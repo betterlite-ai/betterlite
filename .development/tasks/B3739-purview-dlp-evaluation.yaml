@@ -1,0 +1,140 @@
+id: B3739
+title: Purview DLP evaluation and text projection
+description: >-
+  Build Purview DLP policy evaluation and text extraction for DLP blocking.
+  In betterlite-guardrails, implement `MicrosoftPurviewDLPGuardrail` with:
+  - Class initialization and supported event hooks (pre_call, post_call, logging_only)
+  - Configuration model getter returning None for UI integration later
+  - DLP content evaluation via `_check_content`: Calls Graph API with activity
+    type ("uploadText" or "downloadText"), handles HTTP errors (401/403 map to 502,
+    preserve Retry-After header), propagates upstream status codes (429, 503) on
+    rate limits, logs warnings in logging-only mode and raises HTTPException
+    when block_on_violation is true
+  - Policy block detection: Raises HTTPException 400 when _should_block detects
+    policy blocks (owned by B3738)
+  - Responses API function call arguments extraction alongside output_text to
+    catch sensitive data in model-generated tool calls
+  - Completion and chat response text collection from TextCompletionResponse
+    (text_choice.text), ModelResponse (message content), and ResponsesAPIResponse
+    (output_text plus tool call arguments)
+  - Responses API stream reassembly from buffered chunks: Extract the latest
+    ResponsesAPIResponse from event stream with fallback order (response.completed,
+    response.failed, response.incomplete)
+  - Responses API input transformation: Convert input field (string or list) to
+    messages via LiteLLMCompletionResponsesConfig, include instructions as system
+    message, handle transformation errors with HTTPException in blocking mode or
+    log and return None in audit mode
+  - User ID resolution for blocking with fail-closed behavior: Call
+    _resolve_trusted_user_id (owned by B3738) and reject caller-supplied hints;
+    distinguish "untrusted identity available" (HTTPException) from "no identity"
+    (different HTTPException)
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L51-L96"
+    why: MicrosoftPurviewDLPGuardrail class, constructor signature, get_config_model and get_supported_event_hooks returning [pre_call, post_call, logging_only].
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L101-L206"
+    why: _check_content core logic with async API calls, HTTP error handling, status code mapping and policy block detection.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L208-L232"
+    why: _extract_responses_api_function_call_args to extract tool call arguments from ResponsesAPIResponse.output field.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L234-L268"
+    why: _completion_response_text_parts collecting text from TextCompletionResponse, ModelResponse and ResponsesAPIResponse with tool call extraction.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L270-L290"
+    why: _assemble_responses_api_from_chunks reassembling final ResponsesAPIResponse from buffered chunks with fallback event types.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L292-L334"
+    why: _responses_api_input_to_str transforming input field via LiteLLMCompletionResponsesConfig with instruction handling and error modes.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L340-L380"
+    why: _resolve_user_id_for_blocking fail-closed identity resolution using only trusted sources, distinguishing no identity from untrusted identity.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L1"
+    why: LiteLLMCompletionResponsesConfig contract for transform_responses_api_input_to_messages API.
+
+dod:
+  - text: MicrosoftPurviewDLPGuardrail class initializes with guardrail_name, tenant_id, client_id, client_secret, purview_app_name and user_id_field, calls super().__init__ to B3738.
+    proof: [constructor-exists]
+  - text: get_config_model returns None and get_supported_event_hooks returns [pre_call, post_call, logging_only] in that order.
+    proof: [hook-methods-test]
+  - text: _check_content calls _compute_protection_scopes and _process_content, detects policy blocks with _should_block, and raises HTTPException 400 on block.
+    proof: [content-check-tests]
+  - text: HTTP error handling preserves upstream status codes (429, 503) and Retry-After headers, maps 401/403 to 502, logs warnings in logging-only mode.
+    proof: [error-handling-tests]
+  - text: _extract_responses_api_function_call_args extracts function_call arguments from ResponsesAPIResponse.output items and returns list of strings.
+    proof: [responses-extraction-tests]
+  - text: _completion_response_text_parts collects text from TextCompletionResponse.choices, ResponsesAPIResponse and ModelResponse with tool call arguments included.
+    proof: [completion-text-tests]
+  - text: _assemble_responses_api_from_chunks returns (is_responses_api, final_response) where final_response is latest ResponsesAPIResponse from response.completed/failed/incomplete.
+    proof: [stream-assembly-tests]
+  - text: _responses_api_input_to_str transforms input field to messages via LiteLLMCompletionResponsesConfig, includes instructions, returns None on error in logging-only mode or raises HTTPException in blocking mode.
+    proof: [responses-input-tests]
+  - text: _resolve_user_id_for_blocking returns user_id only from _resolve_trusted_user_id, raises HTTPException when untrusted identity exists, raises different HTTPException when no identity exists.
+    proof: [user-id-blocking-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: constructor-exists
+      why: MicrosoftPurviewDLPGuardrail constructor not defined or missing parameters
+      run: grep -A5 "impl MicrosoftPurviewDLPGuardrail" crates/betterlite-guardrails/src/*.rs | grep -q "fn new"
+    - id: hook-methods-test
+      why: get_config_model and get_supported_event_hooks not implemented correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::hook_methods/)'
+    - id: content-check-tests
+      why: _check_content core DLP evaluation logic absent or broken
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::content_check/)'
+    - id: error-handling-tests
+      why: HTTP error handling, status code mapping or Retry-After preservation absent or broken
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::error_handling/)'
+    - id: responses-extraction-tests
+      why: _extract_responses_api_function_call_args not extracting function calls correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::responses_extraction/)'
+    - id: completion-text-tests
+      why: _completion_response_text_parts not collecting text correctly from all response types
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::completion_text/)'
+    - id: stream-assembly-tests
+      why: _assemble_responses_api_from_chunks not reassembling final response from chunks correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::stream_assembly/)'
+    - id: responses-input-tests
+      why: _responses_api_input_to_str not transforming input or handling instructions correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::responses_input/)'
+    - id: user-id-blocking-tests
+      why: _resolve_user_id_for_blocking not using only trusted sources or raising correct errors
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_dlp_evaluation::user_id_blocking/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "HTTP error handling distinguishes caller-fixable upstream errors (e.g., 429 rate limit) from proxy-side credential problems (401/403). 401/403 map to 502 Bad Gateway; others preserve upstream status. Retry-After header is forwarded when present."
+    why: "Transparent error propagation allows callers to implement retry-after logic for transient errors while treating credential/consent issues as permanent proxy failures. Matches LiteLLM's status-code preservation logic."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L141-L165"
+  - what: "_assemble_responses_api_from_chunks accepts the latest event carrying a ResponsesAPIResponse body, not only terminal events. Fallback order is response.completed, then response.failed, then response.incomplete."
+    why: "LiteLLM's behavior: the function preserves non-terminal responses to allow response content scans on partial data. The docstring describes terminal events but the code path includes non-terminal events."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L270-L290"
+  - what: "_resolve_user_id_for_blocking uses _resolve_trusted_user_id only (key/JWT-bound identity), not caller-supplied hints. Raises HTTPException 400 with different messages for untrusted-identity-available vs no-identity cases to guide caller remediation."
+    why: "Identity spoofing risk: caller-supplied metadata (user, end_user_id, safety_identifier) can impersonate Entra users. Blocking DLP must fail closed with guidance on the specific remediation needed (bind user_id to key or provide bound identity)."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L340-L380"
+
+out_of_scope:
+  - "PurviewGuardrailBase constructor, _compute_protection_scopes, _process_content, _should_block, _extract_tool_call_args_from_message, get_prompt_text_for_dlp, _resolve_trusted_user_id, _resolve_user_id: owned by B3738"
+  - "async_pre_call_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook, logging_hook and async_logging_hook: owned by B3740"
+  - "CustomGuardrail base class and standard guardrail logging: belongs to B104"
+  - "LiteLLMCompletionResponsesConfig: defined in betterlite-core (B909)"
+  - "Model-response and streaming-response types: owned by wire format (B005, B2400)"
+  - "HTTPException construction: framework utility"
+
+pitfalls:
+  - "HTTP status code handling: upstream 401/403 indicate proxy-side credential/consent problems (map to 502), while 429/503 are caller-retryable (preserve status). Retry-After header must be forwarded when present on httpx.HTTPStatusError."
+  - "_check_content logs warnings in logging-only mode (block_on_violation=False) and raises HTTPException only when block_on_violation=True. The finally block always calls add_standard_logging_guardrail_information_to_request_data (delegated to framework, U1)."
+  - "_extract_responses_api_function_call_args filters output items for type=='function_call' and extracts arguments field, skipping non-string or whitespace-only arguments. Returns empty list when output is None/empty."
+  - "_completion_response_text_parts handles three response types: TextCompletionResponse (iterate choices, extract text), ResponsesAPIResponse (use output_text plus function_call arguments), and ModelResponse (iterate choices, extract message.content plus tool call arguments). Tool call arguments are always included via _extract_tool_call_args_from_message."
+  - "_assemble_responses_api_from_chunks returns a tuple (is_responses_api_stream, final_response). is_responses_api is true if any event_type starts with 'response.'. final_response is whichever chunk's response field carries a ResponsesAPIResponse, with the latest one retained by iteration order (final is overwritten on each matching chunk, not via OrderedDict eviction). Fallback is implicit in iteration: response.completed is returned if it exists, else response.failed/incomplete. Returns (False, None) for non-Responses-API streams."
+  - "_responses_api_input_to_str transforms input field (string or list of messages) via LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages, converting to messages where instructions become a system message. When raise_on_failure=True (blocking mode), raises HTTPException 400 on transformation error; when False (logging mode), logs warning and returns None so audit can still run on response side."
+  - "_resolve_user_id_for_blocking first tries _resolve_trusted_user_id (owned by B3738, returns only UserAPIKeyAuth.user_id). If None, checks whether any other _resolve_user_id source returns a value (untrusted available). If untrusted identity exists, raise HTTPException 400 'No proxy-authenticated user identity' with guidance to bind to API key. If no identity at all, raise HTTPException 400 'No proxy-authenticated user identity' with guidance to bind for blocking DLP. Both messages must guide caller remediation."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

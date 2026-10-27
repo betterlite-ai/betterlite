@@ -1,0 +1,212 @@
+id: B3067
+title: Configure and schedule Vantage exports
+description: >-
+  Build VantageLogger in betterlite-server::finops::vantage, a FocusLogger subclass with
+  CSV format and Vantage API destination, plus its dedicated scheduled export job.
+
+  VantageLogger.__init__ accepts api_key, integration_token, base_url, frequency, and
+  interval_seconds parameters, each overriding a corresponding environment variable with
+  a fallback default. Read VANTAGE_API_KEY, VANTAGE_INTEGRATION_TOKEN (stored in
+  destination_config only if set), VANTAGE_BASE_URL (defaults to https://api.vantage.sh),
+  VANTAGE_EXPORT_FREQUENCY (defaults to "hourly"), and VANTAGE_EXPORT_INTERVAL_SECONDS.
+  Parse VANTAGE_EXPORT_INTERVAL_SECONDS with warn-and-fallback on error (like FocusLogger's
+  FOCUS_INTERVAL_SECONDS). Call super().__init__ with provider="vantage", export_format="csv",
+  frequency=resolved_frequency, interval_seconds=resolved_interval, prefix="vantage_exports",
+  and destination_config with the resolved credentials. Log credentials-masked debug messages
+  on initialization (token first 4 chars + "***" if > 4 chars, else "***").
+
+  VantageLogger.initialize_focus_export_job acquires the lock with the separate
+  VANTAGE_USAGE_DATA_JOB_NAME key ("vantage_export_usage_data"), preserving the same
+  locking behavior as FocusLogger.initialize_focus_export_job (check pod_lock_manager,
+  acquire with cronjob_id, try/finally release). This prevents VantageLogger and
+  FocusLogger from competing for the same lock when both are configured.
+
+  VantageLogger.init_vantage_background_job (static) finds all registered VantageLogger
+  instances (not exact type match; include subclasses), selects the first, builds trigger
+  configuration from _build_scheduler_trigger (inherited from FocusLogger), and registers
+  with the scheduler. Skip if no VantageLogger is registered, logging debug-level
+  "No Vantage logger registered; skipping scheduler".
+
+  Preserve VANTAGE settings precedence, hourly default, interval warning behavior and the
+  separate vantage_export_usage_data lease key. The export operation is inherited from
+  FocusLogger (export_usage_data) without override.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/vantage.rs
+    - crates/betterlite-server/src/finops/vantage/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L36-L83"
+    why: VantageLogger.__init__ with environment variable reading, credential configuration, and parent initialization.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L85-L110"
+    why: VantageLogger.initialize_focus_export_job with separate lock key for pod coordination.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L112-L129"
+    why: VantageLogger.init_vantage_background_job with scheduler registration.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L22-L23"
+    why: VANTAGE_USAGE_DATA_JOB_NAME constant and module exports.
+
+dod:
+  - text: >-
+      VantageLogger accepts api_key, integration_token, base_url, frequency, and
+      interval_seconds parameters with environment variable fallbacks.
+    proof: [constructor-env-defaults]
+  - text: >-
+      VANTAGE_API_KEY and VANTAGE_INTEGRATION_TOKEN are read from environment and included
+      in destination_config only when set (not None).
+    proof: [constructor-credentials]
+  - text: >-
+      VANTAGE_BASE_URL defaults to "https://api.vantage.sh" when not provided and no
+      environment variable is set.
+    proof: [constructor-base-url-default]
+  - text: >-
+      VANTAGE_EXPORT_FREQUENCY defaults to "hourly" (case-insensitive normalization).
+    proof: [constructor-frequency-default]
+  - text: >-
+      VANTAGE_EXPORT_INTERVAL_SECONDS is parsed with try/except; parse failures log a
+      warning "Invalid VANTAGE_EXPORT_INTERVAL_SECONDS value: <value>, ignoring" and
+      fall back to None.
+    proof: [constructor-interval-parsing]
+  - text: >-
+      VantageLogger calls super().__init__ with provider="vantage", export_format="csv",
+      prefix="vantage_exports", and the resolved configuration.
+    proof: [constructor-parent-call]
+  - text: >-
+      VantageLogger logs debug "VantageLogger initialized (integration_token=<masked>)"
+      on successful initialization, masking the token as first 4 chars + "***" if > 4 chars.
+    proof: [constructor-debug-log]
+  - text: >-
+      initialize_focus_export_job acquires the lock with cronjob_id=VANTAGE_USAGE_DATA_JOB_NAME
+      ("vantage_export_usage_data") when pod_lock_manager and redis_cache exist.
+    proof: [pod-lock-key]
+  - text: >-
+      initialize_focus_export_job logs debug "Vantage export: unable to acquire pod lock"
+      and returns early if acquire_lock returns false.
+    proof: [pod-lock-acquire-fail]
+  - text: >-
+      initialize_focus_export_job runs _run_scheduled_export immediately without locking
+      when pod_lock_manager is None, falsy, or lacks redis_cache.
+    proof: [pod-lock-unavailable]
+  - text: >-
+      initialize_focus_export_job calls release_lock(cronjob_id=VANTAGE_USAGE_DATA_JOB_NAME)
+      in a finally block after _run_scheduled_export, including when the export raises an error.
+    proof: [pod-lock-release]
+  - text: >-
+      init_vantage_background_job retrieves all registered VantageLogger instances using
+      get_custom_loggers_for_type(callback_type=VantageLogger) (type inclusion, not
+      exact-type filtering).
+    proof: [scheduler-type-match]
+  - text: >-
+      init_vantage_background_job logs debug "No Vantage logger registered; skipping scheduler"
+      and returns early if no VantageLogger is found.
+    proof: [scheduler-skip-empty]
+  - text: >-
+      init_vantage_background_job selects the first VantageLogger, calls _build_scheduler_trigger
+      to get trigger configuration, and registers with scheduler.add_job.
+    proof: [scheduler-registration]
+
+checks:
+  optional: []
+  commands:
+    - id: constructor-env-defaults
+      why: VantageLogger does not read environment variables or apply defaults for credentials and frequency
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_env/)'
+    - id: constructor-credentials
+      why: VANTAGE_API_KEY and VANTAGE_INTEGRATION_TOKEN are not conditionally added to destination_config
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_credentials/)'
+    - id: constructor-base-url-default
+      why: VANTAGE_BASE_URL does not default to https://api.vantage.sh
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_base_url/)'
+    - id: constructor-frequency-default
+      why: VANTAGE_EXPORT_FREQUENCY does not default to "hourly" or is not normalized to lowercase
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_frequency/)'
+    - id: constructor-interval-parsing
+      why: VANTAGE_EXPORT_INTERVAL_SECONDS invalid values do not warn and fallback to None
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_interval/)'
+    - id: constructor-parent-call
+      why: VantageLogger does not call parent.__init__ with correct provider, format, and prefix
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_parent/)'
+    - id: constructor-debug-log
+      why: VantageLogger does not log initialization debug message with masked token
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_debug/)'
+    - id: pod-lock-key
+      why: initialize_focus_export_job does not use VANTAGE_USAGE_DATA_JOB_NAME as the lock key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_key/)'
+    - id: pod-lock-acquire-fail
+      why: initialize_focus_export_job does not log debug and return early when acquire_lock fails
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_fail/)'
+    - id: pod-lock-release
+      why: initialize_focus_export_job does not release the lock in a finally block or does not release with the correct VANTAGE_USAGE_DATA_JOB_NAME key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_release/)'
+    - id: pod-lock-unavailable
+      why: initialize_focus_export_job does not run the export immediately when pod_lock_manager is unavailable
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_unavailable/)'
+    - id: scheduler-type-match
+      why: init_vantage_background_job does not retrieve VantageLogger instances using the correct type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::scheduler_type/)'
+    - id: scheduler-skip-empty
+      why: init_vantage_background_job does not skip when no VantageLogger is registered
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::scheduler_skip/)'
+    - id: scheduler-registration
+      why: init_vantage_background_job does not register the VantageLogger with the scheduler
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::scheduler_register/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      init_vantage_background_job uses get_custom_loggers_for_type(callback_type=VantageLogger)
+      to retrieve all registered instances (including subclasses), unlike FocusLogger's exact-type
+      filtering that excludes subclasses.
+    why: >-
+      VantageLogger is a leaf implementation with no known subclasses; retrieving all instances
+      of the type (including potential subclasses) is simpler than exact-type matching and
+      matches the pattern of other callback-driven scheduling in LiteLLM.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L117-L119"
+
+out_of_scope:
+  - >-
+    FocusLogger base class and inherited methods (export_usage_data, _ensure_engine, _export_all,
+    _export_window, _run_scheduled_export, _build_scheduler_trigger, _compute_time_window);
+    owned by B3066.
+  - >-
+    CustomLogger base class and callback registration; owned by B189.
+  - >-
+    Pod lock manager acquisition and release operations; owned by B1690.
+  - >-
+    FocusExportEngine and destination factory; owned by B3065.
+  - >-
+    Logging infrastructure (verbose_logger); owned by B189.
+
+pitfalls:
+  - >-
+    VANTAGE_API_KEY and VANTAGE_INTEGRATION_TOKEN must be added to destination_config only
+    when set (not None); omit them if the environment variable is unset or the parameter is None.
+  - >-
+    base_url is always added to destination_config because the VANTAGE_BASE_URL env var has
+    a non-empty default ("https://api.vantage.sh"), making the `if resolved_base_url:` guard
+    effectively unconditional (unlike api_key and integration_token which can be absent).
+  - >-
+    VANTAGE_EXPORT_FREQUENCY must be normalized to lowercase before passing to parent.__init__.
+  - >-
+    VANTAGE_EXPORT_INTERVAL_SECONDS invalid values log a warning and use None as the fallback;
+    the parent FocusLogger will use 60 seconds as the interval default when None is passed.
+  - >-
+    The lock key "vantage_export_usage_data" is a string constant distinct from FocusLogger's
+    "focus_export_usage_data"; using the same key would cause lock contention.
+  - >-
+    The pod_lock_manager is accessed through a chain of attributes (proxy_logging_obj.db_spend_update_writer.pod_lock_manager);
+    each step may return None, so validate the entire chain before accessing redis_cache.
+  - >-
+    init_vantage_background_job uses get_custom_loggers_for_type(callback_type=VantageLogger),
+    not exact-type filtering; this retrieves VantageLogger and any subclasses registered.
+  - >-
+    Token masking in debug logs shows first 4 characters + "***" only if token length > 4 chars;
+    shorter tokens are masked as "***".
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

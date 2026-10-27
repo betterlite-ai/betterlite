@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-harness-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+metadata.cargo-fuzz = true
+[dependencies]
+betterlite-harness = { path = ".." }
+libfuzzer-sys = "0.4.9"
+[[bin]]
+name = "payloads"
+path = "fuzz_targets/payloads.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "snapshots"
+path = "fuzz_targets/snapshots.rs"
+test = false
+doc = false
+bench = false
+[workspace]

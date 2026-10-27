@@ -1,0 +1,122 @@
+id: B3939
+title: Datadog latency and request metrics
+description: >-
+  Build the Datadog metrics logger that records gauge and count series for request latency
+  and status, then uploads them to Datadog via gzip-compressed HTTP POST.
+
+  Metrics created per request are: total end-to-end latency (from start_time to end_time),
+  provider latency (from api_call_start_time to end_time), betterlite overhead (derived from
+  litellm_overhead_time_ms in hidden_params), and request count tagged with status.
+  The overhead latency metric intentionally carries no status_code tag, distinguishing it
+  from the other latencies.
+
+  Configuration comes from environment variables: DD_API_KEY (required for upload; if missing,
+  warn and skip sending), DD_APP_KEY (optional, included in request headers if present),
+  DD_SITE (default datadoghq.com), and DD_VERSION (default unknown). The upload URL is
+  constructed as https://api.{DD_SITE}/api/v2/series.
+
+  Tag extraction pulls from StandardLoggingPayload: base tags are env, service, version,
+  HOSTNAME and POD_NAME. Per-metric tags add provider, model_name tag from log["model"],
+  model_group and status_code (for status metrics only). Team tags are extracted from metadata
+  preferring user_api_key_team_alias, then team_alias, then user_api_key_team_id, then team_id,
+  and normalized through the tag-value normalizer.
+
+  The logger extends CustomBatchLogger with a default flush_interval of five seconds.
+  Batches are compressed with gzip before POST with Content-Encoding: gzip header.
+  The DD-API-KEY header carries the API key, and DD-APPLICATION-KEY is added if DD_APP_KEY
+  is set. Absent credentials cause the health check to succeed with no upload attempted.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog/metrics.rs
+    - crates/betterlite-logging/src/datadog/metrics/**
+    - tools/oracle/cases/logging/datadog-metrics/**
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/helpers/b3939.py
+    - tools/oracle/helpers/b3939/**
+    - tools/oracle/src/helpers/logging/b3939.rs
+    - tools/oracle/src/helpers/logging/b3939/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_metrics.py#L1-L279
+    why: The complete DatadogMetricsLogger class with __init__, _extract_tags, _add_metrics_from_log, async_log_success_event, async_log_failure_event, async_send_batch, _upload_to_datadog and async_health_check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/datadog_metrics.py#L1-L18
+    why: TypedDict definitions for DatadogMetricPoint, DatadogMetricSeries and DatadogMetricsPayload.
+
+dod:
+  - text: Gauge metrics are created for total latency, provider latency and overhead latency from timing fields in kwargs and hidden_params.
+    proof: [latency-metrics]
+  - text: Count metric is created per request with status_code tag from error_information or 200 default.
+    proof: [count-metric]
+  - text: Tags are extracted from StandardLoggingPayload including base tags (env, service, version, hostname, pod_name) and metric-specific tags (provider, model_name, model_group, status_code, team).
+    proof: [tag-extraction]
+  - text: Overhead latency metric excludes status_code tag while other metrics include it.
+    proof: [overhead-no-status-tag]
+  - text: Payloads are gzipped and uploaded with DD-API-KEY and optional DD-APPLICATION-KEY headers to https://api.{DD_SITE}/api/v2/series.
+    proof: [gzip-upload]
+  - text: Health check succeeds even when DD_API_KEY is absent; warnings are issued for missing required keys.
+    proof: [health-absent-credentials]
+  - text: Metrics are queued in batch and flushed when batch_size is reached or at 5-second intervals.
+    proof: [batch-and-flush]
+
+checks:
+  optional: []
+  commands:
+    - id: latency-metrics
+      why: latency calculations are missing or incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::latency(::|$)/)'
+    - id: count-metric
+      why: request count or status code is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::status(::|$)/)'
+    - id: tag-extraction
+      why: tags are incomplete or missing fields
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::tags(::|$)/)'
+    - id: overhead-no-status-tag
+      why: overhead latency incorrectly includes status_code or other metrics lack it
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::overhead_tag_exclusion(::|$)/)'
+    - id: gzip-upload
+      why: gzip compression or headers are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::upload(::|$)/)'
+    - id: health-absent-credentials
+      why: health check fails when credentials are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::health(::|$)/)'
+    - id: batch-and-flush
+      why: batching or 5-second flush interval is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::flush(::|$)/)'
+
+oracle_cases:
+  - tools/oracle/cases/logging/datadog-metrics/success-event-creates-all-metrics.yaml
+  - tools/oracle/cases/logging/datadog-metrics/failure-event-includes-error-status.yaml
+  - tools/oracle/cases/logging/datadog-metrics/overhead-metric-no-status-tag.yaml
+  - tools/oracle/cases/logging/datadog-metrics/tag-extraction-includes-team.yaml
+  - tools/oracle/cases/logging/datadog-metrics/missing-api-key-warning.yaml
+  - tools/oracle/cases/logging/datadog-metrics/health-check-succeeds-without-credentials.yaml
+  - tools/oracle/cases/logging/datadog-metrics/gzip-compression-on-upload.yaml
+
+deviations:
+  - what: When DD_API_KEY is absent, the logger issues a warning and skips upload but continues to operate normally. The health check returns healthy even without credentials.
+    why: This matches LiteLLM's behavior where the logger warns if DD_API_KEY is missing but does not fail initialization or the health check.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_metrics.py#L37-L39"
+  - what: The overhead latency metric is deliberately created without a status_code tag, distinguishing it from total and provider latency metrics.
+    why: This matches LiteLLM's _extract_tags call on line 148, which excludes status_code for overhead metrics.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_metrics.py#L144-L160"
+
+out_of_scope:
+  - The get_request_response_payload method at lines 281-287; no caller at the pin.
+  - Datadog APM/profiler integration; B3930 owns the tracer facade and agent availability.
+
+pitfalls:
+  - DD_SITE must be used in the upload URL construction with no trailing slash; the default is datadoghq.com, never an empty string.
+  - The model tag uses the literal prefix model_name:, not model:; it reads from log["model"] and builds the tag as f"model_name:{model}".
+  - Overhead latency timestamp is derived from end_time only; it does not require api_call_start_time.
+  - Status code for count metrics comes from error_information.error_code on failure or "200" on success; missing error_code defaults to "500".
+  - The team tag value must pass through the normalizer even when extracted from different metadata keys.
+  - Gzip compression is required for upload; the Content-Encoding header must be set when payload is compressed.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

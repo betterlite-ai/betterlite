@@ -1,0 +1,135 @@
+id: B3122
+title: Record and retrieve caller-scoped provider cache observations
+description: >-
+  Build strict observation decoding and the native success-event observer in crates/betterlite-server::hooks,
+  reusing the shared callback registry and injected cache/clock handles.
+  The observer decodes successful native Anthropic responses to extract exact-before-lookback prefix evidence,
+  validates fingerprints and cache token counts, stores observations with request-start expiry windows,
+  and persists entries with 24-hour retention in the dual cache with one-second local Redis-backed copies.
+  Implement lookup to find warm evidence by exact or partial fingerprint match, with stale-evidence fallback
+  when exact matches have expired. Require existing matching evidence before refreshing read-only hits (cache_creation_tokens == 0).
+  Decode wire body and response as strict Pydantic models, rejecting unknown fields, incomplete streams and response-cache hits.
+  Only successful native Anthropic responses to the exact HTTPS recipient (api.anthropic.com:443/v1/messages) qualify.
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/observation_parsing.rs
+    - crates/betterlite-anthropic/src/observation_parsing/**
+    - crates/betterlite-logging/src/cache_observer.rs
+    - crates/betterlite-logging/src/cache_observer/**
+    - tools/oracle/cases/cache-observation/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L28-L30"
+    why: _HEADERS and _counter TypeAdapter declarations; _NATIVE_HEADERS frozenset initialization.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L32-L44"
+    why: _NATIVE_HEADERS frozenset of HTTP headers used in observation validation.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L458-L486"
+    why: Observed cache usage and response records (_TTLUsage, _CacheUsage, _Usage, _Choice, _Response) with strict validation.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L658-L714"
+    why: parse_observed_cache function validating wire URL, headers, model match, cache token ranges, TTL splits and prefix parsing.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L1-L30"
+    why: CacheObservation model, _CACHE_ENTRY TypeAdapter, _RETENTION_SECONDS constant and imports.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L35-L36"
+    why: _cache_key function building scope-and-fingerprint keys.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L39-L53"
+    why: lookup function with exact-match primary path, expiry filtering and stale-evidence fallback through older fingerprints.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L56-L64"
+    why: _read_exact function reading from cache, validating entry type and fingerprint match without expiry filtering.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L92-L95"
+    why: PromptCacheObserver.__init__ injecting DualCache and clock callable.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L97-L142"
+    why: async_log_success_event callback validating success, non-cached responses with complete streams, request-start expiry, read-only-hit evidence checks and observation persistence.
+dod:
+  - text: CacheObservation records fingerprint (64-char hex), cached_tokens (>0), observed_at (>=0), and expires_at (>=0) as strict frozen Pydantic model with extra="forbid".
+    proof: [cache-observation-tests]
+  - text: _cache_key returns a scope-and-fingerprint-scoped Redis key like "prompt-cache-observation:<scope>:<fingerprint>".
+    proof: [cache-observation-tests]
+  - text: _read_exact retrieves one cached observation by key, validates it with CacheObservation or decodes from JSON string, and returns None on validation failure or fingerprint mismatch; expiry filtering is handled by the caller lookup.
+    proof: [cache-observation-tests]
+  - text: lookup retrieves the exact observation by fingerprint or falls back to stale evidence from older fingerprints in prefix.fingerprints[1:], returning the first non-expired match or the most recent observation regardless of expiry.
+    proof: [cache-observation-tests]
+  - text: parse_observed_cache validates the wire request scheme, host (api.anthropic.com), path (/v1/messages), query (must be absent), and port (None or 443) to accept only native HTTPS recipients.
+    proof: [parse-observed-cache-tests]
+  - text: parse_observed_cache validates model match with response.model, provider_key format via _supported_provider_key, and that headers stay within _NATIVE_HEADERS.
+    proof: [parse-observed-cache-tests]
+  - text: parse_observed_cache validates anthropic-version == DEFAULT_ANTHROPIC_API_VERSION (2023-06-01) and calls supported_prediction_headers(headers) to reject anthropic-beta.
+    proof: [parse-observed-cache-tests]
+  - text: parse_observed_cache calls parse_prompt to reconstruct the observed prefix from the wire body, returning None if the body is unsupported (thinking block, multi-breakpoint or no single-message boundary).
+    proof: [parse-observed-cache-tests]
+  - text: parse_observed_cache validates cache token counts (cached_tokens > 0, cache_creation_tokens >= 0, sum <= prompt_tokens) and TTL consistency via split.ephemeral_5m_input_tokens and split.ephemeral_1h_input_tokens matching the prefix TTL.
+    proof: [parse-observed-cache-tests]
+  - text: parse_observed_cache returns ObservedCachePrefix with the exact prefix, computed cache_scope, cached_tokens and cache_creation_tokens, or None on any validation failure.
+    proof: [parse-observed-cache-tests]
+  - text: PromptCacheObserver.__init__ injects internal_usage_cache (holding a dual_cache) and clock (defaults to time.time), storing them as self.cache and self.clock.
+    proof: [observer-init-tests]
+  - text: async_log_success_event validates that kwargs is an _Event with cache_hit not set, status 200, and stream/prompt_cache_response_complete consistency (incomplete streams rejected unless prompt_cache_response_complete is true).
+    proof: [observer-event-tests]
+  - text: async_log_success_event calls parse_observed_cache and returns early if the wire request is outside the native HTTPS endpoint, response is non-200, stream is incomplete, or observation is None.
+    proof: [observer-event-tests]
+  - text: async_log_success_event checks that request.first_api_call_start_time (cast to timestamp) is not in the future; requests starting after now are dropped.
+    proof: [observer-event-tests]
+  - text: "async_log_success_event requires existing evidence when cache_creation_tokens == 0 (read-only hit): calls _read_exact to fetch the exact prior fingerprint and rejects refresh if the prior observation has mismatched fingerprint or cached_tokens."
+    proof: [observer-read-only-tests]
+  - text: async_log_success_event stores the observation with cache_tokens and TTL scoping via cache_scope (caller_key_hash, deployment_id, provider_key, model, default anthropic-version).
+    proof: [observer-storage-tests]
+  - text: async_log_success_event persists CacheObservation as JSON via model_dump_json() to dual_cache with 86400-second (24-hour) TTL, and maintains one-second local Redis copies via async_set_cache with local_only=True and ttl=1.
+    proof: [observer-storage-tests]
+checks:
+  optional: []
+  commands:
+    - id: cache-observation-tests
+      why: CacheObservation, _cache_key, or _read_exact logic fails
+      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::/)' --no-tests=fail
+    - id: parse-observed-cache-tests
+      why: parse_observed_cache validation or reconstruction logic fails
+      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*parse_observed/)' --no-tests=fail
+    - id: observer-init-tests
+      why: PromptCacheObserver initialization fails
+      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*init/)' --no-tests=fail
+    - id: observer-event-tests
+      why: async_log_success_event event validation fails
+      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*event/)' --no-tests=fail
+    - id: observer-read-only-tests
+      why: read-only hit (cache_creation_tokens == 0) evidence validation fails
+      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*read_only/)' --no-tests=fail
+    - id: observer-storage-tests
+      why: observation storage and TTL logic fails
+      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*storage/)' --no-tests=fail
+oracle_cases: []
+deviations:
+  - what: "parse_observed_cache decodes request and response as strict Pydantic models instead of LiteLLM's manual field access."
+    why: "Typed decoding enforces validation at the boundary and prevents silent field misses when the wire format changes."
+  - what: "PromptCacheObserver is registered as the built-in 'prompt_cache_prediction' callback identity instead of requiring a user callback name."
+    why: "The observer is integral to cache prediction functionality and the shared registry (B189) permits built-in identity registration for framework callbacks."
+  - what: "Observation storage uses the dual cache's ttl parameter instead of computing expiry inline."
+    why: "The dual cache abstracts Redis/local TTL management; the observer specifies retention policy (24 hours) and local copy freshness (1 second) without managing the cache's encoding."
+  - what: "prefix.fingerprints (the lookback/secondary fingerprints) is accessed directly instead of calling a separate lookback function."
+    why: "B3120 returns fingerprints tuple; the observer consumes it directly for fallback matching without reconstructing lookback windows."
+out_of_scope:
+  - "DualCache.async_get_cache and async_set_cache implementations: owned by B4293."
+  - "redis_cache field access and initialization: owned by B4293 via attach_redis_cache."
+  - "Callback registry registration and lifecycle: owned by B189, composed here."
+  - "parse_prompt implementation: owned by B3120, called to reconstruct the observed prefix."
+  - "supported_prediction_headers, _supported_provider_key and cache_scope helpers: owned by B3121, called here for validation."
+  - "Cache eviction, memory backend and Redis backend: owned by B390, B360 and B4293, composed here."
+pitfalls:
+  - >-
+    The wire request is httpx.Request (from the response.request property) and the response is httpx.Response. The body is wire.content (bytes) and headers are wire.headers (a MutableHeaders dict-like). Do not confuse httpx.Request with the FastAPI/Starlette Request type.
+  - >-
+    parse_observed_cache expects httpx.Request and httpx.Response directly, not FastAPI request/response objects. The observer receives them from the _Event model which carries httpx_response (an httpx.Response object).
+  - >-
+    The fingerprints tuple from prefix.fingerprints includes the exact fingerprint at index 0 and lookback fingerprints at indices 1+. The exact match is prefix.fingerprint (a string); fingerprints[1:] are the partial/stale fallback options.
+  - >-
+    The 24-hour retention (_RETENTION_SECONDS = 86400) is for persistent Redis storage; the local copy (_RETENTION_SECONDS is also passed but with local_only=True) keeps a fresh one-second snapshot for immediate same-request lookups.
+  - >-
+    Observations expire at started + prefix.ttl_seconds, where started is the request's first_api_call_start_time.timestamp() and prefix.ttl_seconds is 300 (5m) or 3600 (1h). The expiry_at field stores this pre-computed value.
+  - >-
+    A read-only hit (cache_creation_tokens == 0) requires prior evidence with matching fingerprint and cached_tokens. The previous observation must have been written in an earlier request; mismatch means the cache state changed and the observation is invalid.
+  - >-
+    The cache_scope digest includes anthropic-version as a parameter with DEFAULT_ANTHROPIC_API_VERSION as the default. It is computed inside parse_observed_cache and passed directly to ObservedCachePrefix.scope.
+  - >-
+    Wire request and response validation must be strict: unknown headers outside _NATIVE_HEADERS, extra response fields, or schema mismatches all return None rather than attempting a partial decode. Use TypeAdapter with strict=True.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

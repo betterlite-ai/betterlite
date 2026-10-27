@@ -2,8 +2,8 @@ id: B3910
 milestone: M7 observability
 title: Langfuse OpenTelemetry destinations and service filtering
 status: todo
-depends_on: [B002, B3909]
-file: null
+depends_on: [B002, B3854, B3868, B3909]
+file: tasks/B3910-langfuse-otel-destinations.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse_otel.py"
 parent: B112

@@ -1,0 +1,206 @@
+id: B3997
+title: Authenticate GCS storage requests and isolate bucket credentials
+description: >-
+  Build the reusable GCS bucket client with dynamic bucket and credential selection.
+  Implement GCSBucketBase as a service that handles authentication via Vertex AI,
+  constructs request headers for both async and sync contexts, and manages per-credential
+  Vertex client instances. The class reads bucket name and service account path from
+  environment variables (GCS_BUCKET_NAME, GCS_PATH_SERVICE_ACCOUNT) or accepts them
+  dynamically through callbacks. Cache Vertex instances by their credential string,
+  using "IAM_AUTH" as the key when credentials are absent. Install mock GCS behavior
+  when should_use_gcs_mock() is true at initialization. Provide upload and download
+  operations that preserve URL and body contracts for reuse by the GCS logger, caching,
+  and secret retrieval. Sync headers include GOOGLE_SECRET_MANAGER_PROJECT_ID from
+  the environment; async headers pass no project. Bucket names may contain folder paths;
+  split them and prepend the path to object names. Download returns bytes only for
+  200 status; upload posts JSON and returns parsed response or logs non-200 errors.
+scope:
+  paths:
+    - crates/betterlite-logging/src/gcs_client.rs
+    - crates/betterlite-logging/src/gcs_client/**
+    - crates/betterlite-logging/src/types.rs
+    - tools/oracle/cases/logging/gcs-storage-auth/**
+    - tools/oracle/helpers/b3997.py
+    - tools/oracle/helpers/b3997/**
+    - tools/oracle/src/helpers/logging/b3997.rs
+    - tools/oracle/src/helpers/logging/b3997/**
+    - crates/betterlite-logging/src/types/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L31-L44
+    why: GCSBucketBase.__init__ initialization with mock setup, async client, bucket name and credentials resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L46-L79
+    why: construct_request_headers async method building Vertex-authenticated request headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L81-L115
+    why: sync_construct_request_headers for sync contexts with GOOGLE_SECRET_MANAGER_PROJECT_ID support.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L117-L136
+    why: _handle_folders_in_bucket_name parsing bucket names with folder paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L138-L183
+    why: get_gcs_logging_config dynamic configuration from standard_callback_dynamic_params or defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L185-L201
+    why: get_or_create_vertex_instance credential-scoped caching of VertexBase clients.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L203-L212
+    why: _get_in_memory_key_for_vertex_instance cache key derivation using credentials or IAM_AUTH literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L214-L249
+    why: download_gcs_object retrieval from GCS with status and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L294-L328
+    why: _log_json_data_on_gcs POST upload with string or StandardLoggingPayload serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/gcs_bucket.py#L1-L35
+    why: GCS type definitions for logging config and queue items.
+dod:
+  - text: >-
+      GCSBucketBase.__init__ reads GCS_BUCKET_NAME and GCS_PATH_SERVICE_ACCOUNT from
+      environment; calls should_use_gcs_mock() and when true invokes mock_vertex_auth_methods()
+      and create_mock_gcs_client(); obtains an async httpx client with LoggingCallback provider;
+      initializes an empty vertex_instances dict and calls super().__init__() with any kwargs.
+    proof: [initialization-tests]
+  - text: >-
+      construct_request_headers calls _ensure_access_token_async on the provided or default vertex instance,
+      extracts token and project, calls _get_token_and_url with model="gcs-bucket",
+      and returns a dict with Authorization header "Bearer {token}" and Content-Type "application/json".
+    proof: [header-construction-tests]
+  - text: >-
+      sync_construct_request_headers mirrors the async version, reads GOOGLE_SECRET_MANAGER_PROJECT_ID
+      from environment, uses _ensure_access_token (sync) and _get_token_and_url (sync),
+      and returns the same header structure.
+    proof: [header-construction-tests]
+  - text: >-
+      _handle_folders_in_bucket_name splits bucket name using split_configured_cloud_bucket_name,
+      prepends the returned prefix (if any) to the object name separated by slash, returning
+      the modified bucket and object names.
+    proof: [bucket-folder-handling-tests]
+  - text: >-
+      get_gcs_logging_config checks for standard_callback_dynamic_params in kwargs, extracts
+      gcs_bucket_name and gcs_path_service_account, falls back to instance defaults, raises
+      ValueError if bucket_name is None, and returns GCSLoggingConfig with bucket_name,
+      vertex_instance from get_or_create_vertex_instance, and path_service_account.
+    proof: [config-resolution-tests]
+  - text: >-
+      get_or_create_vertex_instance caches VertexBase instances by credential key from
+      _get_in_memory_key_for_vertex_instance, creates and initializes new instances on cache miss,
+      and returns the cached instance on subsequent calls.
+    proof: [vertex-caching-tests]
+  - text: >-
+      _get_in_memory_key_for_vertex_instance returns credentials as-is if non-None,
+      otherwise returns the literal string "IAM_AUTH".
+    proof: [caching-key-tests]
+  - text: >-
+      download_gcs_object constructs GCS config and headers, handles folder-prefixed bucket names,
+      encodes object name for URL, performs GET to storage.googleapis.com/storage/v1/b/{bucket}/o/{object}?alt=media,
+      returns response.content on 200 status, returns None on non-200 or exception.
+    proof: [download-tests]
+  - text: >-
+      _log_json_data_on_gcs accepts headers, bucket_name, object_name, and logging_payload (string or StandardLoggingPayload),
+      serializes payload to JSON with default=str if not a string, handles folder-prefixed bucket names,
+      encodes object name, performs POST to storage.googleapis.com/upload/storage/v1/b/{bucket}/o?uploadType=media&name={object},
+      logs non-200 response with verbose_logger.error, and returns parsed JSON response.
+    proof: [upload-tests]
+  - text: >-
+      GCSLoggingConfig TypedDict contains bucket_name (str), vertex_instance (VertexBase),
+      and path_service_account (str | None). GCSLogQueueItem contains payload (StandardLoggingPayload),
+      kwargs (dict), and response_obj (Any | None).
+    proof: [type-definition-tests]
+checks:
+  optional: []
+  commands:
+    - id: initialization-tests
+      why: __init__ must read environment, setup mocks, and call parent constructor
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: header-construction-tests
+      why: Both async and sync header construction must produce Bearer token and Content-Type headers
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::header_construction_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: bucket-folder-handling-tests
+      why: Folder paths in bucket names must be split and prepended to object names
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::bucket_folder_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: config-resolution-tests
+      why: Config must resolve from dynamic params, fall back to defaults, and validate bucket_name
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::config_resolution_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: vertex-caching-tests
+      why: Vertex instances must be created once per credential and reused on subsequent calls
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::vertex_caching_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: caching-key-tests
+      why: Cache keys must use credential string or literal "IAM_AUTH" for None credentials
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::caching_key_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: download-tests
+      why: Downloads must encode URLs correctly, handle folders, and return bytes on 200 only
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::download_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: upload-tests
+      why: Uploads must serialize payloads, encode URLs, handle folders, and return parsed response
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::upload_behaviors::tests::/) - test(/::replays_corpus$/)'
+    - id: type-definition-tests
+      why: Type definitions must match LiteLLM schema with correct field names and types
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::type_definitions::tests::/) - test(/::replays_corpus$/)'
+oracle_cases:
+  - tools/oracle/cases/logging/gcs-storage-auth/init-reads-bucket-name-env.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/init-reads-service-account-env.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/init-calls-mock-setup-when-enabled.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/init-skips-mock-setup-when-disabled.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/async-headers-include-bearer-token.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/async-headers-include-content-type.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/sync-headers-include-project-from-env.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/sync-headers-no-project-when-env-absent.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/folder-path-prepended-to-object-name.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/bucket-without-folder-unchanged.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/config-uses-dynamic-bucket-param.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/config-falls-back-to-instance-bucket.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/config-uses-dynamic-service-account-param.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/config-raises-when-bucket-null.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/vertex-instance-cached-by-credential.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/vertex-instance-iam-auth-key-for-none.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/download-returns-bytes-on-200.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/download-returns-none-on-non-200.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/download-handles-folder-prefix.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/upload-serializes-standard-payload.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/upload-preserves-string-payload.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/upload-encodes-object-name.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/upload-handles-folder-prefix.yaml
+  - tools/oracle/cases/logging/gcs-storage-auth/upload-returns-json-response.yaml
+deviations:
+  - what: >-
+      The LiteLLM delete_gcs_object method contains a condition `(response.status_code != 200) or (response.status_code != 204)`
+      that is always true (neither status can satisfy both constraints simultaneously), so it always logs an error even on success.
+      Betterlite logs errors only when status is neither 200 nor 204, treating either as success.
+    why: >-
+      The LiteLLM condition appears to be a bug; the intent is clearly to succeed on either 200 or 204 (POST creates with 200,
+      DELETE succeeds with 204). This task focuses on download and upload paths; delete is out of scope per the outline.
+      A future owner of delete should fix the condition logic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L273
+out_of_scope:
+  - delete_gcs_object (lines 251-292) is not owned by this task; it has no caller at the pin and is out of scope.
+  - GCS_DEFAULT_BATCH_SIZE, GCS_DEFAULT_FLUSH_INTERVAL_SECONDS, and GCS_DEFAULT_USE_BATCHED_LOGGING constants are defined in gcs_bucket.py (lines 13-15) but owned and validated by B3998's queue initialization logic.
+  - B3996 owns should_use_gcs_mock, mock_vertex_auth_methods, and create_mock_gcs_client; this task calls them.
+  - B256 owns CustomBatchLogger parent class; this task inherits from it.
+  - B173 owns get_async_httpx_client and httpxSpecialProvider; this task uses them.
+  - B1302 owns VertexBase class definition and initialization.
+  - B1303 owns _ensure_access_token and _ensure_access_token_async methods.
+  - B1304 owns _get_token_and_url method.
+  - B2208 owns split_configured_cloud_bucket_name and encode_gcs_object_name_for_url utilities.
+pitfalls:
+  - >-
+    Vertex instances are cached by the exact credential string or the literal "IAM_AUTH" key,
+    not by bucket name. Two calls with different buckets but the same credentials reuse the same cached instance.
+  - >-
+    sync_construct_request_headers reads GOOGLE_SECRET_MANAGER_PROJECT_ID at call time, so changes to the environment
+    are reflected in subsequent calls; async headers pass project_id=None and ignore that environment variable.
+  - >-
+    Bucket names may contain slashes representing folder paths. split_configured_cloud_bucket_name handles this splitting;
+    the returned prefix must be prepended to the object name with a slash separator.
+  - >-
+    Object names are URL-encoded using encode_gcs_object_name_for_url before building the request URL;
+    raw slashes and spaces in object names must not appear in the final URL.
+  - >-
+    The _log_json_data_on_gcs method accepts logging_payload as either a string or a StandardLoggingPayload object.
+    If a string, it is posted as-is; if an object, it is serialized to JSON with default=str to handle non-serializable fields.
+  - >-
+    Download returns the raw bytes of the response body on 200, never a parsed JSON object.
+    Callers must deserialize JSON if needed.
+  - >-
+    Both async and sync header construction must succeed, and failures in token generation raise exceptions up to the caller.
+    No fallback or retry logic exists at this level.
+  - >-
+    Mock setup at initialization only happens when should_use_gcs_mock() returns true; once initialization completes,
+    the decision is fixed for the instance lifetime (is_mock_mode flag).
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,122 @@
+id: B3728
+title: Azure Content Safety transport and legacy hooks
+description: >-
+  Build Azure's authenticated Content Safety transport layer and implement lossless text
+  splitting at 10,000-character word boundaries. The task covers two execution paths: the
+  modern AzureGuardrailBase used by both text moderation (B3730) and prompt shield (B3729),
+  and the separate legacy _PROXY_AzureContentSafety hook that runs outside the modern framework.
+  The legacy hook preserves its default severity threshold of four (distinct from the modern
+  default of two in B3730), suppresses non-HTTP exceptions in the pre-call hook, and uses
+  the Azure SDK's analyze_text contract directly without the modern transport layer. Text splitting
+  splits text into chunks at word boundaries without breaking words, returning always at least
+  one chunk even for text longer than the limit, and preserves whitespace within chunks.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/azure_*.rs
+    - crates/betterlite-guardrails/src/azure_*/**
+    - tools/oracle/cases/guardrails/azure/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L1-L166
+    why: Core ownership of resolve_content_safety_api_version, AzureGuardrailBase class with __init__, _post_to_content_safety and get_user_prompt_from_request, plus split_text_by_words for lossless word-boundary splitting up to 10,000 characters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L32-L35
+    why: resolve_content_safety_api_version resolves configured version or the legacy Javelin v1 to the modern default 2024-09-01.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L47-L91
+    why: AzureGuardrailBase.__init__ and _post_to_content_safety for HTTP transport with standard Azure auth headers and timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L92-L139
+    why: split_text_by_words implements lossless word-boundary splitting, always returns at least one chunk, and preserves internal whitespace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L141-L166
+    why: get_user_prompt and get_user_prompt_from_request extract user text from chat and Responses API inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/azure/base.py#L1-L19
+    why: AzureContentSafetyConfigModel with api_key, api_base and api_version fields, default version 2024-09-01.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L1-L157
+    why: Legacy _PROXY_AzureContentSafety hook class, __init__ that raises on missing SDK, _configure_thresholds with default severity four, _compute_result for category analysis, and async_pre_call_hook and async_post_call_success_hook that call test_violation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L24-L47
+    why: Legacy constructor loads Azure SDK and stores endpoint, api_key and category/option types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L49-L111
+    why: Default threshold logic (severity four per category), severity computation and violation raises with 400 status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L112-L131
+    why: Pre-call hook iterates request text, tests each chunk and suppresses non-HTTPException errors with logging, re-raising only HTTPException.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L133-L149
+    why: Post-call hook tests response content text without exception suppression; all exceptions from test_violation propagate unmodified.
+dod:
+  - text: split_text_by_words splits text into chunks at word boundaries without breaking words, always returns at least one chunk, and preserves whitespace within chunks.
+    proof: [split-text-cases]
+  - text: resolve_content_safety_api_version resolves None or the legacy Javelin v1 to the modern default 2024-09-01, and passes through any other configured version.
+    proof: [api-version-cases]
+  - text: AzureGuardrailBase.__init__ stores api_key, api_base and optional api_version from kwargs, acquires a pooled async HTTP client and calls super().__init__.
+    proof: [base-init-cases]
+  - text: _post_to_content_safety POSTs to the Azure Content Safety endpoint with Ocp-Apim-Subscription-Key header, resolves the api version, and returns the parsed response JSON.
+    proof: [post-transport-cases]
+  - text: get_user_prompt_from_request returns the last user message text from chat messages or converted Responses API input, or None if no messages exist.
+    proof: [user-prompt-cases]
+  - text: Legacy _PROXY_AzureContentSafety.__init__ raises on missing Azure SDK, stores endpoint, api_key and SDK category/option types, and configures thresholds.
+    proof: [legacy-init-cases]
+  - text: _configure_thresholds sets default severity four for all categories, and preserves any provided thresholds for categories that are not overridden.
+    proof: [threshold-cases]
+  - text: test_violation calls the Azure SDK's analyze_text and raises HTTPException with 400 status if any category severity meets or exceeds its threshold.
+    proof: [violation-cases]
+  - text: Legacy async_pre_call_hook iterates request text and tests each chunk, suppresses non-HTTPException errors with logging, and raises HTTPException to block.
+    proof: [legacy-pre-call-cases]
+  - text: Legacy async_post_call_success_hook tests response content text if the response is a litellm.ModelResponse and lets all exceptions propagate unmodified without suppression.
+    proof: [legacy-post-call-cases]
+checks:
+  optional: []
+  commands:
+    - id: split-text-cases
+      why: split_text_by_words does not implement lossless word-boundary splitting or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_splitting::/)'
+    - id: api-version-cases
+      why: resolve_content_safety_api_version does not resolve versions correctly or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_api_version::/)'
+    - id: base-init-cases
+      why: AzureGuardrailBase initialization tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_base_initialization::/)'
+    - id: post-transport-cases
+      why: _post_to_content_safety HTTP transport tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_transport::/)'
+    - id: user-prompt-cases
+      why: get_user_prompt_from_request text extraction tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_user_prompt::/)'
+    - id: legacy-init-cases
+      why: Legacy _PROXY_AzureContentSafety initialization tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_initialization::/)'
+    - id: threshold-cases
+      why: _configure_thresholds with default severity four tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_threshold_configuration::/)'
+    - id: violation-cases
+      why: test_violation severity checking tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_violation_detection::/)'
+    - id: legacy-pre-call-cases
+      why: Legacy pre-call hook tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_pre_call::/)'
+    - id: legacy-post-call-cases
+      why: Legacy post-call hook tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_post_call::/)'
+oracle_cases: []
+deviations:
+  - what: The legacy _PROXY_AzureContentSafety hook configures a default severity threshold of four per category, while the modern AzureGuardrailBase does not configure thresholds (B3730 owns threshold logic).
+    why: LiteLLM's legacy hook has its own default thresholds separate from the modern guardrail framework. betterlite preserves this distinction so both execution paths match their sources.
+  - what: The legacy pre-call hook suppresses non-HTTPException errors with logging, while HTTPException is re-raised to block requests.
+    why: LiteLLM's pre-call hook logs all exceptions but only re-raises HTTPException. betterlite preserves this error handling to match the source behavior.
+  - what: API version defaults to 2024-09-01; the legacy Javelin v1 stored by older releases resolves to this modern default.
+    why: LiteLLM handles the migration from older releases that stored "v1" as the Javelin API version. betterlite performs the same resolution.
+out_of_scope:
+  - Modern guardrail initialization, configuration updates and logging are owned by B104 (CustomGuardrail framework).
+  - Threshold evaluation, category filtering and the complete moderation guardrail hook are owned by B3730 (text moderation).
+  - Prompt Shield-specific scans and billing are owned by B3729.
+  - The legacy callback registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by U3 (callback helpers).
+  - Text content type checking (is_text_content_call_type) and message text iteration (iter_message_text) are owned by U1 (framework utilities).
+pitfalls:
+  - "split_text_by_words always returns at least one chunk even if the input is longer than max_length; a caller cannot rely on len(chunks) > 1 to know if splitting occurred."
+  - "split_text_by_words preserves all internal whitespace (spaces, newlines, tabs) within and between chunks; it only splits at word boundaries."
+  - "A token longer than max_length is force-split into multiple chunks; no single token spans two chunks."
+  - "The legacy hook's default threshold is severity four per category; the modern framework uses a different default set by B3730."
+  - "The legacy pre-call hook suppresses all exceptions except HTTPException; a caller that expects other exception types will not see them."
+  - "The legacy post-call hook has no exception suppression: all exceptions from test_violation propagate unmodified, including HTTPException and SDK errors."
+  - "HTTP errors from the Azure SDK (HttpResponseError) are re-raised in test_violation but suppressed with logging in the pre-call hook."
+  - "api_version resolved to the modern default is 2024-09-01; stored config must survive downgrade and re-upgrade of the Azure SDK."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

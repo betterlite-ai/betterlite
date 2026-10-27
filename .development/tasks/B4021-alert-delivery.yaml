@@ -1,0 +1,117 @@
+id: B4021
+title: Batched Slack and Teams delivery and digest flushing
+description: >-
+  Build batched alert delivery to Slack, Teams and webhooks with squashing by URL/type/text.
+  Implement the batching handler with payload squashing, first-item headers preservation, HTTP-200-only
+  success checks, swallowed batch transport errors and console emission in finally blocks.
+  Build MS Teams Adaptive Card generation with version 1.4, using environment variable resolution
+  for webhook URLs with loud failures on missing WEBHOOK_URL and logging-only drops for missing
+  MS_TEAMS_WEBHOOK_URL. Build structured budget webhooks with WEBHOOK_URL resolution.
+  Implement digest bucket management: timed digest draining with start/last timestamps, formatted summary
+  messages and webhook URL preservation. Teams alerts can squash with Slack alerts when their URL/type/text
+  match because format is absent from the squash key. Preserve first-item behavior in digest entries.
+  Build the periodic flush task with owned task coordination through B191, async batch sending with
+  concurrent webhook posts via B173's AsyncHTTPHandler, and periodic interval-based digest bucket draining.
+  Do not call B4024's send_alert from the flush path; render and enqueue digest text directly.
+  Keep async context throughout and handle both single URLs and list-of-URLs webhook destinations.
+scope:
+  paths:
+    - crates/betterlite-logging/src/alert_batching.rs
+    - crates/betterlite-logging/src/alert_batching/
+    - crates/betterlite-logging/src/alert_teams.rs
+    - crates/betterlite-logging/src/alert_teams/
+    - crates/betterlite-logging/src/alert_digest.rs
+    - crates/betterlite-logging/src/alert_digest/
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/batching_handler.py#L27-L77
+    why: Squash payloads by URL/type/text, send to webhook with first-item headers, console logging in finally.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/ms_teams.py#L1-L76
+    why: Teams Adaptive Card structure, webhook URL resolution, card version 1.4.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L133-L137
+    why: Periodic flush task startup with task coordination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1193-L1222
+    why: Structured webhook alert delivery with WEBHOOK_URL environment resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1579-L1595
+    why: Teams alert enqueue with URL resolution, logging on missing URL, format flag preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1597-L1607
+    why: Concurrent async batch sending with squash_payloads integration and queue clearing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1609-L1673
+    why: Digest bucket draining with timestamp formatting, first-message/severity/URL preservation, count/time updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1675-L1683
+    why: Periodic flush loop with digest bucket draining before queue flush, exception swallowing.
+dod:
+  - text: Squash payloads by (URL, alert_type, text) and preserve count of identical alerts.
+    proof: [alert-batching-tests]
+  - text: First item in each squash group determines the formatted message and headers used in the webhook POST.
+    proof: [alert-batching-tests]
+  - text: Webhook delivery returns success only on HTTP 200 status and logs debug messages on errors.
+    proof: [alert-batching-tests]
+  - text: Transport errors are caught and logged at debug level, not propagated; console logging happens in finally.
+    proof: [alert-batching-tests]
+  - text: Teams Adaptive Cards use version 1.4 with a single TextBlock body element containing the alert text.
+    proof: [alert-teams-tests]
+  - text: MS_TEAMS_WEBHOOK_URL is resolved from environment and logs error with drop on missing value.
+    proof: [alert-teams-tests]
+  - text: WEBHOOK_URL is resolved from environment and raises Exception on missing value.
+    proof: [alert-delivery-tests]
+  - text: Digest entries retain first message, severity level, webhook URL and start timestamp.
+    proof: [alert-digest-tests]
+  - text: Digest buckets flush when interval since start_time exceeds alert_type_config.digest_interval.
+    proof: [alert-digest-tests]
+  - text: Flushed digests render a formatted summary with start/end times, alert type, level, count and original message.
+    proof: [alert-digest-tests]
+  - text: Periodic flush task is created lazily on first send_alert call (when alerting is non-empty) or on update_values, not on SlackAlerting init.
+    proof: [alert-delivery-tests]
+  - text: Periodic flush runs digest bucket draining then queue flush on a timed interval.
+    proof: [alert-delivery-tests]
+  - text: async_send_batch concurrently sends squashed alerts via AsyncHTTPHandler.post and clears the queue.
+    proof: [alert-batching-tests]
+  - text: Teams and Slack alerts can squash together when URL, type and text match, because format is not part of the key.
+    proof: [alert-batching-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: alert-batching-tests
+      why: payload squashing, webhook delivery or console logging tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_batching::/)'
+    - id: alert-teams-tests
+      why: Teams payload building or webhook URL resolution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_teams::/)'
+    - id: alert-digest-tests
+      why: digest bucket management or flushing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_digest::/)'
+    - id: alert-delivery-tests
+      why: periodic flush, async batch sending or webhook alert delivery tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_delivery::/)'
+oracle_cases: []
+deviations:
+  - what: WebhookEvent carries budget spend data (spend, max_budget, soft_budget) and a hashed key token; webhook POST serializes all fields to JSON and sends to an externally configured URL.
+    why: B4021 delivers structured budget webhooks to external endpoints specified by configuration; this is a data exposure path requiring security review.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1193-L1222
+  - what: Digest formatted messages include PROXY_BASE_URL as a footer when set, matching the source behavior.
+    why: B4021 renders digest summaries directly and must preserve the source's formatting including optional PROXY_BASE_URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1643-L1645
+  - what: Batch transport errors are caught broadly and logged at debug level; the alert queue clears regardless.
+    why: LiteLLM swallows all delivery errors to avoid blocking the main request path, and console emission in finally ensures observability.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/batching_handler.py#L73-L76
+out_of_scope:
+  - Alert production and alert type decisions are owned by B4025-B4030.
+  - Alert destination selection and filtering before delivery are owned by B4024.
+  - Webhook event record definitions and validation are owned by B4020.
+  - Async HTTP transport is owned by B173; this task uses its AsyncHTTPHandler.post method.
+  - Custom batch logger queue management and flush_queue callback are owned by B256; this task calls it.
+  - Timer task startup, admission and drain are owned by B191; this task uses its facilities.
+pitfalls:
+  - "Squash key (URL, alert_type, text) does not include format, so Teams and Slack can squash together when their text matches."
+  - "Squashing over reversed(queue) with a dict comprehension keeps the first-enqueued item's headers for each key (last write wins in the reversed iteration is the oldest original item), matching DoD item 2."
+  - "HTTP 200 is the only success code; response.status_code != 200 is logged and treated as failed delivery."
+  - "MS_TEAMS_WEBHOOK_URL missing is an error log and silent drop; WEBHOOK_URL missing is an Exception that raises."
+  - "Digest start_time is set when first alert enters a bucket; elapsed seconds are compared against AlertTypeConfig.digest_interval."
+  - "Periodic flush runs on a fixed interval set by SlackAlerting.flush_interval; digest draining is before queue flush each cycle."
+  - "Digest entries preserve webhook_url as-is (string or list); the formatter must handle both without coercion."
+  - "Console logging payload contains the formatted message with count prefix, not the original event; log_to_console guards it."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

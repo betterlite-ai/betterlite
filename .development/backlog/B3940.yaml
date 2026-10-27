@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Datadog FOCUS cost aggregation and upload
 status: todo
 depends_on: [B3930, B3931, B002, B173, B192, B254, B256]
-file: null
+file: tasks/B3940-datadog-cost-management.yaml
 covers:
   - "litellm/integrations/datadog/datadog_cost_management.py"
   - "litellm/types/integrations/datadog_cost_management.py"

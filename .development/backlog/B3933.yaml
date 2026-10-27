@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Datadog log delivery and health checks
 status: todo
 depends_on: [B3930, B3931, B3932, B002, B173, B192, B256]
-file: null
+file: tasks/B3933-datadog-log-delivery.yaml
 covers:
   - "litellm/integrations/datadog/datadog.py"
   - "litellm/integrations/datadog/datadog_mock_client.py"

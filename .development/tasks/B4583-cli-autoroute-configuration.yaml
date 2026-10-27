@@ -1,0 +1,182 @@
+id: B4583
+title: Local autoroute configuration and interactive tier selection
+description: >-
+  Build the autoroute configuration and wizard modules for betterlite-management-cli,
+  enabling users to discover accessible models, assign them to complexity tiers, and
+  configure the ephemeral proxy's model_list. The config module defines data structures
+  (AutorouteConfig, ClassifierChoice, SemanticMatchingChoice), validates that a config
+  references only discovered models, and generates the proxy's model_list with one
+  litellm_proxy/* deployment per model and one auto_router/complexity_router root. The
+  wizard walks an interactive user through model discovery via GET /v1/models, prompts
+  for tier assignments using fuzzy searching, guides optional classifier and semantic-matching
+  setup, and writes the generated config to ~/.litellm/autorouter/config.yaml. Preserve
+  literal "autorouter" routing model name, sorted deployment deduplication, persisted
+  master-key reuse across reconfigures, fuzzy selection UI defaults, and per-tier keyword
+  defaults for semantic rules. Interactive checks enforce terminal attachment and call
+  secure_create to write the YAML file (B4575 dependency).
+
+scope:
+  paths:
+    - tools/management-cli/src/autoroute/config.rs
+    - tools/management-cli/src/autoroute/config/**
+    - tools/management-cli/src/autoroute/wizard.rs
+    - tools/management-cli/src/autoroute/wizard/**
+    - tools/management-cli/src/autoroute/paths.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L1-L46
+    why: Model discovery types (DiscoveredModel, _RawModelListing, parse_discovered_models) and filter functions (chat_models, embedding_models).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L48-L93
+    why: Classifier and semantic matching types (HeuristicClassifier, LLMClassifier, SemanticMatching, etc.) and DEFAULT_KEYWORD_TIER_RULES.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L95-L132
+    why: AutorouteConfig type definition and validate_config validation logic with ConfigGenerationError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L134-L198
+    why: Model list generation with _litellm_proxy_deployment, build_generated_model_list with deduplication and sorted names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L215-L230
+    why: master_key_from_config extracts persisted key from general_settings.master_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L1-L88
+    why: Wizard interactivity check, fuzzy picker with multiselect, model/models prompts, and keyword parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L75-L87
+    why: Keyword tier rules prompt with per-tier defaults and _parse_keywords implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L93-L175
+    why: Master key persistence across reconfigures and run_configure_wizard orchestration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L21-L24
+    why: AUTOROUTE_DIR, CONFIG_PATH, LOG_PATH, PID_RECORD_PATH path constants shared with process lifecycle.
+
+dod:
+  - text: >-
+      DiscoveredModel and AutorouteConfig types preserve all fields: name/mode for models,
+      base_url/api_key/tiers/default_model/classifier/semantic_matching/adaptive for config.
+    proof: [model-types]
+  - text: >-
+      parse_discovered_models validates a /v1/models response against a schema
+      and returns a tuple of DiscoveredModel with name=id, mode from source or "chat" default.
+    proof: [parse-models]
+  - text: >-
+      chat_models and embedding_models filter by mode="chat" and mode="embedding" respectively.
+    proof: [filter-models]
+  - text: >-
+      validate_config raises ConfigGenerationError when tiers or default_model reference unknown
+      chat models, classifier model is unknown, or embedding_model is unknown.
+    proof: [validate-config]
+  - text: >-
+      build_generated_model_list deduplicates referenced models, sorts them alphabetically,
+      and builds one litellm_proxy/* deployment per model plus one autorouter root deployment.
+    proof: [generated-list]
+  - text: >-
+      master_key_from_config extracts config["general_settings"]["master_key"] when present
+      and non-empty, returning None otherwise; the key is returned verbatim without normalization.
+    proof: [master-key]
+  - text: >-
+      run_configure_wizard discovers models via Client.models.list(), filters to chat pool,
+      prompts for tier assignments with fuzzy selection, and optionally configures classifier
+      and semantic matching.
+    proof: [wizard-discovery]
+  - text: >-
+      Wizard prompts reuse DEFAULT_KEYWORD_TIER_RULES as defaults when user presses enter;
+      _parse_keywords splits on commas and strips whitespace, discarding empty strings.
+    proof: [wizard-keywords]
+  - text: >-
+      run_configure_wizard writes the generated config to CONFIG_PATH using secure_create
+      (B4575 dependency) with YAML formatting and sort_keys=False to preserve structure.
+    proof: [wizard-write]
+  - text: >-
+      Interactive mode check raises ClickException when sys.stdin.isatty() is False.
+    proof: [interactive-check]
+  - text: >-
+      CONFIG_PATH, LOG_PATH, PID_RECORD_PATH and AUTOROUTE_DIR are exported from paths.rs
+      so wizard.rs and process lifecycle code share the same directory constants.
+    proof: [shared-paths]
+
+checks:
+  optional: []
+  commands:
+    - id: model-types
+      why: DiscoveredModel or AutorouteConfig types do not preserve all source fields or are not defined correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::.*_types/)'
+    - id: parse-models
+      why: parse_discovered_models does not validate against schema, default mode to "chat", or handle the raw response correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::parse_discovered_models/)'
+    - id: filter-models
+      why: chat_models or embedding_models do not filter by mode correctly or return wrong types
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::(chat_models|embedding_models)/)'
+    - id: validate-config
+      why: validate_config does not check for unknown models in tiers, default_model or embedding_model or does not raise the correct error
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::validate_config/)'
+    - id: generated-list
+      why: build_generated_model_list does not deduplicate, sort alphabetically or use literal "autorouter" model name
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::build_generated_model_list/)'
+    - id: master-key
+      why: master_key_from_config does not extract verbatim key from general_settings or does not return None correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::master_key_from_config/)'
+    - id: wizard-discovery
+      why: run_configure_wizard does not call models discovery correctly or prompt for tiers
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::run_configure_wizard/)'
+    - id: wizard-keywords
+      why: Wizard keyword prompts do not reuse DEFAULT_KEYWORD_TIER_RULES or parse commas correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::.*keywords/)'
+    - id: wizard-write
+      why: run_configure_wizard does not write YAML correctly to CONFIG_PATH or does not use secure_create
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::.*write/)'
+    - id: interactive-check
+      why: Wizard does not check isatty() correctly or does not raise the expected error for non-interactive mode
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::.*interactive/)'
+    - id: shared-paths
+      why: CONFIG_PATH, LOG_PATH, PID_RECORD_PATH or AUTOROUTE_DIR are not defined or exported from paths.rs
+      run: grep -qE 'pub.*CONFIG_PATH|pub.*LOG_PATH|pub.*PID_RECORD_PATH|pub.*AUTOROUTE_DIR' tools/management-cli/src/autoroute/paths.rs
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The management client HTTP Client and ModelsManagementClient. The wizard injects
+    a client; tests provide a mock with canned model lists.
+  - Process lifecycle, proxy launching and PID management beyond the shared path constants. B4584 owns process.rs functions
+    that use the paths exported from paths.rs.
+  - Banner display and top-level command registration. B134 owns the integration.
+  - Click/interactive-prompt framework equivalents. The Rust port uses a library with similar behavior.
+  - build_generated_proxy_config (config.py:201-212), which is excluded from the outline
+    as dead code at the pin; the wizard constructs its outer mapping itself.
+
+pitfalls:
+  - >-
+    parse_discovered_models defaults mode to "chat" for models without an explicit mode field,
+    keeping them selectable as routing targets even when the proxy cannot resolve their cost.
+  - >-
+    validate_config checks default_model against chat_names, not embedding_names, so semantic
+    matching's embedding_model is validated separately.
+  - >-
+    build_generated_model_list builds litellm_proxy/* deployments sorted by model name, deduplicating
+    any model referenced in tiers, default_model, classifier, or embedding_model; the order
+    determines the config order and must be stable.
+  - >-
+    master_key_from_config checks the type of general_settings to defend against it
+    being a non-dict value; a key that is present but falsy (empty string, zero, False, [])
+    is treated as absent.
+  - >-
+    run_configure_wizard exits early if chat_pool is empty, rejecting cases where the key
+    has no chat models. It also exits if not in an interactive terminal, even when the caller wanted
+    to proceed with defaults.
+  - >-
+    The wizard reuses a persisted master_key across reconfigures by loading it before writing;
+    if the config file is missing or corrupt, loading it returns None silently
+    and the outer orchestration (B4584's start command) mints a fresh key.
+  - >-
+    DEFAULT_KEYWORD_TIER_RULES is a tuple of KeywordTierRule; the wizard looks up
+    defaults by tier name and uses the tuple form when prompting.
+  - >-
+    _parse_keywords splits on commas, discarding empty strings from the split; a blank input
+    falls back to the default keywords, so the user never sees no keywords per tier.
+  - >-
+    The fuzzy picker multiselect behavior differs based on the flag: single selection returns
+    a single string, while multiselect returns a list; unwrapping and tuple conversion happens at the call site.
+  - >-
+    secure_create (B4575 dependency) opens the file for exclusive creation; if the file exists,
+    it raises. The wizard must use load_persisted_master_key before writing to avoid a silent
+    overwrite.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

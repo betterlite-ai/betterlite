@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Execute Responses compatibility and synthesize interaction events
 status: todo
 depends_on: [B3481, B3497]
-file: null
+file: tasks/B3498-interaction-responses-call.yaml
 covers:
   - "litellm/interactions/litellm_responses_transformation/{handler,streaming_iterator}.py"
 parent: B098

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Authenticated memory and task debug routes
 status: todo
 depends_on: [B003, B052, B733, B4173]
-file: null
+file: tasks/B4174-runtime-debug-routes.yaml
 covers:
   - "litellm/proxy/common_utils/debug_utils.py"
 parent: B121

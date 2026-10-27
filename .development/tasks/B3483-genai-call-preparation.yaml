@@ -1,0 +1,108 @@
+id: B3483
+title: Resolve native GenAI calls and preserve top-level fields
+description: >-
+  Build call setup logic that prepares native GenAI requests by resolving provider configuration, extracting native REST fields from kwargs, and preserving explicit extra_body values.
+  Implement setup_generate_content_call to unify the common setup path for all four GenAI call modes.
+  The setup function should resolve the model's provider (Gemini, Vertex with native models, or other), select whether to use the native API or fall back to the chat adapter, and handle the missing-logger error when a logger object is required.
+  Implement get_provider_google_genai_generate_content_config to dispatch on provider type, return None for non-partner Vertex partner models to signal adapter fallback, and return the native provider config for Gemini and non-partner Vertex models.
+  Implement _merge_native_request_fields to overlay native top-level fields into extra_body with explicit extra_body values winning on conflict, preserving empty extra_body dicts and returning None only when there is genuinely nothing to forward.
+  Implement _mark_async_entrypoint to record async entry point markers in the logging object's model_call_details.
+  Build the GenerateContentSetupResult record holding all outputs: resolved model, custom_llm_provider, request body, provider config, native request fields, config dict, litellm_params, logging object and call ID.
+  Preserve the string mock response path that raises ValueError when a mock_response is a string and stream is falsy (handlers reject it and return the mock early; the setup path never returns a mock response). With stream=True, the check is skipped and setup proceeds normally.
+  Extract only the named top-level fields from kwargs when they are present, leaving all others as config dict entries for optional params.
+scope:
+  paths:
+    - crates/betterlite-core/src/genai_setup.rs
+    - crates/betterlite-core/src/genai_setup/**
+    - tools/oracle/cases/genai_setup/**
+    - tools/oracle/helpers/b3483.py
+    - tools/oracle/helpers/b3483/**
+    - tools/oracle/src/helpers/core_ops/b3483.rs
+    - tools/oracle/src/helpers/core_ops/b3483/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L44-46
+    why: _mark_async_entrypoint sets async entry point markers in the logging object's model_call_details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L49-62
+    why: GenerateContentSetupResult record holding all setup output fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L91-215
+    why: setup_generate_content_call orchestrates provider resolution, field extraction, config mapping and logging setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L218-231
+    why: _merge_native_request_fields overlays native REST fields into extra_body with correct precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10035-10067
+    why: ProviderConfigManager.get_provider_google_genai_generate_content_config dispatches on provider and returns None for partner models to signal adapter fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/main.py#L48-72
+    why: VertexAIPartnerModels.is_vertex_partner_model check to distinguish Vertex native models from partner models.
+dod:
+  - text: setup_generate_content_call resolves the model's provider and returns the correct GenerateContentSetupResult with provider config for Gemini and non-partner Vertex models, or None config for partner models and other providers.
+    proof: [setup-provider-dispatch]
+  - text: The setup result includes all native REST top-level fields that were present in kwargs, extracted by name from B3480's get_generate_content_request_top_level_fields.
+    proof: [native-field-extraction]
+  - text: Native request fields are merged into extra_body with explicit extra_body values taking precedence, and _merge_native_request_fields returns None only when there are no fields and no extra_body.
+    proof: [merge-field-precedence]
+  - text: Mock response rejection preserves the ValueError when a string mock_response is supplied with stream=False, while setup proceeds normally when stream=True, never returning a mock from the setup path.
+    proof: [mock-response-rejection]
+  - text: The logging object is required and raises ValueError when missing, and is correctly updated with optional params, model and call metadata.
+    proof: [logging-required-and-updated]
+  - text: The setup function correctly calls B3480's provider config methods and B1368's transform methods to construct the request body.
+    proof: [provider-config-calls]
+checks:
+  optional: []
+  commands:
+    - id: setup-provider-dispatch
+      why: Provider dispatch and config selection are missing or return incorrect result for native vs adapter paths
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_setup::.*provider_dispatch/) and not test(/replays/)'
+    - id: native-field-extraction
+      why: Top-level native fields are not extracted from kwargs or missing required fields
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_setup::.*native_fields/) and not test(/replays/)'
+    - id: merge-field-precedence
+      why: Native fields are not merged correctly or precedence is wrong when extra_body is present
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_setup::.*merge/) and not test(/replays/)'
+    - id: mock-response-rejection
+      why: String mock responses are not rejected with ValueError or mock response is returned from setup path
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_setup::.*mock/) and not test(/replays/)'
+    - id: logging-required-and-updated
+      why: Logging object is not required or is not correctly updated with model, optional params and call metadata
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_setup::.*logging/) and not test(/replays/)'
+    - id: provider-config-calls
+      why: Provider config methods or B3480/B1368 transforms are not called correctly to construct the request body
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_setup::.*request_body/) and not test(/replays/)'
+oracle_cases:
+  - tools/oracle/cases/genai_setup/gemini-native-setup.yaml
+  - tools/oracle/cases/genai_setup/vertex-native-setup.yaml
+  - tools/oracle/cases/genai_setup/vertex-partner-adapter-fallback.yaml
+  - tools/oracle/cases/genai_setup/other-provider-adapter-fallback.yaml
+  - tools/oracle/cases/genai_setup/native-field-extraction-four-fields.yaml
+  - tools/oracle/cases/genai_setup/native-field-merge-into-extra-body.yaml
+  - tools/oracle/cases/genai_setup/native-field-empty-extra-body-wins.yaml
+  - tools/oracle/cases/genai_setup/mock-response-string-raises-valueerror.yaml
+  - tools/oracle/cases/genai_setup/mock-response-string-with-stream-no-raise.yaml
+  - tools/oracle/cases/genai_setup/logging-object-required-missing-raises-valueerror.yaml
+  - tools/oracle/cases/genai_setup/logging-update-from-kwargs-with-optional-params.yaml
+deviations:
+  - what: When a model is a Vertex partner model (e.g., anthropic models on Vertex), the setup returns None for the provider config to signal adapter fallback, and the caller handles the conversion to chat format.
+    why: betterlite delegates provider routing to get_provider_google_genai_generate_content_config exactly as LiteLLM does. None means use the adapter, not an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10054-10060
+  - what: The logging object is required at setup time and raises ValueError if missing, rather than being optional.
+    why: All calls supply a logging object for proper request tracking, and the error is caught immediately rather than cascading later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L192-193
+out_of_scope:
+  - B3480 owns the provider config trait and methods that setup_generate_content_call calls.
+  - B1368 owns the provider-specific trait implementations for GoogleGenAIConfig and VertexAIGoogleGenAIConfig.
+  - B1306 owns VertexAIPartnerModels.is_vertex_partner_model check that setup calls.
+  - B174 owns get_llm_provider that setup calls to resolve provider from model string.
+  - B247 owns Logging.update_from_kwargs that setup calls to track request metadata.
+  - The four actual GenAI call handlers (generate_content, agenerate_content, generate_content_stream, agenerate_content_stream) are owned by B3489, not this setup path.
+  - mock_generate_content_response is owned by B3489 and called from generate_content to return a mock response when a string mock_response is supplied with stream=False.
+  - Call execution and response transformation are owned by B3486, B3487 and B3488.
+pitfalls:
+  - The four top-level fields (safetySettings, toolConfig, cachedContent, labels) are extracted by name from B3480's get_generate_content_request_top_level_fields and passed verbatim to the merge function. Do not hard-code the field names.
+  - _merge_native_request_fields must preserve empty extra_body={} dicts by returning them, not None. Return None only when both native_request_fields and extra_body are genuinely absent.
+  - Vertex partner models like Anthropic must return None from get_provider_google_genai_generate_content_config to signal adapter fallback, not raise an error. This tells the caller to use the chat adapter, not the native path.
+  - String mock responses must raise ValueError when stream is falsy, never return a mock response from setup. When stream=True, the check is skipped and setup proceeds normally. Callers check this and return the mock early before calling the setup path.
+  - The logging object is required and never None at the setup point. A ValueError is raised immediately if missing, preventing silent None handling later.
+  - Native field extraction must only include fields that are actually present in kwargs, not all four potential fields every time.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,123 @@
+id: B4303
+title: Merge partial embedding hits and token usage
+description: >-
+  Build a merging pipeline for embedding cache hits where only some input positions cached,
+  preserving the original input order and using fresh embeddings only for missing positions.
+  Aggregate token details across cached and freshly computed embeddings, falling back to token
+  counting when an old cached entry lacks a prompt-token count. Log complete hits (all positions
+  cached) through the callback pipeline. Implement combine_usage for adding two Usage records
+  and _merge_prompt_tokens_details for field-wise summation of prompt token details, handling
+  nested dict keys and non-numeric values without panicking.
+scope:
+  paths:
+  - crates/betterlite-cache/src/embedding_merge.rs
+  - crates/betterlite-cache/src/embedding_merge/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L140-L142
+  why: _prompt_tokens_details_as_mapping converts PromptTokensDetailsWrapper to mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L465-L478
+  why: _extract_model_from_cached_results pulls model name from cached embedding tuple list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L480-L610
+  why: >-
+    _process_async_embedding_cached_response separates cached and uncached positions, aggregates
+    cached token details with fallback to token_counter, builds partial EmbeddingResponse and
+    logs complete hit through _async_log_cache_hit_on_callbacks when all positions cached.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L612-L621
+  why: combine_usage sums prompt/completion/total tokens and delegates prompt_tokens_details merge.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L623-L671
+  why: >-
+    _merge_prompt_tokens_details sums numeric fields recursively, preserving non-numeric values,
+    catching pydantic deserialization errors, returning None when merged dict is empty.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L673-L719
+  why: >-
+    _combine_cached_embedding_response_with_api_result merges partial cached response with fresh
+    API embeddings using an iterator, preserving index and order, combining usage records through
+    combine_usage, and copying _response_headers and _hidden_params.
+dod:
+- text: >-
+    _prompt_tokens_details_as_mapping returns an empty mapping for non-pydantic wrappers and
+    model_dump(exclude_none=True) for pydantic ones.
+  proof: [embedding-merge-tests]
+- text: >-
+    _extract_model_from_cached_results returns None if the list is empty, the first non-dict
+    entry, or the first dict without a model key; returns the model from the first match.
+  proof: [embedding-merge-tests]
+- text: >-
+    _process_async_embedding_cached_response partitions positions into cached (non-null) and
+    uncached (null), updates kwargs["input"] with uncached strings only, and returns
+    (None, false) when all positions cached but the function does not log.
+  proof: [embedding-merge-tests]
+- text: >-
+    When _process_async_embedding_cached_response has cached items, it builds an EmbeddingResponse
+    with model from cached results or kwargs, preserves index and position through enumeration,
+    aggregates prompt_tokens across cached items, and sums numeric prompt_tokens_details fields.
+  proof: [embedding-merge-tests]
+- text: >-
+    When _process_async_embedding_cached_response has cached items, it falls back to token_counter
+    for positions lacking prompt_tokens only, with text=input_string and count_response_tokens=True.
+  proof: [embedding-merge-tests]
+- text: >-
+    When _process_async_embedding_cached_response has no remaining uncached items, it logs the
+    complete hit by calling _async_log_cache_hit_on_callbacks and returns (response, true).
+  proof: [embedding-merge-tests]
+- text: >-
+    combine_usage returns a new Usage with summed prompt/completion/total tokens and merged
+    prompt_tokens_details through _merge_prompt_tokens_details.
+  proof: [embedding-merge-tests]
+- text: >-
+    _merge_prompt_tokens_details returns None for both-None input, one side when the other is None,
+    sums numeric fields across both dicts, and recursively sums nested dict values.
+  proof: [embedding-merge-tests]
+- text: >-
+    _merge_prompt_tokens_details preserves non-numeric values from both inputs (preferring
+    non-zero), returns None when the merged dict is empty, and catches PromptTokensDetailsWrapper
+    construction errors to return None.
+  proof: [embedding-merge-tests]
+- text: >-
+    _combine_cached_embedding_response_with_api_result returns the API response unmodified when
+    cached response is None, and still merges data and metadata when usage on either side is None,
+    using cached.usage directly as the merged usage instead of calling combine_usage.
+  proof: [embedding-merge-tests]
+- text: >-
+    _combine_cached_embedding_response_with_api_result merges two EmbeddingResponse objects by
+    iterating fresh.data, replacing None positions from cached.data with fresh embeddings at
+    the same index, and preserving original input order.
+  proof: [embedding-merge-tests]
+- text: >-
+    _combine_cached_embedding_response_with_api_result combines usage through combine_usage,
+    copies _response_headers and _hidden_params from cached, and computes _response_ms from
+    the provided time range.
+  proof: [embedding-merge-tests]
+- text: Every mutant in embedding merge functions is caught by a test.
+  proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+  - id: embedding-merge-tests
+    why: the embedding merge functions do not exist, tests fail, or the module path is wrong
+    run: cargo nextest run --locked -p betterlite-cache -p betterlite-core --no-tests=fail -E 'test(/^embedding_merge::/) or test(/^combine_usage::/) or test(/^merge_prompt_tokens::/) or test(/^merge_embedding_response::/) or test(/^prompt_tokens_mapping::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Streaming response replay and deferred callback dispatch; that belongs to B4302 and B4304.
+- Token counting implementation; that is B196's domain.
+- Cache-hit logging callback registration; that is B4301's domain.
+- Complete EmbeddingResponse construction from scratch; only merging partial hits here.
+pitfalls:
+- When an old cached embedding entry lacks prompt_tokens but has text input, call token_counter with count_response_tokens=True for one input only, never per-item counting on the aggregate.
+- >-
+  PromptTokensDetailsWrapper aggregation must handle missing keys in either dict, nested dicts for
+  cache_creation_token_details, and non-numeric values; never assume every value is int.
+- >-
+  _combine_cached_embedding_response_with_api_result uses an iterator on fresh.data, so exactly
+  one fresh item must be consumed per None position in cached.data; overrunning panics, so validate
+  the counts match before calling this function.
+- >-
+  EmbeddingResponse.data positions must align with original input order; index the response at
+  the original position, never at the iterator's counter.
+- Preserve _hidden_params["cache_hit"] = true from both cached and merged responses.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

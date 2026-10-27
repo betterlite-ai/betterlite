@@ -1,0 +1,65 @@
+id: B4311
+title: Adapt experimental cache factories to native storage
+description: >-
+  Build the experimental memory and Redis cache factories that construct a native backend adapter for the Cache facade.
+  The NativeBackend class wraps a NativeCacheHandle (from rust_bridge._native) and implements the BaseCache contract by forwarding calls to the native handle's get/set/delete/flush/ping/disconnect methods with validated duration forwarding.
+  The Cache.memory factory creates an in-memory cache with ttl=600 seconds, capacity 200 items and max_entry_bytes=4194304 bytes, returning a CacheFacade configured for local storage.
+  The Cache.redis factory creates a Redis cache with a required namespace parameter, ttl=600 seconds default and max_entry_bytes=4194304 bytes, returning a CacheFacade configured for Redis storage.
+  Validate the ttl parameter as float | None at the Pydantic level using TypeAdapter, so invalid durations raise a ValidationError with the original value for debugging.
+  Defer the NativeCacheHandle creation until the factory is called (lazy initialization), never at import time.
+  The Cache class has no state, only two static methods that return fully initialized facades ready to use.
+scope:
+  paths:
+    - crates/betterlite-cache/src/native_adapter.rs
+    - crates/betterlite-cache/src/native_adapter/tests.rs
+    - crates/betterlite-cache/src/factories.rs
+    - crates/betterlite-cache/src/factories/tests.rs
+    - crates/betterlite-cache/src/native_adapter/tests/**
+    - crates/betterlite-cache/src/factories/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L18-L56
+    why: The NativeBackend class wrapping NativeCacheHandle and implementing BaseCache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L59-L72
+    why: The Cache class with memory and redis static factory methods and their parameter defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L1-L16
+    why: Imports and TypeAdapter validation for ttl parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/__init__.py
+    why: Package initializer that exports Cache.
+dod:
+  - text: NativeBackend implements every method of the BaseCache contract, forwarding each call to the corresponding native_handle method with identical semantics.
+    proof: [native-adapter-tests]
+  - text: The ttl parameter accepts float | None and is validated at the Pydantic level; invalid values raise ValidationError before the native handle is touched.
+    proof: [factory-tests, native-adapter-tests]
+  - text: Cache.memory creates a handle with ttl=600, capacity=200 and max_entry_bytes=4194304, and returns a CacheFacade with type=LiteLLMCacheType.LOCAL.
+    proof: [factory-tests]
+  - text: Cache.redis requires a namespace parameter, creates a handle with ttl=600 default and max_entry_bytes=4194304, and returns a CacheFacade with type=LiteLLMCacheType.REDIS.
+    proof: [factory-tests]
+  - text: NativeCacheHandle creation is deferred until a factory is called; no handles are created at import time.
+    proof: [factory-tests]
+  - text: Every mutant in the native adapter and factories is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: native-adapter-tests
+      why: the native adapter tests fail, do not exist, or assertions differ from the contract
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^native_adapter::/)'
+    - id: factory-tests
+      why: the factory tests fail, do not exist, or parameter defaults differ
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^factories::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - NativeCacheHandle construction, serialization and the Rust bridge. These are owned elsewhere and provide the contract.
+  - LiteLLMCacheType enum is owned by B4290; the CacheFacade implementation and Cache.__init__ are owned by B4299.
+  - The rust_bridge._native module. It is a Rust-to-Python bridge outside this task's scope.
+pitfalls:
+  - Lazy initialization means NativeCacheHandle.memory and NativeCacheHandle.redis are called inside the factory methods, never at module load. A test that checks for deferred creation must catch the import statement and a factory call separately.
+  - The TypeAdapter validates ttl as float | None; a ttl of 0 or 0.0 is valid (an explicit zero duration). A None value is also valid and should reach the native handle.
+  - max_entry_bytes is a constant shared with the legacy facade for compatibility; do not change it in response to future scale experiments.
+  - The redis factory requires namespace as a keyword-only argument with no default. Callers must pass it explicitly; no silent fallback to an empty string or a generated value.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

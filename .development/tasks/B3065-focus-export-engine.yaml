@@ -1,0 +1,143 @@
+id: B3065
+title: Compose FOCUS export destinations and execution
+description: >-
+  Build destination selection and the FOCUS query/transform/serialize/upload engine in betterlite-logging::finops::focus.
+  The FocusDestinationFactory creates destination instances based on provider name and resolved configuration,
+  with provider/config precedence: command-line overrides take priority over environment variables, which supply defaults.
+  The FocusExportEngine fetches usage data through B3060's query interface, transforms it through B3061's transformer,
+  serializes through B3061's serializers (CSV or Parquet), and delivers through the selected destination's deliver method.
+  Preserve the lazy destination failures (exceptions during destination creation are raised, not deferred),
+  empty-data skips (both export_all and export_window return silently when data or normalized data is empty),
+  and filenames containing both UTC window start and end times in YYYYMMDDTHHMMSSz format.
+
+  Configuration precedence per provider:
+  S3: bucket_name (FOCUS_S3_BUCKET_NAME), region_name (FOCUS_S3_REGION_NAME), endpoint_url (FOCUS_S3_ENDPOINT_URL),
+      aws_access_key_id (FOCUS_S3_ACCESS_KEY), aws_secret_access_key (FOCUS_S3_SECRET_KEY),
+      aws_session_token (FOCUS_S3_SESSION_TOKEN).
+  Vantage: api_key (VANTAGE_API_KEY), integration_token (VANTAGE_INTEGRATION_TOKEN),
+           base_url (VANTAGE_BASE_URL, defaults to https://api.vantage.sh).
+  GCS: bucket_name (FOCUS_GCS_BUCKET_NAME), service_account_json (FOCUS_GCS_PATH_SERVICE_ACCOUNT).
+  Mavvrik: api_key (MAVVRIK_API_KEY), api_endpoint (MAVVRIK_API_ENDPOINT), connection_id (MAVVRIK_CONNECTION_ID).
+  S3 and GCS require bucket_name; Vantage requires both api_key and integration_token; Mavvrik credentials are optional.
+  The factory validates presence of required values before returning a destination instance.
+
+  Export methods: export_all(limit) exports all available rows without time filtering;
+  export_window(window, limit) exports rows within the window's start_time and end_time.
+  Both return early if raw data or normalized data is empty.
+  Filename format: usage_<start_utc>_<end_utc>.<extension>.
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/focus.rs
+    - crates/betterlite-logging/src/finops/focus/engine.rs
+    - crates/betterlite-logging/src/finops/focus/destinations/factory.rs
+    - crates/betterlite-logging/src/finops/focus/destinations.rs
+    - crates/betterlite-logging/src/finops/focus/engine/**
+    - crates/betterlite-logging/src/finops/focus/destinations/factory/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L17-L154"
+    why: Complete FocusExportEngine class with __init__, _init_serializer, export_all, export_window, _serialize_and_upload, _build_filename, _sum_column, _count_unique.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/factory.py#L15-L84"
+    why: FocusDestinationFactory class with create and _resolve_config static methods.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/__init__.py#L1-L18"
+    why: Destination module exports including FocusDestination, FocusDestinationFactory, FocusTimeWindow, and all destination implementations.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/base.py#L10-L30"
+    why: FocusTimeWindow dataclass and FocusDestination protocol interface.
+dod:
+  - text: "FocusDestinationFactory.create resolves configuration by checking overrides before environment variables, then dispatches to the correct destination class based on provider name (case-insensitive)."
+    proof: [factory-dispatch, factory-config-precedence]
+  - text: "S3 destination requires bucket_name; Vantage requires both api_key and integration_token; GCS requires bucket_name; raises ValueError with the missing field name if validation fails."
+    proof: [factory-validation]
+  - text: "FocusExportEngine.__init__ accepts provider, export_format, prefix, and optional destination_config dict; initializes a destination through the factory and a serializer based on format."
+    proof: [engine-init-tests]
+  - text: "_init_serializer returns FocusCsvSerializer for 'csv' format and FocusParquetSerializer for 'parquet'; raises NotImplementedError for unsupported formats."
+    proof: [engine-serializer-tests]
+  - text: "export_all queries all available usage data (with optional limit), transforms it, and returns early if data or normalized data is empty; builds a window spanning today at 00:00:00 UTC to current time."
+    proof: [export-all-empty, export-all-window-format]
+  - text: "export_window queries usage data within the provided window's start_time and end_time (inclusive bounds), transforms it, and returns early if data or normalized data is empty."
+    proof: [export-window-bounds, export-window-empty]
+  - text: "_serialize_and_upload serializes the frame through the engine's serializer and delivers the payload through the destination; returns early if serializer returns empty bytes."
+    proof: [serialize-upload-empty]
+  - text: "_build_filename constructs a filename as usage_<start_utc>_<end_utc>.<extension> where timestamps are in YYYYMMDDTHHMMSSz format; raises ValueError if serializer.extension is falsy."
+    proof: [filename-format, filename-error]
+  - text: "_sum_column returns the sum of a DataFrame column as a float; returns 0.0 if the column is missing or the frame is empty, and handles None values as 0.0."
+    proof: [sum-column-cases]
+  - text: "_count_unique returns the count of unique values in a DataFrame column as an int; returns 0 if the column is missing or the frame is empty, and handles None values as 0."
+    proof: [unique-count-cases]
+  - text: "Every mutant in the factory and engine modules is caught by a test."
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: factory-dispatch
+      why: FocusDestinationFactory does not dispatch to the correct destination class for each provider
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export::/|^focus_destination_factory::dispatch/)'
+    - id: factory-config-precedence
+      why: configuration resolution does not check overrides before environment variables
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_destination_factory::config/)'
+    - id: factory-validation
+      why: factory does not validate required fields or raises wrong error messages
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_destination_factory::validation/)'
+    - id: engine-init-tests
+      why: FocusExportEngine does not initialize correctly with format and destination config
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::init/)'
+    - id: engine-serializer-tests
+      why: "_init_serializer does not return correct serializer or does not handle unsupported formats"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::serializer/)'
+    - id: export-all-empty
+      why: "export_all does not skip when data or normalized data is empty"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_all/)'
+    - id: export-all-window-format
+      why: "export_all does not build correct window with current timestamp"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_all_window/)'
+    - id: export-window-bounds
+      why: "export_window does not apply inclusive start_time and end_time bounds to database query"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_window_bounds/)'
+    - id: export-window-empty
+      why: "export_window does not skip when data or normalized data is empty"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_window_empty/)'
+    - id: serialize-upload-empty
+      why: "_serialize_and_upload does not skip when serializer returns empty bytes"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::serialize_and_upload/)'
+    - id: filename-format
+      why: "_build_filename does not construct correct UTC timestamp format or structure"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::filename_format/)'
+    - id: filename-error
+      why: "_build_filename does not raise ValueError when serializer.extension is missing"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::filename_error/)'
+    - id: sum-column-cases
+      why: "_sum_column does not handle missing columns, empty frames, or None values correctly"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::sum_column/)'
+    - id: unique-count-cases
+      why: "_count_unique does not handle missing columns, empty frames, or None values correctly"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::count_unique/)'
+oracle_cases: []
+deviations:
+  - what: "Configuration resolution is injected through betterlite-config (B002) instead of reading environment variables directly."
+    why: "All external configuration in betterlite comes through the config crate for consistency and testability."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/factory.py#L39-L83"
+  - what: "All methods are async/await (Rust's tokio runtime) instead of asyncio (Python)."
+    why: "The gateway is built on tokio; the export engine is called from async contexts in the scheduler."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L20"
+out_of_scope:
+  - Destination implementation classes (FocusS3Destination, FocusGCSDestination, FocusVantageDestination, FocusMavvrikDestination) which belong to B3062, B3063, B3064.
+  - Serializer implementations (FocusCsvSerializer, FocusParquetSerializer) which belong to B3061.
+  - FocusTransformer.transform implementation which belongs to B3061.
+  - Database query logic (FocusLiteLLMDatabase.get_usage_data) which belongs to B3060.
+  - "FocusExportEngine.dry_run_export_usage_data (litellm/integrations/focus/export_engine.py:47-66) is not called at the pinned commit; it is replaced by a simpler query-and-sample in the Vantage route handler (B073)."
+  - "FocusDestinationFactory.create:36 raise is unreachable at the pin: _resolve_config called at line 27 already raises NotImplementedError('Provider ... not supported for Focus export configuration') for unrecognized providers at line 83, making the fallback raise with message 'Provider ... not supported for Focus export' at line 36 dead code."
+pitfalls:
+  - "Provider name must be lowercased before matching: use provider.to_lowercase() to match 's3', 'vantage', 'gcs', or 'mavvrik'."
+  - "Configuration resolution checks overrides dict before environment variables; if a key is in overrides, it is used even if the value is None, unless you skip None values after resolution."
+  - "S3 requires bucket_name; if FOCUS_S3_BUCKET_NAME is unset and no override is provided, raise ValueError('FOCUS_S3_BUCKET_NAME must be provided for S3 exports')."
+  - "Vantage requires both api_key and integration_token; raise ValueError('VANTAGE_API_KEY must be provided for Vantage exports') if api_key is missing, and ValueError('VANTAGE_INTEGRATION_TOKEN must be provided for Vantage exports') if integration_token is missing; filter None values from the final config dict."
+  - "GCS requires bucket_name; if FOCUS_GCS_BUCKET_NAME is unset, raise ValueError('FOCUS_GCS_BUCKET_NAME must be provided for GCS exports')."
+  - "Mavvrik configuration is optional; do not require any fields, just pass resolved values through the final config."
+  - "_build_filename raises ValueError if serializer.extension is empty or falsy, not a runtime panic or silent default."
+  - "_sum_column and _count_unique return 0.0/0 when the column does not exist in the frame or the frame is empty; they do not error."
+  - "export_all and export_window both check data.is_empty() first; if true, they return early without transforming or uploading."
+  - "Filenames use ISO format timestamps with Z suffix (YYYYMMDDTHHMMSSz), not other date formats; confirm the strftime format matches LiteLLM."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

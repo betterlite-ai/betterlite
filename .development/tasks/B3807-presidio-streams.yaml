@@ -1,0 +1,255 @@
+id: B3807
+title: Presidio streamed masking and unmasking
+description: >-
+  Implement buffered streaming response assembly for PII masking and incremental token
+  unmasking across split placeholders. Build SSE frame coalescing to classify stream shape,
+  Anthropic native SSE handling with response reconstruction, and fallback modes when mixed
+  stream types or unknown events prevent safe reassembly. Preserve role-preface handling,
+  unbuffered passthrough for non-reconstructible streams, usage preservation from last
+  chunk, and per-request token mapping for unmasking. Implement masking for both regular
+  chat streaming and /v1/responses API events, with handling for Anthropic SSE text_delta
+  unmasking and Responses API completed text mutations.
+
+  Key behavior: async_post_call_streaming_iterator_hook acts as the streaming response
+  post-hook. When apply_to_output is true, call _stream_apply_output_masking to buffer
+  ModelResponseStream chunks, assemble them with stream_chunk_builder, mask with
+  _process_response_for_pii(mode="mask"), convert back to streaming with
+  convert_model_response_to_streaming, and handle errors with unbuffered passthrough on
+  assembly failure. When output_parse_pii and pii_tokens exist, call _stream_pii_unmasking
+  to unmask SSE bytes chunks with _unmask_sse_bytes_chunk and Responses API completed events
+  in-place with _unmask_responses_api_completed_chunk, preserving non-token streams as-is.
+  _stream_apply_output_masking coalesces leading non-data SSE frames, detects first-frame
+  stream shape (Anthropic versus OpenAI versus Responses), switches to raw Anthropic SSE
+  handling when detected, or buffers and assembles ModelResponseStream chunks, or flushes
+  buffered chunks and passes through on unknown events. _coalesce_first_sse_frame joins
+  raw bytes chunks until a complete SSE frame with a data line is found or _MAX_FIRST_SSE_FRAME_BYTES
+  is reached, relaying non-bytes chunks untouched and returning the joined frame after
+  leading empty frames. _mask_anthropic_sse_stream assembles the first chunk and all
+  remaining bytes into a complete Anthropic response, processes for PII, converts masked
+  response back to raw SSE chunks, or returns original chunks unchanged if no masking
+  occurred. Error handling logs warnings instead of raising for mixed/empty/non-chat streams,
+  but raises BlockedPiiEntityError immediately. _unmask_sse_bytes_chunk decodes SSE lines,
+  finds delta text fields in Anthropic content_block_delta events, replaces tokens and
+  re-encodes the line as JSON. _unmask_responses_api_completed_chunk walks response.output
+  message items and their content blocks to unmask text fields in-place.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/presidio_streams.rs
+    - crates/betterlite-guardrails/src/presidio_streams/**
+    - tools/oracle/cases/presidio-streams/**
+
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L113-L121
+    why: _split_sse_preface separates leading empty SSE frames from first data-bearing frame
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L124-L133
+    why: _flush_unmaskable_buffer logs warning and yields buffered chunks when stream is mixed/unrecognizable
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L136-L169
+    why: _coalesce_first_sse_frame joins bytes until first complete frame with data line, with byte cap
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1423-L1436
+    why: _mask_buffered_model_response_stream assembles ModelResponseStream chunks and applies masking
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1438-L1500
+    why: _stream_apply_output_masking buffers/assembles/masks chat chunks and handles mixed stream passthrough
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1502-L1518
+    why: _mask_anthropic_sse_stream assembles Anthropic raw SSE and converts back to streamed chunks
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1520-L1549
+    why: _unmask_sse_bytes_chunk finds and replaces PII tokens in Anthropic SSE text_delta fields
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1551-L1572
+    why: _unmask_responses_api_completed_chunk unmasks response.output text blocks in-place
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1574-L1647
+    why: _stream_pii_unmasking dispatches to byte/Responses API unmask paths and handles mixed streams
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1649-L1677
+    why: async_post_call_streaming_iterator_hook routes to output masking or unmasking based on config
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1679-L1688
+    why: _preserve_usage_from_last_chunk copies usage from last ModelResponseStream when stream_chunk_builder misses it
+
+dod:
+  - text: _split_sse_preface returns (preface_bytes, classifiable_bytes) where preface holds leading empty SSE frames and classifiable holds the first frame with "data:" line and everything after.
+    proof: [split-sse-preface]
+  - text: _flush_unmaskable_buffer logs a warning and yields buffered chunks when mixed stream shapes are detected.
+    proof: [flush-unmaskable]
+  - text: _coalesce_first_sse_frame coalesces bytes chunks until a complete SSE frame containing a data line is found, relaying non-bytes chunks and stopping at _MAX_FIRST_SSE_FRAME_BYTES if no data line is found.
+    proof: [coalesce-sse-frame]
+  - text: _coalesce_first_sse_frame yields pending bytes if the stream ends without finding a data-line frame and returns early.
+    proof: [coalesce-stream-end]
+  - text: _mask_buffered_model_response_stream assembles buffered ModelResponseStream chunks using stream_chunk_builder, applies PII masking with _process_response_for_pii, and converts back to streaming with convert_model_response_to_streaming.
+    proof: [mask-buffered]
+  - text: _mask_buffered_model_response_stream returns original chunks unchanged if the assembled response is not a ModelResponse.
+    proof: [mask-buffered-invalid]
+  - text: _stream_apply_output_masking coalesces the first SSE frame to classify stream shape, detects Anthropic versus other patterns, dispatches to _mask_anthropic_sse_stream or buffers ModelResponseStream chunks.
+    proof: [stream-apply-shape-detect]
+  - text: _stream_apply_output_masking switches to passthrough and logs warnings when mixed stream shapes are detected (ModelResponseStream followed by non-bytes) or unknown event types are seen.
+    proof: [stream-apply-mixed]
+  - text: _stream_apply_output_masking flushes all buffered chunks and logs warnings when assembly fails or no chunks were buffered.
+    proof: [stream-apply-flush]
+  - text: _stream_apply_output_masking re-raises BlockedPiiEntityError immediately or when no chunks were buffered, without yielding the original chunks.
+    proof: [stream-apply-blocked-raise]
+  - text: _mask_anthropic_sse_stream collects all remaining bytes chunks, assembles them with assemble_anthropic_sse_stream, and calls _process_response_for_pii with mode="mask".
+    proof: [mask-anthropic]
+  - text: _mask_anthropic_sse_stream converts the masked response back to raw SSE chunks with anthropic_sse_chunks_from_response and returns original chunks unchanged if no masking occurred.
+    proof: [mask-anthropic-convert]
+  - text: >-
+      _unmask_sse_bytes_chunk decodes UTF-8, finds "data: " SSE lines, parses the JSON event,
+      and replaces PII tokens in delta.text for content_block_delta events with type="text_delta".
+    proof: [unmask-sse-delta]
+  - text: _unmask_sse_bytes_chunk skips lines that fail UTF-8 decode, JSON parse, or key/type checks and returns the original chunk.
+    proof: [unmask-sse-errors]
+  - text: _unmask_responses_api_completed_chunk walks response.output message items and their content blocks (both dict and object forms) and replaces PII tokens in text fields using _unmask_pii_text.
+    proof: [unmask-responses-api]
+  - text: _stream_pii_unmasking buffers ModelResponseStream chunks and checks incoming chunks against pii_tokens from request_data.metadata.
+    proof: [stream-pii-unmask]
+  - text: _stream_pii_unmasking calls _unmask_sse_bytes_chunk for raw bytes and _unmask_responses_api_completed_chunk for response.completed events, and passes other chunks through unchanged.
+    proof: [stream-pii-dispatch]
+  - text: _stream_pii_unmasking switches to passthrough when a non-chat chunk is seen, flushing buffered ModelResponseStream chunks before yielding it.
+    proof: [stream-pii-mixed]
+  - text: _stream_pii_unmasking assembles buffered ModelResponseStream chunks only if no non-chat chunks were seen, and returns early if no chunks are buffered.
+    proof: [stream-pii-assemble]
+  - text: _stream_pii_unmasking calls _preserve_usage_from_last_chunk to copy usage from the last buffered chunk when stream_chunk_builder does not set it.
+    proof: [stream-pii-usage]
+  - text: _stream_pii_unmasking calls _process_response_for_pii with mode="unmask" on the assembled response.
+    proof: [stream-pii-process]
+  - text: _stream_pii_unmasking logs an error and yields remaining_chunks when an unexpected exception occurs during unmasking.
+    proof: [stream-pii-exception]
+  - text: async_post_call_streaming_iterator_hook dispatches to _stream_apply_output_masking when apply_to_output is true.
+    proof: [hook-apply-to-output]
+  - text: async_post_call_streaming_iterator_hook dispatches to _stream_pii_unmasking when output_parse_pii is true and pii_tokens exist.
+    proof: [hook-output-parse]
+  - text: async_post_call_streaming_iterator_hook passes response chunks through unchanged when neither apply_to_output nor (output_parse_pii and pii_tokens) is true.
+    proof: [hook-passthrough]
+  - text: _preserve_usage_from_last_chunk copies the usage attribute from the last buffered ModelResponseStream chunk to the assembled response when stream_chunk_builder did not set it.
+    proof: [preserve-usage]
+
+checks:
+  optional: []
+  commands:
+    - id: split-sse-preface
+      why: _split_sse_preface does not exist or does not separate preface and classifiable frames correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::split_sse_preface/)'
+    - id: flush-unmaskable
+      why: _flush_unmaskable_buffer does not exist or does not log and yield chunks
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::flush_unmaskable/)'
+    - id: coalesce-sse-frame
+      why: _coalesce_first_sse_frame does not coalesce until data line or cap
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::coalesce_first_frame/)'
+    - id: coalesce-stream-end
+      why: _coalesce_first_sse_frame does not handle stream end correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::coalesce_stream_end/)'
+    - id: mask-buffered
+      why: _mask_buffered_model_response_stream does not exist or does not assemble/mask/convert
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::mask_buffered/)'
+    - id: mask-buffered-invalid
+      why: _mask_buffered_model_response_stream does not return original chunks on invalid response
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::mask_buffered_invalid/)'
+    - id: stream-apply-shape-detect
+      why: _stream_apply_output_masking does not detect stream shape or dispatch correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_apply_shape/)'
+    - id: stream-apply-mixed
+      why: _stream_apply_output_masking does not handle mixed streams or switch to passthrough
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_apply_mixed/)'
+    - id: stream-apply-flush
+      why: _stream_apply_output_masking does not flush or log when assembly fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_apply_flush/)'
+    - id: stream-apply-blocked-raise
+      why: _stream_apply_output_masking does not re-raise BlockedPiiEntityError or when no chunks buffered
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_apply_blocked_raise/)'
+    - id: mask-anthropic
+      why: _mask_anthropic_sse_stream does not assemble or process bytes
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::mask_anthropic/)'
+    - id: mask-anthropic-convert
+      why: _mask_anthropic_sse_stream does not convert back to chunks or handle no-change case
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::mask_anthropic_convert/)'
+    - id: unmask-sse-delta
+      why: _unmask_sse_bytes_chunk does not exist or does not replace tokens in SSE delta fields
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::unmask_sse_delta/)'
+    - id: unmask-sse-errors
+      why: _unmask_sse_bytes_chunk does not skip errors or return original chunk on failure
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::unmask_sse_errors/)'
+    - id: unmask-responses-api
+      why: _unmask_responses_api_completed_chunk does not exist or does not walk output/content blocks
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::unmask_responses_api/)'
+    - id: stream-pii-unmask
+      why: _stream_pii_unmasking does not buffer chunks or read pii_tokens from request_data
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii/)'
+    - id: stream-pii-dispatch
+      why: _stream_pii_unmasking does not dispatch to unmask functions
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii_dispatch/)'
+    - id: stream-pii-mixed
+      why: _stream_pii_unmasking does not handle mixed streams or flush buffered chunks
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii_mixed/)'
+    - id: stream-pii-assemble
+      why: _stream_pii_unmasking does not assemble or early-return on empty/mixed conditions
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii_assemble/)'
+    - id: stream-pii-usage
+      why: _stream_pii_unmasking does not call _preserve_usage_from_last_chunk
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii_usage/)'
+    - id: stream-pii-process
+      why: _stream_pii_unmasking does not call _process_response_for_pii with mode="unmask"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii_process/)'
+    - id: stream-pii-exception
+      why: _stream_pii_unmasking does not log error and yield remaining_chunks on exception
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::stream_pii_exception/)'
+    - id: hook-apply-to-output
+      why: async_post_call_streaming_iterator_hook does not dispatch to _stream_apply_output_masking
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::hook_apply_to_output/)'
+    - id: hook-output-parse
+      why: async_post_call_streaming_iterator_hook does not dispatch to _stream_pii_unmasking
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::hook_output_parse/)'
+    - id: hook-passthrough
+      why: async_post_call_streaming_iterator_hook does not pass through unchanged when conditions are false
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::hook_passthrough/)'
+    - id: preserve-usage
+      why: _preserve_usage_from_last_chunk does not exist or does not copy usage from last chunk
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_streams::preserve_usage/)'
+
+oracle_cases: []
+
+deviations:
+  - what: When _stream_apply_output_masking detects a mixed stream (ModelResponseStream followed by non-bytes) or an unknown event type, it logs a warning, flushes buffered chunks, and switches to transparent passthrough instead of raising an exception.
+    why: LiteLLM warns and continues for incompatible stream shapes. betterlite preserves this fail-open behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1471-L1483
+  - what: When _mask_anthropic_sse_stream cannot assemble the Anthropic response, it logs a warning and returns the original bytes chunks untouched instead of raising.
+    why: LiteLLM treats assembly failure as a non-fatal condition and passes through. betterlite preserves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1502-L1517
+  - what: When _stream_apply_output_masking buffers zero chunks or cannot assemble them, it logs a warning and returns early without masking instead of raising.
+    why: LiteLLM treats empty streams as a non-fatal condition. betterlite preserves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1484-L1493
+  - what: >-
+      When _unmask_sse_bytes_chunk encounters a UTF-8 decode error, JSON parse error, or missing delta field,
+      it silently skips the malformed line and returns the original chunk unchanged.
+    why: Robust handling of malformed SSE bytes prevents exceptions in streaming paths. LiteLLM skips bad lines.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1520-L1549
+  - what: When _stream_pii_unmasking sees a non-chat event (non-ModelResponseStream, non-bytes), it flushes all buffered ModelResponseStream chunks before passing the event through.
+    why: Flushing prevents buffered chunks from being reordered or dropped when the stream mixes OpenAI chat and /v1/responses API events.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1604-L1616
+  - what: Anthropic SSE frame boundary detection happens at the first complete frame with a data line; frames are compared against is_anthropic_sse_stream() for shape detection.
+    why: The shape decision must be made on a whole frame to avoid false positives from transport-split lines. Delegating to is_anthropic_sse_stream() reuses the existing detection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1457-L1470
+
+out_of_scope:
+  - "is_anthropic_sse_stream, assemble_anthropic_sse_stream, anthropic_sse_chunks_from_response, model_response_text: owned by B3669 (Anthropic SSE assembly and projection)."
+  - "split_complete_sse_frames: owned by B005 (SSE keepalive and frame boundaries)."
+  - "stream_chunk_builder, convert_model_response_to_streaming: owned by B2227 (streaming response assembly)."
+  - "_process_response_for_pii: owned by B3806 (response transformations)."
+  - "_unmask_pii_text: owned by B3805 (entity actions and unmasking)."
+  - "_SsePreface helper class/type: owned by framework marshaling, not built by this task. Used as a type marker in streaming."
+  - "apply_to_output, output_parse_pii configuration checks and defaults: owned by lifecycle/constructor tasks."
+  - "Guardrail observation and exception handling in framework: owned by U1 (framework leaves)."
+
+pitfalls:
+  - "SSE frame detection relies on finding 'data' on a line after full line breaks (\\r\\n or \\n); a split line does not count, hence coalescing is required."
+  - "Leading empty SSE frames (comments, empty lines) must be yielded before buffering starts, to preserve their role as keepalives."
+  - "The byte cap _MAX_FIRST_SSE_FRAME_BYTES on coalescing prevents unbounded buffering of unterminated frames; a frame larger than the cap is treated as the first data frame."
+  - "ModelResponseStream chunks are buffered, but bytes chunks trigger Anthropic-specific assembly; mixing the two requires switching to passthrough."
+  - "Usage metadata can be missing from assembled responses when stream_chunk_builder reconstructs from chunks; the last chunk's usage must be preserved."
+  - "Anthropic SSE streams converted back from a masked ModelResponse may differ from the original if masking changed the text content; returning original chunks on no-change preserves byte-for-byte identity."
+  - "Responses API events (non-ModelResponseStream, non-bytes) interrupt stream buffering and force immediate passthrough to prevent reordering."
+  - "Truncated PII tokens in the unmasking buffer only appear at the end of text (due to max_tokens truncation); tokens at the beginning or middle are never checked for truncation."
+  - "SSE lines starting with 'data' but not containing valid JSON (e.g., 'data [DONE]') are silently skipped without attempting JSON parse."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
