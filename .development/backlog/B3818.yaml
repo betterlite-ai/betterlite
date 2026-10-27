@@ -1,14 +1,14 @@
 id: B3818
 milestone: M6 guardrails
 title: Translate and redact MCP discovery calls and tool results
-status: todo
+status: done
 depends_on: []
 file: tasks/B3818-mcp-guardrail-translation.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/guardrail_translation/**"
 parent: B109
 split_from: B109
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 240

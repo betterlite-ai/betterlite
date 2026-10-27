@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP RFC 8693 and Entra on-behalf-of grants
 status: todo
 depends_on: [B4650, B4656, B173]
-file: null
+file: tasks/B4665-mcp-subject-token-exchange.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{token_exchanger,token_exchange_provider}.py"
 parent: B137

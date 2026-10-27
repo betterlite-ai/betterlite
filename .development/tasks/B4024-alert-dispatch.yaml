@@ -1,0 +1,94 @@
+id: B4024
+title: Alert destination selection and digest admission
+description: >-
+  Build the shared `send_alert` entry point that routes alerts to Slack, Teams, webhooks and email
+  based on configured destinations and alert types. Implement destination selection with per-type
+  mappings, default fallback to `SLACK_WEBHOOK_URL` then `ALERTING_WEBHOOK_URL`, raising on
+  missing URLs for Slack while permitting empty URL lists. Route budget alerts to webhooks and
+  email before Slack/Teams type checking, so budget events always deliver even when Slack/Teams
+  alerts are disabled. Enqueue Teams alerts before Slack digest admission so digest mode does not
+  suppress Teams delivery. Implement digest mode: when enabled for an alert type, add the alert
+  to a digest bucket keyed by alert type/model/api_base, preserving first message, severity and
+  webhook URL while updating count and last-update timestamp. Digest buckets accumulate until
+  the B4021 flush task drains them when their interval expires. Format alert messages with alert
+  type, level (except for daily reports and new model added), timestamp, kwargs and alerting
+  metadata. Append `PROXY_BASE_URL` when set. Trigger the batch sending via `flush_queue` when
+  the queue reaches batch size, but never call `send_alert` itself or B116's constructor from
+  this entry point.
+scope:
+  paths:
+    - crates/betterlite-logging/src/alert_dispatch.rs
+    - crates/betterlite-logging/src/alert_dispatch/
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1430-L1577
+    why: SlackAlerting.send_alert entry point with full destination selection, digest mode and formatting logic.
+dod:
+  - text: Budget alerts route to webhooks and email before Slack/Teams alert type checking.
+    proof: [alert-dispatch-tests]
+  - text: send_alert drops silently without enqueuing or raising when neither Slack nor Teams is configured.
+    proof: [alert-dispatch-tests]
+  - text: send_alert drops silently without enqueuing or raising when alert_type is absent from self.alert_types.
+    proof: [alert-dispatch-tests]
+  - text: Teams alerts are enqueued before Slack digest admission.
+    proof: [alert-dispatch-tests]
+  - text: Slack destination selection tries per-type mapping, then default_webhook_url, then SLACK_WEBHOOK_URL or ALERTING_WEBHOOK_URL environment variables.
+    proof: [alert-dispatch-tests]
+  - text: SLACK_WEBHOOK_URL environment variable is checked first via the `or` operator; ALERTING_WEBHOOK_URL is the fallback only when SLACK_WEBHOOK_URL is unset or empty.
+    proof: [alert-dispatch-tests]
+  - text: Missing Slack/Teams webhook URL raises ValueError with the list of missing env vars.
+    proof: [alert-dispatch-tests]
+  - text: Empty Slack webhook URL list remains empty (no raise).
+    proof: [alert-dispatch-tests]
+  - text: Digest mode is enabled per alert type via AlertTypeConfig.digest flag.
+    proof: [alert-dispatch-tests]
+  - text: Digest buckets are keyed by (alert_type_name, request_model or empty string, api_base or empty string).
+    proof: [alert-dispatch-tests]
+  - text: First digest entry preserves first message, level and webhook URL; subsequent entries only update count and last_time.
+    proof: [alert-dispatch-tests]
+  - text: "Alert messages format to Alert type: `{name}` with level and timestamp except for daily_reports and new_model_added."
+    proof: [alert-dispatch-tests]
+  - text: PROXY_BASE_URL footer is appended to formatted messages when the environment variable is set, including if set to an empty string.
+    proof: [alert-dispatch-tests]
+  - text: Periodic flush task is started on first send_alert call when alerting is non-empty.
+    proof: [alert-dispatch-tests]
+  - text: log_queue triggers batch flush via flush_queue when reaching batch_size.
+    proof: [alert-dispatch-tests]
+  - text: Digest-mode alerts return without enqueuing to log_queue.
+    proof: [alert-dispatch-tests]
+  - text: Slack webhook URLs can be a single string or a list; list URLs are enqueued individually.
+    proof: [alert-dispatch-tests]
+checks:
+  optional: []
+  commands:
+    - id: alert-dispatch-tests
+      why: alert destination selection, digest admission, and message formatting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_dispatch::/)'
+oracle_cases: []
+deviations:
+  - what: "Slack webhook URL lists remain empty lists if resolved empty; they do not raise. Per-type mapping returns a list when configured."
+    why: "LiteLLM allows empty URL lists for flexibility; betterlite preserves this behavior for compatibility."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1543-L1552
+out_of_scope:
+  - Alert type filtering and alert producers are owned by B4025-B4030, not this entry point.
+  - Webhook URL resolution for budget alerts is owned by B4020's config loading.
+  - Webhook delivery via HTTP is owned by B4021's batching handler and B173's AsyncHTTPHandler.
+  - Email delivery is owned by B4022's send_email_alert_using_smtp.
+  - Teams message formatting is owned by B4021's ms_teams module.
+  - Timer task admission and periodic flush coordination are owned by B191.
+  - Queue batch flushing and digest draining are owned by B4021's periodic_flush and _flush_digest_buckets.
+  - Digest bucket storage and lock synchronization are owned by B4021; this task only reads alert_type_config and enqueues digest entries.
+pitfalls:
+  - "Digest buckets are accessed under a lock that B4021 owns; this task only reads keys and appends entries, never modifies existing digests in place."
+  - "DigestEntry webhook_url can be a string or a list; both formats must be preserved as-is in the bucket and passed through to B4021's flush."
+  - "Budget webhook and email checks happen before the Slack/Teams type check, so a budget alert sends to webhook/email even if alert_type is not in self.alert_types."
+  - "Teams alert enqueue happens before the Slack digest check, so Teams alerts are never suppressed by Slack digest mode."
+  - "Webhook URL lookup indexes self.alert_to_webhook_url by the raw AlertType enum member as the key, not by the alert_type_config name extraction."
+  - "Alert type name for alert_type_config and digest key lookup is retrieved via getattr(alert_type, 'value', str(alert_type)), which extracts the enum's value string."
+  - "SLACK_WEBHOOK_URL environment variable is checked first via the `or` operator; ALERTING_WEBHOOK_URL is used only when SLACK_WEBHOOK_URL is unset or empty."
+  - "PROXY_BASE_URL footer is appended whenever the environment variable is set and non-None, including when set to an empty string; empty strings are not treated as None."
+  - "kwargs are formatted as raw key-value pairs; alerting_metadata dict is formatted under a *Alerting Metadata* header."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

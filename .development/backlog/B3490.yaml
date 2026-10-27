@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Select interaction providers and prepare optional fields
 status: todo
 depends_on: [B3481, B1369, B1370, B2202]
-file: null
+file: tasks/B3490-interaction-contract.yaml
 covers:
   - "litellm/llms/base_llm/interactions/**"
   - "litellm/interactions/utils.py"

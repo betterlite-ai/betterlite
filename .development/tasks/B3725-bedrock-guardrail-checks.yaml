@@ -1,0 +1,118 @@
+id: B3725
+title: Bedrock resource-less guardrail checks
+description: >-
+  Build InvokeGuardrailChecks request shaping, score thresholds and malformed-response
+  handling. This resource-less API detects violations without guardrail resources; it
+  never blocks/masks/rewrites content. Retag all INPUT text as user content (security
+  measure against prompt-injection bypass), split messages after ten content blocks,
+  and treat truncated sensitiveInformation results as violations when that check has a
+  threshold.
+
+  InvokeGuardrailChecks accepts three check types: contentFilter (severityScore/category),
+  promptAttack (severityScore/category) and sensitiveInformation (confidenceScore/type).
+  Score thresholds (content_filter_threshold, prompt_attack_threshold, pii_confidence_threshold)
+  determine blocking; None means detect-only. Violations are only over-threshold results
+  or truncated PII (fail closed: omitted detections were never scored).
+
+  Log a copy with PII location offsets (beginOffset, endOffset, messageIndex, contentIndex)
+  stripped so the detected PII span cannot be reconstructed. Build tracing detail with
+  violation categories and action. On violations, raise HTTPException (status 400) or
+  ModifyResponseException depending on disable_exception_on_block. Returns empty
+  BedrockGuardrailResponse on pass.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/bedrock_checks.rs
+    - crates/betterlite-guardrails/src/bedrock_checks/**
+    - tools/oracle/helpers/b3725.py
+    - tools/oracle/helpers/b3725/**
+    - tools/oracle/src/helpers/guardrails/b3725.rs
+    - tools/oracle/src/helpers/guardrails/b3725/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1820-L1836
+    why: Own _chunk_texts_into_checks_messages; preserve per-message content-block splitting
+      to avoid truncation guardrail bypass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1838-L1875
+    why: Own _build_invoke_guardrail_checks_messages; preserve INPUT retagging as user and
+      assistant role for OUTPUT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1877-L1984
+    why: Own _make_invoke_guardrail_checks_request; preserve threshold enforcement and error
+      handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1986-L2034
+    why: Own _collect_invoke_checks_violations; preserve truncated sensitiveInformation as
+      violation and threshold matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2037-L2047
+    why: Own _sanitize_invoke_checks_response_for_logging; preserve PII offset stripping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2049-L2051
+    why: Own _get_invoke_checks_status; preserve guardrail_intervened vs success.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2053-L2066
+    why: Own _build_invoke_checks_tracing_detail; preserve violation category collection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2068-L2090
+    why: Own _get_block_exception_for_checks; preserve HTTPException/ModifyResponseException
+      branching and detail structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L116-L131
+    why: Constants _BEDROCK_INVOKE_GUARDRAIL_CHECKS_PATH, _BEDROCK_CHECKS_MAX_CONTENT_BLOCKS
+      and _BEDROCK_CHECKS_PII_LOCATION_KEYS.
+dod:
+  - text: Messages with more than ten content blocks are split across multiple messages
+      without truncating any block.
+    proof: [checks-tests, checks-oracle]
+  - text: All INPUT content is retagged as user role; OUTPUT is assistant.
+    proof: [checks-tests, checks-oracle]
+  - text: Three check types (contentFilter, promptAttack, sensitiveInformation) are
+      evaluated against their respective thresholds; truncated PII counts as violation.
+    proof: [checks-tests, checks-oracle]
+  - text: PII location offsets are stripped from logged responses.
+    proof: [checks-tests, checks-oracle]
+  - text: Violations block with HTTPException (400) or ModifyResponseException depending
+      on disable_exception_on_block.
+    proof: [checks-tests, checks-oracle]
+  - text: Malformed 200 responses raise HTTPException (500) with validation error detail.
+    proof: [checks-tests, checks-oracle]
+checks:
+  optional: []
+  commands:
+    - id: checks-tests
+      why: The message chunking, role tagging, threshold evaluation or response parsing
+        is broken or incomplete.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_checks::tests::/) - test(/replays_the_/)'
+    - id: checks-oracle
+      why: The HTTP request/response shape or threshold logic does not match the booted
+        proxy.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/bedrock-checks/**)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/bedrock-checks/input-messages-retagged-user.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/output-response-assistant.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/messages-split-after-ten-blocks.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/content-filter-threshold-match.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/prompt-attack-threshold-match.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/pii-truncated-is-violation.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/pii-offset-stripped-from-logging.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/no-violations-empty-response.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/threshold-none-detect-only.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/http-exception-on-violations.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/modify-response-on-violations.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/malformed-json-500-error.yaml
+  - tools/oracle/cases/guardrails/bedrock-checks/non-200-error-response.yaml
+deviations: []
+out_of_scope:
+  - B3720 owns all checks request/response records (BedrockChecksMessage, BedrockChecksViolation,
+    BedrockGuardrailChecksResponse) and empty BedrockGuardrailResponse; B3721 owns _create_bedrock_output_content_request
+    and get_content_items_for_message used to extract response text; B3723 owns _load_credentials,
+    _prepare_request, _sign_and_post and _parse_bedrock_guardrail_error_response for HTTP transport.
+  - CustomGuardrail.add_standard_logging_guardrail_information_to_request_data is called at L1935, L1951, L1969
+    in _make_invoke_guardrail_checks_request (within this task's owned range L1877-L2090), owned by B164.
+  - ModifyResponseException is constructed at L2078 in _get_block_exception_for_checks (within this task's
+    owned range L2068-L2090), owned by B184 (litellm/exceptions.py).
+pitfalls:
+  - Truncated sensitiveInformation result must be recorded as a violation even without
+    individual entries, because omitted detections were never scored.
+  - PII location offsets (beginOffset, endOffset, messageIndex, contentIndex) are stripped
+    before logging but evaluated during collection; a deepcopy is necessary.
+  - INPUT messages are retagged as user regardless of original role to prevent prompt-injection
+    bypass through system/developer tagging.
+  - None threshold makes a check detect-only and never contributes violations.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

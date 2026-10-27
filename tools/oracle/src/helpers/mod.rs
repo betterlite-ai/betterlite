@@ -54,6 +54,7 @@ mod proxy;
 mod rate_limit;
 mod redact;
 mod redis;
+mod roi;
 mod router;
 mod sdk;
 mod secret_managers;
@@ -120,7 +121,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 40] = [
+const GROUPS: [Group; 41] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
@@ -152,6 +153,7 @@ const GROUPS: [Group; 40] = [
     rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,
+    roi::GROUP,
     router::GROUP,
     sdk::GROUP,
     secret_managers::GROUP,

@@ -1,0 +1,132 @@
+id: B4657
+title: MCP token endpoint client and distributed refresh coordination
+description: >-
+  Build the token endpoint client and distributed refresh coordination in betterlite-server::mcp::outbound_credentials.
+
+  TokenEndpointClient.fetch POSTs one OAuth grant to a token endpoint, authenticating the gateway as a client via RFC 7523 private-key JWT (PrivateKeyJwtAuth) or HTTP Basic auth (ClientSecretAuth from B4650), and returns a minted token or a typed CredError.
+
+  ExchangedTokenCache memoizes the final token string per opaque cache key with per-key single-flight, so concurrent callers share one round-trip and a hit skips the endpoint entirely. A fingerprint field (typically a principal) lets a caller address a slot by something stable while guaranteeing the token was minted for the current inputs. Invalidate evicts one cached token so the next get_or_compute re-mints (e.g. after an upstream 401). The cache stores (fingerprint, token) pairs; anything else in the slot is treated as absent.
+
+  Cache TTL math uses four environment variables from litellm.constants: MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL (default 3600 seconds), MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS (default 60 seconds, subtracted from lifetime to avoid issuing a token that expires before it can be used), MCP_OAUTH2_TOKEN_CACHE_MIN_TTL (default 10 seconds, the floor even if a short lifetime remains), and MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE (default 500 entries).
+
+  Redis-distributed refresh coordination ensures one refresh runs per (user_id, server_id) pair across all workers. RedisRefreshCoordinator uses a DistributedLock (injected, Redis in production) to elect one worker to refresh while the rest wait and re-read. The lock is a single-flight optimization, not a correctness mutex: on lock backend failure, the coordinator refreshes anyway rather than wait on a holder that may not exist. The holder renews the lock lease while refresh runs (up to refresh_budget_seconds, default 20), so a hung endpoint doesn't hold losers indefinitely. Losers wait up to wait_timeout_seconds (default 35), which must outlast the holder's max lock-hold (refresh_budget_seconds + one lock_ttl_seconds tail).
+
+  RedisDistributedLock uses SET NX PX / owner-only renew / delete. Acquire is atomic (only the first caller wins; the entry self-expires). Extend renews the PX lease only when the token still matches. Release deletes the key only when it still holds this caller's token, so a holder whose PX-expired lock was re-acquired by another cannot delete the new lock. Is_held is EXISTS. Every key is run through an injected namespace_key before reaching Redis. Transport errors on acquire report LockAcquisition.ERROR (distinct from HELD) so the coordinator refreshes anyway, degrading to "each worker may refresh" instead of serving stale on a Redis blip.
+
+  runtime_refresh_coordinator builds a RedisRefreshCoordinator over the proxy's shared Redis, or returns None when Redis is absent so the caller keeps the foundation's in-process default (correct for a single replica). Shared by every credential arm that renews a rotating grant.
+
+  Every token endpoint call handles errors: 401 and non-2xx HTTP status return CredError.of_upstream_unavailable with the status code; unreachable endpoints (httpx.RequestError, Timeout) also return of_upstream_unavailable with the exception type; non-JSON responses and missing access_token in the JSON both return of_upstream_unavailable with a detail message. Client assertion signing failures (JWT encoding, missing key, invalid algorithm) return CredError.of_misconfigured with "could not sign the client assertion; check client_private_key and client_assertion_signing_alg". The single authenticated POST is owned by this task; multi-leg flows that compose it live in resolver arms.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/outbound_credentials/distributed_lock.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/refresh_coordinator.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/refresh_coordinator_factory.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/token_endpoint.rs
+    - tools/oracle/cases/outbound-credentials/**
+    - tools/oracle/helpers/b4657.py
+    - tools/oracle/helpers/b4657/**
+    - tools/oracle/src/helpers/server/b4657.rs
+    - tools/oracle/src/helpers/server/b4657/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/distributed_lock/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/refresh_coordinator/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/refresh_coordinator_factory/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/token_endpoint/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L62-L121
+    why: TokenEndpointClient.fetch, error handling for HTTP status, network errors, JSON validation, and client assertion signing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L141-L228
+    why: ExchangedTokenCache with per-key single-flight, fingerprint matching, invalidate for eviction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L230-L235
+    why: Cache TTL calculation with MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL, MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS, MCP_OAUTH2_TOKEN_CACHE_MIN_TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L251-L281
+    why: Client authentication via _client_auth_params, RFC 7523 JWT and HTTP Basic, _client_assertion with iss, sub, aud, jti, iat, exp fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/redis_refresh_coordinator.py#L1-L108
+    why: RedisRefreshCoordinator election, wait for holder, re-read, lease renewal up to refresh_budget_seconds, wait_timeout_seconds > refresh_budget + lock_ttl.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/redis_distributed_lock.py#L1-L95
+    why: RedisDistributedLock.acquire (SET NX PX), extend (refresh PX if owner), release (delete if owner), is_held (EXISTS), namespace_key injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/redis_refresh_coordinator.py#L36-L43
+    why: LockAcquisition enum (ACQUIRED, HELD, ERROR) distinguishing "someone else is refreshing" from "lock backend down".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/runtime_refresh_coordinator.py#L28-L41
+    why: runtime_refresh_coordinator factory reading proxy globals (user_api_key_cache, redis_cache) at composition time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L179-L221
+    why: MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS (60), MCP_OAUTH2_TOKEN_CACHE_MIN_TTL (10), MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL (3600), MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE (500).
+
+dod:
+  - text: >-
+      TokenEndpointClient.fetch signs RFC 7523 JWTs for PrivateKeyJwtAuth (iss, sub, aud, jti, iat, exp fields, 60-second lifetime) and posts grant_params + auth to the endpoint.
+      Every error case (2xx required, access_token required, JSON required, JWT signing) maps to the correct CredError variant with the observed behavior.
+    proof: [token-endpoint-tests, token-endpoint-coordination-oracle]
+  - text: >-
+      ExchangedTokenCache memoizes token strings per cache_key with a fingerprint field.
+      Concurrent misses on the same key share one endpoint call via a per-key single-flight lock.
+      Invalidate evicts the cached token so a subsequent get_or_compute re-mints.
+    proof: [token-endpoint-tests]
+  - text: >-
+      Cache TTL is max(expires_in - MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS, MCP_OAUTH2_TOKEN_CACHE_MIN_TTL) with MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL used when expires_in is None.
+      The four env vars read their defaults from litellm.constants (60, 10, 3600, 500).
+    proof: [token-endpoint-tests]
+  - text: >-
+      RedisRefreshCoordinator acquires a distributed lock to elect one worker to refresh.
+      The holder renews the lock lease (every lock_ttl_seconds/2) while refresh runs, up to refresh_budget_seconds total.
+      Losers wait for the lock to be released or to expire, then re-read the persisted token.
+    proof: [refresh-coordinator-tests, token-endpoint-coordination-oracle]
+  - text: >-
+      RedisDistributedLock.acquire is SET key token NX PX ttl; extend and release are Lua scripts that check the token matches.
+      On any Redis error, acquire returns LockAcquisition.ERROR (distinct from HELD) and extend/is_held degrade gracefully.
+    proof: [refresh-coordinator-tests]
+  - text: >-
+      LockAcquisition is an enum with three values: ACQUIRED (this worker won), HELD (another holds it), ERROR (backend unreachable).
+      The coordinator's run method branches on the acquisition result.
+    proof: [refresh-coordinator-tests]
+  - text: >-
+      runtime_refresh_coordinator reads user_api_key_cache from the proxy module and returns RedisRefreshCoordinator if Redis is wired, None otherwise.
+      Every credential arm that renews a rotating grant uses one shared coordinator.
+    proof: [refresh-coordinator-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: token-endpoint-tests
+      why: the token endpoint client or cache tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(token_endpoint)'
+    - id: refresh-coordinator-tests
+      why: the refresh coordinator or distributed lock tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(distributed_lock|refresh_coordinator)/)'
+    - id: token-endpoint-coordination-oracle
+      why: oracle cases for distributed refresh or token endpoint calls fail
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/outbound-credentials
+
+oracle_cases:
+  - tools/oracle/cases/outbound-credentials/token-endpoint-basic.yaml
+  - tools/oracle/cases/outbound-credentials/token-endpoint-jwt-auth.yaml
+  - tools/oracle/cases/outbound-credentials/token-endpoint-error-status.yaml
+  - tools/oracle/cases/outbound-credentials/token-endpoint-unreachable.yaml
+  - tools/oracle/cases/outbound-credentials/token-endpoint-invalid-response.yaml
+  - tools/oracle/cases/outbound-credentials/token-cache-hit.yaml
+  - tools/oracle/cases/outbound-credentials/token-cache-invalidate.yaml
+  - tools/oracle/cases/outbound-credentials/refresh-coordinator-single-flight.yaml
+
+deviations: []
+
+out_of_scope:
+  - Multi-leg flows that compose the token endpoint client (ID-JAG, token exchange, client credentials). Those live in resolver arms.
+  - Credential reading and persistence. OAuthTokenStore implementations are B4656.
+  - In-process single-flight without Redis. InProcessRefreshCoordinator lives in B4656.
+  - Configuration parsing and validation. No config keys are owned by this task.
+
+pitfalls:
+  - "LockAcquisition.ERROR is kept distinct from HELD so the coordinator can tell \"someone else is refreshing\" (wait) from \"the lock backend is down\" (refresh anyway). Conflating them would serve stale tokens on a Redis outage."
+  - "The holder renews the lock lease (PX) up to refresh_budget_seconds, not indefinitely, so a hung endpoint doesn't hold losers forever. Losers wait up to wait_timeout_seconds, which must be > refresh_budget_seconds + one lock_ttl_seconds tail; otherwise a loser bails while the holder is still legitimately refreshing and re-reads a still-expired token."
+  - "Cache TTL subtracts MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS from the lifetime and floors at MCP_OAUTH2_TOKEN_CACHE_MIN_TTL, so a 65-second token that buffers 60 seconds is cached for only 5 seconds, floored to 10. A missing expires_in uses MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL (3600 seconds)."
+  - "ExchangedTokenCache stores (fingerprint, token) pairs in a weak-keyed dict. An invalidate overlapping a compute reaches the same _KeyGuard and bumps its generation, preventing the compute from storing a token that predates the eviction."
+  - "RedisDistributedLock uses Lua scripts for extend and release to check the token still matches, so a holder whose PX-expired lock was re-acquired by another cannot delete the new lock."
+  - "Client assertion signing (RFC 7523 JWT) requires client_private_key in SecretStr form and a signing_alg; a missing or invalid field returns CredError.of_misconfigured, not a panic."
+  - "The token endpoint POST uses httpx from LiteLLM's handler (get_async_httpx_client) which is partially typed; the boundary is contained in _post_form, which the token endpoint type-checks against _TokenEndpointResponse."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

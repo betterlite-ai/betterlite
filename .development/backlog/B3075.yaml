@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Persist FinOps settings and detect configured exporters
 status: todo
 depends_on: [B189, B725, B1600, B3067]
-file: null
+file: tasks/B3075-finops-settings-store.yaml
 covers:
   - "litellm/proxy/spend_tracking/{cloudzero_endpoints,vantage_endpoints}.py"
 parent: B073

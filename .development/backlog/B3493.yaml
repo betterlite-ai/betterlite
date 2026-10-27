@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Send interaction creation requests and open streams
 status: todo
 depends_on: [B3490, B3491, B3492, B173, B198, B249, B1369, B1370]
-file: null
+file: tasks/B3493-interaction-http-create.yaml
 covers:
   - "litellm/interactions/http_handler.py"
 parent: B098

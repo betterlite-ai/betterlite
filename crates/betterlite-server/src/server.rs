@@ -1,7 +1,11 @@
+pub mod chat_setup;
+
+use crate::routes::chat::chat_routes;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::Router;
 use betterlite_config::types::Config;
+use betterlite_openai::chat::execution::ChatExecutor;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
@@ -34,7 +38,12 @@ pub enum ServerError {
         source: io::Error,
     },
 }
-pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerError> {
+pub async fn run(
+    config: Config,
+    chat: ChatExecutor,
+    host: &str,
+    port: u16,
+) -> Result<(), ServerError> {
     let shutdown_signal = build_shutdown_signal()?;
     let address = format!("{host}:{port}");
     let listener = TcpListener::bind((host, port))
@@ -46,6 +55,7 @@ pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerErro
         config.general_settings.master_key,
         Arc::clone(&shutting_down),
         &config.model_list,
+        chat_routes(Arc::new(chat)),
     );
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();

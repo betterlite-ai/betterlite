@@ -22,9 +22,12 @@
 )]
 
 pub mod anthropic_tool_exchange;
+pub mod compress;
 pub mod content_detection;
 pub mod extract_key;
 pub mod message_normalization;
 pub mod message_stubbing;
 pub mod protected_indices;
+pub mod retrieval_tool;
+mod tests;
 pub mod truncate_message;

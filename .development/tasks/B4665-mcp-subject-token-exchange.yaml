@@ -1,0 +1,204 @@
+id: B4665
+title: MCP RFC 8693 and Entra on-behalf-of grants
+description: >-
+  Build the pure token exchange engine and its composition root in crates/betterlite-server::mcp::outbound_credentials.
+  OboTokenExchanger swaps a caller's inbound token for an upstream-bound one via RFC 8693 token-exchange or Entra
+  On-Behalf-Of (OBO, RFC 7523 jwt-bearer) grants, caching the result per (subject_token, tenant, config, server) and
+  single-flighting concurrent exchanges so repeated caller tokens skip the IdP round-trip and concurrent calls collapse
+  to one exchange.
+
+  The two profiles differ only in the request form: RFC 8693 carries audience and subject_token_type as separate fields,
+  while Entra OBO uses jwt-bearer and carries the target resource in scope (e.g. api://app-id/.default).
+
+  OboTokenExchanger::exchange takes the caller's subject_token (an inbound bearer or JWT) and the server's
+  TokenExchangeConfig, POSTs the selected grant to the token endpoint with client authentication (client_secret_basic
+  or client_secret_post), and returns the upstream access_token as a typed OAuthToken (with optional expires_at and
+  refresh_token for later grants), or a typed CredError. HTTP failures (5xx / timeout / network) map to
+  upstream_unavailable (503). IdP 4xx client errors (invalid_client / invalid_target, gateway-fault codes) map to
+  misconfigured (500). IdP 4xx subject errors (invalid_grant / invalid_request) and step-up challenges (Entra
+  Conditional Access claims) map to unauthorized (401). Token parsing failures (missing access_token, non-Bearer
+  token_type, non-access issued_token_type) map to upstream_unavailable.
+
+  The exchange is cached per _cache_key, which binds the entry to subject_token, tenant_id, profile, endpoint,
+  audience, scope, client_id, client_secret, auth_method, and subject_token_type (everything is hashed).
+  A rotated caller token hashes to a new key and re-exchanges. Cached tokens use TTL (default 3600s): a token
+  with expires_in is cached until its expiry minus a skew buffer (default 60s), floored at min_ttl (default 10s).
+  A token with no declared expiry uses the default TTL. The cache is in-process and shared per egress instance, so
+  the same server and caller token never exchange twice until TTL.
+
+  Single-flight per cache_key ensures concurrent callers with the same subject_token, tenant, config, and server
+  collapse into one IdP call. The RefreshCoordinator injected at runtime coordinates the refresh and reread callbacks;
+  during the exchange, a re-entrant refresh on the same key re-checks the cache instead of re-entering the IdP.
+
+  build_token_exchanger is the composition root: it builds OboTokenExchanger with the real httpx POST edge,
+  an InMemoryTokenCacheBackend sized to MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE, and TTL constants from config.
+  Each call to build_token_exchanger creates a new instance with its own cache, so one egress never serves another's
+  tokens.
+
+  _post_exchange_endpoint is the HTTP edge: it POSTs to the IdP, passes the form body and client-auth headers
+  (built by build_token_endpoint_client_auth from B4650), and maps failures:
+  - raise_for_status() raising an HTTPStatusError with a 4xx: parse the RFC 6749 error code and claims blob from
+    the JSON body; if the code is in the gateway-fault set (invalid_client, unauthorized_client, unsupported_grant_type,
+    invalid_target, invalid_scope), raise TokenExchangeClientError. Otherwise raise SubjectTokenRejected with claims.
+  - 5xx / timeout / network / JSON parse / malformed body: return None (the exchanger maps it to upstream_unavailable).
+  - Non-object JSON body: return None (the exchanger maps it to upstream_unavailable).
+  - Success: return the parsed JSON body dict.
+  The error_description field is never read (it can leak IdP internals).
+
+  Entra Conditional Access (a step-up challenge in the claims field) threads through SubjectTokenRejected so the edge
+  can build a 401 with the claims blob; the caller uses it to satisfy the step-up and retry.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/outbound_credentials/token_exchanger.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/token_exchanger/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/token_exchange_provider.rs
+    - tools/oracle/cases/outbound-credentials/token-exchange/**
+    - tools/oracle/helpers/b4665.py
+    - tools/oracle/helpers/b4665/**
+    - tools/oracle/src/helpers/server/b4665.rs
+    - tools/oracle/src/helpers/server/b4665/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/token_exchange_provider/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L1-L77
+    why: Docstring and constants defining RFC 8693 grants, JWT bearer grants, and token-type URNs; cache and TTL architecture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L122-L147
+    why: _cache_key function binding subject_token, tenant, all config fields (hashed) into a single key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L162-L221
+    why: _rfc8693_form, _entra_obo_form, and _build_exchange_form showing the two request profiles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L83-L108
+    why: SubjectTokenRejected (caller's token rejected by IdP) and TokenExchangeClientError (gateway's config is wrong) exception types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L149-L160
+    why: _parse_expires_in parsing JSON int/float/string expires_in into seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L223-L377
+    why: OboTokenExchanger class with exchange, invalidate, _token_from_body, _ttl_seconds methods and caching/single-flight logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchange_provider.py#L1-L117
+    why: Composition root build_token_exchanger, _post_exchange_endpoint HTTP edge, _oauth_error_fields RFC 6749 parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/token_endpoint_auth.py
+    why: build_token_endpoint_client_auth builds the token endpoint client authentication (Basic or POST body).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L24-L49
+    why: OAuthToken dataclass returned on success.
+
+dod:
+  - text: >-
+      OboTokenExchanger exchanges a caller token via RFC 8693 or Entra OBO, returning Ok(OAuthToken) with access_token
+      and optional expires_at, or Error(CredError); errors are mapped via exception types, not raised.
+    proof: [token-exchange-tests, helper-python, helper-case-corpus]
+  - text: >-
+      The exchange form is built per profile: RFC 8693 includes subject_token, subject_token_type, and audience (if set);
+      Entra OBO includes assertion, scope, and requested_token_use=on_behalf_of, dropping audience and subject_token_type.
+    proof: [token-exchange-tests]
+  - text: >-
+      Tokens are cached per (subject_token, tenant_id, profile, endpoint, audience, scope, client_id, secret, auth_method,
+      subject_token_type), all hashed; a rotated caller token re-exchanges; a rotated config re-exchanges before TTL.
+    proof: [token-exchange-tests]
+  - text: >-
+      Single-flight per cache_key: concurrent callers with the same token and config collapse to one IdP exchange; the
+      coordinator's reread ensures a re-entrant refresh re-checks the cache instead of looping into the IdP again.
+    proof: [token-exchange-tests]
+  - text: >-
+      Token parsing validates access_token (required), token_type (must be Bearer or absent), and issued_token_type
+      (must not be refresh, id, or saml); missing or non-Bearer token_type is refused; unknown issued_token_type is accepted.
+    proof: [token-exchange-tests]
+  - text: >-
+      TTL is calculated as max(expiry - now - buffer, min_ttl), floored to min_ttl; a token with no expires_in uses default_ttl;
+      a short-lived token (remaining lifetime below buffer) is not cached past its actual expiry.
+    proof: [token-exchange-tests]
+  - text: >-
+      HTTP 4xx with a gateway-fault RFC 6749 code (invalid_client, unauthorized_client, unsupported_grant_type, invalid_target,
+      invalid_scope) maps to TokenExchangeClientError and surfaces as misconfigured (500).
+    proof: [token-exchange-tests, helper-python, helper-case-corpus]
+  - text: >-
+      HTTP 4xx with a subject-fault code or unrecognized error maps to SubjectTokenRejected and surfaces as unauthorized (401);
+      Entra Conditional Access claims in the body are threaded through to the 401 challenge.
+    proof: [token-exchange-tests, helper-python, helper-case-corpus]
+  - text: >-
+      HTTP 5xx, timeout, network error, or JSON parse error map to None in _post_exchange_endpoint and surface as
+      upstream_unavailable (503).
+    proof: [token-exchange-tests]
+  - text: >-
+      Missing endpoint, incomplete client credentials (no client_id or no client_secret), or Entra OBO without scope fail
+      closed with precondition_required or misconfigured, without hitting the IdP.
+    proof: [token-exchange-tests]
+  - text: >-
+      invalidate(subject_token, server, config, tenant_id) drops the cached token for that key, forcing a fresh exchange
+      on the next call; it targets only the matching tenant.
+    proof: [token-exchange-tests]
+  - text: >-
+      build_token_exchanger returns an OboTokenExchanger with an InMemoryTokenCacheBackend sized to MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE;
+      each build creates a new instance with its own cache, so egresses never share cached tokens.
+    proof: [token-exchange-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: token-exchange-tests
+      why: token exchanger tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::(token_exchanger|token_exchange_provider)::/) - test(/replays_corpus$/)'
+    - id: helper-python
+      why: The oracle helper adapter is missing or Python type checking fails.
+      run: test -f tools/oracle/helpers/b4665.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/token_exchange-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/outbound-credentials/token-exchange/rfc8693-basic.yaml
+  - tools/oracle/cases/outbound-credentials/token-exchange/rfc8693-with-audience.yaml
+  - tools/oracle/cases/outbound-credentials/token-exchange/entra-obo-basic.yaml
+  - tools/oracle/cases/outbound-credentials/token-exchange/client-secret-basic.yaml
+  - tools/oracle/cases/outbound-credentials/token-exchange/subject-rejected.yaml
+  - tools/oracle/cases/outbound-credentials/token-exchange/gateway-fault.yaml
+  - tools/oracle/cases/outbound-credentials/token-exchange/transport-failure.yaml
+
+deviations:
+  - what: >-
+      betterlite returns Result[OAuthToken, CredError] instead of raising SubjectTokenRejected or TokenExchangeClientError;
+      errors surface as values the caller must handle, not exceptions that can slip past the type checker.
+    why: Rust Result types enforce error handling at compile time; every failure path is visible and must be handled.
+
+out_of_scope:
+  - Distributed (cross-replica) single-flight coordination. InProcessRefreshCoordinator is per-instance; a later hardening adds Redis-backed coordination.
+  - Reactive 401 refresh (invalidating the token after an upstream 401). The resolver layer handles that with the invalidate method.
+  - Per-user token refresh (refresh_token grant). Token refresh is owned by the per-user store layers (B4656, B4660).
+  - Configuration parsing and validation. TokenExchangeConfig is validated at config load time (B4650, B4651 areas).
+  - HTTP client construction. The httpx client is obtained from the gateway's shared client builder (betterlite-http dependency).
+  - The resolver arm itself and dispatcher rules. Calling the exchange happens in a later credential resolver task.
+
+pitfalls:
+  - >-
+    The cache key includes the entire TokenExchangeConfig hashed (endpoint, audience, scope, auth_method, subject_token_type,
+    client_secret). A single-character config rotation forces a fresh exchange even within TTL. Hash everything, not just the
+    subject_token.
+  - >-
+    expires_in can be a JSON int, float, or numeric string; _parse_expires_in handles all three. A string like "120.0" must
+    parse to 120 seconds, not fail silently and use default_ttl.
+  - >-
+    token_type case-insensitivity (Bearer / bearer / BEARER all pass) is required by RFC 6750; non-Bearer types fail closed,
+    not forwarded as Bearer.
+  - >-
+    issued_token_type URNs for non-access tokens (refresh_token, id_token, saml1, saml2) must be rejected even if token_type
+    claims Bearer, since a malformed STS could mint a refresh token but label it Bearer.
+  - >-
+    The SubjectTokenRejected exception carries the claims blob from the IdP response; thread it through to the
+    CredError::Unauthorized variant so the edge builds the 401 challenge body.
+  - >-
+    Gateway-fault RFC 6749 codes (invalid_client, unauthorized_client, unsupported_grant_type, invalid_target, invalid_scope)
+    map to TokenExchangeClientError, not SubjectTokenRejected; the edge returns 500, not 401.
+  - >-
+    Entra OBO requires at least one scope (e.g. api://app-id/.default); the exchanger fails closed with misconfigured before
+    hitting the IdP if scope is empty.
+  - >-
+    The distributed coordinator (a later hardening) provides run(key, refresh, reread) where reread re-checks the cache after
+    refresh; a re-entrant refresh must not loop back into the IdP.
+  - >-
+    Concurrent TTL expiries: if TTL elapses while a slow IdP call is in flight, the cache miss on re-read populates the cache
+    with the fresh result; no stale bearer is ever served.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

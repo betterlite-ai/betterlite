@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Batched Slack and Teams delivery and digest flushing
 status: todo
 depends_on: [B4020, B173, B256, B191]
-file: null
+file: tasks/B4021-alert-delivery.yaml
 covers:
   - "litellm/integrations/SlackAlerting/batching_handler.py"
   - "litellm/integrations/SlackAlerting/ms_teams.py"

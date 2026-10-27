@@ -1,0 +1,134 @@
+id: B3513
+title: Prepare decision calls and select their providers
+description: >-
+  Build decision request preparation and provider selection in crates/betterlite-openai/src/decisions/call.rs, consuming B3510's record types and B3511's provider configs to construct DecisionsCall objects ready for sending.
+
+  prepare_call takes request fields (SystemOne or OpenAI), validates and routes to the correct provider through ProviderConfigManager.get_provider_decisions_config, resolves credentials and api_base through the provider config, and constructs a DecisionsCall with the validated request, intermediate representation, transformed body, and provider-specific context. Request fields carry either SystemOne questions/state or OpenAI questions/input; prepare_call validates them through the provider-specific request adapter, rejects format mismatches (OpenAI input on a SystemOne call or vice versa), and drops safety_identifier when the provider does not support it and drop_params is true; unsupported parameters that cannot be dropped raise UnsupportedParamsError.
+
+  ProviderConfigManager.get_provider_decisions_config returns the concrete config for each provider (Perplexity, TypeSafe, OpenRouter, Cloudflare, Strands, HostedVLLM, OpenAI, AzureAI), and supported_decisions_providers lists the provider names. Provider configs resolve api_base and api_key through environment names and defaults, validate that required credentials are present, and transform requests to provider-specific format. Model names map to canonical forms through the provider config; malformed canonical_model calls raise BadRequestError.
+
+  DecisionsCall carries model (canonical), requested_model (original), provider name, provider config, both original and validated request formats, intermediate representation, transformed request body, resolved api_base and api_key, headers, timeout, logging object and litellm_params. The DecisionsCall is frozen and immutable after construction.
+
+scope:
+  paths:
+    - crates/betterlite-openai/src/decisions/call.rs
+    - crates/betterlite-openai/src/decisions/call/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L1-L95
+    why: supported_decisions_providers function and the DecisionsCall dataclass definition with all fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L96-L148
+    why: _provider_config lookup, _ir_request conversion routing, and _provider_ir_request validation with safety_identifier handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L151-L256
+    why: prepare_call function, request field validation, credentials resolution, and DecisionsCall construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8910-L8928
+    why: ProviderConfigManager.get_provider_decisions_config provider dispatch including all eight providers (Perplexity, TypeSafe, OpenRouter, Cloudflare, Strands, HostedVLLM, OpenAI, AzureAI) in order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L121-L149
+    why: drop_params handling, safety_identifier dropping when unsupported and drop_params is true, and UnsupportedSafetyIdentifier sentinel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L1-L50
+    why: DecisionsRequestBody and OpenAIDecisionRequestBody record formats and validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L340-L347
+    why: reject_other_format function validates request format exclusivity.
+
+dod:
+  - text: >-
+      supported_decisions_providers returns the provider names (Perplexity, TypeSafe, OpenRouter, Cloudflare, Strands, HostedVLLM, OpenAI, AzureAI) in order, matching LiteLLM at the pinned commit.
+    proof: [providers-list]
+  - text: >-
+      prepare_call takes fields (SystemOne or OpenAI), validates them through the provider's request adapter, resolves the model to canonical form, looks up the provider config, resolves credentials through api_base_env/api_key_env and defaults, and constructs and returns a DecisionsCall object.
+    proof: [prepare-call-success]
+  - text: >-
+      When a model name is not provided, prepare_call raises BadRequestError with message "A model name is required for the Decisions API".
+    proof: [prepare-call-validation]
+  - text: >-
+      When a provider does not exist or has no decisions config, prepare_call raises BadRequestError with message "Unknown Decisions provider 'X'. Supported providers: ...".
+    proof: [prepare-call-validation]
+  - text: >-
+      When canonical_model raises ValueError, prepare_call catches it and raises BadRequestError with the same message.
+    proof: [prepare-call-validation]
+  - text: >-
+      When transform_decisions_request returns UnsupportedDecisionsRequest, prepare_call raises BadRequestError with message "Decisions provider 'X' cannot serve this request: {reason}".
+    proof: [prepare-call-validation]
+  - text: >-
+      Request field validation errors (ValidationError from pydantic) raise BadRequestError with message "Invalid Decisions request: ...".
+    proof: [prepare-call-validation]
+  - text: >-
+      When api_base resolves to None and the provider requires one, prepare_call raises BadRequestError with the provider's missing_api_base_message.
+    proof: [prepare-call-validation]
+  - text: >-
+      When api_key resolves to None and the provider requires one, prepare_call raises AuthenticationError with message "Missing API key for Decisions provider 'X'".
+    proof: [prepare-call-validation]
+  - text: >-
+      When safety_identifier is provided but the provider does not support it and drop_params is false, prepare_call raises UnsupportedParamsError with message naming the provider and parameter.
+    proof: [prepare-call-safety-id]
+  - text: >-
+      When safety_identifier is provided but the provider does not support it and drop_params is true, prepare_call drops it from the request and continues successfully.
+    proof: [prepare-call-safety-id]
+  - text: >-
+      reject_other_format raises BadRequestError with message "Requests with 'X' go through litellm.Y" when a mismatched field appears in the request.
+    proof: [reject-other-format]
+  - text: >-
+      SystemOne and OpenAI request formats are validated through separate TypeAdapter instances that match LiteLLM's Pydantic models exactly.
+    proof: [request-format-validation]
+  - text: >-
+      DecisionsCall fields carry the original request model, canonical model, provider name, provider config reference, validated request, IR request, transformed body, resolved credentials, headers, timeout and litellm_params.
+    proof: [decisions-call-fields]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: providers-list
+      why: >-
+        supported_decisions_providers is missing or does not return all provider names in the correct order
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::providers/)'
+    - id: prepare-call-success
+      why: >-
+        prepare_call is missing, does not construct DecisionsCall objects, or does not resolve credentials and call prepare
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::prepare_call_success/)'
+    - id: prepare-call-validation
+      why: >-
+        prepare_call does not validate request fields, model names, provider existence, api_base/api_key resolution, or canonical_model errors
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::(validation|errors)/)'
+    - id: prepare-call-safety-id
+      why: >-
+        prepare_call does not drop safety_identifier when unsupported and drop_params is true, or does not raise UnsupportedParamsError when drop_params is false
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::safety_identifier/)'
+    - id: reject-other-format
+      why: >-
+        reject_other_format is missing or does not raise BadRequestError with the correct message for mismatched request formats
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::reject_format/)'
+    - id: request-format-validation
+      why: >-
+        SystemOne and OpenAI request formats are not validated through TypeAdapter or validation fails incorrectly
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::request_format/)'
+    - id: decisions-call-fields
+      why: >-
+        DecisionsCall is missing, does not carry all required fields, or fields are not set correctly
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::fields/)'
+
+oracle_cases: []
+
+deviations:
+  - what: drop_params is checked as `litellm.drop_params is True or normalize_drop_params(kwargs.get("drop_params")) is True` using the same normalization LiteLLM does.
+    why: betterlite follows LiteLLM's parameter dropping logic exactly, allowing both module-level and per-call drop_params settings.
+
+out_of_scope:
+  - B3514 owns sending the DecisionsCall (asend and send functions, handler calls).
+  - B3515 owns the public decisions and systemone endpoint entrypoints that call prepare_call.
+  - Response formatting, exception mapping and response cost tracking are owned by B3514.
+  - Per-provider overrides of request transformation (beyond BaseDecisionsConfig) are owned by their respective provider tasks (B3511 TypeSafe, B3512 Strands, etc.).
+
+pitfalls:
+  - safety_identifier is dropped only when the provider does not support it AND (drop_params is true OR the field is not a string). If safety_identifier is a string and drop_params is false, UnsupportedParamsError is raised.
+  - canonical_model is a method on provider_config, not a standalone function; it may raise ValueError if the model is unmapped.
+  - Request field validation uses pydantic TypeAdapter with deny_unknown_fields, so unknown fields on the request envelope raise ValidationError.
+  - The drop_params setting is read from both litellm.drop_params (global) and kwargs.get("drop_params") (per-call); the normalize_drop_params function converts strings "true", "True", 1 to boolean.
+  - api_base_env and api_key_env are tuples of environment variable names; resolve_api_base and resolve_api_key iterate through them and return the first non-empty secret, or None if none are found or provided.
+  - Provider configs are looked up by provider name through ProviderConfigManager; an unmapped provider name returns None and triggers the "Unknown Decisions provider" error.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

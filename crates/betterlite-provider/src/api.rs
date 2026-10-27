@@ -16,3 +16,4 @@ pub mod transcription_http;
 pub mod vector_file_contracts;
 pub mod vector_query_embedding;
 pub mod vector_store_contracts;
+pub mod video_contracts;

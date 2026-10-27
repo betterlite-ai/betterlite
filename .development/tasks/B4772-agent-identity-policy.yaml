@@ -1,0 +1,136 @@
+id: B4772
+title: Managed identity binding and inference policy primitives
+description: >-
+  Build pure binding updates, subject classification, managed-route admission predicates and effective-model selection in the agent/auth policy layer. Preserve identity retirement, revision changes, legacy-field rejection, mode/scope/role checks and 403 versus policy-unavailable 503 conversion separate from storage and caller grants.
+
+  Legacy identity rejection: has_legacy_identity checks whether litellm_params.identity exists (not supported), reject_legacy_identity raises HTTPException 400 with constant message.
+
+  Identity binding writes: ManagedWriteFields and IdentityFields TypedDict structures preserve absent-versus-null. raise_identity_failure raises HTTPException 503 when code is "policy_unavailable", else 403 (default). _configuration_failure validates that autonomous mode requires service_principal_id and enabling without binding checks active identity exists. managed_write_fields processes incoming updates and existing agent state, returning ManagedWriteFields or AgentIdentityFailure. _identity_write constructs DB write operations: for identity=None, unbind by setting active=False and revision=uuid; for new identity, archive retired bindings and upsert identity fields.
+
+  Subject classification: classify_agent_subject validates JWT claims against binding (iss, tid, azp), extracts oid, checks scope claim for delegated grant, checks xms_sub_fct not user (13), validates required_scopes and required_roles are present, returns AgentSubject(kind="delegated_subject"|"application", oid, mode) or AgentIdentityFailure.
+
+  Route authorization: managed_agent_route_allowed checks route in agent management routes (/agents, /v1/agents), realtime routes, model-inference routes and MCP routes; method restrictions apply per route. managed_inference_request resolves effective model from body/path/query/settings using resolve_inference_model, with kind-specific routing (image_generation for /images/generations, speech for /audio/speech, completion as fallback for routes not in the kind map, body for rerank/decisions/systemone/messages_count_tokens routes, path for :countTokens).
+
+  Policy admission and invocation: managed_agent_policy(auth) returns the AgentResponse if auth is admitted as managed agent, None otherwise. actor_admission_failure checks agent enabled, identity present and active, context matches agent and binding revision, mode compatibility and delegated-mode user_id. invocation_target extracts agent_id from a2a/{agent_id} path routes or a2a/ model names in body.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/agent_identity.rs
+    - crates/betterlite-auth/src/agent_identity/**
+    - crates/betterlite-auth/src/agent_identity/tests.rs
+    - crates/betterlite-auth/src/agent_policy.rs
+    - crates/betterlite-auth/src/agent_policy/**
+    - crates/betterlite-auth/src/agent_policy/tests.rs
+    - crates/betterlite-auth/src/agent_identity/tests/**
+    - crates/betterlite-auth/src/agent_policy/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity.py#L1-17
+    why: has_legacy_identity and reject_legacy_identity functions with constant message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L22-65
+    why: IdentityFields, IdentityUpsert, IdentityRelationWrite, IdentityHistoryKey, IdentityHistoryEntry, IdentityHistoryWrite, ManagedWriteFields TypedDict structures with ReadOnly annotations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L68-85
+    why: raise_identity_failure raises 503 for policy_unavailable code else 403; _configuration_failure validates configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L88-119
+    why: managed_write_fields processes incoming and existing state, validates identity configuration, returns fields or failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L122-165
+    why: _identity_write unbinds (active=False), archives retired bindings, upserts identity with new revision uuid.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L168-202
+    why: classify_agent_subject validates claims against binding, checks scope and roles, returns AgentSubject or AgentIdentityFailure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L14-82
+    why: Frozensets of managed routes (realtime, model, MCP, agent inference) and model-route-kind mapping for inference request handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L85-96
+    why: managed_agent_route_allowed checks route, applies RouteChecks.check_route_access, method restrictions by route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L99-129
+    why: managed_inference_request resolves model from body/path/query, applies kind-specific logic, returns augmented body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L132-139
+    why: managed_agent_policy returns AgentResponse if admitted, None otherwise (predicate on auth.managed_agent_policy).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L192-206
+    why: actor_admission_failure checks enabled/identity/active/context match/mode/user_id (delegated).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L212-218
+    why: invocation_target extracts agent_id from a2a/{agent_id} path or model="a2a/..." body.
+
+dod:
+  - text: has_legacy_identity returns true when litellm_params contains "identity" key, false otherwise.
+    proof: [legacy-identity-tests]
+  - text: >-
+      reject_legacy_identity raises HTTPException 400 with exact message
+      "litellm_params.identity is not supported: bind an Entra application through the top-level identity field"
+      when identity is present.
+    proof: [legacy-identity-tests]
+  - text: raise_identity_failure raises HTTPException 503 when code is "policy_unavailable", else 403, with the failure message.
+    proof: [managed-identity-tests]
+  - text: _configuration_failure returns AgentIdentityFailure when autonomous mode lacks service_principal_id, or enabling without binding when identity is None or inactive.
+    proof: [managed-identity-tests]
+  - text: managed_write_fields validates incoming identity config, resolves execution_mode, checks configuration, returns ManagedWriteFields or AgentIdentityFailure.
+    proof: [managed-identity-tests]
+  - text: _identity_write unbinds (active=False, revision=uuid) when identity=None and existing identity exists; archives retired bindings when new identity provided.
+    proof: [managed-identity-tests]
+  - text: classify_agent_subject validates iss/tid/azp match binding fields, extracts oid, checks scope for delegated grant, validates required_scopes and required_roles, returns AgentSubject or AgentIdentityFailure.
+    proof: [managed-identity-tests]
+  - text: managed_agent_route_allowed returns true for /agents /v1/agents GET/HEAD, realtime routes GET, model routes POST, MCP routes, with RouteChecks.check_route_access for path patterns.
+    proof: [route-auth-tests]
+  - text: managed_inference_request resolves model from body/path/query/settings with kind-specific logic, returns augmented body with effective model.
+    proof: [route-auth-tests]
+  - text: managed_agent_policy returns AgentResponse when auth.managed_agent_policy is admitted, None otherwise.
+    proof: [route-auth-tests]
+  - text: actor_admission_failure returns AgentIdentityFailure when agent disabled, identity absent or inactive, context null when required, agent_id or revision mismatch, mode incompatible, or delegated without user_id.
+    proof: [policy-tests]
+  - text: invocation_target extracts agent_id from /a2a/{agent_id} routes or model="a2a/agent-name" body.
+    proof: [policy-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: legacy-identity-tests
+      why: has_legacy_identity or reject_legacy_identity functions missing or do not handle legacy identity correctly.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_identity::.*legacy/)'
+    - id: managed-identity-tests
+      why: managed_identity module missing, fails to process writes, classify subjects or handle failures.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_identity::.*managed/)'
+    - id: route-auth-tests
+      why: route authorization or inference request handling missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_policy::.*route/)'
+    - id: policy-tests
+      why: policy admission or invocation target extraction missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_policy::.*policy/)'
+
+oracle_cases: []
+
+deviations:
+  - what: raise_identity_failure raises HTTPException with 503 for policy_unavailable code, else 403; the status is determined by code, not caller preference.
+    why: LiteLLM distinguishes policy unavailable (managed agent requires database) from authentication failures; 503 signals temporary service state, 403 signals caller authorization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L68-69
+  - what: managed_write_fields validates configuration and returns either ManagedWriteFields dict or AgentIdentityFailure enum (Result-like union).
+    why: Rust's type system requires named union or Result; LiteLLM uses duck typing. Both raise on error; betterlite returns both results for caller flexibility (write preparation vs validation).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L88-119
+  - what: Managed routes are computed at startup as frozensets and patterns, not at request time; RouteChecks.check_route_access is a synchronous function available from B882.
+    why: Rust prefers compile-time/startup collection over runtime evaluation; avoiding repeated iteration over route lists on hot paths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L14-45
+
+out_of_scope:
+  - Database storage of bindings, retirements and identity records. B4773 owns the identity store and persistence.
+  - Caller grants and access-group resolution. B4778, B4779, B4780 own those.
+  - HTTP routes and endpoint handlers. B4781, B4785 own managed admission and mutation routes.
+  - Agent registry operations. B4776 owns registry reconciliation.
+  - Request admission itself (that is `admit_managed_actor` and `prepare_agent_invocation`). B4781 owns admission.
+  - MCP context and reload callees (G3 from outline).
+
+pitfalls:
+  - Binding revision must be a uuid4 string; generate fresh on every identity upsert so identity changes are detectable.
+  - classify_agent_subject checks iss, tid, azp against binding issuer, tenant_id, client_id; a mismatch means token issued elsewhere (403 identity_denied).
+  - scope claim is space-separated string of delegated scopes; scope present + allowed_mode == "autonomous" fails as a contradiction (also when oid equals service_principal_id or idtyp == "app"); scope absent + allowed_mode == "delegated" is the symmetric contradiction.
+  - roles claim is a list in application tokens; required_roles is a tuple/frozenset; the subset check must match exactly.
+  - xms_sub_fct = "13" in MSA user tokens; its presence with managed identity binding fails (native user auth unsupported).
+  - managed_inference_request returns augmented body dict; do not mutate the original.
+  - managed_agent_route_allowed is a pure boolean predicate; it does not raise or log.
+  - managed_agent_policy is a read-only accessor on auth; do not assign to it here (admission does that in B4781).
+  - invocation_target returns agent_id if found, None otherwise; empty string in path is None.
+  - actor_admission_failure returns None on success, AgentIdentityFailure on any check fail; the caller raises or continues based on None.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

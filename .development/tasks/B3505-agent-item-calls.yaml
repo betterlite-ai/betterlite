@@ -1,0 +1,127 @@
+id: B3505
+title: Retrieve delete and list versions of managed agents
+description: >-
+  Expose the remaining sync/async named-agent operations, keeping name-based error/log metadata
+  and the explicit default provider. Implement aget, get, adelete, delete, alist_versions and
+  list_versions entry points. Each pair follows the async-to-sync pattern: the async variant
+  calls loop.run_in_executor with a context copy forwarding to its sync counterpart, passing
+  an operation-specific flag in kwargs. Both sync and async return typed results from agents.types
+  (AgentCreateResponse for get, AgentDeleteResult for delete, AgentVersionsResponse for list_versions).
+  Default provider is Gemini when absent from args or kwargs.custom_llm_provider. All three operations
+  acquire the agents config through B3501's _get_agents_api_config and build logging metadata
+  with operation name (get_agent, delete_agent, list_agent_versions) and name as the optional
+  param. Delegate HTTP work to B3502 (get_agent) or B3503 (delete_agent, list_agent_versions).
+  Wrap exceptions through litellm.exception_type with the agent name (not empty string) as model,
+  provider and original exception. Implement the six functions in crates/betterlite-core/src/api/agents.rs
+  and their Rust/Python oracle adapters.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/agents/item.rs
+    - crates/betterlite-core/src/api/agents/item/**
+    - tools/oracle/helpers/b3505.py
+    - tools/oracle/helpers/b3505/**
+    - tools/oracle/src/helpers/core_ops/b3505.rs
+    - tools/oracle/src/helpers/core_ops/b3505/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L280-L350
+    why: get and aget implementations with async-to-sync forwarding, contextvars pattern and provider defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L357-L427
+    why: delete and adelete implementations with async-to-sync forwarding and named exception metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L434-L503
+    why: list_versions and alist_versions implementations with async pattern, version listing and name metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L213-L286
+    why: get_agent HTTP method that B3505 calls for retrieval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L292-L444
+    why: delete_agent and list_agent_versions HTTP methods that B3505 calls for deletion and version listing.
+
+dod:
+  - text: >-
+      Sync and async get/delete/list_versions operations match LiteLLM on the HTTP request sent
+      upstream (method, path, body, headers) and on typed response.
+    proof:
+      - oracle
+  - text: >-
+      Default provider is Gemini; when absent from args or kwargs.custom_llm_provider, all six
+      calls use "gemini".
+    proof:
+      - behavior-tests
+  - text: >-
+      Agent name is forwarded into the logging object's optional_params dict under the key "name"
+      before HTTP delegation.
+    proof:
+      - behavior-tests
+  - text: >-
+      All three operations call B3501's _get_agents_api_config and _make_logging_obj with the
+      operation call_type (get_agent, delete_agent, list_agent_versions) and name as the
+      optional param.
+    proof:
+      - behavior-tests
+  - text: >-
+      Exceptions wrap the original error through litellm.exception_type with the agent name
+      (not empty string) as the model, the provider and completion/extra kwargs.
+    proof:
+      - behavior-tests
+  - text: >-
+      Async variants delegate to their sync counterparts using loop.run_in_executor with
+      contextvars.copy_context, passing an operation-specific flag (aget_agent, adelete_agent,
+      alist_agent_versions) in kwargs.
+    proof:
+      - behavior-tests
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Get/delete/list_versions operations fail to delegate, handle exceptions or match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^agent_item_calls(::|$)/) - test(/replays_the_.*_corpus/)'
+
+oracle_cases:
+  - tools/oracle/cases/agents/item-get-basic.yaml
+  - tools/oracle/cases/agents/item-get-with-name-metadata.yaml
+  - tools/oracle/cases/agents/item-delete-basic.yaml
+  - tools/oracle/cases/agents/item-delete-with-name-metadata.yaml
+  - tools/oracle/cases/agents/item-list-versions-basic.yaml
+  - tools/oracle/cases/agents/item-list-versions-with-pagination.yaml
+  - tools/oracle/cases/agents/item-provider-absent-defaults-gemini.yaml
+  - tools/oracle/cases/agents/item-unsupported-provider-error.yaml
+  - tools/oracle/cases/agents/item-http-error-wrapping.yaml
+  - tools/oracle/cases/agents/item-async-get-delegates-to-sync.yaml
+  - tools/oracle/cases/agents/item-async-delete-delegates-to-sync.yaml
+  - tools/oracle/cases/agents/item-async-list-versions-delegates-to-sync.yaml
+
+deviations: []
+
+out_of_scope:
+  - B3501 owns provider/logging setup (_get_agents_api_config, _make_logging_obj).
+  - B3502 owns get_agent HTTP handler.
+  - B3503 owns delete_agent and list_agent_versions HTTP handlers.
+  - B185/B186 exception_type construction; this task only calls it.
+  - B198 timeout/context propagation; this task forwards kwargs unmodified.
+  - Async infrastructure (@client decorator, contextvars, executor) reused from betterlite's own patterns.
+
+pitfalls:
+  - >-
+    Agent name is the primary operation identifier and must be available before HTTP delegation
+    for use in logging and exception construction. Default provider assignment (to "gemini" when
+    absent) happens in both async and sync paths through the parameter or kwargs.get pattern,
+    ensuring both name and provider are available for these metadata fields.
+  - >-
+    Agent name is operation metadata, not the model name. Exception construction and logging
+    both use the agent name passed to the function, not an empty string or provider name.
+    All six operations pass name as the sole optional_param in _make_logging_obj.
+  - >-
+    Async wrappers use loop.run_in_executor with partial(ctx.run, func) where ctx is
+    contextvars.copy_context(). The pattern reuses the existing client decorator lifecycle,
+    not reimplemented async/sync wrappers or context copying on the sync side.
+  - >-
+    The three operation flags (aget_agent, adelete_agent, alist_agent_versions) are popped
+    from kwargs before HTTP delegation, not passed downstream. Each async variant checks for
+    its flag and routes to either the executor path (if true) or direct return (if coroutine).
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

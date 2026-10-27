@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Managed identity binding and inference policy primitives
 status: todo
 depends_on: [B4770, B732, B882, B1102]
-file: null
+file: tasks/B4772-agent-identity-policy.yaml
 covers:
   - "litellm/proxy/agent_endpoints/identity.py"
   - "litellm/proxy/agent_endpoints/managed_identity.py"

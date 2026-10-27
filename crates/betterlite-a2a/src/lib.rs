@@ -1,4 +1,11 @@
+pub mod agent_card;
 pub mod client;
+pub mod completion_bridge;
+pub mod langflow_config;
+pub mod logging_context;
+pub mod provider_selector;
+pub mod send;
+pub mod streaming_iterator;
 pub mod version_convert;
 pub mod watsonx_credentials;
 pub mod watsonx_run;

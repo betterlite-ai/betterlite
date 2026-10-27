@@ -1,0 +1,236 @@
+id: B3243
+title: Policy and attachment persistence and refresh
+description: >-
+  Implement policy and attachment persistence operations in betterlite-db::policy_persistence,
+  providing database writes, reads and sync operations. Preserve config-defined policies when
+  syncing from the database, auto-promote production status only on creation, enforce draft-only
+  editing, and restore production registries before loading non-production versions by ID.
+
+  add_policy_to_db accepts PolicyCreateRequest and creates a new v1 production policy in the database,
+  then parses and adds it to the in-memory registry via _parse_policy and add_policy. Build the insertion data
+  with policy_name, version_number=1, version_status="production", is_latest=true, production_at=now,
+  guardrails_add/remove (default []), created_at/updated_at=now, and optional inherit/description/condition/pipeline
+  and created_by/updated_by fields. Validate pipeline as GuardrailPipeline if present and store its model_dump
+  as JSON. Return the database row converted to PolicyDBResponse.
+
+  update_policy_in_db accepts PolicyUpdateRequest and updates a draft-status policy. Fetch by policy_id,
+  and reject non-draft versions by raising Exception with message "Only draft versions can be updated. This policy has status '{status}'.".
+  (Note: the HTTP 400 response with different message is handled by the route handler in B3248; this function only raises the plain exception, which is re-wrapped
+  by the catch-all into "Error updating policy in DB: Only draft versions can be updated. This policy has status '{status}'.")
+  Build update data with updated_at=now and updated_by from supplied headers, including only non-None
+  fields from the request. Validate pipeline and store as JSON. Return the updated row as PolicyDBResponse.
+  Do not update the in-memory registry (drafts are not loaded).
+
+  delete_policy_from_db deletes by policy_id, fetches the version_status, and removes from in-memory registry
+  only if it was production via remove_policy. If the policy_id is not found, raise Exception with message "Policy with ID {policy_id} not found"
+  (which is re-wrapped by catch-all into "Error deleting policy from DB: Policy with ID {policy_id} not found").
+  If production was deleted and a config-defined policy of the same name exists, return 200 with warning "Production version was deleted. The config-defined policy with the same
+  name is active again.". If no config fallback, return warning "Production version was deleted. No other version
+  was promoted. Promote another version to production if this policy should remain active." Draft/published deletions
+  return success without warnings.
+
+  get_all_policies_from_db fetches from _policy_table with optional version_status filter, ordering descending
+  by created_at, returning list[PolicyDBResponse].
+
+  sync_policies_from_db loads production policies first, builds the _policies map with conflict resolution
+  (DB version wins), and preserves config snapshots in _sources. Then loads draft/published policies into
+  _policies_by_id by policy_id for request-body overrides, mapping policy_id→(policy_name, policy object).
+  Set _initialized=true after loading. Log the counts: "Synced N production policies and M draft/published
+  (by ID) from DB to in-memory registry (C config-defined policies preserved)".
+
+  resolve_guardrails_from_db fetches all production policies from the database, builds a temporary in-memory
+  map, and calls PolicyResolver.resolve_policy_guardrails to resolve the target policy. Return sorted(resolved.guardrails).
+
+  add_attachment_to_db accepts PolicyAttachmentCreateRequest, inserts into the database via PolicyAttachmentRepository,
+  adds to in-memory registry via add_attachment, and returns PolicyAttachmentDBResponse.
+
+  delete_attachment_from_db deletes by attachment_id and calls sync_attachments_from_db to refresh in-memory state
+  (in-memory attachments have no IDs, so sync is required). If the attachment_id is not found, raise Exception with message "Attachment with ID {attachment_id} not found"
+  (which is re-wrapped by catch-all into "Error deleting attachment from DB: Attachment with ID {attachment_id} not found").
+  Return {"message": "Attachment {id} deleted successfully"}.
+
+  get_attachment_by_id_from_db fetches by attachment_id, returning PolicyAttachmentDBResponse or None on miss.
+
+  get_all_attachments_from_db fetches all attachments ordered descending by created_at, returning list[PolicyAttachmentDBResponse].
+
+  sync_attachments_from_db loads all attachments from the database, converts to PolicyAttachment objects,
+  concatenates config-defined attachments first then database attachments, and stores in _attachments.
+  Set _initialized=true. Log "Synced N attachments from DB to in-memory registry (C config-defined attachments preserved)".
+
+  All database operations use existing table handles from B3242 (_policy_table, PolicyAttachmentRepository.table).
+  All operations accept PrismaClient and use async/await. Exceptions log via verbose_proxy_logger.exception
+  and re-raise as generic Exception with context. Preserve source partial-write behavior and config state
+  after database overrides.
+
+scope:
+  paths:
+    - crates/betterlite-db/src/policy_persistence.rs
+    - crates/betterlite-db/src/policy_persistence/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L381-L449
+    why: add_policy_to_db creates v1 production with inherited config parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L450-L512
+    why: update_policy_in_db draft-only validation and pipeline JSON serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L514-L562
+    why: delete_policy_from_db production removal and config fallback messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L606-L636
+    why: get_all_policies_from_db filtering and ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L637-L707
+    why: sync_policies_from_db production map first, then draft/published by ID, config preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L708-L759
+    why: resolve_guardrails_from_db temporary map and resolver usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L318-L386
+    why: add_attachment_to_db repository creation and in-memory registry sync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L387-L422
+    why: delete_attachment_from_db sync on removal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L423-L464
+    why: get_attachment_by_id_from_db retrieval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L465-L506
+    why: get_all_attachments_from_db ordering and list building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L507-L544
+    why: sync_attachments_from_db config preservation and ordering.
+
+dod:
+  - text: >-
+      add_policy_to_db creates a new production (v1, is_latest=true, version_status="production") policy,
+      parses and adds it to the in-memory registry, and returns the database row as PolicyDBResponse.
+    proof: [policy-creation-tests]
+  - text: >-
+      update_policy_in_db rejects non-draft versions by raising Exception with draft-only message, updates only
+      non-None fields with updated_at and updated_by, and returns the updated row as PolicyDBResponse.
+    proof: [policy-update-tests]
+  - text: >-
+      delete_policy_from_db removes from in-memory registry only for production, warns about config fallback
+      or promotion need, returns appropriate success message, and raises Exception with message
+      "Error deleting policy from DB: Policy with ID {policy_id} not found" when the policy_id does not exist.
+    proof: [policy-deletion-tests]
+  - text: >-
+      get_all_policies_from_db returns policies filtered by optional version_status, ordered descending
+      by created_at, as list[PolicyDBResponse].
+    proof: [policy-list-tests]
+  - text: >-
+      sync_policies_from_db loads production policies into _policies (with DB-wins conflict resolution),
+      then loads draft/published by policy_id into _policies_by_id, preserves config-defined policies,
+      and logs the sync counts.
+    proof: [policy-sync-tests]
+  - text: >-
+      resolve_guardrails_from_db builds a temporary in-memory policy map from production versions,
+      calls PolicyResolver.resolve_policy_guardrails, and returns sorted guardrails.
+    proof: [policy-resolve-tests]
+  - text: >-
+      add_attachment_to_db inserts attachment via PolicyAttachmentRepository, adds to in-memory registry,
+      and returns PolicyAttachmentDBResponse.
+    proof: [attachment-creation-tests]
+  - text: >-
+      delete_attachment_from_db deletes by attachment_id, syncs in-memory state, returns success message,
+      and raises Exception with message "Error deleting attachment from DB: Attachment with ID {attachment_id} not found" when the attachment_id does not exist.
+    proof: [attachment-deletion-tests]
+  - text: >-
+      get_attachment_by_id_from_db returns PolicyAttachmentDBResponse or None, properly handling database retrieval.
+    proof: [attachment-retrieval-tests]
+  - text: >-
+      get_all_attachments_from_db returns attachments ordered descending by created_at as list[PolicyAttachmentDBResponse].
+    proof: [attachment-list-tests]
+  - text: >-
+      sync_attachments_from_db concatenates config-defined attachments first, then database attachments,
+      and logs preservation counts.
+    proof: [attachment-sync-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: policy-creation-tests
+      why: Policy creation, in-memory parsing or production versioning is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::policy_creation::/)'
+    - id: policy-update-tests
+      why: Draft-only validation, field updates or status preservation is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::policy_update::/)'
+    - id: policy-deletion-tests
+      why: Production removal, config fallback messages or orphan warnings are missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::policy_deletion::/)'
+    - id: policy-list-tests
+      why: Policy filtering by version_status or ordering is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::policy_list::/)'
+    - id: policy-sync-tests
+      why: Production map first, draft/published by ID, or config preservation in sync is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::policy_sync::/)'
+    - id: policy-resolve-tests
+      why: Guardrail resolution from database or resolver integration is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::policy_resolve::/)'
+    - id: attachment-creation-tests
+      why: Attachment insertion, in-memory registry addition or response building is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::attachment_creation::/)'
+    - id: attachment-deletion-tests
+      why: Attachment deletion or in-memory sync on removal is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::attachment_deletion::/)'
+    - id: attachment-retrieval-tests
+      why: Attachment retrieval by ID or response building is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::attachment_retrieval::/)'
+    - id: attachment-list-tests
+      why: Attachment listing or ordering by created_at is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::attachment_list::/)'
+    - id: attachment-sync-tests
+      why: Attachment sync with config preservation or ordering is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_persistence::attachment_sync::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "All operations use async/await with PrismaClient passed as a parameter instead of a shared global."
+    why: "Explicit dependency injection enables testing without global state and supports multiple concurrent database contexts."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L381"
+  - what: "Pipeline validation uses the existing GuardrailPipeline type from B3240 instead of inlining validation."
+    why: "Reusing the shared type ensures consistency between creation, updates and the memory registry's parsing."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L424"
+  - what: "Exceptions are caught, logged via verbose_proxy_logger, and re-raised as generic Exception rather than custom error types."
+    why: "The source follows this pattern for consistency with the LiteLLM proxy codebase; error boundaries are defined by HTTP route handlers (B3248)."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L446"
+
+out_of_scope:
+  - "B3240 owns PolicyCondition, PolicyScope, PolicyGuardrails, Policy, PolicyAttachment, GuardrailPipeline validation and resolve_policy_guardrails."
+  - "B3241 owns _parse_policy, add_policy, remove_policy, add_attachment, config snapshot storage, and is_initialized/get_source accessors."
+  - "B3242 owns _policy_table, _policy_version_source_table, _row_to_policy_db_response, and the typed CRUD record definitions."
+  - "B726 owns PolicyRepository and PolicyAttachmentRepository table handles, create/update/delete/find_many operations and PrismaClient lifecycle."
+  - "B003 owns user_api_key_auth HTTP dependency and error boundary registration."
+  - "PolicyResolver.resolve_policy_guardrails is owned by B3240; this task calls it with a temporary policy map."
+
+pitfalls:
+  - >-
+    New policies are created with version_status="production" and is_latest=true on the first insertion; there is
+    no draft→production promotion on creation. version_number always starts at 1 for new policies.
+  - >-
+    update_policy_in_db is draft-only; any non-draft version raises Exception with message "Only
+    draft versions can be updated. This policy has status '{status}'.", which is re-wrapped into
+    "Error updating policy in DB: Only draft versions can be updated. This policy has status '{status}'."
+    The HTTP 400 response with a different message is handled by the route handler in B3248. Do not update config-defined policies.
+  - >-
+    delete_policy_from_db removes from in-memory registry only if version_status=="production". Draft and published
+    deletions do not affect the registry. No other version is auto-promoted; admin must explicitly promote via B3244.
+    When the policy_id is not found, raise Exception with the exact message "Policy with ID {policy_id} not found",
+    which is re-wrapped by catch-all into "Error deleting policy from DB: Policy with ID {policy_id} not found".
+  - >-
+    sync_policies_from_db publishes production policies into _policies first (with DB-wins conflict resolution),
+    then loads draft/published by policy_id into _policies_by_id. This order ensures request-body policy_<uuid>
+    overrides find the non-production version without needing a second database fetch.
+  - >-
+    The _policies_by_id map uses policy_id as key, storing (policy_name, policy object) tuples. Request-body
+    overrides use this for non-production versions; production uses the _policies by-name map.
+  - >-
+    Config-defined policies are preserved during sync by reading _config_policies and _config_attachments. Log when
+    a policy name exists in both config and database; the database version takes precedence. Never remove config-defined
+    policies from the registry, only override their entries.
+  - >-
+    delete_attachment_from_db must call sync_attachments_from_db after deletion because in-memory attachments do not
+    carry attachment_id; resync rebuilds the list from the database to maintain consistency.
+    When the attachment_id is not found, raise Exception with the exact message "Attachment with ID {attachment_id} not found",
+    which is re-wrapped by catch-all into "Error deleting attachment from DB: Attachment with ID {attachment_id} not found".
+  - >-
+    resolve_guardrails_from_db loads only production policies to avoid circular/override inheritance issues when
+    resolving a non-production target. The temporary map is discarded after resolution.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
