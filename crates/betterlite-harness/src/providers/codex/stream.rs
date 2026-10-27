@@ -14,12 +14,13 @@ pub struct CodexStreamState {
 }
 
 pub(super) fn object(value: Option<&Value>) -> Option<JsonObject> {
-    value.and_then(Value::as_object).map(|value| {
+    let object = value.and_then(Value::as_object).map(|value| {
         value
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect()
-    })
+    });
+    object
 }
 
 pub(super) fn tool_input(item: &JsonObject) -> (String, String, JsonObject, bool) {

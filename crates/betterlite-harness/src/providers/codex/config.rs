@@ -21,11 +21,12 @@ const MANAGED_CONFIG_KEYS: [&str; 8] = [
 ];
 
 pub(super) fn mismatch() -> HarnessError {
-    HarnessError::OptionsMismatch {
+    let error = HarnessError::OptionsMismatch {
         given: "CodexOptions.config",
         harness: Harness::Codex,
         expected: "valid Codex configuration",
-    }
+    };
+    error
 }
 
 pub fn toml_key(key: &str) -> String {
@@ -68,7 +69,7 @@ pub fn toml_value(value: &Value, depth: usize) -> Result<String, HarnessError> {
 }
 
 pub fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError> {
-    config
+    let overrides = config
         .iter()
         .map(|(key, value)| {
             let first = key.split('.').next().unwrap_or_default();
@@ -77,14 +78,16 @@ pub fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError
             }
             Ok(format!("{}={}", key, toml_value(value, 0)?))
         })
-        .collect()
+        .collect();
+    overrides
 }
 
 pub(super) fn pairs(flag: &str, values: &[String]) -> Vec<String> {
-    values
+    let pairs = values
         .iter()
         .flat_map(|value| [flag.to_owned(), value.clone()])
-        .collect()
+        .collect();
+    pairs
 }
 
 pub(super) fn provider_overrides<S>(

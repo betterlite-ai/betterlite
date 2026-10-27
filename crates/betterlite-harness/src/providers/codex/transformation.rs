@@ -71,12 +71,13 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
     {
         let gateway = context.settings.gateway.as_ref().ok_or_else(mismatch)?;
         let mut setup = HarnessSessionSetup {
+            files: BTreeMap::new(),
             persisted_dirs: vec![PersistedDir {
                 private_path: "sessions".to_owned(),
                 cache_path: "codex/sessions".to_owned(),
             }],
             skills_dir: Some("skills".to_owned()),
-            ..HarnessSessionSetup::default()
+            env: BTreeMap::new(),
         };
         if let Some(schema) = context.settings.output_schema.as_ref() {
             let strict = strict_json_schema(
