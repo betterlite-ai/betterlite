@@ -29,7 +29,9 @@ pub struct SensitiveDataMasker {
 impl SensitiveDataMasker {
     #[must_use]
     pub fn new() -> Self {
-        Self::with_patterns(Vec::<String>::new(), ["cost"])
+        let extra_patterns = Vec::<String>::new();
+        let overrides = ["cost"];
+        Self::with_patterns(extra_patterns, overrides)
     }
 
     pub fn with_patterns<I, J>(extra_patterns: I, overrides: J) -> Self
@@ -136,7 +138,7 @@ impl SensitiveDataMasker {
             let sensitive = self.is_sensitive_key(key, excluded_keys);
             masked.insert(
                 key.clone(),
-                self.mask_entry(
+                self.mask_nested(
                     value,
                     depth.saturating_add(1),
                     max_depth,
@@ -148,7 +150,7 @@ impl SensitiveDataMasker {
         Value::Object(masked)
     }
 
-    fn mask_entry(
+    fn mask_nested(
         &self,
         value: &Value,
         depth: usize,
@@ -158,47 +160,35 @@ impl SensitiveDataMasker {
     ) -> Value {
         match value {
             Value::Object(object) => self.mask_dict(object, depth, max_depth, excluded_keys),
-            Value::Array(values) => {
-                Value::Array(self.mask_sequence(values, depth, max_depth, excluded_keys, sensitive))
-            }
+            Value::Array(values) if depth >= max_depth => Value::Array(values.clone()),
+            Value::Array(values) => Value::Array(
+                values
+                    .iter()
+                    .map(|item| {
+                        self.mask_nested(
+                            item,
+                            depth.saturating_add(1),
+                            max_depth,
+                            excluded_keys,
+                            sensitive,
+                        )
+                    })
+                    .collect(),
+            ),
             _ if sensitive => Value::String(self.mask_value(&scalar_text(value))),
             Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
         }
-    }
-
-    fn mask_sequence(
-        &self,
-        values: &[Value],
-        depth: usize,
-        max_depth: usize,
-        excluded_keys: &[String],
-        sensitive: bool,
-    ) -> Vec<Value> {
-        if depth >= max_depth {
-            return values.to_vec();
-        }
-        values
-            .iter()
-            .map(|value| {
-                self.mask_entry(
-                    value,
-                    depth.saturating_add(1),
-                    max_depth,
-                    excluded_keys,
-                    sensitive,
-                )
-            })
-            .collect()
     }
 
     #[must_use]
     pub fn mask(&self, data: &Value) -> Value {
         match data {
             Value::Object(object) => self.mask_dict(object, 0, DEFAULT_MASK_DEPTH, &[]),
-            Value::Array(values) => {
-                Value::Array(self.mask_sequence(values, 0, DEFAULT_MASK_DEPTH, &[], false))
-            }
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => data.clone(),
+            Value::Array(_)
+            | Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_) => self.mask_nested(data, 0, DEFAULT_MASK_DEPTH, &[], false),
         }
     }
 }
@@ -220,7 +210,12 @@ fn scalar_text(value: &Value) -> String {
 
 #[must_use]
 pub fn mask_sensitive_structure(data: &Value) -> Value {
-    SensitiveDataMasker::error_masker().mask(data)
+    let masker = SensitiveDataMasker::error_masker();
+    if data.is_null() {
+        Value::Null
+    } else {
+        masker.mask(data)
+    }
 }
 
 #[must_use]

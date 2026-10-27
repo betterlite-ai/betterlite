@@ -39,17 +39,21 @@ pub fn redact_credentials_in_payload(data: &Value) -> Value {
 }
 
 fn redact_mapping(data: &Map<String, Value>, depth: usize) -> Value {
-    Value::Object(
-        data.iter()
-            .map(|(key, value)| (key.clone(), redact_entry(key, value, depth)))
-            .collect(),
-    )
+    let entries = data
+        .iter()
+        .map(|(key, value)| (key.clone(), redact_entry(key, value, depth)))
+        .collect();
+    Value::Object(entries)
 }
 
 fn redact_entry(key: &str, value: &Value, depth: usize) -> Value {
     if !value.is_null() && SensitiveDataMasker::new().is_sensitive_key(key, &[]) {
         return Value::String(REDACTED.to_owned());
     }
+    redact_value(value, depth)
+}
+
+fn redact_value(value: &Value, depth: usize) -> Value {
     match value {
         Value::Object(object) if depth < DEFAULT_REDACT_DEPTH => {
             redact_mapping(object, depth.saturating_add(1))
@@ -57,24 +61,10 @@ fn redact_entry(key: &str, value: &Value, depth: usize) -> Value {
         Value::Array(values) if depth < DEFAULT_REDACT_DEPTH => Value::Array(
             values
                 .iter()
-                .map(|item| redact_sequence_entry(item, depth.saturating_add(1)))
+                .map(|item| redact_value(item, depth.saturating_add(1)))
                 .collect(),
         ),
         Value::Object(_) | Value::Array(_) => Value::String(REDACTED.to_owned()),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
-    }
-}
-
-fn redact_sequence_entry(value: &Value, depth: usize) -> Value {
-    match value {
-        Value::Object(object) => redact_mapping(object, depth),
-        Value::Array(values) if depth < DEFAULT_REDACT_DEPTH => Value::Array(
-            values
-                .iter()
-                .map(|item| redact_sequence_entry(item, depth.saturating_add(1)))
-                .collect(),
-        ),
-        Value::Array(_) => Value::String(REDACTED.to_owned()),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
     }
 }
