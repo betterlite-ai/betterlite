@@ -1,0 +1,5 @@
+task: B214
+deviations:
+  - what: Ollama image inputs are copied as supplied inline values and HTTP URLs are not downloaded.
+    why: The task explicitly defers URL acquisition to the shared SSRF-safe decision from B177/B183.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L176-L194
