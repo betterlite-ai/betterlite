@@ -1,24 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Number;
 pub const REVERSE_MAP_KEY: &str = "_anthropic_tool_name_map";
 const MAX_TOOL_NAME_LENGTH: usize = 128;
 
 pub type ToolName = String;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum AdditionalJson {
-    Null,
-    Bool(bool),
-    Number(Number),
-    Text(String),
-    Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
-}
-
-pub type AdditionalFields = BTreeMap<String, AdditionalJson>;
+#[expect(
+    clippy::disallowed_types,
+    reason = "serde_json::Value preserves provider fields not modeled by this adapter"
+)]
+pub type AdditionalFields = BTreeMap<String, serde_json::Value>;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub struct ToolNameMaps {
