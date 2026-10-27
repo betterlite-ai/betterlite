@@ -19,6 +19,8 @@ use std::{fs, path::PathBuf};
 )]
 #[case::ollama_trailing_arguments(r#"[{"role":"assistant","content":"a","tool_calls":[{"id":"i","type":"function","function":{"name":"f","arguments":"{} false"}}]}]"#, None)]
 #[case::ollama_ignore_parts(r#"[{"role":"user","content":[{"type":"unknown","text":"drop"},{"type":"text"},{"type":"image_url"}]},{"role":"system","content":[{"type":"image_url","image_url":"ignored"}]},{"role":"assistant","content":[{"type":"unknown","text":"kept"}]}]"#, None)]
+#[case::numbers(r#"[{"role":"assistant","content":"","tool_calls":[{"id":"i","type":"function","function":{"name":"f","arguments":"{\"small\":1e-5,\"large\":1e16,\"overflow\":1e400,\"int\":999999999999999999999999999,\"zero\":-0}"}}]}]"#, Some(r####"{"prompt":"### Assistant:\nTool Calls: [\n  {\n    \"id\": \"i\",\n    \"type\": \"function\",\n    \"function\": {\n      \"name\": \"f\",\n      \"arguments\": {\n        \"small\": 1e-05,\n        \"large\": 1e+16,\n        \"overflow\": Infinity,\n        \"int\": 999999999999999999999999999,\n        \"zero\": 0\n      }\n    }\n  }\n]\n\n","images":[]}"####))]
+#[case::nonstandard_number(r#"[{"role":"assistant","content":"","tool_calls":[{"id":"i","type":"function","function":{"name":"f","arguments":"NaN"}}]}]"#, None)]
 fn builtin_prompts_behavior_tests_behavior(#[case] wire: &str, #[case] expected: Option<&str>) {
     let messages: Vec<Message> = serde_json::from_str(wire).unwrap();
     let actual = ollama("injected-model", &messages);

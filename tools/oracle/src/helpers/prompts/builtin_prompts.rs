@@ -91,3 +91,5 @@ fn failure(error: &PromptError) -> Box<HelperError> {
         message: error.to_string(),
     })
 }
+
+mod tests;
