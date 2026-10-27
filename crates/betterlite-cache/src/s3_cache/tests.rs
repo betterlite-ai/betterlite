@@ -31,7 +31,7 @@ async fn configured_transport_reads_response() {
     let cache = S3Cache::new_async(&config.sections.s3_response_cache).await;
     let server = async {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = [0; 8192];
+        let mut request = vec![0; 8192];
         let count = stream.read(&mut request).await.unwrap();
         assert!(count > 0);
         stream
