@@ -1,0 +1,160 @@
+id: B4712
+title: MCP persistent writes, drafts and server deletion
+description: >-
+  Build persistent MCP server writes, draft lifecycle, and safe server deletion in betterlite-server::mcp::server_writes.
+  Implement create_mcp_server, create_mcp_server_if_identifier_free, create_draft_mcp_server, update_mcp_server,
+  delete_mcp_server, and supporting functions that manage the LiteLLM_MCPServerTable with full encryption lifecycle,
+  advisory-lock collision detection on server_name/alias, draft TTL expiry, and per-user credential/OAuth cleanup
+  on delete. Preserve LiteLLM's behavior on partial updates (exclude_unset semantics so omitted fields keep DB values),
+  identifier-free inserts via advisory locks, draft-row transience (create-if-absent and prune-on-write), OAuth token
+  purge on identity-change, and soft-error handling for orphaned credential cleanup. Support config keys
+  litellm.mcp_tool_search, litellm_settings.mcp_tool_search for search config with top_k (default 5, range 1–100),
+  similarity_threshold (default 0, range 0–1), embedding_model absent by default, and core_tools empty by default.
+  Preserve legacy JSON coerce_top_k fallback. Encrypt global-scoped env vars at rest and manage credentials blob
+  migration on auth_type changes. Database operations use Prisma transactions with pg_advisory_xact_lock for
+  collision detection and best-effort cleanup on delete (credential rows, env var rows, OAuth client rows, token cache
+  invalidation).
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/server_writes.rs
+    - crates/betterlite-server/src/mcp/server_writes/**
+    - tools/oracle/cases/mcp-server/**
+    - tools/oracle/helpers/b4712.py
+    - tools/oracle/helpers/b4712/**
+    - tools/oracle/src/helpers/server/b4712.rs
+    - tools/oracle/src/helpers/server/b4712/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L320-L424
+    why: _prepare_mcp_server_data serializes request payload to DB format with JSON field handling and encryption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L426-L472
+    why: encrypt_credentials encrypts specific secret fields (auth_value, client_id, client_secret, AWS keys).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L516-L565
+    why: Identifier conflict detection case-insensitive on server_name and alias, excluding draft rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L623
+    why: Advisory lock-based write with collision check and transaction boundary enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L954-L974
+    why: create_mcp_server with UUID generation, audit fields, and env var decryption on returned row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L976-L1011
+    why: create_mcp_server_if_identifier_free returns conflict or created row; races resolved by advisory lock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1013-L1053
+    why: create_draft_mcp_server with TTL expiry, create-if-absent, and race recovery logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1055-L1075
+    why: _prune_expired_draft_mcp_servers deletes drafts past TTL; age checked after fetch, not in query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1143-L1272
+    why: update_mcp_server with exclude_unset partial update, auth_type change handling, and credential merge logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1103-L1141
+    why: _update_mcp_server_row with advisory lock for identifier rewrites; alias-clear special case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L886-L952
+    why: delete_mcp_server with best-effort cleanup, token cache invalidation per credential user, and soft error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1326-L1379
+    why: rotate_mcp_server_credentials_master_key re-encrypts server and OAuth client credential blobs and env vars.
+dod:
+  - text: >-
+      create_mcp_server inserts a row with server_id auto-generated if absent, audit fields created_by/updated_by
+      set, and env var decryption on returned row so ciphertext is not exposed.
+    proof: [behavior-tests]
+  - text: >-
+      create_mcp_server_if_identifier_free returns the created row or McpIdentifierConflict when server_name/alias
+      collide case-insensitively with any non-draft live row; advisory locks prevent race conditions.
+    proof: [behavior-tests]
+  - text: >-
+      create_draft_mcp_server creates a short-lived draft with approval_status=draft, implements create-if-absent
+      (returns existing without overwriting), prunes expired drafts on write, and recovers from concurrent create races.
+    proof: [behavior-tests]
+  - text: >-
+      update_mcp_server uses exclude_unset so omitted fields keep their DB value (not reset to schema defaults);
+      alias=None clears it, allowed_tools=None becomes [], and null JSON maps become {}.
+    proof: [behavior-tests]
+  - text: >-
+      update_mcp_server detects auth_type changes and url/issuer changes; on change, clears auth-flow-scoped fields
+      unless the caller re-submitted them, and drops stale minted tokens on client rotation.
+    proof: [behavior-tests]
+  - text: >-
+      update_mcp_server merges new credentials with existing when auth_type is unchanged (for partial updates); on
+      auth_type change, replaces entirely except within client-forwarded class (true_passthrough/oauth_delegate).
+    proof: [behavior-tests]
+  - text: >-
+      Token-exchange settings migrated from legacy credential blob to dedicated columns on every write; cleared
+      columns never repopulate from stale blob copies.
+    proof: [behavior-tests]
+  - text: >-
+      delete_mcp_server removes the row (commit point), enumerates per-user credential/env var/OAuth client rows,
+      invalidates token cache per enumerated user, and handles failures in enumeration and cleanup with best-effort
+      logging instead of raising.
+    proof: [behavior-tests]
+  - text: >-
+      Global-scoped env vars encrypted at rest before storage; per-user placeholder vars stored plaintext and are
+      not secrets. On read, failed decryption logs warning and drops ciphertext so it is never sent upstream.
+    proof: [behavior-tests]
+  - text: >-
+      Identifier collision detection case-insensitive on both server_name and alias, excluding draft rows and
+      respecting exclude_server_id for updates; advisory locks keyed by normalized identifier.
+    proof: [behavior-tests]
+  - text: >-
+      Draft lifecycle: create-if-absent (no overwrite), TTL expiry pruned on write, age enforced in query not by
+      sweeper, and two workers sweeping same row is safe (delete returns None for missing row).
+    proof: [behavior-tests]
+  - text: >-
+      New oracle helper operation for server_writes integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Create, update, delete and draft logic must operate on live database rows with encryption, locking and cleanup.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_writes::/) - test(/replays_corpus$/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4712.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/server-writes-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+deviations:
+  - what: betterlite stores encrypted credentials in the LiteLLM_MCPServerTable.credentials JSON blob using the
+      same format as LiteLLM. However, Rust struct serialization and field selection differ from Python's dict
+      iteration. encrypt_credentials is called explicitly on payload construction; Python merges encrypted dicts.
+    why: Rust requires type-safe credential structures. betterlite's encryption happens at the boundary (request
+      deserialization), not on every field operation, so the merge-and-encrypt order is the same but the code path differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L426-L472
+  - what: Advisory lock keys are Blake2b hashes of lowercased identifiers, not CRC32 or similar. Lock order is
+      deterministic (sorted identifiers) to prevent deadlock.
+    why: Rust's hashlib integration and integer ordering guarantee deadlock-free locks. Python uses different hash
+      functions and does not guarantee order. betterlite's approach is more robust.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L594
+  - what: delete_mcp_server token cache invalidation is injected; the default is the manager's shared invalidate
+      function, not a global reference.
+    why: Rust avoids module-level state. Dependency injection is explicit and testable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L886-L951
+out_of_scope:
+  - OAuth token refresh, binding validation, and upstream token requests; those belong to B4715 (MCP OAuth token refresh, resolution and invalidation)
+  - MCP server reads (get_all_mcp_servers, get_mcp_server, get_mcp_servers), approval workflow (approve_mcp_server, reject_mcp_server, get_mcp_submissions) and pinned tools management (set_mcp_server_pinned_tools); owned by B4711 (MCP table access, identifier locks and server reads)
+  - Per-user credential and environment variable I/O (get_user_credential, store_user_oauth_credential, etc.); those belong in their own tasks
+  - Config loading and resolution of config keys (litellm.mcp_tool_search); config integration belongs to B002
+  - Search ranking and semantic indexing; owned by B4684 (mcp_search_primitives) and B4261 (semantic_text_ranking)
+  - Manager startup wiring and route handlers; those belong to the endpoint task B4686 or manager setup
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b4712 in the server group. Replace the stub Op in tools/oracle/src/helpers/server/b4712.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b4712.py. The registry files are not this task''s to edit.'
+  - 'exclude_unset=True makes update_mcp_server a true partial update; omitted fields in the request are not written and keep their stored DB value. This is different from exclude_none, which would still apply schema defaults to non-Optional fields.'
+  - 'alias clearing (alias=None or missing on update) must check the existing server_name too, as the edit form submits all fields unchanged; clearing alias drops the prefix to the server_name, which may collide with another row.'
+  - 'Draft rows back the transient OAuth authorize flow and have approval_status=draft. Never return drafts in get_all_mcp_servers (the public listing); only get_draft_mcp_server with TTL checks reads them.'
+  - 'Advisory locks are keyed by Blake2b(identifier.lower()), not the identifier itself, and must be sorted to prevent deadlock. Two concurrent writes for the same pair lock in the same order.'
+  - 'Token-exchange settings (token_exchange_endpoint, audience, subject_token_type, token_exchange_profile) lift from the credentials blob to dedicated columns on write, and the blob copy is stripped. Read-time fallback (column or blob) only serves pre-migration rows.'
+  - 'Env var encryption: scope=global values are encrypted before storage; scope=user values are plaintext placeholders. On read, failed decryption logs warning and drops the value; do not forward ciphertext upstream.'
+  - 'On delete, per-user credential and env var rows have no FK cascade; they are cleaned up in a second pass. A failure there is logged and doesn''t fail the delete; token cache is invalidated per enumerated credential user.'
+  - 'Credentials merge: when auth_type is unchanged, new values override existing keys; existing keys not in the update are preserved. Client rotation additionally drops stale minted token keys (access_token, refresh_token, expires_in) from the old app.'
+  - 'The audit fields created_by and updated_by are required on create and update; touched_by is provided by the caller (the authenticated user/admin).'
+  - 'Prisma''s Json type rejects raw None for nullable Json fields; use Json(None) to write SQL null.'
+review_level: security
+oracle_cases:
+  - tools/oracle/cases/mcp-server/create-basic.yaml
+  - tools/oracle/cases/mcp-server/create-identifier-conflict.yaml
+  - tools/oracle/cases/mcp-server/create-draft-lifecycle.yaml
+  - tools/oracle/cases/mcp-server/update-partial.yaml
+  - tools/oracle/cases/mcp-server/update-auth-type-change.yaml
+  - tools/oracle/cases/mcp-server/update-credential-merge.yaml
+  - tools/oracle/cases/mcp-server/delete-with-cleanup.yaml
+  - tools/oracle/cases/mcp-server/env-var-encryption.yaml
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

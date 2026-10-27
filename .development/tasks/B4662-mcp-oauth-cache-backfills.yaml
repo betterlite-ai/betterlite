@@ -1,0 +1,372 @@
+id: B4662
+title: MCP legacy OAuth cache and persisted configuration backfills
+description: >-
+  Build the legacy OAuth token caching layer for MCP servers configured with client credentials,
+  plus startup backfills that heal persisted oauth2_flow and issuer stamp rows created before the
+  write-side validations and migrations landed.
+
+  MCPOAuth2TokenCache is an in-memory cache for OAuth2 client_credentials tokens keyed by the
+  identity of the token request (server_id plus hash of token_url, client_id, client_secret,
+  scopes, upstream_resource, token_endpoint_auth_method), not by server_id alone. Caches per-identity
+  asyncio.Lock to prevent duplicate concurrent fetches. Inherits from LiteLLM's InMemoryCache for
+  TTL-based storage and eviction. async_get_token returns a valid access token, fast-path checking
+  the cache without locking, slow path acquiring the per-identity lock then double-checking before
+  fetching. _fetch_token POSTs to effective_token_url with grant_type=client_credentials, parses
+  expires_in from response (defaulting to MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL if missing or non-numeric),
+  applies MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS, and caps TTL to MCP_OAUTH2_TOKEN_CACHE_MIN_TTL.
+  invalidate removes every cached token for a server by prefix.
+
+  MCPPerUserTokenCache is Redis-backed storage for per-user OAuth2 access tokens using LiteLLM's
+  user_api_key_cache (DualCache with optional Redis) and NaCl encryption via encrypt_value_helper and
+  decrypt_value_helper. Cache keys are MCP_PER_USER_TOKEN_REDIS_KEY_PREFIX:user_id:server_id. Values are
+  OAuthToken encrypted via OAuthTokenCacheCodec. get_token returns OAuthToken or None; get returns
+  access_token string or None. set stores token with computed TTL; _compute_per_user_token_ttl uses
+  server.token_storage_ttl_seconds capped by token lifetime (expires_in minus MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS)
+  or falls back to MCP_PER_USER_TOKEN_DEFAULT_TTL. delete invalidates token in Redis and every peer worker's
+  in-memory layer via auth_cache_invalidation_pubsub.evict_and_broadcast.
+
+  oauth2_flow_backfill classifies every auth_type=oauth2 row whose oauth2_flow is null at startup,
+  stamping provable ones and warning on ambiguous ones. Flow is "authorization_code" or "client_credentials";
+  BackfillRule names which signal triggered the classification. Protocols _MCPServerRow, _MCPUserCredentialRow,
+  _MCPServerTable, _MCPUserCredentialsTable narrow the untyped Prisma client. _mcp_server_table and
+  _mcp_user_credentials_table return typed table accessors. classify_null_flow_row takes per-user_tokens flag
+  (whether any oauth2 type rows exist for the server), authorization_url, registration_url, token_url, and
+  credentials (MCPCredentials dict or None); returns (flow, rule) where flow is "authorization_code",
+  "client_credentials" or None, and rule names the signal. Signal order (strongest first): per_user_tokens
+  (interactive only), authorization_url (interactive requires endpoint), registration_url (DCR for interactive),
+  ambiguous_m2m_shape (M2M without authorization signal, left unstamped), interactive_default. Never stamps
+  client_credentials; M2M is asserted by human. backfill_null_oauth2_flows queries null rows, reads per-user
+  token rows to find which servers have interactive tokens, classifies each row, logs warnings for ambiguous,
+  updates stamped rows with oauth2_flow value and updated_by=oauth2_flow_backfill, returns dict of rule counts.
+
+  oauth_issuer_stamp_backfill heals rows whose issuer column was written by discovery (GH #34985), making
+  them issuer-anchored (RFC 8414 section 3.3), ignoring their configured endpoints, and fail-closed on
+  failed discovery. Deletes the write-back from code, but cannot fix rows already stamped. Heals those by
+  clearing the stamp via two narrow clauses: configured endpoints must be present (deliberate pins often have
+  none), and issuer origin must match configured endpoints' origins (admin intent that would be discarded).
+  Protocols _MCPServerRow narrows the row. _origin extracts scheme-and-authority identity using shared
+  canonicalize_url_identity. _is_stamped_issuer_row checks (updated_by == mcp_oauth_discovery, issuer set,
+  auth_type in oauth2/true_passthrough/oauth_delegate, endpoints present and origins match issuer).
+  backfill_discovery_stamped_issuers queries candidate rows, filters via _is_stamped_issuer_row, updates
+  issuer to None and updated_by=mcp_oauth_issuer_stamp_backfill, returns count healed. Idempotent: healed
+  rows no longer match updated_by filter.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/oauth_caches.rs
+    - crates/betterlite-server/src/mcp/oauth_caches/**
+    - crates/betterlite-server/src/mcp/backfills.rs
+    - crates/betterlite-server/src/mcp/backfills/**
+    - tools/oracle/cases/mcp-oauth-caches/**
+    - tools/oracle/fuzz/corpus/helper_case/oauth_caches-*
+    - tools/oracle/helpers/b4662.py
+    - tools/oracle/helpers/b4662/**
+    - tools/oracle/src/helpers/server/b4662.rs
+    - tools/oracle/src/helpers/server/b4662/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L43-L80
+    why: MCPOAuth2TokenCache class, _token_identity static method hashing request material (token_url, client_id, scopes, resource, auth_method).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L83-L115
+    why: _get_lock returns per-identity asyncio.Lock, async_get_token with fast path and slow path double-check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L117-L190
+    why: _fetch_token POSTs to token_url, parses expires_in (defaulting on missing/invalid), applies buffer, caps to min TTL, returns (access_token, ttl).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L192-L200
+    why: invalidate removes every cached token for a server by prefix matching server_id:.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L203-L203
+    why: mcp_oauth2_token_cache singleton instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L206-L221
+    why: _compute_per_user_token_ttl uses server.token_storage_ttl_seconds capped by lifetime, derives from expires_in minus buffer, or defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L224-L265
+    why: MCPPerUserTokenCache with _cache_key, _codec, get_token fetching from user_api_key_cache with decryption, debug-logging on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L266-L313
+    why: MCPPerUserTokenCache.set encrypts token via codec and stores in user_api_key_cache, delete uses evict_and_broadcast.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L316-L316
+    why: mcp_per_user_token_cache singleton instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L319-L351
+    why: resolve_mcp_auth resolves auth value with priority (mcp_auth_header, M2M token, static token), resolved_token_header returns header name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L1-L35
+    why: oauth2_flow_backfill module docstring describing startup heal for null oauth2_flow rows before write-side stamps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L49-L56
+    why: OAuth2Flow and BackfillRule Literal types; rules are per_user_tokens, authorization_url, registration_url, ambiguous_m2m_shape, interactive_default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L61-L107
+    why: _MCPServerRow, _MCPUserCredentialRow, _MCPServerTable, _MCPUserCredentialsTable protocols; _mcp_server_table, _mcp_user_credentials_table accessors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L110-L123
+    why: _decrypted_credentials parses and decrypts raw_credentials, returning MCPCredentials dict or None on parse/type errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L126-L142
+    why: classify_null_flow_row takes signals and returns (oauth2_flow, backfill_rule) with signal priority order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L145-L208
+    why: backfill_null_oauth2_flows queries null rows, checks per-user tokens, classifies, warns on ambiguous, stamps, returns rule counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L1-L37
+    why: oauth_issuer_stamp_backfill module docstring describing heal for issuer rows written by discovery.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L46-L51
+    why: Actor constants _DISCOVERY_ACTOR and _BACKFILL_ACTOR for audit trail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L53-L53
+    why: _AUTH_TYPES_WITH_ISSUER_ANCHORING tuple (oauth2, true_passthrough, oauth_delegate).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L56-L65
+    why: _origin extracts scheme-and-authority from URL using canonicalize_url_identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L68-L103
+    why: _MCPServerRow protocol and _is_stamped_issuer_row predicate checking updated_by, issuer, auth_type, and endpoint-origin matches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L106-L148
+    why: backfill_discovery_stamped_issuers queries candidates, filters via predicate, updates issuer to None, returns count healed.
+
+dod:
+  - text: >-
+      MCPOAuth2TokenCache inherits InMemoryCache, caches by token identity (server_id:hash(material)),
+      uses per-identity asyncio.Lock for single-flight, and double-checks cached entry after lock acquire.
+    proof: [oauth2-cache-structure, oauth2-cache-singleflight]
+  - text: >-
+      _token_identity hashes token_url, client_id, client_secret, scopes, upstream_resource, and token_endpoint_auth_method;
+      the hash is joined with server_id as key; changing any material misses the cache.
+    proof: [oauth2-cache-identity]
+  - text: >-
+      async_get_token returns access token string (never None) when config complete, None when client_credentials not configured,
+      fast-path checking cache without lock, slow-path acquiring lock and double-checking before fetch.
+    proof: [oauth2-cache-get-token]
+  - text: >-
+      _fetch_token POSTs to effective_token_url with grant_type=client_credentials and token_request (headers, body with client auth),
+      parses access_token and expires_in from JSON response, defaulting expires_in to MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL if missing/invalid.
+    proof: [oauth2-cache-fetch-token]
+  - text: >-
+      _fetch_token applies MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS to expires_in, caps result to >= MCP_OAUTH2_TOKEN_CACHE_MIN_TTL,
+      returns (access_token, ttl), raises ValueError on HTTP error or missing access_token.
+    proof: [oauth2-cache-ttl-buffer]
+  - text: >-
+      MCPOAuth2TokenCache.invalidate removes every cached token for a server by matching prefix server_id: without lock
+      (iteration is safe on dict removal within the loop).
+    proof: [oauth2-cache-invalidate]
+  - text: >-
+      MCPPerUserTokenCache stores tokens in user_api_key_cache with Redis key MCP_PER_USER_TOKEN_REDIS_KEY_PREFIX:user_id:server_id
+      and encrypted value via OAuthTokenCacheCodec; get_token decrypts and returns OAuthToken or None on missing/decryption failure.
+    proof: [per-user-cache-storage]
+  - text: >-
+      _compute_per_user_token_ttl uses server.token_storage_ttl_seconds capped by token lifetime (expires_in - buffer),
+      derives from expires_in (minus buffer) if no configured TTL, falls back to MCP_PER_USER_TOKEN_DEFAULT_TTL; always returns >= 1.
+    proof: [per-user-cache-ttl]
+  - text: >-
+      MCPPerUserTokenCache.set encrypts OAuthToken via codec and stores in user_api_key_cache with computed TTL,
+      catches exceptions and debug-logs, completing as no-op on failure.
+    proof: [per-user-cache-set]
+  - text: >-
+      MCPPerUserTokenCache.delete uses evict_and_broadcast to invalidate token in Redis and broadcast to peer workers' in-memory layers,
+      catches exceptions and debug-logs, completing as no-op on failure.
+    proof: [per-user-cache-delete]
+  - text: >-
+      classify_null_flow_row takes has_per_user_tokens flag and MCPCredentials; returns (flow, rule) where flow is "authorization_code",
+      "client_credentials" or None; rules follow signal strength (per_user_tokens, authorization_url, registration_url, ambiguous_m2m_shape, interactive_default).
+    proof: [flow-classification]
+  - text: >-
+      backfill_null_oauth2_flows queries auth_type=oauth2 rows with oauth2_flow=null, reads per-user credential rows,
+      classifies each, logs warnings for ambiguous (flow=None), updates stamped rows, returns dict of rule counts.
+    proof: [flow-backfill]
+  - text: >-
+      _is_stamped_issuer_row checks (updated_by == mcp_oauth_discovery, issuer set, auth_type in oauth2/true_passthrough/oauth_delegate,
+      endpoints present, endpoint origins match issuer origin); all clauses must hold for predicate to be true.
+    proof: [issuer-predicate]
+  - text: >-
+      backfill_discovery_stamped_issuers queries candidate rows, filters via _is_stamped_issuer_row, clears issuer to None
+      and sets updated_by=mcp_oauth_issuer_stamp_backfill, per-row catches exceptions and continues, returns count healed.
+    proof: [issuer-backfill]
+  - text: >-
+      resolve_mcp_auth resolves the auth value for an MCP server with priority order: mcp_auth_header (per-request override)
+      takes precedence, then OAuth2 client_credentials token (auto-fetched and cached), then server.authentication_token (static token).
+    proof: [auth-resolution-priority]
+  - text: >-
+      resolved_token_header answers which upstream header the resolved auth value belongs in, using the same two inputs as
+      resolve_mcp_auth; returns None to keep the default auth_type, or the upstream_token_header when mcp_auth_header is absent.
+    proof: [auth-resolution-header]
+  - text: >-
+      New oracle helper operation for OAuth caches integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: oauth2-cache-structure
+      why: MCPOAuth2TokenCache or _locks dict is missing.
+      run: grep -qE 'struct MCPOAuth2TokenCache|MCPOAuth2TokenCache.*{' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: oauth2-cache-singleflight
+      why: Per-identity asyncio.Lock or _get_lock is missing.
+      run: grep -qE 'asyncio\.Lock|_get_lock' crates/betterlite-server/src/mcp/oauth_caches.rs || grep -qE 'Mutex|RwLock' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: oauth2-cache-identity
+      why: _token_identity does not hash token request material or does not include server_id prefix.
+      run: grep -qE '_token_identity|token_identity' crates/betterlite-server/src/mcp/oauth_caches.rs && grep -qE 'sha256|hash256|hmac' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: oauth2-cache-get-token
+      why: async_get_token is missing or does not implement double-check pattern.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth.*get.*token/) - test(/replays_corpus$/)'
+    - id: oauth2-cache-fetch-token
+      why: _fetch_token is missing or does not POST to token_url.
+      run: grep -qE '_fetch_token|fetch_token' crates/betterlite-server/src/mcp/oauth_caches.rs && grep -qE 'grant_type.*client_credentials|client_credentials.*grant' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: oauth2-cache-ttl-buffer
+      why: _fetch_token does not apply expiry buffer or cap to min TTL.
+      run: grep -qE 'EXPIRY_BUFFER|CACHE_MIN_TTL|min_ttl' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: oauth2-cache-invalidate
+      why: invalidate is missing or does not remove tokens by server_id prefix.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth.*invalidate/) - test(/replays_corpus$/)'
+    - id: per-user-cache-storage
+      why: MCPPerUserTokenCache or key/encryption logic is missing.
+      run: grep -qE 'MCPPerUserTokenCache|per_user.*cache' crates/betterlite-server/src/mcp/oauth_caches.rs && grep -qE 'encrypt|decrypt|codec' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: per-user-cache-ttl
+      why: _compute_per_user_token_ttl is missing or does not cap lifetime and apply defaults.
+      run: grep -qE '_compute_per_user_token_ttl|compute.*ttl' crates/betterlite-server/src/mcp/oauth_caches.rs && grep -qE 'min|max|lifetime|expires_in' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: per-user-cache-set
+      why: MCPPerUserTokenCache.set is missing or does not handle encryption/persistence errors.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth.*set/) - test(/replays_corpus$/)'
+    - id: per-user-cache-delete
+      why: MCPPerUserTokenCache.delete is missing or does not broadcast to peers.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth.*delete/) - test(/replays_corpus$/)'
+    - id: flow-classification
+      why: classify_null_flow_row is missing or does not implement signal priority.
+      run: grep -qE 'classify.*flow|flow.*classify' crates/betterlite-server/src/mcp/backfills.rs && grep -qE 'per_user|authorization_url|registration_url|ambiguous|interactive' crates/betterlite-server/src/mcp/backfills.rs
+    - id: flow-backfill
+      why: backfill_null_oauth2_flows is missing or does not stamp rows.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::backfill.*flow/) - test(/replays_corpus$/)'
+    - id: issuer-predicate
+      why: _is_stamped_issuer_row is missing or does not check all clauses.
+      run: grep -qE '_is_stamped_issuer_row|stamped.*issuer' crates/betterlite-server/src/mcp/backfills.rs && grep -qE 'updated_by|issuer|auth_type|endpoint' crates/betterlite-server/src/mcp/backfills.rs
+    - id: issuer-backfill
+      why: backfill_discovery_stamped_issuers is missing or does not heal rows.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::backfill.*issuer/) - test(/replays_corpus$/)'
+    - id: helper-python
+      why: The oracle helper adapter is missing or Python type checking fails.
+      run: test -f tools/oracle/helpers/b4662.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/oauth_caches-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: auth-resolution-priority
+      why: resolve_mcp_auth does not implement the correct priority order or does not call async_get_token for OAuth2.
+      run: grep -qE 'resolve_mcp_auth|resolve.*auth' crates/betterlite-server/src/mcp/oauth_caches.rs && grep -qE 'mcp_auth_header|client_credentials|authentication_token' crates/betterlite-server/src/mcp/oauth_caches.rs
+    - id: auth-resolution-header
+      why: resolved_token_header does not return upstream_token_header or does not handle mcp_auth_header correctly.
+      run: grep -qE 'resolved_token_header|token_header' crates/betterlite-server/src/mcp/oauth_caches.rs && grep -qE 'upstream_token_header' crates/betterlite-server/src/mcp/oauth_caches.rs
+
+oracle_cases:
+  - tools/oracle/cases/mcp-oauth-caches/resolve-mcp-auth-header-override.yaml
+  - tools/oracle/cases/mcp-oauth-caches/resolve-mcp-auth-oauth2-token.yaml
+  - tools/oracle/cases/mcp-oauth-caches/resolve-mcp-auth-static-token.yaml
+  - tools/oracle/cases/mcp-oauth-caches/resolved-token-header-mcp-auth.yaml
+  - tools/oracle/cases/mcp-oauth-caches/resolved-token-header-default.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-identity-basic.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-identity-material-change.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-singleflight.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-get-hit.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-get-miss.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-fetch-success.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-fetch-missing-token.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-fetch-ttl-buffer.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-fetch-min-ttl.yaml
+  - tools/oracle/cases/mcp-oauth-caches/oauth2-cache-invalidate.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-get-hit.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-get-miss.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-get-decrypt-failure.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-set-success.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-set-failure.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-delete-success.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-delete-failure.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-ttl-configured.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-ttl-lifetime-bound.yaml
+  - tools/oracle/cases/mcp-oauth-caches/per-user-cache-ttl-default.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-classification-per-user-tokens.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-classification-authorization-url.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-classification-registration-url.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-classification-ambiguous-m2m-shape.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-classification-interactive-default.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-backfill-stamps-rows.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-backfill-warns-ambiguous.yaml
+  - tools/oracle/cases/mcp-oauth-caches/flow-backfill-counts-rules.yaml
+  - tools/oracle/cases/mcp-oauth-caches/issuer-predicate-matched.yaml
+  - tools/oracle/cases/mcp-oauth-caches/issuer-predicate-unmatched.yaml
+  - tools/oracle/cases/mcp-oauth-caches/issuer-backfill-heals-rows.yaml
+  - tools/oracle/cases/mcp-oauth-caches/issuer-backfill-origin-mismatch.yaml
+  - tools/oracle/cases/mcp-oauth-caches/issuer-backfill-idempotent.yaml
+
+deviations:
+  - what: >-
+      OAuth2TokenCache keying is per-identity (server_id:hash(material)) instead of per-server, so config changes
+      (scopes, client_secret, upstream_resource, auth_method) trigger a cache miss and token refresh.
+    why: >-
+      LiteLLM keyed by server_id alone and served stale tokens across config edits. Per-identity matching ensures
+      every configuration carries fresh credentials and is auditable per-request (server_id is a cache key component).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_token_cache.py#L43-L81
+  - what: >-
+      oauth2_flow backfill never stamps client_credentials (left to human assertion via dashboard or API);
+      ambiguous rows (M2M shape without interactive signal) are warned and left unstamped.
+    why: >-
+      M2M credentials are asserted by config, not inferred. An ambiguous row could be either interactive
+      (DCR-registered with no sign-in yet) or M2M (static credentials), and stamping client_credentials
+      would route per-user traffic through the proxy's stored credential forever. A completed interactive
+      sign-in heals the row via per_user_tokens signal at the next boot.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth2_flow_backfill.py#L1-L35
+  - what: >-
+      issuer stamp backfill only heals rows where configured endpoints and stamped issuer share the same origin,
+      and skips rows with no configured endpoints (canonical shape of deliberate pins).
+    why: >-
+      The discovery write-back was an unintended side effect; stamped rows are rare and narrow healing to
+      rows created by that write (endpoints present + origin match) avoids clearing admin pins. Each heal
+      logs the cleared issuer for manual restoration if needed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_issuer_stamp_backfill.py#L1-L37
+
+out_of_scope:
+  - MCPOAuth2TokenCache is per-replica in-memory only; Redis-backed M2M token storage belongs to a later task.
+  - Encryption and decryption implementations (encrypt_value_helper, decrypt_value_helper) are provided by betterlite-mcp or config crates.
+  - Token endpoint client authentication (client_secret_basic, client_secret_post, auth_method normalization) is owned by B4650.
+  - OAuthToken and OAuthTokenCacheCodec (bound token encoding with identity proof, bearer-only encoding) are owned by B4656.
+  - Refresh token coordination (RefreshCoordinator, RefreshingTokenStore) is owned by B4657.
+  - CredentialReader interface that V2PerUserTokenStore uses to read persisted authorization_code credentials belongs to a later persistence task.
+  - Configuration loading of token cache TTLs (MCP_OAUTH2_TOKEN_CACHE_*) and per-user TTL rules belongs to the config/manager layer.
+  - OAuth discovery and issuer resolution in the read path belong to later tasks; backfill runs once at startup.
+  - per-user token invalidation triggers (reauth, revocation, 401 response handlers) belong to the arm that handles OAuth token refreshes.
+
+pitfalls:
+  - >-
+    MCPOAuth2TokenCache._token_identity joins server_id with a SHA256 hash of token request material (in \x00 order:
+    token_url, client_id, client_secret, scopes joined with space, upstream_resource, auth_method), so the same server
+    with different credentials produces different cache keys; a config change (any of the six inputs) misses the cache.
+  - >-
+    async_get_token uses fast-path cache check without lock (returns immediately if hit) then slow-path lock + double-check
+    before fetch; this reduces lock contention but the second check after lock acquire is mandatory (another task may have
+    completed a fetch while this task waited for the lock).
+  - >-
+    MCPOAuth2TokenCache._fetch_token parses expires_in as int, defaulting to MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL if the field is
+    missing, null, or non-numeric (e.g. a string); this matches LiteLLM's lenient behavior for providers that return unexpected types.
+  - >-
+    TTL calculation: (expires_in - MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS), capped to >= MCP_OAUTH2_TOKEN_CACHE_MIN_TTL.
+    A token with very short lifetime or missing expires_in gets the buffer + min TTL rules applied, so the cache entry always
+    expires before or as the real token does.
+  - >-
+    MCPPerUserTokenCache.set and delete catch all exceptions and degrade to no-op with debug logging (cache unavailable, decryption
+    failure, delete failure); they never propagate errors, so token fetch falls back to the non-cached path.
+  - >-
+    _compute_per_user_token_ttl returns max(ttl, 1) so TTL is always at least 1 second, preventing zero or negative TTLs
+    that would break Redis or cache behavior.
+  - >-
+    classify_null_flow_row signal order is strict: per_user_tokens > authorization_url > registration_url > ambiguous_m2m_shape > interactive_default.
+    An oauth2 row with per-user tokens is definitively interactive (only interactive flow mints per-user tokens), so that signal
+    overrides everything; a registration_url proves DCR (interactive only), overriding the ambiguous shape.
+  - >-
+    backfill_null_oauth2_flows uses update_many to batch stamp all rows with the same flow value, reducing database round-trips;
+    each stamped row gets updated_by=oauth2_flow_backfill for audit trail and idempotency.
+  - >-
+    _decrypted_credentials on oauth2_flow_backfill handles three input forms: None (return None), string (parse as JSON), dict (use as-is).
+    Parsing failures return None (ambiguous row). The result is MCPCredentials (a dict that must contain client_id and client_secret strings to count as M2M).
+  - >-
+    _is_stamped_issuer_row checks updated_by == mcp_oauth_discovery (the actor the removed write recorded), issuer must be non-empty,
+    auth_type must be in (oauth2, true_passthrough, oauth_delegate), endpoints must be present and non-empty, and all configured endpoints'
+    origins must match the issuer's origin (using canonicalize_url_identity for consistent origin comparison).
+  - >-
+    _origin splits a URL into scheme-and-authority, so https://example.com:443/path and https://example.com/path have the same origin
+    (the default port is normalized by canonicalize_url_identity); origins without scheme or netloc return None.
+  - >-
+    backfill_discovery_stamped_issuers is idempotent: it clears issuer to None and sets updated_by to _BACKFILL_ACTOR, so a row that
+    already has _BACKFILL_ACTOR as updated_by will not match the query filter (updated_by == _DISCOVERY_ACTOR) on the next boot.
+  - >-
+    The oauth_caches helper operation exercises MCPOAuth2TokenCache (identity, singleflight, fetch, TTL buffer, invalidation),
+    MCPPerUserTokenCache (get, set, delete with encryption), _compute_per_user_token_ttl, classify_null_flow_row with all signal paths,
+    _is_stamped_issuer_row with matched and unmatched cases, and backfill entry/exit; replace the stub Op in
+    tools/oracle/src/helpers/server/b4662.rs and implement the Python adapter in tools/oracle/helpers/b4662.py.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

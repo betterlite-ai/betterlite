@@ -1,0 +1,197 @@
+id: B3463
+title: Authorize nested RAG stores and project managed settings
+description: >-
+  Build depth-bounded recursive store-ID discovery, sorted authorization,
+  and managed-store option projection for RAG ingestion and query requests.
+  Discover all vector_store_id values in nested request payloads up to a
+  recursion depth limit, authorize each discovered ID against user permissions,
+  and compose caller-allowed options with managed store overrides in a
+  consistent order.
+
+  Recursive discovery with stack-based depth tracking: scan payloads for
+  vector_store_id keys at any nesting level, rejecting invalid IDs (non-string
+  or empty) with a 400 error and stopping traversal on depth overflow.
+  The special case: when a list is encountered at over-depth, return it
+  flat (do not recurse into list items) but check if any item is a dict or
+  list and raise depth-exceeded error if so. Invalid vector_store_id values
+  raise HTTPException with error detail naming the constraint violation.
+
+  Authorization: each discovered ID is passed to assert_user_can_access_vector_store_id
+  from B1061, which returns a LiteLLM_ManagedVectorStore or None. The result is
+  a mapping from vector_store_id (sorted by key) to the resolved managed store.
+  Only authorized IDs appear in the returned mapping.
+
+  Caller option allowlisting: _MANAGED_STORE_CALLER_OPTIONS frozenset contains
+  seven keys (vector_store_id, data_source_id, wait_for_ingestion,
+  ingestion_timeout, custom_metadata, file_description,
+  max_embedding_requests_per_min) that callers may set when a managed store is
+  resolved. When a managed store exists, only these keys from the caller request
+  are preserved; all other provider-specific keys are removed. When no managed
+  store resolves, the full caller-supplied config is kept.
+
+  Managed store overrides: call build_request_data_from_managed_vector_store
+  from B1067 to extract server-configured settings for a resolved managed store.
+  These settings (custom_llm_provider, aws_region_name, embedding_model, etc.)
+  take precedence over caller-supplied values by merging last (overwriting
+  any conflicting caller keys).
+
+  Provider validation: _ingest_provider_error validates the custom_llm_provider
+  in the merged config by calling get_ingestion_class, returning None if valid
+  or an error message string if unsupported. This check is deferred to the route
+  and does not block discovery or authorization.
+
+  All functions are request-parsing helpers that transform payloads and
+  authorized stores into merged options for the ingestion/query pipeline.
+  No provider constructor is called. Return types use MappingProxyType for
+  immutability where appropriate.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/store_authorization.rs
+    - crates/betterlite-core/src/rag/store_authorization/**
+    - tools/oracle/cases/helpers/store-authorization/**
+    - tools/oracle/helpers/b3463.py
+    - tools/oracle/helpers/b3463/**
+    - tools/oracle/src/helpers/core_ops/b3463.rs
+    - tools/oracle/src/helpers/core_ops/b3463/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L78-L82
+    why: _raise_vector_store_scan_depth_exceeded raises 400 HTTPException with
+      depth-exceeded error message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L85-L99
+    why: _append_payload_to_scan_stack appends dict/list to stack if depth is
+      valid, raises on depth overflow with nested items in over-depth lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L102-L135
+    why: _collect_vector_store_ids_from_payload discovers all nested
+      vector_store_id keys via stack-based traversal, validates each as
+      non-empty string, returns sorted set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L138-L155
+    why: _authorize_nested_vector_store_ids authorizes each discovered ID,
+      returns MappingProxyType of sorted vector_store_id to LiteLLM_ManagedVectorStore.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L158-L166
+    why: _ingest_provider_error validates provider via get_ingestion_class,
+      returns None or error message string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L169-L179
+    why: _MANAGED_STORE_CALLER_OPTIONS frozenset of seven caller-allowed keys
+      when a managed store is resolved.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L182-L190
+    why: _caller_vector_store_options filters request config to caller-allowed
+      keys when managed store exists, full config when None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L193-L202
+    why: _managed_store_overrides returns server-configured settings from
+      managed store, merged to override caller settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L85
+    why: DEFAULT_MAX_RECURSE_DEPTH=100 for depth overflow checking.
+
+dod:
+  - text: "_raise_vector_store_scan_depth_exceeded raises HTTPException with\
+      \ status 400 and detail containing error message referencing\
+      \ DEFAULT_MAX_RECURSE_DEPTH."
+    proof: [behavior-tests]
+  - text: "_collect_vector_store_ids_from_payload discovers all nested\
+      \ vector_store_id keys via stack-based traversal, validates each as\
+      \ non-empty string, and returns a sorted set."
+    proof: [behavior-tests]
+  - text: Depth overflow raises 400 HTTPException with error detail when depth\
+      \ exceeds DEFAULT_MAX_RECURSE_DEPTH during stack traversal.
+    proof: [behavior-tests]
+  - text: Over-depth list case detects nested dicts/lists in over-depth list\
+      \ items and raises depth-exceeded error without recursing.
+    proof: [behavior-tests]
+  - text: Invalid vector_store_id (non-string or empty string) raises 400\
+      \ HTTPException with error detail naming the constraint.
+    proof: [behavior-tests]
+  - text: "_authorize_nested_vector_store_ids returns MappingProxyType mapping\
+      \ sorted vector_store_ids to LiteLLM_ManagedVectorStore, omitting unauthorized IDs."
+    proof: [behavior-tests, helper-python]
+  - text: "_MANAGED_STORE_CALLER_OPTIONS contains exactly seven keys:\
+      \ vector_store_id, data_source_id, wait_for_ingestion, ingestion_timeout,\
+      \ custom_metadata, file_description, max_embedding_requests_per_min."
+    proof: [type-tests]
+  - text: "_caller_vector_store_options filters to allowed keys when managed\
+      \ store exists, returns full config when None."
+    proof: [behavior-tests]
+  - text: "_managed_store_overrides returns non-None values from managed store\
+      \ config, empty mapping when None."
+    proof: [behavior-tests]
+  - text: "_ingest_provider_error validates provider via get_ingestion_class,\
+      \ returns None when valid, error message string when unsupported."
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Recursive discovery, authorization, or option merging do not preserve
+        pin behavior.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::store_authorization::tests::/) - test(/replays_the_/)'
+    - id: type-tests
+      why: Allowed-caller-options set or return types are incomplete or misnamed.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::store_authorization::tests::types/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3463.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/store-authorization/single-vector-store-id.yaml
+  - tools/oracle/cases/helpers/store-authorization/nested-vector-store-ids.yaml
+  - tools/oracle/cases/helpers/store-authorization/deep-nesting.yaml
+  - tools/oracle/cases/helpers/store-authorization/depth-exceeded.yaml
+  - tools/oracle/cases/helpers/store-authorization/over-depth-flat-list-no-nesting.yaml
+  - tools/oracle/cases/helpers/store-authorization/over-depth-flat-list-with-nested-dict.yaml
+  - tools/oracle/cases/helpers/store-authorization/invalid-id-non-string.yaml
+  - tools/oracle/cases/helpers/store-authorization/invalid-id-empty-string.yaml
+  - tools/oracle/cases/helpers/store-authorization/unauthorized-store-id.yaml
+  - tools/oracle/cases/helpers/store-authorization/caller-options-with-managed-store.yaml
+  - tools/oracle/cases/helpers/store-authorization/caller-options-without-managed-store.yaml
+  - tools/oracle/cases/helpers/store-authorization/managed-store-overrides.yaml
+  - tools/oracle/cases/helpers/store-authorization/managed-precedence-over-caller.yaml
+  - tools/oracle/cases/helpers/store-authorization/provider-valid.yaml
+  - tools/oracle/cases/helpers/store-authorization/provider-unsupported.yaml
+  - tools/oracle/cases/helpers/store-authorization/provider-non-string.yaml
+
+deviations:
+  - what: Caller request URL and file_id inputs bypass store authorization in
+      the route layer. The RAG ingest and query request handlers (owned by B3465
+      and B097) check only the ingest_options and retrieval_config payloads
+      respectively; file_url and file_id fields do not participate in nested
+      store discovery, delegated to the route handlers rather than this helper.
+    why: Authorization applies only to managed store configuration, not to
+      external URLs or existing file identifiers that may reference unmanaged
+      sources.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L604-L607
+
+out_of_scope:
+  - The route handlers (rag_ingest, rag_query) that call these helpers; B3465
+    and B097 own those functions.
+  - The database lookup and schema for managed vector stores; B1061 owns the
+    authorization check and B1067 owns the config extraction.
+  - Provider-specific validation beyond get_ingestion_class; individual
+    provider tasks own their configuration validation.
+  - The LiteLLM_ManagedVectorStore data type definition; this lives in a
+    dependency, not in this task.
+
+pitfalls:
+  - "Register helper operation `store_authorization` in the `store_authorization` group before this task runs by adding it to tools/oracle/src/helpers/mod.rs GROUPS and tools/oracle/helpers/b3463.py OPERATIONS."
+  - "The over-depth list case is subtle: when a list is encountered at over-depth,
+    the code does not recurse into the list items, but it checks whether any item
+    is a dict or list and raises depth-exceeded if so. This is a flat-list return
+    with a conditional error, not a simple pass-through."
+  - "_MANAGED_STORE_CALLER_OPTIONS is a frozenset; iterating it when filtering
+    caller options is order-independent, but sorted() on the returned vector_store_ids
+    ensures consistent behavior in _authorize_nested_vector_store_ids."
+  - "MappingProxyType is returned for immutability; callers see read-only mappings
+    and cannot modify the returned store authorization or options dictionaries."
+  - "Provider validation defers to get_ingestion_class, which raises ValueError
+    when the provider is unknown; _ingest_provider_error catches this and returns
+    a string error message for the route to handle."
+  - "When assert_user_can_access_vector_store_id returns None (unauthorized),
+    the dict comprehension's is not None guard filters that ID out entirely;
+    unauthorized IDs never appear in the returned mapping."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Resolve key and team agent grants
 status: todo
 depends_on: [B4776, B4778, B726, B732, B737, B747]
-file: null
+file: tasks/B4779-agent-key-team-grants.yaml
 covers:
   - "litellm/proxy/agent_endpoints/auth/agent_permission_handler.py"
 parent: B141

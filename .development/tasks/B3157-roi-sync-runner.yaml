@@ -1,0 +1,168 @@
+id: B3157
+title: Run and cancel coordinated ROI analyses
+description: >-
+  Build SyncManager and its coordinated ROI analysis runner in `betterlite-server::roi_sync`.
+  This module orchestrates the entire sync workflow: initializing state with a GitHub factory
+  and clock provider, acquiring distributed leases, processing pull requests with three workers
+  (PR_CONCURRENCY=3) in parallel, maintaining a one-second heartbeat to renew the lease,
+  and publishing the final report once all estimates complete.
+  The runner accepts injected dependencies (GitHub transport, estimator models, spend reader,
+  completion callback) and preserves LiteLLM's behavior: cached pull reuse, ordered result
+  publication, lease-loss cancellation, source-error fallthrough to warnings, partial-repository
+  handling, and publication guarding when the coordinator replaces the run.
+  Async workers process indexed pulls by stride across the queue, refreshing cached identities
+  and capturing status updates (done, estimated, reused, needs_attention) at every estimate.
+  Heartbeat monitors watch for lease loss and coordinate publication directly; cancellation
+  stops workers cleanly and updates phase/stage without writing partial results.
+  The three worker tasks run independently inside _run's nested scope; neither `process` nor
+  `worker` is split to an upper task.
+scope:
+  paths:
+    - crates/betterlite-server/src/roi_sync.rs
+    - crates/betterlite-server/src/roi_sync/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L45-L49"
+    why: "SyncCoordinator protocol contracts: status, acquire, heartbeat, finish operations."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L162-L167"
+    why: "GitHubFactory contract: factory callable that constructs GitHub clients."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L178-L179"
+    why: "SyncClock contract: callable returning current UTC datetime."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L194-L195"
+    why: "_utc_now utility: default clock implementation."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L332-L354"
+    why: "SyncManager.__init__: initialization with factories, default status, lock and task tracking."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L356-L370"
+    why: "SyncManager.status property: elapsed/remaining second calculation from stored timestamps."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L372-L416"
+    why: "SyncManager.start: lock-protected startup, coordinator acquire, initial-status setup, task spawn."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L418-L429"
+    why: "SyncManager.cancel: task cancellation, status update, coordinator finish on cancellation."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L431-L443"
+    why: "SyncManager._heartbeat: one-second sleep loop, lease renewal, coordinator loss detection."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L445-L628"
+    why: "SyncManager._run: main sync orchestration with nested process/worker functions, cache reuse, final publication."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L630-L635"
+    why: "_update_status: typed status mutation helper using MappingProxyType immutability pattern."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L694-L702"
+    why: "_update_estimate_progress: per-pull progress counters for done/estimated/reused/needs_attention."
+dod:
+  - text: "SyncManager.__init__ stores a GitHub factory, a clock, initial idle status, and an asyncio lock for start serialization."
+    proof: [sync-init]
+  - text: "SyncManager.status computes elapsed seconds from started_at to finished_at (or now), and remaining seconds when running and at least PR_CONCURRENCY pulls have been processed."
+    proof: [status-compute]
+  - text: "SyncManager.start acquires the lock, validates settings.repos and estimator_model, cancels any running task, acquires a coordinator lease with initial status, creates a UUID owner, spawns the async _run task and returns true only if acquired."
+    proof: [start-lifecycle]
+  - text: "SyncManager.cancel stops the task with asyncio.cancel, waits for it, updates phase to cancelled, notifies the coordinator of completion, and returns true only if there was a task to cancel."
+    proof: [cancel-lifecycle]
+  - text: "SyncManager._heartbeat runs a one-second sleep loop, calls coordinator.heartbeat at every iteration, cancels the monitored task on heartbeat failure, and exits cleanly on any exception."
+    proof: [heartbeat-lifecycle]
+  - text: "SyncManager._run coordinates the entire analysis: read spend, fetch repositories, create indexed pull queue, initialize estimator, run three parallel workers across indexed pulls by stride, publish ordered results, finalize report."
+    proof: [run-phases]
+  - text: "The three worker tasks process indexed pulls with stride PR_CONCURRENCY starting from their offset (0, 1, 2), each calling the nested process function on assigned indices."
+    proof: [worker-concurrency]
+  - text: "The process callback checks local and repository cache for each pull, reuses cached records with refreshed profile email, falls back to GitHub evidence and estimation on cache miss, and marks metadata-unavailable on SourceError."
+    proof: [process-cache]
+  - text: "Cached record refresh reads profile_email from GitHub and merges it with commit_emails without re-estimating."
+    proof: [cache-identity-refresh]
+  - text: "Results are collected by index and ordered into the final report tuple without loss."
+    proof: [ordered-results]
+  - text: "Coordinator.finish is called with the completed status and serialized report; if it returns false, SourceError prevents publication."
+    proof: [coordinator-final]
+  - text: "When no coordinator is present, the report is stored directly in the repository config."
+    proof: [local-report]
+  - text: "A lease loss (heartbeat returns false) cancels the task; a source error updates status.phase to error; an unexpected exception updates status with a generic error message."
+    proof: [error-handling]
+  - text: "The finally block closes the GitHub client only when status.phase != 'complete', separately from the task.done() check cancel() uses to short-circuit when there is no running task."
+    proof: [cancellation-cleanup]
+  - text: "_update_status mutates the internal status using typed keyword arguments that match ROISyncStatus fields."
+    proof: [status-update]
+  - text: "_update_estimate_progress increments done, estimated, reused, and needs_attention counters based on estimate status and cached flag."
+    proof: [progress-update]
+  - text: "Every mutant in status computation, worker concurrency, caching logic and error handling is caught by a test."
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sync-init
+      why: SyncManager.__init__ does not initialize fields or is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::.*init/)'
+    - id: status-compute
+      why: status property does not compute elapsed/remaining seconds correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::.*status/)'
+    - id: start-lifecycle
+      why: start method does not acquire lock, validate, or spawn task correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::.*start/)'
+    - id: cancel-lifecycle
+      why: cancel method does not stop task or update status correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::.*cancel/)'
+    - id: heartbeat-lifecycle
+      why: heartbeat task does not renew lease or detect loss
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::.*heartbeat/)'
+    - id: run-phases
+      why: _run does not execute sync phases in order or finalize report
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::(run_spend|run_repositories|run_estimates|run_publication)/)'
+    - id: worker-concurrency
+      why: worker tasks do not process by stride or do not run concurrently
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::.*worker/)'
+    - id: process-cache
+      why: process callback does not check cache or fall back to GitHub correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::(cached_pull|new_pull|metadata_unavailable)/)'
+    - id: cache-identity-refresh
+      why: cached pull refresh does not merge profile email or use commit emails
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::cache_identity_refresh/)'
+    - id: ordered-results
+      why: results are not collected by index or are not ordered correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::ordered_results/)'
+    - id: coordinator-final
+      why: coordinator.finish is not called with status and report or does not guard publication
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::(coordinator_finish|local_finish)/)'
+    - id: local-report
+      why: local repository fallback does not store report when no coordinator present
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::local_report/)'
+    - id: error-handling
+      why: error conditions do not update status.phase/error correctly or do not prevent publication
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::(source_error|unexpected_error|lease_loss)/)'
+    - id: cancellation-cleanup
+      why: cancel or _run cleanup does not stop monitor/GitHub or handle already-closed states
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::(cancel_cleanup|error_cleanup)/)'
+    - id: status-update
+      why: _update_status does not apply typed mutations or validate the result
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::update_status/)'
+    - id: progress-update
+      why: _update_estimate_progress does not increment counters or evaluate estimate status correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_sync::update_progress/)'
+oracle_cases: []
+deviations:
+  - what: "Async workers use asyncio.gather with return_exceptions=True to collect results even when one task fails; failures are propagated only after all workers complete."
+    why: "This preserves LiteLLM's behavior of graceful task cleanup and ensures that a single-worker failure does not orphan other workers. A task cancellation via lease loss will interrupt all workers at once."
+  - what: "Lease loss during _run cancels the current task but does not prevent the heartbeat monitor from notifying the coordinator of cancellation in the finally block."
+    why: "The coordinator must be notified of every state change so it can release the lease for other runners. A lease loss already means this runner's ownership is lost; the final notification is informational."
+  - what: "When the coordinator.finish call returns false (the run was replaced), a SourceError is raised to prevent the local repository store and update the status.error before cleanup."
+    why: "This matches LiteLLM's design: a replaced run means another runner has taken over, and this runner must not overwrite that runner's report."
+out_of_scope:
+  - "B3156 owns _read_repositories, _previous_report, cache_key, _cached_record, _cache_estimated_pull, _unavailable_record, _estimate_with_fallback, _report_record, _processed_records and settings_fingerprint."
+  - "B3154 owns Estimator and EstimatorModel contracts."
+  - "B3153 owns GitHub.evidence and pull query methods."
+  - "B3152 owns GitHub.__init__, .profile_email, .close and retry policy."
+  - "B3155 owns SyncStore lease operations and the SpendReader contract implementation."
+  - "B3150 owns ROISyncStatus and ROIReport type definitions and validators."
+  - "B725 owns ConfigRepository.get_param and .set_param contracts."
+  - "The demo report generation and scheduled sync routes (B076) are not part of this task."
+pitfalls:
+  - "PR_CONCURRENCY must be 3; workers start at offsets 0, 1, 2 and process every third pull. Stride iteration is off-by-one when range(offset, len, PR_CONCURRENCY) is not used."
+  - "The monitor task must be created before _run starts so it outlives all workers. Cancelling the monitor in finally will cause it to exit before the coordinator.finish call if the timing is tight."
+  - "Cached pull identity refresh must call github.profile_email with the fallback parameter to use the previous profile email if the new lookup fails."
+  - "The cache key is None for pulls fetched from GitHub evidence, not for cached pulls; cached pulls retain their original key from the index."
+  - "Cached record conversion to typed ROIPullRecord must use TypeAdapter.validate_python on the MappingProxyType to ensure correct model construction."
+  - "Results must be indexed by position (the original queue index) before building the final report, not by pull number or URL."
+  - "The heartbeat loop has a bare `except Exception` to catch coordination failures; this is intentional and must not be narrowed to specific exception types."
+  - "A CancelledError in the heartbeat loop must be suppressed with contextlib.suppress; awaiting a cancelled task raises CancelledError again."
+  - "Status updates use MappingProxyType to preserve immutability; the internal _status dict must be replaced, not mutated in place."
+  - "Estimated status counter counts only pulls with estimate['status'] == 'estimated', not pulls with cached=True or other estimate statuses."
+  - "The needs_attention counter is the count of pulls where estimated is False; when every estimate is 'error', needs_attention equals done."
+  - "Reused counter counts only pulls with cached=True in the estimate dict, not pulls that were served from the previous_report map."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
