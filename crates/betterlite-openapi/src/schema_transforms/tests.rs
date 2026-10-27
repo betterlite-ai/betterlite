@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use rstest::rstest;
 
@@ -17,15 +17,29 @@ fn parse(text: &str) -> JsonObject {
 
 #[rstest]
 #[case::identical(
-    r#"{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}"#
+    r#"{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}"#,
+    "Block"
 )]
 #[case::same_names_other_types(
-    r#"{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}"#
+    r#"{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}"#,
+    "Block"
 )]
 #[case::other_keywords_ignored(
-    r#"{"title":"Other","properties":{"value":{}},"required":["value",7]}"#
+    r#"{"title":"Other","properties":{"value":{}},"required":["value",7]}"#,
+    "Block"
 )]
-fn same_shape_reuses_component_on_collision(#[case] incoming: &str) {
+#[case::other_property_names(
+    r#"{"properties":{"other":{"type":"string"}},"required":["value"]}"#,
+    "Request_Block"
+)]
+#[case::other_required(
+    r#"{"properties":{"value":{"type":"string"}},"required":[]}"#,
+    "Request_Block"
+)]
+#[case::missing_required(r#"{"properties":{"value":{"type":"string"}}}"#, "Request_Block")]
+#[case::no_properties(r#"{"type":"string"}"#, "Request_Block")]
+#[case::empty_properties(r#"{"properties":{},"required":["value"]}"#, "Request_Block")]
+fn shape_decides_reuse_on_collision(#[case] incoming: &str, #[case] component: &str) {
     let existing =
         r#"{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}"#;
     let mut document = parse(&format!(
@@ -35,29 +49,13 @@ fn same_shape_reuses_component_on_collision(#[case] incoming: &str) {
         r##"{{"properties":{{"block":{{"$ref":"#/$defs/Block"}}}},"$defs":{{"Block":{incoming}}}}}"##
     ));
     add_schema_to_components(&mut document, "Request", &schema);
+    let renamed = if component == "Block" {
+        String::new()
+    } else {
+        format!(r#""{component}":{incoming},"#)
+    };
     let expected = parse(&format!(
-        r##"{{"components":{{"schemas":{{"Block":{existing},"Request":{{"properties":{{"block":{{"$ref":"#/components/schemas/Block"}}}}}}}}}}}}"##
-    ));
-    assert_eq!(document, expected);
-}
-
-#[rstest]
-#[case::other_property_names(r#"{"properties":{"other":{"type":"string"}},"required":["value"]}"#)]
-#[case::other_required(r#"{"properties":{"value":{"type":"string"}},"required":[]}"#)]
-#[case::missing_required(r#"{"properties":{"value":{"type":"string"}}}"#)]
-#[case::no_properties(r#"{"type":"string"}"#)]
-#[case::empty_properties(r#"{"properties":{},"required":["value"]}"#)]
-fn different_shape_renames_on_collision(#[case] incoming: &str) {
-    let existing = r#"{"properties":{"value":{"type":"string"}},"required":["value"]}"#;
-    let mut document = parse(&format!(
-        r#"{{"components":{{"schemas":{{"Block":{existing}}}}}}}"#
-    ));
-    let schema = parse(&format!(
-        r##"{{"properties":{{"block":{{"$ref":"#/$defs/Block"}}}},"$defs":{{"Block":{incoming}}}}}"##
-    ));
-    add_schema_to_components(&mut document, "Request", &schema);
-    let expected = parse(&format!(
-        r##"{{"components":{{"schemas":{{"Block":{existing},"Request_Block":{incoming},"Request":{{"properties":{{"block":{{"$ref":"#/components/schemas/Request_Block"}}}}}}}}}}}}"##
+        r##"{{"components":{{"schemas":{{"Block":{existing},{renamed}"Request":{{"properties":{{"block":{{"$ref":"#/components/schemas/{component}"}}}}}}}}}}}}"##
     ));
     assert_eq!(document, expected);
 }
@@ -249,14 +247,10 @@ fn failed_generation_gives_example_body_fallback() {
     assert_eq!(body, expected);
 }
 
-#[test]
-fn replays_the_openapi_schema_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openapi_schema");
-    for entry in fs::read_dir(corpus).unwrap() {
-        let text = fs::read_to_string(entry.unwrap().path()).unwrap();
-        let Ok(schema) = serde_json::from_str::<JsonObject>(&text) else {
-            continue;
-        };
+#[rstest]
+fn replays_the_openapi_schema_corpus(#[files("fuzz/corpus/openapi_schema/*")] path: PathBuf) {
+    let text = fs::read_to_string(path).unwrap();
+    if let Ok(schema) = serde_json::from_str::<JsonObject>(&text) {
         let mut document = parse(r#"{"paths":{"/chat":{"post":{"parameters":[{"in":"path"}]}}}}"#);
         add_request_schema(&mut document, "Corpus", Some(&schema), &["/chat"]);
         drop(inline_request_body(Some(&schema), &JsonObject::new()));

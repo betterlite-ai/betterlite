@@ -80,11 +80,12 @@ fn discriminator_mapping_removed(#[case] schema: &str, #[case] expected: &str) {
 }
 
 fn nested_reference(depth: usize) -> String {
-    let mut schema = r##"{"$ref":"#/$defs/Missing","$defs":{"Z":{}}}"##.to_owned();
-    for _ in 0..depth {
-        schema = format!(r#"{{"a":{schema}}}"#);
-    }
-    schema
+    let reference = r##"{"$ref":"#/$defs/Missing","$defs":{"Z":{}}}"##;
+    format!(
+        "{}{reference}{}",
+        r#"{"a":"#.repeat(depth),
+        "}".repeat(depth)
+    )
 }
 
 #[test]
@@ -106,11 +107,8 @@ fn reference_at_depth_limit_is_kept() {
 
 #[test]
 fn array_depth_counts_toward_limit() {
-    let mut schema = r##"{"$ref":"#/$defs/Missing"}"##.to_owned();
-    for _ in 0..31_u8 {
-        schema = format!("[{schema}]");
-    }
-    let wrapped = format!(r#"{{"a":{schema}}}"#);
+    let reference = r##"{"$ref":"#/$defs/Missing"}"##;
+    let wrapped = format!(r#"{{"a":{}{reference}{}}}"#, "[".repeat(31), "]".repeat(31));
     assert_eq!(inlined_schema(&wrapped), Ok(tree(&wrapped)));
 }
 
@@ -128,10 +126,11 @@ fn missing_reference_raises(#[case] schema: &str) {
 #[test]
 fn self_reference_stops_at_depth_limit() {
     let schema = r##"{"properties":{"head":{"$ref":"#/$defs/Node"}},"$defs":{"Node":{"properties":{"next":{"$ref":"#/$defs/Node"}}}}}"##;
-    let mut chain = r##"{"$ref":"#/$defs/Node"}"##.to_owned();
-    for _ in 0..10_u8 {
-        chain = format!(r#"{{"properties":{{"next":{chain}}}}}"#);
-    }
+    let chain = format!(
+        r##"{}{{"$ref":"#/$defs/Node"}}{}"##,
+        r#"{"properties":{"next":"#.repeat(10),
+        "}}".repeat(10)
+    );
     let expected = format!(r#"{{"properties":{{"head":{chain}}}}}"#);
     assert_eq!(inlined_schema(schema), Ok(tree(&expected)));
 }

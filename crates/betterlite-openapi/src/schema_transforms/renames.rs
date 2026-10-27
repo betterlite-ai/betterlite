@@ -73,26 +73,21 @@ pub(super) fn rewrite_object(
     renames: &BTreeMap<String, String>,
 ) -> JsonObject {
     let mut rewritten = JsonObject::new();
-    for (key, value) in object {
-        match value {
-            JsonTree::Text(reference) if key == "$ref" && reference.starts_with(DEFS_PREFIX) => {
-                // LiteLLM strips every occurrence of the prefix, not only the leading one
-                let name = reference.replace(DEFS_PREFIX, "");
-                let component = renames.get(&name).unwrap_or(&name);
-                let target = format!("#/components/schemas/{component}");
-                rewritten.insert(key.clone(), JsonTree::Text(target));
-            }
-            JsonTree::Null
-            | JsonTree::Flag(_)
-            | JsonTree::Number(_)
-            | JsonTree::Text(_)
-            | JsonTree::Array(_)
-            | JsonTree::Object(_) => {
-                if key != "$defs" {
-                    rewritten.insert(key.clone(), rewrite_refs(value, renames));
-                }
-            }
-        }
+    for (key, value) in object.iter().filter(|(key, _)| *key != "$defs") {
+        rewritten.insert(key.clone(), rewrite_entry(key, value, renames));
     }
     rewritten
+}
+
+fn rewrite_entry(key: &str, value: &JsonTree, renames: &BTreeMap<String, String>) -> JsonTree {
+    if key == "$ref"
+        && let JsonTree::Text(reference) = value
+        && reference.starts_with(DEFS_PREFIX)
+    {
+        // LiteLLM strips every occurrence of the prefix, not only the leading one
+        let name = reference.replace(DEFS_PREFIX, "");
+        let component = renames.get(&name).unwrap_or(&name);
+        return JsonTree::Text(format!("#/components/schemas/{component}"));
+    }
+    rewrite_refs(value, renames)
 }
