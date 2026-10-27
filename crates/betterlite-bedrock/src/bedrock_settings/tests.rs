@@ -1,54 +1,80 @@
 #![cfg(test)]
-use std::collections::BTreeMap;
 
-use super::{AwsInput, bedrock_error, snapshot};
-use secrecy::ExposeSecret as _;
+mod errors;
+mod settings;
+
+use errors::{bedrock_error_response, error_text_unread, input, text};
+use settings::{deployment_before_env, empty_bearer, exposed, irsa_config, load, session_tags};
+
+use super::{BedrockError, ErrorHeaders};
 
 #[rstest::rstest]
-#[case::deployment_before_env("deployment")]
-#[case::empty_bearer("empty")]
-#[case::session_tags("tags")]
-#[case::irsa_config("irsa")]
-#[case::bedrock_error_response("error")]
-#[case::error_text_unread("text")]
-fn bedrock_settings_cases(#[case] case: &str) {
-    assert!(!case.is_empty());
+#[case::deployment_before_env(deployment_before_env)]
+#[case::empty_bearer(empty_bearer)]
+#[case::session_tags(session_tags)]
+#[case::irsa_config(irsa_config)]
+#[case::bedrock_error_response(bedrock_error_response)]
+#[case::error_text_unread(error_text_unread)]
+fn bedrock_settings_cases(#[case] case: fn()) {
+    case();
 }
 
 #[test]
 fn bedrock_settings_credential_identity_isolation() {
-    let one = input(Some("one"));
-    let two = input(Some("two"));
-    let first = snapshot(&one, &AwsInput::default(), &BTreeMap::new());
-    let second = snapshot(&two, &AwsInput::default(), &BTreeMap::new());
-    assert_ne!(
-        first.aws_access_key_id.unwrap().expose_secret(),
-        second.aws_access_key_id.unwrap().expose_secret()
+    let settings = load(
+        &[
+            ", aws_access_key_id: first-key, aws_secret_access_key: first-secret, aws_role_name: first-role",
+            ", aws_access_key_id: second-key, aws_secret_access_key: second-secret",
+            "",
+        ],
+        &[("AWS_SECRET_ACCESS_KEY", "env-secret")],
+    )
+    .unwrap();
+    let identities = settings
+        .iter()
+        .map(|aws| {
+            (
+                exposed(aws.access_key_id.as_ref()),
+                exposed(aws.secret_access_key.as_ref()),
+                aws.role_name.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        identities,
+        [
+            (Some("first-key"), Some("first-secret"), Some("first-role")),
+            (Some("second-key"), Some("second-secret"), None),
+            (None, Some("env-secret"), None),
+        ]
     );
 }
 
 #[test]
 fn bedrock_settings_secret_safe_failure() {
-    let error = bedrock_error(500, String::from("request failed"), None, None);
-    let debug = format!("{error:?}");
-    assert!(!debug.contains("fixture-secret"));
-}
-
-fn input(access_key: Option<&str>) -> AwsInput {
-    AwsInput {
-        aws_access_key_id: access_key.map(String::from),
-        aws_secret_access_key: None,
-        aws_session_token: None,
-        aws_region_name: None,
-        aws_session_name: None,
-        aws_profile_name: None,
-        aws_role_name: None,
-        aws_web_identity_token: None,
-        aws_sts_endpoint: None,
-        aws_external_id: None,
-        aws_role_arn: None,
-        aws_web_identity_token_file: None,
-        aws_bearer_token_bedrock: None,
-        aws_session_tags: None,
+    let environment = [
+        ("AWS_SECRET_ACCESS_KEY", "fixture-env-secret"),
+        ("AWS_BEARER_TOKEN_BEDROCK", "fixture-bearer"),
+        ("AWS_SESSION_TOKEN", "fixture-session"),
+    ];
+    let configured = ", aws_access_key_id: fixture-key, aws_web_identity_token: fixture-web";
+    let debug = format!("{:?}", load(&[configured], &environment).unwrap());
+    let missing = ", aws_secret_access_key: os.environ/MISSING_SECRET";
+    let failure = load(&[missing], &environment).unwrap_err();
+    let secret_header = ("authorization".to_owned(), text("fixture-s\u{e9}cret"));
+    let headers = Some(ErrorHeaders::Mapping(vec![secret_header]));
+    let header = BedrockError::try_from(input(headers, None)).unwrap_err();
+    let rendered = format!("{debug} {failure} {failure:?} {header} {header:?}");
+    let secrets = [
+        "fixture-env-secret",
+        "fixture-bearer",
+        "fixture-session",
+        "fixture-key",
+        "fixture-web",
+        "s\u{e9}cret",
+    ];
+    for secret in secrets {
+        assert!(!rendered.contains(secret), "{secret} leaked: {rendered}");
     }
+    assert!(rendered.contains("MISSING_SECRET"));
 }

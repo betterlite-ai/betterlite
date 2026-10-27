@@ -757,6 +757,8 @@ version = "0.1.0"
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-openai",
  "futures-util",
  "indexmap 2.14.2",
  "rstest",

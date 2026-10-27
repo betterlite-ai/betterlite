@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-openai = { path = "../betterlite-openai" }
 indexmap = "2.14.2"
 secrecy.workspace = true
 serde.workspace = true
@@ -13,6 +14,7 @@ serde_json = "1.0.154"
 thiserror.workspace = true
 
 [dev-dependencies]
+betterlite-config = { path = "../betterlite-config" }
 futures-util = { version = "0.3.34", default-features = false }
 rstest = "=0.27.0"
 
