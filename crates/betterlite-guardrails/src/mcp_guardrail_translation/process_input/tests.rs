@@ -30,7 +30,6 @@ async fn sends_description_schema_descriptions_and_argument_leaves_in_one_call()
         r#"{"type":"function","function":{"name":"lookup","description":"Find a user","parameters":{"additionalProperties":false,"properties":{"email":{"description":"The email","type":"string"}},"type":"object"},"strict":false}}"#
     );
 }
-
 #[tokio::test]
 async fn an_empty_schema_becomes_an_empty_object_definition() {
     let mut call = request(r#"{"mcp_tool_name":"ping","mcp_input_schema":"not a schema"}"#);
@@ -46,7 +45,6 @@ async fn an_empty_schema_becomes_an_empty_object_definition() {
         r#"{"name":"ping","description":"","parameters":{"additionalProperties":false,"properties":{},"type":"object"},"strict":false}"#
     );
 }
-
 #[tokio::test]
 async fn only_description_keyed_schema_strings_are_scanned() {
     let mut call = request(
@@ -59,11 +57,28 @@ async fn only_description_keyed_schema_strings_are_scanned() {
         .unwrap();
     assert_eq!(guardrail.calls()[0].0.texts, texts(&["Top"]));
 }
-
 #[tokio::test]
 async fn a_guardrail_failure_reaches_the_caller() {
     let mut call = request(r#"{"mcp_tool_name":"lookup","mcp_arguments":{"q":"x"}}"#);
     let guardrail = ScriptedGuardrail::new(Reply::Fail);
     let outcome = process_input_messages(&mut call, &guardrail, None).await;
     assert!(matches!(outcome, Err(TranslationError::Guardrail(_))));
+}
+#[tokio::test]
+async fn private_number_shaped_argument_strings_are_scanned_and_masked() {
+    let mut call = request(
+        r#"{"mcp_tool_name":"send","mcp_arguments":{"body":{"$serde_json::private::Number":"card 4111 1111 1111 1111"}}}"#,
+    );
+    let guardrail = ScriptedGuardrail::new(Reply::Mask("card 4111 1111 1111 1111"));
+    process_input_messages(&mut call, &guardrail, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        guardrail.calls()[0].0.texts,
+        texts(&["card 4111 1111 1111 1111"])
+    );
+    assert_eq!(
+        to_json(&call.mcp_arguments),
+        r#"{"body":{"$serde_json::private::Number":"[MASKED]"}}"#
+    );
 }

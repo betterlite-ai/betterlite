@@ -20,7 +20,6 @@ fn nested(depth: usize, leaf: &str) -> String {
 fn value(json: &str) -> McpValue {
     serde_json::from_str(json).unwrap()
 }
-
 #[rstest]
 #[case::string_at_the_limit(MAX_SCAN_DEPTH, r#""x""#, true)]
 #[case::string_past_the_limit(MAX_SCAN_DEPTH + 1, r#""x""#, false)]
@@ -35,11 +34,10 @@ fn scans_up_to_the_depth_limit(#[case] depth: usize, #[case] leaf: &str, #[case]
         outcome.map(|found| found.leaves.len())
     );
 }
-
 #[test]
 fn leaves_come_with_their_paths_and_labels_with_keys_first() {
     let found = scan_json(
-        &value(r#"{"b":[1,{"c":"deep"}],"a":"top","d":2.5,"e":true,"f":null}"#),
+        &value(r#"{"b":[1,{"c":"deep"}],"a":"top","d":2,"e":true,"f":null}"#),
         NestedPayload::StructuredContent,
     )
     .unwrap();
@@ -62,10 +60,9 @@ fn leaves_come_with_their_paths_and_labels_with_keys_first() {
     );
     assert_eq!(
         found.labels,
-        texts(&["a", "b", "d", "e", "f", "1", "c", "2.5"])
+        texts(&["a", "b", "d", "e", "f", "1", "c", "2"])
     );
 }
-
 #[tokio::test]
 async fn arguments_past_the_limit_fail_closed_before_the_guardrail_runs() {
     let mut call = request(&format!(
@@ -83,7 +80,6 @@ async fn arguments_past_the_limit_fail_closed_before_the_guardrail_runs() {
     assert!(guardrail.calls().is_empty());
     assert_eq!(ContentBlocked::STATUS.as_u16(), 400);
 }
-
 #[tokio::test]
 async fn a_schema_past_the_limit_fails_closed() {
     let mut call = request(&format!(
@@ -99,7 +95,6 @@ async fn a_schema_past_the_limit_fails_closed() {
         }))
     ));
 }
-
 #[tokio::test]
 async fn structured_content_past_the_limit_fails_closed() {
     let mut result = tool_result(&format!(

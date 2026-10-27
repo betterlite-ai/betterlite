@@ -1,17 +1,14 @@
 use super::json_value::McpValue;
 
 use super::error::{ContentBlocked, NestedPayload};
-
 mod tests;
 
 pub const MAX_SCAN_DEPTH: usize = 100;
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathPart {
     Key(String),
     Index(usize),
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LeafPath(pub Vec<PathPart>);
 
@@ -41,13 +38,11 @@ pub struct JsonScan {
     pub leaves: Vec<Leaf>,
     pub labels: Vec<String>,
 }
-
 pub fn scan_json(value: &McpValue, payload: NestedPayload) -> Result<JsonScan, ContentBlocked> {
     let mut found = JsonScan::default();
     collect(value, &mut Vec::new(), &mut found, payload)?;
     Ok(found)
 }
-
 fn collect(
     value: &McpValue,
     path: &mut Vec<PathPart>,
@@ -70,12 +65,6 @@ fn collect(
             }
         }
         McpValue::Object(entries) => {
-            if entries.len() == 1
-                && let Some(McpValue::Text(number)) = entries.get("$serde_json::private::Number")
-            {
-                found.labels.push(number.clone());
-                return Ok(());
-            }
             found.labels.extend(entries.keys().cloned());
             for (key, item) in entries {
                 path.push(PathPart::Key(key.clone()));

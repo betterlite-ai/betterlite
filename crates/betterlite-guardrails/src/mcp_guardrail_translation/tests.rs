@@ -1,16 +1,13 @@
 #![cfg(test)]
 
-use std::future::{self, Future};
-use std::sync::Mutex;
-
-use thiserror::Error;
-
 use super::call_tool_result::CallToolResult;
 use super::guardrail::{ApplyGuardrail, GuardrailInputs};
 use super::tool_request::McpToolRequest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
-
+use std::future::{self, Future};
+use std::sync::Mutex;
+use thiserror::Error;
 #[derive(Debug, Error)]
 #[error("the scripted guardrail failed")]
 pub(super) struct ScriptedFailure;
@@ -26,7 +23,6 @@ pub(super) struct ScriptedGuardrail {
     pub(super) reply: Reply,
     pub(super) calls: Mutex<Vec<(GuardrailInputs, GuardrailInputType)>>,
 }
-
 impl ScriptedGuardrail {
     pub(super) fn new(reply: Reply) -> Self {
         Self {
@@ -39,7 +35,6 @@ impl ScriptedGuardrail {
         self.calls.lock().unwrap().clone()
     }
 }
-
 impl ApplyGuardrail for ScriptedGuardrail {
     type Error = ScriptedFailure;
 
@@ -69,22 +64,18 @@ impl ApplyGuardrail for ScriptedGuardrail {
         future::ready(reply)
     }
 }
-
 pub(super) fn request(json: &str) -> McpToolRequest {
     serde_json::from_str(json).unwrap()
 }
-
 pub(super) fn tool_result(json: &str) -> CallToolResult {
     serde_json::from_str(json).unwrap()
 }
-
 pub(super) fn to_json<Wire>(wire: &Wire) -> String
 where
     Wire: serde::Serialize,
 {
     serde_json::to_string(wire).unwrap()
 }
-
 pub(super) fn texts(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }

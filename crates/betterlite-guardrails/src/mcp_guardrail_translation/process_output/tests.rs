@@ -27,7 +27,6 @@ async fn text_blocks_structured_leaves_and_labels_go_out_in_one_call() {
         texts(&["first", "second", "Ann", "age", "name", "41"])
     );
 }
-
 #[rstest]
 #[case::key(r#"{"secret":"value"}"#)]
 #[case::number(r#"{"pin":4242}"#)]
@@ -48,7 +47,6 @@ async fn a_masked_label_is_rejected(#[case] structured: &str) {
         Err(TranslationError::Blocked(ContentBlocked::UnrewritableLabel))
     ));
 }
-
 #[rstest]
 #[case::no_content("{}")]
 #[case::only_images(r#"{"content":[{"type":"image","data":"AAAA","mimeType":"image/png"}]}"#)]
@@ -65,11 +63,33 @@ async fn a_result_without_text_skips_the_guardrail(#[case] json: &str) {
     assert!(guardrail.calls().is_empty());
     assert_eq!(result, original);
 }
-
 #[tokio::test]
 async fn a_guardrail_failure_on_the_result_reaches_the_caller() {
     let mut result = tool_result(r#"{"content":[{"type":"text","text":"x"}]}"#);
     let guardrail = ScriptedGuardrail::new(Reply::Fail);
     let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(matches!(outcome, Err(TranslationError::Guardrail(_))));
+}
+
+#[tokio::test]
+async fn private_number_shaped_structured_strings_are_scanned_and_masked() {
+    let mut result = tool_result(
+        r#"{"content":[],"structuredContent":{"body":{"$serde_json::private::Number":"card 4111 1111 1111 1111"}}}"#,
+    );
+    let guardrail = ScriptedGuardrail::new(Reply::Mask("card 4111 1111 1111 1111"));
+    process_output_response(&mut result, &guardrail, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        guardrail.calls()[0].0.texts,
+        texts(&[
+            "card 4111 1111 1111 1111",
+            "body",
+            "$serde_json::private::Number"
+        ])
+    );
+    assert_eq!(
+        serde_json::to_string(&result.structured_content).unwrap(),
+        r#"{"body":{"$serde_json::private::Number":"[MASKED]"}}"#
+    );
 }

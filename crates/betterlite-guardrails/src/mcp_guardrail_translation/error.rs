@@ -2,7 +2,6 @@ use reqwest::StatusCode;
 use thiserror::Error;
 
 use super::nesting_depth::{LeafPath, MAX_SCAN_DEPTH};
-
 #[derive(Debug, Error)]
 pub enum TranslationError<GuardrailFailure> {
     #[error(transparent)]
@@ -10,7 +9,6 @@ pub enum TranslationError<GuardrailFailure> {
     #[error("the guardrail failed on the MCP payload")]
     Guardrail(#[source] GuardrailFailure),
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ContentBlocked {
     #[error(
@@ -37,18 +35,15 @@ pub enum ContentBlocked {
     )]
     UnrewritableLabel,
 }
-
 impl ContentBlocked {
     pub const STATUS: StatusCode = StatusCode::BAD_REQUEST;
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NestedPayload {
     ToolArguments,
     InputSchema,
     StructuredContent,
 }
-
 impl NestedPayload {
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -59,13 +54,11 @@ impl NestedPayload {
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanTarget {
     ToolCall,
     ToolResult,
 }
-
 impl ScanTarget {
     #[must_use]
     pub const fn label(self) -> &'static str {

@@ -9,7 +9,6 @@ use super::nesting_depth::{Leaf, PathPart, scan_json};
 use super::tool_request::McpToolRequest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
-
 mod tests;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
