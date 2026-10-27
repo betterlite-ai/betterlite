@@ -196,17 +196,18 @@ async fn storage_errors_are_misses(#[case] status: &str, #[case] code: &str) {
 #[case::strings(r#"["ab", "cd"]"#, r#"{"a":"b","c":"d"}"#)]
 #[case::duplicates(r#"[["a",1],["a",2]]"#, r#"{"a":2}"#)]
 #[case::empty("[]", "{}")]
-fn dictionary_conversion(#[case] input: &str, #[case] expected: &str) {
-    assert_eq!(
-        decode_body(input.as_bytes()).unwrap(),
-        decode_body(expected.as_bytes()).unwrap()
-    );
-}
-
-#[rstest]
 #[case::none("{'key': None}", r#"{"key":null}"#)]
 #[case::boolean("{'key': True, 'other': False}", r#"{"key":true,"other":false}"#)]
 #[case::tuple("(('key', 1),)", r#"{"key":1}"#)]
+#[case::escapes(
+    r"{'key': '\x41\u00e9\U0001f600\0\101\777\q\a'}",
+    "{\"key\":\"A\u{e9}\u{1f600}\\u0000A\u{1ff}\\\\q\\u0007\"}"
+)]
+#[case::names(
+    r"{'key': '\N{LATIN SMALL LETTER E WITH ACUTE}\N{SNOWMAN}'}",
+    r#"{"key":"\u00e9\u2603"}"#
+)]
+#[case::unicode("{'key': '\u{e9}'}", r#"{"key":"\u00e9"}"#)]
 #[case::quotes(r#"{'key': "isn't JSON"}"#, r#"{"key":"isn't JSON"}"#)]
 fn python_literals_use_ast_fallback(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(
@@ -216,6 +217,17 @@ fn python_literals_use_ast_fallback(#[case] input: &str, #[case] expected: &str)
 }
 
 #[rstest]
+#[case::hex(r"{'key': '\x4'}")]
+#[case::unicode(r"{'key': '\u123z'}")]
+#[case::out_of_range(r"{'key': '\U00110000'}")]
+#[case::unknown_name(r"{'key': '\N{NO SUCH CHARACTER}'}")]
+#[case::missing_name_brace(r"{'key': '\Nwrong'}")]
+#[case::surrogate(r"{'key': '\ud800'}")]
+#[case::large_integer("{'key': 9223372036854775808}")]
+#[case::nan(r#"{"key":NaN}"#)]
+#[case::infinity(r#"{"key":Infinity}"#)]
+#[case::set("{'key': {1, 2}}")]
+#[case::bytes("{'key': b'abc'}")]
 #[case::numeric_key("[[1,2]]")]
 #[case::scalar("1")]
 #[case::wrong_pair("[[\"a\"]]")]
@@ -366,4 +378,17 @@ async fn absent_credentials_do_not_use_default_chain() {
         assert!(!request.to_lowercase().contains("authorization:"));
     };
     timeout(Duration::from_secs(2), operation).await.unwrap();
+}
+
+#[rstest]
+#[case::lists("[", "]")]
+#[case::tuples("(", ",)")]
+#[case::mappings("{'key':", "}")]
+fn excessive_nesting_is_rejected(#[case] opening: &str, #[case] closing: &str) {
+    let input = format!(
+        "{}0{}",
+        opening.repeat(1_000_000),
+        closing.repeat(1_000_000)
+    );
+    decode_body(input.as_bytes()).unwrap_err();
 }

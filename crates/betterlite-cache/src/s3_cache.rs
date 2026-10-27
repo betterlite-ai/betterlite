@@ -13,12 +13,8 @@ use tokio::time::timeout;
 
 pub mod body;
 mod client;
-#[expect(
-    clippy::disallowed_types,
-    clippy::cognitive_complexity,
-    reason = "the entry module contains an opaque JSON payload and its bounded literal decoder"
-)]
 pub mod entry;
+pub mod literal;
 mod read;
 use entry::CachedEntry;
 

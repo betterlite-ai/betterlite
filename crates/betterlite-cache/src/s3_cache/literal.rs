@@ -1,167 +1,167 @@
-use std::collections::BTreeMap;
+use std::iter::Peekable;
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::{Chars, Utf8Error, from_utf8};
 
 use serde_json::{Map, Number, Value};
 
-use super::CachedEntry;
-
-pub(crate) fn to_dictionary(value: &Value) -> Result<CachedEntry, super::super::body::DecodeError> {
-    let entries = value
-        .as_array()
-        .ok_or(super::super::body::DecodeError::Dictionary)?;
-    let mut dictionary = BTreeMap::new();
-    for entry in entries {
-        if let Some(pair) = entry.as_array() {
-            let [key, payload] = pair.as_slice() else {
-                return Err(super::super::body::DecodeError::Dictionary);
-            };
-            let name = key
-                .as_str()
-                .ok_or(super::super::body::DecodeError::Dictionary)?;
-            dictionary.insert(name.to_owned(), CachedEntry(payload.clone()));
-        } else if let Some(text) = entry.as_str() {
-            let mut chars = text.chars();
-            let key = chars
-                .next()
-                .ok_or(super::super::body::DecodeError::Dictionary)?;
-            let payload = chars
-                .next()
-                .ok_or(super::super::body::DecodeError::Dictionary)?;
-            if chars.next().is_some() {
-                return Err(super::super::body::DecodeError::Dictionary);
-            }
-            dictionary.insert(
-                key.to_string(),
-                CachedEntry(Value::String(payload.to_string())),
-            );
-        } else {
-            return Err(super::super::body::DecodeError::Dictionary);
-        }
-    }
-    serde_json::to_value(dictionary)
-        .map(CachedEntry)
-        .map_err(|source| super::super::body::DecodeError::Json {
-            source: Box::new(source),
-        })
-}
-
 pub(crate) fn parse(bytes: &[u8]) -> Result<Value, LiteralError> {
-    let text = from_utf8(bytes).map_err(|source| LiteralError::Utf8 { source })?;
+    let text = from_utf8(bytes).map_err(LiteralError::Utf8)?;
     let mut parser = Parser {
-        chars: text.chars(),
+        chars: text.chars().peekable(),
+        depth: 0,
     };
     let value = parser.value()?;
     parser.space();
     if parser.chars.next().is_some() {
-        return Err(LiteralError::Trailing);
+        return Err(LiteralError::Unexpected);
     }
     Ok(value)
 }
 
 struct Parser<'input> {
-    chars: Chars<'input>,
-}
-
-macro_rules! parse_collection {
-    ($parser:expr, $closing:expr, $collection:expr) => {{
-        let mut object = Map::new();
-        let mut values = Vec::new();
-        let mut elements = 0_usize;
-        loop {
-            $parser.space();
-            if $parser.consume($closing) {
-                break match $collection {
-                    Collection::Mapping => Ok(Value::Object(object)),
-                    Collection::Sequence => Ok(Value::Array(values)),
-                };
-            }
-            if matches!($collection, Collection::Mapping) {
-                let key = $parser
-                    .value()?
-                    .as_str()
-                    .ok_or(LiteralError::Key)?
-                    .to_owned();
-                $parser.space();
-                $parser
-                    .consume(':')
-                    .then_some(())
-                    .ok_or(LiteralError::Unexpected)?;
-                object.insert(key, $parser.value()?);
-            } else {
-                values.push($parser.value()?);
-            }
-            elements = elements
-                .checked_add(1)
-                .ok_or(LiteralError::CollectionLimit)?;
-            if elements > 100_000 {
-                break Err(LiteralError::CollectionLimit);
-            }
-            $parser.space();
-            if !$parser.consume(',') {
-                $parser
-                    .consume($closing)
-                    .then_some(())
-                    .ok_or(LiteralError::Unexpected)?;
-                break match $collection {
-                    Collection::Mapping => Ok(Value::Object(object)),
-                    Collection::Sequence => Ok(Value::Array(values)),
-                };
-            }
-        }
-    }};
-}
-
-macro_rules! parse_string {
-    ($parser:expr, $quote:expr) => {{
-        let mut value = String::new();
-        while let Some(next_character) = $parser.chars.next() {
-            match next_character {
-                closing if closing == $quote => return Ok(Value::String(value)),
-                '\\' => match $parser.chars.next().ok_or(LiteralError::UnexpectedEnd)? {
-                    'n' => value.push('\n'),
-                    'r' => value.push('\r'),
-                    't' => value.push('\t'),
-                    'b' => value.push('\u{08}'),
-                    'f' => value.push('\u{0c}'),
-                    'v' => value.push('\u{0b}'),
-                    escaped => value.push(escaped),
-                },
-                other => value.push(other),
-            }
-        }
-        Err(LiteralError::UnexpectedEnd)
-    }};
+    chars: Peekable<Chars<'input>>,
+    depth: usize,
 }
 
 impl Parser<'_> {
     fn value(&mut self) -> Result<Value, LiteralError> {
         self.space();
-        match self.chars.next().ok_or(LiteralError::UnexpectedEnd)? {
-            '{' => parse_collection!(self, '}', Collection::Mapping),
-            '[' => parse_collection!(self, ']', Collection::Sequence),
-            '(' => parse_collection!(self, ')', Collection::Sequence),
-            quote @ ('\'' | '"') => parse_string!(self, quote),
-            character
-                if character.is_ascii_digit()
-                    || character == '-'
-                    || character.is_ascii_alphabetic() =>
-            {
+        match self.chars.next().ok_or(LiteralError::Unexpected)? {
+            '{' => self.collection('}'),
+            '[' => self.collection(']'),
+            '(' => self.collection(')'),
+            quote @ ('\'' | '"') => self.string(quote),
+            character if character.is_ascii_alphanumeric() || character == '-' => {
                 self.token_value(character)
             }
             _ => Err(LiteralError::Unexpected),
         }
     }
 
-    fn token(&mut self, first: char, allowed: fn(char) -> bool) -> String {
-        let mut token = first.to_string();
-        while let Some(character) = self.chars.clone().next() {
-            if allowed(character) {
-                token.push(character);
+    fn collection(&mut self, closing: char) -> Result<Value, LiteralError> {
+        if self.depth >= 128 {
+            return Err(LiteralError::DepthLimit);
+        }
+        self.depth = self.depth.saturating_add(1);
+        let mut object = Map::new();
+        let mut values = Vec::new();
+        self.space();
+        while self.chars.next_if_eq(&closing).is_none() {
+            let item = self.value()?;
+            if closing == '}' {
+                let key = item.as_str().ok_or(LiteralError::Key)?.to_owned();
+                self.space();
+                self.chars
+                    .next_if_eq(&':')
+                    .ok_or(LiteralError::Unexpected)?;
+                object.insert(key, self.value()?);
+            } else {
+                values.push(item);
+            }
+            self.space();
+            if self.chars.next_if_eq(&',').is_none() {
+                self.chars
+                    .next_if_eq(&closing)
+                    .ok_or(LiteralError::Unexpected)?;
+                break;
+            }
+            self.space();
+        }
+        self.depth = self.depth.saturating_sub(1);
+        Ok(if closing == '}' {
+            Value::Object(object)
+        } else {
+            Value::Array(values)
+        })
+    }
+
+    fn string(&mut self, quote: char) -> Result<Value, LiteralError> {
+        let mut value = String::new();
+        while let Some(character) = self.chars.next() {
+            match character {
+                closing if closing == quote => return Ok(Value::String(value)),
+                '\\' => self.escape(&mut value)?,
+                '\n' | '\r' | '\0' => return Err(LiteralError::Unexpected),
+                other => value.push(other),
+            }
+        }
+        Err(LiteralError::Unexpected)
+    }
+
+    fn escape(&mut self, value: &mut String) -> Result<(), LiteralError> {
+        let escaped = self.chars.next().ok_or(LiteralError::Unexpected)?;
+        let decoded = match escaped {
+            'a' => '\u{07}',
+            'b' => '\u{08}',
+            'f' => '\u{0c}',
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            'v' => '\u{0b}',
+            '\\' | '\'' | '"' => escaped,
+            'x' => self.hex_escape(2)?,
+            'u' => self.hex_escape(4)?,
+            'U' => self.hex_escape(8)?,
+            'N' => self.named_escape()?,
+            '0'..='7' => self.octal_escape(escaped)?,
+            '\n' => return Ok(()),
+            '\r' => {
+                self.chars.next_if_eq(&'\n');
+                return Ok(());
+            }
+            other => {
+                value.push('\\');
+                other
+            }
+        };
+        value.push(decoded);
+        Ok(())
+    }
+
+    fn hex_escape(&mut self, length: usize) -> Result<char, LiteralError> {
+        let digits: String = self.chars.by_ref().take(length).collect();
+        if digits.len() != length || !digits.chars().all(|digit| digit.is_ascii_hexdigit()) {
+            return Err(LiteralError::Escape);
+        }
+        let code = u32::from_str_radix(&digits, 16).map_err(LiteralError::Integer)?;
+        char::from_u32(code).ok_or(LiteralError::Escape)
+    }
+
+    fn octal_escape(&mut self, first: char) -> Result<char, LiteralError> {
+        let mut digits = first.to_string();
+        for _ in 0_u8..2 {
+            if let Some(digit @ '0'..='7') = self.chars.peek().copied() {
+                digits.push(digit);
                 self.chars.next();
             } else {
                 break;
             }
+        }
+        let code = u32::from_str_radix(&digits, 8).map_err(LiteralError::Integer)?;
+        char::from_u32(code).ok_or(LiteralError::Escape)
+    }
+
+    fn named_escape(&mut self) -> Result<char, LiteralError> {
+        if self.chars.next_if_eq(&'{').is_none() {
+            return Err(LiteralError::Escape);
+        }
+        let mut name = String::new();
+        for character in self.chars.by_ref() {
+            if character == '}' {
+                return unicode_names2::character(&name).ok_or(LiteralError::Escape);
+            }
+            if name.len() >= 128 {
+                return Err(LiteralError::Escape);
+            }
+            name.push(character);
+        }
+        Err(LiteralError::Unexpected)
+    }
+
+    fn token(&mut self, first: char, allowed: fn(char) -> bool) -> String {
+        let mut token = first.to_string();
+        while let Some(character) = self.chars.next_if(|character| allowed(*character)) {
+            token.push(character);
         }
         token
     }
@@ -175,7 +175,7 @@ impl Parser<'_> {
                 "None" => Ok(Value::Null),
                 "True" => Ok(Value::Bool(true)),
                 "False" => Ok(Value::Bool(false)),
-                _ => Err(LiteralError::Word),
+                _ => Err(LiteralError::Unexpected),
             };
         }
         let text = self.token(first, |value| {
@@ -186,74 +186,35 @@ impl Parser<'_> {
                 .parse::<i64>()
                 .map(Number::from)
                 .map(Value::Number)
-                .map_err(|source| LiteralError::Integer {
-                    source: Box::new(source),
-                });
+                .map_err(LiteralError::Integer);
         }
-        let number = text.parse::<f64>().map_err(|source| LiteralError::Float {
-            source: Box::new(source),
-        })?;
+        let number = text.parse::<f64>().map_err(LiteralError::Float)?;
         Number::from_f64(number)
             .map(Value::Number)
             .ok_or(LiteralError::Number)
     }
 
     fn space(&mut self) {
-        while self
-            .chars
-            .clone()
-            .next()
-            .is_some_and(|character| character.is_ascii_whitespace())
-        {
-            self.chars.next();
-        }
+        while self.chars.next_if(char::is_ascii_whitespace).is_some() {}
     }
-
-    fn consume(&mut self, expected: char) -> bool {
-        if self.chars.clone().next() == Some(expected) {
-            self.chars.next();
-            true
-        } else {
-            false
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Collection {
-    Mapping,
-    Sequence,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum LiteralError {
     #[error("cache literal is not UTF-8")]
-    Utf8 {
-        #[source]
-        source: Utf8Error,
-    },
-    #[error("cache literal ended unexpectedly")]
-    UnexpectedEnd,
+    Utf8(#[source] Utf8Error),
     #[error("cache literal has unexpected syntax")]
     Unexpected,
-    #[error("cache literal has trailing data")]
-    Trailing,
     #[error("cache literal has a non-string dictionary key")]
     Key,
-    #[error("cache literal has an unsupported word")]
-    Word,
     #[error("cache literal has an invalid number")]
     Number,
-    #[error("cache literal collection is too large")]
-    CollectionLimit,
+    #[error("cache literal nesting exceeds 128 levels")]
+    DepthLimit,
+    #[error("cache literal has an invalid string escape")]
+    Escape,
     #[error("cache literal has an invalid integer")]
-    Integer {
-        #[source]
-        source: Box<ParseIntError>,
-    },
+    Integer(#[source] ParseIntError),
     #[error("cache literal has an invalid float")]
-    Float {
-        #[source]
-        source: Box<ParseFloatError>,
-    },
+    Float(#[source] ParseFloatError),
 }
