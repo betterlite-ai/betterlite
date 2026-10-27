@@ -81,12 +81,11 @@ def _hoist(value: Any, tools: list[Any] | None) -> dict[str, Any]:
     ]
     if not items:
         return {"input": value, "tools": list(existing), "hoisted": [], "debug": None}
-    hoisted = [
-        tool
-        for item in items
-        for tool in (item.get("tools", ()) if isinstance(item.get("tools"), list) else ())
-        if isinstance(tool, dict)
-    ]
+    hoisted = []
+    for item in items:
+        item_tools = item.get("tools")
+        if isinstance(item_tools, list) and all(isinstance(tool, dict) for tool in item_tools):
+            hoisted.extend(item_tools)
     remaining = [
         item
         for item in value

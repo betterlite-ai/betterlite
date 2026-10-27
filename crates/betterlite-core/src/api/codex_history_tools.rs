@@ -10,7 +10,7 @@
     reason = "Codex provider passthrough preserves vendor JSON without a closed schema"
 )]
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt::Write as _};
 
 use serde_json::{Map, Value};
 
@@ -124,12 +124,15 @@ fn split_additional_tools(input: &Value) -> (Vec<Value>, Vec<Value>) {
     let mut hoisted = Vec::new();
     let mut remaining = Vec::new();
     for item in input.as_array().into_iter().flatten() {
-        if is_additional_tools(item) {
-            if let Some(item_tools) = item.get("tools").and_then(Value::as_array) {
-                hoisted.extend(item_tools.iter().filter(|tool| tool.is_object()).cloned());
-            }
-        } else {
+        if !is_additional_tools(item) {
             remaining.push(item.clone());
+            continue;
+        }
+        let Some(item_tools) = item.get("tools").and_then(Value::as_array) else {
+            continue;
+        };
+        if item_tools.iter().all(Value::is_object) {
+            hoisted.extend(item_tools.iter().cloned());
         }
     }
     (remaining, hoisted)
@@ -210,7 +213,9 @@ fn is_truthy(value: &Value) -> bool {
         Value::Null | Value::Bool(false) => false,
         Value::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
         Value::String(text) => !text.is_empty(),
-        _ => true,
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(object) => !object.is_empty(),
+        Value::Bool(true) => true,
     }
 }
 
@@ -246,15 +251,49 @@ fn python_json(value: &Value) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Value::String(text) => json_string(text),
         _ => value.to_string(),
     }
 }
 
 fn json_string(value: &str) -> String {
-    if let Ok(encoded) = serde_json::to_string(value) {
-        return encoded;
+    let mut encoded = String::with_capacity(value.len().saturating_add(2));
+    encoded.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => encoded.push_str("\\\""),
+            '\\' => encoded.push_str("\\\\"),
+            '\u{08}' => encoded.push_str("\\b"),
+            '\u{0c}' => encoded.push_str("\\f"),
+            '\n' => encoded.push_str("\\n"),
+            '\r' => encoded.push_str("\\r"),
+            '\t' => encoded.push_str("\\t"),
+            control if control.is_ascii_control() => {
+                if write!(encoded, "\\u{:04x}", u32::from(control)).is_err() {
+                    return "\"\"".to_owned();
+                }
+            }
+            ascii if ascii.is_ascii() => encoded.push(ascii),
+            non_ascii => {
+                if !append_non_ascii(&mut encoded, non_ascii) {
+                    return "\"\"".to_owned();
+                }
+            }
+        }
     }
-    "\"\"".to_owned()
+    encoded.push('"');
+    encoded
+}
+
+fn append_non_ascii(encoded: &mut String, character: char) -> bool {
+    let mut units = [0; 2];
+    let encoded_units = character.encode_utf16(&mut units);
+    for unit in encoded_units {
+        if write!(encoded, "\\u{unit:04x}", unit = u32::from(*unit)).is_err() {
+            return false;
+        }
+    }
+    true
 }
 
 #[path = "codex_history_tools/tests.rs"]

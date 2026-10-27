@@ -28,3 +28,41 @@ fn hoists_vendor_tools_and_keeps_existing_order() {
         )
     );
 }
+
+#[test]
+fn malformed_tool_list_contributes_no_tools() {
+    let input = serde_json::json!([{
+        "type":"additional_tools",
+        "tools":[{"type":"vendor"}, "malformed"]
+    }]);
+    let result = hoist_additional_tools(&input, None);
+    assert!(result.hoisted.is_empty());
+    assert!(result.tools.is_empty());
+}
+
+#[test]
+fn agent_message_uses_fallback_after_empty_container() {
+    let input = serde_json::json!([{
+        "type":"agent_message",
+        "content":[{"text":[],"encrypted_content":"fallback"}]
+    }]);
+    let (output, _) = normalize_codex_input_items(&input);
+    assert_eq!(
+        output,
+        serde_json::json!([{"type":"message","role":"assistant","content":[{"type":"output_text","text":"fallback"}]}])
+    );
+}
+
+#[test]
+fn local_shell_arguments_escape_non_ascii_like_python_json() {
+    let input = serde_json::json!([{
+        "type":"local_shell_call",
+        "call_id":"c",
+        "action":{"h\u{e9}":"\u{e9}\u{1f600}"}
+    }]);
+    let (output, _) = normalize_codex_input_items(&input);
+    assert_eq!(
+        output,
+        serde_json::json!([{"type":"function_call","call_id":"c","name":"local_shell","arguments":"{\"h\\u00e9\": \"\\u00e9\\ud83d\\ude00\"}"}])
+    );
+}
