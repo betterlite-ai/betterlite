@@ -1,0 +1,244 @@
+id: B3391
+title: Skill lookup and deletion with shared caller context
+description: >-
+  Build the get and delete native operations for betterlite-core::api::skills, with shared
+  helper functions for caller context extraction and lazy-initialized hosted-handler access.
+  Implement both sync (get_skill, delete_skill) and async (aget_skill, adelete_skill) entry
+  points that share implementation via sync-to-async bridging. Reuse B3390's validate_environment,
+  request transformations, and wire-format contracts (Skill, DeleteSkillResponse). Use B567's
+  AnthropicModelInfo.get_api_base for credential resolution and B247's Logging.update_from_kwargs
+  for pre-call logging. Route provider-specific calls through B185/B186's exception_type mapping
+  and use B198's request_timeout constant (default 6000 seconds) when timeout is None or 0.
+
+  _get_user_api_key_auth_from_kwargs extracts principal identity: check metadata.user_api_key_auth
+  first (accepting any non-None value), then litellm_metadata.user_api_key_auth, returning None
+  if neither key exists. _get_litellm_skills_handler lazily initializes and caches the hosted-
+  handler transformation class. Both get and delete operations accept custom_llm_provider (default
+  "anthropic"), extra_headers, extra_query (accepted but not forwarded), and optional per-call
+  timeout. When custom_llm_provider="litellm_proxy", route to the hosted handler; otherwise select
+  the provider config, validate environment, transform request, and dispatch via HTTP handler.
+
+  The fallback Anthropic API base is "https://api.anthropic.com/v1", which already contains /v1;
+  preserve this when building URLs so get_complete_url concatenation does not insert a duplicate.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/skills/get_delete.rs
+    - crates/betterlite-core/src/api/skills/get_delete/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L38-L43"
+    why: "_get_user_api_key_auth_from_kwargs extracts principal from metadata.user_api_key_auth
+      (preferred) or litellm_metadata.user_api_key_auth, accepting any non-None value."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L59-L68"
+    why: "_get_litellm_skills_handler lazily initializes the hosted-handler transformation class
+      with module-level singleton pattern, imported only when first called."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L447-L501"
+    why: "aget_skill async entry point with context-preserving executor bridge and exception
+      mapping through custom_llm_provider."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L504-L608"
+    why: "get_skill sync entry point routing to hosted or external provider, with default provider
+      selection, logging, and timeout handling."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L611-L665"
+    why: "adelete_skill async entry point with context-preserving executor bridge."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L668-L772"
+    why: "delete_skill sync entry point with provider routing, logging, and timeout defaults."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577"
+    why: "REQUEST_TIMEOUT is 6000 seconds by default, used when timeout is None or 0 (truthiness
+      test)."
+
+dod:
+  - text: >-
+      _get_user_api_key_auth_from_kwargs extracts principal from kwargs metadata fields: checks
+      metadata.user_api_key_auth first, then litellm_metadata.user_api_key_auth, accepting any
+      non-None value and returning None if neither exists.
+    proof: [principal-extraction]
+
+  - text: >-
+      _get_litellm_skills_handler lazily initializes and caches the hosted-handler transformation
+      class on first call, reusing the cached instance on subsequent calls without re-importing.
+    proof: [lazy-handler-init]
+
+  - text: >-
+      get_skill defaults custom_llm_provider to "anthropic", routes to hosted handler when provider
+      is "litellm_proxy", otherwise selects external provider config and dispatches via HTTP handler.
+    proof: [get-skill-routing]
+
+  - text: >-
+      delete_skill defaults custom_llm_provider to "anthropic", routes to hosted handler when
+      provider is "litellm_proxy", otherwise selects external provider config and dispatches
+      via HTTP handler.
+    proof: [delete-skill-routing]
+
+  - text: >-
+      get_skill and delete_skill call B3390's validate_environment and transform_*_skill_request
+      to produce request body and headers from GenericLiteLLMParams.
+    proof: [request-transformation]
+
+  - text: >-
+      get_skill and delete_skill construct URLs using B3390's get_complete_url, which uses
+      B567's AnthropicModelInfo.get_api_base and respects the /v1 already in the fallback base.
+    proof: [url-construction]
+
+  - text: >-
+      get_skill and delete_skill log pre-call metrics via B247's Logging.update_from_kwargs
+      with skill_id in optional_params.
+    proof: [pre-call-logging]
+
+  - text: >-
+      timeout=None or timeout=0 falls back to B198's request_timeout constant (6000 seconds);
+      explicit timeout values are preserved.
+    proof: [timeout-default]
+
+  - text: >-
+      Both sync get_skill/delete_skill and async aget_skill/adelete_skill handle exceptions
+      through B185/B186's exception_type, mapping provider errors to LiteLLM-compatible
+      exceptions.
+    proof: [exception-mapping]
+
+  - text: >-
+      async aget_skill and adelete_skill copy context variables with contextvars.copy_context,
+      run the sync function in an executor, and await any returned coroutine from the sync path.
+    proof: [async-context-preservation]
+
+  - text: >-
+      extra_query parameter is accepted in function signature but not forwarded to provider
+      requests or transformations, matching LiteLLM behavior for get/delete operations.
+    proof: [extra-query-acceptance]
+
+  - text: >-
+      get_skill and delete_skill raise ValueError with messages 'GET skill is not supported for
+      {custom_llm_provider}' and 'DELETE skill is not supported for {custom_llm_provider}' when
+      B157's ProviderConfigManager.get_provider_skills_api_config returns None for the provider.
+    proof: [unsupported-provider-error]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: principal-extraction
+      why: _get_user_api_key_auth_from_kwargs does not check metadata precedence or returns
+        incorrect values.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(principal_extraction|user_api_key)/)'
+
+    - id: lazy-handler-init
+      why: _get_litellm_skills_handler does not lazily initialize or does not cache the handler
+        instance.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(lazy_handler|handler_init)/)'
+
+    - id: get-skill-routing
+      why: get_skill does not route to hosted or external providers correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::get_skill_(routing|hosted|external)/)'
+
+    - id: delete-skill-routing
+      why: delete_skill does not route to hosted or external providers correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::delete_skill_(routing|hosted|external)/)'
+
+    - id: request-transformation
+      why: Request transformation via B3390 does not apply validate_environment and
+        transform_*_request correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(get_skill_request|delete_skill_request|transformation)/)'
+
+    - id: url-construction
+      why: URL construction does not use B3390's get_complete_url or B567's get_api_base,
+        or does not handle the /v1 fallback base correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(get_skill_url|delete_skill_url|url_construction|fallback_base)/)'
+
+    - id: pre-call-logging
+      why: Pre-call logging via B247 is missing or does not capture skill_id in optional_params.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(pre_call_logging|logging)/)'
+
+    - id: timeout-default
+      why: timeout=None or 0 does not fall back to request_timeout constant, or explicit
+        timeouts are not preserved.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(timeout_default|timeout)/)'
+
+    - id: exception-mapping
+      why: Exceptions are not mapped through B185/B186's exception_type or custom_llm_provider
+        is not used for exception selection.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(exception_mapping|exception_type)/)'
+
+    - id: async-context-preservation
+      why: async functions do not copy context, run sync code in executor, or do not await
+        returned coroutines correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(async_context|aget_skill|adelete_skill)/)'
+
+    - id: extra-query-acceptance
+      why: extra_query is not accepted in function signature or is incorrectly forwarded
+        to provider requests.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::extra_query/)'
+
+    - id: unsupported-provider-error
+      why: get_skill and delete_skill do not raise ValueError with the correct message
+        when ProviderConfigManager.get_provider_skills_api_config returns None.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(unsupported_provider|get_skill_error|delete_skill_error)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: extra_query parameter is accepted in get_skill, aget_skill, delete_skill, and
+      adelete_skill function signatures but is not forwarded to provider requests or
+      transformations.
+    why: LiteLLM accepts the parameter for consistency with other operations but does not
+      use it for get/delete. Accepting but not forwarding maintains the same interface
+      and avoids breaking existing callers who pass the parameter.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L504-L512"
+
+  - what: The fallback Anthropic API base "https://api.anthropic.com/v1" already contains
+      /v1, so URL construction via get_complete_url does not insert a duplicate.
+    why: Preserving the literal fallback base and passing it to get_complete_url ensures
+      correct URL assembly. The transformation layer is responsible for correct concatenation
+      without assuming base structure.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L32,L570,L734"
+
+out_of_scope:
+  - >-
+    HTTP handler dispatch: get_skill_handler, async_get_skill_handler, delete_skill_handler,
+    and async_delete_skill_handler are unresolved; these handlers own the actual HTTP calls
+    and response decoding.
+
+  - >-
+    Provider config selection: ProviderConfigManager.get_provider_skills_api_config
+    (litellm/utils.py:9245-9260) is owned by B157; it is a dependency only.
+
+  - >-
+    Hosted handler construction and transformations: LiteLLMSkillsTransformationHandler
+    create_skill_handler, get_skill_handler, delete_skill_handler, and related methods are
+    unresolved.
+
+  - >-
+    The @client lifecycle decorator (litellm/utils.py:1674-2315) is owned by B157; it is a dependency only.
+
+pitfalls:
+  - metadata.user_api_key_auth is checked before litellm_metadata.user_api_key_auth. Code that
+    reverses the order will accept different principals than LiteLLM.
+
+  - The DEFAULT_ANTHROPIC_API_BASE fallback "https://api.anthropic.com/v1" already contains /v1.
+    Code that appends /v1 again or strips it before passing to get_complete_url will produce
+    incorrect URLs like "https://api.anthropic.com/v1/v1/skills/{id}".
+
+  - timeout=None and timeout=0 both trigger the REQUEST_TIMEOUT fallback via truthiness test.
+    Code that treats None and 0 differently will diverge from LiteLLM.
+
+  - extra_query is accepted in the function signature but is not forwarded to provider requests.
+    Code that passes extra_query to the HTTP handler or uses it for query filtering will
+    diverge from LiteLLM's get/delete operations.
+
+  - The hosted handler is lazily imported only when custom_llm_provider="litellm_proxy". Code
+    that tries to import or initialize it earlier will create unnecessary module dependencies
+    or fail if the hosted path is not available.
+
+  - Both get_skill and delete_skill route through the same logic (default provider, select config,
+    transform, dispatch). Diverging implementations for each operation will make maintenance
+    harder and create test coverage gaps.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

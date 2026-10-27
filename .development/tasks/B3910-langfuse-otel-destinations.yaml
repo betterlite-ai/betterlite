@@ -1,0 +1,249 @@
+id: B3910
+title: Langfuse OpenTelemetry destinations and service filtering
+description: >-
+  Implement Langfuse OpenTelemetry destination configuration and logger specialization in betterlite-logging,
+  building on B3909's attribute setting. Add the langfuse_otel destination with US-cloud default endpoint,
+  explicit host normalization, Basic authorization headers and x-langfuse-ingestion-version: 4. Resolve
+  per-request credentials as a complete destination override via standard_callback_dynamic_params.
+  Retain the no-op proxy-start/service-hook behavior that prevents internal-service traces reaching Langfuse.
+  Implement LangfuseOtelLogger.__init__ to build OpenTelemetryConfig from environment or dynamic credentials,
+  _get_langfuse_otel_host to resolve LANGFUSE_OTEL_HOST or LANGFUSE_HOST, _build_langfuse_otel_config to construct
+  the OTLP endpoint and authorization, _get_langfuse_authorization_header for Basic auth encoding of public:secret,
+  _build_langfuse_otel_headers for the Langfuse header set, _format_otel_headers to serialize as comma-separated string,
+  construct_dynamic_otel_headers to extract dynamic credentials and return auth headers, and construct_dynamic_otel_config
+  to build a complete dynamic destination override. Implement service hooks create_litellm_proxy_request_started_span,
+  async_service_success_hook and async_service_failure_hook as no-ops to prevent internal traces. Direct dependencies:
+  B002 for environment lookup and config injection; B3909 for set_langfuse_otel_attributes as the specialized logger's
+  attribute hook; B3854 for OpenTelemetryConfig.from_env fallback and B3868 for OpenTelemetry.__init__. Export LangfuseOtelLogger
+  as the specialized OpenTelemetry logger and all static configuration helpers. Every case listed under DoD exercises endpoint
+  resolution, host normalization, header construction and credential override.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/langfuse_otel.rs
+    - crates/betterlite-logging/src/langfuse_otel/**
+    - tools/oracle/cases/logging/langfuse-otel/**
+    - tools/oracle/cases/helpers/langfuse-otel/**
+    - tools/oracle/helpers/b3910.py
+    - tools/oracle/helpers/b3910/**
+    - tools/oracle/src/helpers/logging/b3910.rs
+    - tools/oracle/src/helpers/logging/b3910/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L27-L30
+    why: LANGFUSE_CLOUD_US_ENDPOINT, LANGFUSE_CLOUD_EU_ENDPOINT, LANGFUSE_INGESTION_VERSION_HEADER and LANGFUSE_INGESTION_VERSION constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L34-L39
+    why: LangfuseOtelLogger.__init__ with conditional config creation and parent init.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L258-L267
+    why: _get_langfuse_otel_host environment variable precedence (LANGFUSE_OTEL_HOST then LANGFUSE_HOST).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L269-L287
+    why: _create_open_telemetry_config_from_langfuse_env credential extraction and fallback to OpenTelemetryConfig.from_env().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L290-L317
+    why: get_langfuse_otel_config static method with required key validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L320-L345
+    why: _build_langfuse_otel_config with host normalization (https prefix), endpoint construction, authorization header and OpenTelemetryConfig return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L348-L354
+    why: _get_langfuse_authorization_header base64 encoding of "public_key:secret_key" as Basic auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L357-L367
+    why: _build_langfuse_otel_headers dict with Authorization and x-langfuse-ingestion-version headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L370-L374
+    why: _format_otel_headers comma-separated serialization of header dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L376-L398
+    why: construct_dynamic_otel_headers extraction of langfuse_public_key and langfuse_secret_key from dynamic params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L400-L421
+    why: construct_dynamic_otel_config credential extraction and _build_langfuse_otel_config call with optional langfuse_host override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L423-L447
+    why: Service hook overrides (create_litellm_proxy_request_started_span, async_service_success_hook, async_service_failure_hook) returning None or no-op.
+
+dod:
+  - text: >-
+      LANGFUSE_CLOUD_US_ENDPOINT and LANGFUSE_CLOUD_EU_ENDPOINT constants are exported with US cloud
+      (https://us.cloud.langfuse.com/api/public/otel) as the default; LANGFUSE_INGESTION_VERSION_HEADER
+      is "x-langfuse-ingestion-version" and LANGFUSE_INGESTION_VERSION is "4".
+    proof: [constant-definitions]
+
+  - text: >-
+      LangfuseOtelLogger.__init__ constructs OpenTelemetryConfig from _create_open_telemetry_config_from_langfuse_env
+      if config is None, then calls parent OpenTelemetry.__init__ with the config.
+    proof: [initialization-tests]
+
+  - text: >-
+      _get_langfuse_otel_host returns LANGFUSE_OTEL_HOST if set, else LANGFUSE_HOST, else None.
+      Environment variables are read in order of precedence.
+    proof: [host-resolution-tests]
+
+  - text: >-
+      _create_open_telemetry_config_from_langfuse_env reads LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY;
+      if both are present, calls _build_langfuse_otel_config with those keys and _get_langfuse_otel_host();
+      otherwise returns OpenTelemetryConfig.from_env().
+    proof: [config-creation-tests]
+
+  - text: >-
+      get_langfuse_otel_config raises ValueError if either LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY is missing,
+      otherwise calls _build_langfuse_otel_config with those keys and _get_langfuse_otel_host().
+    proof: [config-validation-tests]
+
+  - text: >-
+      _build_langfuse_otel_config normalizes langfuse_host by prepending "https://" if not already starting
+      with "http", constructs endpoint as "{normalized_host.rstrip('/')}/api/public/otel", and uses
+      LANGFUSE_CLOUD_US_ENDPOINT as default when host is None. Returns OpenTelemetryConfig with exporter "otlp_http",
+      the computed endpoint, and formatted headers from _build_langfuse_otel_headers.
+    proof: [endpoint-construction-tests]
+
+  - text: >-
+      _get_langfuse_authorization_header constructs "public_key:secret_key", base64-encodes it,
+      and returns "Basic {encoded}" for HTTP Basic authentication.
+    proof: [authorization-header-tests]
+
+  - text: >-
+      _build_langfuse_otel_headers returns dict with "Authorization" header and the constant
+      LANGFUSE_INGESTION_VERSION_HEADER set to LANGFUSE_INGESTION_VERSION ("x-langfuse-ingestion-version: 4").
+    proof: [header-construction-tests]
+
+  - text: >-
+      _format_otel_headers serializes a header dict to comma-separated "key=value" pairs, e.g.
+      {"Authorization": "Basic ...", "x-langfuse-ingestion-version": "4"} becomes "Authorization=Basic ...,x-langfuse-ingestion-version=4".
+    proof: [header-formatting-tests]
+
+  - text: >-
+      construct_dynamic_otel_headers extracts langfuse_public_key and langfuse_secret_key from standard_callback_dynamic_params,
+      and if both are present, calls _get_langfuse_authorization_header and _build_langfuse_otel_headers to return auth headers;
+      otherwise returns empty dict.
+    proof: [dynamic-headers-tests]
+
+  - text: >-
+      construct_dynamic_otel_config extracts langfuse_public_key and langfuse_secret_key from standard_callback_dynamic_params;
+      if both are present, optionally reads langfuse_host (falling back to _get_langfuse_otel_host),
+      and calls _build_langfuse_otel_config. Returns None if either key is missing.
+    proof: [dynamic-config-tests]
+
+  - text: >-
+      create_litellm_proxy_request_started_span returns None to prevent proxy request span creation.
+    proof: [service-hook-span-tests]
+
+  - text: >-
+      async_service_success_hook and async_service_failure_hook are defined and accept arbitrary arguments,
+      performing no action to prevent service event logging.
+    proof: [service-hook-noop-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: constant-definitions
+      why: Langfuse endpoint and ingestion constants must be correctly defined
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::(cloud_endpoints|ingestion_constants)/)'
+    - id: initialization-tests
+      why: LangfuseOtelLogger.__init__ must construct config and call parent init
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::initialization/)'
+    - id: host-resolution-tests
+      why: host resolution must respect LANGFUSE_OTEL_HOST and LANGFUSE_HOST precedence
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::host_resolution/)'
+    - id: config-creation-tests
+      why: config creation must read credentials and fall back to from_env
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::config_creation/)'
+    - id: config-validation-tests
+      why: get_langfuse_otel_config must validate required credentials
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::config_validation/)'
+    - id: endpoint-construction-tests
+      why: endpoint construction must normalize host and apply defaults
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::endpoint_construction/)'
+    - id: authorization-header-tests
+      why: authorization header must base64-encode public:secret as Basic auth
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::authorization_header/)'
+    - id: header-construction-tests
+      why: Langfuse headers must include Authorization and ingestion version
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::header_construction/)'
+    - id: header-formatting-tests
+      why: headers must serialize to comma-separated key=value format
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::header_formatting/)'
+    - id: dynamic-headers-tests
+      why: dynamic headers must extract credentials from params and construct auth headers
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::dynamic_headers/)'
+    - id: dynamic-config-tests
+      why: dynamic config must extract credentials and build complete override config
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::dynamic_config/)'
+    - id: service-hook-span-tests
+      why: service hook must return None to prevent proxy request span creation
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::service_hook_span/)'
+    - id: service-hook-noop-tests
+      why: service hooks must be defined and handle arguments without action
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel::tests::service_hook_noop/)'
+    - id: oracle-langfuse-otel-dispatch
+      why: endpoint resolution and credential override must match LiteLLM behavior
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/langfuse-otel)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(langfuse_otel)'
+
+oracle_cases:
+  - tools/oracle/cases/logging/langfuse-otel/initialization-environment-credentials.yaml
+  - tools/oracle/cases/logging/langfuse-otel/initialization-no-credentials-fallback.yaml
+  - tools/oracle/cases/logging/langfuse-otel/host-resolution-otel-host.yaml
+  - tools/oracle/cases/logging/langfuse-otel/host-resolution-langfuse-host.yaml
+  - tools/oracle/cases/logging/langfuse-otel/host-resolution-none.yaml
+  - tools/oracle/cases/logging/langfuse-otel/config-validation-missing-keys.yaml
+  - tools/oracle/cases/logging/langfuse-otel/endpoint-us-cloud-default.yaml
+  - tools/oracle/cases/logging/langfuse-otel/endpoint-custom-host.yaml
+  - tools/oracle/cases/logging/langfuse-otel/endpoint-host-with-https.yaml
+  - tools/oracle/cases/logging/langfuse-otel/endpoint-host-trailing-slash.yaml
+  - tools/oracle/cases/logging/langfuse-otel/authorization-header-base64.yaml
+  - tools/oracle/cases/logging/langfuse-otel/headers-authorization-and-version.yaml
+  - tools/oracle/cases/logging/langfuse-otel/header-formatting-comma-separated.yaml
+  - tools/oracle/cases/logging/langfuse-otel/dynamic-headers-with-credentials.yaml
+  - tools/oracle/cases/logging/langfuse-otel/dynamic-headers-missing-secret.yaml
+  - tools/oracle/cases/logging/langfuse-otel/dynamic-config-with-credentials.yaml
+  - tools/oracle/cases/logging/langfuse-otel/dynamic-config-with-host-override.yaml
+  - tools/oracle/cases/logging/langfuse-otel/dynamic-config-missing-credentials.yaml
+  - tools/oracle/cases/helpers/langfuse-otel/host-resolution-precedence.yaml
+  - tools/oracle/cases/helpers/langfuse-otel/authorization-header-encoding.yaml
+
+deviations:
+  - what: >-
+      LangfuseOtelLogger.__init__ calls super().__init__() (OpenTelemetry.__init__) and _create_open_telemetry_config_from_langfuse_env
+      falls back to OpenTelemetryConfig.from_env() when credentials are missing. These functions are owned by B3854 (legacy
+      OTel capture policy and span annotations) and B3868 (OTel provider assembly and legacy initialization).
+    why: >-
+      The base OpenTelemetry provider initialization and configuration fallback are separate tasks owned by their respective
+      modules. This task builds Langfuse-specific destination configuration that delegates to them through standard interfaces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L34-L39
+
+  - what: >-
+      construct_dynamic_otel_headers and construct_dynamic_otel_config move team/key-scoped Langfuse credentials from
+      per-request standard_callback_dynamic_params into a destination-level override. Secrets are never logged or printed
+      in configuration diagnostics.
+    why: >-
+      Dynamic credential per-request routing enables team-specific Langfuse projects without storing credentials at init time.
+      The override respects configured URL policy at the proxy layer. Secrets are treated as sensitive and never exposed in
+      diagnostics or debug output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L376-L421
+
+out_of_scope:
+  - B3909 owns set_langfuse_otel_attributes attribute setting and response type dispatch.
+  - B3854 owns OpenTelemetryConfig and its from_env fallback; B3868 owns OpenTelemetry.__init__ and provider assembly.
+  - B002 owns configuration loading and environment variable injection.
+  - B173 owns HTTP client pooling (used indirectly by OpenTelemetry exporter).
+  - B3901 owns trace and observation ID resolution primitives.
+  - B3903 owns tracing channel and export lifecycle.
+
+pitfalls:
+  - 'LANGFUSE_CLOUD_US_ENDPOINT is the default when no explicit host is provided; EU endpoint is exported as
+    documentation and does not auto-select based on deployment region.'
+  - 'Host normalization checks startswith("http"), not just startswith("https"); "http://..." is left unchanged
+    but "localhost" becomes "https://localhost".'
+  - 'rstrip("/") removes trailing slashes from the host; "https://example.com/" becomes "https://example.com"
+    before appending /api/public/otel.'
+  - 'Basic authorization encodes "public_key:secret_key" (colon-separated) in base64, then prefixes "Basic "
+    (uppercase B, single space).'
+  - 'LANGFUSE_INGESTION_VERSION_HEADER is the string "x-langfuse-ingestion-version" (lowercase, hyphenated),
+    and LANGFUSE_INGESTION_VERSION is "4" (string, not integer).'
+  - '_format_otel_headers joins header key=value pairs with commas; the result is passed to OpenTelemetryConfig
+    headers field, which expects a comma-separated string not a dict.'
+  - 'construct_dynamic_otel_headers returns an empty dict (not None) when credentials are missing.'
+  - 'construct_dynamic_otel_config returns None (not an empty config) when credentials are missing.'
+  - 'Service hooks create_litellm_proxy_request_started_span, async_service_success_hook and async_service_failure_hook
+    override parent methods; the first returns None and the others are async no-ops to suppress internal spans.'
+  - '_create_open_telemetry_config_from_langfuse_env returns OpenTelemetryConfig.from_env() only when at least
+    one credential is missing; it does not check for partial credentials (both must be absent to fall back).'
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

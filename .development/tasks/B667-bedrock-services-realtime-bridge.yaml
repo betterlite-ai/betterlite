@@ -232,6 +232,6 @@ pitfalls:
 - Session state is updated before client delivery, but a failed delivery is excluded from the logged event list.
 - Provider failure keeps the client websocket open; only normal provider EOF closes it here.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

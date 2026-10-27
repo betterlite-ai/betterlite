@@ -1,0 +1,248 @@
+id: B4002
+title: Deliver Azure Sentinel model and audit batches
+description: >-
+  Implement Azure Sentinel logging with independent model and audit log queues,
+  OAuth bearer-token authentication, and recursive batch splitting on payload size.
+  Build on CustomBatchLogger, handling dual-queue lifecycle with configurable stream names
+  and azure-specific authority hosts.
+
+  Read AZURE_SENTINEL_DCR_IMMUTABLE_ID (required), AZURE_SENTINEL_STREAM_NAME (default:
+  Custom-LiteLLM), AZURE_SENTINEL_AUDIT_STREAM_NAME (default: AZURE_SENTINEL_STREAM_NAME),
+  AZURE_SENTINEL_ENDPOINT (required), AZURE_SENTINEL_TENANT_ID or AZURE_TENANT_ID (required),
+  AZURE_SENTINEL_CLIENT_ID or AZURE_CLIENT_ID (required), AZURE_SENTINEL_CLIENT_SECRET or
+  AZURE_CLIENT_SECRET (required), and AZURE_SENTINEL_AUTHORITY_HOST or AZURE_AUTHORITY_HOST
+  (default: https://login.microsoftonline.com) from B002. Use B256 for batch constructor
+  and periodic-flush wiring; B173 for async HTTP POST; B192 for safe_dumps. Logs inherit
+  from CustomBatchLogger and queue StandardLoggingPayload; audit logs queue StandardAuditLogPayload
+  in a separate queue.
+
+  Model events (async_log_success_event, async_log_failure_event) check kwargs for standard_logging_object
+  and return early with a verbose_logger.warning when it is absent, leaving log_queue unchanged and not
+  triggering a threshold send. Audit events (async_log_audit_log_event) receive a typed audit payload
+  parameter and queue it unconditionally without checks. Normalize authority hosts by stripping trailing
+  slashes and prepending https:// to bare hosts. Map known hosts (login.microsoftonline.com,
+  login.microsoftonline.us) to their Azure Monitor scopes, falling back to https://monitor.azure.com/.default
+  for unknown hosts. OAuth tokens are cached and refreshed 60 seconds before expiry; expiry defaults to
+  3,600 seconds if omitted. The Logs Ingestion API uses version 2023-01-01, accepts 200/204 responses,
+  and splits batches above 1,000,000 UTF-8 bytes or batch_size count. Requeue survivors before new
+  arrivals, cap model and audit queues independently at max_queue_size, and never resubmit delivered
+  halves after cancellation. The logger registers as a callback and receives model/audit dispatch.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/azure_sentinel_logging.rs
+    - crates/betterlite-logging/src/azure_sentinel_logging/**
+    - tools/oracle/cases/logging/azure_sentinel/**
+    - tools/oracle/helpers/b4002.py
+    - tools/oracle/helpers/b4002/**
+    - tools/oracle/src/helpers/logging/b4002.rs
+    - tools/oracle/src/helpers/logging/b4002/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L60-L168
+    why: "AzureSentinelLogger.__init__ reads six env vars (DCR, stream names, endpoint, tenant, client ID, secret), validates required ones, normalizes authority host, maps OAuth scope, initializes dual queues and periodic flush."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L170-L179
+    why: "_normalize_authority_host strips trailing slashes and bare hosts, prepending https:// if needed."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L181-L188
+    why: "_resolve_oauth_scope maps authority hosts to Azure Monitor Logs Ingestion audiences; defaults to public cloud scope."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L190-L192
+    why: "_build_api_endpoint constructs the Logs Ingestion API URL with DCR immutable ID, stream name and api-version=2023-01-01."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L194-L238
+    why: "_get_oauth_token obtains and caches Bearer tokens with client credentials flow, refreshing 60 seconds before expiry."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L240-L265
+    why: "async_log_success_event queues StandardLoggingPayload to model queue, triggers threshold send if at batch size."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L267-L295
+    why: "async_log_failure_event queues StandardLoggingPayload to model queue, triggers threshold send if at batch size."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L297-L318
+    why: "async_log_audit_log_event queues StandardAuditLogPayload to audit queue, triggers threshold send if at batch size."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L320-L324
+    why: "_threshold_send_logs checks awaitign-retry flag and batch size before locking and sending model batch."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L326-L330
+    why: "_threshold_send_audit_logs checks awaiting-retry flag and batch size before locking and sending audit batch."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L332-L356
+    why: "async_send_batch clears model queue, calls API, requeues undelivered before new arrivals, caps at max_queue_size with overflow drop."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L358-L379
+    why: "async_send_audit_batch clears audit queue, calls API, requeues undelivered before new arrivals, caps at max_queue_size with overflow drop."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L381-L398
+    why: "_requeue prepends undelivered items, trims oldest overflow with warning and count."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L400-L442
+    why: "_async_send_batch_to_api gets token, builds headers, sends batch with 413 recursive split, returns undelivered items."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L444-L453
+    why: "flush_queue sends both model and audit batches under the flush lock."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/azure_sentinel.py
+    why: "AZURE_SENTINEL_MAX_PAYLOAD_SIZE_BYTES is 1,000,000 (1 MB UTF-8 threshold)."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/__init__.py
+    why: "Module exports AzureSentinelLogger."
+
+dod:
+  - text: "AzureSentinelLogger initializes with required environment variables and raises ValueError if any required var is missing."
+    proof: [sentinel-init-test, sentinel-init-oracle]
+
+  - text: "AZURE_SENTINEL_DCR_IMMUTABLE_ID and AZURE_SENTINEL_ENDPOINT are required; missing either raises ValueError."
+    proof: [sentinel-env-test, sentinel-env-oracle]
+
+  - text: "Authority host normalization strips trailing slashes and prepends https:// to bare hosts; login.microsoftonline.us maps to https://monitor.azure.us/.default."
+    proof: [sentinel-authority-test, sentinel-authority-oracle]
+
+  - text: "OAuth token is cached and refreshed with 60-second margin before expiry; default token lifetime is 3,600 seconds if expires_in is missing."
+    proof: [sentinel-token-test, sentinel-token-oracle]
+
+  - text: "async_log_success_event and async_log_failure_event both queue StandardLoggingPayload to model queue and trigger threshold send at batch size."
+    proof: [sentinel-model-event-test, sentinel-model-event-oracle]
+
+  - text: "When kwargs lacks standard_logging_object, async_log_success_event and async_log_failure_event log a warning and return without queuing, leaving log_queue unchanged and not triggering a send."
+    proof: [sentinel-model-event-missing-payload-test, sentinel-model-event-missing-payload-oracle]
+
+  - text: "async_log_audit_log_event queues StandardAuditLogPayload to audit queue and triggers threshold send at batch size."
+    proof: [sentinel-audit-event-test, sentinel-audit-event-oracle]
+
+  - text: "Batch sending splits above 1,000,000 UTF-8 bytes or batch_size count, accepts 200/204 responses, and requeues undelivered before new arrivals."
+    proof: [sentinel-batch-test, sentinel-batch-oracle]
+
+  - text: "Requeue truncates oldest items when total length exceeds max_queue_size, with warning logged and count of dropped records."
+    proof: [sentinel-requeue-test, sentinel-requeue-oracle]
+
+  - text: "Cancellation remainder is retained; delivered halves are never resubmitted after cancellation."
+    proof: [sentinel-cancel-test, sentinel-cancel-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: sentinel-init-test
+      why: Initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-env-test
+      why: Environment variable resolution tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*env($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-authority-test
+      why: Authority host normalization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*authority($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-token-test
+      why: OAuth token refresh tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*token($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-model-event-test
+      why: Model event logging tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*model.*event($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-model-event-missing-payload-test
+      why: Model event missing payload tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*model.*event.*missing.*payload($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-audit-event-test
+      why: Audit event logging tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*audit.*event($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-batch-test
+      why: Batch sending tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*batch($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-requeue-test
+      why: Requeue and overflow tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*requeue($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-cancel-test
+      why: Cancellation remainder tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*cancel($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: sentinel-init-oracle
+      why: Missing initialization oracle cases
+      run: grep -rlq 'AZURE_SENTINEL_DCR_IMMUTABLE_ID\|AZURE_SENTINEL_ENDPOINT\|tenant_id\|client_id' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-env-oracle
+      why: Missing environment variable oracle cases
+      run: grep -rlq 'AZURE_SENTINEL_TENANT_ID\|AZURE_SENTINEL_CLIENT_SECRET\|AZURE_SENTINEL_STREAM_NAME' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-authority-oracle
+      why: Missing authority host oracle cases
+      run: grep -rlq 'authority.*host\|normalize\|microsoftonline.us\|monitor.azure' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-token-oracle
+      why: Missing OAuth token oracle cases
+      run: grep -rlq 'oauth.*token\|access_token\|expires_in\|refresh' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-model-event-oracle
+      why: Missing model event oracle cases
+      run: grep -rlq 'success_event\|failure_event\|StandardLoggingPayload\|log_queue' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-model-event-missing-payload-oracle
+      why: Missing model event missing payload oracle cases
+      run: grep -rlq 'standard_logging_object\|missing.*payload\|warn.*drop\|queue.*unchanged' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-audit-event-oracle
+      why: Missing audit event oracle cases
+      run: grep -rlq 'audit.*event\|audit_queue\|StandardAuditLogPayload' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-batch-oracle
+      why: Missing batch sending oracle cases
+      run: grep -rlq 'async_send_batch\|413.*split\|1000000\|1_000_000' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-requeue-oracle
+      why: Missing requeue oracle cases
+      run: grep -rlq 'requeue\|overflow\|max_queue_size\|oldest' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+    - id: sentinel-cancel-oracle
+      why: Missing cancellation oracle cases
+      run: grep -rlq 'BatchSendCancelled\|CancelledError\|delivered.*halves' tools/oracle/cases/logging/azure_sentinel/ || exit 1
+
+oracle_cases:
+  - tools/oracle/cases/logging/azure_sentinel/initialization.yaml
+  - tools/oracle/cases/logging/azure_sentinel/required-env-vars.yaml
+  - tools/oracle/cases/logging/azure_sentinel/authority-normalization.yaml
+  - tools/oracle/cases/logging/azure_sentinel/oauth-token-refresh.yaml
+  - tools/oracle/cases/logging/azure_sentinel/model-event-queueing.yaml
+  - tools/oracle/cases/logging/azure_sentinel/model-event-missing-payload.yaml
+  - tools/oracle/cases/logging/azure_sentinel/audit-event-queueing.yaml
+  - tools/oracle/cases/logging/azure_sentinel/batch-413-split.yaml
+  - tools/oracle/cases/logging/azure_sentinel/requeue-overflow.yaml
+  - tools/oracle/cases/logging/azure_sentinel/cancellation-remainder.yaml
+
+deviations:
+  - what: "Azure Sentinel logging uses separate model and audit log queues with independent max_queue_size enforcement."
+    why: "LiteLLM uses two separate queue attributes; betterlite reuses the same enforcement mechanism per queue."
+
+  - what: "Audit stream defaults to the model stream name if not explicitly provided."
+    why: "LiteLLM's default_audit_stream_name assignment uses the resolved model stream as fallback; matches the pinned behavior."
+
+out_of_scope:
+  - "Generic OAuth/credential caching beyond the token cache built directly here; B673 and B677 provide Entra token services for other components."
+  - "Connection pooling beyond the httpx client management; httpx owns internals."
+  - "Monitoring or observability beyond verbose_logger calls and exception logging."
+  - "Callback registration or dispatch routing; B189 owns the callback registry."
+
+pitfalls:
+  - "AZURE_SENTINEL_TENANT_ID and AZURE_SENTINEL_CLIENT_ID must be non-empty or the client_credentials flow will fail at token request time."
+  - "OAuth token refresh uses a 60-second margin; time.time() < token_expiry - 60 is the check, so a token expiring in exactly 61 seconds will not refresh on the next request."
+  - "The audit stream defaults to the model stream, not to Custom-LiteLLM; it only defaults to Custom-LiteLLM if both model stream and audit stream are unset."
+  - "Authority host normalization prepends https:// to bare hosts like 'login.microsoftonline.com'; urlparse().hostname on the result is the key for oauth_scope lookup."
+  - "Model events check kwargs.get('standard_logging_object', None) and log the exact warning 'Azure Sentinel: standard_logging_object not found in kwargs' before returning early without appending to log_queue or checking batch size. Audit events receive pre-validated typed parameters and queue unconditionally."
+  - "Requeue prepends undelivered items from the failed batch before new arrivals, then trims from the end if overflow exceeds max_queue_size; the order is: [undelivered, new arrivals][0 : max_size]."
+  - "Batch size is inherited from CustomBatchLogger (default 512); exceeding it OR exceeding 1,000,000 UTF-8 bytes triggers split."
+  - "The Logs Ingestion API returns 200 for success and 204 for success with no body; both are treated as successful delivery."
+  - "Cancellation exceptions (BatchSendCancelled, asyncio.CancelledError) restore the batch and mark the awaiting_retry flag; permanent errors log and clear the queue."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

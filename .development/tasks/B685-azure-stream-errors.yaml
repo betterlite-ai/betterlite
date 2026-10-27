@@ -268,6 +268,6 @@ pitfalls:
 - The sync branch performs an OIDC exchange in a client-parameter map that it later does not use.
 - Async keeps raw response headers where sync calls process_azure_headers.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

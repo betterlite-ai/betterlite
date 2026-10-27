@@ -36,6 +36,10 @@ scope:
   - tools/oracle/cases/sdk-http/responses-lifecycle-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-write-*
   - Cargo.lock
+  - tools/oracle/helpers/b1116.py
+  - tools/oracle/helpers/b1116/**
+  - tools/oracle/src/helpers/core_ops/b1116.rs
+  - tools/oracle/src/helpers/core_ops/b1116/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1461-L1610
@@ -116,5 +120,5 @@ pitfalls:
 - extra_query disappears before the HTTP handler and extra_body disappears inside it.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

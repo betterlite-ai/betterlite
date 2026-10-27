@@ -23,8 +23,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/private_json.rs
   - crates/betterlite-logging/src/private_json/**
   - crates/betterlite-logging/fuzz/**
@@ -34,7 +32,7 @@ scope:
   - tools/oracle/helpers/private_json.py
   - tools/oracle/helpers/private_json/**
   - tools/oracle/cases/helpers/private-json/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/private_json-*"
   lint_tables: false
 references:
 - url: >-
@@ -91,8 +89,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'private_json' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/private_json-*")" &&
+      grep -lq 'private_json' tools/oracle/fuzz/corpus/helper_case/private_json-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -116,11 +114,12 @@ out_of_scope:
 - >-
   Windows ACL parity must be added with B170's platform packaging; this task's permission tests run on pinned Debian.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/private_json-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as private_json in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/private_json.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/private_json.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Explicit overwrite is non-atomic and must never be an automatic fallback after failed staging.
 - A restrictive final file mode does not undo a secret leaked through a permissive temporary file.
 - Use tempfile or an equivalent existing atomic-file facility rather than building random filenames by hand.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

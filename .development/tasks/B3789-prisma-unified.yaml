@@ -1,0 +1,144 @@
+id: B3789
+title: Prisma AIRS unified text and tool selection
+description: >-
+  Implement the apply_guardrail unified method that handles both request and response scanning
+  across multiple input shapes: chat completions, text completions, Anthropic /v1/messages,
+  /v1/responses, and MCP tool invocations.
+
+  The method unifies text selection, tool call scanning, and masking decisions. On the request
+  side, it selectively scans only user/system/developer messages, with an optional mode that
+  scans only the latest user/developer message (for Anthropic /v1/messages by default, configurable
+  via experimental_use_latest_role_message_only). When structured messages are present, the
+  method aligns scanned texts with their source messages to avoid scanning assistant or tool
+  history. For Responses requests with reasoning items, those are identified and excluded from
+  latest-message calculations. On the response side, all texts are scanned without selection.
+
+  For each text: scan with PANW AIRS, apply masking if action is allow with masked_data present,
+  or apply masking if action is block and the corresponding mask_*_content flag is set. Block
+  the request without masking otherwise, raising HTTPException 400. Text extraction handles
+  multiple content sources: message content as string or list of content parts, and for responses,
+  tool call and function call arguments extracted as strings.
+
+  Tool calls are scanned individually: function name and arguments are sent as plain text
+  newline-separated (tool_event schema only accepts MCP ecosystem). Build masked_text from the
+  masked AIRS response using _masked_tool_call_arguments: if the scanned text included both name
+  and args, recover only the args portion from masked_text by splitting on the first newline;
+  if only args were scanned, use masked_text as-is; if masked_text is None or args were never
+  scanned, masking cannot be applied. MCP tool invocations via /mcp-rest/tools/call send a
+  tool_event object with metadata (ecosystem, method, server_name, tool_invoked) and input
+  (serialized arguments). Resolve the server name from request_data first, then the MCP server
+  registry keyed on tool name. On block with mask_request_content set, rewrite arguments via
+  _apply_mcp_masking: update both arguments and mcp_arguments fields if present, or raise
+  HTTPException 400 if neither exists. If original arguments were structured (dict/list),
+  validate masked text as JSON before applying; raise on invalid JSON. If only plain text was
+  scanned, preserve the original type without re-parsing.
+
+  Text selection requires three Responses utilities that are not in other tasks. _text_source_message_indices
+  maps every text to the message index it came from by walking message texts forward and backward;
+  return None if the alignment is ambiguous (safety fallback to scan all). _reasoning_item_text_indices
+  identifies which texts came from Responses reasoning items, handling the optional instructions
+  offset. Both return None on validation failure. _get_latest_user_text_indices combines these
+  to find the latest user/developer message texts, excluding reasoning items and skipping the
+  lookup if the latest message has no text.
+
+  Resolve litellm_call_id from request_data or logging_obj fallback. For MCP requests without
+  a call_id, synthesize one from the tool name (slug + UUID, max 40 chars). For direct
+  /apply_guardrail endpoint calls with empty request_data and no logging_obj, synthesize a UUID
+  and store it. Merge metadata from logging_obj.model_call_details.litellm_params.metadata into
+  request_data.metadata on conflict.
+
+  Deviations: text selection always includes system and developer roles, not just user. The
+  experimental_use_latest_role_message_only flag controls per-request selection on Anthropic
+  paths only when structured messages are available; unset, it defaults to latest-only for
+  Anthropic /v1/messages and full-history otherwise. Responses reasoning item detection is
+  based on the item.type field; items without text are still marked as reasoning. Structured
+  message text alignment is conservative: if walk direction disagreement occurs, fall back to
+  scanning all user/system/developer texts. Synthesized MCP tool name slugs are lowercase
+  alphanumeric-only with hyphens, max 40 chars, never empty ("mcp-tool" fallback). On action
+  allow with mask_response_content unset, mask_text returns None per AIRS schema unless the
+  masked field was present. Masked tool call arguments are never re-serialized; if masked_text
+  fails to deserialize as JSON when original args were structured, raise HTTPException 400.
+
+  include_guardrail_metadata is not included in request_data extraction and is never added
+  during scanning. Helper methods not in this scope are out-of-scope; they belong to B3787
+  (content extraction), B3786 (scan and verdict), B058 (logging), or shared CustomGuardrail.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/prisma_airs.rs
+    - crates/betterlite-guardrails/src/prisma_airs/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1774-L2008
+    why: apply_guardrail unified orchestration method for text and tool scanning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1587-L1625
+    why: Request-side text selection logic (_is_anthropic_request, _use_latest_user_only) and Responses detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1627-L1740
+    why: Text-to-message source mapping and latest user message detection from structured messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1551-L1585
+    why: Tool call extraction, masking argument recovery, and writing masked arguments back onto the tool call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1765-L1772
+    why: MCP tool name fallback for /mcp-rest paths and legacy naming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/panw_prisma_airs.py
+    why: Unified guardrail config model with text selection and masking flags.
+dod:
+  - text: Text selection aligns with structured messages, skips non-scannable roles, and handles latest-only mode with Anthropic detection and reasoning item exclusion.
+    proof: [unified-text-selection-tests]
+  - text: Tool calls are scanned individually with name and arguments sent as newline-separated text, and masked arguments are recovered without re-parsing.
+    proof: [unified-tool-call-tests]
+  - text: MCP tool invocations scan via tool_event with ecosystem and method metadata, and masked arguments rewrite both request_data fields without corrupting structured types.
+    proof: [unified-mcp-tool-tests]
+  - text: Masking decisions (allow+masked, block+mask_*_content) are applied correctly on both request and response sides; blocks without masking raise HTTPException 400.
+    proof: [unified-masking-tests]
+  - text: call_id resolution from request_data, logging_obj, or synthesized MCP/UUID paths matches LiteLLM behavior without duplicates or missing traces.
+    proof: [unified-call-id-tests]
+checks:
+  optional: []
+  commands:
+    - id: unified-text-selection-tests
+      why: Text alignment with messages, latest-message selection, and reasoning exclusion must match LiteLLM structured message handling.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma_airs::unified_text_selection::/)' 2>&1 | head -100 || cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma.*text_selection/)' 2>&1 | head -100 || true
+    - id: unified-tool-call-tests
+      why: Tool call extraction, argument masking recovery, and in-place modification of tool_calls lists must match LiteLLM behavior.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma_airs::unified_tool_call::/)' 2>&1 | head -100 || cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma.*tool_call/)' 2>&1 | head -100 || true
+    - id: unified-mcp-tool-tests
+      why: MCP tool event construction, server name resolution, and masked argument rewriting to both request_data fields must match LiteLLM behavior.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma_airs::unified_mcp_tool::/)' 2>&1 | head -100 || cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma.*mcp/)' 2>&1 | head -100 || true
+    - id: unified-masking-tests
+      why: Masking application on allow and on block+mask_*_content must preserve structured arguments and raise HTTPException 400 on invalid JSON.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma_airs::unified_masking::/)' 2>&1 | head -100 || cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma.*masking/)' 2>&1 | head -100 || true
+    - id: unified-call-id-tests
+      why: call_id resolution from request_data, logging_obj.litellm_call_id, synthesized MCP slugs, and UUID fallbacks must be unique per request.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma_airs::unified_call_id::/)' 2>&1 | head -100 || cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^panw_prisma.*call_id/)' 2>&1 | head -100 || true
+oracle_cases: []
+deviations:
+  - what: "Text selection always includes system and developer roles alongside user; LiteLLM includes them via role_out_of_guardrail_scope."
+    why: "Consistent with existing content extraction logic and guardrail best practices."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py"
+  - what: "Structured message text alignment uses a conservative bidirectional walk that falls back to scanning all user/system/developer texts on disagreement."
+    why: "Guard against ambiguous text attributions when translation handlers add or reorder messages."
+    link: null
+  - what: "Synthesized MCP tool name slugs use max 40 characters of lowercase alphanumeric-only text with hyphens, and fall back to 'mcp-tool' if empty."
+    why: "Keep call_id readable while avoiding UUID collision and unbounded length in observable server state."
+    link: null
+  - what: "Masked tool call arguments from AIRS response are never re-serialized; if structured arguments require JSON and masked_text fails to parse, HTTPException 400 is raised."
+    why: "Prevent silent data corruption by strict validation; callers cannot recover from a mask that breaks JSON."
+    link: null
+  - what: "metadata enrichment from logging_obj.model_call_details.litellm_params.metadata uses dict merge with request_data values taking precedence on conflict."
+    why: "Preserve explicit per-call metadata while falling back to logged context."
+    link: null
+out_of_scope:
+  - "B3787 owns content extraction helpers: _extract_text_from_messages, _extract_text_from_content_list, _extract_response_text, _extract_text_from_sse_bytes, _extract_text_from_streaming_events, _extract_prompt_from_request."
+  - "B3786 owns scan transport and verdict handling: _call_panw_api, _scan_raw_streaming_text, _scan_and_process_streaming_response, _scan_tool_calls_for_guardrail (except the call_id and metadata setup), async_pre_call_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook."
+  - "B058 owns guardrail logging decorators and information recording: @log_guardrail_information, add_standard_logging_guardrail_information_to_request_data."
+  - "Shared CustomGuardrail base owns: __init__, should_run_guardrail (except MCP compat map), mask application hooks for messages/responses, error detail building, API error handling with fallback logic, scan deduplication, masking configuration, get_config_model, get_supported_event_hooks."
+pitfalls:
+  - "Structured message text alignment fails silently and falls back to all user/system/developer texts if forward and backward walks disagree; this is conservative but may rescan non-latest messages."
+  - "Reasoning items in Responses have no mandatory fields; an item with type=reasoning but no text still consumes space in the flat texts list and must be skipped."
+  - "Latest user message text indices must account for both item.type=reasoning exclusion and the offset created by optional scannable_instructions prefix in Responses input."
+  - "_apply_mcp_masking may raise HTTPException on JSON parse failure; this exception must propagate without being silently caught or converted to allow, since invalid masked text indicates a critical policy failure."
+  - "Synthesized MCP call_ids use the tool name slug as prefix for readability, but collision is still possible if two tools are invoked concurrently with the same UUID suffix."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

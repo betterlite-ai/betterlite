@@ -1,0 +1,99 @@
+id: B3704
+title: Tenant-scoped sensitive data session routing
+description: >-
+  Build sticky sensitive-data routing that stores session-to-model overrides keyed by the authenticated principal, with Redis-first reads, local in-memory fallback, and remaining-TTL propagation. Preserve the behavior where Redis SET always runs first but a failure falls back to local-only cache; GET tries Redis before local with TTL inheritance. Store the key as "{sensitive_route:<tenant>:<session_id>}:model" where tenant is the hashed api_key if present, otherwise a stable identity built from non-empty user/team/org fields or "default" for keyless auth.
+
+  Implement the pre-call hook that checks for an existing routing override and applies it by updating the request's model field and metadata fields (sensitive_data_routing_applied: bool, sensitive_data_routing_original_model: str). The hook returns early if no session_id is found or no routing exists for the session. Add set_session_routing for guardrails to store routing decisions (called when sensitive data is detected), parameterized by session_id, model, optional principal identity and optional guardrail_name for logging context. Load LITELLM_SENSITIVE_ROUTING_TTL from config (default 3600 seconds).
+
+scope:
+  paths:
+    - crates/betterlite-router/src/sensitive_data_routing.rs
+    - crates/betterlite-router/src/sensitive_data_routing/**
+    - crates/betterlite-config/src/sections/sensitive_data_routing.rs
+    - crates/betterlite-config/src/sections/sensitive_data_routing/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/sensitive_data_routing.py
+    why: "Complete implementation of _PROXY_SensitiveDataRoutingHandler with __init__, _make_cache_key, _resolve_tenant, _get_routed_model, set_session_routing and async_pre_call_hook"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py
+    why: "DualCache structure that holds both Redis and in-memory cache references"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: "get_session_id_from_request_data helper function"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py
+    why: "CustomLogger base class"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356-L3443
+    why: "UserAPIKeyAuth type with api_key, user_id, team_id and org_id fields"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py
+    why: "RedisCache.async_get_cache, async_get_ttl and async_set_cache methods"
+
+dod:
+  - text: SensitiveDataRoutingHandler struct exists and stores internal_usage_cache and ttl_seconds (u64) loaded from config.
+    proof: [handler-struct-exists]
+  - text: _make_cache_key creates keys in the format "{sensitive_route:<tenant>:<session_id>}:model".
+    proof: [cache-key-format]
+  - text: _resolve_tenant returns hashed api_key if present, otherwise joins user/team/org in order as "user:<id>|team:<id>|org:<id>", or "default" if none exist.
+    proof: [tenant-resolution]
+  - text: _get_routed_model tries Redis first with async_get_cache, propagates remaining TTL on success to in-memory cache, falls back to in-memory on Redis error, and returns the routed model or None.
+    proof: [routed-model-logic]
+  - text: set_session_routing tries Redis SET first without falling back (logs warning on failure), then always sets in-memory cache with local_only=true and the TTL.
+    proof: [session-routing-set]
+  - text: async_pre_call_hook checks for session_id, looks up routed model, updates request.model and request.metadata on mismatch, and returns the modified data dict.
+    proof: [pre-call-hook]
+  - text: Configuration integration loads LITELLM_SENSITIVE_ROUTING_TTL with default 3600 from B002 config.
+    proof: [config-integration]
+  - text: All test cases cover success (Redis and in-memory), Redis failures with fallback, cache misses, identical model (no routing), and metadata updates.
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: handler-struct-exists
+      why: SensitiveDataRoutingHandler struct is missing or does not have required fields
+      run: grep -q "struct SensitiveDataRoutingHandler" crates/betterlite-router/src/sensitive_data_routing.rs && grep -q "internal_usage_cache" crates/betterlite-router/src/sensitive_data_routing.rs && grep -q "ttl_seconds" crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: cache-key-format
+      why: _make_cache_key does not create the correct key format
+      run: grep -q 'sensitive_route:' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q ':model' crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: tenant-resolution
+      why: _resolve_tenant does not resolve tenant correctly
+      run: grep -q 'api_key' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q 'user_id\|team_id\|org_id' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q 'default' crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: routed-model-logic
+      why: _get_routed_model does not implement Redis-first with TTL propagation
+      run: grep -q 'async_get_cache' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q 'async_get_ttl' crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: session-routing-set
+      why: set_session_routing does not set Redis first then in-memory
+      run: grep -q 'async_set_cache' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q 'local_only' crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: pre-call-hook
+      why: async_pre_call_hook is missing or does not update request model and metadata
+      run: grep -q 'async_pre_call_hook' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q 'sensitive_data_routing_applied' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q 'sensitive_data_routing_original_model' crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: config-integration
+      why: LITELLM_SENSITIVE_ROUTING_TTL is not loaded from config with default 3600
+      run: grep -q 'LITELLM_SENSITIVE_ROUTING_TTL' crates/betterlite-router/src/sensitive_data_routing.rs && grep -q '3600' crates/betterlite-router/src/sensitive_data_routing.rs
+    - id: behavior-tests
+      why: Behavior tests for the handler are missing or incomplete
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^sensitive_data_routing::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "get_session_id_from_request_data helper (belongs to B104)"
+  - "InternalUsageCache.async_get_cache, async_set_cache (belong to B124)"
+  - "RedisCache.async_set_cache (belongs to B126)"
+  - "log_redis_failure implementation (belongs to B393)"
+  - "Request/response translation and hook registration (belongs to B105)"
+
+pitfalls:
+  - "The cache key format uses single braces and a colon-separated structure; any deviation breaks tenant scoping and session isolation."
+  - "Redis SET is not optional: LiteLLM tries Redis first and only falls back to in-memory on exception. A future change that makes Redis SET optional must preserve this behavior."
+  - "User/team/org identity fallback depends on at least one being non-empty; if all three are None, tenant becomes 'default', which could cause collisions between different keyless callers."
+  - "TTL propagation from Redis to in-memory cache uses the remaining TTL from async_get_ttl; if that method returns None, the full TTL_SECONDS is used instead."
+  - "The pre_call_hook returns the modified data dict; callers expect it to mutate the request in place or return the mutation, never return a new dict without updating the caller's reference."
+  - "Metadata fields sensitive_data_routing_applied and sensitive_data_routing_original_model are strings set by the hook; any code that reads them must handle the case where they are absent or have unexpected types."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

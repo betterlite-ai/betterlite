@@ -1,0 +1,107 @@
+id: B3968
+title: Humanloop prompt fetching caching and compilation
+description: >-
+  Build Humanloop prompt lookup, local caching, variable compilation and model/parameter
+  replacement. Preserve the missing-key passthrough and the source's in-place template
+  compilation semantics rather than treating this file as an event exporter.
+
+  Implement HumanLoopPromptManager extending DualCache with a local memory-only cache,
+  caching only by prompt ID with a configurable TTL (default 60 seconds). On cache miss,
+  fetch prompts from the Humanloop API at /v5/prompts/{id} with X-Api-Key authentication.
+  Compile prompts by substituting {{variable}} template placeholders with values from
+  prompt_variables, mutating the message list in place. Extract model and optional
+  parameters (those in litellm.OPENAI_CHAT_COMPLETION_PARAMS) from the fetched prompt
+  response, applying them as overrides to caller parameters.
+
+  Implement HumanloopLogger extending CustomLogger with get_chat_completion_prompt
+  override. When no API key is configured, fall back to the parent class behavior
+  unchanged. When an API key is present, fetch the prompt by ID, compile it with
+  caller variables, and override model and optional parameters. The ignore_prompt_manager_*
+  arguments are not honored by this override.
+
+  Load HUMANLOOP_API_KEY (required to enable) from environment or dynamic_callback_params.
+  Load HUMANLOOP_PROMPT_CACHE_TTL_SECONDS from config (default 60). Treat missing
+  prompt_id as an error and missing API key as fallback to parent behavior.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/humanloop.rs
+    - crates/betterlite-logging/src/humanloop/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L30-L36
+    why: HumanLoopPromptManager cache lookup interface and DualCache extension.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L38-L61
+    why: In-place template compilation with {{variable}} placeholder substitution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L63-L99
+    why: Humanloop API fetch endpoint, response structure and optional parameter filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L101-L110
+    why: Cache lookup and conditional fetch with TTL setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L112-L127
+    why: Prompt compilation public interface and variable substitution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L129-L133
+    why: Model extraction with fallback to caller model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L140-L192
+    why: HumanloopLogger.get_chat_completion_prompt override with missing-key passthrough and parameter merging.
+
+dod:
+  - text: HumanLoopPromptManager caches prompts by ID only with configured TTL, defaulting to 60 seconds.
+    proof: [humanloop-tests]
+  - text: Cache miss triggers a GET request to /v5/prompts/{id} with X-Api-Key header.
+    proof: [humanloop-tests]
+  - text: >-
+      A non-2xx response from /v5/prompts/{id} raises an Exception with the exact
+      message "Error getting prompt from Humanloop: " followed by the response text.
+    proof: [humanloop-tests]
+  - text: >-
+      The template field in the API response is branched by type (dict becomes a
+      single-item list, list is used as-is, other types raise ValueError).
+    proof: [humanloop-tests]
+  - text: >-
+      An invalid template type raises ValueError with the exact message
+      "Invalid template message type: " followed by the type representation.
+    proof: [humanloop-tests]
+  - text: Prompt templates are compiled in place by substituting {{variable}} placeholders with values from prompt_variables.
+    proof: [humanloop-tests]
+  - text: Model is extracted from fetched prompt response with fallback to caller model; prompt_id is required and missing raises an error.
+    proof: [humanloop-tests]
+  - text: Optional parameters from the fetched response (those in litellm.OPENAI_CHAT_COMPLETION_PARAMS) override caller parameters.
+    proof: [humanloop-tests]
+  - text: When HUMANLOOP_API_KEY is missing or None, HumanloopLogger falls back to parent class behavior unchanged.
+    proof: [humanloop-tests]
+  - text: HumanloopLogger.get_chat_completion_prompt enforces prompt_id is required, merges fetched model and parameters, and ignores ignore_prompt_manager_* arguments.
+    proof: [humanloop-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: humanloop-tests
+      why: the humanloop tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^humanloop_prompts::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Cache keys include only the prompt ID; no credential scoping or credential-based isolation of cached entries.
+    why: The source caches by prompt ID only and mutates templates in place on compilation; credential-isolated cache keys or template copying would change behavior beyond the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L35-L110
+
+out_of_scope:
+  - The full get_secret_str provider-backed secret resolution beyond B002's environment subset.
+  - CustomLogger.get_chat_completion_prompt fallback dispatch beyond parent class behavior.
+  - Prompt manager pre-hook and post-hook execution.
+
+pitfalls:
+  - "HTTP errors from the Humanloop API are caught as httpx.HTTPStatusError and re-raised as a generic Exception with the response text; the original status code is lost in the exception."
+  - "The template field branching checks for dict or list only; any other JSON type (string, number, null) raises ValueError with the type representation."
+  - Template compilation mutates the message list in place; a cached template is mutated on every compile call and subsequent compilations of the same cached template see previous compilation results.
+  - The placeholder format is {{variable}} (double braces), converted to {variable} (single braces) for string.format() substitution.
+  - Optional parameters from the response override caller parameters; parameter precedence is caller defaults, then fetched optional_params.
+  - Missing prompt_id raises an error; missing API key falls through to parent class without error.
+  - The ignore_prompt_manager_model and ignore_prompt_manager_optional_params arguments are not honored; the implementation always applies fetched values.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

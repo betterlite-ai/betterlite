@@ -325,6 +325,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as model_metadata_projection in the models group. Replace the stub Op in tools/oracle/src/helpers/models/model_metadata_projection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_metadata_projection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An absent provider uses the resolved provider, while an explicit null provider survives.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

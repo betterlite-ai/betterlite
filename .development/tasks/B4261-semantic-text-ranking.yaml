@@ -99,5 +99,5 @@ pitfalls:
   - "Vectors are immutable from the caller's perspective; use private mutable State and expose only immutable references."
 review_level: standard
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1500
   max_new_expects: 0

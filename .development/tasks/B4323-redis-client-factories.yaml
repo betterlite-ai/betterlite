@@ -1,0 +1,146 @@
+id: B4323
+title: Construct Redis, Sentinel and Cluster clients and pools
+description: >-
+  Construct reusable sync and async transports for Redis, supporting direct targets,
+  URLs, Sentinel and Cluster deployment modes. Preserve pool timeout 5 seconds,
+  Sentinel socket fallback 0.1 seconds, async Cluster health interval 25 seconds,
+  and keepalive true unless explicitly overridden. Separate Sentinel-monitor
+  authentication (sentinel_password only) from data-node credentials so monitors
+  never receive the data node's credential provider or static password. Supply
+  redacted diagnostics that mask credential_provider and redis_connect_func values,
+  then pass the entire kwargs dict through B244's SensitiveDataMasker.mask_dict
+  to also mask any key matching credential-like patterns (password, secret, key,
+  token, auth, credential, access, private, certificate, fingerprint, tenancy).
+
+  The client factories dispatch on redis_kwargs from B4321's resolution logic:
+  startup_nodes selects RedisCluster (sync via redis.RedisCluster, async via the
+  isolated node-failure transport from B4322), url selects Redis.from_url, sentinel_nodes
+  and service_name select Sentinel (with separate monitor auth), and neither selects
+  direct Redis. Each path coerces settings through B4321's _get_redis_client_logic,
+  _get_redis_kwargs, _get_redis_url_kwargs and _get_redis_cluster_kwargs; apply
+  credential providers from B4320 via _credential_provider_auth_kwargs before
+  dispatching, and strip conflicting static credentials and IAM callbacks. Connection
+  pools are built for URL and direct targets only, not Cluster or Sentinel. The
+  pool timeout and Cluster defaults are from litellm.constants, and the socket
+  fallback comes from environment variables or config keys. Redacted logging calls
+  the two credential-masking functions (credential_provider, redis_connect_func)
+  to substitute placeholders, then masks the whole kwargs dict via B244 before
+  printing configuration tables with rich or plain logging when debug is enabled.
+
+  Named cases cover client factory inputs and outputs: pool timeouts, socket timeouts,
+  async Cluster health intervals, Sentinel auth separation, monitoring node isolation,
+  literal environment defaults, and configuration that reaches the driver as kwargs.
+  Redaction tests confirm credential providers, IAM callbacks and password-like fields
+  never appear in logs.
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_client_factories.rs
+    - crates/betterlite-redis/src/redis_client_factories/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L679-L705
+    why: >-
+      init_redis_cluster dispatches on startup_nodes and applies cluster settings with
+      credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L708-L748
+    why: >-
+      Sentinel connection kwargs, auth separation (no credential_provider on monitors),
+      and socket defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L751-L772
+    why: >-
+      Async Sentinel initialization mirrors sync, also with monitor auth separation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L830
+    why: >-
+      Sync client dispatch: Cluster, URL, Sentinel or direct Redis.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L833-L903
+    why: >-
+      Async client dispatch and connection pool reuse, Cluster health check and
+      keepalive defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L906-L932
+    why: >-
+      Connection pool creation for URLs, applied to async clients, timeout applied
+      here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L935-L1032
+    why: >-
+      Redaction and diagnostic logging with rich tables, credential masking and
+      value projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L508-L521
+    why: >-
+      Pool timeout 5 seconds, socket timeout 0.1 seconds, Cluster health check
+      25 seconds from environment or defaults.
+dod:
+  - text: Sync and async Redis clients dispatch on redis_kwargs from resolution logic to the four deployment modes.
+    proof:
+      - redis-dispatch-tests
+  - text: Sentinel monitors receive only sentinel_password, never the data-node credential_provider or static password.
+    proof:
+      - sentinel-auth-tests
+  - text: Cluster clients apply the isolated node-failure transport from B4322 in async mode.
+    proof:
+      - cluster-isolation-tests
+  - text: Async Cluster health interval defaults to 25 seconds and keepalive defaults to true.
+    proof:
+      - async-cluster-health-tests
+  - text: Connection pools are created for URL targets only, with timeout 5 seconds from environment or default.
+    proof:
+      - pool-timeout-tests
+  - text: Socket timeout defaults to 0.1 seconds on Sentinel connections from environment or default.
+    proof:
+      - socket-timeout-tests
+  - text: "Redacted logging masks credential_provider and redis_connect_func values through substitution and B244's SensitiveDataMasker.mask_dict, which also masks any key matching credential patterns; names literal node counts and connection type, and omits None values."
+    proof:
+      - redaction-tests
+checks:
+  optional: []
+  commands:
+    - id: redis-dispatch-tests
+      why: four-way dispatch tests (Cluster/URL/Sentinel/direct) fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*dispatch/)'
+    - id: sentinel-auth-tests
+      why: Sentinel monitor authentication separation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*sentinel.*auth/)'
+    - id: cluster-isolation-tests
+      why: async Cluster node isolation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*cluster.*isolation/)'
+    - id: async-cluster-health-tests
+      why: async Cluster health interval and keepalive default tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*async.*cluster.*health/)'
+    - id: pool-timeout-tests
+      why: connection pool timeout tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*pool.*timeout/)'
+    - id: socket-timeout-tests
+      why: Sentinel socket timeout default tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*socket.*timeout/)'
+    - id: redaction-tests
+      why: credential and password-like field redaction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/redis_client_factories::.*redaction/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Pool timeout and socket timeout are resolved once at client creation, not per-connection.
+      Changes to environment variables after client creation do not apply.
+    why: >-
+      LiteLLM also reads these once at startup; betterlite defers resolution to
+      client/pool construction time.
+  - what: >-
+      Sentinel socket_timeout defaults to 0.1 seconds, hardcoded from REDIS_SOCKET_TIMEOUT,
+      not per-environment override at this layer.
+    why: >-
+      Monitor connections are internal and short-lived; data-node socket settings do not
+      apply to monitors.
+out_of_scope:
+  - Connection retry policies beyond the redis-py driver's defaults.
+  - Command timeout and other per-request tuning (B360, B393 apply context-specific overrides).
+  - Secret manager resolution beyond the credential providers from B4320.
+  - Request logging inside redis-py (verbose_logger diagnostics belong to B360+).
+pitfalls:
+  - Sentinel-password is separate from the data-node static password and credential provider. Both must stay off monitors.
+  - redis.RedisCluster does not accept a connection_pool argument; only Redis and async Redis do.
+  - The isolating async_redis_cluster_class from B4322 must replace the default redis.cluster.RedisCluster, not wrap it.
+  - REDIS_CLUSTER_NODES is an env-only override that gets JSON-parsed; invalid JSON is an error, not silent fallback.
+  - Redaction happens after frozenset/Final assignment so masked values do not affect credential identity or client caching.
+  - Cluster health_check_interval is a property of the async client, not the connection pool.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

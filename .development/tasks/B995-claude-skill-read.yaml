@@ -99,6 +99,10 @@ scope:
   - crates/betterlite-server/fuzz/corpus/claude_skill_read/**
   - tools/oracle/cases/api/claude-skill-read/**
   - tools/oracle/fixtures/claude-skill-read/**
+  - tools/oracle/helpers/b995.py
+  - tools/oracle/helpers/b995/**
+  - tools/oracle/src/helpers/server/b995.rs
+  - tools/oracle/src/helpers/server/b995/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/skills_endpoints.py#L181-L405
@@ -209,5 +213,5 @@ pitfalls:
   query=query, top_k=top_k, user_api_key_dict=user_api_key_dict) and its nested guards.
 review_level: security
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1500
   max_new_expects: 0

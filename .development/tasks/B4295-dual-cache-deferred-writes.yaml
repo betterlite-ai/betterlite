@@ -1,0 +1,81 @@
+id: B4295
+title: Queue request-scoped cache writes and increments
+description: >-
+  Implement immediate memory effects with deferred Redis SET/DEL/increment completion and the direct-path fallback when no batch is active.
+  Queued writes execute immediately in the in-memory tier and schedule their Redis operations on the active request batch; when no batch is open, they run directly against Redis.
+  `async_set_cache_pre_call` and `async_delete_cache_pre_call` write memory and return the deferred batch result, or None for fallback.
+  `increment_cache_post_call` schedules a single increment operation on the post-call batch with failure logging; `pipeline_increment_post_call` schedules a pipeline of increments, each with its failure logged through `on_settled`.
+  Keep callback failures observable: `log_deferred_increment_failure` observes when the Redis increment settles. Both `async_increment_cache_pipeline` and `async_set_cache_pipeline` swallow Redis failures after memory is updated and log them; only `async_set_cache_sadd` propagates Redis errors.
+scope:
+  paths:
+    - crates/betterlite-cache/src/dual_cache.rs
+    - crates/betterlite-cache/src/dual_cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L72-L77
+    why: Failure observer for deferred increments, called when the Redis future settles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L520-L524
+    why: Pre-call cache write with deferred Redis completion; returns None when no batch is active.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L526-L534
+    why: Pre-call cache delete with immediate memory effect and deferred Redis deletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L536-L540
+    why: Helper to write a single key-value pair to the active batch with memory TTL applied.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L543-L563
+    why: Batch write with TTL defaults; immediate in-memory update, deferred Redis pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609-L620
+    why: Post-call single increment on the active post-call batch; direct path when no batch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L622-L642
+    why: Post-call pipeline of increments with failure logging per operation; swallows in-memory errors but logs Redis failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L644-L673
+    why: Direct-path increment pipeline; swallows Redis errors after in-memory succeeds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L675-L694
+    why: Set-add operation for cache set members; immediate in-memory, deferred or direct Redis.
+dod:
+  - text: >-
+      The dual-cache deferred-write functions (`async_set_cache_pre_call`, `async_delete_cache_pre_call`, `async_set_cache_pipeline`, `increment_cache_post_call`, `pipeline_increment_post_call`, `async_increment_cache_pipeline`, `async_set_cache_sadd`) are implemented and callable.
+    proof: [dual-cache-deferred-write-functions]
+  - text: >-
+      A request with an active `RedisBatch` that calls `async_set_cache_pre_call` schedules a SET on the batch and writes memory immediately; calling without an active batch returns None and uses the fallback.
+    proof: [dual-cache-deferred-write-integration]
+  - text: >-
+      `increment_cache_post_call` with an active post-call batch schedules a single increment with failure logging through `log_deferred_increment_failure` registered on `on_settled`.
+    proof: [dual-cache-deferred-write-integration]
+  - text: >-
+      `pipeline_increment_post_call` schedules each increment operation on the post-call batch with its own failure logging, and runs on the direct path when no batch is open.
+    proof: [dual-cache-deferred-write-integration]
+  - text: >-
+      `async_increment_cache_pipeline` and `async_set_cache_pipeline` swallow Redis failures after in-memory operations succeed; only `async_set_cache_sadd` propagates Redis errors.
+    proof: [error-propagation-tests]
+checks:
+  optional: []
+  commands:
+    - id: dual-cache-deferred-write-functions
+      why: the deferred-write functions are missing or do not compile
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::)'
+    - id: dual-cache-deferred-write-integration
+      why: deferred writes do not integrate correctly with active batches
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::(deferred_write|batch_integration))'
+    - id: error-propagation-tests
+      why: error propagation differs between increments and set operations
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::(error_propagation|error_swallowing))'
+oracle_cases: []
+deviations:
+  - what: Rust function names are shortened to 30 characters or fewer per coding rules; `increment_cache_post_call`, `pipeline_increment_post_call`, and `log_deferred_increment_failure` implement LiteLLM's longer-named `async_increment_cache_post_call`, `async_increment_cache_pipeline_post_call`, and `_log_deferred_increment_failure`.
+    why: Betterlite enforces the 30-character name limit to improve readability and consistency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609-L642
+  - what: When `pipeline_increment_post_call` detects no active post-call batch, it delegates to the direct `async_increment_cache_pipeline` path rather than falling back to a synchronous increment.
+    why: Request-scoped batch lifecycle means all post-call work is async; betterlite has no synchronous fallback for post-call operations.
+out_of_scope:
+  - RedisBatch construction, lifecycle and operation methods (set, delete, increment, on_settled). Those are owned by a lower task.
+  - active_request_redis_batch and active_post_call_redis_batch lookup; context injection is owned by the batch infrastructure.
+  - The default TTL and batch expiry constants; those live in the config or DualCache constructor.
+pitfalls:
+  - "`log_deferred_increment_failure` is registered as a callback on the future returned by batch.increment().on_settled(); it must handle cancellation (future.cancelled()) before reading the exception, or a cancellation attempt raises."
+  - "`pipeline_increment_post_call` wraps each operation in the list before iterating; if the batch.increment().on_settled() chain is broken, the failure will never be observed."
+  - "`async_set_cache_pipeline` and `async_increment_cache_pipeline` both swallow Redis errors after logging them with log_redis_failure, whereas `async_set_cache_sadd` propagates Redis errors. Callers must handle swallowed vs. propagated errors; tests verify they do."
+  - "LiteLLM applies `default_in_memory_ttl` to all cached writes in `_set_on_batch` and applies it again in the batch/pipeline helpers; the helper must not double-apply."
+  - "The in-memory increment in `pipeline_increment_post_call` can fail, but the function swallows the error and proceeds to queue the Redis increment anyway. Log the in-memory failure but do not re-raise."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

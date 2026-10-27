@@ -27,6 +27,10 @@ scope:
   - tools/oracle/sdk_http/speech_call_plan.py
   - tools/oracle/cases/sdk-http/speech-call-plan/**
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-call-plan-*
+  - tools/oracle/helpers/b1083.py
+  - tools/oracle/helpers/b1083/**
+  - tools/oracle/src/helpers/core_ops/b1083.rs
+  - tools/oracle/src/helpers/core_ops/b1083/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8198-L8234
@@ -81,5 +85,5 @@ pitfalls:
 - Missing model is outside try, unlike provider resolution and execution failures.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

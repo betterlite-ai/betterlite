@@ -1,0 +1,11 @@
+kind: helper
+name: wire-name-projection
+call:
+  owned_parameter_names:
+    function: wire_name_projection
+    name: no-log
+    owner: observability_options
+    root: connection_settings
+env: {}
+compare:
+  ignore: []

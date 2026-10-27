@@ -1,0 +1,113 @@
+id: B3695
+title: Content filtering actions and ordered text evaluation
+description: >-
+  Build the action handlers for content filter detection and the single-text evaluator
+  that applies all content filtering checks in sequence: conditional categories, phrase
+  patterns, category keywords, regex patterns and blocked words. Each handler appends
+  a detection record to the detections list (or does nothing if detections is None) and
+  then executes the configured BLOCK or MASK action. BLOCK raises HTTP 400 with error detail.
+  MASK applies redaction tags to matched text except for conditional matches, where MASK logs a warning
+  instead (no redaction for conditional categories). The single-text evaluator orchestrates
+  the checks in order, collecting exceptions from loaded categories, and returns filtered
+  text with all matched text redacted where applicable.
+
+  Build Rust functions that preserve LiteLLM behavior:
+  - handle_conditional_match: appends CategoryKeywordDetection (type, category, keyword, severity, action) before action check; BLOCK raises HTTP 400; MASK logs warning without redacting
+  - handle_category_keyword_match: appends CategoryKeywordDetection (type, category, keyword, severity, action) before action check; BLOCK raises HTTP 400; MASK applies keyword_redaction_tag
+    via regex pattern matching (case-insensitive)
+  - handle_pattern_match: appends PatternDetection (type, pattern_name, action) before action check; BLOCK raises HTTP 400; MASK applies pattern_redaction_format tag
+    via span redaction
+  - handle_blocked_word_match: appends BlockedWordDetection (type, keyword, action, description) before action check; BLOCK raises HTTP 400; MASK applies keyword_redaction_tag
+  - filter_single_text: orchestrates all checks (conditional, phrase, category keyword,
+    pattern, blocked word) in order; collects exceptions from loaded categories and passes
+    them to check functions; returns filtered text
+
+scope:
+  paths:
+    - crates/betterlite/src/guardrails/content_filter_actions.rs
+    - crates/betterlite/src/guardrails/content_filter_actions/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1209-L1247
+    why: "_handle_conditional_match: BLOCK raises HTTP 400; MASK logs warning without redacting."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1249-L1293
+    why: "_handle_category_keyword_match: BLOCK raises HTTP 400; MASK applies regex-based redaction via _keyword_to_regex_pattern."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1295-L1324
+    why: "_handle_pattern_match: BLOCK raises HTTP 400; MASK applies pattern_redaction_format via span redaction."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1326-L1369
+    why: "_handle_blocked_word_match: BLOCK raises HTTP 400; MASK applies keyword_redaction_tag via regex redaction."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1371-L1429
+    why: "_filter_single_text: orchestrates all checks in order; collects exceptions; returns filtered text."
+
+dod:
+  - text: "handle_conditional_match appends CategoryKeywordDetection with type: \"category_keyword\", category, keyword, severity, and action fields before checking the action."
+    proof: [action-handler-tests]
+  - text: handle_conditional_match raises HTTP 400 with error detail containing matched_phrase, category, and severity when action is BLOCK.
+    proof: [action-handler-tests]
+  - text: handle_conditional_match logs warning without redacting text when action is MASK for conditional categories.
+    proof: [action-handler-tests]
+  - text: "handle_category_keyword_match appends CategoryKeywordDetection with type: \"category_keyword\", category, keyword, severity, and action fields before checking the action."
+    proof: [action-handler-tests]
+  - text: handle_category_keyword_match raises HTTP 400 with error detail when action is BLOCK.
+    proof: [action-handler-tests]
+  - text: handle_category_keyword_match applies keyword_redaction_tag to matched keyword using case-insensitive regex (via _keyword_to_regex_pattern) when action is MASK.
+    proof: [action-handler-tests]
+  - text: "handle_pattern_match appends PatternDetection with type: \"pattern\", pattern_name, and action fields before checking the action."
+    proof: [action-handler-tests]
+  - text: handle_pattern_match raises HTTP 400 when action is BLOCK.
+    proof: [action-handler-tests]
+  - text: handle_pattern_match applies pattern_redaction_format tag (with pattern name uppercased) to matched spans when action is MASK.
+    proof: [action-handler-tests]
+  - text: "handle_blocked_word_match appends BlockedWordDetection with type: \"blocked_word\", keyword, action, and description fields before checking the action."
+    proof: [action-handler-tests]
+  - text: handle_blocked_word_match raises HTTP 400 with error detail including keyword and optional description when action is BLOCK.
+    proof: [action-handler-tests]
+  - text: handle_blocked_word_match applies keyword_redaction_tag to matched keyword via case-insensitive regex when action is MASK.
+    proof: [action-handler-tests]
+  - text: All handlers treat detections=None as a no-op and do not attempt to append when it is None.
+    proof: [action-handler-tests]
+  - text: filter_single_text collects all exceptions from loaded categories and passes them to check functions.
+    proof: [action-handler-tests]
+  - text: filter_single_text checks conditional categories first, then phrase patterns, then category keywords, then all regex patterns, then all blocked words in that order.
+    proof: [action-handler-tests]
+  - text: filter_single_text returns filtered text with all masking applied; updates text_lower after each masked blocked word match.
+    proof: [action-handler-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: action-handler-tests
+      why: Action handler logic or filter orchestration fails or does not exist
+      run: |-
+        cargo nextest run --locked -p betterlite --no-tests=fail \
+          -E 'test(/::content_filter_actions_behavior($|::)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Conditional category matches with MASK action log a warning but do not redact text. The source explicitly handles conditional MASK separately from other MASK actions.
+    why: LiteLLM preserves this behavior; conditional matches are phrase patterns detected by B3694 that cannot be redacted with simple span-based masking since their structure differs from regex patterns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1242-L1247
+
+out_of_scope:
+  - B3690 defines detection records and action enum variants.
+  - B3693 owns _find_pattern_spans, _mask_spans, _keyword_to_regex_pattern; this task calls them.
+  - B3694 owns _check_conditional_categories, _check_phrase_patterns, _check_category_keywords; this task calls them.
+  - B3692 owns category loading and _load_categories; this task only reads loaded_categories.
+  - B3698 handles detection logging and risk calculation; this task only appends to detections list.
+  - Final guardrail constructor and initialization (B105).
+
+pitfalls:
+  - Conditional matches and phrase patterns both call handle_conditional_match with identical error detail structure (error, category, matched_phrase, severity), making the two call sites indistinguishable at the handler level. Do not implement a field-name branch between the two.
+  - MASK action for conditional categories logs a warning but does not redact; other MASK actions apply redaction tags to text. Do not accidentally apply redaction to conditional matches.
+  - Pattern redaction format uses pattern_name.to_uppercase() before substituting into the format string; if the format contains {pattern_name}, ensure case conversion matches.
+  - Blocked word matching updates text_lower after each masked match; skipping this causes subsequent searches to run against stale text or unmasked state.
+  - Keyword-to-regex-pattern conversion is called from within action handlers, not once per keyword; do not cache regex results across different keywords.
+  - The exceptions list must be collected from all loaded categories before any check runs; passing wrong exceptions to a check function silently accepts text that should be skipped.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

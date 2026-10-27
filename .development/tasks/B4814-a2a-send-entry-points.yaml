@@ -1,0 +1,124 @@
+id: B4814
+title: A2A send entry points and provider bridge selection
+description: >-
+  Build the public async send entry points that choose native A2A or the completion bridge and attach accounting context. Preserve trace/agent header precedence, response-ID wrapping and distinct streaming/non-streaming logging paths.
+
+  asend_message is decorated with @client for LiteLLM logging and tracking. asend_message_streaming is undecorated and builds its own Logging object manually. Detect custom_llm_provider in litellm_params to route through completion bridge; otherwise use native A2A client. If a2a_client is not provided but api_base exists, create one with X-LiteLLM-Trace-Id header (from logging_obj.litellm_trace_id or generated uuid for asend_message; from logging_obj.litellm_trace_id, str(request.id) if set, or generated uuid for asend_message_streaming), X-LiteLLM-Agent-Id when agent_id provided, then merge in agent_extra_headers (agent headers take precedence). Call _execute_a2a_send_with_retry for non-streaming and _execute_a2a_stream_with_retry for streaming. Calculate usage from request/response and set on logging object via _set_usage_on_logging_obj. Set litellm params on logging object via _set_litellm_params_on_logging_obj (only pricing keys). Set agent_id on logging object via _set_agent_id_on_logging_obj. For streaming, reuse or build logging object through _build_streaming_logging_obj, then wrap in A2AStreamingIterator.
+
+  _send_message_via_completion_bridge is called by both entry points when custom_llm_provider is truthy. Extract params from request via model_dump or dict(), call A2ACompletionBridgeHandler.handle_non_streaming, return LiteLLMSendMessageResponse.from_dict. Omit agent_extra_headers parameter name in bridge entry description text.
+
+scope:
+  paths:
+    - crates/betterlite-a2a/src/send.rs
+    - crates/betterlite-a2a/src/send/**
+    - crates/betterlite-a2a/src/send/tests.rs
+    - crates/betterlite-a2a/src/send/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L221-249
+    why: _send_message_via_completion_bridge routes through completion bridge handler and wraps response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L403-552
+    why: asend_message detects custom_llm_provider, creates client if needed, preserves trace/agent headers, calculates usage and sets logging fields; decorated with @client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L627-764
+    why: asend_message_streaming routes through bridge or native, builds logging object, wraps in A2AStreamingIterator; undecorated, manages Logging object manually.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L1-87
+    why: Module-level imports, constants and shared helpers for both send functions.
+
+dod:
+  - text: asend_message detects custom_llm_provider in litellm_params and routes to completion bridge via _send_message_via_completion_bridge when truthy.
+    proof: [send-routing-tests]
+  - text: asend_message creates a2a_client from api_base when not provided, with X-LiteLLM-Trace-Id from logging_obj.litellm_trace_id or generated uuid, X-LiteLLM-Agent-Id when agent_id provided, merged with agent_extra_headers taking precedence.
+    proof: [send-client-tests]
+  - text: asend_message calls _execute_a2a_send_with_retry with a2a_client, request, agent_card, card_url, api_base and agent_name.
+    proof: [send-client-tests]
+  - text: asend_message calculates usage from request/response via A2ARequestUtils.calculate_usage_from_request_response and sets on logging object.
+    proof: [send-usage-tests]
+  - text: asend_message sets litellm_params on logging object via _set_litellm_params_on_logging_obj with only pricing keys.
+    proof: [send-usage-tests]
+  - text: asend_message sets agent_id on logging object via _set_agent_id_on_logging_obj.
+    proof: [send-usage-tests]
+  - text: asend_message returns LiteLLMSendMessageResponse from a2a_response via from_a2a_response.
+    proof: [send-response-tests]
+  - text: _send_message_via_completion_bridge extracts params from request, calls A2ACompletionBridgeHandler.handle_non_streaming, returns LiteLLMSendMessageResponse.from_dict.
+    proof: [bridge-routing-tests]
+  - text: asend_message_streaming detects custom_llm_provider and routes through completion bridge via A2ACompletionBridgeHandler.handle_streaming.
+    proof: [stream-routing-tests]
+  - text: asend_message_streaming creates a2a_client when not provided, with X-LiteLLM-Trace-Id from logging_obj.litellm_trace_id, then str(request.id) if request.id is set, then generated uuid, and X-LiteLLM-Agent-Id when agent_id provided.
+    proof: [stream-client-tests]
+  - text: asend_message_streaming builds or reuses logging object, sets agent_id, wraps stream in A2AStreamingIterator.
+    proof: [stream-logging-tests]
+  - text: asend_message_streaming yields chunks from A2AStreamingIterator.
+    proof: [stream-iterator-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: send-routing-tests
+      why: Send routing or custom_llm_provider detection missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*routing/)'
+    - id: send-client-tests
+      why: A2A client creation or header handling missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*client/)'
+    - id: send-usage-tests
+      why: Usage calculation or logging object setup missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*usage/)'
+    - id: send-response-tests
+      why: Response wrapping or return type conversion missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*response/)'
+    - id: bridge-routing-tests
+      why: Completion bridge routing or response conversion missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*bridge/)'
+    - id: stream-routing-tests
+      why: Streaming bridge routing missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*stream.*routing/)'
+    - id: stream-client-tests
+      why: Streaming client creation or header handling missing or incorrect, including request.id trace fallback.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*stream.*client/)'
+    - id: stream-logging-tests
+      why: Streaming logging object building or reuse missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*stream.*logging/)'
+    - id: stream-iterator-tests
+      why: A2AStreamingIterator wrapping or chunk yielding missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^send::.*stream.*iterator/)'
+
+oracle_cases: []
+
+deviations:
+  - what: asend_message is decorated with @client for LiteLLM logging and tracking; asend_message_streaming is undecorated and builds its own Logging object manually via _build_streaming_logging_obj.
+    why: Only asend_message uses the @client decorator; asend_message_streaming handles logging object construction directly without a decorator wrapper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L403
+  - what: asend_message and asend_message_streaming call LiteLLMSendMessageResponse.from_a2a_response and from_dict; these response wrapper methods are supplied by B4771 as part of the native agent provider contracts.
+    why: B4771 owns LiteLLMSendMessageResponse which wraps A2A SDK responses with betterlite's _hidden_params for cost tracking and logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L468-505
+  - what: A2A trace and agent header generation uses UUID4 generation and datetime.now() replaced with injected execution/ID facilities from B198.
+    why: asend_message generates trace IDs from logging object or uuid; this UUID source belongs to B198's injected boundary (replacing uuid.uuid4).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L490
+
+out_of_scope:
+  - Native A2A client creation and send/stream retry loops; owned by B4801.
+  - Completion bridge handler implementation; owned by B4809.
+  - Streaming iterator and terminal logging dispatch; owned by B4810.
+  - Card resolution and URL retrieval; owned by B4800.
+  - Usage calculation from request/response; owned by B4802.
+  - Logging object construction and field setters; owned by B247/B4810.
+  - Unused A2AClient class and excluded send_message/aget_agent_card wrappers; not rebuilt.
+
+pitfalls:
+  - Agent headers must be merged into trace/agent headers AFTER setting X-LiteLLM-Trace-Id/X-LiteLLM-Agent-Id so agent headers take precedence.
+  - "custom_llm_provider must be explicitly checked and truthy; a missing key or None value falls through to native A2A flow."
+  - "Usage calculation uses asyncify wrapper on the synchronous A2ARequestUtils.calculate_usage_from_request_response; the function returns a tuple (prompt, completion, total)."
+  - "litellm_params merging into logging uses only _a2a_cost_params keys (explicit pricing keys, not all of litellm_params)."
+  - "For streaming, logging_obj may already exist in kwargs (as litellm_logging_obj); check isinstance(..., Logging) to reuse or build a new one."
+  - "Trace ID from logging object takes precedence over other sources; check logging_obj.litellm_trace_id when logging_obj exists."
+  - "asend_message_streaming has a three-tier trace ID fallback: logging_obj.litellm_trace_id, then str(request.id) if request.id is set, then generated uuid4. This differs from asend_message's two-tier fallback (logging_obj.litellm_trace_id or uuid4) which never consults request.id."
+  - Agent headers overlay (update) trace/agent headers; do not replace them.
+  - "For streaming with completion bridge, api_base is optional (some providers derive endpoint from model)."
+  - "Request params must be extracted via model_dump(mode=\"json\") for Pydantic models or dict() fallback before passing to bridge handler."
+  - "Response wrapping uses from_dict for bridge responses and from_a2a_response for native responses; both methods are supplied by B4771."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,71 @@
+id: B3494
+title: Delete and cancel provider interactions
+description: >-
+  Implement the DELETE and POST lifecycle operations for Interactions HTTP transport.
+  Add crates/betterlite-http/src/interactions/lifecycle.rs with four methods on InteractionsHTTPHandler: delete_interaction and async_delete_interaction execute DELETE requests without a body, while cancel_interaction and async_cancel_interaction execute POST requests with a JSON body.
+  All four methods follow the same pattern: resolve the HTTP client via _sync_client or _async_client, call validate_environment to prepare headers, call transform_delete_interaction_request or transform_cancel_interaction_request to build the URL and body, log the pre-call with interaction_id as input, execute the HTTP transport (using timeout or request_timeout as the fallback), handle exceptions via _BaseHTTPHandler._handle_error, and call transform_delete_interaction_response or transform_cancel_interaction_response to convert the raw response.
+  The DELETE request omits the request body, passing an empty dict; the POST request sends the body as JSON.
+  Both operations preserve the per-operation timeout parameter and the transport-only error catching semantics inherited from B3492.
+  Provider selection and optional-field extraction are owned by B3490; request/response transformation contracts are owned by B1369 (Vertex) and B1370 (Studio).
+scope:
+  paths:
+    - crates/betterlite-http/src/interactions/lifecycle.rs
+    - crates/betterlite-http/src/interactions/lifecycle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L460-L521
+    why: The delete_interaction method that validates headers, constructs the URL via transform_delete_interaction_request, logs pre-call, executes DELETE without a body and with timeout fallback, handles errors and transforms the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L523-L575
+    why: The async_delete_interaction method implementing the same flow asynchronously with await on the async client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L581-L642
+    why: The cancel_interaction method that validates headers, constructs the URL and body via transform_cancel_interaction_request, logs pre-call, executes POST with the body as JSON and timeout fallback, handles errors and transforms the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L644-L696
+    why: The async_cancel_interaction method implementing the same flow asynchronously.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1123-L1139
+    why: The DeleteInteractionResult and CancelInteractionResult response types.
+dod:
+  - text: The delete_interaction and async_delete_interaction methods execute DELETE requests with empty bodies, resolving clients via _sync_client or _async_client, validating headers and logging pre-call with interaction_id as input.
+    proof: [delete-tests]
+  - text: The cancel_interaction and async_cancel_interaction methods execute POST requests with JSON bodies, resolving clients and following the same validation and logging flow as delete operations.
+    proof: [cancel-tests]
+  - text: All four methods handle HTTP errors via _BaseHTTPHandler._handle_error, preserving provider-specific exception conversion and passing through non-HTTP exceptions unchanged.
+    proof: [delete-tests, cancel-tests]
+  - text: Both DELETE and POST operations accept timeout parameters and fall back to request_timeout when timeout is None, passing timeout=timeout or request_timeout to their respective transports.
+    proof: [delete-tests, cancel-tests]
+  - text: The sync versions of delete and cancel accept a _is_async parameter; when true, they dispatch to their async counterparts.
+    proof: [delete-tests, cancel-tests]
+checks:
+  optional: []
+  commands:
+    - id: delete-tests
+      why: delete_interaction or async_delete_interaction do not resolve clients, validate headers, log pre-call, construct URLs, handle errors or transform DELETE responses correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::lifecycle::.*delete/) and not test(/replays/)'
+    - id: cancel-tests
+      why: cancel_interaction or async_cancel_interaction do not resolve clients, validate headers, construct URLs/bodies, send JSON payloads, handle errors or transform POST responses correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::lifecycle::.*cancel/) and not test(/replays/)'
+oracle_cases: []
+deviations:
+  - what: DELETE requests do not pass a request body to the HTTP transport, and transform_delete_interaction_request returns an empty dict for the body parameter.
+    why: LiteLLM's delete_interaction at lines 509-513 calls sync_httpx_client.delete() with url and headers only, never passing a body or data parameter. The url and data returned by transform_delete_interaction_request are both used internally but the data is never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L509-L513
+  - what: Both DELETE and POST cancel apply timeout=timeout or request_timeout, unlike GET retrieval (B3492) which omits the timeout parameter.
+    why: LiteLLM's delete_interaction at line 512 and async_delete_interaction at line 566 both pass timeout to httpx.delete(), identical to how cancel_interaction at line 634 and async_cancel_interaction at line 688 pass timeout to httpx.post(). GET requests in B3492 do not pass timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L509-L513
+  - what: The sync delete_interaction and cancel_interaction methods accept a _is_async parameter that is False by default; when True, they immediately dispatch to their async counterparts and return a Coroutine without awaiting it.
+    why: LiteLLM uses a dispatcher pattern to avoid code duplication, where the sync method can be called with _is_async=True to return a coroutine that the caller awaits. This pattern is specific to the Python OpenAPI SDK structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L473-L482
+out_of_scope:
+  - Provider contract methods (validate_environment, transform_delete_interaction_request, transform_delete_interaction_response, transform_cancel_interaction_request, transform_cancel_interaction_response, get_error_class). These are owned by B3490 (contract definition) and B1369/B1370 (provider implementations).
+  - HTTP client resolution and error handling infrastructure. These are owned by B3492 (_BaseHTTPHandler).
+  - Interaction retrieval (GET) and creation (POST) operations. These are owned by B3492 and B3493 respectively.
+  - Request body construction beyond calling the provider's transform methods. The provider contracts handle the full body shape.
+pitfalls:
+  - "The transform_delete_interaction_request method returns a tuple of (URL, data), but the data is not sent in the HTTP request. Both components are computed for provider flexibility, but only the URL is used in the DELETE transport. The returned data is ignored."
+  - "The cancel_interaction method uses json=data to send the body, which httpx serializes to JSON automatically. The data dict must be JSON-serializable."
+  - "Both operations log the interaction_id as the input parameter to pre_call, not as a structured field in additional_args. The URL is passed separately in additional_args[api_base]."
+  - "Error conversion uses provider_config.get_error_class(error_message, status_code, headers). The status code is extracted from e.response.status_code and headers are dict(e.response.headers)."
+  - "The sync methods delete_interaction and cancel_interaction accept a _is_async parameter that defaults to False. When True, they return the coroutine from their async counterpart without awaiting it. This allows the same method name to serve both sync and async callers in Python."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -16,7 +16,7 @@ scope:
     - tools/oracle/helpers/otlp_normalization.py
     - tools/oracle/helpers/otlp_normalization/**
     - tools/oracle/cases/helpers/otlp-normalization/**
-    - tools/oracle/fuzz/corpus/helper_case/**
+    - "tools/oracle/fuzz/corpus/helper_case/otlp_normalization-*"
   lint_tables: false
 
 references:
@@ -97,22 +97,22 @@ checks:
       run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: otlp-truncation-helper
       why: the _truncate oracle helper case or corpus is missing, or replay fails
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_truncate' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_truncate_helper/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -lq 'otlp_truncate' tools/oracle/fuzz/corpus/helper_case/otlp_normalization-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_truncate_helper/)'
     - id: otlp-payload-elision-helper
       why: the _truncate_payload oracle helper case or corpus is missing, or replay fails
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_elision' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_elision_helper/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -lq 'otlp_elision' tools/oracle/fuzz/corpus/helper_case/otlp_normalization-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_elision_helper/)'
     - id: otlp-content-text-helper
       why: the content_text oracle helper case or corpus is missing, or replay fails
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_content_text' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_content_text_helper/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -lq 'otlp_content_text' tools/oracle/fuzz/corpus/helper_case/otlp_normalization-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_content_text_helper/)'
     - id: otlp-ui-content-helper
       why: the to_ui_content oracle helper case or corpus is missing, or replay fails
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_ui_content' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_ui_content_helper/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -lq 'otlp_ui_content' tools/oracle/fuzz/corpus/helper_case/otlp_normalization-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_ui_content_helper/)'
     - id: otlp-response-encoding-helper
       why: the encode_otlp_response oracle helper case or corpus is missing, or replay fails
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -rlq 'otlp_response_encoding' tools/oracle/fuzz/corpus/helper_case && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_response_encoding_helper/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otlp-normalization)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && grep -lq 'otlp_response_encoding' tools/oracle/fuzz/corpus/helper_case/otlp_normalization-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^otlp_response_encoding_helper/)'
     - id: helper-case-corpus
       why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/otlp_normalization-*")" && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/otlp-normalization/truncate-simple.yaml
@@ -146,6 +146,7 @@ out_of_scope:
   - HTTP request/response handling and auth; B3867 owns the ingest route.
 
 pitfalls:
+  - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/otlp_normalization-<case>.yaml. The rest of that folder belongs to other tasks.'
   - 'The oracle helper for this task is pre-registered as otlp_normalization in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/otlp_normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/otlp_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - "OTLP_MAX_ATTRIBUTE_VALUE_BYTES and OTLP_MAX_BODY_BYTES come from litellm.constants, not local defaults. Use them as the exact thresholds."
   - "Message array truncation calculates escape overhead (up to 6 bytes per character for JSON encoding). If content is cut, the overflow marker itself counts toward the 64KB (65536-byte) limit."
@@ -157,5 +158,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 2

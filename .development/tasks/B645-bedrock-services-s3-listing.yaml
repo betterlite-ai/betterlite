@@ -141,7 +141,6 @@ scope:
   - crates/betterlite-bedrock/src/s3_listing.rs
   - crates/betterlite-bedrock/src/s3_listing/**
   - Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/bedrock/services_s3_listing.rs
   - tools/oracle/src/helpers/bedrock/services_s3_listing/**
@@ -464,6 +463,6 @@ pitfalls:
   walk.
 - An authorized listing entry retains its raw percent-encoded key, even though authorization checked a decoded form.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -34,6 +34,10 @@ scope:
   - tools/oracle/cases/sdk-http/file-http-upload/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-http-upload-*
   - Cargo.lock
+  - tools/oracle/helpers/b2461.py
+  - tools/oracle/helpers/b2461/**
+  - tools/oracle/src/helpers/core_ops/b2461.rs
+  - tools/oracle/src/helpers/core_ops/b2461/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L3404-L3847
@@ -118,5 +122,5 @@ pitfalls:
 - A successful 204 media response still fails the explicit 200/201 check.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1500
   max_new_expects: 0

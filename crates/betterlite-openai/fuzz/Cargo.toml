@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-openai-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-openai = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "chat_request"
+path = "fuzz_targets/chat_request.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

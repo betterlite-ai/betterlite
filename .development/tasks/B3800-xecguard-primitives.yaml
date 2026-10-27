@@ -1,0 +1,94 @@
+id: B3800
+title: XecGuard scan and grounding primitives
+description: >-
+  Build XecGuard scan/grounding payloads, history extraction and block diagnostics.
+  Retain source redaction before recording scan results and separate scan from grounding requests.
+  Implement the sync `logging_hook` that surfaces scans in logging-only mode with event-loop awareness and exception swallowing.
+
+  The scan payload builder (`_call_scan`, `_call_grounding`) and message assembly helpers construct inputs from chat/Responses/request data.
+  Message normalization flattens multimodal content to plain text for the XecGuard API, and history synthesis ensures the full conversation is visible to the policy engine.
+  Grounding document extraction reads metadata and validates document structure before sending to the `/grounding` endpoint.
+
+  Both scan and grounding block responses include error detail formatting (trace_id, violated policies/rules, rationale) that the caller renders to the client.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/xecguard_primitives.rs
+    - crates/betterlite-guardrails/src/xecguard_primitives/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L59-63
+    why: Redaction before recording scan results. Chains redact_nested_match_and_regex_keys and mask_credentials_in_payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L275-301
+    why: "Sync logging_hook: asyncio.get_event_loop/new_event_loop, early return when the loop is running, exception swallowing mirrored from async_logging_hook."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L307-379
+    why: HTTP helpers. _call_scan and _call_grounding build request bodies; _post sends them and handles API errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L385-504
+    why: Message assembly and history extraction. Full conversation forwarding and multimodal content flattening.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L510-579
+    why: Grounding document extraction and block message formatting. Validate document structure; construct error strings with violated policies/rules and trace IDs.
+
+dod:
+  - text: "All primitives are built: _sanitize_scan_result_for_logging, HTTP payload construction (_call_scan, _call_grounding, _post), message assembly, and block formatting."
+    proof: [behavior-tests]
+  - text: "logging_hook runs async_logging_hook on an available event loop with asyncio.get_event_loop/new_event_loop, returns (kwargs, result) unchanged, and swallows every exception with debug logging."
+    proof: [sync-logging-cases]
+  - text: "Message normalization flattens multimodal content to plain text and handles empty/missing content fields."
+    proof: [message-assembly-cases]
+  - text: "History synthesis ensures the full chat, including system prompt, reaches XecGuard even when framework filters would skip it."
+    proof: [history-fullness-cases]
+  - text: "Grounding document extraction validates document_id and context fields and drops malformed documents with debug logging."
+    proof: [grounding-document-cases]
+  - text: "scan_block_message and grounding_block_message format error strings with trace_id, violated policies/rules, and truncated rationale."
+    proof: [block-message-cases]
+  - text: "Scan result redaction never exposes secret_fields and chains the redaction library functions."
+    proof: [redaction-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: XecGuard primitives do not exist or tests fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::/)' --workspace
+    - id: sync-logging-cases
+      why: logging_hook does not handle event loop state or exception swallowing correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::logging_hook/)' --workspace
+    - id: message-assembly-cases
+      why: Message normalization or synthesis does not match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::message/)' --workspace
+    - id: history-fullness-cases
+      why: Full history assembly does not preserve system prompts or synthesizes incorrectly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::history/)' --workspace
+    - id: grounding-document-cases
+      why: Grounding document extraction validation or metadata lookup fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::grounding_documents/)' --workspace
+    - id: block-message-cases
+      why: Block message formatting does not include trace_id, policies, or handles missing fields
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::block_message/)' --workspace
+    - id: redaction-cases
+      why: Scan result sanitization does not redact secrets or chains the redaction functions
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_primitives::redaction/)' --workspace
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The __init__ constructor, apply_guardrail method, async_logging_hook, and initialize_guardrail initialization belong to B3820 (hooks and orchestration).
+  - Guardrail framework base contracts (CustomGuardrail, GuardrailEventHooks, log_guardrail_information) are inherited interfaces, not built here.
+  - The pooled httpx client (get_async_httpx_client, httpxSpecialProvider.GuardrailCallback) is owned by B173.
+
+pitfalls:
+  - asyncio.get_event_loop() raises RuntimeError if no event loop exists in the thread. Catch it, create a new loop, and set it as the thread's default.
+  - asyncio.set_event_loop() may fail if the loop is already running. Check loop.is_running() before run_until_complete and return early if true.
+  - Exception swallowing in logging_hook is intentional; every exception is caught and logged at debug level without re-raising. This mirrors the Presidio guardrail pattern.
+  - Message normalization must handle both dict and object interfaces (checking hasattr for .choices, .message, .content attributes alongside dict.get calls).
+  - Grounding document validation requires both document_id and context to be present and non-empty strings. Malformed documents are logged and dropped, never raising.
+  - Block message rationale is truncated to _RATIONALE_TRUNCATE_CHARS (200) characters to prevent oversized error responses. Truncation happens during formatting, not during scan result storage.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

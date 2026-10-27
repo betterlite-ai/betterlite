@@ -171,6 +171,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as model_ptu_pricing in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_ptu_pricing.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_ptu_pricing.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - PTU fixed-cost pricing conflicts with token pricing even when both fields are supplied in one patch.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

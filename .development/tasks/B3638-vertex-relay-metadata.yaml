@@ -1,0 +1,123 @@
+id: B3638
+title: Vertex passthrough metadata and Interactions usage
+description: >-
+  Build shared Vertex model/provider URL helpers, credentials records and Interactions usage projection for passthrough
+  endpoints. Implement model extraction from URLs, provider/publisher resolution, Interactions route detection, and
+  the response logging payload factory. Preserve response-model-before-request-model selection and treat absent
+  model or usage as unpriceable. The common payload helper writes model and custom_llm_provider but not
+  model_call_details.response_cost when costing fails, keeping that asymmetry from the source. Dependencies: B068
+  completion_cost; B1668 InteractionsUsageObjectTransformation.is_interactions_usage_object and
+  transform_interactions_usage_object (betterlite-models::cost_usage). Errors in costing or model resolution
+  surface as warnings with zero cost, leaving the spend row intact for downstream subscribers.
+scope:
+  paths:
+  - crates/betterlite-vertex/src/{lib,vertex_relay_metadata}.rs
+  - crates/betterlite-vertex/src/vertex_relay_metadata.rs
+  - crates/betterlite-vertex/src/vertex_relay_metadata/**
+  - crates/betterlite-models/src/passthrough/vertex.rs
+  - crates/betterlite-models/src/passthrough/vertex/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L56-L121
+  why: Interactions route detection, model extraction from response and request, and handler composition.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L663-L669
+  why: Model extraction from URL using /models/{name} regex pattern.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L701-L719
+  why: Provider/publisher detection and custom LLM provider identification.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L754-L788
+  why: Vertex response logging payload construction with cost calculation and model enrichment.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/vertex_ai.py#L1-L18
+  why: VertexPassThroughCredentials type with nullable project, location and credentials fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/usage_object_transformation.py
+  why: InteractionsUsageObjectTransformation contract for detecting and transforming Interactions usage.
+dod:
+- text: Strict interactions route detection returns true for /projects/{p}/locations/{l}/interactions patterns and false for other routes.
+  proof: [vertex-interactions-route-detection]
+- text: Loose interactions route detection returns true for any path ending in /interactions and false otherwise.
+  proof: [interactions-route-detection]
+- text: Model extraction prefers response body model, then request body model, and returns none when neither is present
+    or non-empty.
+  proof: [model-extraction]
+- text: URL-based model extraction uses regex to find /models/{name} and returns unknown when no match is found.
+  proof: [url-model-extraction]
+- text: Provider/publisher detection identifies mistralai, anthropic, ai21 and openapi publishers, and returns none otherwise.
+  proof: [provider-detection]
+- text: Custom LLM provider returns gemini when hostname ends with generativelanguage.googleapis.com, and vertex_ai
+    otherwise.
+  proof: [provider-identification]
+- text: Vertex response logging payload sets model, custom_llm_provider and response_cost in kwargs, and enriches
+    logging_obj.model and model_call_details.
+  proof: [logging-payload]
+- text: Response cost calculation uses completion_cost with vertex_location when available, and missing cost does
+    not populate model_call_details.response_cost.
+  proof: [cost-calculation]
+- text: VertexPassThroughCredentials has nullable vertex_project, vertex_location and vertex_credentials fields.
+  proof: [credentials-type]
+- text: Interactions handler calls transform_interactions_usage_object only when usage is a valid Interactions object.
+  proof: [interactions-usage]
+checks:
+  optional: []
+  commands:
+  - id: vertex-interactions-route-detection
+    why: Strict vertex interactions route detection is missing or matches incorrect patterns
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- vertex_interactions_route
+  - id: interactions-route-detection
+    why: Loose interactions route detection is missing or matches incorrect patterns
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- interactions_route
+  - id: model-extraction
+    why: Model extraction from response/request fallback is missing or incorrect
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- model_extraction
+  - id: url-model-extraction
+    why: URL model extraction regex is missing or fails to parse /models/{name}
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- url_model
+  - id: provider-detection
+    why: Provider/publisher detection is missing or identifies wrong publishers
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- provider_detection
+  - id: provider-identification
+    why: Custom LLM provider detection is missing or does not distinguish gemini from vertex_ai
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- custom_provider
+  - id: logging-payload
+    why: Vertex response logging payload construction is missing or does not enrich kwargs correctly
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- logging_payload
+  - id: cost-calculation
+    why: Response cost calculation or logging_obj enrichment is missing or incorrect
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- cost
+  - id: credentials-type
+    why: VertexPassThroughCredentials is missing or fields are not nullable
+    run: >-
+      grep -q 'vertex_project.*Option' crates/betterlite-models/src/passthrough/vertex.rs
+      && grep -q 'vertex_location.*Option' crates/betterlite-models/src/passthrough/vertex.rs
+      && grep -q 'vertex_credentials.*Option' crates/betterlite-models/src/passthrough/vertex.rs
+  - id: interactions-usage
+    why: Interactions usage object validation or transformation is missing
+    run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- interactions_usage
+oracle_cases: []
+deviations:
+- what: Model extraction returns "unknown" instead of failing when no /models/{name} pattern is found in the URL.
+  why: Source uses "unknown" as fallback; betterlite matches this behavior for compatibility.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L664-L669
+- what: response_cost is not written to model_call_details when the common payload helper runs, even though other
+    handlers do. This asymmetry is preserved from the source.
+  why: Source code does not set model_call_details["response_cost"] in
+    _create_vertex_response_logging_payload_for_generate_content; changing it could break batch or dispatch logic
+    that depends on its absence.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L754-L788
+out_of_scope:
+- Vertex credential source resolution (project/location/credentials retrieval from config or runtime state).
+- Provider-response dispatch or selection (vertex_passthrough_handler and its branches, owned by B3642).
+- Batch prediction job handling (batch_prediction_jobs_handler and extract_model_name_from_vertex_path, owned by B3641).
+- Anthropic/Gemini-specific streaming assembly (owned by B3631 and B3640).
+pitfalls:
+- Hostname check for Gemini uses generativelanguage.googleapis.com; include the full domain when parsing URLs.
+- Model extraction from request/response prefers response, but Interactions handler also checks request_body before
+  returning None; test both fallback orders.
+- >-
+  Two distinct route detection functions exist: is_vertex_interactions_route uses strict regex matching
+  /projects/{p}/locations/{l}/interactions, while is_interactions_route uses loose suffix matching for any path
+  ending in /interactions.
+- The three Interactions declarations (regex and TypeAdapter) are separate items from the function; count them
+  correctly and include both in test cases.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

@@ -52,7 +52,6 @@ scope:
     - crates/betterlite-db/fuzz/Cargo.toml
     - crates/betterlite-db/fuzz/fuzz_targets/pod_owner.rs
     - crates/betterlite-db/fuzz/corpus/pod_owner/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_queue.rs
     - crates/betterlite-config/src/spend_queue/**
     - crates/betterlite-config/fuzz/Cargo.toml
@@ -127,6 +126,6 @@ pitfalls:
   - A reentrant acquire succeeds without extending the original TTL and is the only acquire path that emits the gauge event.
   - A Lua failure intentionally reaches GET plus DEL, so the fallback cannot be described as atomic.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

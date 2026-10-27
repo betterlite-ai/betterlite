@@ -1,0 +1,140 @@
+id: B3845
+title: OTel GenAI and legacy attribute mapping
+description: >-
+  Implement the attribute mapper contract and two mappers that transform span payloads into flat attribute dictionaries.
+  The GenAI mapper emits the canonical OpenTelemetry GenAI semantic-convention attributes (gen_ai.*, litellm.*, Server.*, Error.*),
+  keying all attribute names and enums so the engine itself never references them directly.
+  The legacy mapper emits older semconv-ai / Traceloop naming (gen_ai.system, gen_ai.usage.*, llm.is_streaming) plus bare unprefixed service keys
+  for backends that consume those names.
+
+  Each mapper declares one extractor table per span kind (LLMCallSpanData, MCPToolCallSpanData, MCPListToolsSpanData, GuardrailSpanData, ServiceSpanData)
+  mapping semantic keys to lambda extractors. The `map` method dispatches on span type, applies the appropriate table, and drops None-valued entries.
+
+  For LLM call spans, both mappers project tool definitions with a shared budget that reserves space for multiple active vocabularies.
+  Include utility functions for tool attribute budgeting, JSON serialization of messages and tool parameters, extracting message content from multimodal dicts,
+  and applying extractor tables to span payloads. Keep message/choice/Responses transformations below GenAI mapping as complete functions
+  for legacy attribute writers, preserving the exact LiteLLM conversions of string/list/object content into OTEL "parts" arrays.
+
+  Implement set_tools_attributes, which hardcodes its own behavior independent of shared tables: pulls name/description/parameters directly off raw tool.get('function') dicts
+  and writes every field through safe_set_attribute with None coerced to empty string and missing parameters serialized as the JSON string "null".
+  Implement _tool_calls_kv_pair, which walks Function.__annotations__.keys() (name and arguments only, no description/parameters) and emits keys only when the value is truthy.
+  Implement the four complete legacy transformation functions that normalize messages and Responses API output into the "{role, parts}" format.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/mappers/base.rs
+    - crates/betterlite-logging/src/otel/mappers/base/**
+    - crates/betterlite-logging/src/otel/mappers/genai.rs
+    - crates/betterlite-logging/src/otel/mappers/genai/**
+    - crates/betterlite-logging/src/otel/mappers/legacy.rs
+    - crates/betterlite-logging/src/otel/mappers/legacy/**
+    - crates/betterlite-logging/src/otel/mappers/utils.rs
+    - crates/betterlite-logging/src/otel/mappers/utils/**
+    - crates/betterlite-logging/src/otel/transforms.rs
+    - crates/betterlite-logging/src/otel/transforms/**
+    - crates/betterlite-logging/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/genai-mapping/**
+    - tools/oracle/helpers/b3845.py
+    - tools/oracle/helpers/b3845/**
+    - tools/oracle/src/helpers/logging/b3845.rs
+    - tools/oracle/src/helpers/logging/b3845/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/base.py#L16-L37
+    why: AttributeMapper protocol; owns map method contract and SpanData type union.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/genai.py#L41-L198
+    why: GenAIMapper class; all attribute tables and _llm_call, _guardrail, _service methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/legacy.py#L29-L102
+    why: LegacyMapper class; tables and _llm_call, _service methods using semconv-ai naming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/utils.py#L15-L123
+    why: Utility functions for tool budgeting, JSON serialization, message extraction and collecting attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2302-L2333
+    why: set_tools_attributes method; tool iteration and safe_set_attribute calls using legacy naming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2352-L2370
+    why: _tool_calls_kv_pair method; tool call extraction from responses into key-value pairs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2760-L2887
+    why: Legacy transformation functions _transform_messages_to_otel_semantic_conventions, _transform_choices_to_otel_semantic_conventions, _to_dict and _transform_responses_api_output_to_otel.
+dod:
+  - text: >-
+      The AttributeMapper trait is implemented with one map method dispatched on payload type,
+      returning an empty dict for unknown spans.
+    proof: [mapper-protocol]
+  - text: >-
+      GenAI and legacy mappers each implement the AttributeMapper trait with their own tables.
+      LLM call spans include tool definitions up to the budget; service spans include db_span_attributes
+      (from B3848); guardrail spans include all named attributes; MCP spans omit guardrail/service keys.
+    proof: [genai-mapper, legacy-mapper]
+  - text: >-
+      Mappers dispatch on span type and apply their extractor table, dropping None-valued entries.
+      Tool definitions are collected with tool_attr_budget distributing the span-wide ceiling across mappers.
+    proof: [mapper-dispatch, tool-budget]
+  - text: >-
+      Message serialization preserves multimodal content lists and tool-call fields; output_messages extracts
+      the message from each choice; stringify_message and serialize_messages handle fallbacks on JSON encode failure.
+    proof: [message-serialization]
+  - text: >-
+      Legacy transformation functions normalize messages/choices/Responses API output into {role, parts} format,
+      handling both string and list content, multimodal parts, Pydantic models and LiteLLM wrapper objects.
+    proof: [legacy-transforms]
+  - text: >-
+      set_tools_attributes emits name/description/parameters off raw function dicts with every field always written
+      (None coerced to empty string, missing parameters serialized as JSON string "null"), using legacy llm.request.functions.* prefixes.
+      _tool_calls_kv_pair emits only name/arguments off Function's own fields and only when truthy, using gen_ai.completions.*.function_call.* prefixes.
+    proof: [tool-functions, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: mapper-protocol
+      why: The AttributeMapper trait does not exist or lacks the required map method
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::base::tests::mapper_protocol(::|$)/)'
+    - id: genai-mapper
+      why: GenAI mapper attributes, dispatch or tool collection fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::genai::tests::(::|$)/) - test(/replays_the_/)'
+    - id: legacy-mapper
+      why: Legacy mapper attributes, dispatch or tool collection fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::legacy::tests::(::|$)/) - test(/replays_the_/)'
+    - id: mapper-dispatch
+      why: Mappers do not dispatch on span type or return incorrect results
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::dispatch_tests::(::|$)/)'
+    - id: tool-budget
+      why: Tool attribute budget is not computed or is not split across mappers
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::utils::tests::tool_budget(::|$)/)'
+    - id: message-serialization
+      why: Message serialization, multimodal content extraction or fallback handling fails
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_transforms::message_tests::(::|$)/)'
+    - id: legacy-transforms
+      why: Message/choice/Responses transformation functions do not produce {role, parts} output
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_transforms::legacy_tests::(::|$)/)'
+    - id: tool-functions
+      why: set_tools_attributes or _tool_calls_kv_pair produce incorrect key prefixes or missing attributes
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_transforms::tool_functions_tests::(::|$)/)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3845::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/genai-mapping/llm-call-genai-attributes.yaml
+  - tools/oracle/cases/helpers/genai-mapping/guardrail-attributes.yaml
+  - tools/oracle/cases/helpers/genai-mapping/service-db-attributes.yaml
+  - tools/oracle/cases/helpers/genai-mapping/mcp-tool-call-attributes.yaml
+  - tools/oracle/cases/helpers/genai-mapping/mcp-list-tools-minimal.yaml
+  - tools/oracle/cases/helpers/genai-mapping/legacy-mapper-genai-system.yaml
+  - tools/oracle/cases/helpers/genai-mapping/tool-definition-budget.yaml
+  - tools/oracle/cases/helpers/genai-mapping/message-multimodal-content.yaml
+  - tools/oracle/cases/helpers/genai-mapping/responses-api-output.yaml
+deviations: []
+out_of_scope:
+  - Mapper registry and resolve_mappers dispatch; that lives in B3846.
+  - Message attribute population from request payloads; that is B3844's inference span projection.
+  - Service datastore attribute names beyond db_span_attributes; db_system and db.statement belong to B3848.
+  - Tool name/description extraction from parsed definitions; payload construction is B3843's ToolDefinition.
+pitfalls:
+  - The span-wide tool definition budget (32 attributes) is split across N active mappers; a mapper's share is budget/N rounded down, with at least 1 tool always kept legible even when N is large.
+  - LiteLLM's GenAI mapper accesses error.error_type and error.message; the error record is optional and both fields may be None independently.
+  - serialize_messages returns None on an empty list, not an empty JSON array, so downstream code omits the key from sparse spans.
+  - Responses API items are Pydantic v2 models from the openai SDK with a model_dump() method, not dict-like objects with .get(); _to_dict handles both forms.
+  - The cost breakdown keys in LiteLLM's GenAI mapper are "input", "output", "cache_read", "cache_creation", "tool_usage", "original", "discount_amount", "discount_percent", "margin_fixed_amount", "margin_percent", "margin_total_amount", all optional (None-valued when absent).
+  - Tool definitions are limited by the budget before the span attribute limit; exceed the budget and the oldest tools are silently dropped.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

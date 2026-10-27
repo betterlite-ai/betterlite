@@ -81,6 +81,6 @@ pitfalls:
   - The main Redis path does not flush tool discovery; that call exists only in the non-Redis writer branch at the pin.
   - Publishing to Redis must still occur on a pod that subsequently fails to acquire the database-writer lease.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -38,6 +38,10 @@ scope:
   - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_dependencies.py
   - tools/oracle/cases/routing/router-dependencies/**
+  - tools/oracle/helpers/b377.py
+  - tools/oracle/helpers/b377/**
+  - tools/oracle/src/helpers/server/b377.rs
+  - tools/oracle/src/helpers/server/b377/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L68-L226
@@ -101,5 +105,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,158 @@
+id: B4743
+title: MCP HTTP failure propagation and bounded cleanup
+description: >-
+  Build cancellation-safe HTTP cleanup and preserve the original stream/operation failure when
+  transport teardown also fails. Implement _first_non_cancelled_cause to walk an exception tree
+  and find the first non-CancelledError cause, excluding errors already recorded during cleanup.
+  Implement as_mcp_read_timeout to normalize SDK-generated read timeouts (REQUEST_TIMEOUT in
+  MCPError with a TimeoutError context) for diagnostics, while keeping relayed application errors
+  with the same numeric code distinct from SDK timeouts. Implement _run_bounded_cleanup to run
+  an operation within a deadline while being cancellation-safe: isolate the task, shield cleanup
+  from caller cancellation, drain and re-raise caller's cancellation only after cleanup completes,
+  and avoid repeated cancellation from abandoning the cleanup task.
+
+  Implement _MCPResponseStream, a wrapper around httpx2.AsyncByteStream that records errors during
+  streaming through an injected callback. When iteration or close fails, call the error recorder
+  before re-raising. Implement _MCPHTTPClient, an httpx2.AsyncClient subclass that adds MCP-specific
+  failure handling: _record_cleanup_error stores errors from POST failures and stream teardown when
+  inside a cleanup scope; send() treats DELETE requests as terminal cleanup (consuming the response
+  before returning) under bounded cleanup with the scope's deadline, treats POST errors as fatal
+  (closing and raising for all non-404 statuses), wraps streamed responses in _MCPResponseStream,
+  and records other exceptions during send. Clean up scope and errors are mutable class variables
+  (not instance variables) since the client is reused across sessions.
+
+  Direct dependency on B173 for outbound send, response body iteration/read and aclose operations.
+  B4744 calls these cleanup primitives; rest_endpoints.py:1612 also calls as_mcp_read_timeout. Do
+  not turn caller cancellation into an error result or let repeated cancellation abandon the cleanup
+  task. A terminal DELETE consumes its response before returning (aread() not just close). The bound
+  is hardcoded to 5 seconds for session/transport cleanup and 1 second for the final HTTP close; the
+  caller supplies the deadline to _run_bounded_cleanup.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/client.rs
+    - crates/betterlite-mcp/src/client/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L138-L147
+    why: _first_non_cancelled_cause walks exception trees and filters by identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L150-L151
+    why: _SDK_READ_TIMEOUT_CODE constant from REQUEST_TIMEOUT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L154-L168
+    why: as_mcp_read_timeout discriminates SDK timeouts from application errors by context chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L171-L173
+    why: Type variables TSessionResult, _ListPage, _ListItem for generic operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L176-L197
+    why: _run_bounded_cleanup shields cleanup from cancellation, drains task, re-raises caller cancellation after cleanup completes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L200-L219
+    why: _MCPResponseStream wraps stream, records errors on iteration and aclose.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L221-L259
+    why: _MCPHTTPClient with cleanup scope, error recording, DELETE terminal cleanup, POST error propagation (except 404).
+dod:
+  - text: >-
+      _first_non_cancelled_cause walks exception.exceptions (or getattr for compatibility) breadth-first
+      using a FIFO queue (pop(0) to dequeue, extend() to enqueue nested exceptions), returns the first non-CancelledError
+      not in cleanup_errors by identity, and returns None if only cancelled errors and cleanup errors are found.
+    proof: [cleanup-tests]
+  - text: >-
+      as_mcp_read_timeout returns TimeoutError when exc is MCPError with code REQUEST_TIMEOUT and
+      __context__ is TimeoutError; returns None otherwise. The returned TimeoutError carries exc.error.message.
+    proof: [cleanup-tests]
+  - text: >-
+      _run_bounded_cleanup runs the operation inside anyio.fail_after with the remaining deadline,
+      shielded from the caller's cancellation. Repeated cancellations do not abandon the task. After
+      the task completes or stalls, re-raise the caller's cancellation if it was caught; otherwise
+      return the operation result or propagate an exception.
+    proof: [cleanup-tests]
+  - text: >-
+      _MCPResponseStream forwards chunks from the wrapped stream, calls record_error(exc) when iteration
+      fails, then re-raises. aclose() forwards the call, calls record_error(exc) when close fails, then
+      re-raises.
+    proof: [cleanup-tests]
+  - text: >-
+      _MCPHTTPClient.send() with DELETE request inside cleanup_scope runs terminate under _run_bounded_cleanup
+      with the scope's deadline, consuming the response (aread) before returning. On success returns the response.
+    proof: [cleanup-tests]
+  - text: >-
+      _MCPHTTPClient.send() with POST request closes the response and calls raise_for_status() when status
+      is 4xx or 5xx (all errors except 404). On 404 or success, returns the response unchanged.
+    proof: [cleanup-tests]
+  - text: >-
+      _MCPHTTPClient.send() with stream=True wraps response.stream in _MCPResponseStream before returning.
+    proof: [cleanup-tests]
+  - text: >-
+      _MCPHTTPClient._record_cleanup_error adds the error to cleanup_errors tuple only when cleanup_scope
+      is not None and cleanup_scope.shield is True.
+    proof: [cleanup-tests]
+  - text: >-
+      Any exception from _MCPHTTPClient.send() (outside the terminate closure) is recorded before re-raising.
+    proof: [cleanup-tests]
+checks:
+  optional: []
+  commands:
+    - id: cleanup-tests
+      why: the required behavior tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/::mcp_http_cleanup_behavior_tests($|::)/)
+        - test(/replays_the_/)'
+    - id: mcp-clippy
+      why: clippy catches issues in cleanup and streaming code
+      run: cargo clippy --locked -p betterlite-mcp --all-targets -- -D warnings
+oracle_cases: []
+deviations:
+  - what: >-
+      When a POST request returns an error status (4xx or 5xx), the response is closed and raise_for_status()
+      is called. The 404 status is explicitly excluded; LiteLLM treats 404 as a non-error response for POST.
+    why: >-
+      MCP servers may return 404 for unsupported endpoints. Treating it as success allows graceful fallback;
+      other error codes indicate real failures that should be surfaced immediately.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L249-L251
+  - what: >-
+      When the caller is cancelled, _run_bounded_cleanup re-raises the cancellation after allowing the
+      operation to complete, rather than immediately propagating the cancellation.
+    why: >-
+      Cleanup operations must complete even under cancellation. Storing cancellation separately and re-raising
+      after ensures the operation finishes before cancellation propagates upstream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L176-L197
+  - what: >-
+      The exception tree walk in _first_non_cancelled_cause uses identity (is) comparison rather than
+      equality (==) when filtering cleanup_errors, matching only the exact exception objects recorded.
+    why: >-
+      Cleanup errors are tracked by identity to avoid false matches when different exceptions have the same
+      message or type. Only the exact objects recorded during cleanup are excluded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L145-L146
+out_of_scope:
+  - Tool schema conversion and pagination (B4740).
+  - Credential header construction and discovery fingerprinting (B4741).
+  - AWS SigV4 credential acquisition and request signing (B4742).
+  - Session transport lifecycle and HTTP session establishment (B4744).
+  - Tool listing and execution (B4745).
+  - Prompts and resources operations (B4746).
+  - Integration with chat and Responses calls (B140).
+  - HTTP client pooling, reuse and limits (B173).
+pitfalls:
+  - >-
+      The cleanup_scope and cleanup_errors are mutable class variables on _MCPHTTPClient, not instance variables,
+      so they persist across method calls on the same client instance and across different sessions if the client
+      is reused. The caller must set these appropriately for each cleanup context.
+  - >-
+      _run_bounded_cleanup creates an asyncio.create_task to run the operation, and repeatedly awaits
+      asyncio.shield(task) inside a loop within a shielded anyio.CancelScope, catching CancelledError each
+      iteration without abandoning the task. The comment at lines 181-182 mentions why a single shield is
+      insufficient when an asyncio.gather elsewhere in the codebase keeps retrying Task.cancel; this function
+      itself uses create_task and shield, not gather.
+  - >-
+      as_mcp_read_timeout uses __context__ to discriminate SDK-generated timeouts from relayed application errors.
+      The SDK raises its own timeout from inside an except TimeoutError, leaving the TimeoutError on the context chain.
+      A relayed error from a message has no such chain, even if it carries REQUEST_TIMEOUT as its code.
+  - >-
+      The terminal DELETE response must be consumed (aread) before being returned or closed, not just closed without
+      reading. This ensures the connection is fully drained before the HTTP client shuts down.
+  - >-
+      _MCPResponseStream does not suppress exceptions; it records them and then re-raises, so the caller sees all
+      streaming errors.
+  - >-
+      When _record_cleanup_error is called outside a cleanup scope (cleanup_scope is None), nothing is recorded.
+      The errors list only grows during active cleanup, not during normal operation.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

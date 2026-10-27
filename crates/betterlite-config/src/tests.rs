@@ -2,9 +2,21 @@
 use super::loader::{ConfigError, ConfigLoader};
 use super::types::RoutingStrategy;
 use secrecy::ExposeSecret;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+mod bedrock_request_policy_config;
+mod coordination_redis_settings;
+mod gemini_live_settings;
+mod mistral_options;
+mod mistral_resources;
 mod provider_base_config;
+mod vertex_batch_download_settings;
+mod vertex_file_read_settings;
+mod vertex_gcs_settings;
+mod vertex_rag_settings;
+mod vertex_search_settings;
+mod xai_identity;
+mod xai_oauth;
 
 fn map_loader(values: BTreeMap<String, String>) -> ConfigLoader<BTreeMap<String, String>> {
     ConfigLoader { lookup: values }
@@ -103,4 +115,26 @@ fn rejects_boolean_in_numeric_field_as_invalid_scalar() {
     );
 }
 
-mod bedrock_request_policy_config;
+#[rstest::rstest]
+#[case::known_to_a_section(
+    "litellm_settings.foo litellm_settings.bar | model_list litellm_settings.bar",
+    "litellm_settings.bar"
+)]
+#[case::stub_section_knows_nothing(
+    "litellm_settings.foo | litellm_settings model_list",
+    "litellm_settings.foo"
+)]
+#[case::nested_key_under_unknown_parent(
+    "litellm_settings.cache_params | model_list litellm_settings.cache_params.ttl",
+    "litellm_settings.cache_params.ttl"
+)]
+#[case::outermost_path_only("a a.b | a", "a")]
+#[case::nothing_ignored(" | model_list", "")]
+fn a_key_is_unknown_only_when_every_view_ignores_it(#[case] views: &str, #[case] unknown: &str) {
+    let sets: Vec<BTreeSet<String>> = views
+        .split('|')
+        .map(|view| view.split_whitespace().map(str::to_owned).collect())
+        .collect();
+    let expected: Vec<&str> = unknown.split_whitespace().collect();
+    assert_eq!(super::loader::unknown_paths(&sets), expected);
+}

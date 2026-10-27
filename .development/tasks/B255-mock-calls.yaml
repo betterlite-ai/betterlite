@@ -25,7 +25,7 @@ scope:
   - tools/oracle/helpers/mock_calls.py
   - tools/oracle/helpers/mock_calls/**
   - tools/oracle/cases/helpers/mock-calls/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/mock_calls-*"
   - crates/betterlite-config/**
   - crates/betterlite-openai/**
   - crates/betterlite-server/**
@@ -73,8 +73,8 @@ checks:
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'mock_calls' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mock_calls-*")" &&
+      grep -lq 'mock_calls' tools/oracle/fuzz/corpus/helper_case/mock_calls-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-yaml-corpus
@@ -108,11 +108,12 @@ out_of_scope:
   mock_functions.mock_image_generation is B082; admission_input_tokens/admitted_prompt_token_counter are B069 (consume
   an injected optional prompt_tokens value here).
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/mock_calls-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as mock_calls in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/mock_calls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mock_calls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

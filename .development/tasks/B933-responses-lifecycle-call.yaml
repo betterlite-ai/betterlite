@@ -35,6 +35,10 @@ scope:
   - tools/oracle/cases/sdk-http/responses-lifecycle-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-read-*
   - Cargo.lock
+  - tools/oracle/helpers/b933.py
+  - tools/oracle/helpers/b933/**
+  - tools/oracle/src/helpers/core_ops/b933.rs
+  - tools/oracle/src/helpers/core_ops/b933/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1613-L1790
@@ -118,5 +122,5 @@ pitfalls:
 - A passed timeout does not imply a per-call deadline on the GET request at the pin.
 review_level: security
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1500
   max_new_expects: 0

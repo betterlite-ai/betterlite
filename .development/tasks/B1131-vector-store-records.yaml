@@ -139,5 +139,5 @@ pitfalls:
 - VectorStoreToolParams preserves zero and empty maps and has no rewrite_query member.
 review_level: standard
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1500
   max_new_expects: 0

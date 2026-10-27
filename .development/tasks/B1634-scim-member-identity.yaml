@@ -76,6 +76,6 @@ pitfalls:
   - A direct user_id hit is still ambiguous when another row uses that value as sso_user_id or user_email.
   - The explicit type Group suppresses even a historical placeholder user, while an unknown type preserves a uniquely keyed real user.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

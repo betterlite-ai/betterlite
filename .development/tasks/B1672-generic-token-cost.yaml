@@ -101,6 +101,6 @@ pitfalls:
   - A positive image_count prevents inferred prompt text even when all supplied modality token counters are zero.
   - Provider-specific inference_geo is intentionally absent from generic totals even though billed-rate reporting uses it.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

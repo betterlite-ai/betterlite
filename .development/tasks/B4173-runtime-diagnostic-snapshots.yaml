@@ -18,7 +18,6 @@ scope:
   paths:
     - crates/betterlite-core/**
     - Cargo.toml
-    - deny.toml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L29-L53
@@ -109,5 +108,5 @@ pitfalls:
   - Fuzz targets are committed with corpus files that must not be .gitignored; if cargo fuzz init writes fuzz/.gitignore, remove the corpus exclusion line.
 review_level: standard
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 2

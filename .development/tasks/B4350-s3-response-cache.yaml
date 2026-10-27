@@ -23,6 +23,8 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-cache/**
+    - crates/betterlite-config/src/sections/s3_response_cache.rs
+    - crates/betterlite-config/src/sections/s3_response_cache/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L11-182
@@ -80,7 +82,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^s3_cache::/)'
     - id: config-s3
       why: S3 settings are not loaded through betterlite-config or s3_bucket_name is not required
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^s3.*config/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::s3_response_cache::/)'
     - id: s3-fuzz-corpus
       why: the S3 cache body fuzz target or its corpus is missing, or replaying the corpus fails
       run: test -f crates/betterlite-cache/fuzz/fuzz_targets/s3_cache_body.rs && test -n "$(ls -A crates/betterlite-cache/fuzz/corpus/s3_cache_body)" && cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(replays_the_s3_cache_body_corpus)'
@@ -104,5 +106,5 @@ pitfalls:
   - "AWS credentials (s3_aws_access_key_id, s3_aws_secret_access_key, s3_aws_session_token) are passed through the constructor and must never appear in Debug output or logs."
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 1

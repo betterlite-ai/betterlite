@@ -1,0 +1,139 @@
+id: B3975
+title: Rubrik moderation payloads and block decisions
+description: >-
+  Build Rubrik's normalized message and tool-call payloads, correlation
+  helpers and refusal/block detection. These are pure payload-building and
+  decision functions that live below transport and moderation delivery, preparing
+  data for the webhook endpoints and detecting whether the response or prompt
+  was blocked.
+
+  Normalize tool calls from streaming chunks, message shapes and ChatCompletion
+  objects into ChatCompletionMessageToolCall. Preserve tool-ID multiplicity
+  (Counter catches duplicates). Flatten message content parts, including
+  Anthropic-style content arrays, for the webhook. Extract all text segments
+  including tool-call arguments. Build the OpenAI-format payloads the webhooks
+  consume: response moderation takes the assistant's text and tool calls,
+  prompt moderation takes the full request.
+
+  Detect blocks by diffing what was sent against what came back: tool-block
+  when a tool call is missing (cardinality or count), text-block when content
+  was replaced wholesale (not appended). The webhook appends explanations with
+  `original + "\n\n"` separator; detect this to distinguish replacement from
+  append. Use Counter to handle duplicate tool call IDs correctly. Return None
+  when nothing was blocked, a BlockedResponseResult with explanation otherwise.
+  Extract prompt refusals from the webhook's synthetic chat.completion response.
+
+  Manage correlation IDs so moderation logs (blocking, response/failure) are
+  joined by shared filenames. Use litellm_call_id throughout; it is assigned
+  at request start and immune to races with response object population.
+  Prepend system prompts onto block payloads using a new messages list (never
+  mutating the source), handling dict/list/str message shapes and tolerating
+  errors with a warning.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/rubrik.rs
+    - crates/betterlite-logging/src/rubrik/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L503-L508
+    why: RubrikLogger._normalize_tool_calls converts streaming/message/dict tool calls to ChatCompletionMessageToolCall objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L510-L532
+    why: _normalize_tool_call handles ChatCompletionToolCallChunk, ChatCompletionMessageToolCall, dicts and protocol objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L534-L540
+    why: _join_texts concatenates response content segments with newlines into the single content string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L542-L575
+    why: _build_response_moderation_payload constructs OpenAI chat.completion envelope for after_completion webhook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L577-L598
+    why: _flatten_messages_for_moderation collapses content lists to strings and filters dict messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L600-L614
+    why: _moderation_text_parts extracts every attacker-controlled text segment including tool arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L616-L644
+    why: _build_prompt_moderation_payload builds bare OpenAI request for before_prompt webhook with correlation key fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L646-L682
+    why: _extract_request_data forwards messages/model/tools to response moderation envelope, excluding proxy_server_request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L694-L700
+    why: _resolve_model returns model name for ModifyResponseException from response or call details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L704-L718
+    why: _correlation_id retrieves litellm_call_id from call_details or request_data for cross-log joining.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L720-L738
+    why: _apply_correlation_id pins payload id to litellm_call_id for S3 filename correlation across log paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L740-L767
+    why: _prepend_system_prompt builds new messages list with system scaffold at head, tolerating shape mismatches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1162-L1175
+    why: _extract_prompt_refusal returns refusal text from webhook response or None when passthrough.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1177-L1247
+    why: _extract_response_block diffs sent content/tool calls against returned to detect text/tool block or None.
+
+dod:
+  - text: _normalize_tool_calls and _normalize_tool_call convert ChatCompletionToolCallChunk, ChatCompletionMessageToolCall, dict and protocol-object tool calls to ChatCompletionMessageToolCall tuples, raising TypeError for unrecognized shapes.
+    proof: [rubrik-payload-tests]
+  - text: _join_texts concatenates response text segments with newlines, returning empty string when no segments.
+    proof: [rubrik-payload-tests]
+  - text: _build_response_moderation_payload constructs an OpenAI chat.completion dict with the joined content, tool calls (model_dump with exclude_none), finish_reason (tool_calls or stop), id falls back to f"chatcmpl-{uuid.uuid4()}" when request_id is None (rubrik.py:564), and model is always the literal empty string, never the real model name (rubrik.py:567).
+    proof: [rubrik-payload-tests]
+  - text: _flatten_messages_for_moderation builds a tuple of dicts with role and newline-joined text parts for each dict message, converting content arrays via B218's convert_content_list_to_str.
+    proof: [rubrik-payload-tests]
+  - text: _moderation_text_parts returns a tuple of all text segments coerced to str, including message content, tool call arguments and deprecated function_call arguments.
+    proof: [rubrik-payload-tests]
+  - text: _build_prompt_moderation_payload builds a bare OpenAI request dict with model, flattened messages, optional tools (when non-None), optional user, and correlation_key (fallback to litellm_call_id).
+    proof: [rubrik-payload-tests]
+  - text: _extract_request_data returns a dict with messages, model and tools from call_details/optional_params or request_data (never forwarding proxy_server_request body).
+    proof: [rubrik-payload-tests]
+  - text: _resolve_model returns response.model (if response exists and has model attr) or call_details.get(model, unknown), never None.
+    proof: [rubrik-payload-tests]
+  - text: _correlation_id returns litellm_call_id from call_details or request_data (in that order), returning None if missing.
+    proof: [rubrik-payload-tests]
+  - text: _apply_correlation_id overwrites payload["id"] with the correlation ID in place when present, leaving it unchanged when None.
+    proof: [rubrik-payload-tests]
+  - text: _prepend_system_prompt builds a new messages list with system scaffold at head and original messages, tolerates shape mismatches with warnings, and is a no-op when system is absent.
+    proof: [rubrik-payload-tests]
+  - text: _extract_prompt_refusal returns message content from choices[0].message when choices is non-empty, returns None on passthrough (empty choices).
+    proof: [rubrik-payload-tests]
+  - text: _extract_response_block detects text block when returned_content differs from sent_content and is not an append (does not start with sent_content + "\n\n"), and returns BlockedResponseResult with the explanation or "Response blocked by policy." when returned_content is empty (rubrik.py:1236).
+    proof: [rubrik-payload-tests]
+  - text: _extract_response_block detects tool block when cardinality or count of returned tool call IDs differs from sent (using Counter to preserve ID multiplicity), and returns BlockedResponseResult with appended explanation or "Tool call blocked by policy." when the appended explanation is empty (rubrik.py:1245).
+    proof: [rubrik-payload-tests]
+  - text: _extract_response_block returns None when no text and no tool calls are blocked, raises _MalformedToolBlockingResponseError when choices is empty.
+    proof: [rubrik-payload-tests]
+  - text: _extract_response_block correctly extracts appended tool-block explanation (returned_content minus the original text and leading newlines) for reconstruction.
+    proof: [rubrik-payload-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: rubrik-payload-tests
+      why: the rubrik payload and block-detection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_payloads::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: _sanitize_proxy_server_request is not built; _extract_request_data no longer forwards proxy_server_request after the pin and the function is dead code.
+    why: The source function filters the proxy_server_request after the LiteLLM version at the pin; betterlite skips it entirely for security.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L684-L692
+
+out_of_scope:
+  - Rubrik's logger constructor and configuration (handled by B3976).
+  - Transport layer POST to webhook endpoints (handled by B3976).
+  - Moderation hook wiring and request/response guardrail dispatch (handled by B3978).
+  - Logging queue insertion and delivery (handled by B3977).
+  - ModifyResponseException construction and exception handling (owned by framework layer not yet assigned).
+
+pitfalls:
+  - _normalize_tool_call type-checks for ChatCompletionMessageToolCall first, so subclass checks never run; dicts must use isinstance(tc, dict) before falling through to protocol.
+  - _extract_response_block uses Counter to preserve tool-ID multiplicity; set-based checks miss duplicate-ID attacks where one occurrence is silently removed by the service.
+  - _extract_response_block distinguishes text replacement from tool-block append via the `\n\n` separator; without it, a replacement like "Hello, blocked." where original was "Hello" passes through as an append.
+  - _flatten_messages_for_moderation filters to dict messages only; other types (None, str, list) are skipped, matching the webhook's string-only content expectation.
+  - _moderation_text_parts safely coerces all segments to str, handling missing/None attributes; the signature promises a tuple even when a segment is falsy.
+  - _prepend_system_prompt builds a new messages list by tuple unpacking; mutating the copy never affects the shared source dict.
+  - _apply_correlation_id mutates payload["id"] in place on a deep-copied dict; the copy ensures source objects are not modified.
+  - _extract_prompt_refusal returns a default "Request blocked by policy." when content is missing/None, matching webhook behavior.
+  - _extract_response_block returns BlockedResponseResult with explanation (possibly empty) that callers must handle; the None state means no block.
+  - Prompt payload construction omits correlation_key when it resolves to empty string; the webhook skips the S3 write when key is absent.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

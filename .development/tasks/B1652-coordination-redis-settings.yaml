@@ -93,6 +93,6 @@ pitfalls:
   - A saved empty coordination_redis object is authoritative for current_settings even though source reporting treats it as false.
   - An incoming ***REDACTED*** with no saved value remains the literal marker rather than becoming null.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

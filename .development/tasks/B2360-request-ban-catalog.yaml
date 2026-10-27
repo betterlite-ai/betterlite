@@ -132,6 +132,6 @@ pitfalls:
   - CustomPricingLiteLLMParams.model_fields includes its seven inherited fields; inspecting only the subclass loses basic per-token overrides.
   - user_api_key_auth_metadata is banned even though phoenix_project_name is not.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -149,6 +149,6 @@ pitfalls:
   - A present null from MGET is authoritative, while an absent map entry demands another read path.
   - Scope exit restores the previous active value but does not perform release or close.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

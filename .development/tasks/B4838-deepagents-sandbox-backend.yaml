@@ -1,0 +1,150 @@
+id: B4838
+title: Confine Deep Agents filesystem and shell operations to its sandbox
+description: >-
+  Implement SandboxBackend and related helpers in Rust to serve the deepagents
+  SandboxBackendProtocol. The agent sees virtual paths rooted at the sandbox workdir;
+  file bytes move through Sandbox.read/write, and ls/glob/grep/delete/execute run plain
+  POSIX commands through Sandbox.run so the same code serves local and Docker sandboxes.
+
+  Build the protocol types (LsResult, ReadResult, WriteResult, EditResult, DeleteResult,
+  GlobResult, GrepResult, GrepMatch, ExecuteResponse, FileInfo, FileData, FileUploadResponse,
+  FileDownloadResponse) and utility functions (compile_grep_include_glob for glob matching,
+  perform_string_replacement with occurrence counting, slice_read_response for offset/limit,
+  InvalidGlobPatternError exception type) in Rust, replacing the deepagents imports.
+
+  Preserve symlink confinement so links to ~/.aws/credentials do not leak host secrets even
+  in read-only mode (resolve realpath and reject anything outside workdir). Binary files
+  are read as base64 with UTF-8fallback for text. CRLF normalizes to LF on write and edit.
+  Read-only sessions refuse write/edit/delete with error. Execute-disabled sessions return
+  error without running. Sync bridge rejects calls from the same event loop thread.
+  Filesystem operations timeout at 60s; execute at 120s. Output truncates at 100,000 bytes.
+  Exit codes: 3 for missing path, 4 for non-directory, 124 for timeout.
+scope:
+  paths:
+    - crates/betterlite-deepagents-harness/**
+    - Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L1-L437
+    why: >-
+      The SandboxBackend class to port. The module imports deepagents protocol types
+      (DeleteResult, EditResult, ExecuteResponse, FileData, FileDownloadResponse, FileInfo,
+      FileUploadResponse, GlobResult, GrepMatch, GrepResult, LsResult, ReadResult,
+      SandboxBackendProtocol, WriteResult) and utils (compile_grep_include_glob,
+      perform_string_replacement, slice_read_response, InvalidGlobPatternError). This task
+      builds Rust equivalents of these types and functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L67-L95
+    why: >-
+      Constants: _logger (B4837), _UNPRICED_MODELS (B4837), DEEPAGENTS_EXECUTE_TIMEOUT_SECONDS
+      (120.0, uses shorter name EXECUTE_TIMEOUT_SECONDS to meet 30-char limit),
+      DEEPAGENTS_FS_TIMEOUT_SECONDS (60.0), DEEPAGENTS_MAX_OUTPUT_BYTES (100,000), _EXIT_NOT_FOUND,
+      _EXIT_NOT_DIR, _EXIT_TIMEOUT, _READ_ONLY_ERROR, _NO_EXECUTE_ERROR, _LS_SCRIPT,
+      _DELETE_SCRIPT, _REALPATH_SCRIPT, _GREP_LINE, _FILTER_MIDDLEWARE_NAME (B4837).
+      B4838 owns all except those at L67, L69, L94.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/base.py#L11-L62
+    why: The CompletedRun struct (L11-15) with exit_code, stdout, stderr. The Sandbox protocol (L30-62) with run, read, write methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/errors.py#L42-L45
+    why: SandboxError exception for read/write/run failures.
+dod:
+  - text: >-
+      The SandboxBackend class is registered as deepagents SandboxBackendProtocol
+      and constructed with a Sandbox, event loop, writable flag and allow_execute flag.
+      All public methods match the protocol signature.
+    proof: [backend-tests]
+  - text: >-
+      Virtual path resolution: to_real normalizes and maps / to workdir, to_virtual maps
+      workdir back to /. Paths outside the root raise ValueError. Path traversal with .. is rejected.
+    proof: [backend-tests]
+  - text: >-
+      to_confined resolves symlinks inside the sandbox: realpath, check exit code 0,
+      verify the result stays inside the resolved root, reject anything outside.
+    proof: [backend-tests]
+  - text: >-
+      File operations invoke Sandbox.read, Sandbox.write, or Sandbox.run through the
+      POSIX scripts in the module (ls, delete, realpath, grep, find). Exit codes are
+      normalized to error messages.
+    proof: [backend-tests]
+  - text: >-
+      Read returns base64-encoded binary files; text files are UTF-8 decoded with
+      replacement. Offset and limit parameters are handled with slice_read_response logic
+      (built in this crate).
+    proof: [backend-tests]
+  - text: >-
+      Write and edit reject requests when writable=false and return the read-only error message.
+      Edit normalizes CRLF to LF, performs string replacement with occurrence counting (built in
+      this crate), encodes back to UTF-8 on write, and returns the count of occurrences replaced.
+    proof: [backend-tests]
+  - text: >-
+      Delete rejects workspace root, calls the delete script, normalizes exit codes.
+    proof: [backend-tests]
+  - text: >-
+      Glob compiles the pattern with glob matching logic (built in this crate), runs find -P
+      -type f excluding HARNESS_SNAPSHOT_SKIP_DIRS, maps results to FileInfo with is_dir=false.
+      If find exits non-zero but produced stdout, sets truncated=true to signal partial results.
+    proof: [backend-tests]
+  - text: >-
+      Grep runs the grep command (find piped to grep), parses the line:lineno:text output,
+      filters results by compile_grep_include_glob(glob) if present, truncates to max_count.
+    proof: [backend-tests]
+  - text: >-
+      Upload and download return deepagents response lists, each element with path and
+      optional error. Upload rejects write-disabled sessions; download catches SandboxError.
+    proof: [backend-tests]
+  - text: >-
+      Execute rejects allow_execute=false with the no-execute error. Otherwise it runs
+      the command through sh -c with the supplied timeout (or EXECUTE_TIMEOUT_SECONDS=120).
+      Truncates output at 100,000 bytes, sets truncated=true. Merges stderr into stdout.
+      Any SandboxError (timeout or other) maps to exit_code=124.
+    proof: [backend-tests]
+  - text: >-
+      The sync bridge _sync/als/_sync and all sync methods reject calls from the event
+      loop thread with "cannot run on the event loop thread", returning that error message.
+    proof: [backend-tests]
+  - text: >-
+      Every deepagents result type (LsResult, ReadResult, etc) is returned; error strings
+      come from ValueError messages, SandboxError messages, or stderr from the sandboxed command.
+    proof: [backend-tests]
+checks:
+  optional: []
+  commands:
+    - id: backend-tests
+      why: the SandboxBackend tests fail, do not exist, or do not cover the behaviors
+      run: cargo nextest run --locked -p betterlite-deepagents-harness --no-tests=fail -E 'test(/^sandbox_backend::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - The deepagents graph execution, tool definitions, checkpoint management. B4840 owns the handler integration.
+  - ToolFilterMiddleware and UsageCallback classes, owned by B4837.
+  - _logger, _UNPRICED_MODELS, _FILTER_MIDDLEWARE_NAME definitions, owned by B4837.
+  - Symlink resolution relies on the realpath command in the sandbox; the task assumes POSIX sh and standard utilities (find, grep, xargs, etc).
+pitfalls:
+  - >-
+    to_confined caches the resolved root to avoid repeated realpath calls. It is set once and
+    never invalidated, assuming the sandbox filesystem does not change; if a symlink target moves
+    mid-session, later operations may fail.
+  - >-
+    The ls script outputs "d/name" or "f/name"; a name containing "/" would break parsing, but
+    POSIX filenames never contain "/".
+  - >-
+    The find and grep commands use -P to never follow symlinks, and xargs -0 with tr to handle
+    filenames with spaces. Grep output format is file:lineno:line, parsed with regex.
+  - >-
+    CRLF normalization happens before string replacement and after the read, so old/new strings
+    are compared with LF line endings regardless of input encoding.
+  - >-
+    Base64 binary detection is UTF-8 decode error, not file magic. A binary file that decodes as
+    valid UTF-8 (e.g., UTF-8 BOM) is returned as text.
+  - >-
+    Output truncates at 100,000 bytes after merging stderr, using UTF-8 error handling to avoid
+    splitting multibyte characters.
+  - >-
+    Exit code 124 signals timeout; 3/4 signal missing path or non-directory; 0 from grep means
+    matches found, 1 means no matches (not an error). Any SandboxError in execute maps to 124.
+  - >-
+    The sync bridge rejects same-loop calls by checking for a running loop and closing the
+    coroutine. The event loop assumption is hard: frameworks may call sync methods from the same
+    thread but a different context (different event loop or outside the loop).
+review_level: security
+budget:
+  max_changed_lines: 2450
+  max_new_expects: 2

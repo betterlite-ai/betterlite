@@ -435,6 +435,6 @@ pitfalls:
 - A provider-mismatched exact catalog entry still blocks generalization fallback.
 - Dynamic metadata can return an empty dict and bypass all static defaults.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

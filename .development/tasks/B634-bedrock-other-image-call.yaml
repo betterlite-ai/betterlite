@@ -300,6 +300,6 @@ pitfalls:
 - The synchronous fallback client ignores this method's timeout argument, while the asynchronous fallback client
   receives it.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

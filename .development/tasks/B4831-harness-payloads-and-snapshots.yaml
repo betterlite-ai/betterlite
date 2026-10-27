@@ -1,0 +1,81 @@
+id: B4831
+title: Normalize harness payloads and derive workspace changes
+description: >-
+  Implement JSONL/object extraction, strict output schemas, tool-name expansion and skill file reads, together with workspace hashing and text diffs. Preserve the 50 MiB snapshot file limit, 16 MiB text capture budget, 256 KiB diff limit, sorted changes and symlink skips.
+
+  Tool-name helpers map between harness-native tool names (which may be client-specific) and a normalized vocabulary shared across harnesses (read, write, edit, bash, etc.). normalize_tool_name reverses one mapping; native_tool_names expands multiple normalized names to their native equivalents. structured_output_instruction and strict_json_schema build instructions and schemas suitable for agent frameworks and OpenAI structured outputs. last_json_object finds the final JSON object in a text response. decode_json_line parses JSONL records from harness stderr and stdout. stderr_tail_text joins non-blank lines from stderr with newlines. read_skill_files collects (path, bytes) tuples from a skill folder, checking for a SKILL.md manifest.
+
+  Snapshot functions hash workspace files and detect changes. snapshot_local_sync hashes every regular file under a root, skipping symlinks and the directories listed in HARNESS_SNAPSHOT_SKIP_DIRS: .git, node_modules, .venv, venv, __pycache__, .mypy_cache, .pytest_cache, .ruff_cache. diff_snapshots compares two snapshots to list created, modified and deleted files in sorted order. capture_text_contents reads small text files (<256 KiB) before a turn, with a total budget of 16 MiB (HARNESS_SNAPSHOT_MAX_TOTAL_BYTES), so "modified"/"deleted" diffs can include the old contents. build_file_changes constructs FileChange events for each difference, reading the new contents and building unified diffs. _as_text returns None for binary files (containing null bytes) or non-UTF-8 data. Files >50 MiB (HARNESS_SNAPSHOT_MAX_FILE_BYTES) are excluded entirely from snapshots.
+
+scope:
+  paths:
+    - crates/betterlite-harness/src/payloads.rs
+    - crates/betterlite-harness/src/snapshots.rs
+    - crates/betterlite-harness/fuzz/fuzz_targets/payloads.rs
+    - crates/betterlite-harness/fuzz/corpus/payloads/**
+    - crates/betterlite-harness/fuzz/fuzz_targets/snapshots.rs
+    - crates/betterlite-harness/fuzz/corpus/snapshots/**
+    - crates/betterlite-harness/src/payloads/**
+    - crates/betterlite-harness/src/snapshots/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L21-L116
+    why: Tool-name, schema, JSONL and stderr-tail helpers LiteLLM calls in harness transformations
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/snapshot.py#L27-L183
+    why: Workspace snapshots, diffs, FileChange construction, and snapshot size constants (HARNESS_SNAPSHOT_MAX_FILE_BYTES, HARNESS_SNAPSHOT_MAX_TOTAL_BYTES)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2220-L2236
+    why: HARNESS_SNAPSHOT_SKIP_DIRS, HARNESS_MAX_DIFF_BYTES and related constants
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py
+    why: FileChange and FileChangeKind types defined in B4830
+dod:
+  - text: Tool-name helpers preserve LiteLLM's semantics. normalize_tool_name returns the mapped name or falls back to the input. native_tool_names deduplicates and keeps order. structured_output_instruction formats a schema as a prompt. strict_json_schema recursively adds additionalProperties false and required fields while dropping defaults and non-$ref keywords.
+    proof: [payloads-behavior-tests]
+  - text: JSON decoders preserve LiteLLM limits. last_json_object finds the final top-level JSON object in text, parses it, and re-serializes. decode_json_line skips blank lines and non-objects, returning None for them. stderr_tail_text joins non-blank stderr lines with newlines. read_skill_files checks for SKILL.md and returns (path, bytes) tuples.
+    proof: [payloads-behavior-tests]
+  - text: Snapshot hashing and diffing work correctly. snapshot_local_sync hashes every file under a root, skipping symlinks and directories in HARNESS_SNAPSHOT_SKIP_DIRS (.git, node_modules, .venv, venv, __pycache__, .mypy_cache, .pytest_cache, .ruff_cache). diff_snapshots compares two snapshots and returns (path, kind) sorted by path. Symlinks are never followed.
+    proof: [snapshots-behavior-tests]
+  - text: File changes and diffs respect limits. capture_text_contents reads files <= 256 KiB with a 16 MiB total budget (HARNESS_SNAPSHOT_MAX_TOTAL_BYTES). _as_text rejects binary files (null bytes) and non-UTF-8. Files >50 MiB (HARNESS_SNAPSHOT_MAX_FILE_BYTES) are skipped. unified_diff builds diffs with standard headers. build_file_changes returns a list of FileChange events with diffs or None.
+    proof: [snapshots-behavior-tests]
+  - text: JSONL and JSON object input decoders have corpus-backed fuzz targets at crates/betterlite-harness/fuzz/fuzz_targets/payloads.rs and crates/betterlite-harness/fuzz/fuzz_targets/snapshots.rs with corpus directories.
+    proof: [payloads-fuzz-corpus, snapshots-fuzz-corpus]
+  - text: Every function in the covered LiteLLM ranges is implemented or listed out of scope with its reason.
+    proof: [payloads-behavior-tests, snapshots-behavior-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: payloads-behavior-tests
+      why: behavior tests for payloads helpers fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^payloads::/) - test(replays_the_payloads_corpus)'
+    - id: snapshots-behavior-tests
+      why: behavior tests for snapshots and diffs fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^snapshots::/) - test(replays_the_snapshots_corpus)'
+    - id: payloads-fuzz-corpus
+      why: payloads fuzz target or its corpus is missing, or replaying fails
+      run: test -f crates/betterlite-harness/fuzz/fuzz_targets/payloads.rs && test "$(ls crates/betterlite-harness/fuzz/corpus/payloads 2>/dev/null | wc -l)" -ge 2 && cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(replays_the_payloads_corpus)'
+    - id: snapshots-fuzz-corpus
+      why: snapshots fuzz target or its corpus is missing, or replaying fails
+      run: test -f crates/betterlite-harness/fuzz/fuzz_targets/snapshots.rs && test "$(ls crates/betterlite-harness/fuzz/corpus/snapshots 2>/dev/null | wc -l)" -ge 2 && cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(replays_the_snapshots_corpus)'
+oracle_cases: []
+deviations:
+  - what: Unknown harness keys in mappings return the input unchanged.
+    why: LiteLLM mappings are tool-name expansions, not lookups that must find every key. Unmapped names pass through.
+  - what: Symlinks and directories are skipped entirely during snapshot walks.
+    why: LiteLLM ignores them when walking; betterlite does the same.
+  - what: Files >50 MiB are excluded from snapshots; snapshot_local_sync returns a read-only mapping.
+    why: LiteLLM's HARNESS_SNAPSHOT_MAX_FILE_BYTES constant. Immutable returns prevent accidental modification.
+out_of_scope:
+  - Harness-specific tool-name mappings. Those come from each harness config (B4834–B4836).
+  - Actual skill folder locations or validation beyond SKILL.md presence. read_skill_files checks the manifest only.
+  - Error construction or logging inside helpers. Errors are returned as-is or as None.
+pitfalls:
+  - strict_json_schema may raise ValueError when recursion depth exceeds DEFAULT_MAX_RECURSE_DEPTH. Call it only on validated inputs or test deep nesting.
+  - capture_text_contents reads files in sorted-key order and stops at the 16 MiB total budget (HARNESS_SNAPSHOT_MAX_TOTAL_BYTES), not per-file. A very large file early in the sort can exhaust the budget.
+  - last_json_object scans from the start for opening braces and re-serializes valid objects. It is O(n²) in pathological cases (many false starts). Test with real harness output.
+  - _hash_file reads a file in 1 MiB chunks. A file growing between snapshot calls may hash partially. Snapshots capture state at one moment.
+  - unified_diff adds "\ No newline at end of file" if the last line lacks a newline. Test both cases.
+  - >-
+    HARNESS_SNAPSHOT_SKIP_DIRS must match LiteLLM's set exactly: .git, node_modules, .venv, venv, __pycache__, .mypy_cache, .pytest_cache, .ruff_cache. An rstest case per directory ensures the skip list is correct.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

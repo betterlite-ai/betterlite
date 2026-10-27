@@ -234,6 +234,6 @@ pitfalls:
 - Provider/base extraction happens before the explicit route branches, so an extraction error is not bypassed by
   an explicit route.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

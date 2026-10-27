@@ -123,6 +123,6 @@ pitfalls:
   - Equivalent-index matching excludes attached indexes even when every key column otherwise matches.
   - The child-name digest covers the untruncated UTF-8 name, while only the retained prefix has a 54-byte budget.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -107,6 +107,6 @@ pitfalls:
   - Insert always hashes; update only hashes strings beginning sk-.
   - Reusing a token in insert is a no-op even when new fields differ.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -99,6 +99,6 @@ pitfalls:
   - An empty TTL detail object means zero write cost rather than permission to charge the aggregate cache_creation_tokens again.
   - Missing audio-token pricing yields zero for that component, whereas missing image/video token pricing falls back to input_cost_per_token.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

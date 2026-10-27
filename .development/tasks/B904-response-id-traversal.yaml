@@ -111,5 +111,5 @@ pitfalls:
 - List text blocks use truthiness, so a whitespace-only block counts as readable while a whitespace-only summary string does not.
 review_level: security
 budget:
-  max_changed_lines: 770
+  max_changed_lines: 1500
   max_new_expects: 1

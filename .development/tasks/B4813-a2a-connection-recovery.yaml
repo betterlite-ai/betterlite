@@ -1,0 +1,185 @@
+id: B4813
+title: A2A error classification and client reconstruction
+description: >-
+  Build exception classification for A2A SDK errors and recovery for clients whose cards
+  contain localhost URLs. Preserve the existing pooled HTTP client and call-context headers
+  while changing the target card URL and streaming mode.
+
+  A2AExceptionCheckers provides three static methods for error inspection: is_connection_error
+  checks if an error message contains connection-failure patterns; is_localhost_url delegates
+  to B4800's is_localhost_or_internal_url to detect development URLs; is_agent_card_error
+  detects card-related failures by substring matching.
+
+  map_a2a_exception examines an exception and optional card/API URLs, then raises the
+  appropriate A2A exception type: A2ALocalhostURLError if the error is a connection failure
+  to a localhost URL (checked first, enabling retry), A2AAgentCardError if the error message
+  contains card-related keywords, A2AConnectionError for other connection failures, and
+  A2AError as the default. Error strings are checked case-insensitively.
+
+  handle_a2a_localhost_retry receives an A2ALocalhostURLError, the current agent card, the
+  current A2A client, and a streaming flag. It performs five steps in order: check that the
+  agent card is not None (raise RuntimeError if missing), log a warning via LiteLLM's
+  verbose_logger with the localhost URL and base URL, call B4800's set_agent_card_url to
+  mutate the card to the base URL, extract the retained httpx_client from the existing
+  a2a_client's _litellm_httpx_client attribute (raise RuntimeError if absent), then use the
+  A2A SDK's create_client with the mutated card and a ClientConfig specifying the retained
+  httpx_client and streaming mode, attach both the client and call-context to the new client
+  for subsequent operations, and return the reconstructed client. The A2A SDK is imported
+  conditionally; if unavailable, raise ImportError.
+
+  This task does not call B4801's create_a2a_client, so there is no recovery/transport
+  dependency cycle.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/a2a/exception_mapping.rs
+    - crates/betterlite-core/src/a2a/exception_mapping/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L37-L58
+    why: A2AExceptionCheckers class with is_connection_error, is_localhost_url, is_agent_card_error static methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L97-L157
+    why: map_a2a_exception function maps SDK exceptions to typed A2A exception variants by checking localhost, card, connection and generic patterns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L160-L227
+    why: handle_a2a_localhost_retry reconstructs a client with mutated card, retained httpx_client and call-context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1-L30
+    why: CONNECTION_ERROR_PATTERNS constant list used by is_connection_error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L49-L70
+    why: is_localhost_or_internal_url function called by A2AExceptionCheckers.is_localhost_url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L119-L128
+    why: set_agent_card_url function called by handle_a2a_localhost_retry to mutate the card.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L12-L160
+    why: A2AError, A2AConnectionError, A2AAgentCardError, A2ALocalhostURLError exception classes.
+
+dod:
+  - text: A2AExceptionCheckers.is_connection_error returns true if the error string contains any CONNECTION_ERROR_PATTERNS substring (case-insensitive), false otherwise and for non-string inputs.
+    proof: [exception-checkers, exception-checkers-connection]
+  - text: A2AExceptionCheckers.is_localhost_url delegates to B4800's is_localhost_or_internal_url and returns its result.
+    proof: [exception-checkers, exception-checkers-localhost]
+  - text: A2AExceptionCheckers.is_agent_card_error returns true if the error string contains any card-related pattern (case-insensitive), false for non-string inputs.
+    proof: [exception-checkers, exception-checkers-card]
+  - text: map_a2a_exception checks localhost connection error first (raises A2ALocalhostURLError if card_url and api_base are present, URL is localhost, and error is connection), then card error (raises A2AAgentCardError), then general connection error (raises A2AConnectionError), then raises A2AError.
+    proof: [exception-mapping, exception-mapping-order]
+  - text: handle_a2a_localhost_retry raises RuntimeError "no agent card is available to rewrite" when agent_card is None.
+    proof: [exception-recovery, exception-recovery-missing-card]
+  - text: handle_a2a_localhost_retry raises RuntimeError "the client was not created by create_a2a_client" when httpx_client is absent or None.
+    proof: [exception-recovery, exception-recovery-external-client]
+  - text: handle_a2a_localhost_retry logs a warning with the localhost URL, base URL and original error, prefixed with "streaming" when is_streaming is true.
+    proof: [exception-recovery, exception-recovery-warning]
+  - text: handle_a2a_localhost_retry calls set_agent_card_url to mutate the card before extracting the httpx_client.
+    proof: [exception-recovery, exception-recovery-card-mutation]
+  - text: handle_a2a_localhost_retry extracts _litellm_httpx_client from the current client, passes it to ClientConfig with the mutated card and streaming flag, calls create_client, attaches both _litellm_httpx_client and _litellm_call_context to the new client, and returns it.
+    proof: [exception-recovery, exception-recovery-client-reconstruction]
+  - text: handle_a2a_localhost_retry raises ImportError "A2A SDK is required" when the A2A SDK is not available.
+    proof: [exception-recovery, exception-recovery-sdk-check]
+
+checks:
+  optional: []
+  commands:
+    - id: exception-checkers
+      why: A2AExceptionCheckers class or its methods are missing or incomplete.
+      run: grep -qE 'impl.*A2AExceptionCheckers|fn is_connection_error|fn is_localhost_url|fn is_agent_card_error' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-checkers-connection
+      why: is_connection_error does not check CONNECTION_ERROR_PATTERNS case-insensitively.
+      run: grep -qE 'to_lowercase|to_lower' crates/betterlite-core/src/a2a/exception_mapping.rs && grep -qE 'CONNECTION_ERROR_PATTERNS|connection.*pattern' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-checkers-localhost
+      why: is_localhost_url does not delegate to B4800's is_localhost_or_internal_url.
+      run: grep -qE 'is_localhost_or_internal_url' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-checkers-card
+      why: is_agent_card_error does not check card-related patterns case-insensitively.
+      run: grep -qE 'agent.?card|well.?known|card.?not.?found|invalid.?agent' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-mapping
+      why: map_a2a_exception function is missing or incomplete.
+      run: grep -qE 'fn map_a2a_exception|pub fn map_a2a_exception' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-mapping-order
+      why: map_a2a_exception does not check localhost error first, then card, then connection, then generic.
+      run: grep -qE 'A2ALocalhostURLError' crates/betterlite-core/src/a2a/exception_mapping.rs && grep -qE 'A2AAgentCardError' crates/betterlite-core/src/a2a/exception_mapping.rs && grep -qE 'A2AConnectionError' crates/betterlite-core/src/a2a/exception_mapping.rs && grep -qE 'A2AError' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery
+      why: handle_a2a_localhost_retry function is missing or incomplete.
+      run: grep -qE 'fn handle_a2a_localhost_retry|pub async fn handle_a2a_localhost_retry' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery-missing-card
+      why: handle_a2a_localhost_retry does not raise RuntimeError when agent_card is None.
+      run: grep -qE 'no agent card is available|agent_card.*None' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery-external-client
+      why: handle_a2a_localhost_retry does not raise RuntimeError when httpx_client is absent.
+      run: grep -qE 'was not created by create_a2a_client|_litellm_httpx_client.*None' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery-warning
+      why: handle_a2a_localhost_retry does not log a warning with the localhost URL and base URL.
+      run: grep -qE 'warn|verbose_logger' crates/betterlite-core/src/a2a/exception_mapping.rs && grep -qE 'localhost_url|base_url' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery-card-mutation
+      why: handle_a2a_localhost_retry does not call set_agent_card_url before extracting httpx_client.
+      run: grep -qE 'set_agent_card_url' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery-client-reconstruction
+      why: handle_a2a_localhost_retry does not reconstruct the client with the httpx_client and streaming mode.
+      run: grep -qE 'create_client|ClientConfig' crates/betterlite-core/src/a2a/exception_mapping.rs && grep -qE '_litellm_httpx_client|_litellm_call_context' crates/betterlite-core/src/a2a/exception_mapping.rs
+    - id: exception-recovery-sdk-check
+      why: handle_a2a_localhost_retry does not check A2A SDK availability.
+      run: grep -qE 'A2A_SDK_AVAILABLE|ImportError.*A2A SDK' crates/betterlite-core/src/a2a/exception_mapping.rs
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Classification checks happen sequentially in Rust code matching LiteLLM's Python order,
+      but the implementation uses Result<T, E> and match expressions rather than explicit
+      if/elif chains raising exceptions.
+    why: >-
+      Rust error handling uses Result types. The checker functions and exception raising
+      map directly to LiteLLM's behavior: first check and raise localhost error if matched,
+      then card, then connection, then generic. Each check returns an error variant that
+      propagates as the same exception type users see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L121-L157
+  - what: >-
+      The A2A SDK import is conditional and the task exports a check for SDK availability,
+      not the raw A2A_SDK_AVAILABLE flag as a module-level constant.
+    why: >-
+      Rust modules do not have module-level runtime state. SDK availability is checked
+      once at module load or on first call and cached. The handle_a2a_localhost_retry function
+      raises ImportError if unavailable, matching LiteLLM's behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L26-L34
+
+out_of_scope:
+  - >-
+    Client creation itself; create_a2a_client is owned by B4801. This task only reconstructs
+    an existing client with a mutated card.
+  - >-
+    The A2A SDK's ClientConfig, create_client and Client types; those are external imports
+    used by this task.
+  - >-
+    Streaming logic beyond the streaming flag passed to ClientConfig; actual streaming behavior
+    is owned by B4801 and later tasks.
+  - >-
+    Connection error pattern definitions; CONNECTION_ERROR_PATTERNS is a constant maintained
+    elsewhere.
+
+pitfalls:
+  - >-
+    The order of checks in map_a2a_exception is critical: localhost connection failure is
+    checked first so it can trigger retry recovery. Card errors and general connection errors
+    are checked in that order. Only then does the default generic error apply.
+  - >-
+    The handle_a2a_localhost_retry function must check agent_card is not None before any other
+    operation, including the warning log, to match the exact order in LiteLLM's
+    exception_mapping_utils.py lines 187-213.
+  - >-
+    The _litellm_httpx_client attribute is a private stash on the A2A SDK's Client object, set
+    only by create_a2a_client. An externally supplied client without this attribute cannot be
+    retried; the function must raise rather than build a fresh transport.
+  - >-
+    The _litellm_call_context attribute is also a private stash and may be None; getattr with a
+    default is used to preserve None rather than fail.
+  - >-
+    Exception messages use LiteLLM wording (localhost_url, base_url, agent_card), not the
+    original SDK message, to provide consistent user-facing diagnostics.
+  - >-
+    The warning message checks is_streaming and includes "streaming " prefix when true,
+    matching LiteLLM's format string at exception_mapping_utils.py line 193.
+  - >-
+    CONNECTION_ERROR_PATTERNS is imported from litellm.constants; if unavailable, patterns may
+    be defined locally as a fallback or deferred until runtime use.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,179 @@
+id: B3978
+title: Rubrik prompt and response moderation hooks
+description: >-
+  Wire request/response moderation to the lower payload and transport functions,
+  with intentional policy blocks rethrown and transient/malformed failures returned
+  unchanged. Stash block context for the separate logging hook without invoking it
+  directly.
+
+  Implement RubrikLogger.apply_guardrail as the unified entry point that dispatches
+  to _moderate_prompt (before model call) or _moderate_response (after model call)
+  based on input_type. Both paths build payloads via B3975's functions, post to
+  endpoints via B3976's helpers, and interpret responses. Policy blocks (ModifyResponseException)
+  are rethrown to fail the request. Transient errors and malformed service responses
+  (MalformedToolBlockingResponseError) are logged at critical/error severity and
+  return inputs unchanged, implementing fail-open semantics.
+
+  Prompt moderation synthesizes a user message from text-only requests (e.g. /v1/completions)
+  before building the webhook payload, since the service expects structured chat format.
+  Response moderation normalizes tool calls before payload construction. Both extract
+  correlation IDs for joining logs and build request envelopes the service consumes.
+
+  Stash the block flag on logging_obj.model_call_details["_rubrik_blocked"] and store
+  logging_obj on request_data["_rubrik_logging_obj"] so the deferred success-event handler
+  (B3977) skips the blocked request and async_post_call_failure_hook can build the
+  unsampled block event. When logging_obj is None, log an error instead of silently
+  dropping the signal, preserving observability of misconfiguration.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/rubrik_moderation.rs
+    - crates/betterlite-logging/src/rubrik_moderation/**
+    - tools/oracle/cases/logging/rubrik-moderation/**
+    - tools/oracle/helpers/b3978.py
+    - tools/oracle/helpers/b3978/**
+    - tools/oracle/src/helpers/logging/b3978.rs
+    - tools/oracle/src/helpers/logging/b3978/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L322-L353
+    why: RubrikLogger.apply_guardrail dispatches on input_type to _moderate_prompt or _moderate_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L355-L388
+    why: _guarded wraps coroutines to rethrow ModifyResponseException and return inputs unchanged on transient/malformed errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L390-L434
+    why: _moderate_response normalizes tool calls, builds response payload, posts to endpoint and checks for blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L436-L470
+    why: _moderate_prompt synthesizes user message for text requests, builds request payload and checks for refusals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L472-L501
+    why: _stash_block_context sets flag on logging_obj and stashes logging_obj on request_data for deferred handlers.
+
+dod:
+  - text: apply_guardrail routes on input_type="request" to _moderate_prompt and input_type="response" to _moderate_response, wrapping both with _guarded and returning inputs unchanged when type is unrecognized.
+    proof: [rubrik-hook-tests]
+  - text: _guarded awaits a coroutine and rethrows ModifyResponseException as-is; logs at critical severity on MalformedToolBlockingResponseError and returns inputs unchanged; logs at error severity on any other exception and returns inputs unchanged.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_response normalizes tool_calls via B3975's _normalize_tool_calls, joins text segments via B3975's _join_texts, extracts correlation_id via B3975's _correlation_id, builds response payload via B3975's _build_response_moderation_payload, posts via B3976's _post_to_response_moderation_endpoint, and detects blocks via B3975's _extract_response_block.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_response returns inputs unchanged when both tool_calls and texts are empty (early return optimization).
+    proof: [rubrik-hook-tests]
+  - text: _moderate_response builds request envelope via B3975's _extract_request_data and passes it to the endpoint POST.
+    proof: [rubrik-hook-tests]
+  - text: >-
+      _moderate_response logs a warning at severity "warning" with message literal
+      "Rubrik: logging_obj present but model_call_details is empty -- request context will be missing"
+      when logging_obj is truthy but model_call_details is empty mapping.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_response raises ModifyResponseException with message from blocked.explanation, model resolved via B3975's _resolve_model, and guardrail_name from self.guardrail_name when a block is detected.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_response calls _stash_block_context before raising ModifyResponseException to set the logged context.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_prompt returns inputs unchanged when no structured_messages are present and no texts are provided.
+    proof: [rubrik-hook-tests]
+  - text: >-
+      _moderate_prompt synthesizes a user message from newline-joined texts when
+      structured_messages is absent (text-only requests like /v1/completions), building
+      a list with one dict message {"role": "user", "content": joined_text}, and returns
+      inputs when joined is empty.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_prompt builds prompt payload via B3975's _build_prompt_moderation_payload, posts via B3976's _post_to_prompt_moderation_endpoint, and extracts refusal via B3975's _extract_prompt_refusal.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_prompt returns inputs unchanged when refusal is None (passthrough case).
+    proof: [rubrik-hook-tests]
+  - text: _moderate_prompt raises ModifyResponseException with message from refusal text, model from inputs.get("model") fallback to request_data.get("model") fallback to "unknown", and guardrail_name from self.guardrail_name when refusal is present.
+    proof: [rubrik-hook-tests]
+  - text: _moderate_prompt calls _stash_block_context before raising ModifyResponseException.
+    proof: [rubrik-hook-tests]
+  - text: _stash_block_context sets logging_obj.model_call_details["_rubrik_blocked"] = True when logging_obj is not None, and stashes logging_obj on request_data["_rubrik_logging_obj"].
+    proof: [rubrik-hook-tests]
+  - text: _stash_block_context logs an error with litellm_call_id when logging_obj is None and sets request_data["_rubrik_logging_obj"] = None for observability.
+    proof: [rubrik-hook-tests]
+  - text: Every listed oracle case exercises prompt and response moderation paths, block detection and exception raising, fail-open on transient/malformed errors, and block context stashing.
+    proof: [oracle]
+  - text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad suppressions.
+    proof: [probe-python, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: rubrik-hook-tests
+      why: moderation hook tests are absent, fail or do not test dispatch/error handling
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_moderation_hooks::/)
+        - test(/replays_the_.*_corpus/)'
+    - id: probe-python
+      why: the new adapter is missing, unchanged, untyped or fails lint
+      run: test -f tools/oracle/helpers/b3978.py && test -n "$(git diff --name-only
+        "$GATE_BASE" -- tools/oracle/helpers/b3978.py)" && uv run --locked --project
+        tools/oracle ruff check tools/oracle/helpers && uv run --locked --project
+        tools/oracle basedpyright tools/oracle/helpers
+
+oracle_cases:
+  - tools/oracle/cases/logging/rubrik-moderation/apply-guardrail-request-type.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/apply-guardrail-response-type.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/apply-guardrail-unknown-type.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-with-tool-calls.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-text-blocked.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-tool-blocked.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-empty-inputs.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-malformed-service.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-transient-error.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-response-logging-obj-empty-context.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-prompt-with-messages.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-prompt-text-only-synthesized.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-prompt-blocked.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-prompt-empty-inputs.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-prompt-malformed-service.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/moderate-prompt-transient-error.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/stash-block-context-with-logging-obj.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/stash-block-context-no-logging-obj.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/guarded-rethrows-modify-exception.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/guarded-logs-critical-on-malformed.yaml
+  - tools/oracle/cases/logging/rubrik-moderation/guarded-logs-error-on-transient.yaml
+
+deviations: []
+
+out_of_scope:
+  - Rubrik logger initialization and configuration (handled by B3976).
+  - Payload construction and block detection (handled by B3975).
+  - Transport layer POST to webhook endpoints (handled by B3976).
+  - Sampled log event enqueueing and block event handling (handled by B3977).
+  - ModifyResponseException type definition and exception handling (handled by B184).
+  - Streaming chunk buffering or end-of-stream moderation; caller must buffer until end-of-stream before invoking.
+
+pitfalls:
+  - >-
+    _moderate_response uses Final type hints to pin variables for mutation safety;
+    tool_calls and texts are extracted once from inputs and never re-read, even if
+    inputs is mutated after the early return check.
+  - >-
+    _moderate_prompt only synthesizes a user message when structured_messages is absent AND
+    texts is present and non-empty; a request with neither falls through and returns inputs.
+  - >-
+    _moderate_prompt joins text segments with newlines, matching the webhook's expectation
+    of multi-segment text payloads; single-segment content and empty strings are handled
+    but produce different payloads.
+  - >-
+    _stash_block_context sets request_data["_rubrik_logging_obj"] even when logging_obj is None,
+    so the failure handler can test for the key and handle the None case; missing the key
+    means moderation never ran.
+  - >-
+    ModifyResponseException is raised with guardrail_name from self.guardrail_name (assigned at
+    logger construction by B3976), not from any input parameter; the framework layer owns the
+    exception definition and must provide a constructor accepting message, model, request_data
+    and guardrail_name.
+  - >-
+    MalformedToolBlockingResponseError is a private exception type defined by B3975 for
+    when choices is empty; it is caught separately from generic exceptions so it can log
+    at critical instead of error, indicating a service misconfiguration.
+  - >-
+    model resolution in _moderate_response uses call_details (from logging_obj.model_call_details)
+    but checks if call_details is an empty mapping and logs a warning; logging_obj may be
+    present but provide no context, which is a valid failure case.
+  - >-
+    Final variables are only available in Python 3.8+ as a typing annotation; the linter
+    checks immutability but the runtime does not enforce it.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

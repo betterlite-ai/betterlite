@@ -34,6 +34,10 @@ scope:
   - tools/oracle/sdk_http/realtime_http_transport.py
   - tools/oracle/cases/sdk-http/realtime-http-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-transport-*
+  - tools/oracle/helpers/b2456.py
+  - tools/oracle/helpers/b2456/**
+  - tools/oracle/src/helpers/provider/b2456.rs
+  - tools/oracle/src/helpers/provider/b2456/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6297-L6511
@@ -96,5 +100,5 @@ pitfalls:
 - A nonempty caller session dict is mutated by inserted defaults in the source; do not claim it remains unchanged.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

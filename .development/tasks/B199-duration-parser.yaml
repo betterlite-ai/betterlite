@@ -32,7 +32,7 @@ scope:
   - tools/oracle/helpers/duration.py
   - tools/oracle/helpers/duration/**
   - tools/oracle/cases/helpers/duration/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/duration-*"
   lint_tables: false
 references:
 - url: >-
@@ -89,8 +89,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'duration' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/duration-*")" &&
+      grep -lq 'duration' tools/oracle/fuzz/corpus/helper_case/duration-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -117,6 +117,7 @@ out_of_scope:
 - Budget persistence, admission and scheduled reset jobs belong to M4; this part supplies pure calculations.
 - Do not add new accepted config keys until their owning feature consumes them.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/duration-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as duration in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/duration.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/duration.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The monthly word alias is a fixed duration while mo is calendar-dependent.
 - >-
@@ -127,5 +128,5 @@ pitfalls:
   changes.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

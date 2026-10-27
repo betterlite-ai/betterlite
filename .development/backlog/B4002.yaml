@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Deliver Azure Sentinel model and audit batches
 status: todo
 depends_on: [B002, B256, B173, B192]
-file: null
+file: tasks/B4002-azure-sentinel-logging.yaml
 covers:
   - "litellm/integrations/azure_sentinel/**"
   - "litellm/types/integrations/azure_sentinel.py"

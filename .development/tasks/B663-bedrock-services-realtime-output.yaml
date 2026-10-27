@@ -294,6 +294,6 @@ pitfalls:
 - An empty response id and None both allocate a new id, but only None causes response.created to be emitted.
 - SPECULATIVE user transcripts remain visible as deltas even though they are omitted from the final transcript buffer.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

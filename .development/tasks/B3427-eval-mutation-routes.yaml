@@ -1,0 +1,116 @@
+id: B3427
+title: Eval update delete and cancellation routes
+description: >-
+  Register POST, DELETE and POST `/v1/evals/{eval_id}`, `/v1/evals/{eval_id}` and `/v1/evals/{eval_id}/cancel` routes in `betterlite-server::api::eval_mutation_routes`,
+  then mount the router in B096's composition. Decode optional request bodies with orjson before the try block and apply model selection precedence:
+  body `model` (truthy), then query `model`, then header `x-litellm-model`. For all three routes, path `eval_id` overwrites any body value unconditionally.
+  A present body `custom_llm_provider`, even when null, is not replaced by the query default `openai`; only apply the default when the key is entirely absent from the body.
+  Decode request bodies before the try/catch block so malformed JSON is a 400 parse error, not a 500 handler exception. Hand off to authenticated common processing through
+  `ProxyBaseLLMRequestProcessing.base_process_llm_request` on route_type `aupdate_eval`, `adelete_eval`, or `acancel_eval`, and catch exceptions through
+  `ProxyBaseLLMRequestProcessing._handle_llm_api_exception`. Response models are `Eval` (update) and `DeleteEvalResponse`/`CancelEvalResponse` (delete/cancel) from B3420's contracts.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/eval_mutation_routes.rs
+    - crates/betterlite-server/src/api/eval_mutation_routes/**
+    - tools/oracle/cases/evals/mutation/**
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/helpers/b3427.py
+    - tools/oracle/helpers/b3427/**
+    - tools/oracle/src/helpers/server/b3427.rs
+    - tools/oracle/src/helpers/server/b3427/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L307-L394
+    why: "POST /v1/evals/{eval_id}: the update_eval route, body/query/header model selection, path eval_id override, custom_llm_provider handling, delegation to base_process_llm_request and exception handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L397-L482
+    why: "DELETE /v1/evals/{eval_id}: the delete_eval route, optional body decoding, model selection, path parameter override, custom_llm_provider behavior."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L485-L570
+    why: "POST /v1/evals/{eval_id}/cancel: the cancel_eval route, optional body, model selection, path override, custom_llm_provider defaults."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2524
+    why: "ProxyBaseLLMRequestProcessing.base_process_llm_request and its signature, including route_type, user_api_key_dict and other parameters passed by every route."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3625-L3774
+    why: "ProxyBaseLLMRequestProcessing._handle_llm_api_exception and the error envelope it produces."
+dod:
+  - text: "The three routes POST /v1/evals/{eval_id} (update_eval), DELETE /v1/evals/{eval_id} (delete_eval) and POST /v1/evals/{eval_id}/cancel (cancel_eval) are registered with the correct HTTP methods and paths."
+    proof: [http-routes]
+  - text: "Model selection uses body model (truthy) first, then query model, then header x-litellm-model, matching every listed oracle case."
+    proof: [model-selection]
+  - text: "Path eval_id overwrites any eval_id value from the request body unconditionally."
+    proof: [path-id-override]
+  - text: "A present body custom_llm_provider, even null, is not replaced by the query default openai."
+    proof: [provider-null-handling]
+  - text: "Delete and cancel routes accept requests with no body, matching delete-eval-basic.yaml and cancel-eval-basic.yaml."
+    proof: [optional-body]
+  - text: "Request body decoding (JSON parse errors) happens before the try/catch block, so malformed bodies return 400 with parse error details."
+    proof: [malformed-body]
+  - text: "Every route delegates to ProxyBaseLLMRequestProcessing.base_process_llm_request with route_type aupdate_eval, adelete_eval, or acancel_eval."
+    proof: [processor-delegation]
+  - text: "Exceptions are caught and passed to ProxyBaseLLMRequestProcessing._handle_llm_api_exception."
+    proof: [error-handling]
+  - text: "Response models use Eval (for update) and DeleteEvalResponse/CancelEvalResponse (for delete/cancel) from B3420."
+    proof: [response-contracts]
+checks:
+  optional: []
+  commands:
+    - id: http-routes
+      why: the three routes are not registered or use wrong methods/paths
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::http_routes(::|$)/)'
+    - id: model-selection
+      why: model selection precedence (body > query > header) is not correct or cases fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::model_selection(::|$)/)'
+    - id: path-id-override
+      why: path eval_id does not override body eval_id
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::path_id_override(::|$)/)'
+    - id: provider-null-handling
+      why: body custom_llm_provider null is incorrectly replaced by default
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::provider_null_handling(::|$)/)'
+    - id: optional-body
+      why: delete and cancel routes do not accept requests with no body
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::optional_body(::|$)/)'
+    - id: malformed-body
+      why: malformed JSON body is not rejected as 400 or is caught after the try block
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::malformed_body(::|$)/)'
+    - id: processor-delegation
+      why: routes do not delegate to base_process_llm_request or use wrong route_type values
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::processor_delegation(::|$)/)'
+    - id: error-handling
+      why: exceptions are not caught or not passed to _handle_llm_api_exception
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::error_handling(::|$)/)'
+    - id: response-contracts
+      why: response models do not use Eval and DeleteEvalResponse/CancelEvalResponse from B3420
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::response_contracts(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/evals/mutation/update-eval-basic.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-model-body.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-model-query.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-model-header.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-provider-body.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-provider-null.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-basic.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-model-body.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-path-override.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-provider-null.yaml
+  - tools/oracle/cases/evals/mutation/cancel-eval-basic.yaml
+  - tools/oracle/cases/evals/mutation/cancel-eval-model-header.yaml
+  - tools/oracle/cases/evals/mutation/cancel-eval-provider-default.yaml
+  - tools/oracle/cases/evals/mutation/malformed-json-body.yaml
+deviations:
+  - what: "Request body decoding (JSON parse errors) occurs before the try/catch block so malformed bodies return 400 with a parse error, not a 500 from the handler. This is a safety boundary between parsing and processing, not a deviation from LiteLLM."
+    why: "LiteLLM's FastAPI route handler implicitly parses bodies as part of the request lifecycle; betterlite's explicit decode before try/catch preserves the same error surface (400 on bad JSON) without changing the visible contract."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L352-L354"
+out_of_scope:
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; this task only calls it."
+  - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; this task only catches and delegates to it."
+  - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
+  - "The concrete operation implementations (aupdate_eval, adelete_eval, acancel_eval) owned by B3422 and B3423; routes only dispatch to them."
+pitfalls:
+  - "Model selection must check body (truthy), then query, then header `x-litellm-model` in that exact order. The line order in LiteLLM is the authority despite any misleading comments."
+  - "custom_llm_provider must never default to openai when a body value (including null) is present. Only apply the default when the key is entirely absent from the body."
+  - "Path eval_id overwrites body eval_id unconditionally; this is not a precedence rule, it is always the source of truth."
+  - "Body parsing with orjson must happen outside the try block so parse errors are visible as 400 responses, not caught by exception handlers."
+  - "Delete and cancel routes must accept optional bodies like update does, not require an empty body."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

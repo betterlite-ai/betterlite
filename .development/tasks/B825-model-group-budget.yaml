@@ -73,6 +73,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-group-budget/**
+    - tools/oracle/helpers/b825.py
+    - tools/oracle/helpers/b825/**
+    - tools/oracle/src/helpers/server/b825.rs
+    - tools/oracle/src/helpers/server/b825/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L1088-L1244
@@ -124,6 +128,6 @@ pitfalls:
   - Supplying budget_id for an already linked group fails on a duplicate constructor keyword, even for the same ID.
   - PUT excludes nulls, so an all-null payload cannot clear an existing group's budget.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

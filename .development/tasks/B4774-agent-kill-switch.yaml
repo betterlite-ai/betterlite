@@ -1,0 +1,146 @@
+id: B4774
+title: Agent kill switch secrets, delivery and audit records
+description: >-
+  Implement webhook credential restoration/redaction and one-shot outbound delivery through betterlite-http,
+  with bounded response capture and an audit record for each attempt. Preserve query merging, no redirects
+  and success only for 2xx.
+
+  Redaction: the redact_kill_switch function removes secrets from stored AgentKillSwitchConfig using the marker
+  string. Restoration replaces the marker with the original secret from existing storage when the admin echoes
+  the marker as a placeholder for an unchanged field. Bearer token, API-key header and Basic auth password
+  each restore independently, clearing to empty string if no stored secret exists.
+
+  Request building: merge query parameters into the URL without encoding duplication, add auth headers with
+  Bearer/API-key/Basic conversion (only one auth type can exist per config), and preserve configured headers.
+  An auth-derived header overwrites a manually configured header of the same name.
+
+  Delivery: send the HTTP request with no redirects (follow_redirects=false), bounded timeout, and capture
+  the response status, bounded response body text (up to AGENT_KILL_SWITCH_RESPONSE_BODY_MAX_CHARS characters),
+  and any httpx error message. A 2xx status marks success; any other status or error is recorded and returned.
+
+  Auditing: every kill switch attempt writes an audit log with the result (status and response body or error),
+  the actor/key, the timestamp, and a changed_by field tracking the human operator or service account that
+  triggered the switch. The audit log table name is agents, the action is kill_switch_fired, and the object_id
+  is the agent_id.
+
+  Injected contract: KillSwitchHttpClient protocol has build_request (typed params) and send (with stream and
+  follow_redirects flags). Default client comes from B173's pooled httpx client configured for AgentKillSwitch.
+  Default audit writer is B065's create_audit_log_for_update.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/kill_switch_management.rs
+    - crates/betterlite-server/src/kill_switch_management/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L34-104
+    why: Credential redaction and restoration with marker-based placeholder semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L139-150
+    why: KillSwitchHttpClient protocol definition with build_request and send methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L114-136
+    why: Auth header generation and request building with query-parameter merging; auth-derived headers override configured headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L153-154
+    why: default_kill_switch_http_client factory function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L160-161
+    why: default_kill_switch_audit_log_writer factory function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L164-183
+    why: Audit log construction with agent_id, action, timestamp and changed_by.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L186-239
+    why: Kill switch delivery, response streaming and text capture, HTTP error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L579-580
+    why: AGENT_KILL_SWITCH_TIMEOUT_SECONDS and AGENT_KILL_SWITCH_RESPONSE_BODY_MAX_CHARS constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L614
+    why: REDACTED_BY_LITELM_STRING constant used for marker-based field redaction.
+
+dod:
+  - text: Redacting a kill switch config replaces all bearer token, api_key and password fields with the marker
+      string; redacting None returns None.
+    proof: [kill-switch-redaction-tests]
+  - text: Restoring a redacted config replaces the marker with the original secret from storage for each auth
+      type, or empty string if no storage exists.
+    proof: [kill-switch-restoration-tests]
+  - text: Building a kill switch request merges query parameters into the URL, adds auth headers (Bearer, API-key,
+      or Basic based on the single configured auth type), and preserves configured headers with auth-derived
+      headers overwriting any configured header of the same name.
+    proof: [kill-switch-request-tests]
+  - text: Firing a kill switch sends the request with no redirects, bounded timeout from config or default
+      AGENT_KILL_SWITCH_TIMEOUT_SECONDS (10.0 seconds), and returns AgentKillSwitchResult with status and
+      bounded response text or error message.
+    proof: [kill-switch-delivery-tests]
+  - text: Only 2xx status codes mark a kill switch result as succeeded; all other statuses and errors return
+      succeeded=false.
+    proof: [kill-switch-delivery-tests]
+  - text: Building a kill switch audit log includes the result, user/api-key actor, timestamp, and changed_by
+      derived from the calling actor and admin name.
+    proof: [kill-switch-audit-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: kill-switch-redaction-tests
+      why: redaction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^kill_switch_management.*redact/)'
+    - id: kill-switch-restoration-tests
+      why: restoration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^kill_switch_management.*restore/)'
+    - id: kill-switch-request-tests
+      why: request building tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/^kill_switch_management.*request/)'
+    - id: kill-switch-delivery-tests
+      why: delivery and streaming tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^kill_switch_management.*deliver/)'
+    - id: kill-switch-audit-tests
+      why: audit log tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^kill_switch_management.*audit/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      betterlite rejects request-supplied push-callback URLs with HTTP 400 before forwarding.
+      LiteLLM's proxy accepts them if they pass SSRF checks.
+    why: >-
+      The bounded-inputs rule forbids external request destinations; operator-configured webhook URLs are
+      trusted. Request callbacks are deferred to a future decision on SSRF policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/kill_switch.py#L129-136
+  - what: >-
+      The kill switch request uses a configured finite deadline (B173's default pooled-client timeout or
+      AGENT_KILL_SWITCH_TIMEOUT_SECONDS, default 10.0 seconds). LiteLLM does not override keepalive behavior.
+    why: >-
+      Bounded request timeouts prevent indefinite hangs on slow webhook servers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L579
+
+out_of_scope:
+  - Webhook URL validation (owned by B4770).
+  - HTTP routing, request/response middleware and streaming hooks (owned by B4788/B4789).
+  - Redirect handling and SSRF policy beyond no-redirects (owned by B009).
+  - Database storage and transaction semantics for audit logs (owned by B065/B700).
+  - Per-provider kill switch dispatch and retry policy.
+  - "litellm/proxy/agent_endpoints/kill_switch.py#L139-150: KillSwitchHttpClient protocol is declared by this task; the protocol implementation methods are injected."
+  - "litellm/proxy/agent_endpoints/kill_switch.py#L153-154: default_kill_switch_http_client is a factory function building the B173 client; its implementation belongs to B173."
+  - "litellm/proxy/agent_endpoints/kill_switch.py#L160-161: default_kill_switch_audit_log_writer is a factory function returning B065's create_audit_log_for_update; ownership stays with B065."
+
+pitfalls:
+  - >-
+    AgentKillSwitchConfig.auth is a discriminated union (Bearer | ApiKey | Basic); only one auth type can exist.
+    Auth-derived headers override any manually configured header of the same name through simple dict merging.
+  - >-
+    Redaction and restoration are not symmetrical: restoring twice with the marker does not restore from
+    empty. The marker is only a placeholder for unchanged fields in a PATCH request; fresh requests supply
+    the full secret.
+  - >-
+    Response body streaming must not buffer the entire response; read up to max_chars and stop. The iterator
+    may represent multiple chunks, and concatenation must not exceed the limit.
+  - >-
+    httpx.Response.aclose() is not a no-op; it must be called in a finally block to free the connection back
+    to the pool.
+  - >-
+    The audit log table_name is agents (not agent_endpoints), the action is kill_switch_fired, and the
+    object_id is the agent_id string. The result serializes as JSON via model_dump_json.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -86,5 +86,5 @@ pitfalls:
   - Each guardrailDefinitions entry in both records must include the complete litellm_params block with guardrail, mode, patterns/categories array, and pattern_redaction_format. Do not omit or shorten these.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1000
   max_new_expects: 0

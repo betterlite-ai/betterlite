@@ -307,6 +307,6 @@ pitfalls:
 - The last unsuccessful poll also sleeps before the for/else raises 408.
 - The empty thread-creation mapping becomes no POST body because the closure tests truthiness.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

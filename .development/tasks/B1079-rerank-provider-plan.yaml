@@ -47,6 +47,10 @@ scope:
   - tools/oracle/sdk_http/rerank_provider_plan.py
   - tools/oracle/cases/sdk-http/rerank-provider-plan/**
   - tools/oracle/fuzz/corpus/sdk_http_case/rerank-provider-plan-*
+  - tools/oracle/helpers/b1079.py
+  - tools/oracle/helpers/b1079/**
+  - tools/oracle/src/helpers/core_ops/b1079.rs
+  - tools/oracle/src/helpers/core_ops/b1079/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L92-L562
@@ -145,5 +149,5 @@ pitfalls:
 - The Cohere missing-base guard is unreachable after the nonempty https://api.cohere.com fallback.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,8 @@
+kind: helper
+name: upload-filename-empty
+call:
+  upload_filename:
+    filename: ''
+env: {}
+compare:
+  ignore: []

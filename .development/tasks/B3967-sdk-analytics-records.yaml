@@ -25,6 +25,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-logging/src/analytics.rs
     - crates/betterlite-logging/src/analytics/**
   lint_tables: false
 
@@ -102,5 +103,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

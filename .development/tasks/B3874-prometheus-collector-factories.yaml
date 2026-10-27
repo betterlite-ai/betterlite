@@ -1,0 +1,204 @@
+id: B3874
+title: Prometheus configuration and collector factories
+description: >-
+  Port litellm/integrations/prometheus.py:102-112, 165-188, 257-265, 881-1021,
+  1027-1099, 1105-1232 to Rust in crates/betterlite-prometheus. Build validated
+  include/exclude filtering, frozen metric label sets, registry lookup and
+  disabled/excluded-label collectors. Expose the native collector interface
+  used by independent emitters, with decimal finite values and explicit
+  infinity/NaN handling so metrics do not force floats into money or gateway code.
+
+  Build _NON_ENUM_METRIC_LABELS, a frozenset of label names that are not part of
+  the UserAPIKeyLabelNames enum: guardrail_name, status, error_type, hook_type,
+  purpose, file_type, result. These labels appear on guardrail and service metrics.
+
+  Build _ExcludedLabelMetric, a wrapper around a Prometheus metric that filters
+  excluded labels from every labels(...) call. When a metric is registered with
+  a full set of labelnames and then prometheus_exclude_labels removes some,
+  _ExcludedLabelMetric drops the excluded labels from the call and returns the
+  underlying metric with only the kept labels, or returns the metric directly if
+  no labels remain.
+
+  Implement get_instance, a static lookup that scans the callback registry to find
+  a registered PrometheusLogger. This enables other parts of the system to emit
+  metrics without depending on B3875's constructor.
+
+  Build configuration parsing: _parse_prometheus_config reads
+  prometheus_metrics_config (a list of PrometheusMetricsConfig dicts or objects),
+  validates all metrics and labels, and returns a dict mapping metric name to
+  included label lists for label filtering. _parse_exclude_config reads
+  prometheus_exclude_metrics and prometheus_exclude_labels, validates them against
+  all possible labels, and raises on invalid names.
+
+  Implement validation: _all_defined_labels returns the union of UserAPIKeyLabelNames
+  values, _NON_ENUM_METRIC_LABELS, and custom prometheus_metadata_labels and
+  custom_prometheus_tags (all sanitized). _validate_all_configurations chains
+  _validate_single_metric_name and _validate_single_metric_labels over all configs,
+  collecting errors. _validate_single_metric_name checks that a metric name is in
+  DEFINED_PROMETHEUS_METRICS. _validate_single_metric_labels checks that every
+  label in include_labels is valid for that metric by calling
+  PrometheusMetricLabels.get_labels.
+
+  Implement pretty printing (optional for CLI display): pretty_print_validation_errors
+  formats MetricValidationError and LabelValidationError using console output if
+  available, else falls back to logging. pretty_print_prometheus_config displays
+  enabled metrics and label filters after parsing succeeds.
+
+  Implement the metric factory pattern: _is_metric_enabled returns true iff the
+  metric is not in exclude_metrics and either no enabled_metrics were configured,
+  enabled_metrics is empty, or the metric is in enabled_metrics. _create_metric_factory
+  takes a Prometheus metric class and returns a factory function that returns NoOpMetric
+  if disabled, _ExcludedLabelMetric if labels are excluded, or the real metric otherwise.
+  The factory extracts the metric name from the first positional arg or the "name"
+  kwarg and the labelnames from the labelnames kwarg.
+
+  Implement get_labels_for_metric, which returns the resolved label list for a metric:
+  start with PrometheusMetricLabels.get_labels, drop excluded labels, then keep only
+  labels in label_filters[metric_name] if that metric is in label_filters. Cache
+  results on the instance so the label set stays frozen even if toggles change after
+  instantiation. The metric interface is _MetricLike: either NoOpMetric or
+  _ExcludedLabelMetric or a real Prometheus MetricWrapperBase.
+
+scope:
+  paths:
+    - crates/betterlite-prometheus/src/collector_factory.rs
+    - crates/betterlite-prometheus/src/collector_factory/tests.rs
+    - crates/betterlite-prometheus/src/collector_factory/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L102-L112
+    why: _NON_ENUM_METRIC_LABELS frozenset definition
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L165-L188
+    why: _ExcludedLabelMetric class and _MetricLike type alias
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L257-L265
+    why: PrometheusLogger.get_instance static method scanning callbacks
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L881-L945
+    why: _parse_prometheus_config and _parse_exclude_config with validation chain
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L946-L1008
+    why: _all_defined_labels, _validate_all_configurations, _validate_single_metric_name and _validate_single_metric_labels
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1010-L1021
+    why: _build_label_filters collecting include_labels by metric
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1027-L1100
+    why: pretty_print_validation_errors with rich console tables and fallback logging
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1105-L1167
+    why: pretty_print_prometheus_config with enabled metrics and label filters display
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1168-L1181
+    why: _is_metric_enabled checking exclude_metrics and enabled_metrics set
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1183-L1202
+    why: _create_metric_factory extracting metric name and labelnames, returning NoOp or ExcludedLabelMetric or real metric
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1204-L1232
+    why: get_labels_for_metric with caching and label filtering applied to default labels
+
+dod:
+  - text: _NON_ENUM_METRIC_LABELS is defined as a frozenset with all seven non-enum labels
+      (guardrail_name, status, error_type, hook_type, purpose, file_type, result).
+    proof: [config-and-factory-tests]
+  - text: _ExcludedLabelMetric wraps a metric and filters labels; labels(...) call
+      drops excluded labels and returns the underlying metric with kept labels only,
+      or returns the metric directly if no labels remain after filtering.
+    proof: [config-and-factory-tests]
+  - text: PrometheusLogger.get_instance scans the callback registry and returns the
+      first PrometheusLogger found, or None if not registered.
+    proof: [config-and-factory-tests]
+  - text: _parse_prometheus_config reads prometheus_metrics_config, validates all metrics
+      and labels, returns a dict of metric name to include_labels list for label filtering,
+      and raises ValueError with full validation errors if any validation fails.
+    proof: [config-and-factory-tests]
+  - text: _parse_exclude_config reads prometheus_exclude_metrics and prometheus_exclude_labels,
+      validates against DEFINED_PROMETHEUS_METRICS and _all_defined_labels, raises ValueError
+      on invalid names.
+    proof: [config-and-factory-tests]
+  - text: _all_defined_labels returns union of UserAPIKeyLabelNames enum values,
+      _NON_ENUM_METRIC_LABELS, and sanitized custom_prometheus_metadata_labels and
+      custom_prometheus_tags.
+    proof: [config-and-factory-tests]
+  - text: _validate_all_configurations collects metric and label errors from all configs;
+      metric validation checks DEFINED_PROMETHEUS_METRICS membership; label validation
+      checks inclusion in PrometheusMetricLabels.get_labels for the metric.
+    proof: [config-and-factory-tests]
+  - text: _build_label_filters returns dict mapping metric name to include_labels list,
+      skipping metrics with invalid names detected during validation.
+    proof: [config-and-factory-tests]
+  - text: _is_metric_enabled returns false if metric is in exclude_metrics, true if
+      enabled_metrics is not set or empty, otherwise true iff metric is in enabled_metrics.
+    proof: [config-and-factory-tests]
+  - text: _create_metric_factory returns a factory function that extracts metric name
+      from first positional arg or "name" kwarg, returns NoOpMetric if disabled,
+      _ExcludedLabelMetric if labels are excluded, or the real metric.
+    proof: [config-and-factory-tests]
+  - text: >-
+      get_labels_for_metric returns a fresh list of labels: default labels from
+      PrometheusMetricLabels.get_labels minus excluded labels and filtered by
+      label_filters[metric_name] if present, with results cached per instance.
+    proof: [config-and-factory-tests]
+  - text: Pretty printing functions exist and do not panic; pretty_print_validation_errors
+      displays errors via console if rich is available, falls back to logging;
+      pretty_print_prometheus_config displays enabled metrics and label filters.
+    proof: [config-and-factory-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: config-and-factory-tests
+      why: Configuration parsing, validation, factory or registry tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^prometheus_config|^prometheus_factory|^excluded_label_metric|^prometheus_registry/) - test(replays_the_)'
+    - id: compile
+      why: The crate does not compile
+      run: cargo build --locked -p betterlite-prometheus
+
+oracle_cases: []
+
+deviations:
+  - what: Betterlite exposes the native collector interface (labels, inc, set, observe,
+      remove) directly on metrics, rather than wrapping all operations in logger methods.
+    why: The independent emitters in B3876–B3882 need to call collector operations
+      directly without a logger dependency. This makes metrics injection simpler and
+      avoids circular dependencies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1183-L1232
+  - what: Betterlite handles infinity and NaN explicitly as enum/type variants, never
+      as float values in metrics, so money calculations in budget code never receive
+      or produce unrepresentable numbers.
+    why: LiteLLM stores float prices and can produce inf/NaN in calculations; betterlite
+      uses Decimal for money and represents special values explicitly so they cannot
+      corrupt accounting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1146-L1162
+  - what: pretty_print_validation_errors and pretty_print_prometheus_config are
+      optional output helpers that log to stderr or fall back to logging if console
+      is unavailable, rather than failing startup.
+    why: LiteLLM uses rich for visual output but makes it optional; betterlite
+      follows the same pattern for observability.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1027-L1167
+
+out_of_scope:
+  - Emission of metrics or calling collector methods at runtime; that is B3876 and its consumers.
+  - Registration of collectors into the exporter; that is B3875.
+  - Reading config values directly; B002 supplies the prometheus_metrics_config, prometheus_exclude_metrics,
+      prometheus_exclude_labels, custom_prometheus_metadata_labels, custom_prometheus_tags,
+      prometheus_emit_stream_label, prometheus_emit_rate_limit_labels and
+      prometheus_emit_input_sequence_length_label settings.
+  - Callback registration; B189 provides the registry lookup for get_instance.
+
+pitfalls:
+  - _parse_prometheus_config must validate before building label_filters; a metric
+      with an invalid name should not appear in label_filters even if include_labels
+      were provided.
+  - _ExcludedLabelMetric.labels drops excluded labels by position (zip original names
+      with values, keeping only non-excluded), so it assumes labelvalues tuple length
+      matches original_labelnames length.
+  - _all_defined_labels must include sanitized custom labels, not raw ones; failing
+      to sanitize leaves validation gaps.
+  - get_labels_for_metric returns a fresh list every call from the default schema,
+      then filters; callers that mutate the returned list will not affect the cache.
+  - _is_metric_enabled defaults to true when no config is provided (enabled_metrics
+      is not set); only explicit exclusion or explicit enable lists gate metrics.
+  - PrometheusLogger.get_instance scans litellm.callbacks at call time, not cached,
+      so the callback must be registered before calling get_instance.
+  - _NON_ENUM_METRIC_LABELS is a frozenset of strings, not label enum variants; it
+      represents names that appear on metrics but are not part of UserAPIKeyLabelNames.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

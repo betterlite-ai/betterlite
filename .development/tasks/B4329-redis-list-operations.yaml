@@ -1,0 +1,165 @@
+id: B4329
+title: Push and drain Redis lists across Redis and Valkey versions
+description: >-
+  Implement async_rpush, async_rpush_and_trim, async_rpush_pipeline and async_lpop methods
+  that move elements through Redis lists with version-dependent behavior. Preserve the distinction
+  between Redis >= 7.0 (LPOP with count parameter) and Redis < 7.0 (single LPOP loop through
+  pipelines), including the regrouping of flat results back to per-key lists. Handle byte-to-string
+  decoding with a fallback when decoding fails, and propagate command errors without retrying
+  an ambiguously applied push or pop. Inject circuit breaker guards and service success/failure
+  hooks; operate on namespaced keys and parse the Redis version from cache state.
+
+
+  Configuration boundary keys consumed: LITELLM_REDIS_MAJOR_VERSION (integer, default from
+  B002). This task owns no new keys. Spend queues depend on these operations to move entries
+  through Redis lists, and the service hooks inject observability without circular dependencies.
+
+
+  Owned functions in litellm/caching/redis_cache.py:
+
+  - `:2052-2103` async_rpush with circuit breaker, namespace fix, timing, success/failure hooks
+  - `:2105-2150` async_rpush_and_trim with transactional RPUSH+LTRIM pipeline
+  - `:2152-2166` _pipeline_rpush_helper that enqueues namespaced RPUSH commands
+  - `:2168-2225` async_rpush_pipeline with per-operation isolation and error propagation
+  - `:2227-2238` handle_lpop_count_for_older_redis_versions that loops LPOP for Redis < 7
+  - `:2240-2302` async_lpop with version check, byte decoding, hooks and error handling
+  - `:2304-2361` _pipeline_lpop_helper that regroupes flat results for older Redis versions
+  - `:2363-2420` async_lpop_pipeline with per-operation results and error propagation
+
+
+  Direct dependencies: B393 `_redis_circuit_breaker_guard` and `log_redis_failure` wrap and
+  log failures; B4324 `check_and_fix_namespace`, `_parse_redis_major_version` and
+  `_get_call_stack_info` supply namespace, version and diagnostic projections; B4325
+  `_async_commands` supplies the reusable Redis transport; B012 supplies `service_logger_obj` injected
+  service hooks. B4290 must cover the RedisPipelineRpushOperation and RedisPipelineLpopOperation
+  record contracts (key, values; key, count). No async task, queue or timeout for list operations
+  is owned here; timeouts come from the Redis client and the circuit breaker.
+
+
+  Valkey is wire-compatible transport plus numeric version parsing here, not a separate semantic
+  backend. The single-pop loop for Redis < 7 preserves positional LPOP results in order; the newer
+  bulk pipeline regrouping preserves which results belong to which operation.
+
+
+  Configuration keys: the Redis major version comes from B002's DEFAULT_REDIS_MAJOR_VERSION
+  config binding (B002 env LITELLM_REDIS_MAJOR_VERSION, default 7 as integer). This task
+  reads it once through the injected version parser and uses it to dispatch between code paths.
+  No new config keys, env vars or defaults are introduced.
+scope:
+  paths:
+    - crates/betterlite-redis/src/list_operations.rs
+    - crates/betterlite-redis/src/list_operations/**
+    - tools/oracle/cases/caching/list-operations/**
+    - tools/oracle/helpers/b4329.py
+    - tools/oracle/helpers/b4329/**
+    - tools/oracle/src/helpers/redis/b4329.rs
+    - tools/oracle/src/helpers/redis/b4329/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2052-L2103
+    why: async_rpush implementation verified against the pinned checkout
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2105-L2150
+    why: async_rpush_and_trim with transactional RPUSH+LTRIM
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2152-L2225
+    why: pipeline helpers and async_rpush_pipeline implementation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2227-L2302
+    why: version-dependent LPOP handling for older Redis versions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2304-L2361
+    why: pipeline LPOP with result regrouping for Redis < 7
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2363-L2420
+    why: async_lpop_pipeline with per-operation isolation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L81-L97
+    why: RedisPipelineRpushOperation and RedisPipelineLpopOperation TypedDict contracts
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L154-L275
+    why: Service event dispatch and async success path (B012 integration).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L312-L425
+    why: Service failure and call lifecycle events (B012 integration).
+dod:
+  - text: Write tests named list_operations_behaviors covering RPUSH, transactional RPUSH+LTRIM, pipelined RPUSH and LPOP. Table tests with rstest compare Redis >= 7 and Redis < 7 dispatch, byte decoding, empty lists, and error propagation.
+    proof:
+      - list-operations-behaviors
+  - text: Every listed oracle case exercises the production operation and asserts exact list state, decoded values, per-operation results, and error codes; only /error/message may be ignored for betterlite wording.
+    proof:
+      - oracle
+  - text: Per-operation pipeline LPOP results stay isolated even when one operation's list is empty. The flat-result regrouping for Redis < 7 preserves positional correspondence for each operation.
+    proof:
+      - oracle
+      - list-operations-behaviors
+  - text: Byte-to-string decoding preserves the fallback when UTF-8 decode fails; the original bytes are returned.
+    proof:
+      - oracle
+      - list-operations-behaviors
+  - text: Command errors in pipelines raise immediately without silent swallow; the circuit breaker's failure recording happens only on the outer operation.
+    proof:
+      - oracle
+      - list-operations-behaviors
+  - text: Service success and failure hooks fire with timing, operation name and call stack info, and are called via async fire-and-forget (create_task) without blocking.
+    proof:
+      - oracle
+      - list-operations-behaviors
+checks:
+  optional: []
+  commands:
+    - id: list-operations-behaviors
+      why: the list operations behavior test is missing or fails
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::list_operations_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: layering
+      why: deny.toml does not keep betterlite-redis behind betterlite
+      run: grep -qE 'crate = "betterlite-redis", wrappers = \["betterlite"\]' deny.toml
+oracle_cases:
+  - tools/oracle/cases/caching/list-operations/rpush-list-append.yaml
+  - tools/oracle/cases/caching/list-operations/rpush-and-trim-keep-newest.yaml
+  - tools/oracle/cases/caching/list-operations/lpop-single-item.yaml
+  - tools/oracle/cases/caching/list-operations/lpop-redis-6-loop.yaml
+  - tools/oracle/cases/caching/list-operations/lpop-redis-7-bulk.yaml
+  - tools/oracle/cases/caching/list-operations/lpop-pipeline-multiple-keys.yaml
+deviations:
+  - what: >-
+      RedisPipelineRpushOperation and RedisPipelineLpopOperation record contracts are specified
+      in litellm/types/caching.py and must be resolved by B4290 (not yet materialized as a concrete
+      task). Until then, define these TypedDicts locally: RedisPipelineRpushOperation with fields
+      {"key": str, "values": Sequence[Any]} and RedisPipelineLpopOperation with fields
+      {"key": str, "count": int | None}.
+    why: >-
+      B4290 is proposed in the outline but has no task file yet. These record contracts are
+      essential for the pipeline method signatures. betterlite must define them locally or
+      through B4329's scope until B4290 materializes.
+  - what: >-
+      Service logging hooks (async_service_success_hook, async_service_failure_hook) are
+      supplied by B012. This task assumes B012's logging_pipeline integration is available
+      and that service_logger_obj is injected into RedisCache at construction.
+    why: >-
+      B012 owns the complete service event dispatch and hook registry. This task integrates with
+      that existing infrastructure and does not reimplement service logging.
+  - what: >-
+      In the older Redis < 7 path, handle_lpop_count_for_older_redis_versions loops LPOP commands
+      through a single pipeline with one execute() per iteration. A more efficient design would
+      batch all commands and execute once; betterlite preserves the pinned behavior to keep the
+      positional order of pops stable.
+    why: LiteLLM's single-pop loop gives callers a predictable order even under list mutations; a faster batch could reorder results if the list changes between commands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2227-L2238
+  - what: Pipeline RPUSH and LPOP operations raise on the first error without attempting recovery. No retry or partial success is available; the entire pipeline fails.
+    why: LiteLLM does not retry failed list operations. A partial success would require splitting the caller's operation semantics by position, which is not specified.
+out_of_scope:
+  - B393 owns the circuit breaker guard and failure logging that wraps these operations.
+  - B4324 owns the namespace fix, version parsing and call stack extraction.
+  - B4325 owns the _async_commands transport and client reuse contract.
+  - B4290 owns the RedisPipelineRpushOperation and RedisPipelineLpopOperation type contracts (not yet materialized).
+  - B012 owns the ServiceLogging hook injection and async emission.
+  - Spend queue buffering and flushing belongs to the callers, not list operations themselves.
+pitfalls:
+  - >-
+      The oracle helper for this task is pre-registered as b4329 in the redis group. Replace the
+      stub Op in tools/oracle/src/helpers/redis/b4329.rs with an impl Helper whose Input captures
+      the operation parameters, and write run in tools/oracle/helpers/b4329.py to invoke betterlite's
+      list methods and return typed output. The registry files (helpers/mod.rs, redis/mod.rs,
+      dispatch.py) are not this task's to edit.
+  - "Redis < 7.0 has no count parameter on LPOP: the handle_lpop_count_for_older_redis_versions loop must execute the pipeline after each LPOP command, not batch all commands and execute once, to preserve positional order."
+  - "The _pipeline_lpop_helper regrouping for Redis < 7 must filter None values per-key and collect them back into a list. A None at the end of a list signals an empty slot, not the end of results."
+  - "Byte-to-string decoding must not panic on decode failure. The code catches UnicodeDecodeError and returns the original bytes, matching LiteLLM's fallback."
+  - "Service hooks fire after the operation completes, not before. They are asyncio.create_task calls, so the main request does not wait for them; the logger must be prepared for concurrent hook firings."
+  - "RPUSH and LPOP errors propagate directly without retry. Do not add exponential backoff or retry loops; the circuit breaker handles repeated failures at a higher level."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

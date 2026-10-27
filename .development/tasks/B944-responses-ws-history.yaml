@@ -299,5 +299,5 @@ pitfalls:
 - 'A serializer failure is a debug diagnostic plus None, and a warmup acknowledgement drops only that failed event before trying the next status.'
 review_level: security
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1500
   max_new_expects: 1

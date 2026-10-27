@@ -193,5 +193,5 @@ pitfalls:
 - 'The successful list-tools path logs Created %s MCP discovery events with three events, while the caught exception path logs Error creating MCP list tools events: %s, prints a traceback, and still returns a failed event plus an empty output item.'
 review_level: standard
 budget:
-  max_changed_lines: 480
+  max_changed_lines: 1500
   max_new_expects: 1

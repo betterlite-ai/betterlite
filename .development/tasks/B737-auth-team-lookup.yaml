@@ -259,6 +259,6 @@ pitfalls:
   - check_db_only does not bypass _should_check_db; a recent DB read can still produce the ordinary team 404.
   - Alias cache writes do not use _cache_team_object, so their TTL is DEFAULT_IN_MEMORY_TTL rather than the team-cache policy.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

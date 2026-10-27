@@ -19,7 +19,7 @@ scope:
   - tools/oracle/helpers/bedrock_content.py
   - tools/oracle/helpers/bedrock_content/**
   - tools/oracle/cases/helpers/bedrock-content/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/bedrock_content-*"
   lint_tables: false
 references:
 - url: >-
@@ -57,8 +57,8 @@ checks:
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'bedrock_content' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_content-*")" &&
+      grep -lq 'bedrock_content' tools/oracle/fuzz/corpus/helper_case/bedrock_content-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -75,11 +75,12 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B181 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/bedrock_content-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as bedrock_content in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/bedrock_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

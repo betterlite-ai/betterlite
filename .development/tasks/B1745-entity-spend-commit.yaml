@@ -75,6 +75,6 @@ pitfalls:
   - Team membership cache eviction happens after the committed callback, so its failure must leave that category excluded from replay.
   - End users are created by spend flushing, whereas missing user, key and team rows are simply not updated.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

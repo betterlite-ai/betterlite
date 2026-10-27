@@ -23,7 +23,6 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-logging/**
   - crates/betterlite-config/**
   - crates/betterlite-openai/**
@@ -33,7 +32,7 @@ scope:
   - tools/oracle/helpers/logging_privacy.py
   - tools/oracle/helpers/logging_privacy/**
   - tools/oracle/cases/helpers/logging-privacy/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/logging_privacy-*"
   lint_tables: false
 references:
 - url: >-
@@ -103,8 +102,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'logging_privacy' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/logging_privacy-*")" &&
+      grep -lq 'logging_privacy' tools/oracle/fuzz/corpus/helper_case/logging_privacy-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -129,6 +128,7 @@ out_of_scope:
   redact_messages.py _redact_responses_api_output/_dict are B080; redacted_standard_logging_payload/_redact_standard_logging_object
   are B190; text-completion snapshots B202/B203.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/logging_privacy-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as logging_privacy in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/privacy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_privacy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   The should_redact_message_logging docstring differs from its implementation; derive precedence from the pinned
@@ -137,5 +137,5 @@ pitfalls:
 - Content privacy and secret redaction are separate decisions.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

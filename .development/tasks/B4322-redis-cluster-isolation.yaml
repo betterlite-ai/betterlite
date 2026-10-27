@@ -24,7 +24,7 @@ scope:
   - tools/oracle/helpers/redis_cluster_node_isolation/**
   - tools/oracle/cases/helpers/redis-cluster-node-isolation/**
   - Cargo.toml
-  - deny.toml
+  - crates/betterlite-redis/src/redis_cluster_node_isolation/tests/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L86-L260
@@ -115,5 +115,5 @@ out_of_scope:
 - Configuration and diagnostic output; B4323 constructs the client and provides settings.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

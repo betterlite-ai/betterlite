@@ -1,0 +1,175 @@
+id: B3902
+title: Langfuse OTLP delivery and oversized batches
+description: >-
+  Implement Langfuse protobuf export through betterlite-http, preserving retry status classification,
+  bounded exponential delays, batch halving on 413, largest-field truncation for one span, and
+  per-span encoding failure isolation. The exporter takes provisioned credentials (public and secret keys)
+  and a base URL that defaults to the Langfuse US cloud, and builds a request-signed OTLP HTTP endpoint
+  with Basic authorization from the base64-encoded key pair. Protobuf spans are encoded through the
+  OTLP library's span encoder, and any span the encoder rejects is dropped from the batch without
+  losing other spans. A single span too large to encode is truncated, largest field first (input,
+  output, metadata), then resent until it fits or all fields are gone; a multi-span batch is halved
+  and retried. Transport errors, 408, 429 and 5xx status codes trigger exponential backoff with
+  a ceiling configurable through LANGFUSE_MAX_RETRIES, defaulting to 3 retries with delays of 1, 2,
+  4 seconds; HTTP 413 is caught separately and triggers size reduction rather than retry. Mock mode
+  accepts spans without network I/O. Flush reports the transport outcome through the injected exporter
+  interface, not queue drain: a batch counted as failed never succeeds, and a successful flush means
+  delivery rather than acceptance into a queue. Every HTTP header sent to Langfuse, including
+  Authorization, carries Langfuse SDK identity (SDK name, version) and ingestion-version for
+  compatibility negotiation. The exporter-path and base-URL join preserves trailing and leading
+  slashes: LANGFUSE_OTEL_TRACES_EXPORT_PATH defaults to /api/public/otel/v1/traces, both the path
+  and base_url.rstrip('/') and the path.lstrip('/') are joined with a single slash. Implement via
+  betterlite-http; do not reuse B256's generic batch policy for the distinct Langfuse truncation and
+  retry algorithm.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-http/**
+  - crates/betterlite-logging/src/langfuse_exporter.rs
+  - crates/betterlite-logging/src/langfuse_exporter/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/cases/helpers/langfuse-exporter/**
+  - tools/oracle/fuzz/corpus/helper_case/langfuse_exporter-*
+  - tools/oracle/helpers/b3902.py
+  - tools/oracle/helpers/b3902/**
+  - tools/oracle/src/helpers/logging/b3902.rs
+  - tools/oracle/src/helpers/logging/b3902/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L77-L90
+  why: Ingestion header constants, truncation markers and server version diagnostic.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L561-L641
+  why: DiscardingSpanExporter and batch halving logic on 413 with field-group truncation.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L650-L809
+  why: >-
+    LangfuseSpanExporter, retryable status classification, exponential backoff delays,
+    retry and truncation rounds, OTLP protobuf encoding, per-span isolation, and Basic
+    authorization header construction with base64-encoded credentials.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L824-L841
+  why: _ExportLedger, shutdown and force_flush delegation to the wrapped exporter for delivery-aware flush.
+dod:
+- text: Exporter helper cases match observable pinned behavior for each status, truncation, and encoding failure scenario.
+  proof: [oracle, helper-python]
+- text: Basic authorization header encodes the key pair correctly, and the endpoint and ingestion-version headers are present on every request.
+  proof: [oracle, langfuse-exporter-tests]
+- text: >-
+    Retry status classification includes 408, 429 and 5xx; non-retryable 4xx codes are logged and
+    rejected; a 413 triggers size reduction, and transport errors are retried.
+  proof: [langfuse-exporter-tests]
+- text: >-
+    Exponential backoff uses delays of 2^n seconds up to a ceiling set by LANGFUSE_MAX_RETRIES,
+    with a default ceiling of 3 retries and maximum ceiling of 1000 retries.
+  proof: [langfuse-exporter-tests]
+- text: >-
+    A multi-span batch returning 413 is split in halves; a single span is truncated starting
+    with its largest field (input, output, metadata), resent and dropped once fully truncated.
+  proof: [langfuse-exporter-tests]
+- text: >-
+    A span the protobuf encoder rejects is dropped from the batch; other spans in the batch are
+    encoded and sent; if all spans are rejected the batch is reported as no-op.
+  proof: [langfuse-exporter-tests]
+- text: >-
+    LANGFUSE_OTEL_TRACES_EXPORT_PATH defaults to /api/public/otel/v1/traces, and is joined with base_url
+    by rstrip('/') on base_url and lstrip('/') on the path with a single connecting slash.
+  proof: [langfuse-exporter-tests]
+- text: >-
+    Mock mode's DiscardingSpanExporter accepts every span and acknowledges success without network I/O;
+    flush reports the transport outcome of the real exporter.
+  proof: [oracle, langfuse-exporter-tests]
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus
+    replays successfully.
+  proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: langfuse-exporter-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging -p betterlite-http --no-tests=fail -E
+      'test(/::langfuse_exporter_tests_behavior($|::)/) - test(/replays_the_/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'langfuse_exporter' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/langfuse-exporter/success.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/retryable-500.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/retryable-408.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/retryable-429.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/non-retryable-400.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/non-retryable-404.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/too-large-batch.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/too-large-single-span.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/fully-truncated-span.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/transport-error.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/encoder-rejection.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/mock-mode.yaml
+- tools/oracle/cases/helpers/langfuse-exporter/custom-export-path.yaml
+deviations:
+- what: >-
+    Batch halving is implemented iteratively with reduce and _Halving state rather than recursion,
+    so the algorithm settles within a bounded number of rounds instead of recursive call depth.
+  why: >-
+    Rust prefers iteration to deep recursion; the iterative form caps rounds at O(log n + truncation_steps)
+    and avoids stack growth. LiteLLM's v2 consumer did not expose batch-splitting behavior directly.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L673-L694
+- what: >-
+    Encoder error recovery drops rejected spans silently and logs the count, rather than
+    failing the entire batch if a single span cannot be encoded to protobuf.
+  why: >-
+    OTLP encoding errors (missing required fields, proto violations) should not block delivery of
+    valid spans in the batch. The v2 consumer retried the entire batch; betterlite recovers without
+    that cost.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L770-L777
+out_of_scope:
+- OTLP protobuf encoding is a library boundary.
+- Configuration of the exporter's endpoint, credentials and timeout happens in B3900 and B3903.
+- The tracer that supplies spans and the provider that owns the batch export thread are B3903's channel lifetime management.
+- Python SDK version headers and Langfuse compatibility are B3900's concerns.
+pitfalls:
+- >-
+    The oracle helper for this task is pre-registered as b3902 in the logging group.
+    Replace the stub Op in tools/oracle/src/helpers/logging/b3902.rs with an impl Helper
+    whose Input is the typed input, and write run in tools/oracle/helpers/b3902.py.
+    The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task's to edit.
+- >-
+    _build_span_exporter constructs an Authorization header by base64-encoding the key pair,
+    which must be done synchronously at exporter construction and used on every request.
+    The key pair is supplied at creation time and never again; the header is held in the exporter
+    and sent to Langfuse, so treat any string containing the header as carrying sensitive material.
+- >-
+    The endpoint and export path are joined with rstrip('/') on base_url and lstrip('/') on the path;
+    both empty, both slashed, or one slashed on the boundary must produce a single slash between them.
+- >-
+    The V4 SDK sends x-langfuse-ingestion-version: 4, x-langfuse-sdk-name: python and
+    x-langfuse-sdk-version set to the installed langfuse package version, and includes
+    the x-langfuse-public-key header with the public key plain text.
+- >-
+    Per-span encoding failure isolation drops only the failing span; other spans in the batch
+    proceed. A batch where every span fails encodes to an empty sequence and is reported as no-op.
+- >-
+    Exponential backoff uses 2^attempt seconds capped at 2^6 seconds; configured_max_retries supplies
+    the ceiling on the exponent, not the delay scale.
+- >-
+    A 413 on a multi-span batch is split in halves; a 413 on a single span triggers truncation
+    of its largest field from its respective group, marked with the v2 consumer's truncation constant.
+    Once all three groups (input, output, metadata) are truncated and the span is still rejected,
+    it is dropped and logged.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

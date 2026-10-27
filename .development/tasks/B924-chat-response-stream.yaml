@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/chat_response_stream.py
   - tools/oracle/cases/sdk-http/chat-response-stream/**
+  - tools/oracle/helpers/b924.py
+  - tools/oracle/helpers/b924/**
+  - tools/oracle/src/helpers/core_ops/b924.rs
+  - tools/oracle/src/helpers/core_ops/b924/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L441-L485
@@ -113,5 +117,5 @@ pitfalls:
 - Pending annotation events are not drained merely because the provider reaches EOF.
 review_level: standard
 budget:
-  max_changed_lines: 770
+  max_changed_lines: 1500
   max_new_expects: 1

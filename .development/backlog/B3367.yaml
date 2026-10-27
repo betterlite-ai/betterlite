@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Explicit container file upload
 status: todo
 depends_on: [B3360, B3361, B3363, B247, B185]
-file: null
+file: tasks/B3367-container-file-upload.yaml
 covers:
   - "litellm/containers/main.py"
 parent: B094

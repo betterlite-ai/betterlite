@@ -1,0 +1,85 @@
+id: B3945
+title: Credential-scoped logger cache and eviction hooks
+description: >-
+  Build a reusable native logger-handle store with sorted credential/service cache
+  identity, TTL reuse and best-effort stop on eviction. The cache holds logger
+  instances keyed by a hash of sorted credentials plus service name. On eviction,
+  call stop() on loggers that expose it (New Relic metrics drains, Datadog batches)
+  to clean up periodic flush tasks and release resources. Support injected removal
+  effects so the cache does not depend on any exporter class or call B3944/B113.
+
+  Owned logic from litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py:
+  LangfuseInMemoryCache._remove_key (decrement counter when evicting a LangfuseLogger),
+  DynamicLoggingCache.__init__ (initialize with B2226's InMemoryCache and 3600 second TTL),
+  get_cache_key (hash sorted JSON of credentials dict plus service_name key), get_cache
+  (retrieve by credentials and service), set_cache (store by credentials and service).
+
+  Inject the stop/counter effects through a removal-callback trait instead of importing
+  logger types. Build the native cache atop B2226's InMemoryCache, never calling into
+  logging or calling B3944 construction. TTL defaults to _DEFAULT_TTL_FOR_HTTPX_CLIENTS
+  from B2226; builders pass credentials and service name as strings.
+
+  Write standalone Rust tests verifying replacement, TTL expiration and explicit eviction
+  with typed logger handles (test-only fixtures), and confirm the cache neither registers
+  new routes nor calls upper exporters.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/dynamic_logger_cache.rs
+    - crates/betterlite-logging/src/dynamic_logger_cache/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L20-L50
+    why: LangfuseInMemoryCache wrapper that decrements counter on eviction and calls stop().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L52-L75
+    why: DynamicLoggingCache initialization, key generation via sorted JSON hash, and get/set methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L298
+    why: _DEFAULT_TTL_FOR_HTTPX_CLIENTS constant used as the cache TTL default.
+
+dod:
+  - text: DynamicLoggingCache initializes with B2226's InMemoryCache and 3600 second TTL.
+    proof: [dynamic-logger-cache-tests]
+  - text: get_cache_key hashes the sorted JSON serialization of credentials dict merged with "service_name" key.
+    proof: [dynamic-logger-cache-tests]
+  - text: get_cache and set_cache wrap InMemoryCache.get_cache and set_cache with credential/service key construction.
+    proof: [dynamic-logger-cache-tests]
+  - text: On cache eviction, the cache calls stop() on objects that expose it without importing logger types.
+    proof: [dynamic-logger-cache-tests]
+  - text: TTL expiration and explicit eviction clean up logger resources through best-effort stop() calls.
+    proof: [dynamic-logger-cache-tests, eviction-cleanup]
+  - text: The cache accepts arbitrary objects as values and does not depend on exporter classes or B3944.
+    proof: [dynamic-logger-cache-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: dynamic-logger-cache-tests
+      why: the dynamic logger cache tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^dynamic_logger_cache::/)' - test(/replays_the_/)
+    - id: eviction-cleanup
+      why: eviction does not call stop() on logger fixtures
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^dynamic_logger_cache::.*evict/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Cache removal effects are injected through a trait rather than calling logger constructors or importing logger crates, preventing circular dependencies with B3944 and B113.
+    why: Exporters register themselves into the cache; the cache must not depend on exporter code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L30-L50
+
+out_of_scope:
+  - Langfuse client counter management and registration into cache instances; that counter adjustment is an injected removal effect provided by exporters.
+  - HTTP routes, logging callback dispatch and exporter initialization; those are called by owners that construct logger instances.
+  - B2226 InMemoryCache implementation (hash table, TTL heap, eviction ordering); B3945 wraps it.
+
+pitfalls:
+  - The cache key must include the service_name as a dict key alongside credentials before JSON serialization and hashing, not appended as a string.
+  - Loggers expose stop() only if they have periodic flush tasks (New Relic metrics, Datadog batch queues); silent no-op is acceptable for loggers without that method.
+  - Stop failures are caught and logged at debug level; eviction must not fail if stop() raises.
+  - The cache holds no reference to exporter classes; removal effects must be trait objects or closure captures.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

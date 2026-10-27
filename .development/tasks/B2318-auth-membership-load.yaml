@@ -138,6 +138,6 @@ pitfalls:
   - A present membership write omits ttl even though an absent membership write explicitly uses the management TTL.
   - A reset can remove a running load and let a replacement begin before the old load callback runs.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -39,6 +39,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/spend_facet_query.rs
     - crates/betterlite-server/fuzz/corpus/spend_facet_query/**
     - tools/oracle/cases/http/management-spend-facets/**
+    - tools/oracle/helpers/b1705.py
+    - tools/oracle/helpers/b1705/**
+    - tools/oracle/src/helpers/server/b1705.rs
+    - tools/oracle/src/helpers/server/b1705/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/spend_logs.py#L30-L157
@@ -73,6 +77,6 @@ pitfalls:
   - Moving DISTINCT inside the newest-row limit changes which facet values are available.
   - Authorization predicates must be applied before the 10000-row scan cap.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

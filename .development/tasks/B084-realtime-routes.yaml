@@ -34,6 +34,10 @@ scope:
   - crates/betterlite-server/src/state/**
   - tools/oracle/cases/api/realtime-routes/**
   - tools/oracle/fixtures/realtime-routes/**
+  - tools/oracle/helpers/b084.py
+  - tools/oracle/helpers/b084/**
+  - tools/oracle/src/helpers/server/b084.rs
+  - tools/oracle/src/helpers/server/b084/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L362-L518
@@ -106,5 +110,5 @@ pitfalls:
 - The SDP body is read before expiry validation, and only integer expiry values are checked.
 review_level: security
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1500
   max_new_expects: 0

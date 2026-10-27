@@ -111,5 +111,5 @@ pitfalls:
 - The lifecycle matcher accepts the exact index path or query suffix, but not an otherwise similar trailing slash.
 review_level: security
 budget:
-  max_changed_lines: 740
+  max_changed_lines: 1500
   max_new_expects: 0

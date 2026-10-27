@@ -368,6 +368,6 @@ pitfalls:
 - When several route tokens occur in a model id, the route table order wins rather than their position in the string.
 - A json_schema key present with None can pass the native-route gate; that gate does not validate the schema body.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

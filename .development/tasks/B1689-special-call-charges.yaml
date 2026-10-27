@@ -60,7 +60,6 @@ scope:
     - crates/betterlite-models/src/protocol_cost/**
     - crates/betterlite-provider/src/pricing.rs
     - crates/betterlite-provider/src/pricing/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/replicate_price.rs
     - crates/betterlite-config/src/replicate_price/**
     - crates/betterlite-config/fuzz/Cargo.toml
@@ -135,6 +134,6 @@ pitfalls:
   - Search with query=[] bills zero queries here, whereas direct cost_per_token replaces a falsey count with one.
   - Replicate's timestamp fallback is also divided by 1000 even though subtracting timestamps already produced seconds.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

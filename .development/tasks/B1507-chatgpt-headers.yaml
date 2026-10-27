@@ -31,7 +31,6 @@ description: >-
   estimate 235 implementation/data, 190 tests, 105 adapters and 140 config/wiring lines, capped at 700.
 scope:
   paths:
-    - crates/betterlite-openai/src/lib.rs
     - crates/betterlite-openai/src/chatgpt.rs
     - crates/betterlite-openai/src/chatgpt/**
     - crates/betterlite-openai/src/chatgpt/headers.rs
@@ -91,5 +90,5 @@ pitfalls:
   - litellm_trace_id is a session fallback before litellm_call_id, so exchanging them changes conversation affinity.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,119 @@
+id: B3795
+title: Straiker webhook records and context projection
+description: >-
+  Build typed webhook and config records in betterlite-guardrails, with pure helpers for context,
+  finish-reason and usage extraction from responses. Cover opaque metadata scalar projection,
+  provider name resolution and call-surface fallback behavior. Implement identity extraction from
+  merged metadata with precedence over aliases, destination from api_base, and finish-reason
+  walking from response choices. Build HTTP-failure records with unreachable/retryable status
+  classification. Preserve request-structured-message resolution with translation-mapping guards
+  and hook-name coercion from enumerated and tagged modes. Move typed StraikerWebhookContent,
+  StraikerWebhookContext, StraikerWebhookIdentity, StraikerWebhookUsage type mirrors into
+  crates/betterlite-guardrails/src/straiker_webhook/types.rs. Keep opaque metadata filtering for
+  application keys and session_id, and preserve all scalar types the source accepts (strings,
+  numbers, booleans, nulls). Add behavior oracle cases for identity precedence, metadata filtering,
+  finish-reason extraction from dict/object choices, usage fallback to anthropic keys, and
+  call-surface resolution from logging_obj versus request. Write the behavior rstest functions
+  straiker_webhook_context_tests_behavior in adjacent tests.rs files, with a named case for each
+  behavior and failure in the DoD; corpus replay tests have separate names. No streamed streaming
+  or v3/v1 envelope building belongs in this task. Budget 360 types/helpers, 130 adapters,
+  280 tests and 100 wiring (870 total, includes test overhead).
+
+  Reuse B174 for get_llm_provider (provider name), B207 for get_call_types_for_route (translation
+  guards), and B226 for resolve_structured_messages (message extraction). Seed B171's shared
+  helper_case corpus with every added operation and replay it through the common typed parser.
+  The helper operation straiker_webhook_records is already registered; each operation has its own
+  Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/straiker_webhook.rs
+    - crates/betterlite-guardrails/src/straiker_webhook/**
+    - tools/oracle/cases/helpers/straiker-webhook-records/**
+    - "tools/oracle/fuzz/corpus/helper_case/b3795-*"
+    - tools/oracle/helpers/b3795.py
+    - tools/oracle/helpers/b3795/**
+    - tools/oracle/src/helpers/guardrails/b3795.rs
+    - tools/oracle/src/helpers/guardrails/b3795/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L164-L220
+  why: Webhook failure records, metadata merging, identity extraction and opaque scalar handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L222-L296
+  why: Provider resolution, destination from api_base, translation-guard checks and hook-name coercion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L298-L378
+  why: Finish-reason and usage extraction from response choices, call-surface fallback and streamed-request detection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/straiker.py
+  why: Complete webhook type definitions and config model.
+dod:
+- text: Identity extraction precedence, metadata scalar filtering, and finish-reason walking from
+    response choices match the pinned behavior for every listed case.
+  proof:
+  - oracle
+  - helper-python
+- text: Opaque metadata preserves configured and request-derived values; application-specific
+    and session keys are filtered; unreachable status is classified correctly.
+  proof:
+  - straiker-webhook-tests
+- text: Provider resolution falls back from custom_llm_provider through get_llm_provider; destination
+    parses api_base safely; usage counts select anthropic keys as fallback.
+  proof:
+  - straiker-webhook-tests
+- text: Call-surface resolution uses logging_obj.call_type before request data; finish-reason
+    returns the first truthy value from response top level or first choice.
+  proof:
+  - straiker-webhook-tests
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete
+    corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: straiker-webhook-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::straiker_webhook_context_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b3795-*")"
+      && grep -lq 'straiker_webhook_records' tools/oracle/fuzz/corpus/helper_case/b3795-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/straiker-webhook-records/identity-precedence.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/metadata-filtering.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/finish-reason-dict-choice.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/finish-reason-object-choice.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/usage-anthropic-fallback.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/provider-custom-llm-provider.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/provider-fallback-to-model.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/provider-fallback-raises.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/destination-urlsplit.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/call-surface-logging-obj.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/opaque-scalar-types.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/request-structured-messages-no-translation.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/hook-name-enum-coercion.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/jsonable-dict-basemodel.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/jsonable-dict-plain-dict.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/jsonable-opaque-dict-list-mixed.yaml
+  - tools/oracle/cases/helpers/straiker-webhook-records/jsonable-opaque-dict-list-empty.yaml
+deviations: []
+out_of_scope: []
+pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b3795-<case>.yaml. The rest of that folder belongs to other tasks.'
+- Provider resolution falls back safely when get_llm_provider raises BadRequestError; returning None instead of
+  panicking.
+- Opaque metadata filtering must preserve the configured default_metadata values even when request metadata is
+  empty or missing.
+- Finish-reason extraction must check both finish_reason and stop_reason fields to support Anthropic-format
+  responses.
+- Hook-name coercion handles both string enum values and Mode.tags which may be lists or single values.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

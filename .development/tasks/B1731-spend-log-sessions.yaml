@@ -92,6 +92,6 @@ pitfalls:
   - The cursor encodes API key before session key but binds session key before API key to the SQL comparison.
   - A page beyond the end still runs the count query because its empty result cannot establish the total.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

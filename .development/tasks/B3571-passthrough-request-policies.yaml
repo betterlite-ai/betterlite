@@ -1,0 +1,233 @@
+id: B3571
+title: Passthrough header query and timeout policies
+description: >-
+  Implement query-source precedence, protected x-pass- header forwarding and the
+  separate generic-proxy and native-SDK timeout chains. Expose the pure policies
+  to both router and SDK callers, with configuration values resolved through the
+  existing config boundary.
+
+  Query merge precedence: defaults (lowest), parsed URL values, request values
+  (highest); blank URL values disappear under parse_qs. The x-pass- header prefix
+  strips even when forward_headers is false or None. Forwarding removes
+  content-length, host and accept-encoding, then adds request headers not already
+  in the target set (case-insensitive comparison). After general forwarding, loop
+  over request headers looking for x-pass- prefix: strip it, check if the result
+  matches a protected header name (8 literal keys: authorization, api-key,
+  x-api-key, x-goog-api-key, ocp-apim-subscription-key, host, content-length,
+  accept-encoding) or starts with x-amz- (any case), and skip if either matches.
+
+  Generic timeout precedence: per-endpoint value, general_settings.pass_through_request_timeout,
+  then 600 seconds. SDK streaming resolves stream_timeout first at every level
+  (request, deployment, router) before the generic chain. Only the winning value
+  is validated as float seconds; a value in a lower-precedence field never fails
+  the call. Passing an existing client bypasses timeout resolution in B101.
+
+  Port the protected header constants, BasePassthroughUtils.get_merged_query_parameters
+  and BasePassthroughUtils.forward_headers_from_request from utils.py, plus
+  resolve_pass_through_request_timeout and resolve_llm_passthrough_timeout from
+  timeout_utils.py. Own utils.py:1-8,11-103 (guards, headers, query methods,
+  utilities declaration); keep utils.py:9 and 106-156 (encode_bedrock_runtime_modelid_arn,
+  its import, class declaration) with B2203. Own the whole timeout file. Configuration
+  tests must load general_settings.pass_through_request_timeout, and query string
+  decoding needs a fuzz corpus.
+
+  Use a lower betterlite-models::passthrough_policies module for header/query
+  helpers. Expose get_configured_request_timeout through B305's interface without
+  pulling routing execution into provider crates. Preserve the forwarding behavior
+  and validation semantics exactly, including the case-insensitive header comparison,
+  the exact protected names, the x-amz- prefix wildcard, and the stream-timeout
+  level-by-level precedence.
+scope:
+  paths:
+    - crates/betterlite-models/src/passthrough_policies.rs
+    - crates/betterlite-models/src/passthrough_policies/**
+    - crates/betterlite-models/fuzz/fuzz_targets/query_parsing.rs
+    - crates/betterlite-models/fuzz/corpus/query_parsing/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-*
+    - crates/betterlite-config/fuzz/Cargo.toml
+    - tools/oracle/src/models_probes/passthrough_request_policies.rs
+    - tools/oracle/src/models_probes/passthrough_request_policies/**
+    - tools/oracle/src/models_probes/mod.rs
+    - tools/oracle/litellm/probes/passthrough_request_policies.py
+    - tools/oracle/cases/models/passthrough-request-policies/**
+    - crates/betterlite-config/src/sections/passthrough_request_policies.rs
+    - crates/betterlite-config/src/sections/passthrough_request_policies/**
+    - tools/oracle/helpers/b3571.py
+    - tools/oracle/helpers/b3571/**
+    - tools/oracle/src/helpers/models/b3571.rs
+    - tools/oracle/src/helpers/models/b3571/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L1-L28
+    why: Protected header constants and imports
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L31-L56
+    why: get_merged_query_parameters query precedence and URL parsing
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L58-L103
+    why: forward_headers_from_request forwarding and x-pass- prefix handling
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L1-L14
+    why: Timeout constants and type adapters
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L16-L39
+    why: resolve_pass_through_request_timeout generic proxy timeout chain
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L42-L81
+    why: resolve_llm_passthrough_timeout SDK timeout precedence with streaming levels
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/request_timeout_resolver.py#L20-L29
+    why: get_configured_request_timeout explicitly-set timeout distinction for SDK precedence
+dod:
+  - text: Query merge returns defaults with lowest priority, URL values overriding,
+      and request values with highest priority; blank URL parse_qs values disappear.
+    proof: [query-merge-tests]
+  - text: Header forwarding removes content-length, host and accept-encoding, adds
+      request headers not already in target set (case-insensitive), and combines them.
+    proof: [forwarding-tests]
+  - text: x-pass- headers strip the prefix and forward unless the result is a protected
+      literal or starts with x-amz-, matching case-insensitively for all checks.
+    proof: [passthrough-header-tests]
+  - text: Protected header names are authorization, api-key, x-api-key, x-goog-api-key,
+      ocp-apim-subscription-key, host, content-length and accept-encoding (exact literals).
+    proof: [protected-header-tests]
+  - text: Generic passthrough timeout resolves per-endpoint, then general_settings.pass_through_request_timeout,
+      then 600 seconds.
+    proof: [generic-timeout-tests]
+  - text: SDK passthrough streaming timeout checks stream_timeout at request, deployment
+      and router levels before the generic chain; non-streaming checks request timeout,
+      request_timeout, deployment timeout, deployment request_timeout, router timeout,
+      then get_configured_request_timeout (explicitly-set litellm.request_timeout),
+      then generic chain.
+    proof: [sdk-timeout-tests]
+  - text: "Timeout resolution validates only the winning value; a lower-precedence
+      value in a false branch is not validated. Precedence: request stream_timeout >
+      deployment stream_timeout > router stream_timeout > request timeout > request_timeout
+      > deployment timeout > deployment request_timeout > router timeout > get_configured_request_timeout
+      (explicitly set) > general_settings.pass_through_request_timeout > 600s."
+    proof: [sdk-timeout-tests]
+  - text: Configuration tests load general_settings.pass_through_request_timeout, and
+      task-specific parser seeds verify timeout config parsing. A cargo-fuzz target and
+      corpus verify request query string parsing.
+    proof: [config-load-test, config-corpus, query-fuzz-corpus]
+  - text: The task adapter invokes production logic and passes strict ruff/basedpyright
+      without Any or broad suppressions.
+    proof: [probe-python]
+  - text: Every mutant in the header merge, forwarding and timeout functions is caught
+      by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: query-merge-tests
+      why: Query merge precedence and URL parsing tests must pass
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^passthrough_policies::query_merge::/)'
+    - id: forwarding-tests
+      why: Header forwarding and removal tests must pass
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^passthrough_policies::header_forwarding::/)'
+    - id: passthrough-header-tests
+      why: x-pass- prefix stripping and protected header detection tests must pass
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^passthrough_policies::passthrough_headers::/)'
+    - id: protected-header-tests
+      why: Protected header literal matching tests must pass
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^passthrough_policies::protected_headers::/)'
+    - id: generic-timeout-tests
+      why: Generic passthrough timeout resolution tests must pass
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^passthrough_policies::generic_timeout::/)'
+    - id: sdk-timeout-tests
+      why: SDK passthrough timeout precedence with streaming level checks must pass
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^passthrough_policies::sdk_timeout::/)'
+    - id: probe-python
+      why: the new adapter is missing, unchanged, untyped or fails lint
+      run: test -f tools/oracle/litellm/probes/passthrough_request_policies.py && test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/litellm/probes/passthrough_request_policies.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    - id: config-load-test
+      why: Configuration test loading pass_through_request_timeout must pass
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::passthrough_request_policies::)'
+    - id: config-corpus
+      why: new task-specific parser seeds, operation/key or replay are missing
+      run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-invalid.yaml && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/passthrough-" && grep -Fq 'pass_through_request_timeout' crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-valid.yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: query-fuzz-corpus
+      why: Query parsing decoder, corpus, and replay test must exist
+      run: test -f crates/betterlite-models/fuzz/fuzz_targets/query_parsing.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/query_parsing)" && grep -q 'decode_request_query' crates/betterlite-models/fuzz/fuzz_targets/query_parsing.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_query_parsing_corpus)'
+oracle_cases:
+- tools/oracle/cases/models/passthrough-request-policies/query-params-merge-precedence.yaml
+- tools/oracle/cases/models/passthrough-request-policies/blank-url-params-removed.yaml
+- tools/oracle/cases/models/passthrough-request-policies/header-forwarding-disabled.yaml
+- tools/oracle/cases/models/passthrough-request-policies/protected-header-blocks-xpass.yaml
+- tools/oracle/cases/models/passthrough-request-policies/xpass-prefix-stripped.yaml
+- tools/oracle/cases/models/passthrough-request-policies/xamz-prefix-blocks-xpass.yaml
+- tools/oracle/cases/models/passthrough-request-policies/endpoint-timeout-wins.yaml
+- tools/oracle/cases/models/passthrough-request-policies/general-setting-timeout-fallback.yaml
+- tools/oracle/cases/models/passthrough-request-policies/explicit-request-timeout-between-router-and-fallback.yaml
+- tools/oracle/cases/models/passthrough-request-policies/sdk-stream-timeout-precedence.yaml
+deviations:
+  - what: Header forwarding comparison for custom headers uses case-insensitive matching
+      (header_name.lower()) when checking for collisions in the target set.
+    why: HTTP header names are case-insensitive per RFC 7230; preserving this
+      behavior ensures correct forwarding semantics whether headers arrive as Title-Case,
+      lowercase or mixed case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L79-L82
+  - what: Protected header removal uses exact lowercase literal names (authorization,
+      api-key, etc.) and prefix comparison (x-amz-) before forwarding is checked.
+    why: These are protocol and credential headers that must never be forwarded,
+      even when forward_headers is true. LiteLLM removes them first, then adds
+      request headers, so they cannot be overwritten.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L71-L77
+  - what: x-pass- header forwarding loops over the request headers after general
+      forwarding (when enabled), so x-pass- can override general-forwarding results.
+    why: x-pass- mechanism is independent of forward_headers setting; its headers
+      are always forwarded with the prefix stripped. This allows explicit per-call
+      header override even when forward_headers is false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L87-L101
+  - what: Timeout resolution validates only the winning value as float. A lower-precedence
+      value that is not used is never validated, even if it is an invalid type.
+    why: Early validation of unused values would reject valid calls that happen to
+      supply an optional timeout in the wrong type at a lower level. LiteLLM only
+      validates what it uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L80-L81
+  - what: generic_settings key for passthrough request timeout is "pass_through_request_timeout"
+      (with underscore, not hyphen).
+    why: This matches LiteLLM's config key name exactly and is loaded through B002's
+      existing config boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L8
+out_of_scope:
+  - Stream timeout level precedence semantics (request.stream_timeout, deployment.stream_timeout,
+    router_stream_timeout) are tested with oracle cases by B101, not in this task's
+    unit tests.
+  - Passthrough URL construction and signature operations owned by B3570.
+  - Provider timeout resolution and SDK call orchestration owned by B101.
+  - HTTP request sending and timeout enforcement owned by B173.
+  - Config file parsing and schema validation owned by B002.
+pitfalls:
+  - >-
+    Protected header removal (authorization, api-key, x-api-key, x-goog-api-key,
+    ocp-apim-subscription-key) blocks credentials from being forwarded through x-pass-
+    overrides. This is a security boundary: a client must not be able to override or inject
+    credentials in the forwarded request, even via x-pass- prefixed headers. The x-amz-*
+    prefix wildcard blocks AWS SigV4 signing headers the same way.
+  - >-
+    Header name comparison in custom-header collision detection uses header_name.lower()
+    to match HTTP semantics, but the protected header check uses exact lowercase literal
+    keys: be consistent in which comparison applies where.
+  - >-
+    x-pass- headers are always forwarded regardless of forward_headers setting. When
+    forward_headers is true, x-pass- results can override general-forwarding results
+    because the x-pass- loop runs after.
+  - >-
+    parse_qs returns dict[str, list[str]] with all values as lists, even single values.
+    The merge must flatten single-item lists back to scalars for consistency with the
+    input types.
+  - >-
+    Timeout precedence includes both timeout and request_timeout at the request level,
+    then both at the deployment level. The order matters: check timeout before request_timeout
+    at both levels.
+  - >-
+    accept-encoding removal is required because forwarding e.g. "br" when brotli is absent
+    would relay undecodable bytes to the caller. Do not skip this header when forward_headers
+    is true.
+  - >-
+    SDK passthrough timeout only validates the winning timeout value. A wrong type at a
+    lower precedence level should not fail; only the selected value is validated as float.
+  - >-
+    get_configured_request_timeout() returns the explicitly-set litellm.request_timeout
+    (from REQUEST_TIMEOUT env var or litellm_settings) between router_timeout and the
+    general_settings fallback. When it returns a value, that is the SDK-level explicit
+    timeout that beats the generic proxy fallback.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

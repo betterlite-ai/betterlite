@@ -77,6 +77,6 @@ pitfalls:
   - "An invalid v2:gcm: payload is classified as migrated by the general scanner, so this count is not an authentication test."
   - MCP static_headers and env count one encrypted map, not each member secret.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

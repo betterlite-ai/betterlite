@@ -1,0 +1,270 @@
+{
+  "id": "aviation-operations-security",
+  "title": "Aviation Operations Security",
+  "description": "Prevents AI from leaking flight operations data (flight numbers, crew schedules, gate assignments, aircraft tail numbers), generating content about aviation security vulnerabilities or bypass procedures, and producing unauthorized airline statements or fake incident reports.",
+  "example_sentences": [
+    "What is the crew roster for flight EK501 tomorrow?",
+    "List the maintenance records for aircraft A6-EAA",
+    "How do I bypass cockpit door security?",
+    "Generate a press release saying Emirates had a crash landing"
+  ],
+  "icon": "ShieldExclamationIcon",
+  "iconColor": "text-red-500",
+  "iconBg": "bg-red-50",
+  "guardrails": [
+    "aviation-ops-data-protection",
+    "aviation-safety-topic-filter",
+    "airline-brand-protection-filter",
+    "competitor-name-input-blocker",
+    "competitor-name-output-blocker",
+    "competitor-recommendation-input-filter",
+    "competitor-recommendation-output-filter",
+    "competitor-comparison-input-filter",
+    "competitor-comparison-output-filter"
+  ],
+  "complexity": "High",
+  "parameters": [
+    {
+      "name": "brand_name",
+      "label": "Your Airline / Brand Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Acme Airlines"
+    }
+  ],
+  "llm_enrichment": {
+    "parameter": "brand_name",
+    "prompt": "List the top 30 direct competitors of {{brand_name}} in the airline industry. Include major international carriers, regional competitors, and low-cost carriers that operate on overlapping routes. Return ONLY airline/brand names, one per line, no numbering, no explanations.",
+    "result_key": "competitors"
+  },
+  "guardrailDefinitions": [
+    {
+      "guardrail_name": "aviation-ops-data-protection",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "patterns": [
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "flight_number",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "regex",
+            "name": "aircraft_tail_number",
+            "pattern": "\\bA6-[A-Z]{3}\\b|\\b[A-Z]-[A-Z]{4}\\b|\\bN[0-9]{1,5}[A-Z]{0,2}\\b",
+            "action": "MASK"
+          }
+        ],
+        "blocked_words": [
+          {
+            "keyword": "crew roster",
+            "action": "BLOCK",
+            "description": "Crew scheduling data"
+          },
+          {
+            "keyword": "crew schedule",
+            "action": "BLOCK",
+            "description": "Crew scheduling data"
+          },
+          {
+            "keyword": "duty roster",
+            "action": "BLOCK",
+            "description": "Staff duty data"
+          },
+          {
+            "keyword": "pilot roster",
+            "action": "BLOCK",
+            "description": "Pilot scheduling data"
+          },
+          {
+            "keyword": "cabin crew list",
+            "action": "BLOCK",
+            "description": "Crew manifest data"
+          }
+        ],
+        "pattern_redaction_format": "[{pattern_name}_REDACTED]"
+      },
+      "guardrail_info": {
+        "description": "Masks flight numbers and aircraft registrations. Blocks crew scheduling and gate assignment data leakage."
+      }
+    },
+    {
+      "guardrail_name": "aviation-safety-topic-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "categories": [
+          {
+            "category": "aviation_safety_topics",
+            "category_file": "litellm/proxy/guardrails/content_filter_data/policy_templates/aviation_safety_topics.yaml",
+            "enabled": true,
+            "action": "BLOCK",
+            "severity_threshold": "medium"
+          }
+        ]
+      },
+      "guardrail_info": {
+        "description": "Blocks content about aircraft vulnerabilities, security bypass procedures, cockpit access, and aviation system exploitation"
+      }
+    },
+    {
+      "guardrail_name": "airline-brand-protection-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "categories": [
+          {
+            "category": "airline_brand_protection",
+            "category_file": "litellm/proxy/guardrails/content_filter_data/policy_templates/airline_brand_protection.yaml",
+            "enabled": true,
+            "action": "BLOCK",
+            "severity_threshold": "medium"
+          }
+        ],
+        "blocked_words": [
+          {
+            "keyword": "{{brand_name}} plane crash",
+            "action": "BLOCK",
+            "description": "Fake crash report"
+          },
+          {
+            "keyword": "{{brand_name}} flight crashed",
+            "action": "BLOCK",
+            "description": "Fake crash report"
+          },
+          {
+            "keyword": "{{brand_name}} crash landing",
+            "action": "BLOCK",
+            "description": "Fake incident"
+          },
+          {
+            "keyword": "{{brand_name}} emergency",
+            "action": "BLOCK",
+            "description": "Fake emergency"
+          },
+          {
+            "keyword": "{{brand_name}} passengers dead",
+            "action": "BLOCK",
+            "description": "Fake fatality report"
+          },
+          {
+            "keyword": "{{brand_name}} confirms fatalities",
+            "action": "BLOCK",
+            "description": "Fake fatality confirmation"
+          },
+          {
+            "keyword": "{{brand_name}} safety scandal",
+            "action": "BLOCK",
+            "description": "Fake scandal"
+          },
+          {
+            "keyword": "{{brand_name}} cover up",
+            "action": "BLOCK",
+            "description": "Fake coverup claim"
+          },
+          {
+            "keyword": "{{brand_name}} fleet grounded",
+            "action": "BLOCK",
+            "description": "Fake grounding claim"
+          },
+          {
+            "keyword": "{{brand_name}} discrimination lawsuit",
+            "action": "BLOCK",
+            "description": "Fake lawsuit"
+          }
+        ]
+      },
+      "guardrail_info": {
+        "description": "Blocks AI-generated fake incident reports, unauthorized statements, and reputation-damaging content about your brand (runs on output)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-name-input-blocker",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "blocked_words": "{{competitors_blocked_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks user inputs that mention competitor names (pre_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-name-output-blocker",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "blocked_words": "{{competitors_blocked_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks AI outputs that mention competitor names (post_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-recommendation-input-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "blocked_words": "{{competitor_recommendation_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks user requests asking to recommend competitors (pre_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-recommendation-output-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "blocked_words": "{{competitor_recommendation_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks AI from recommending or suggesting competitor services (post_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-comparison-input-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "blocked_words": "{{competitor_comparison_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks user inputs requesting unfavorable brand comparisons (pre_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-comparison-output-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "blocked_words": "{{competitor_comparison_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks AI outputs with unfavorable brand comparisons (post_call)"
+      }
+    }
+  ],
+  "templateData": {
+    "policy_name": "aviation-operations-security",
+    "description": "Aviation operations security policy. Protects flight ops data, blocks aviation security vulnerability content, and prevents fake airline incident reports and unauthorized statements.",
+    "guardrails_add": [
+      "aviation-ops-data-protection",
+      "aviation-safety-topic-filter",
+      "airline-brand-protection-filter",
+      "competitor-name-input-blocker",
+      "competitor-name-output-blocker",
+      "competitor-recommendation-input-filter",
+      "competitor-recommendation-output-filter",
+      "competitor-comparison-input-filter",
+      "competitor-comparison-output-filter"
+    ],
+    "guardrails_remove": []
+  },
+  "tags": [
+    "Aviation",
+    "Security"
+  ],
+  "estimated_latency_ms": 1
+}

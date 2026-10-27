@@ -37,7 +37,7 @@ scope:
   - tools/oracle/helpers/catalog_refresh.py
   - tools/oracle/helpers/catalog_refresh/**
   - tools/oracle/cases/helpers/catalog-refresh/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/catalog_refresh-*"
   lint_tables: false
 references:
 - url: >-
@@ -108,8 +108,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'catalog_refresh' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/catalog_refresh-*")" &&
+      grep -lq 'catalog_refresh' tools/oracle/fuzz/corpus/helper_case/catalog_refresh-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -135,11 +135,12 @@ out_of_scope:
   Fetch response classification, retry calculation, raw revisions and integrity checks are B257; local asset/snapshot
   access is B193; CLI process-name inspection is not used because startup policy is explicit.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/catalog_refresh-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as catalog_refresh in the models group. Replace the stub Op in tools/oracle/src/helpers/models/catalog_refresh.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/catalog_refresh.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Revision hashes cover the original bytes, not a reformatted serialized map.
 - A reload failure must not replace a good runtime catalog with the packaged fallback.
 - The model resolver depends only on the catalog data, never on the HTTP reload service's mutable state.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

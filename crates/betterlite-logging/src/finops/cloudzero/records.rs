@@ -1,0 +1,217 @@
+const _: &str = r#"Copyright 2025 CloudZero
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License."#;
+
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Utc};
+use regex::Regex;
+use rust_decimal::Decimal;
+use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CzEntityType {
+    Team,
+}
+
+impl CzEntityType {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Team => "team",
+        }
+    }
+}
+
+pub type CzbEntityType = CzEntityType;
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum CzrnError {
+    #[error("invalid CZRN format: {0}")]
+    Invalid(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UsageRecord {
+    pub date: Option<String>,
+    pub custom_llm_provider: String,
+    pub team_id: String,
+    pub team_alias: Option<String>,
+    pub model: String,
+    pub model_group: String,
+    pub api_key: String,
+    pub api_key_alias: Option<String>,
+    pub user_email: Option<String>,
+    pub organization_alias: Option<String>,
+    pub project_alias: Option<String>,
+    pub user_alias: Option<String>,
+    pub api_requests: i64,
+    pub successful_requests: i64,
+    pub failed_requests: i64,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cache_creation_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub spend: Decimal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CbfValue {
+    Text(String),
+    Integer(i64),
+    Money(Decimal),
+    DateTime(DateTime<Utc>),
+    None,
+}
+
+pub type CbfRecord = BTreeMap<String, CbfValue>;
+pub type CbfDataFrame = Vec<CbfRecord>;
+
+#[derive(Debug, Clone, Copy)]
+pub struct CzrnComponents<'components> {
+    pub service_type: &'components str,
+    pub provider: &'components str,
+    pub region: &'components str,
+    pub owner_account_id: &'components str,
+    pub resource_type: &'components str,
+    pub cloud_local_id: &'components str,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CzrnGenerator;
+
+impl CzrnGenerator {
+    pub fn create_from_litellm_data(&self, row: &UsageRecord) -> Result<String, CzrnError> {
+        let provider = Self::normalize_provider(&row.custom_llm_provider);
+        let owner_account_id = Self::normalize_component(&row.team_id, false);
+        self.create_from_components(CzrnComponents {
+            service_type: "litellm",
+            provider: &provider,
+            region: "cross-region",
+            owner_account_id: &owner_account_id,
+            resource_type: "llm-usage",
+            cloud_local_id: &row.model,
+        })
+    }
+
+    pub fn create_from_components(
+        &self,
+        components: CzrnComponents<'_>,
+    ) -> Result<String, CzrnError> {
+        let czrn = format!(
+            "czrn:{}:{}:{}:{}:{}:{}",
+            Self::normalize_component(components.service_type, true),
+            Self::normalize_component(components.provider, false),
+            Self::normalize_component(components.region, false),
+            Self::normalize_component(components.owner_account_id, false),
+            Self::normalize_component(components.resource_type, false),
+            components.cloud_local_id
+        );
+        if self.is_valid(&czrn) {
+            Ok(czrn)
+        } else {
+            Err(CzrnError::Invalid(czrn))
+        }
+    }
+
+    #[must_use]
+    pub fn is_valid(&self, value: &str) -> bool {
+        let mut parts = value.splitn(7, ':');
+        parts.next() == Some("czrn")
+            && parts
+                .next()
+                .is_some_and(|part| valid_component(part, false))
+            && parts.next().is_some_and(|part| valid_component(part, true))
+            && parts
+                .next()
+                .is_some_and(|part| valid_component(part, false))
+            && parts
+                .next()
+                .is_some_and(|part| valid_component(part, false))
+            && parts
+                .next()
+                .is_some_and(|part| valid_component(part, false))
+            && parts.next().is_some_and(|part| {
+                !part.is_empty()
+                    && part
+                        .chars()
+                        .all(|character| character != '\n' && character != '\r')
+            })
+    }
+
+    pub fn extract_components(&self, value: &str) -> Result<[String; 6], CzrnError> {
+        if !self.is_valid(value) {
+            return Err(CzrnError::Invalid(value.to_owned()));
+        }
+        let mut parts = value.splitn(7, ':');
+        let _prefix = parts.next();
+        let mut components = [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
+        for component in &mut components {
+            if let Some(component_value) = parts.next() {
+                component_value.clone_into(component);
+            }
+        }
+        Ok(components)
+    }
+
+    fn normalize_provider(provider: &str) -> String {
+        let normalized = provider.to_lowercase().replace('_', "-");
+        match normalized.as_str() {
+            "bedrock" => "aws".to_owned(),
+            "gemini" => "google".to_owned(),
+            _ => normalized,
+        }
+    }
+
+    fn normalize_component(component: &str, allow_uppercase: bool) -> String {
+        let value = if allow_uppercase {
+            component.to_owned()
+        } else {
+            component.to_lowercase()
+        };
+        let Ok(invalid_characters) = Regex::new("[^a-zA-Z0-9-]") else {
+            return "unknown".to_owned();
+        };
+        let substituted = invalid_characters.replace_all(&value, "-");
+        let Ok(consecutive_hyphens) = Regex::new("-+") else {
+            return "unknown".to_owned();
+        };
+        let collapsed = consecutive_hyphens.replace_all(&substituted, "-");
+        let trimmed = collapsed.trim_matches('-');
+        if trimmed.is_empty() {
+            "unknown".to_owned()
+        } else {
+            trimmed.to_owned()
+        }
+    }
+}
+
+fn valid_component(value: &str, uppercase: bool) -> bool {
+    let Ok(pattern) = Regex::new(if uppercase {
+        "^[a-zA-Z0-9-]+$"
+    } else {
+        "^[a-z0-9-]+$"
+    }) else {
+        return false;
+    };
+    pattern.is_match(value)
+}
+
+pub mod cbf;

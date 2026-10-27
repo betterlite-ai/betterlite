@@ -1,0 +1,147 @@
+id: B3573
+title: Generic passthrough guardrail translation
+description: >-
+  Extract configured request/response fields or a filtered full payload, apply the selected guardrail as a check,
+  and return the original payload. Preserve response request-context mutation and user-key metadata enrichment without
+  applying returned text substitutions to the relayed data.
+
+  PassThroughEndpointHandler._get_guardrail_settings retrieves PassThroughGuardrailSettings by guardrail name from
+  litellm_logging_obj.passthrough_guardrails_config via PassthroughGuardrailHandler.get_settings. _extract_text_for_guardrail
+  calls JsonPathExtractor.extract_fields when settings.request_fields or settings.response_fields are present, otherwise
+  returns safe_dumps of full payload with underscore-prefixed keys, "metadata" and "litellm_logging_obj" removed.
+  Non-dict responses and empty extracted text skip scanning.
+
+  process_input_messages extracts text, calls guardrail_to_apply.apply_guardrail with input_type "request", and returns
+  the original request unchanged. process_output_response skips non-dict responses, extracts text, adds user-key metadata
+  via BaseTranslation.transform_user_api_key_dict_to_metadata when litellm_metadata is absent (even empty dict blocks injection),
+  calls guardrail_to_apply.apply_guardrail with input_type "response", and returns the original response unchanged.
+
+  Implement in crates/betterlite-core::passthrough_guardrail. Preserve LiteLLM's field filtering, metadata injection logic
+  and guardrail return contract (check-only, no text substitution). Do not create a second guardrail registry in SDK core.
+scope:
+  paths:
+    - crates/betterlite-core/src/passthrough_guardrail.rs
+    - crates/betterlite-core/src/passthrough_guardrail/**
+    - tools/oracle/cases/passthrough-guardrail/**
+    - tools/oracle/helpers/b3573.py
+    - tools/oracle/helpers/b3573/**
+    - tools/oracle/src/helpers/core_ops/b3573.rs
+    - tools/oracle/src/helpers/core_ops/b3573/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L32-L51
+    why: _get_guardrail_settings retrieves guardrail settings by name from logging object via PassthroughGuardrailHandler
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L53-L86
+    why: _extract_text_for_guardrail reads targeted fields via JsonPathExtractor or full payload excluding internal keys
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L88-L127
+    why: process_input_messages applies guardrail check on request without modifying request data
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L129-L193
+    why: process_output_response applies guardrail check on response with optional metadata enrichment, returns response unchanged
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L96-L113
+    why: PassthroughGuardrailHandler.get_settings retrieves settings for a guardrail (owned by B3601)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/jsonpath_extractor.py#L15-L43
+    why: JsonPathExtractor.extract_fields extracts fields using JSONPath expressions (external dependency)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L82-L120
+    why: BaseTranslation.transform_user_api_key_dict_to_metadata projects user metadata (owned by B3661)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1340
+    why: CustomGuardrail.apply_guardrail contract (owned by B3664)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py
+    why: safe_dumps for full-payload serialization (owned by B192)
+dod:
+  - text: >-
+      PassThroughEndpointHandler._get_guardrail_settings calls PassthroughGuardrailHandler.get_settings with guardrail name
+      and returns PassThroughGuardrailSettings or None if logging_obj is missing, passthrough_guardrails_config is missing,
+      or guardrail_name is missing.
+    proof: [handler-bounds]
+  - text: >-
+      _extract_text_for_guardrail calls JsonPathExtractor.extract_fields when request_fields or response_fields are present,
+      otherwise returns safe_dumps of full payload excluding underscore-prefixed keys, "metadata" and "litellm_logging_obj".
+    proof: [handler-bounds]
+  - text: >-
+      process_input_messages extracts text via _extract_text_for_guardrail, skips if empty, calls guardrail_to_apply.apply_guardrail
+      with input_type "request", and returns the original request data unchanged (not the guardrail result).
+    proof: [handler-bounds]
+  - text: >-
+      process_output_response skips non-dict responses, extracts text via _extract_text_for_guardrail, adds user-key metadata
+      to request_data when litellm_metadata is absent, calls guardrail_to_apply.apply_guardrail with input_type "response",
+      and returns the original response unchanged.
+    proof: [handler-bounds]
+  - text: >-
+      Existing litellm_metadata (even empty dict) prevents auth-metadata injection via transform_user_api_key_dict_to_metadata.
+    proof: [handler-bounds]
+  - text: >-
+      Empty extracted text (non-truthy text_to_check) skips guardrail scanning in both input and output paths.
+    proof: [handler-bounds]
+  - text: >-
+      Every function from handler.py:32-193 is built or out_of_scope with its owner.
+    proof: [handler-bounds]
+checks:
+  optional: []
+  commands:
+    - id: handler-bounds
+      why: the handler.py scope is incomplete or an owned function is missing
+      run: |-
+        grep -q 'PassThroughEndpointHandler' crates/betterlite-core/src/passthrough_guardrail.rs && \
+        grep -q 'fn.*get_guardrail_settings' crates/betterlite-core/src/passthrough_guardrail.rs && \
+        grep -q 'fn.*extract_text_for_guardrail' crates/betterlite-core/src/passthrough_guardrail.rs && \
+        grep -q 'fn process_input_messages' crates/betterlite-core/src/passthrough_guardrail.rs && \
+        grep -q 'fn process_output_response' crates/betterlite-core/src/passthrough_guardrail.rs && \
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_guardrail::/)' || cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(passthrough_guardrail)'
+oracle_cases:
+  - tools/oracle/cases/passthrough-guardrail/get-settings-found.yaml
+  - tools/oracle/cases/passthrough-guardrail/get-settings-missing-logging.yaml
+  - tools/oracle/cases/passthrough-guardrail/extract-with-field-expressions.yaml
+  - tools/oracle/cases/passthrough-guardrail/extract-full-payload-filtered.yaml
+  - tools/oracle/cases/passthrough-guardrail/extract-excludes-underscore-metadata.yaml
+  - tools/oracle/cases/passthrough-guardrail/process-input-no-modification.yaml
+  - tools/oracle/cases/passthrough-guardrail/process-input-empty-text-skip.yaml
+  - tools/oracle/cases/passthrough-guardrail/process-output-non-dict.yaml
+  - tools/oracle/cases/passthrough-guardrail/process-output-metadata-injection.yaml
+  - tools/oracle/cases/passthrough-guardrail/process-output-blocks-existing-metadata.yaml
+  - tools/oracle/cases/passthrough-guardrail/process-output-no-modification.yaml
+deviations:
+  - what: >-
+      Full-payload fallback excludes underscore-prefixed fields, "metadata" and "litellm_logging_obj" from serialized JSON.
+    why: Internal logging state and prefixed fields must not be sent to guardrails; this preserves LiteLLM's filtering exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L82-L84
+  - what: >-
+      Process methods return original request/response unchanged; guardrail text modifications are never applied to relayed data.
+    why: Passthrough guardrails are checks only, not rewrites. Handler is transparent and does not transform the payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L110-L127,129-193
+  - what: >-
+      Existing litellm_metadata (even when empty dict) prevents user-key metadata injection in process_output_response.
+    why: If caller supplies metadata, it takes precedence over auth enrichment, preserving caller intent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L175-L178
+out_of_scope:
+  - >-
+    PassthroughGuardrailHandler.get_settings (owned by B3601, provider guardrail settings lookup).
+  - >-
+    JsonPathExtractor.extract_fields (external dependency, not owned by betterlite).
+  - >-
+    BaseTranslation.transform_user_api_key_dict_to_metadata (owned by B3661, user metadata projection).
+  - >-
+    CustomGuardrail.apply_guardrail (owned by B3664, guardrail invocation contract).
+  - >-
+    Guardrail registration and dispatch (owned by B3574, passthrough guardrail dispatcher).
+  - >-
+    Provider-specific handlers and Bedrock translation (owned by provider-specific tasks).
+pitfalls:
+  - >-
+    The handler always returns original request/response unchanged, even after guardrail application. Guardrail text
+    modifications are never applied to relayed data; the handler is check-only, not a rewriter.
+  - >-
+    _extract_text_for_guardrail returns a string, never None. Empty text_to_check (empty string or whitespace) is falsy
+    and skips apply_guardrail call, but the extraction method itself never returns None.
+  - >-
+    User-key metadata enrichment only happens in process_output_response when litellm_metadata is absent. An empty
+    litellm_metadata dict blocks enrichment, preventing caller intent override.
+  - >-
+    PassThroughGuardrailSettings fields (request_fields, response_fields) are optional; missing fields means use
+    full-payload fallback, not no extraction.
+  - >-
+    safe_dumps must exclude underscore-prefixed keys, "metadata" and "litellm_logging_obj" exactly as LiteLLM does,
+    or guardrails may see internal state they should not.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

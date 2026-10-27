@@ -96,5 +96,5 @@ pitfalls:
 - text_tokens may include reasoning; subtracting all reasoning unconditionally undercounts providers that already separated it.
 review_level: standard
 budget:
-  max_changed_lines: 440
+  max_changed_lines: 1500
   max_new_expects: 1

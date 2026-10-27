@@ -1,0 +1,170 @@
+id: B3765
+title: Compresr settings and compressed message writeback
+description: >-
+  Build Compresr guardrail initialization, configuration types, and message writeback pipeline.
+  The CompresrGuardrailConfigModel provides typed config fields including api_key, api_base (defaulting to https://api.compresr.ai), compression model, and all tuning knobs: target_compression_ratio, coarse/dynamic flags, min_chars_to_compress, compression targets (tool_outputs, system, history, last_user), enable_retrieval flag, max_bytes_per_call per-call budget, allow_bypass_header for testing, and compression_params passthrough for new API features.
+
+  The CompresrGuardrail class constructor applies defaults (0.5 compression ratio, latte_v2 model, 500 char minimum, tool outputs only), validates api_base to reject non-http(s) and cloud-metadata addresses, requires an API key from the config or COMPRESR_API_KEY env var, and initializes the per-call recovery store (_originals_by_call_id) when enable_retrieval is on.
+
+  The main apply_guardrail entry point runs on request inputs: it checks for bypass header if enabled, extracts the fallback user query, selects eligible messages (respecting compress_tool_outputs, compress_system, compress_history, compress_last_user flags and min_chars_to_compress), calls the compression API, and applies results to a message copy. Message writeback (via _apply_compression_results) replaces message content with compressed text, stores original text hashes for recovery when enabled, dedupes compression results for ambiguous text replacements, and mirrors replacements into the Responses texts channel when applicable.
+
+  Tool injection merges the compresr_retrieve tool into the request's tool list so the model can recover original content during agentic loops. The bypass header (x-compresr-bypass: true) skips compression for a single call when allow_bypass_header is on.
+
+  Configuration defaults match LiteLLM's: api_base DEFAULT_API_BASE, compression_model DEFAULT_COMPRESSION_MODEL, target_compression_ratio 0.5, coarse true, min_chars_to_compress 500, compress_tool_outputs true, compress_system false, compress_history false, compress_last_user false, enable_retrieval true, max_bytes_per_call 10 MiB, allow_bypass_header false, dynamic true. Unsupported keys in config stop startup with a list of them; every guardrail config option is registered so a new feature does not require a code change.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/compresr_settings.rs
+    - crates/betterlite-guardrails/src/compresr_settings/**
+    - crates/betterlite-guardrails/src/compresr_writeback.rs
+    - crates/betterlite-guardrails/src/compresr_writeback/**
+    - tools/oracle/cases/guardrails/compresr/**
+    - crates/betterlite-config/src/sections/compresr_writeback.rs
+    - crates/betterlite-config/src/sections/compresr_writeback/**
+    - tools/oracle/helpers/b3765.py
+    - tools/oracle/helpers/b3765/**
+    - tools/oracle/src/helpers/guardrails/b3765.rs
+    - tools/oracle/src/helpers/guardrails/b3765/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/compresr.py
+    why: >-
+      CompresrGuardrailOptionalParams and CompresrGuardrailConfigModel type definitions with all tuning knobs and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/__init__.py
+    why: >-
+      initialize_guardrail function, guardrail_initializer_registry and guardrail_class_registry, plus _coerce_event_hook and _get_optional_value helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L500-L589
+    why: >-
+      CompresrGuardrail __init__ method, default resolution, API key validation, and recovery store initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L590-L621
+    why: >-
+      _should_bypass, _request_headers, _handle_compress_failure error routing for fail_open/fail_closed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L623-L717
+    why: >-
+      Store lifecycle: _evict_oldest, _prune_originals (age/count/byte budget), _existing_originals, _store_originals, _bound_call_bytes per-call eviction, _retrieve_original and _resolve_retrievals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L831-L865
+    why: >-
+      _select_targets (respects compress_* flags and min_chars_to_compress) and _extract_fallback_query (last user message).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L866-L943
+    why: >-
+      _apply_compression_results and _mirror_texts_channel (message writeback with recovery markers and ambiguity handling).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L946-L1053
+    why: >-
+      apply_guardrail orchestration (bypass check, target selection, compression call, tool injection, logging stats).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L278-L299,L306-L317
+    why: >-
+      Tool injection (_build_compresr_retrieve_tool and _merge_retrieve_tool) for recovery retrieval; has_compresr_retrieve_tool detection is owned by B3764.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L1129-L1159
+    why: >-
+      _sanitized_follow_up_kwargs (kwargs cleanup for agentic loop) and get_config_model static method.
+dod:
+  - text: CompresrGuardrailConfigModel loads from guardrail config and provides all tuning knobs with LiteLLM defaults.
+    proof: [config-loading]
+  - text: CompresrGuardrail __init__ validates api_base, requires an API key, applies configuration defaults, and initializes the recovery store.
+    proof: [config-tests, guardrail-init]
+  - text: Configuration defaults match LiteLLM exactly (0.5 ratio, latte_v2, 500 chars, tool outputs only, recovery on, 10 MiB cap).
+    proof: [config-tests]
+  - text: Unsupported config keys are rejected at startup with a full list of them.
+    proof: [unsupported-keys]
+  - text: apply_guardrail extracts fallback query, selects targets respecting all compress_* flags, calls the compression API, and applies results to messages.
+    proof: [apply-guardrail-tests]
+  - text: Message writeback replaces content with compressed text, stores hashes for recovery when enabled, and dedupes ambiguous replacements.
+    proof: [writeback-tests]
+  - text: Responses texts channel mirrors compressed content only when unambiguous (one compression per text, all occurrences accounted for).
+    proof: [writeback-tests]
+  - text: Tool injection builds a _build_compresr_retrieve_tool definition and merges it with existing tools; detection of the tool calls is delegated to B3764's has_compresr_retrieve_tool function.
+    proof: [tool-injection-tests]
+  - text: The x-compresr-bypass header skips compression for a single call when allow_bypass_header is on.
+    proof: [bypass-header-tests]
+  - text: Failure handling respects fail_open (log and forward uncompressed) and fail_closed (raise 502 with generic message, never upstream details).
+    proof: [failure-handling-tests]
+  - text: Recovery store is initialized with correct OrderedDict and per-process state when enable_retrieval is on.
+    proof: [recovery-store-init]
+checks:
+  optional: []
+  commands:
+    - id: config-loading
+      why: Configuration types or defaults do not load correctly
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::compresr_writeback::tests::/)' --no-capture
+    - id: config-tests
+      why: CompresrGuardrail initialization or configuration fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_settings::tests::/)' --no-capture
+    - id: guardrail-init
+      why: Recovery store or request headers initialization is incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_settings::.*init(::|$)|^compresr_settings::.*store(::|$)|^compresr_settings::.*header(::|$)/)' --no-capture
+    - id: unsupported-keys
+      why: Configuration does not reject unsupported keys
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::compresr_writeback::tests::.*unsupported(::|$)/)' --no-capture
+    - id: apply-guardrail-tests
+      why: apply_guardrail entry point, target selection, or bypass logic fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_writeback::tests::.*apply_guardrail(::|$)|^compresr_writeback::tests::.*select_targets(::|$)|^compresr_writeback::tests::.*bypass(::|$)/)' --no-capture
+    - id: writeback-tests
+      why: Message writeback, recovery marker application, or texts channel mirroring fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_writeback::tests::.*writeback(::|$)|^compresr_writeback::tests::.*mirror(::|$)|^compresr_writeback::tests::.*recovery(::|$)|^compresr_writeback::tests::.*ambiguous(::|$)/)' --no-capture
+    - id: tool-injection-tests
+      why: Tool injection or compresr_retrieve merge fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_writeback::tests::.*tool_injection(::|$)|^compresr_writeback::tests::.*merge_tool(::|$)/)' --no-capture
+    - id: bypass-header-tests
+      why: Bypass header detection or skipping fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_settings::tests::.*bypass_header(::|$)/)' --no-capture
+    - id: failure-handling-tests
+      why: fail_open or fail_closed failure handling does not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_writeback::tests::.*fail_open(::|$)|^compresr_writeback::tests::.*fail_closed(::|$)/)' --no-capture
+    - id: recovery-store-init
+      why: Recovery store is not initialized correctly or per-process state is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_settings::tests::.*recovery_store(::|$)/)' --no-capture
+oracle_cases:
+  - tools/oracle/cases/guardrails/compresr/settings-load-defaults.yaml
+  - tools/oracle/cases/guardrails/compresr/settings-api-key-required.yaml
+  - tools/oracle/cases/guardrails/compresr/settings-api-base-validation.yaml
+  - tools/oracle/cases/guardrails/compresr/writeback-message-content-replacement.yaml
+  - tools/oracle/cases/guardrails/compresr/writeback-recovery-markers.yaml
+  - tools/oracle/cases/guardrails/compresr/writeback-ambiguous-dedup.yaml
+  - tools/oracle/cases/guardrails/compresr/writeback-texts-mirror-safe.yaml
+  - tools/oracle/cases/guardrails/compresr/tool-injection-merge.yaml
+  - tools/oracle/cases/guardrails/compresr/bypass-header-enabled.yaml
+  - tools/oracle/cases/guardrails/compresr/bypass-header-disabled.yaml
+deviations:
+  - what: "Configuration defaults are applied in the Rust constructor the same way LiteLLM applies them in Python __init__: missing values get hardcoded defaults, and coerce_event_hook logic is replicated."
+    why: >-
+      Defaults must match exactly so betterlite deployments migrate from LiteLLM without surprises.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/__init__.py#L35-L67"
+  - what: "The recovery store uses OrderedDict with per-process state scoped by (caller hash, call_id) for multi-tenant isolation."
+    why: >-
+      Per-tenant isolation prevents one caller from reading another's compressed originals; the caller scope is derived from virtual-key auth.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L572-L577"
+  - what: "Message writeback adds recovery markers only when stored originals fit within the per-call byte budget; no marker is added if the budget is exceeded."
+    why: >-
+      This preserves the marker-only-on-store invariant: a marker is never issued without storing the original.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L883-L902"
+  - what: "Responses texts channel mirror applies replacements only when unambiguous: one compression result per text, and the text occurs in texts the same number of times as in the compressed messages."
+    why: >-
+      Ambiguous replacements (same text with different compressions, or mismatched occurrence counts) are skipped to avoid replacing the wrong instance.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L921-L943"
+  - what: >-
+      Tool injection calls has_compresr_retrieve_tool (from B3764) to detect existing retrieve tools before merging, rather than checking tools directly.
+    why: >-
+      The detection function is shared and centralized in B3764 so both B3765's injection and B3764's agentic loop use consistent logic. B3765 depends on B3764, so this forward reference is safe.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L302-L303"
+out_of_scope:
+  - "Compression transport and API calls: B3763 owns _call_compress and the HTTP compression request."
+  - "Recovery store eviction and retrieval: B3764 owns per-key storage, TTL pruning, the _retrieve_original method on retrieval, and has_compresr_retrieve_tool detection."
+  - "Query selection and content projection: B3763 owns _query_for_target, _render_tool_intent, and IP/URL validation."
+  - "Recovery plan building and agentic loop: B3764 owns async_should_run_agentic_loop, async_build_agentic_loop_plan, and follow-up message formatting."
+  - "Content text utilities: B3663 owns is_all_text_parts, merge_rewritten_text_parts, and content_to_text."
+pitfalls:
+  - "CompresrGuardrailOptionalParams and CompresrGuardrailConfigModel are Pydantic models. The optional params are all nullable to let the constructor apply defaults; the config model provides the guardrail_name and event_hook that the constructor inherits from CustomGuardrail."
+  - "API key resolution is checked at __init__ time: get_secret_str (the proxy's env-lookup function) must be available; if the key is empty after env lookup, raise ValueError immediately so startup fails loud."
+  - "The recovery store is per-process in a HashMap at _originals_by_call_id; enable_retrieval=true logs a warning about multi-worker deployments needing --workers 1 or disable_retrieval."
+  - "Bypass header is x-compresr-bypass (lowercase), and its value is coerced to bool via str().lower() == \"true\", so any case variation is accepted."
+  - "Target selection skips messages that are too short (< min_chars_to_compress chars after content_to_text), have non-text multipart content, or don't match the role/position filters."
+  - "_select_targets returns indices in order; _apply_compression_results pairs them with contexts and results in order, so alignment is by position, not by message identity."
+  - "Message writeback only replaces when compressed_context is a non-empty string that differs from the original text. Identical text is treated as no-op so unchanged requests are not rewritten downstream."
+  - "Recovery markers are 24-character SHA-256 prefixes; appending to the compressed text (e.g. \"...compressed...hash123\") preserves the marker in all content shapes (string, text parts)."
+  - "Ambiguous text (same original, different compressions due to different queries) is tracked; if a text has multiple compressions, no replacement is applied (safe-fail)."
+  - "The texts mirror applies replacements only when the count matches: if a text is compressed N times in messages but appears M times in texts (M != N), no replacement is applied."
+  - "Tool injection calls has_compresr_retrieve_tool (from B3764) to detect existing retrieve tools before merging, since B3764 owns the detection logic and B3765 depends on B3764."
+  - "Fail_open logs and returns None to signal the caller to forward uncompressed; fail_closed raises HTTPException(502) with a generic detail dict, never the upstream response body or API key."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

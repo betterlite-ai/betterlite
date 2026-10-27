@@ -120,7 +120,6 @@ scope:
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/anthropic_provider.rs
   - tools/oracle/src/helpers/provider/anthropic_provider/**
@@ -434,6 +433,6 @@ pitfalls:
   map.
 - The batch-results selector tests substrings anywhere in the URL, not an endpoint suffix.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

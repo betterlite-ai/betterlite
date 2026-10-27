@@ -118,6 +118,6 @@ pitfalls:
   - A publication with unknown status may still carry useful token buckets, but its provenance and monetary fields are absent.
   - Actual turn spend already includes classifier cost, so the record consistency check must compare that full sum.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

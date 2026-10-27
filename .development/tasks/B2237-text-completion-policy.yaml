@@ -78,8 +78,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/text_completion_policy.rs
   - crates/betterlite-openai/src/text_completion_policy/**
   - tools/oracle/Cargo.toml
@@ -354,6 +352,6 @@ pitfalls:
 - An empty list is accepted by the standalone token predicate through all(...), but the one-message prompt branch
   separately requires truthy content.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

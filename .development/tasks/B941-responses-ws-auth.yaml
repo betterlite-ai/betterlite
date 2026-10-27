@@ -165,26 +165,18 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/responses_ws_auth.rs
-  - crates/betterlite-config/src/api/responses_ws_auth/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-auth-*
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs
   - crates/betterlite-server/fuzz/corpus/responses_ws_auth/**
   - tools/oracle/cases/websocket/responses-ws-auth/**
   - tools/oracle/fixtures/responses-ws-auth/**
+  - crates/betterlite-config/src/sections/responses_ws_auth.rs
+  - crates/betterlite-config/src/sections/responses_ws_auth/**
+  - tools/oracle/helpers/b941.py
+  - tools/oracle/helpers/b941/**
+  - tools/oracle/src/helpers/server/b941.rs
+  - tools/oracle/src/helpers/server/b941/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1316-L1384
@@ -304,7 +296,7 @@ checks:
   commands:
   - id: behavior-tests
     why: The named server, core, and config behavior tests are absent or a non-replay contract fails.
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_auth::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::responses_ws_auth::/) - test(/::replays_corpus$/)'
   - id: case-model-in-first-frame
     why: A flat frame, either route alias, original text, or resolved gpt-4o is not preserved.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::model_in_first_frame($|::)/)'
@@ -355,7 +347,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::auth_(missing|invalid)($|::)/)'
   - id: config-tests
     why: A named general_settings boolean is not loaded, defaulted false, set true, or kept out of environment lookup.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::responses_ws_auth::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: No new YAML seed carries the four exact keys through the production loader.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-auth-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -410,5 +402,5 @@ pitfalls:
 - 'json.dumps({"model": resolved_model}).encode() retains its default separator, so the synthetic body for gpt-4o is bytes for {"model": "gpt-4o"}, not the compact spelling {"model":"gpt-4o"}.'
 review_level: security
 budget:
-  max_changed_lines: 760
+  max_changed_lines: 1500
   max_new_expects: 0

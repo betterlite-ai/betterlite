@@ -87,8 +87,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/files.rs
   - crates/betterlite-openai/src/files/**
   - tools/oracle/Cargo.toml
@@ -323,6 +321,6 @@ pitfalls:
 - The chunk iterator owns context exit; closing only the outer FileContentStreamingResult would leak an entered
   response.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

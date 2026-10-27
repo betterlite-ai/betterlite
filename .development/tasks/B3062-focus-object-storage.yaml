@@ -1,0 +1,96 @@
+id: B3062
+title: Deliver FOCUS exports to S3 and GCS
+description: >-
+  Build S3 and GCS destination implementations in betterlite-logging::finops for FOCUS export delivery.
+  The S3 destination accepts bucket_name, prefix, and optional AWS credentials (region, endpoint, key id, secret, session token);
+  it forwards only truthy client options to the boto3 SDK and uploads with Content-Type application/octet-stream.
+  The GCS destination accepts bucket_name, prefix, and optional service_account_json config; it uses authenticated media uploads
+  to the GCS JSON API, requires HTTP status 200, and uploads with Content-Type application/octet-stream.
+  Both destinations build object keys using the FocusTimeWindow start time, partitioning by date (date=YYYY-MM-DD)
+  and optionally by hour (hour=HH) when the frequency is "hourly", then appending the filename.
+  Prefix trimming removes trailing slashes; paths are constructed with forward slashes and normalized to avoid redundant separators.
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/focus/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/s3_destination.py#L29-L84"
+    why: S3 destination full implementation (init, deliver, _build_object_key, _client_kwargs, _upload).
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/gcs_destination.py#L20-L68"
+    why: GCS destination full implementation (init, deliver, _build_object_key).
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/base.py"
+    why: FocusTimeWindow and FocusDestination protocol supplied by B3061.
+dod:
+  - text: S3Destination accepts bucket_name (required), prefix, and optional region_name, endpoint_url, aws_access_key_id, aws_secret_access_key, aws_session_token config values.
+    proof: [s3-init-tests]
+  - text: S3Destination.deliver builds an object key, then calls _upload asynchronously using asyncio.to_thread.
+    proof: [s3-deliver-tests]
+  - text: S3Destination object keys use date=YYYY-MM-DD and hour=HH partitions (hour only when frequency is "hourly"), with prefix trimmed of trailing slashes.
+    proof: [s3-key-tests]
+  - text: S3Destination._client_kwargs forwards only truthy config values to the boto3 client constructor; None and empty string config entries are omitted.
+    proof: [s3-kwargs-tests]
+  - text: S3Destination._upload creates a boto3 S3 client with collected kwargs and uploads using put_object with Content-Type "application/octet-stream".
+    proof: [s3-upload-tests]
+  - text: GCSDestination accepts bucket_name (required), prefix, and optional service_account_json config.
+    proof: [gcs-init-tests]
+  - text: GCSDestination.deliver builds an object key, fetches request headers (with Content-Type set to "application/octet-stream"), encodes the object name for URL, and POSTs to the GCS JSON API media upload endpoint.
+    proof: [gcs-deliver-tests]
+  - text: GCSDestination.deliver raises RuntimeError if the HTTP response status is not 200.
+    proof: [gcs-status-tests]
+  - text: GCSDestination object keys use date=YYYY-MM-DD and hour=HH partitions (hour only when frequency is "hourly"), with prefix trimmed of trailing slashes.
+    proof: [gcs-key-tests]
+  - text: Every mutant in the S3 and GCS implementations is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: s3-init-tests
+      why: S3Destination init validation or config handling fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::init/)'
+    - id: s3-deliver-tests
+      why: S3Destination deliver method fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::deliver/)'
+    - id: s3-key-tests
+      why: S3 object key partitioning or prefix handling fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::object_key/)'
+    - id: s3-kwargs-tests
+      why: S3 client kwargs filtering fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::kwargs/)'
+    - id: s3-upload-tests
+      why: S3 upload method fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::upload/)'
+    - id: gcs-init-tests
+      why: GCSDestination init validation or config handling fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::init/)'
+    - id: gcs-deliver-tests
+      why: GCSDestination deliver method fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::deliver/)'
+    - id: gcs-status-tests
+      why: GCSDestination status code validation fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::status/)'
+    - id: gcs-key-tests
+      why: GCS object key partitioning or prefix handling fails or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::object_key/)'
+oracle_cases: []
+deviations:
+  - what: S3 client construction filters config values, omitting any that are falsy (None, empty string); only non-empty credentials are forwarded to boto3.
+    why: LiteLLM's _client_kwargs dictionary merges empty TypedDict instances to omit falsy values; betterlite preserves this filtering behavior so unset credentials do not override environment-based defaults.
+  - what: GCSDestination requires HTTP status 200 for successful upload; any other status raises RuntimeError with status code and response body.
+    why: LiteLLM's deliver method checks status_code != 200; betterlite preserves this strict requirement for the GCS JSON API media upload.
+out_of_scope:
+  - "litellm/integrations/gcs_bucket/gcs_bucket_base.py:31-79 (GCSBucketBase.__init__, construct_request_headers): owned by B3997."
+  - "FocusTimeWindow and FocusDestination protocol (owned by B3061): these are contracts that S3 and GCS destinations implement."
+  - "boto3 and httpx client lifecycle management (beyond direct method calls): async dispatch and transport are provided by B173."
+pitfalls:
+  - "S3 prefix trimming uses rstrip('/'), not strip('/') or lstrip('/'); it removes only trailing slashes, preserving leading slashes and partition structure."
+  - "S3 object keys filter empty partition components (prefix, date, hour) with filter(None, parts) to avoid leading slashes when prefix is empty."
+  - "GCS partition keys follow the same date=YYYY-MM-DD and hour=HH format as S3; the FocusTimeWindow.start_time must be converted to UTC before formatting."
+  - "GCS deliver requires both construct_request_headers (inherited from GCSBucketBase) and self.BUCKET_NAME (set by __init__ of the base class); FocusGCSDestination must call super().__init__(bucket_name=bucket_name)."
+  - "GCS service_account_json config must be assigned to self.path_service_account_json before calling construct_request_headers, matching LiteLLM's attribute naming."
+  - "GCS URL construction uses encode_gcs_object_name_for_url to percent-encode the object name; this is called before building the URL string (B2208 supplies the encoder)."
+  - "S3 _upload is a synchronous method called from deliver via asyncio.to_thread; it must not be async or use await."
+  - "GCS deliver is async and uses await on construct_request_headers and async_httpx_client.post (both from GCSBucketBase)."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

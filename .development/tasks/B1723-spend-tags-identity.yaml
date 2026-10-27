@@ -39,6 +39,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/tag_report_query.rs
     - crates/betterlite-server/fuzz/corpus/tag_report_query/**
     - tools/oracle/cases/http/spend-tag-reports/**
+    - tools/oracle/helpers/b1723.py
+    - tools/oracle/helpers/b1723/**
+    - tools/oracle/src/helpers/server/b1723.rs
+    - tools/oracle/src/helpers/server/b1723/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L411-L617
@@ -75,6 +79,6 @@ pitfalls:
   - all_tags is an ordinary tag; only all-tags activates the all-tag branch.
   - The daily chart returns more than ten tags when they exist, despite its top-ten comment.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

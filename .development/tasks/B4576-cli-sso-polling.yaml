@@ -1,0 +1,164 @@
+id: B4576
+title: CLI SSO polling and team selection
+description: >-
+  Add crates/betterlite-cli/src/sso_polling.rs with polling orchestration and team selection for betterlite-management-cli.
+  Build the polling SSO session that awaits ready status with exponential backoff and team-selection interfaces.
+  Implement _PollRequest TypedDict with url, headers, timeouts and status callbacks; CliAuthData to carry polling response shapes
+  (status, key, user_id, teams, team_details, requires_team_selection, team_id); and Outcome enum (PollingStartError, PollingTimeout,
+  PollingPermanentError, PollingData) to distinguish error sources. Preserve permanent-4xx rejection except 429,
+  periodic retry messages at configurable intervals, the poll-secret header in every request, and the different skip semantics
+  of generic team selection versus login's first-team fallback. Implement get_key_input for cross-platform raw terminal input
+  (arrow keys, enter, escape, 'q' on Windows and Unix). Implement display_team_selection to render teams with highlight
+  using ANSI or equivalent safe formatting, and prompt_team_selection to navigate with arrows in tty mode or fallback to numeric prompt.
+  Implement _poll_for_ready_data to poll a URL until status becomes ready, logging periodic retry messages based on status
+  (pending: pending_message, other: other_status_message, http error: _polling_error_message), returning CliAuthData when
+  status==ready or None on timeout. Implement _response_error_detail to extract error detail field from response JSON,
+  returning the detail string when present and valid, else None. Implement _is_permanent_polling_error(status) to return
+  true for 4xx except 429 (rate limit is retryable). Implement _normalize_teams to convert from LiteLLM's teams (list of ids or
+  team_details with team_id/id fields) to list of CliTeam records. Implement _start_cli_sso_flow(base_url) to POST to /sso/cli/start,
+  validate CliSsoStartData fields, return CliSsoStartData or PollingStartError. Implement _get_cli_sso_poll_headers(poll_secret)
+  to return header dict with x-litellm-cli-poll-secret. Implement _poll_for_authentication(base_url, key_id, poll_secret) to poll
+  and check requires_team_selection, calling _handle_poll_team_selection if needed, returning CliAuthResult. Implement
+  _handle_poll_team_selection to let user select team via _prompt_team_selection, re-poll with team_id query param, return jwt or None.
+  Implement _prompt_team_selection to display teams and prompt for numeric selection (1-indexed) or 'skip' to use first team, returning team_id string or None.
+scope:
+  paths:
+    - crates/betterlite-cli/src/sso_polling.rs
+    - crates/betterlite-cli/src/sso_polling/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L65-L122
+    why: TypedDicts (CliTeam, CliPollData, CliSsoStartData, CliAuthResult) and _TeamMapping type alias owned by B4574.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L315-L362
+    why: get_key_input cross-platform raw input (Windows msvcrt, Unix termios/tty) returning up/down/enter/escape/quit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L365-L400
+    why: display_team_selection renders teams with alias, budget and highlight current selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L403-L449
+    why: prompt_team_selection checks isatty(), renders loop with arrow input, settles on enter, returns team or None on quit/escape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L452-L483
+    why: prompt_team_selection_fallback prompts numeric index (1-indexed) or 'skip', returns selected team or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L486-L505
+    why: _response_error_detail extracts JSON detail field only; _is_permanent_polling_error rejects 4xx except 429.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L509-L548
+    why: _poll_for_ready_data polls URL with timeout, logs at intervals, distinguishes permanent vs transient errors, returns ready data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L551-L572
+    why: _normalize_teams maps list of ids or team_details to list of CliTeam records with team_id and team_alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L575-L615
+    why: _start_cli_sso_flow POSTs to /sso/cli/start, validates CliSsoStartData fields (login_id, poll_secret, user_code).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L618-L684
+    why: _get_cli_sso_poll_headers returns x-litellm-cli-poll-secret header; _poll_for_authentication polls, checks requires_team_selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L687-L783
+    why: _handle_poll_team_selection and _prompt_team_selection prompts user, re-polls with team_id, returns jwt.
+dod:
+  - text: get_key_input returns Option<&str> one of "up", "down", "enter", "escape", "quit" on Unix termios raw read or Windows msvcrt getch.
+    proof: [raw-input]
+  - text: display_team_selection renders teams with team_alias (or "N/A" fallback), budget as "$X" or "Unlimited", and highlights current selection.
+    proof: [display-teams]
+  - text: prompt_team_selection checks stdin.isatty(), renders display loop with get_key_input navigation, returns selected team on enter or None on escape/quit.
+    proof: [interactive-selection]
+  - text: prompt_team_selection_fallback prompts "Select a team by entering the index number (or 'skip' to continue without a team)", parses 1-indexed input, returns team or None on skip.
+    proof: [fallback-selection]
+  - text: _response_error_detail extracts string from JSON response["detail"] field when present and valid, else returns None.
+    proof: [error-extraction]
+  - text: _is_permanent_polling_error returns true for status 400-499 except 429, false for 429 and other statuses.
+    proof: [permanent-error-check]
+  - text: _poll_for_ready_data polls URL every poll_interval seconds, logs pending_message when attempt % pending_log_every == 0 and status==pending, similar for other_status_message and other statuses.
+    proof: [polling-loop]
+  - text: _poll_for_ready_data returns CliAuthData when status=="ready" and response.json() parses, None when timeout expires or _is_permanent_polling_error, logs _polling_error_message for transient http errors.
+    proof: [polling-result]
+  - text: _normalize_teams handles list of team objects with (team_id or id) and team_alias fields, or simple list of team_id strings, returns list of CliTeam.
+    proof: [team-normalization]
+  - text: _start_cli_sso_flow POSTs to base_url/sso/cli/start, validates response has login_id, poll_secret, user_code as non-empty strings, returns CliSsoStartData or PollingStartError.
+    proof: [sso-start]
+  - text: >-
+      _get_cli_sso_poll_headers(poll_secret) returns dict with "x-litellm-cli-poll-secret" header mapped to poll_secret value.
+    proof: [poll-headers]
+  - text: _poll_for_authentication polls /sso/cli/poll/{key_id} with poll headers, when requires_team_selection is true, calls _handle_poll_team_selection, returns CliAuthResult with api_key/user_id/teams/team_id.
+    proof: [auth-polling]
+  - text: _handle_poll_team_selection calls _prompt_team_selection to get team_id, re-polls with ?team_id=<id>, returns jwt from re-poll data["key"] or None.
+    proof: [team-selection-polling]
+  - text: _prompt_team_selection displays teams table, prompts numeric 1-indexed selection or 'skip' to use first team, returns team_id string.
+    proof: [team-prompt]
+checks:
+  optional: []
+  commands:
+    - id: raw-input
+      why: get_key_input does not read raw terminal input or does not map keys correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::raw_input/)'
+    - id: display-teams
+      why: display_team_selection does not format teams or highlight correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::display/)'
+    - id: interactive-selection
+      why: prompt_team_selection does not navigate with arrows or does not check isatty
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::interactive/)'
+    - id: fallback-selection
+      why: prompt_team_selection_fallback does not parse numeric index or handle 'skip' correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::fallback/)'
+    - id: error-extraction
+      why: _response_error_detail does not extract error fields in correct order
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::error/)'
+    - id: permanent-error-check
+      why: _is_permanent_polling_error does not distinguish 429 or does not identify 4xx errors
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::permanent/)'
+    - id: polling-loop
+      why: _poll_for_ready_data does not log at configured intervals or does not distinguish statuses
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::polling/)'
+    - id: polling-result
+      why: _poll_for_ready_data does not return ready data or handle timeout correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::ready/)'
+    - id: team-normalization
+      why: _normalize_teams does not handle list of objects or list of ids, or does not extract team_id/team_alias
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::normalize/)'
+    - id: sso-start
+      why: _start_cli_sso_flow does not validate required fields or does not return correct type
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::start/)'
+    - id: poll-headers
+      why: _get_cli_sso_poll_headers does not include x-litellm-cli-poll-secret header
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::headers/)'
+    - id: auth-polling
+      why: _poll_for_authentication does not check requires_team_selection or does not call team selection
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::auth/)'
+    - id: team-selection-polling
+      why: _handle_poll_team_selection does not re-poll with team_id or does not return jwt
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::team_polling/)'
+    - id: team-prompt
+      why: _prompt_team_selection does not display table or does not handle 'skip' to first team
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_polling::tests::team_prompt/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - TypedDict definitions (CliTeam, CliPollData, CliSsoStartData, CliAuthResult, _TeamMapping); defined and imported from B4574.
+  - HTTP client implementation; Http trait and requests client are injected for testability.
+  - Browser opening and login orchestration; owned by B4574 (run_pkce_login).
+  - Login dispatch and command registration; owned by B4585.
+  - Terminal output formatting libraries; use injected stdout/stderr writer or standard library equivalents.
+  - Storage and token persistence; owned by B4574 and B4575.
+  - display_teams_table in auth.py:277-312; no caller at the pin. The live implementation is in teams.py:37.
+pitfalls:
+  - >-
+    get_key_input must be cross-platform: Windows uses msvcrt.getch() with escape sequence detection for arrow keys; Unix uses
+    termios raw mode to read single chars and detects ANSI escape sequences.
+  - >-
+    display_team_selection must use ANSI codes or safe equivalent that works in most terminals; Bold and colors should
+    degrade gracefully.
+  - >-
+    prompt_team_selection checks sys.stdin.isatty() (or Rust equivalent) to decide between interactive and fallback mode; a non-tty
+    pipes input and must not block on raw input.
+  - >-
+    Periodic logging uses modulo logic: if (attempt % interval == 0) then log, so the first log fires at attempt=0, and every interval-th attempt after.
+  - >-
+    _is_permanent_polling_error must return false for status 429 (rate limit is retryable); all other 4xx errors are permanent and
+    stop polling.
+  - >-
+    _normalize_teams handles two input shapes: list of dicts with (team_id or id) and team_alias keys, or simple list of strings (team ids).
+  - >-
+    _start_cli_sso_flow validates that response.json() parses and has all three required string fields (login_id, poll_secret, user_code)
+    non-empty.
+  - >-
+    Re-polling with team_id query parameter appends ?team_id=<id> to the poll URL, preserving headers and other parameters.
+  - >-
+    Team selection fallback uses 'skip' (not 'none' or 's') to select first team, and first team is teams[0], not a fallback default.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

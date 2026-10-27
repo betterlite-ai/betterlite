@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-a2a-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-a2a = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "normalize_protocol_version"
+path = "fuzz_targets/normalize_protocol_version.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

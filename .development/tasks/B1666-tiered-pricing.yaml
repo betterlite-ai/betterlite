@@ -76,6 +76,6 @@ pitfalls:
   - A gap between tiers selects the last valid tier, not the nearest preceding tier.
   - Filtering malformed ranges before sorting would suppress the source's empty-range error.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

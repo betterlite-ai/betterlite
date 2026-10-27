@@ -1,0 +1,149 @@
+id: B3518
+title: OpenSandbox create run and delete lifecycle
+description: >-
+  Build the OpenSandbox lifecycle methods in crates/betterlite-provider by composing the helpers from B3517
+  and the shared sandbox records from B3516. The acreate_sandbox method POSTs the prepared body to the API,
+  waits for the sandbox to reach Running state, polls for execd endpoint readiness with separate deadline,
+  and stores endpoint credentials in the returned handle's hidden_params. The arun_code method reacquires
+  endpoint information from the handle or a bare ID, sends code execution requests to the endpoint with resolved
+  headers, and parses the streamed response. The adelete_sandbox method deletes the sandbox or returns false on
+  404, respecting stored credentials and parameter overrides. The _ensure_handle helper reacquires endpoint
+  information for a bare container ID when it is not yet cached in hidden_params, preserving the stored-base and
+  explicit-key precedence. Execution headers include only the resolved credentials from the cached handle or
+  the execution request, not authentication headers. All HTTP operations use the AsyncHTTPHandler pool supplied
+  by B173. Preserve handle._hidden_params structure with api_base, api_key, execd_endpoint, execd_headers and
+  use_server_proxy. Credentials and timeout policies are reviewed as security work.
+scope:
+  paths:
+    - crates/betterlite-provider/src/opensandbox/lifecycle.rs
+    - crates/betterlite-provider/src/opensandbox/lifecycle/**
+    - tools/oracle/cases/sandbox/**
+    - tools/oracle/helpers/b3518.py
+    - tools/oracle/helpers/b3518/**
+    - tools/oracle/src/helpers/provider/b3518.rs
+    - tools/oracle/src/helpers/provider/b3518/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L51-L228
+    why: >-
+      Lifecycle methods owned by this task: acreate_sandbox (51-125), arun_code (127-167),
+      adelete_sandbox (169-190), _ensure_handle (192-228). These compose the helpers from B3517
+      (validate_environment, _api_base, _create_body, _sandbox_state, _lifecycle_headers,
+      _wait_until_running, _wait_for_execd_endpoint, _as_handle, _api_key, _as_str_dict,
+      _endpoint_base_url, _post_code, _parse_lines) and records from B3516 (ContainerHandle,
+      CodeExecutionResult, _read_capped_lines).
+  - url: https://docs.open-sandbox.com/api
+    why: OpenSandbox REST API documentation for sandbox lifecycle, execution and endpoint discovery.
+dod:
+  - text: >-
+      acreate_sandbox POSTs to {api_base}/sandboxes with the body from _create_body (B3517), waits for state
+      to become Running using _wait_until_running, retrieves execd endpoint using _wait_for_execd_endpoint,
+      stores api_base, api_key, execd_endpoint, execd_headers and use_server_proxy in handle._hidden_params,
+      and returns the handle.
+    proof: [opensandbox-lifecycle-tests, opensandbox-create-oracle]
+  - text: >-
+      acreate_sandbox accepts template, timeout, allow_internet_access, api_key, api_base, metadata,
+      env_vars, resource_limits, resource_requests, entrypoint, network_policy, secure_access,
+      use_server_proxy, ready_timeout, poll_interval, client kwargs, validates environment for the API key,
+      normalizes api_base using _api_base, and defaults ready_timeout and poll_interval to 30 and 0.2 seconds.
+    proof: [opensandbox-lifecycle-tests]
+  - text: >-
+      acreate_sandbox raises TimeoutError with ready_timeout value if _wait_until_running or _wait_for_execd_endpoint
+      deadlines pass, and raises ValueError if the sandbox enters Failed/Stopping/Terminated states or endpoint is missing.
+    proof: [opensandbox-lifecycle-tests, opensandbox-create-oracle]
+  - text: >-
+      arun_code calls _ensure_handle to reacquire endpoint info for a bare container ID if not cached, extracts
+      api_base, api_key, execd_endpoint and execd_headers from handle._hidden_params, constructs the endpoint URL
+      using _endpoint_base_url, POSTs code with language context to {endpoint}/code, streams the response and
+      returns the parsed CodeExecutionResult.
+    proof: [opensandbox-lifecycle-tests, opensandbox-run-oracle]
+  - text: >-
+      arun_code sets request headers to Content-Type application/json, Accept text/event-stream, Cache-Control no-cache,
+      and merges the endpoint_headers from handle._hidden_params, without including authentication headers in the execution request.
+    proof: [opensandbox-lifecycle-tests, opensandbox-run-oracle]
+  - text: >-
+      arun_code accepts container as ContainerHandle or string ID, code, api_key, api_base, language,
+      use_server_proxy, ready_timeout, poll_interval, client kwargs; defaults language to python, and passes
+      use_server_proxy through to _ensure_handle.
+    proof: [opensandbox-lifecycle-tests]
+  - text: >-
+      arun_code uses _post_code (B3517) which sets execution timeout to connect 30 and write 30 (no read/pool timeout),
+      and parses lines through _parse_lines (B3517).
+    proof: [opensandbox-lifecycle-tests, opensandbox-run-oracle]
+  - text: >-
+      adelete_sandbox converts a string container ID to a ContainerHandle using _as_handle, extracts api_base
+      and api_key from handle._hidden_params with parameter fallback, DELETEs {api_base}/sandboxes/{id} with
+      _lifecycle_headers, returns false on 404 HTTPStatusError, and returns true for 2xx status, raising on other errors.
+    proof: [opensandbox-lifecycle-tests, opensandbox-delete-oracle]
+  - text: >-
+      adelete_sandbox respects stored-base/explicit-key precedence: prefers handle._hidden_params["api_base"] over
+      the api_base parameter, and _api_key resolves api_key parameter > handle cached api_key > environment lookup.
+    proof: [opensandbox-lifecycle-tests, opensandbox-delete-oracle]
+  - text: >-
+      adelete_sandbox accepts container as ContainerHandle or string ID, api_key, api_base, client kwargs,
+      and handles missing credentials by falling back to environment lookup or raising appropriately.
+    proof: [opensandbox-lifecycle-tests]
+  - text: >-
+      _ensure_handle takes a container (ContainerHandle or string ID), api_key, api_base, use_server_proxy,
+      ready_timeout, poll_interval, client; returns the handle unchanged if execd_endpoint is cached in
+      hidden_params, otherwise reacquires it via _wait_for_execd_endpoint and updates hidden_params.
+    proof: [opensandbox-lifecycle-tests]
+  - text: >-
+      _ensure_handle updates handle.domain to the resolved api_base, and maintains handle._hidden_params with
+      all five fields (api_base, api_key, execd_endpoint, execd_headers, use_server_proxy), preserving any
+      pre-existing values.
+    proof: [opensandbox-lifecycle-tests]
+  - text: >-
+      _ensure_handle raises ValueError or TimeoutError (from _wait_for_execd_endpoint) when endpoint cannot be
+      acquired, even after caching the handle's stored credentials.
+    proof: [opensandbox-lifecycle-tests]
+  - text: >-
+      Every call to _http, _api_base, _api_key, _lifecycle_headers, _create_body, _sandbox_state, _as_str_dict,
+      _endpoint_base_url, _as_handle, _wait_until_running, _wait_for_execd_endpoint, _post_code, _parse_lines
+      (supplied by B3517) or _read_capped_lines (supplied by B3516) completes without panicking or unwrapping.
+    proof: [opensandbox-lifecycle-tests]
+  - text: Every mutant in conditional logic, header construction, timeout handling and credential fallback is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: opensandbox-lifecycle-tests
+      why: the OpenSandbox lifecycle tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^opensandbox::lifecycle/)'
+    - id: opensandbox-create-oracle
+      why: OpenSandbox create cases do not match LiteLLM on handle structure or endpoint caching
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/ -k "opensandbox.*create"
+    - id: opensandbox-run-oracle
+      why: OpenSandbox execution cases do not match LiteLLM on code submission or result parsing
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/ -k "opensandbox.*run"
+    - id: opensandbox-delete-oracle
+      why: OpenSandbox delete cases do not match LiteLLM on credential handling or 404 behavior
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/ -k "opensandbox.*delete"
+oracle_cases:
+  - tools/oracle/cases/sandbox/opensandbox-create-success.yaml
+  - tools/oracle/cases/sandbox/opensandbox-create-endpoint-wait.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-stored-credentials.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-with-override.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-bare-id.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-custom-language.yaml
+  - tools/oracle/cases/sandbox/opensandbox-delete-success.yaml
+  - tools/oracle/cases/sandbox/opensandbox-delete-404.yaml
+  - tools/oracle/cases/sandbox/opensandbox-delete-bare-id.yaml
+deviations: []
+out_of_scope:
+  - Environment variable expansion or secret-manager full dispatch beyond os.environ/; needs the unresolved B129 leaf.
+  - Retries, timeouts and connection pooling for HTTP operations; those come from AsyncHTTPHandler in betterlite-http (B173).
+  - The helper methods and constants from B3517; they are composed, not implemented here.
+  - Metadata, resource_requests or other advanced sandbox options beyond what _create_body (B3517) accepts.
+pitfalls:
+  - The acreate_sandbox method must wait for both Running state AND execd endpoint readiness before returning; the two deadlines are separate.
+  - Execution headers must include the endpoint_headers from handle._hidden_params but must not repeat the OPEN-SANDBOX-API-KEY from lifecycle operations.
+  - Endpoint URL construction uses _endpoint_base_url which checks for http(s) prefix in the endpoint string first before falling back to api_base's protocol.
+  - _ensure_handle only reacquires the endpoint if it is missing from hidden_params; if cached, it returns immediately without additional polls.
+  - adelete_sandbox with a bare string ID must construct a temporary handle with _as_handle; the api_key fallback in _api_key must handle missing cached credentials gracefully.
+  - The handle.domain field is updated during _ensure_handle to reflect the resolved api_base; preserve this across credential updates.
+  - Timeout values default to 30 seconds for readiness but can be overridden per call; defaults come from B3517 constants.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

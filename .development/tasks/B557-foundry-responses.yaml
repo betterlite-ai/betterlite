@@ -215,6 +215,6 @@ pitfalls:
   endpoint normalizer.
 - The Responses URL helper keeps a fragment even while clearing query, unlike Decisions which clears both.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

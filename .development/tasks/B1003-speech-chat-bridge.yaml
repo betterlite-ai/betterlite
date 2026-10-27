@@ -45,7 +45,6 @@ scope:
   - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/speech_chat_bridge.rs
   - crates/betterlite-openai/src/api/speech_chat_bridge/**
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs
   - crates/betterlite-openai/fuzz/corpus/speech_audio/**
@@ -142,5 +141,5 @@ pitfalls:
 - Non-Gemini output is always labeled audio/mpeg here; MIME sniffing is a separate helper used by route consumers.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

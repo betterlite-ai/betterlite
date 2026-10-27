@@ -1,0 +1,171 @@
+id: B4331
+title: Share request Redis batches and drain deferred writes
+description: >-
+  Build request-scoped batch sharing so independent Redis operations on the same backend
+  within a single HTTP or WebSocket request pipeline share one batch, plus a second batch
+  for post-call deferred writes (counters, token scripts, response cache) that flush
+  separately.
+
+  A request declares reads through active_request_redis_batch or post-call writes through
+  active_post_call_redis_batch inside a request_redis_batch_scope context manager. The
+  scope shares one RedisBatch per distinct Redis backend (identified by _backend_key, which
+  compares connection settings and namespace); nested scopes join the outer scope's batches.
+  Awaiting any operation in the batch flushes all pending operations in one round trip.
+
+  Post-call writes flush once when success and failure callbacks have all run, or at
+  POST_CALL_FLUSH_DEADLINE_SECONDS (1.0 second) after the first post-call declaration
+  when no callback phase closes them. A call to flush_post_call_redis_batches wakes
+  the deadline timer early. The drain_post_call_redis_batches function flushes every
+  open post-call batch on shutdown, used when the service is stopping and needs all
+  in-flight writes sent before Redis closes.
+
+  The prefetched field (dict[str, object] keyed by consumer name) stores reads declared
+  early for a consumer that runs later in the request. Calling code arms prefetch slots
+  by name (proxy_server.py:3879 for _UPDATE_CACHE_PREFETCH_SLOT = "update_cache_read",
+  routing_read_batch.py:122 for _PREFETCH_SLOT = "routing_read") and retrieves them
+  with pop semantics at use time. This task declares the field and its init-to-empty
+  semantics; B382 owns the routing_read prefetch behavior and the proxy server's
+  prefetch behavior is owned by another task covering proxy_server.py. The field
+  lives in RequestRedisBatches because it is request-scoped and must coordinate across
+  the phases that read and consume it.
+
+  The batch engine (RedisBatch from B4330) is unchanged; request_redis_batch_scope is
+  the minimal entry point. Preserve the ContextVar-based active batch lookup, the weak
+  registry of open post-call requests, the one-second deadline as a floating-point
+  constant, and best-effort cleanup on deadline timeout or early flush. Use asyncio.get_running_loop().call_later
+  for the deadline timer and asyncio.ensure_future for the deadline flush task, so
+  timers are owned by the running event loop and survive request cancellation until
+  the deadline fires.
+scope:
+  paths:
+    - crates/betterlite-redis/src/request_batch.rs
+    - crates/betterlite-redis/src/request_batch/**
+    - tools/oracle/src/cache_probes/request_batch.rs
+    - tools/oracle/src/cache_probes/request_batch/**
+    - tools/oracle/src/cache_probes/mod.rs
+    - tools/oracle/litellm/probes/registry.py
+    - tools/oracle/litellm/probes/protocol.py
+    - tools/oracle/litellm/probes/request_batch.py
+    - tools/oracle/cases/caching/request_batch/**
+    - Cargo.toml
+    - tools/oracle/helpers/b4331.py
+    - tools/oracle/helpers/b4331/**
+    - tools/oracle/src/helpers/redis/b4331.rs
+    - tools/oracle/src/helpers/redis/b4331/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L407-L417
+    why: _backend_key function comparing connection settings and namespace to coalesce
+      caches that talk to the same server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L37
+    why: POST_CALL_FLUSH_DEADLINE_SECONDS = 1.0 second default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L419-L421
+    why: _open_post_call weak registry for requests with pending post-call writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L423-L490
+    why: RequestRedisBatches __init__ with _batches, _post_call storage, deadline timer,
+      prefetched slot dict (L448), batch() and post_call() accessor methods, deadline
+      timer management, and flush methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L493-L516
+    why: _active_request_batches ContextVar and accessor functions active_request_redis_batch,
+      active_request_redis_batches, active_post_call_redis_batch, flush_post_call_redis_batches
+      and drain_post_call_redis_batches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L530-L551
+    why: request_redis_batch_scope context manager with nested scope handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3869-L3888
+    why: _UPDATE_CACHE_PREFETCH_SLOT = "update_cache_read" usage in proxy_server that
+      arms prefetched["update_cache_read"] and later pops it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L32-L135
+    why: _PREFETCH_SLOT = "routing_read" usage in routing_read_batch for prefetch
+      arm/take semantics; B382 owns the routing prefetch behavior.
+dod:
+  - text: RequestRedisBatches shares one batch per backend within a request. Callers
+      pass RedisCache instances to batch() or post_call() and receive a RedisBatch.
+      Two caches with identical connection settings and namespace get the same batch;
+      two caches with different settings or instances without readable settings get
+      separate batches.
+    proof: [request-batch-tests]
+  - text: Awaiting any pending operation flushes all declared operations in the shared
+      batch for that backend in one round trip. Operations on different backends flush
+      independently.
+    proof: [request-batch-tests]
+  - text: Post-call writes flush separately, once when flush_post_call_redis_batches
+      is called or at the one-second deadline after the first post_call declaration,
+      whichever is earlier.
+    proof: [request-batch-tests]
+  - text: The deadline timer is canceled if flush_post_call_redis_batches is called
+      early or if flush_all finishes the request scope without pending post-call work.
+    proof: [request-batch-tests]
+  - text: Nested request_redis_batch_scope contexts return the outer scope's batches,
+      not nested batches.
+    proof: [request-batch-tests]
+  - text: drain_post_call_redis_batches flushes every RequestRedisBatches in the weak
+      registry, used at shutdown.
+    proof: [request-batch-tests]
+  - text: The weak registry _open_post_call holds every RequestRedisBatches with pending
+      post-call writes until all writes are flushed.
+    proof: [request-batch-tests]
+  - text: Deadline flush task owns the timer and runs through the event loop; request
+      cancellation does not prevent its execution.
+    proof: [request-batch-tests]
+  - text: prefetched is initialized as an empty dict[str, object] keyed by consumer name, and
+      calling code arms it by name and takes (pops) entries at use time. This task declares the
+      field and its initialization semantics; the behavioral logic of what is stored and retrieved
+      is owned by the code that uses it (B382 for routing_read prefetch, and proxy_server code for
+      update_cache_read prefetch).
+    proof: [request-batch-tests, prefetch-slot-semantics]
+checks:
+  optional: []
+  commands:
+    - id: request-batch-tests
+      why: the request-scoped batch sharing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::request_batch(::|$)/)'
+    - id: prefetch-slot-semantics
+      why: prefetched slot store initialization, empty-check, or pop semantics are not tested
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/request_batch.*prefetch/)'
+    - id: probe-python
+      why: the new adapter is missing, unchanged, untyped or fails lint
+      run: test -f tools/oracle/litellm/probes/request_batch.py && test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/litellm/probes/request_batch.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+  - tools/oracle/cases/caching/request_batch/coalesced-backends-share-pipeline.yaml
+  - tools/oracle/cases/caching/request_batch/post-call-deadline-flushes-writes.yaml
+  - tools/oracle/cases/caching/request_batch/nested-scopes-share-outer-batches.yaml
+  - tools/oracle/cases/caching/request_batch/prefetch-slot-arm-and-pop.yaml
+  - tools/oracle/cases/caching/request_batch/drain-flushes-all-open-post-call.yaml
+deviations:
+  - what: The prefetched dict is managed by RequestRedisBatches but the arm/take behavioral
+      logic is owned by calling code (proxy_server.py for _UPDATE_CACHE_PREFETCH_SLOT,
+      routing_read_batch.py for _PREFETCH_SLOT).
+    why: The field is a request-scoped communication channel between early reads and late
+      consumption. RequestRedisBatches owns only the container and initialization; the tasks
+      covering the calling code own the logic of what is stored and when it is consumed. B382
+      owns routing prefetch behavior.
+out_of_scope:
+  - The behavioral logic of prefetched slot consumption. proxy_server.py:3879/3888 (_UPDATE_CACHE_PREFETCH_SLOT)
+    and routing_read_batch.py:92/122/127/135 (_PREFETCH_SLOT) are owned by their respective tasks;
+    B382 owns routing prefetch behavior.
+  - RedisBatch construction and operation settlement. B4330 owns the batch engine;
+    this task owns the request-scoped wrapper.
+  - Circuit breaker, logging and failure handling. B393 owns these services.
+  - Redis cache primitives, namespace management and client initialization. B4324,
+    B4325 and B4326 own these services.
+  - Calling request batches from proxy_server or litellm_logging. Callbacks and shutdown
+    sites call this leaf.
+pitfalls:
+  - The deadline timer must be acquired from asyncio.get_running_loop().call_later,
+    not time.sleep or a manual async sleep, so it survives request cancellation.
+  - _backend_key must handle RedisCache instances without readable redis_kwargs or
+    namespace attributes (test doubles) by falling back to identity comparison.
+  - Weak references in _open_post_call auto-discard when a RequestRedisBatches is no
+    longer held by the request; do not manually remove entries.
+  - The deadline flush task is scheduled with asyncio.ensure_future, not create_task,
+    so it holds a reference on the event loop even if the request is canceled.
+  - cancel() on a TimerHandle is idempotent; calling it twice is safe.
+  - RequestRedisBatches must not depend on B393 or B360 in the reverse direction,
+    even though B393 and B360 may call request batch functions.
+  - The prefetched dict is mutable and shared across request phases; calling code must
+    coordinate when slots are armed (pre-admission) and when they are taken (at use) to
+    avoid losing early armed values.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

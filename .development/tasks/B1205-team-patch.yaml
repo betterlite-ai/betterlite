@@ -185,6 +185,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as team_patch in the server group. Replace the stub Op in tools/oracle/src/helpers/server/team_patch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/team_patch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty budget_limits array does not initialize or serialize windows; do not treat it as a request to manufacture a reset window.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -119,5 +119,5 @@ pitfalls:
 - The legacy batch parser throws when neither batch nor generic-response marker exists; do not turn that branch into an empty successful id.
 review_level: security
 budget:
-  max_changed_lines: 570
+  max_changed_lines: 1500
   max_new_expects: 0

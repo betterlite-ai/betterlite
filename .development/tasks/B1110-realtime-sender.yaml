@@ -109,5 +109,5 @@ pitfalls:
 - Guardrail setup injection and successful-send cache mutation intentionally have different commit points.
 review_level: security
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1500
   max_new_expects: 0

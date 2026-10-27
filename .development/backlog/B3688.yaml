@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Guardrail compliance redaction and retryable usage rollups
 status: todo
 depends_on: [B726, B1667, B1706]
-file: null
+file: tasks/B3688-guardrail-usage-rollups.yaml
 covers:
   - "litellm/proxy/guardrails/usage_tracking.py"
   - "litellm/litellm_core_utils/core_helpers.py"

@@ -75,6 +75,6 @@ pitfalls:
   - Feeding a secret captured from LiteLLM into the betterlite run would test shared credentials instead of two independent implementations.
   - A Location header is observed data, not permission for the oracle to follow an arbitrary remote redirect.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

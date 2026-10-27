@@ -1,0 +1,161 @@
+id: B3803
+title: Custom guardrail results and rejection detection
+description: >-
+  Build custom-code invocation, result processing and the response-rejection guardrail program.
+  The main guardrail entry point calls the compiled apply_guardrail function and processes its result:
+  allow() passes the inputs through; block() raises an HTTP exception; flag() logs a non-blocking violation;
+  modify() transforms the texts, images or tool_calls and returns modified inputs.
+  Preserve the 30-second execution timeout default, metadata projection from request_data
+  (user_id, team_id, end_user_id from metadata.litellm_metadata), and compilation caching via a write lock.
+  Include the live response-rejection program for checking response text against rejection phrases.
+  The policy endpoint (not a dependency: it is a caller) instantiates this guardrail with the program.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/custom_code.rs
+  - crates/betterlite-guardrails/src/custom_code/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L74-L85
+    why: _metadata_bucket helper and CustomCodeGuardrailError exception types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L100-L115
+    why: CustomCodeGuardrailConfigModel with custom_code string and timeout field (default 30 seconds, must be positive).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L141-L175
+    why: CustomCodeGuardrail.__init__, execution_timeout validation and initialization lock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L176-L190
+    why: get_config_model and get_supported_event_hooks methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L192-L235
+    why: _do_compile and _compile_custom_code with compilation caching and SyntaxError handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L237-L318
+    why: apply_guardrail async method, timeout error handling, and log statements.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L319-L343
+    why: _call_compiled dispatching between sync and async user functions and deadline management.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L344-L368
+    why: _prepare_safe_request_data extracting metadata and safe user/team/end_user IDs, redacting sensitive request fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L477
+    why: _process_result converting user function results (allow/block/flag/modify) to actions, logging and exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/__init__.py#L24-L55
+    why: initialize_guardrail instantiating and registering the guardrail, validation error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/response_rejection_code.py#L35-L73
+    why: RESPONSE_REJECTION_GUARDRAIL_CODE program constant including rejection phrase matching logic.
+dod:
+  - text: CustomCodeGuardrailError and CustomCodeCompilationError are exception types with message and optional details dict.
+    proof: [custom-code-error-types]
+  - text: CustomCodeGuardrailConfigModel loads custom_code string and optional timeout (default 30 seconds, must be positive).
+    proof: [custom-code-config-tests]
+  - text: CustomCodeGuardrail.__init__ validates timeout, initializes a compile lock and calls _compile_custom_code.
+    proof: [custom-code-init-tests]
+  - text: _compile_custom_code compiles the user code once using compile_sandboxed and build_sandbox_globals, caches the bytecode, and raises CustomCodeCompilationError on syntax/runtime errors.
+    proof: [custom-code-compilation-tests]
+  - text: >-
+      apply_guardrail prepares safe request_data (extracting model, user_id, team_id, end_user_id and metadata),
+      calls _call_compiled, and processes the result to allow/block/flag/modify.
+      Example: block("reason") raises HTTPException with status 400.
+    proof: [custom-code-apply-tests]
+  - text: >-
+      _call_compiled dispatches sync functions to call_with_timeout and async functions to await_with_timeout
+      or call_off_loop_with_timeout, managing the execution deadline.
+    proof: [custom-code-dispatch-tests]
+  - text: _prepare_safe_request_data returns only model, user_id, team_id, end_user_id and metadata; sensitive fields are excluded.
+    proof: [custom-code-metadata-tests]
+  - text: >-
+      _process_result handles allow (return inputs unchanged), block (raise HTTPException with detection_info),
+      flag (log guardrail_flagged and return inputs unchanged), modify (return modified inputs with texts/images/tool_calls).
+      Unknown action defaults to allow, non-dict result logs a warning and returns inputs unchanged.
+    proof: [custom-code-result-tests]
+  - text: >-
+      apply_guardrail logs timeout as CustomCodeExecutionError and execution exceptions as CustomCodeExecutionError.
+      Example: timeout after 30 seconds logs the guardrail_name and remaining timeout.
+    proof: [custom-code-error-handling-tests]
+  - text: get_supported_event_hooks returns pre_call, during_call, post_call, pre_mcp_call, during_mcp_call and logging_only.
+    proof: [custom-code-event-hooks-tests]
+  - text: get_config_model returns CustomCodeGuardrailConfigModel.
+    proof: [custom-code-config-model-tests]
+  - text: initialize_guardrail raises ValueError with message "Custom code guardrail requires a guardrail_name" when guardrail_name is missing.
+    proof: [custom-code-init-validation-name-tests]
+  - text: initialize_guardrail raises ValueError with message "Custom code guardrail requires 'custom_code' in litellm_params" when custom_code is missing.
+    proof: [custom-code-init-validation-code-tests]
+  - text: initialize_guardrail instantiates CustomCodeGuardrail with litellm_params.custom_code and registers it via add_litellm_callback.
+    proof: [custom-code-init-guardrail-tests]
+  - text: >-
+      RESPONSE_REJECTION_CODE is a Python-like string constant that checks response input_type,
+      lowercases response texts, and returns block() when a response text contains a rejection phrase
+      (case-insensitive substring match). Default phrases include "i can't help with that" and similar.
+    proof: [response-rejection-program-tests]
+checks:
+  optional: []
+  commands:
+    - id: custom-code-error-types
+      why: CustomCodeGuardrailError and subclasses must exist with message and details
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_errors::/)' && grep -q "CustomCodeGuardrailError" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-config-tests
+      why: config model must load custom_code and optional timeout
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_config::/)' && grep -q "custom_code" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-init-tests
+      why: __init__ must validate timeout and initialize compilation lock
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_guardrail_init::/)' && grep -q "_compile_lock" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-compilation-tests
+      why: compilation caching must compile once and reuse cached result
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_compilation::/)' && grep -q "compile_sandboxed" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-apply-tests
+      why: apply_guardrail must handle allow/block/flag/modify correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_apply::/)' && grep -q "fn apply_guardrail" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-dispatch-tests
+      why: _call_compiled must dispatch sync/async and manage deadlines
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_dispatch::/)' && grep -q "fn _call_compiled" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-metadata-tests
+      why: metadata preparation must extract safe fields only
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_metadata::/)' && grep -q "_prepare_safe_request_data" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-result-tests
+      why: result processing must handle all actions correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_result::/)' && grep -q "_process_result" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-error-handling-tests
+      why: timeout and execution errors must be logged and converted to CustomCodeExecutionError
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_error_handling::/)' && grep -q "ExecutionTimeoutError" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-event-hooks-tests
+      why: get_supported_event_hooks must return correct event types
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_event_hooks::/)' && grep -q "get_supported_event_hooks" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-config-model-tests
+      why: get_config_model must return CustomCodeGuardrailConfigModel
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_config_model::/)' && grep -q "CustomCodeGuardrailConfigModel" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-init-validation-name-tests
+      why: initialize_guardrail must validate guardrail_name and raise ValueError
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_init_validation_name::/)' && grep -q "guardrail_name" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-init-validation-code-tests
+      why: initialize_guardrail must validate custom_code and raise ValueError
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_init_validation_code::/)' && grep -q "custom_code" crates/betterlite-guardrails/src/custom_code.rs
+    - id: custom-code-init-guardrail-tests
+      why: initialize_guardrail must instantiate and register via callback manager
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_init_guardrail::/)' && grep -q "fn initialize_guardrail" crates/betterlite-guardrails/src/custom_code.rs
+    - id: response-rejection-program-tests
+      why: RESPONSE_REJECTION_CODE must be a complete program constant with rejection phrase matching
+      run: grep -q "RESPONSE_REJECTION_CODE" crates/betterlite-guardrails/src/custom_code.rs && grep -q "rejection.*phrase" crates/betterlite-guardrails/src/custom_code.rs
+oracle_cases: []
+deviations:
+  - what: Execution timeout defaults to 30 seconds when not set; LiteLLM has the same default.
+    why: Custom guardrail code must not stall the proxy; 30 seconds matches LiteLLM's user-facing default.
+  - what: apply_guardrail converts ExecutionTimeoutError to CustomCodeExecutionError with the timeout value and guardrail name.
+    why: Timeout is a user-facing error condition; preserving the timeout helps diagnose slow custom code.
+  - what: _prepare_safe_request_data extracts only model, user_id, team_id, end_user_id and a metadata dict; other request fields are excluded.
+    why: Custom guardrail code is untrusted; redacting sensitive request fields (api_keys, auth headers) prevents credential leakage.
+  - what: Block with input_type=request raises passthrough exception for synthetic response; input_type=response raises HTTP 400.
+    why: Pre-call blocks return an HTTP response without calling the LLM; post-call blocks reject the response as-is.
+  - what: Unknown result actions (not allow/block/flag/modify) default to allow() with a warning log.
+    why: Unexpected user code results should not stall or crash; allowing through with a log preserves availability.
+  - what: Compilation errors raise CustomCodeCompilationError instead of CustomCodeExecutionError; compilation is startup-time validation.
+    why: Guardrail routes at startup must fail immediately if the code has syntax errors, not silently skip the guardrail.
+out_of_scope:
+  - "update_custom_code (custom_code_guardrail.py:479-519): no caller at the pin."
+  - "B3802 owns compile_sandboxed, build_sandbox_globals, call_with_timeout, call_off_loop_with_timeout and await_with_timeout."
+  - "B189 owns add_litellm_callback and callback manager registration."
+  - "Request/response type contracts and guardrail framework base class (CustomGuardrail.__init__, log_guardrail_information decorator, raise_passthrough_exception)."
+  - "HTTP exception raising and status code selection; betterlite-core provides response construction."
+pitfalls:
+  - Compilation happens inside the __init__ lock; a reentrant call to _compile_custom_code from module-level code will deadlock. Keep module-level code simple.
+  - _call_compiled checks if the result is a coroutine after calling sync functions; a sync function returning an awaitable crashes the guardrail. Document that sync functions must not return coroutines.
+  - Timeout applies to both compilation (load_module) and execution (apply_guardrail); if compilation takes >30 seconds, the guardrail fails at startup, not per-request.
+  - _prepare_safe_request_data returns a plain dict, not a MappingProxyType or frozen struct; custom code can modify it in place, but changes do not propagate back to the original request.
+  - Rejection phrase matching is case-insensitive substring match (text.lower().contains(phrase)), not regex or exact match; partial matches count (e.g., "no help" matches "no help with it").
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

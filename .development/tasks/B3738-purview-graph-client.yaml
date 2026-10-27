@@ -1,0 +1,149 @@
+id: B3738
+title: Purview Graph authentication scopes and trusted identity
+description: >-
+  Build the Microsoft Graph OAuth2 client, token caching with 60-second expiry margin,
+  and protected scope computation with one-hour LRU caching. Implement user identity
+  resolution with trust levels: key/JWT-bound identities (highest priority) separate
+  from caller-supplied hints. Handle policy-change invalidation, ETag-driven cache
+  coherence and text extraction for DLP evaluation across message types and tool calls.
+
+  In betterlite-guardrails, build the base class `PurviewGuardrailBase` with:
+  - OAuth2 token acquisition via client-credentials flow with 60-second expiry margin
+    and recomputation after await.
+  - Synchronous cache lock (threading.Lock) valid across both async event loops
+    (proxy main loop and logging-hook fallback) with no awaits under lock.
+  - Protection scope cache as LRU (OrderedDict, 1000-entry capacity) with per-user
+    ETag tracking and TTL (3600 seconds, one hour per Microsoft).
+  - Policy-change invalidation: when Graph returns protectionScopeState='modified',
+    clear that user's scope cache entry.
+  - User ID resolution with trust hierarchy: UserAPIKeyAuth.user_id (key/JWT-bound),
+    then end_user_id (caller request hint, never trusted for blocking), then
+    metadata proxies. Separate trusted-only resolver for blocking DLP.
+  - Helper to extract plaintext from tool_calls and function_call arguments
+    (both request-path and response-path shapes, dict-style and object-style).
+  - Support for OpenAI /v1/completions token-id and string prompts: skip token-id
+    lists (no plaintext for Purview), concatenate string lists, mix string/token
+    lists by extracting only strings.
+  - Completion and chat message text concatenation with \\n\\n separators to preserve
+    pattern matching across message boundaries.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/**
+    - crates/betterlite-guardrails/Cargo.toml
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L1-L490"
+    why: Complete PurviewGuardrailBase implementation including token, scope cache, content processing, and user ID resolution.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L33-L36"
+    why: GraphTokenResponse TypedDict structure for OAuth2 response parsing.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L85-L89"
+    why: URL path encoding for user IDs in Graph API segments.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L94-L124"
+    why: OAuth2 token caching with 60-second expiry margin and recomputation after await.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L160-L201"
+    why: Protection scope computation with ETag caching, LRU eviction (1000 entries), TTL (3600 seconds) and policy-change invalidation.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L207-L270"
+    why: Graph processContent API call structure, policy-change state tracking and scope cache invalidation.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L276-L312"
+    why: User ID resolution hierarchy from four sources with trust levels, separate trusted-only path.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L322-L359"
+    why: Trusted identity extractors for blocking (key/JWT-bound only) and audit (proxy-injected) paths.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L365-L376"
+    why: Policy action evaluation to detect blocking restrictions.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L382-L423"
+    why: Completion prompt handling for token-id lists (skip), strings, and mixed lists.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L425-L462"
+    why: Tool call argument extraction from both dict and object message representations.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L464-L490"
+    why: Message concatenation for DLP with \\n\\n separators and tool call inclusion.
+
+dod:
+  - text: PurviewGuardrailBase struct with constructor, token cache tuple, scope cache LRU and synchronous cache lock is defined in betterlite-guardrails.
+    proof: [base-struct-exists]
+  - text: OAuth2 token caching correctly acquires from client-credentials flow, includes 60-second expiry margin and recomputes now after await.
+    proof: [token-cache-tests]
+  - text: Protection scope LRU cache stores (etag, scope_response, fetched_at), maintains 1000-entry capacity with OrderedDict, and moves accessed entries to end.
+    proof: [scope-cache-tests]
+  - text: Policy-change invalidation clears scope cache entries when Graph returns protectionScopeState='modified'.
+    proof: [scope-cache-tests]
+  - text: User ID resolution walks four sources in trust order; trusted-only resolver uses only key/JWT-bound user_id for blocking; logging resolver uses proxy-injected user_api_key_user_id for audit.
+    proof: [user-id-resolution-tests]
+  - text: Tool call argument extraction handles both request and response paths, dict and object shapes, tool_calls/function_call fields and returns plaintext arguments.
+    proof: [tool-call-extraction-tests]
+  - text: Completion prompt handling correctly skips token-id lists, concatenates string lists, filters mixed lists and returns None for empty results.
+    proof: [completion-prompt-tests]
+  - text: Chat message concatenation joins all roles with \\n\\n separators, includes tool call arguments and returns None when empty.
+    proof: [message-concat-tests]
+  - text: Graph API POST returns (response_json, response_headers) tuple, constructs bearer token header correctly and logs requests/responses at debug level.
+    proof: [graph-api-tests]
+  - text: Policy action evaluation returns true when any policyAction contains restrictAccessAction with restrictionAction='block'.
+    proof: [policy-action-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: base-struct-exists
+      why: PurviewGuardrailBase is not defined or missing required fields
+      run: grep -q "struct PurviewGuardrailBase" crates/betterlite-guardrails/src/*.rs && grep -q "_token_cache" crates/betterlite-guardrails/src/*.rs && grep -q "_scope_cache" crates/betterlite-guardrails/src/*.rs && grep -q "_cache_lock" crates/betterlite-guardrails/src/*.rs
+    - id: token-cache-tests
+      why: OAuth2 token caching does not work correctly or expiry margin is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::token_cache/)'
+    - id: scope-cache-tests
+      why: Protection scope cache does not implement LRU, TTL or policy-change invalidation
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::scope_cache/)'
+    - id: user-id-resolution-tests
+      why: User ID resolution does not walk sources in correct trust order
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::user_id_resolution/)'
+    - id: tool-call-extraction-tests
+      why: Tool call argument extraction fails on various message shapes
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::tool_call_extraction/)'
+    - id: completion-prompt-tests
+      why: Completion prompt handling does not skip token-id lists or concatenate correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::completion_prompt/)'
+    - id: message-concat-tests
+      why: Chat message concatenation does not include tool calls or uses wrong separator
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::message_concat/)'
+    - id: graph-api-tests
+      why: Graph API POST does not construct auth headers or return tuple correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::graph_api/)'
+    - id: policy-action-tests
+      why: Policy action evaluation does not detect blocking restrictions correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^purview_graph_client::policy_action/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Threading lock instead of async lock for scope and token caches. The source holds one lock across both the main asyncio event loop and a separate event loop created by logging_hook thread fallback, which is incompatible with asyncio.Lock due to runtime binding in Python 3.10+."
+    why: "betterlite uses std::sync::Mutex for synchronous in-memory dict operations with no awaits under lock, avoiding the event-loop binding issue and supporting both contexts."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L76-L83"
+  - what: "Policy action evaluation for blocking checks @odata.type field for 'restrictAccessAction' substring and action field for 'restrictAccess' literal."
+    why: "LiteLLM's behavior is preserved: both conditions trigger the block check. Rust pattern matching on the same conditions ensures parity."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L365-L376"
+
+out_of_scope:
+  - "Graph API _graph_post implementation (owned by B173, HTTP client acquisition and POST)"
+  - "CustomGuardrail constructor and cooperative super().__init__ call (belongs to B104)"
+  - "Standard guardrail logging integration (belongs to B104)"
+  - "Configuration environment variable resolution for tenant_id, client_id, client_secret (belongs to B002/B129)"
+  - "Purview DLP evaluation logic and hook registration (belongs to B3739, B3740)"
+  - "Entra OBO token acquisition for Agent 365 (belongs to B3741)"
+
+pitfalls:
+  - "std::sync::Mutex is used instead of tokio::sync::Mutex because scope and token cache operations must succeed from both the main asyncio event loop and logging_hook's created event loop. A synchronous Rust Mutex protects only in-memory dict ops with no awaits inside the lock."
+  - "Protection scope cache TTL is 3600 seconds (one hour) per Microsoft Purview recommendations. Token cache margin is exactly 60 seconds: token is valid from time.time() + expires_in, recomputed after await."
+  - "User ID resolution _resolve_user_id walks all four sources and returns the first non-None; _resolve_trusted_user_id returns only UserAPIKeyAuth.user_id (omits end_user_id and metadata hints). Separate function _resolve_user_id_from_logging_kwargs reads only proxy-injected user_api_key_user_id."
+  - "Tool call argument extraction handles both dict and object message representations (hasattr/getattr fallback) and both tool_calls array and legacy function_call field. Arguments must be stripped and non-empty."
+  - "Completion prompts carrying token IDs (int lists, mixed lists with int sub-arrays) return None and log at debug level; string lists are \\n-joined; mixed string/int lists filter to strings only. Empty results return None."
+  - "Chat message concatenation uses \\n\\n separators (not \\n alone) to preserve pattern matching across message boundaries. Each message extracts content via convert_content_list_to_str plus tool call arguments."
+  - "ETag is read from response headers case-insensitively (etag or ETag). When cached entry exists and TTL not expired, move it to end of OrderedDict (move_to_end). Evict least-recently-used (popitem(last=False)) when cache exceeds 1000 entries."
+  - "HTTP graph API base is https://graph.microsoft.com/v1.0, token endpoint is https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token, scope is https://graph.microsoft.com/.default."
+  - "Policy-change invalidation: when processContent response has protectionScopeState='modified', pop the user_id from _scope_cache under lock. Next call recomputes scopes."
+  - "Graph POST headers use Authorization: Bearer {token} and Content-Type: application/json. ETag If-None-Match is sent only when cached etag is non-empty."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

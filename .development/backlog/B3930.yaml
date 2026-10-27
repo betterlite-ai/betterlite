@@ -1,7 +1,7 @@
 id: B3930
 milestone: M7 observability
 title: Datadog tags and active trace context
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B3930-datadog-tags-tracing.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/integrations/datadog/datadog.py"
 parent: B113
 split_from: B113
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 180

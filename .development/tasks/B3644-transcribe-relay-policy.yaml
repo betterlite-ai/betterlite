@@ -1,0 +1,129 @@
+id: B3644
+title: Transcribe passthrough ownership and admission policy
+description: >-
+  Build Transcribe operation validation, cost eligibility checking, media-bucket policies and owner-tag management. Expose these policy functions below HTTP forwarding and delayed billing, preserving the source's 400/403/404 distinctions and exact owner precedence.
+
+  Build typed records for transcription jobs, policy refusals and job-lookup contracts, plus eleven policy-checking functions that validate requests before routing. Load Amazon Transcribe's operation names from committed static data (refreshed by a tools/ script to track SDK updates). Check whether a StartTranscriptionJob request is priceable (has a cost rate, measurable media format, no custom language models and no surcharges), read media bucket restrictions from config, verify non-admin keys can only use configured buckets and admin-reserved operations, attach the caller's identity as a litellm-owner tag, and check job access by tag on GetTranscriptionJob and DeleteTranscriptionJob.
+
+  Preserve the source's error-code distinctions: 400 for missing identity, malformed tags or caller-supplied litellm-owner; 403 for admin-only operations, role/custom-model/surcharge refusals and bucket mismatches; 404 when a non-admin cannot access a job. Store cost as a pre-rounded integer multiple of cost_per_second.
+
+  A request's media format comes from MediaFormat or the file extension of Media.MediaFileUri. Non-admin requests must keep their transcript in configured S3 buckets and may not set DataAccessRoleArn or JobExecutionSettings. Jobs and media URIs default to the Media.MediaFileUri path style, not the dotted-bucket style. The max-charge constant is 3600 seconds of audio at the cost rate, used as a fallback when media is unreachable.
+
+scope:
+  paths:
+    - crates/betterlite-transcribe/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L1-351
+    why: "The owned functions: policy validation, typed records, and contracts."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1
+    why: "TRANSCRIBE_JOB_POLLING_INTERVAL_SECONDS and other constants used by later tasks."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+    why: "UserAPIKeyAuth shape for contract types."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5052
+    why: "PassThroughEndpointLoggingResultValues for contract types."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/resource_ownership.py#L6-L92
+    why: "Ownership scope predicates and ordering that B1018 ports."
+
+dod:
+  - text: "transcribe_operations() returns Transcribe's operation names as a frozenset from committed static data, optionally cached."
+    proof: [transcribe-operations]
+  - text: "transcribe_cost_per_second() returns the input_cost_per_second from the model_cost map for transcribe/StartTranscriptionJob, or None if absent or malformed."
+    proof: [transcribe-pricing]
+  - text: "StartTranscriptionJob with no cost rate, immeasurable media format, custom language models or surcharges (ContentRedaction, ToxicityDetection) is rejected with a detailed refusal explaining why."
+    proof: [transcribe-eligibility]
+  - text: "transcribe_admin_only_refusal() allows StartTranscriptionJob and GetTranscriptionJob/DeleteTranscriptionJob to non-admins, but rejects other operations with 403."
+    proof: [transcribe-admin-gates]
+  - text: "Non-admin non-GetTranscriptionJob/DeleteTranscriptionJob operations are blocked by transcribe_admin_only_refusal() before reaching bucket checks."
+    proof: [transcribe-admin-gates]
+  - text: "transcribe_media_buckets() parses general_settings.transcribe_media_buckets as a frozenset of S3 bucket names, or returns None if missing or malformed."
+    proof: [transcribe-bucket-config]
+  - text: "Non-admin requests with no bucket list, or with Media.MediaFileUri/RedactedMediaFileUri or OutputBucketName in buckets outside the configured list, are rejected with 403."
+    proof: [transcribe-bucket-validation]
+  - text: "Non-admin requests setting DataAccessRoleArn or JobExecutionSettings are rejected with 403."
+    proof: [transcribe-bucket-validation]
+  - text: "A StartTranscriptionJob request missing a caller identity is rejected with 400 and a message explaining the missing identity."
+    proof: [transcribe-owner-tag]
+  - text: "A StartTranscriptionJob request with a caller-supplied litellm-owner tag is rejected with 400."
+    proof: [transcribe-owner-tag]
+  - text: "A valid StartTranscriptionJob request has the litellm-owner tag added with the caller's primary resource owner scope."
+    proof: [transcribe-owner-tag]
+  - text: "GetTranscriptionJob and DeleteTranscriptionJob are 404 for non-admins when the job has no litellm-owner tag matching the caller's scope, or when fetching the job fails."
+    proof: [transcribe-job-access]
+  - text: "Media format is extracted from MediaFormat if supplied, else from the extension of Media.MediaFileUri, case-insensitive."
+    proof: [transcribe-media-format]
+  - text: "transcription_job_cost(audio_seconds, cost_per_second) returns ceil(audio_seconds) * cost_per_second as a Decimal."
+    proof: [transcribe-cost-calc]
+  - text: "transcribe_max_job_cost() returns the cost of 3600 seconds (TRANSCRIBE_MAX_MEDIA_DURATION_SECONDS) at the given rate."
+    proof: [transcribe-cost-calc]
+  - text: "started_transcription_job() parses a response body as a TranscriptionJob record, returning None on validation failure without panicking."
+    proof: [transcribe-response-parse]
+
+checks:
+  optional: []
+  commands:
+    - id: transcribe-operations
+      why: "botocore operations cannot be read, or operations are cached incorrectly"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(transcribe_operations)'
+    - id: transcribe-pricing
+      why: "cost lookup fails or returns wrong value"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(cost_per_second)'
+    - id: transcribe-eligibility
+      why: "eligibility checks miss or incorrectly classify unpriced requests"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(unpriceable_request_reason)'
+    - id: transcribe-admin-gates
+      why: "admin-only operations are not properly gated"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(admin_only_refusal)'
+    - id: transcribe-bucket-config
+      why: "bucket configuration is not loaded or parsed correctly"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(media_buckets)'
+    - id: transcribe-bucket-validation
+      why: "bucket restrictions are not enforced for non-admins"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(storage_refusal)'
+    - id: transcribe-owner-tag
+      why: "owner tags are not added correctly or validation is missing"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(owned_start_request)'
+    - id: transcribe-job-access
+      why: "job access control is not enforced"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(job_access_refusal)'
+    - id: transcribe-media-format
+      why: "media format extraction fails or is case-sensitive"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(requested_media_format)'
+    - id: transcribe-cost-calc
+      why: "cost calculation is incorrect or does not round up"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(.*_job_cost)'
+    - id: transcribe-response-parse
+      why: "response parsing fails or panics on invalid input"
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(started_transcription_job)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Cost per second is stored as Decimal instead of float to prevent rounding errors in billing calculations."
+    why: "LiteLLM uses floats but Rust decimal crate provides exact arithmetic for financial calculations."
+  - what: "Media format is case-normalized to lowercase; MediaFormat and file extensions are compared case-insensitively."
+    why: "AWS file extensions and MediaFormat values are case-insensitive; normalization prevents inconsistent treatment."
+  - what: "Error messages are rewritten in betterlite's voice instead of copying LiteLLM's format."
+    why: "Rule errors-match-litellm requires betterlite's own messages while keeping status and error codes."
+
+out_of_scope:
+  - HTTP routing and response serialization (owned by B102).
+  - Job polling and media measurement (owned by B3645).
+  - Delayed spend logging (owned by B3646).
+  - Media file download and duration measurement.
+  - AWS role or credential management.
+
+pitfalls:
+  - "The Transcribe operation names are vendored in committed static data; a tools/ script refreshes this list to track botocore SDK updates, and the check verifies the production data file exists."
+  - "The media format fallback order is MediaFormat string first, then the extension of Media.MediaFileUri; both are case-insensitive."
+  - "Media URI members are MediaFileUri and RedactedMediaFileUri (both in Media), plus OutputBucketName at the top level. Do not miss any."
+  - "The litellm-owner tag precedence is hardcoded as raw user, then user:, then team:, then org:, then key: with api_key or token. Resource ownership is determined by B1018's is_proxy_admin and get_primary_resource_owner_scope."
+  - "Tags are validated as a list of objects; missing or None fields are accepted but empty strings and missing Key values are caught."
+  - "Custom language model members come from ModelSettings.LanguageModelName and any LanguageIdSettings entry's LanguageModelName field."
+  - "The owned-request modification returns a new dict with the owner tag appended; it does not mutate the caller's input."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

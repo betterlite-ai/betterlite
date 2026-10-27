@@ -31,7 +31,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim_role_settings.rs
     - crates/betterlite-server/src/scim_role_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/scim_role_settings.rs
     - crates/betterlite-config/src/scim_role_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/scim-role-*
@@ -82,6 +81,6 @@ pitfalls:
   - Recomputing an unchanged member is necessary after a group rename because scim_admin_group can match the display name.
   - The default role helper treats a missing user_role differently from placeholder creation's direct dictionary lookup.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

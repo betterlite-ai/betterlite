@@ -292,6 +292,6 @@ pitfalls:
   - Clearing budget_limits stores JSON null, unlike generation's absent SQL column.
   - Empty duration and budget_duration remove the patch field without clearing stored values.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -39,6 +39,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,cohere_streams}.rs
+    - crates/betterlite-openai/src/cohere_streams.rs
     - crates/betterlite-openai/src/cohere_streams/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/cohere_line.rs

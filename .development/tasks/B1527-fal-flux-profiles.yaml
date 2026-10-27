@@ -81,5 +81,5 @@ pitfalls:
   - Default seed and safety values mentioned in the Flux docstring are not inserted into requests.
 review_level: standard
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -375,6 +375,6 @@ pitfalls:
 - Generic retrieval returns the raw output prefix, whereas the native handler uses a predicted object URI; do not
   make them share one response projection.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

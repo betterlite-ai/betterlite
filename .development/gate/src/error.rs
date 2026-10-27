@@ -1,3 +1,4 @@
+use std::error;
 use std::io;
 use std::path::PathBuf;
 use std::string::FromUtf8Error;
@@ -11,6 +12,8 @@ pub(crate) enum GateError {
     Read { path: PathBuf, source: io::Error },
     #[error("cannot write {path}: {source}")]
     Write { path: PathBuf, source: io::Error },
+    #[error("cannot lock {path}: {source}")]
+    Lock { path: PathBuf, source: io::Error },
     #[error("{path} does not match its format: {source}")]
     Yaml {
         path: PathBuf,
@@ -51,4 +54,11 @@ pub(crate) enum GateError {
     },
     #[error("cannot dispatch {task}: {reason}")]
     Dispatch { task: String, reason: String },
+    #[error("{program} failed: {stderr}")]
+    Failed { program: String, stderr: String },
+    #[error("cannot read {what}: {source}")]
+    Affected {
+        what: String,
+        source: Box<dyn error::Error + Send + Sync>,
+    },
 }

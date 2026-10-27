@@ -1,0 +1,81 @@
+id: B3842
+title: OTel V2 settings and destination contracts
+description: >-
+  Build betterlite-logging::otel::config module to load OpenTelemetry V2 configuration from the betterlite-config typed schema. Typed configuration supplies exporter kinds, content-capture modes, service exclusions, mapper names, baggage promotion rules and immutable per-tenant destination contracts with cache keys for processor reuse.
+
+  Support the feature flag env var LITELLM_OTEL_V2 (read-only, cached) and implement the mode-agnostic exporter specification with optional HTTP headers, certificate paths and factory-specific options. Define the OtelDestination record: immutable, frozen, with header-string serialization for wire forms and cache-key generation for processor deduplication.
+
+  Load setting values through the existing betterlite-config B002 environment/YAML resolution, including comma-separated list parsing for env vars (e.g., LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS=litellm.team.id,litellm.api_key.hash). Handle service exclusion normalization through B3840's db_system classifier, accept both ServiceTypes names and db.system spellings, and drop malformed exclusions with a warn log instead of panicking.
+
+  Resolve OTLP HTTP TLS certificate policy through the existing B172 get_ssl_verify path: when SSL_VERIFY is disabled, return a no-verify HTTP session; when a certificate file is present, return its path; else return the default verified context. Implement settings_customise_sources to filter the bare "excluded_services" field from environment parsing so repeated YAML updates do not accumulate stale values.
+
+  Model no deviations from LiteLLM's settings behavior at the pinned commit; every default, literal env var, config key and capture mode matches LiteLLM's text. The feature flag env var read is cached once per process startup. Named cases cover every capture mode, exporter kind, mapper name, span scope, service exclusion path and TLS state transition.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/config.rs
+    - crates/betterlite-logging/src/otel/config/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/config.py#L21-L382
+    why: V2 configuration settings, capture modes, exporter specification, baggage promotion fields and their validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/config.py#L389-L438
+    why: Service exclusion normalization and db_system mapping for allowed service names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/destination.py#L16-L60
+    why: OtelDestination record contract, header serialization and cache key generation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/otlp_tls.py#L9-L41
+    why: OTLP HTTP TLS policy resolution using get_ssl_verify and optional session-level disabling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/config.py#L1-L47
+    why: Feature flag env var LITELLM_OTEL_V2 (L20-L21) and enum classes CaptureMessageContent and ExporterOwner (L24-L47).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/baggage.py#L40-L66
+    why: Baggage promotion defaults (BAGGAGE_PROMOTED_KEYS, DEFAULT_BAGGAGE_METADATA_KEYS, DEFAULT_BAGGAGE_TEAM_METADATA_KEYS) and metadata key constants.
+dod:
+  - text: >-
+      OtelDestination is frozen, wraps endpoint/headers/resource_attributes/callback_name/protocol/span_scope, generates cache keys from endpoint+headers+resource_attributes+protocol (without span_scope), and renders headers as URL-percent-encoded k=v pairs joined by commas.
+    proof: [otel-config-tests]
+  - text: >-
+      The V2 config loads exporter specs with kind, endpoint, traces_endpoint, headers, owner, options, use_simple_processor and requires_headers fields. Empty exports fold the shorthand exporter/endpoint/headers into one spec. Every default, validation alias, list-field CSV splitting and env var name matches LiteLLM.
+    proof: [otel-config-tests]
+  - text: >-
+      Capture message content modes are normalized case-insensitively (no_content, span_only, event_only, span_and_event) and the capture_span_content property returns true for span_only and span_and_event. mapper_names are split on commas, deduplicated with genai always first, and legacy appended if legacy_compat is true.
+    proof: [otel-config-tests]
+  - text: >-
+      Service exclusion normalization accepts both ServiceTypes names (redis, postgres, batch_write_to_db, redis_*) and db.system spellings (redis, postgresql), maps them through B3840's db_system classifier, and drops unrecognized names with a verbose warn log instead of panicking.
+    proof: [otel-config-tests]
+  - text: >-
+      Baggage promotion and metadata key lists accept comma-separated strings from env vars or YAML lists, with no silent truncation. A missing variable fails with the variable name and path during config load.
+    proof: [otel-config-tests]
+  - text: >-
+      The LITELLM_OTEL_V2 feature flag is checked with a cached function that reads the environment once per process and returns false if the env var is absent, empty, or any falsy value (through B002's environment/config resolution).
+    proof: [otel-config-tests]
+  - text: >-
+      OTLP HTTP TLS resolves through get_ssl_verify (B172): when verify is false, return a no-verify adapter session; when it is a certificate path string, return the path; else return the default context. When OTEL_EXPORTER_OTLP_CERTIFICATE or OTEL_EXPORTER_OTLP_{SIGNAL}_CERTIFICATE env var is set, betterlite does not read them (out of scope, LiteLLM's behavior outside B3842).
+    proof: [otel-config-tests]
+  - text: >-
+      Every named case covers one capture mode, one exporter kind (console, in_memory, otlp_http, otlp_grpc, http/json, a registered factory), one mapper name, one span scope (full or llm_only), one service exclusion path (recognized name, misspelled name, null, list, CSV string), one TLS state (verify true, false, a certificate path, missing cert in env), and the use_simple_processor field (null/auto, true, false for each relevant exporter kind).
+    proof: [otel-config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: otel-config-tests
+      why: The config tests fail, do not exist, or snapshots were not accepted
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/::otel.*config.*($|::)/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      When OTEL_EXPORTER_OTLP_CERTIFICATE or OTEL_EXPORTER_OTLP_{SIGNAL}_CERTIFICATE env vars are set, betterlite accepts them but returns a null session (verifies with the default trusted CA only). LiteLLM's OTLP client accepts the env var directly; betterlite does not expose the certificate to the OTLP exporter factory (that is exporter-transport scoping left to the exporter task, not B3842).
+    why: Certificate paths to OTLP exporters are part of the exporter-transport layer, which B3848 owns. This task reads them from the environment but passes them as informational context, not as active configuration.
+out_of_scope:
+  - Exporter transport setup and certificate application to the OTLP exporter factory (B3848 owns exporter_transport and _exporter_from_spec).
+  - The V2 logger construction that uses the config (B3853).
+  - Legacy OTel settings and capture modes (B3854 owns OpenTelemetryConfig and capture-mode detection).
+  - The preset/destination resolution logic that maps config to exporters (B3850, B3851).
+pitfalls:
+  - "LiteLLM's excluded_services field accepts both a string and a tuple of strings; betterlite expects a frozenset with normalized db.system names. Use a separate TypeAdapter validator to parse the raw value without rebuilding the settings model, since pydantic-settings re-scans the environment on every construct."
+  - "Capture mode values are case-insensitive on the wire (SPAN_AND_EVENT or span_and_event); the property capture_span_content checks the normalized lowercase form. Normalize at the field boundary, not in the property."
+  - "Mapper names must include genai first and legacy last if legacy_compat is true, but the config construction order is not guaranteed. Use the model validator after every field is set, not field validators."
+  - "CSV parsing for list env vars must not strip away values that contain colons or other special characters. Use split(',') followed by .strip() on each item, not regex splitting."
+  - "The feature flag is cached with lru_cache. Tests that toggle LITELLM_OTEL_V2 must call is_otel_v2_enabled.cache_clear() before each test or the env-var change will not be read."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2
+review_level: standard

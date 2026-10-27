@@ -86,5 +86,5 @@ pitfalls:
 - False, zero and empty strings are forwarded as provider-specific parameters; only None is excluded by value.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 1

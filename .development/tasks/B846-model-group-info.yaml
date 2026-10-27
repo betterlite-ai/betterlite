@@ -599,6 +599,6 @@ pitfalls:
   - A later deployment replaces supported_openai_params while its false capability flags cannot unset an earlier true flag.
   - Metadata-only tpm/rpm from the first deployment is not summed like metadata-only limits from later deployments.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

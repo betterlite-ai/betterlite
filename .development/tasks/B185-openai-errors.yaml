@@ -28,7 +28,7 @@ scope:
   - tools/oracle/helpers/provider_error/**
   - tools/oracle/cases/helpers/openai-errors/**
   - tools/oracle/cases/errors/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/provider_error-*"
   - crates/betterlite-error/src/dispatch.rs
   - crates/betterlite-error/src/dispatch/**
   lint_tables: false
@@ -91,8 +91,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'provider_error' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_error-*")" &&
+      grep -lq 'provider_error' tools/oracle/fuzz/corpus/helper_case/provider_error-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -121,11 +121,12 @@ out_of_scope:
   Shared checkers/parser/status B236; Azure/OpenRouter B237; OpenAI-like B245; native classifiers and remainder
   of exception_type B186; exception_logging and _add_key_name_and_team_to_alert B012.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/provider_error-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as provider_error in the error group. Replace the stub Op in tools/oracle/src/helpers/error/provider_error.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_error.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Python checks error strings before some status branches, so a status-only table is insufficient.
 - Ignore only client message wording, not type/code/param or header semantics.
 - A synthetic response status must not override more meaningful transport information.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

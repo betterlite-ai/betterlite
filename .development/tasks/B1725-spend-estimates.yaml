@@ -54,7 +54,6 @@ scope:
     - crates/betterlite-server/src/spend/estimates/**
     - crates/betterlite-router/src/provider_budget_view.rs
     - crates/betterlite-router/src/provider_budget_view/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/provider_budget_view.rs
     - crates/betterlite-config/src/provider_budget_view/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/provider-budget-view-*
@@ -62,6 +61,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/spend_estimate.rs
     - crates/betterlite-server/fuzz/corpus/spend_estimate/**
     - tools/oracle/cases/http/spend-estimates/**
+    - tools/oracle/helpers/b1725.py
+    - tools/oracle/helpers/b1725/**
+    - tools/oracle/src/helpers/server/b1725.rs
+    - tools/oracle/src/helpers/server/b1725/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L753-L793
@@ -115,6 +118,6 @@ pitfalls:
   - Estimate selection uses the last deployment in a group and never calls the router's selection strategy.
   - A missing messages field fails a model request even when completion_response would have been sufficient on its own.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

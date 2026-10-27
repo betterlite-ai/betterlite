@@ -1,0 +1,125 @@
+id: B4057
+title: Generic prompt API fetching and compilation cache
+description: >-
+  Build GenericPromptManager integrating with the prompt management system to fetch
+  and cache prompts from any API implementing the /beta/litellm_prompt_management endpoint.
+  The manager initializes with api_base, optional api_key, timeout, and optional prompt_id,
+  storing these to fetch prompts on compile_prompt calls. Every API request includes an
+  Authorization header when api_key is present, as Bearer {api_key}. The in-memory cache
+  maps (prompt_id, label, version) tuples to compiled results; _get_cache_key builds
+  the tuple and _common_caching_logic checks the cache and optionally applies variables
+  before returning. The cache persists across requests and persists across variable
+  substitutions, so a prior cache hit with no variables can be returned directly to
+  satisfy a second identical request with variables. Implement cache management with
+  _get_cache_key, _common_caching_logic, and clear_cache; the latter empties the cache
+  so a subsequent compile_prompt re-fetches from the API. The _compile_prompt_helper
+  and async_compile_prompt_helper methods fetch the API response, parse it into a
+  PromptManagementClient record, cache the result, and apply prompt variables using
+  {variable_name} or {{variable_name}} syntax before returning. The _apply_variables
+  method substitutes every occurrence of each variable in the template messages' content
+  fields. Build prompt_initializer and prompt_initializer_registry in __init__.py; the
+  initializer takes PromptLiteLLMParams and PromptSpec, extracts api_base (required),
+  api_key (optional), timeout (defaults to 30), and provider_specific_query_params,
+  and builds a GenericPromptManager instance. The registry maps
+  SupportedPromptIntegrations.GENERIC_PROMPT_MANAGEMENT to the initializer function.
+  Preserve every behavior from the reference code: default timeout 30 seconds, Bearer
+  prefix in the Authorization header, cache-after-fetch semantics, the syntax for both
+  {key} and {{key}} variables, the API endpoint and param names.
+scope:
+  paths:
+    - crates/betterlite-models/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/integrations/generic-prompt-api/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L55-L80
+    why: "__init__ method: api_base, api_key, timeout, prompt_id, additional_provider_specific_query_params, and _prompt_cache."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L81-L85
+    why: "integration_name property returns 'generic_prompt'."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L86-L94
+    why: "_get_headers method: builds Authorization header with Bearer prefix when api_key is present."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L96-L132
+    why: "_fetch_prompt_from_api: synchronous API fetch with httpx, error handling for HTTP and JSON decode errors."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L133-L168
+    why: "async_fetch_prompt_from_api: asynchronous API fetch with async httpx client."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L169-L205
+    why: "_parse_api_response: parses API response into PromptManagementClient, extracting prompt_id, prompt_template, prompt_template_model, and prompt_template_optional_params."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L207-L224
+    why: "should_run_prompt_management: returns true when prompt_id is present or when provider_specific_query_params are present."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L225-L231
+    why: "_get_cache_key: constructs cache key from prompt_id, prompt_label, and prompt_version."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L233-L251
+    why: "_common_caching_logic: checks cache, applies variables if present, returns None if not found."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L253-L307
+    why: "_compile_prompt_helper: sync compilation with cache check, API fetch, response parsing, caching, and variable application."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L309-L348
+    why: "async_compile_prompt_helper: async compilation with identical logic to sync version."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L350-L385
+    why: "_apply_variables: substitutes variables in prompt template using {key} and {{key}} syntax."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L456-L458
+    why: "clear_cache: empties the prompt cache so subsequent fetches re-fetch from API."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/__init__.py#L34-L66
+    why: "prompt_initializer: builds GenericPromptManager from PromptLiteLLMParams and PromptSpec."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/__init__.py#L69-L71
+    why: "prompt_initializer_registry: maps SupportedPromptIntegrations.GENERIC_PROMPT_MANAGEMENT to the initializer."
+dod:
+  - text: GenericPromptManager initializes with api_base, optional api_key, timeout (default 30), and optional prompt_id.
+    proof: [generic-prompt-api-tests]
+  - text: integration_name property returns 'generic_prompt' string.
+    proof: [generic-prompt-api-tests]
+  - text: _get_headers includes Authorization header with Bearer prefix when api_key is set; includes Content-Type and Accept application/json always.
+    proof: [generic-prompt-api-tests]
+  - text: _fetch_prompt_from_api and async_fetch_prompt_from_api fetch from the /beta/litellm_prompt_management endpoint at api_base, passing prompt_id as a query parameter, and raise errors wrapping httpx and json.JSONDecodeError.
+    proof: [generic-prompt-api-tests]
+  - text: _parse_api_response extracts prompt_id, prompt_template, prompt_template_model, and prompt_template_optional_params from the API response dict.
+    proof: [generic-prompt-api-tests]
+  - text: should_run_prompt_management returns true when prompt_id is present or when provider_specific_query_params are present in the prompt spec.
+    proof: [generic-prompt-api-tests]
+  - text: _get_cache_key constructs a cache key from prompt_id, prompt_label, and prompt_version using colon separators.
+    proof: [generic-prompt-api-tests]
+  - text: _common_caching_logic checks the cache, applies variables if present, and returns None if not cached.
+    proof: [generic-prompt-api-tests]
+  - text: _compile_prompt_helper and async_compile_prompt_helper check cache, fetch from API on miss, parse response, cache result, apply variables, and return PromptManagementClient.
+    proof: [generic-prompt-api-tests]
+  - text: clear_cache empties the prompt cache so a prior cache hit becomes a fresh fetch on the next compile_prompt call.
+    proof: [generic-prompt-api-cache-tests]
+  - text: _apply_variables substitutes every occurrence of {variable_name} and {{variable_name}} in prompt template message content fields.
+    proof: [generic-prompt-api-tests]
+  - text: prompt_initializer accepts PromptLiteLLMParams and PromptSpec, extracts api_base (required), api_key, timeout, and provider_specific_query_params, and returns GenericPromptManager.
+    proof: [generic-prompt-api-tests]
+  - text: prompt_initializer_registry maps SupportedPromptIntegrations.GENERIC_PROMPT_MANAGEMENT to the prompt_initializer function.
+    proof: [generic-prompt-api-tests]
+checks:
+  optional: []
+  commands:
+    - id: generic-prompt-api-tests
+      why: API fetching, parsing, caching, and variable application tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^generic_prompt_api::/)'
+    - id: generic-prompt-api-cache-tests
+      why: cache clearing and re-fetch behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^generic_prompt_api_cache::/)'
+oracle_cases: []
+deviations:
+  - what: Authorization header is always built by _get_headers with Content-Type and Accept headers; when api_key is None, Authorization is omitted.
+    why: LiteLLM does the same; the spec does not require dropping all headers when the key is absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L86-L94
+  - what: Variable substitution with {key} and {{key}} syntax happens on every cache hit with variables, not just on cache misses; a cached prompt is re-substituted rather than cached-post-substitution.
+    why: LiteLLM does the same; the cache stores the raw template and applies variables on every retrieval.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L350-L385
+out_of_scope:
+  - "get_chat_completion_prompt (L424-L454) and async_get_chat_completion_prompt (L387-L422): these methods delegate to PromptManagementBase methods owned by B4058. This task builds the _compile_prompt_helper and async_compile_prompt_helper methods that do the actual compilation; B4058 wraps them with the completion hooks and the should_run_prompt_management gate."
+  - "set_global_generic_prompt_config (__init__.py#L19-L31) and global_generic_prompt_config (__init__.py#L16): betterlite does not support runtime global configuration; users configure generic_prompt_config through the config file instead. This task builds the config-driven prompt_initializer; runtime globals are not betterlite's pattern."
+  - "Integration with routing, retries, fallbacks, or logging: these tasks call this task but are not called by it."
+  - "CustomPromptManagement base class and PromptManagementBase completion hooks: these are owned by B4050."
+  - "PromptSpec, PromptInfo, and PromptLiteLLMParams types: owned by B4050."
+pitfalls:
+  - "The _get_headers method must construct a dict literal, not return the same dict across calls; modifying the returned dict would mutate a shared instance."
+  - "Cache key construction uses colon separators: prompt_id:label:version; all three are included even when some are None, so None values appear in the key string."
+  - "_apply_variables must substitute every occurrence of each variable in each message; a message with multiple occurrences of the same variable gets all of them replaced."
+  - "_apply_variables supports both {key} and {{key}} syntax (double braces); it replaces the {variable_name} form first, then the {{variable_name}} form, so a template can use either or both."
+  - "The _compile_prompt_helper and async_compile_prompt_helper methods raise ValueError wrapping any exception, including from API fetch, JSON parsing, and variable application."
+  - "should_run_prompt_management returns true when prompt_id is not None or when provider_specific_query_params exist in the PromptSpec's litellm_params; an empty dict of params still counts as present."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

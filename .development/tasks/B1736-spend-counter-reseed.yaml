@@ -39,7 +39,6 @@ scope:
   paths:
     - crates/betterlite-auth/src/spend_reseed.rs
     - crates/betterlite-auth/src/spend_reseed/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/reseed-lock-*
@@ -79,6 +78,6 @@ pitfalls:
   - A successful Redis miss must ignore the per-pod value even when it is nonzero.
   - Window warm failures propagate unconditionally, unlike the default primary-counter warm path.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

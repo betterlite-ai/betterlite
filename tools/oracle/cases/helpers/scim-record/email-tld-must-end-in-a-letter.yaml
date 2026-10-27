@@ -1,0 +1,11 @@
+kind: helper
+name: email-tld-must-end-in-a-letter
+call:
+  scim_record:
+    kind: user
+    value: {schemas: [u], emails: [{value: ada@example.123}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

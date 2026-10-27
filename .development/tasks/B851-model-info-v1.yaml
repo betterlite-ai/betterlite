@@ -91,19 +91,13 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-info-v1/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/model_info_v1.rs
-    - crates/betterlite-config/src/model_info_v1/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-info-v1-*
+    - crates/betterlite-config/src/sections/model_info_v1.rs
+    - crates/betterlite-config/src/sections/model_info_v1/**
+    - tools/oracle/helpers/b851.py
+    - tools/oracle/helpers/b851/**
+    - tools/oracle/src/helpers/server/b851.rs
+    - tools/oracle/src/helpers/server/b851/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15956-L16275
@@ -151,7 +145,7 @@ checks:
         - test(/replays_the_/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_info_v1::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_info_v1::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -542,6 +536,6 @@ pitfalls:
   - A single-id request bypasses the list's health and discoverability filters but still invokes listing callbacks.
   - infer_model_from_keys is passed only when nonempty key/team grants already suppress inference.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,159 @@
+id: B3774
+title: Headroom compression and issued hash tracking
+description: >-
+  Implement Headroom guardrail's compression request and apply hook that coordinates protected message handling from B3773, compression service communication, and issued-hash tracking for retrieval operations. The apply_guardrail entry point skips compression for bypass requests (x-headroom-bypass header) and background operations, extracts protected indices and compressible message subsets from the protected set defined in B3773, calls the compression service, and restores protected rows back into the result before returning. Only service-issued retrieval hashes are recorded in the per-call issued-hash map; hashes are pruned once per apply hook based on monotonic expiry time with a 900-second (15-minute) TTL.
+
+
+  Build _build_headroom_retrieve_tool which generates the OpenAI-compatible function schema for the retrieval tool, with parameters for hash (required) and query (optional).
+
+
+  Implement _resolve_call_id to unify call identity across pre-call and agentic-loop hooks by reading litellm_call_id from the logging object or request state, falling back to a generated UUID if neither is set, so hash scoping is per-call rather than trusting any hash-shaped string in message text.
+
+
+  Implement compression request _call_compress that sends flattened message payloads to /v1/compress, handles HTTP errors, timeouts and malformed responses by delegating to _handle_compress_failure (provided by B3773), and records compression statistics (tokens_before, tokens_after, compression_ratio, transforms_applied, tokens_saved) from the response. Derive tokens_saved from tokens_before - tokens_after when the service omits it and both token counts are present as numbers.
+
+
+  Implement _should_bypass to detect x-headroom-bypass headers with a value present (case-insensitive).
+
+
+  Implement update_in_memory_litellm_params to re-resolve and re-clamp the timeout on parameter updates rather than nulling it, calling _resolve_timeout (provided by B3773).
+
+
+  Implement _prune_expired_hashes to remove entries from the per-call issued-hash map that are past their TTL (900 seconds) using monotonic time comparison.
+
+
+  Implement has_headroom_retrieve_tool utility to check whether a tools list contains a headroom_retrieve function by calling has_tool_with_name (from B226).
+
+
+  Implement apply_guardrail to orchestrate compression: read bypass and background flags, validate message shape, resolve protected indices and compressible subsets, call compression service, restore protected rows, update logging and applied-guardrails header, and record issued hashes. Message identity is preserved when returning the caller's original inputs object for unchanged requests; a rebuilt copy is returned only when compression succeeded and the messages changed.
+
+
+  The apply hook calls _flatten_messages_for_compression (provided by B3773) on compressible rows, _restore_content_shapes (provided by B3773) on the service output, and _restore_protected_messages (provided by B3773) to interleave protected rows back. It calls _raw_retrieve_call_ids (provided by B3773) to determine which messages carry retrieval results, and _protected_indices (provided by B3773) to expand tool exchanges. Use the request_data adapter (a Pydantic RequestData model in scope) to read untranslated messages and recover long tool names before flattening.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/headroom.rs
+    - crates/betterlite-guardrails/src/headroom/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/guardrails/headroom/compression/**
+    - crates/betterlite-config/src/sections/headroom_compression.rs
+    - crates/betterlite-config/src/sections/headroom_compression/**
+    - tools/oracle/helpers/b3774.py
+    - tools/oracle/helpers/b3774/**
+    - tools/oracle/src/helpers/guardrails/b3774.rs
+    - tools/oracle/src/helpers/guardrails/b3774/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L324-L363
+    why: Retrieve tool definition, call ID resolution, and has_headroom_retrieve_tool utility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L524-L570
+    why: Bypass header check, update_in_memory_litellm_params timeout re-resolution, and issued-hash pruning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L586-L726
+    why: Compression request handling, response parsing, statistics extraction, and failure fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L767-L878
+    why: Apply guardrail orchestration, protected-row restoration, hash recording, and tool list management.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py
+    why: HeadroomGuardrailConfigModel configuration schema.
+dod:
+  - text: Bypass header x-headroom-bypass (case-sensitive, value required) skips compression and returns inputs unchanged.
+    proof: [headroom-compression-tests]
+  - text: Background requests (request_data.get("background") is truthy) skip compression and return inputs unchanged.
+    proof: [headroom-compression-tests]
+  - text: Compression request sends flattened messages to /v1/compress with model when present, and includes Authorization header when api_key is set.
+    proof: [oracle]
+  - text: Response parsing validates JSON structure, message array presence and count, rejecting malformed JSON and mismatched counts with fail-open or fail-closed behavior.
+    proof: [oracle]
+  - text: Compression statistics (tokens_before, tokens_after, compression_ratio, transforms_applied, tokens_saved) are extracted from the response payload.
+    proof: [oracle]
+  - text: When tokens_saved is absent, it is derived as tokens_before - tokens_after if both values are present and numeric (not boolean).
+    proof: [oracle]
+  - text: Issued retrieval hashes from service response are recorded in the per-call issued-hash map with 900-second (15-minute) TTL using monotonic time.
+    proof: [headroom-compression-tests]
+  - text: Hash pruning removes entries past their 900-second TTL once per apply_guardrail call using monotonic time comparison.
+    proof: [headroom-compression-tests]
+  - text: Call identity is resolved from litellm_call_id in logging object or request state, falling back to generated UUID, recorded in request_data if generated.
+    proof: [headroom-compression-tests]
+  - text: Protected message indices (system, final user, final assistant, tool results carrying retrieval) are excluded from compression via protected_indices calculated in B3773.
+    proof: [oracle]
+  - text: Protected rows are restored back into the full message list after compression service returns, preserving their original positions and shapes.
+    proof: [oracle]
+  - text: Original message identity is preserved when returning caller's inputs object on bypass or failure; inputs object is rebuilt only on successful compression.
+    proof: [headroom-compression-tests]
+  - text: Retrieval tool is added to the tools list when compression succeeded and hashes were recorded, only if not already present.
+    proof: [oracle]
+  - text: Applied guardrails header is updated on both success and failure of compression.
+    proof: [headroom-compression-tests]
+  - text: Logging guardrail information includes compression statistics on success and error details on failure.
+    proof: [headroom-compression-tests]
+  - text: Request-data adapter validates and reads untranslated messages to recover long MCP tool names before flattening.
+    proof: [headroom-compression-tests]
+checks:
+  optional: []
+  commands:
+    - id: headroom-compression-tests
+      why: compression request, hash tracking, bypass/background handling or apply orchestration fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_compression::|^headroom_compression_call_id::|^headroom_compression_hash_tracking::)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/headroom/compression/bypass-header-true.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/bypass-header-false.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/background-request-skipped.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/foreground-request-compressed.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/compression-request-payload.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/compression-with-model.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/compression-auth-header.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/response-valid-statistics.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/response-missing-json.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/response-non-dict.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/response-missing-messages.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/response-empty-messages.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/response-count-mismatch.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/tokens-saved-omitted-derived.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/tokens-saved-omitted-nonnumeric.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/tokens-saved-present-wins.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/protected-rows-restored.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/protected-system-message-excluded.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/protected-final-user-excluded.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/protected-final-assistant-excluded.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/retrieve-tool-added-when-hashes.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/retrieve-tool-not-duplicated.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/failure-http-error-fail-open.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/failure-http-error-fail-closed.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/failure-timeout-fail-open.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/failure-timeout-fail-closed.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/call-id-from-logging-object.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/call-id-from-request-state.yaml
+  - tools/oracle/cases/guardrails/headroom/compression/call-id-generated-uuid.yaml
+deviations:
+  - what: betterlite does not keep an unbounded map of issued hashes; entries are pruned once per apply_guardrail call based on 900-second (15-minute) monotonic expiry TTL.
+    why: LiteLLM's _issued_hashes_by_call_id map can grow without bound if hash validation never calls _prune_expired_hashes. Betterlite enforces TTL-based cleanup on every compression operation with a 15-minute window to permit retrieval in subsequent turns of an agentic interaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L66
+  - what: HTTP POST requests to the compression service carry a Connection timeout separate from the full request timeout to enforce connection establishment deadlines.
+    why: httpx.Timeout's connect parameter allows precise control over connection establishment time, improving diagnostic signal when the service is slow to accept connections.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L556
+out_of_scope:
+  - Message flattening helpers (_flatten_messages_for_compression, _is_str_object_dict, _is_object_list) provided by B3773.
+  - Content shape restoration (_restore_content_shapes, _restore_protected_messages) provided by B3773.
+  - Protected indices calculation (_protected_indices, _raw_retrieve_call_ids, _retrieval_result_indices) provided by B3773.
+  - Compression failure detail building (_build_compress_failure_detail) provided by B3773.
+  - Compression failure handling and timeout resolution (_handle_compress_failure, _resolve_timeout, _request_headers) provided by B3773.
+  - Tool call extraction (has_tool_with_name, get_tool_calls_from_response) provided by B226.
+  - Retrieval hook implementation (_call_retrieve, async_should_run_agentic_loop, async_build_agentic_loop_plan) owned by B3775.
+  - Initialization from guardrail registry (owned by B107).
+  - ">-
+    CustomGuardrail base class lifecycle (CustomGuardrail.__init__, add_standard_logging_guardrail_information_to_request_data, update_in_memory_litellm_params base implementation, log_guardrail_information decorator):
+    Framework base class for guardrail integration; no assigned task owner yet (B104 outline has no task file). Required for initialization and lifecycle; infrastructure dependency."
+  - ">-
+    HTTP client management (AsyncHTTPHandler.post): Infrastructure layer that provides pooled httpx clients with timeout handling; no assigned task owner yet.
+    Injected as dependency rather than constructed here."
+  - ">-
+    Applied guardrails header addition (add_guardrail_to_applied_guardrails_header from proxy/common_utils/callback_utils.py): Callback utility to record guardrail
+    application in response headers; no assigned task owner yet (label A). Use as injected dependency."
+pitfalls:
+  - Protected indices are calculated in B3773 and must be consistent with the compressible message set; any row in protected_indices is excluded from compression.
+  - Issued-hash TTL is 900 seconds (15 minutes) using monotonic time, separate from any cache or storage TTL; hashes are pruned once per apply hook and the map can briefly grow unbounded on high call frequency before the next pruning.
+  - The apply hook must preserve the caller's original inputs object when no compression occurred or it failed; returning a rebuilt copy on an unchanged request triggers unnecessary message rewrites downstream.
+  - Token savings are only counted when tokens_before and tokens_after are both present as numbers (not booleans); a service that returns booleans true/false instead of numeric token counts will have tokens_saved omitted.
+  - Retrieval tool is only added when hashes were successfully recorded; if ccr_retrieval is false, no tool is added even if compression succeeded.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

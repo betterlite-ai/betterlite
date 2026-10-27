@@ -170,5 +170,5 @@ pitfalls:
   increments expire with the TTL: %s''; retain its level and fallback instead of turning it into a hard error.'
 review_level: security
 budget:
-  max_changed_lines: 470
+  max_changed_lines: 1500
   max_new_expects: 1

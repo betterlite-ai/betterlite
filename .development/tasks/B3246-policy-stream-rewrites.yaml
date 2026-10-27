@@ -1,0 +1,107 @@
+id: B3246
+title: Pipeline streaming rewrite observation and legacy adaptation
+description: >-
+  Build streaming guardrail rewrite adapters that sit between pipeline steps and endpoint translations,
+  observing whether unified guardrails or legacy post-call hooks rewrote the streamed response.
+  Deliver text and tool-call rewrites on translations that support ended-stream write-back
+  (those with delivers_ended_stream_rewrites = true); for translations without write-back,
+  or rewrites that drop/add tool calls, discard the rewrite and release the original buffered chunks
+  with a warning so the client gets the unmodified stream.
+  Legacy guardrails (those with no apply_guardrail or use_native_lifecycle_hooks = true) run their
+  post-call hooks against the assembled response through an adapter that rescans it with the translation
+  to detect whether the hook changed texts or tool calls. Guardrails without streaming capability
+  continue running on their own. Preserve the executor's pass/fail classification for exceptions,
+  the translation's empty-input handling (tool-only streams stay deliverable), and the absence
+  of the guardrail from the applied-guardrails header when its rewrite was discarded.
+  Wire capability checks and callback lookup here so streaming adaptation does not depend on the
+  step runner orchestration.
+scope:
+  paths:
+    - crates/betterlite-core/src/guardrails/streaming_rewrite.rs
+    - crates/betterlite-core/src/guardrails/streaming_rewrite/**
+    - tools/oracle/cases/streaming/**
+    - Cargo.toml
+    - tools/oracle/helpers/b3246.py
+    - tools/oracle/helpers/b3246/**
+    - tools/oracle/src/helpers/core_ops/b3246.rs
+    - tools/oracle/src/helpers/core_ops/b3246/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L52-L112
+    why: UndeliverableStreamRewrite exception, helper functions for text/tool-call shape inspection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L115-L167
+    why: _StreamRewriteObserver wraps the guardrail to detect rewrites and report deliverability.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L169-L184
+    why: _ScannedTextRecorder records texts scanned by the endpoint translation for revalidation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L186-L266
+    why: _LegacyHookStreamAdapter runs legacy post-call hooks on the assembled response through rescanning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L292-L304
+    why: _release_original_chunks restores buffered chunks and logs the discard reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L428-L484
+    why: _run_streaming_step coordinates streaming execution, adapts legacy hooks, handles exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L600-L625
+    why: supports_unified_execution, supports_streaming_execution, find_guardrail_callback capability checks.
+dod:
+  - text: UndeliverableStreamRewrite exception captures the guardrail name and discard reason, with __str__ matching LiteLLM's message format.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: _StreamRewriteObserver detects text rewrites, tool-call rewrites, and tool-call count changes, and reports discard reason on translations without write-back.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: _LegacyHookStreamAdapter runs a legacy post-call hook against the assembled response, rescans it, and raises UndeliverableStreamRewrite on text/tool-call mismatch.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: _release_original_chunks restores the original buffered chunks and logs a warning with the guardrail name and discard reason.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: _run_streaming_step wraps the guardrail, coordinates the translation, detects and releases unrewritable rewrites, and calls add_guardrail_to_applied_guardrails_header only when the rewrite is deliverable.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: >-
+      supports_unified_execution checks for apply_guardrail in the type dict and use_native_lifecycle_hooks false.
+      supports_streaming_execution checks for unified support or post-call-hook-only with no streaming-iterator override.
+      find_guardrail_callback looks up a registered guardrail by name from litellm.callbacks.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: Every helper function for text/tool-call inspection and comparison preserves LiteLLM's exact mismatch reporting and count-change detection.
+    proof: [streaming-rewrite-oracle, helper-python]
+  - text: Streaming cases test unified guardrails, legacy hooks, rewrites on deliverable/undeliverable translations, and count changes.
+    proof: [streaming-rewrite-oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: streaming-rewrite-oracle
+      why: streaming rewrite cases fail or oracle adapter is missing
+      run: |-
+        cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(streaming_rewrite)' \
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/helpers/b3246)" \
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+    - id: helper-python
+      why: Python oracle helper adapters fail strict Python checks
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/streaming/unified-text-rewrite.yaml
+  - tools/oracle/cases/streaming/unified-tool-rewrite.yaml
+  - tools/oracle/cases/streaming/legacy-hook-text-rewrite.yaml
+  - tools/oracle/cases/streaming/legacy-hook-tool-rewrite.yaml
+  - tools/oracle/cases/streaming/rewrite-undeliverable-no-writes.yaml
+  - tools/oracle/cases/streaming/rewrite-undeliverable-count-change.yaml
+  - tools/oracle/cases/streaming/rewrite-rescanned-mismatch.yaml
+  - tools/oracle/cases/streaming/empty-stream-no-rewrite.yaml
+deviations:
+  - what: betterlite logs discard reasons to stderr through tracing instead of verbose_proxy_logger, so the warning format differs.
+    why: betterlite uses structured JSON logging for observability; LiteLLM's proxy_logger is Python-only.
+  - what: betterlite does not log the step guardrail name in every streaming step execution; only discards log.
+    why: The full step-by-step logging lives in the executor (B3247), not the rewrite adapter. The adapter only logs exceptional cases (discards).
+out_of_scope:
+  - "B3247 owns execution orchestration (_run_step, _prepare_hook_input) and when _run_streaming_step is called, how streaming steps are chosen, and on_error/on_fail fallback."
+  - "B888 (or the concrete endpoint-translation task) owns BaseTranslation.post_call_hook_response, process_output_response, process_output_streaming_response methods and delivers_ended_stream_rewrites class attribute."
+  - "B189 owns callback registration, discovery in litellm.callbacks, and add_guardrail_to_applied_guardrails_header function in callback_utils.py."
+  - "B3664/B3665/B3666 (split from B104) own CustomGuardrail class definition, apply_guardrail and async_post_call_success_hook methods, and use_native_lifecycle_hooks, records_own_guardrail_information, structured_messages_cover_full_request attributes."
+  - "B3679-B3681 (split from B104) own UnifiedLLMGuardrails lifecycle hooks and pre/post hook interface that _run_step coordinates."
+  - "B164-B165 own CustomLogger base class and lifecycle contract."
+  - "B3247 owns CustomGuardrail._is_guardrail_intervention and exception handling classification beyond UndeliverableStreamRewrite."
+pitfalls:
+  - A _LegacyHookStreamAdapter wraps the guardrail to run its post-call hook only; the hook's lifecycle exceptions are caught by the executor, not the adapter.
+  - _ScannedTextRecorder is a dummy guardrail; it must mark its methods as recorded_own_guardrail_information=false so the executor doesn't skip the real guardrail's logging.
+  - Tool-call detection uses model_dump() on BaseModel and get("function") on dicts; a tool call that is not a dict or lacks a function key becomes (None, None) without error.
+  - The originals deepcopy must happen before hook_input.pop("response"), so a legacy hook cannot accidentally see a leftover response from a prior step.
+  - add_guardrail_to_applied_guardrails_header is called only when the observer confirms no discard; if discarded, the step result must show the guardrail never ran.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

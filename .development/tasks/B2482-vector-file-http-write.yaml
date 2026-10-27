@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/vector_file_write_transport.py
   - tools/oracle/cases/sdk-http/vector-file-write-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-transport-*
+  - tools/oracle/helpers/b2482.py
+  - tools/oracle/helpers/b2482/**
+  - tools/oracle/src/helpers/core_ops/b2482.rs
+  - tools/oracle/src/helpers/core_ops/b2482/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11300-L11572
@@ -88,5 +92,5 @@ pitfalls:
 - File DELETE forwards timeout in sync mode even though vector-store DELETE omits it.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

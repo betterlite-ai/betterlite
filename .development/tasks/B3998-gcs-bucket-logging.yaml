@@ -1,0 +1,235 @@
+id: B3998
+title: Group GCS log uploads and retrieve request payloads
+description: >-
+  Implement bounded queue draining, credential-separated NDJSON groups and legacy
+  individual-object upload modes for GCS. Provide the three-date request lookup used
+  by spend-log retrieval with individual naming and custom sanitized IDs.
+  Inherit from GCSBucketBase and read environment variables GCS_BATCH_SIZE (default 2048),
+  GCS_FLUSH_INTERVAL (default 20 seconds) and GCS_USE_BATCHED_LOGGING (default true).
+  Enqueue StandardLoggingPayload items from success and failure events, flushing immediately
+  when the queue reaches its configured capacity before dropping any queued item. Group
+  items by their effective bucket plus service-account credentials; batched uploads combine
+  grouped items into NDJSON format under date/batch-{uuid}.ndjson, while individual uploads
+  use response ID or failure UUID under date/{id}. Both paths use construct_request_headers
+  to obtain Vertex authentication and _log_json_data_on_gcs to POST the formatted payload.
+  Implement request-payload retrieval by trying the start date, then start+1 and start-1
+  until a success-object lookup finds the response. Omit the async_health_check method
+  (no caller at the pin) and remove paid-tier eligibility checks without consulting
+  enterprise implementations.
+scope:
+  paths:
+  - crates/betterlite-logging/src/gcs_logger.rs
+  - crates/betterlite-logging/src/gcs_logger/**
+  - tools/oracle/cases/logging/gcs-bucket-logging/**
+  - tools/oracle/helpers/b3998.py
+  - tools/oracle/helpers/b3998/**
+  - tools/oracle/src/helpers/logging/b3998.rs
+  - tools/oracle/src/helpers/logging/b3998/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L28-L51
+  why: GCSBucketLogger.__init__ with environment configuration and parent initialization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L54-L96
+  why: async_log_success_event and async_log_failure_event queue enqueuing with auto-flush.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L98-L113
+  why: _drain_queue_batch bounded non-blocking queue drain respecting batch_size.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L115-L150
+  why: Batch object naming, config key extraction and sanitization for credential grouping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L152-L177
+  why: Grouping by config, combining payloads to NDJSON with json.dumps default=str.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L179-L228
+  why: Sending grouped batches and individual logs with header/upload dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L230-L256
+  why: Sending single log items individually with exception handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L258-L278
+  why: async_send_batch routing between batched and individual modes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L280-L303
+  why: Object naming with custom metadata override and failure UUID fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L305-L356
+  why: Request-payload retrieval trying three dates and object-date formatting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L358-L372
+  why: Queue flushing and periodic flush task scheduling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/Readme.md
+  why: GCS integration documentation reference material.
+dod:
+- text: >-
+    GCSBucketLogger.__init__ reads GCS_BATCH_SIZE, GCS_FLUSH_INTERVAL and GCS_USE_BATCHED_LOGGING
+    from environment with documented defaults, creates an asyncio queue with max size from
+    LITELLM_ASYNCIO_QUEUE_MAXSIZE, calls super().__init__() to initialize GCSBucketBase,
+    and launches periodic_flush as an async task.
+  proof: [initialization-tests]
+- text: >-
+    async_log_success_event and async_log_failure_event obtain standard_logging_object from
+    kwargs, flush the queue when full to make room without blocking, and enqueue the item
+    with payload, kwargs and response_obj. Exceptions are logged and do not propagate.
+  proof: [event-enqueue-tests]
+- text: >-
+    _drain_queue_batch removes items from the queue non-blocking without exceeding batch_size,
+    returning a list of up to batch_size items. Empty queue stops the loop.
+  proof: [drain-batch-tests]
+- text: >-
+    _get_config_key extracts bucket_name and path_service_account from standard_callback_dynamic_params,
+    falls back to instance defaults, combines them with pipe-delimiter and returns the key.
+    Sanitization for logging hashes this key and returns "config-{hex[:8]}".
+  proof: [config-key-tests]
+- text: >-
+    _group_items_by_config partitions items by their config key, returning a dict mapping
+    config_key to lists of items with matching keys.
+  proof: [grouping-tests]
+- text: >-
+    _combine_payloads_to_ndjson serializes each item's payload to JSON with default=str,
+    joins lines with newline, producing complete NDJSON format.
+  proof: [ndjson-tests]
+- text: >-
+    _send_grouped_batch obtains config and headers, generates current-date batch object name,
+    combines payloads, calls _log_json_data_on_gcs and returns success/error counts. Exceptions
+    count all items as errors.
+  proof: [grouped-batch-tests]
+- text: >-
+    _send_individual_logs iterates items and calls _send_single_log_item for each.
+  proof: [individual-logs-tests]
+- text: >-
+    _send_single_log_item obtains config and headers, generates object name, calls
+    _log_json_data_on_gcs with the single payload, logs exceptions without propagating.
+  proof: [single-item-tests]
+- text: >-
+    async_send_batch drains up to batch_size items; if use_batched_logging is true,
+    groups by config and sends grouped batches; otherwise sends items individually.
+    Empty drain does nothing.
+  proof: [async-send-tests]
+- text: >-
+    _get_object_name checks for error_str to determine success vs failure naming,
+    reads custom gcs_log_id from litellm_params.metadata, sanitizes it and uses it to
+    override the standard date/id naming.
+  proof: [object-naming-tests]
+- text: >-
+    get_request_response_payload tries start_time_utc, start_time_utc+1 day and start_time_utc-1 day,
+    generates success object names by date, calls download_gcs_object and deserializes JSON.
+    Returns None if all three dates fail.
+  proof: [payload-retrieval-tests]
+- text: >-
+    _generate_success_object_name formats as date/response_id and _generate_failure_object_name
+    as date/failure-{uuid}. _get_object_date_from_datetime formats as YYYY-MM-DD.
+  proof: [naming-format-tests]
+- text: >-
+    flush_queue calls async_send_batch and updates last_flush_time. periodic_flush sleeps
+    flush_interval seconds in a loop and calls flush_queue, logging when each flush completes.
+  proof: [flush-tests]
+checks:
+  optional: []
+  commands:
+  - id: initialization-tests
+    why: __init__ must read environment, create queue and launch periodic flush
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: event-enqueue-tests
+    why: Success and failure events must enqueue items and flush when queue is full
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::event_enqueue_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: drain-batch-tests
+    why: Queue drain must respect batch_size limit and handle empty queue
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::drain_batch_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: config-key-tests
+    why: Config key extraction and sanitization must use dynamic params with fallbacks
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::config_key_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: grouping-tests
+    why: Items must be grouped by config key with correct partitioning
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::grouping_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: ndjson-tests
+    why: Payloads must be combined as newline-delimited JSON with default=str serialization
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::ndjson_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: grouped-batch-tests
+    why: Grouped batches must use batched naming and call _log_json_data_on_gcs once per group
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::grouped_batch_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: individual-logs-tests
+    why: Individual mode must send each item separately with per-item object names
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::individual_logs_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: single-item-tests
+    why: Single item sends must use individual object naming and handle exceptions
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::single_item_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: async-send-tests
+    why: async_send_batch must route between batched and individual modes
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::async_send_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: object-naming-tests
+    why: Object names must use response ID for success, UUID for failure, and custom gcs_log_id when present
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::object_naming_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: payload-retrieval-tests
+    why: Payload retrieval must try three dates and return None when all fail
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::payload_retrieval_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: naming-format-tests
+    why: Object naming formats must match expected date/id patterns
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::naming_format_behaviors::tests::/) - test(/::replays_corpus$/)'
+  - id: flush-tests
+    why: Queue flushing and periodic flush must call async_send_batch and update timestamps
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::flush_behaviors::tests::/) - test(/::replays_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/logging/gcs-bucket-logging/init-reads-batch-size-env.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/init-reads-flush-interval-env.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/init-reads-batched-logging-env.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/success-event-enqueues-payload.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/failure-event-enqueues-payload.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/full-queue-flushes-before-enqueue.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/drain-batch-respects-limit.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/config-key-uses-dynamic-params.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/config-key-falls-back-to-defaults.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/config-key-sanitization-hashes.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/grouping-by-config-key.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/ndjson-format-with-default-str.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/grouped-batch-single-upload.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/grouped-batch-handles-exceptions.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/individual-logs-per-item.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/async-send-batch-mode-selection.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/custom-gcs-log-id-override.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/object-name-success-format.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/object-name-failure-format.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/payload-retrieval-tries-three-dates.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/payload-retrieval-returns-none.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/date-format-yyyy-mm-dd.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/flush-queue-updates-timestamp.yaml
+- tools/oracle/cases/logging/gcs-bucket-logging/periodic-flush-loop.yaml
+deviations:
+- what: >-
+    GCSBucketLogger.__init__ (lines 48-51) and async_log_success_event (lines 58-61)
+    raise ValueError if premium_user is not True.
+    Betterlite removes these paid-tier eligibility checks entirely per project policy.
+  why: >-
+    LiteLLM's enterprise package enforces paid-tier restrictions; betterlite has no paid tier.
+    All features are always available and nothing gates users or teams.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L48-L61
+out_of_scope:
+- async_health_check (line 374) is not owned by this task; it has no caller at the pin and raises NotImplementedError.
+- GCS_DEFAULT_BATCH_SIZE, GCS_DEFAULT_FLUSH_INTERVAL_SECONDS and GCS_DEFAULT_USE_BATCHED_LOGGING constants are
+  defined in gcs_bucket.py (lines 11-15) but owned and validated by B002's environment and config loading.
+- B3997 owns GCSBucketBase parent class, get_gcs_logging_config and construct_request_headers; this task calls them.
+- B2208 owns sanitize_cloud_object_component utility; this task uses it.
+- get_secret_str general secret-manager dispatcher needs a lower owner (question 2 in outline).
+- CustomLogger and AdditionalLoggingUtils base classes and their methods need assignment (outlined as architectural decisions).
+pitfalls:
+- >-
+  Config key extraction reads both standard_callback_dynamic_params (dynamic per-call overrides)
+  and instance-level BUCKET_NAME and path_service_account (set at initialization). Fallback order
+  is dynamic params first, then instance, then literal defaults.
+- >-
+  A full queue calls flush_queue immediately before enqueuing new items. This prevents
+  blocking and data loss but does not guarantee delivery; failed groups are not requeued.
+- >-
+  Batched logging groups items by config key (bucket plus credentials), so multiple keys
+  result in multiple uploads even within one batch_send call. Individual mode sends each
+  item as a separate request.
+- >-
+  NDJSON combines payloads with newline separators, using json.dumps with default=str
+  to serialize non-JSON-serializable fields. No trailing newline exists.
+- >-
+  Object naming for batches uses current UTC time and a UUID suffix: date/batch-{timestamp}-{uuid}.ndjson.
+  Success individuals use response_obj.get("id", ""), and failures use failure-{uuid}.
+- >-
+  custom gcs_log_id from litellm_params.metadata overrides standard naming entirely, formatted as
+  date/custom-{uuid}-{sanitized_id}. If sanitization produces an empty string, the override is skipped.
+- >-
+  Request-payload retrieval searches three dates in order: start_date, start_date+1, start_date-1.
+  It cannot recover individual items from NDJSON batches, only individually-uploaded success objects.
+- >-
+  Paid-tier eligibility checks (premium_user is True) are removed entirely, not replaced with
+  a warning or fallback. betterlite has no paid tier.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

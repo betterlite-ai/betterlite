@@ -1,10 +1,12 @@
 pub mod auth;
 mod error_body;
 pub mod jwt_display;
+pub mod management_envelopes;
 mod model_list;
 mod model_query;
 pub mod passthrough;
 mod routes;
+pub mod scim_records;
 pub mod server;
 mod shutdown;
 mod tests;

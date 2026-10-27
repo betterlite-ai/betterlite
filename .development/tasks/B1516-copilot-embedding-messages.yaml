@@ -78,5 +78,5 @@ pitfalls:
   - The Messages API version is 2026-06-01 rather than the shared 2025-04-01 header default.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

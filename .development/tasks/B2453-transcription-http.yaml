@@ -34,6 +34,10 @@ scope:
   - tools/oracle/sdk_http/transcription_http.py
   - tools/oracle/cases/sdk-http/transcription-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/transcription-http-*
+  - tools/oracle/helpers/b2453.py
+  - tools/oracle/helpers/b2453/**
+  - tools/oracle/src/helpers/provider/b2453.rs
+  - tools/oracle/src/helpers/provider/b2453/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1544-L1798
@@ -98,5 +102,5 @@ pitfalls:
 - max_retries is unused by these handlers and must not create an extra HTTP retry layer.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

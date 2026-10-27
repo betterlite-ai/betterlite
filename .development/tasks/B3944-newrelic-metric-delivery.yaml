@@ -1,0 +1,167 @@
+id: B3944
+title: New Relic metric delivery, retries and eviction drain
+description: >-
+  Implement NewRelicMetricsLogger delivery, retry, and drain state machine for team metric batches.
+  Deliver team metrics using explicit team credentials only (no environment fallback), gzip
+  request bodies with Content-Type application/json and Content-Encoding gzip, split large payloads
+  into 200-record chunks (NEWRELIC_METRICS_MAX_BATCH_SIZE), and cap retried records at 10,000
+  (NEWRELIC_METRICS_MAX_RETRY_QUEUE_SIZE). Classify HTTP responses: 408 (request timeout) and 429
+  (rate limit) requeue for retry with exponential backoff; other 4xx drops with a diagnostic message
+  (permanent failures like 403 credential rejection); 5xx and network errors requeue. When the queue
+  exceeds max_queue_size after a retry requeue, drop the oldest records first and log the count.
+  Implement stop() called on cache eviction: set stopped flag and schedule _final_drain() as a fire-and-forget
+  task, guarded against a shutdown race. For a stopped logger, every new async_log_success_event or
+  async_log_failure_event calls _drain_with_retry(). The _drain_with_retry() loop attempts delivery
+  on every queued record across up to three passes (NEWRELIC_METRICS_MAX_DRAIN_PASSES) with 2^pass
+  seconds backoff between attempts, never stopping at the first failing chunk so a persistent
+  head failure does not starve the tail. After the final pass, drop any records still queued that
+  were present at drain start (a record appended by a callback during drain is left for its own drain).
+  Use max(1, int((now - window_start) * 1000)) for interval.ms; it is the real flush window, not a
+  fixed config value. The periodic_flush() task runs until stopped, calling flush_queue() at a 5-second
+  interval. flush_queue() takes the queue under flush_lock, empties it to a local snapshot, releases
+  the lock, splits into batch_size chunks without exceeding the queued count at lock time, and stops
+  at the first failing chunk (unlike drain, which attempts all chunks). Every async send is isolated
+  under async_send_batch() so concurrent requests append to the queue without blocking send.
+scope:
+  paths:
+    - crates/betterlite-logging/src/newrelic_metrics.rs
+    - crates/betterlite-logging/src/newrelic_metrics/**
+    - tools/oracle/cases/logging/newrelic-delivery/**
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/helpers/b3944.py
+    - tools/oracle/helpers/b3944/**
+    - tools/oracle/src/helpers/logging/b3944.rs
+    - tools/oracle/src/helpers/logging/b3944/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L70
+    why: _RETRYABLE_CLIENT_STATUSES constant with 408 and 429.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L197-L220
+    why: NewRelicMetricsLogger.__init__ with explicit newrelic_api_key, region resolution, async client setup, _stopped flag, _drain_lock, periodic_flush task and base initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L221-L233
+    why: "stop() method: set flag, schedule _final_drain() as fire-and-forget task with exception handling for shutdown race."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L234-L269
+    why: "_drain_with_retry() loop: attempt all queued on up to three passes with 2^pass backoff, drop survivors at final pass only, never stop at first failure."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L270-L291
+    why: _drain_flush_once() take queue snapshot under lock, split chunks, attempt all, requeue only failed chunks (5xx/network).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L295-L302
+    why: periodic_flush() loop until stopped, call flush_queue at flush_interval, final drain on exit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L303-L314
+    why: async_log_success_event and async_log_failure_event call _log_async_event with standard_logging_object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L315-L326
+    why: _log_async_event enqueues metric record, drain immediately if stopped, threshold flush if queue reaches batch_size.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L327-L340
+    why: flush_queue() limit to current queue size, split and attempt all chunks, stop at first failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L341-L357
+    why: async_send_batch() extract oldest batch_size records, classify and send, requeue if failed, return bool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L358-L398
+    why: _classify_and_send() build payload, post with gzip, handle HTTPStatusError/network, classify status, return bool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L399-L412
+    why: _requeue() prepend batch in place (never assignment), check overflow, drop oldest, warn on drop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L413-L427
+    why: async_send_compressed_data() gzip serialize, build headers with Api-Key, POST to metric_api_url.
+dod:
+  - text: NewRelicMetricsLogger requires an explicit newrelic_api_key and rejects missing or empty keys with a detailed error.
+    proof: [init-validation-tests]
+  - text: Credentials are never read from the environment; the logger takes the API key as a constructor parameter only.
+    proof: [credential-isolation-tests]
+  - text: 408 and 429 status codes are retried; other 4xx status codes drop the batch with a diagnostic message; 5xx and network errors requeue for retry.
+    proof: [response-classification-tests, oracle]
+  - text: Retried batches are prepended to the queue in chronological order (oldest records dropped first on overflow) and capped at max_queue_size=10000 records.
+    proof: [requeue-and-overflow-tests, oracle]
+  - text: The stopped logger returns a bool from stop() guarded against shutdown race and schedules _final_drain() as a fire-and-forget task.
+    proof: [stop-safety-tests]
+  - text: A stopped logger with subsequent async_log_success_event or async_log_failure_event calls drains on every new record through _drain_with_retry().
+    proof: [post-stop-callback-tests]
+  - text: _drain_with_retry() attempts delivery on every queued record up to three passes with 2^pass second backoff (0s, 1s, 2s), never stops at the first failing chunk, and drops only survivors at the final pass.
+    proof: [drain-behavior-tests, oracle]
+  - text: A record appended by a callback during drain is not dropped after the final pass, so it is left for its own serialized drain.
+    proof: [drain-callback-interleave-tests]
+  - text: flush_queue() limits chunk attempts to the current queue size at lock release (records appended mid-flush belong to the next window), stops at the first failing chunk, and logs progress.
+    proof: [flush-behavior-tests, oracle]
+  - text: Requests are gzipped with Content-Type application/json, Content-Encoding gzip, and Api-Key header.
+    proof: [gzip-headers-tests, oracle]
+  - text: Interval.ms is computed as max(1, int((now - window_start) * 1000)) in milliseconds, where window_start is the flush start time at lock release.
+    proof: [interval-ms-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: init-validation-tests
+      why: Initialization rejects empty keys or accepts missing credentials.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::init_validation(::|$)/)'
+    - id: credential-isolation-tests
+      why: Credentials fall back to environment variables or are read at wrong point.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::credential_isolation(::|$)/)'
+    - id: response-classification-tests
+      why: Response status codes are classified incorrectly for retry/drop decision.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::response_classification(::|$)/)'
+    - id: requeue-and-overflow-tests
+      why: Retry queue prepends incorrectly, exceeds max_queue_size, or does not drop oldest.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::requeue_and_overflow(::|$)/)'
+    - id: stop-safety-tests
+      why: stop() panics, does not schedule final drain, or fails on shutdown race.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::stop_safety(::|$)/)'
+    - id: post-stop-callback-tests
+      why: Stopped logger does not drain on new callbacks or drains incorrectly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::post_stop_callback(::|$)/)'
+    - id: drain-behavior-tests
+      why: Drain does not attempt all passes, stops at first failure, or drops records prematurely.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::drain_behavior(::|$)/)'
+    - id: drain-callback-interleave-tests
+      why: Records appended during drain are dropped or stranded.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::drain_callback_interleave(::|$)/)'
+    - id: flush-behavior-tests
+      why: flush_queue stops at first failure, exceeds current queue size, or does not limit chunks.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::flush_behavior(::|$)/)'
+    - id: gzip-headers-tests
+      why: Gzip compression is missing, headers are wrong, or Api-Key is malformed.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::gzip_headers(::|$)/)'
+    - id: interval-ms-tests
+      why: Interval computation is wrong, floor is not applied, or window_start is incorrect.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_metrics::tests::interval_ms(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/logging/newrelic-delivery/202-success.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/408-retry.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/429-retry.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/500-retry.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/403-drop.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/400-drop.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/network-error-retry.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/gzip-compression.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/batch-split-200-records.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/retry-queue-overflow-drops-oldest.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/drain-three-passes.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/drain-with-backoff.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/post-stop-drain.yaml
+  - tools/oracle/cases/logging/newrelic-delivery/interval-ms-floor.yaml
+deviations:
+  - what: The stopped logger ignores exceptions when scheduling _final_drain() on shutdown, so it never panics into the cache eviction path.
+    why: Eviction should always complete, and if the event loop is shutting down there may be no running loop to schedule the task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L229-L232
+  - what: A record appended by a callback after stop() is left for its own drain, never dropped at the final pass with records that were queued at drain start.
+    why: "Fairness: every record gets the full three-pass retry budget, not fewer attempts because a callback raced the drain."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L250-L269
+out_of_scope:
+  - Metric record construction and aggregation (B3943 owns _metric_record_from_payload, build_metric_payload and limits).
+  - HTTP client setup (B173 owns get_async_httpx_client and POST transport).
+  - JSON serialization (B192 owns safe_dumps).
+  - Base batch logger (B256 owns CustomBatchLogger.__init__, periodic_flush scheduling and batch_size/max_queue_size initialization).
+pitfalls:
+  - "The newrelic_api_key is passed explicitly to __init__; there is no environment fallback. An empty or missing key raises ValueError immediately."
+  - "The Api-Key header value must be passed exactly as newrelic_api_key; do not add a Bearer prefix or modify the value."
+  - "408 and 429 must be retried; 403 is a permanent credential failure and must be dropped with a diagnostic message naming it."
+  - "Other 4xx statuses are permanent failures (bad request, not found, etc.) and must be dropped, never retried."
+  - "5xx statuses and network errors (HTTPStatusError caught, or any exception during the post) must be requeued."
+  - "_requeue() prepends the batch in place (never self.log_queue = batch + self.log_queue): records appended concurrently must survive."
+  - "max_queue_size overflow drops only the oldest records, preserving newer records and any record appended during the requeue operation."
+  - "A stopped logger's _drain_with_retry() loop must take a snapshot of the queue before the first pass attempt, not at the start of each pass."
+  - "Records appended during drain that were not in the snapshot must not be dropped at the final pass; they are left for a subsequent serialized drain."
+  - "Backoff between drain passes is 2^pass seconds: 0, 1, 2 seconds (three passes total)."
+  - "flush_queue() must limit chunk attempts to ceil(queued / batch_size) where queued is the count at lock release, never loop until empty."
+  - "The interval.ms must use the real flush window start time (the previous last_flush_time) as window_start, not the current time."
+  - "Request body is gzipped; Content-Type and Content-Encoding headers must reflect gzipped JSON, not raw JSON."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

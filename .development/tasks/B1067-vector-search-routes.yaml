@@ -24,6 +24,10 @@ scope:
   - crates/betterlite-server/src/api/vector_search_routes/**
   - crates/betterlite-server/fuzz/corpus/request_body/vector-search-*
   - tools/oracle/cases/api/vector-search-routes/**
+  - tools/oracle/helpers/b1067.py
+  - tools/oracle/helpers/b1067/**
+  - tools/oracle/src/helpers/server/b1067.rs
+  - tools/oracle/src/helpers/server/b1067/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L30-L283
@@ -105,5 +109,5 @@ pitfalls:
 - Search accepts slash-containing ids, but the retrieve/update/delete decorators in B1068 do not use the path converter.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1500
   max_new_expects: 0

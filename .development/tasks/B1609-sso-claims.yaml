@@ -25,7 +25,6 @@ scope:
     - crates/betterlite-auth/src/sso_claims.rs
     - crates/betterlite-auth/src/sso_claims/**
     - crates/betterlite-auth/fuzz/corpus/jwt_claims/sso-*
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_claims.rs
     - crates/betterlite-config/src/sso_claims/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-claims-*
@@ -79,6 +78,6 @@ pitfalls:
   - A DB team_ids_jwt_field adds to SSO-specific teams and does not deduplicate the result.
   - Empty or absent userinfo values have different claim-merge behavior from nonempty values, even when an ID token carries the same key.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -32,6 +32,10 @@ scope:
   - crates/betterlite-core/**
   - crates/betterlite-logging/src/stream.rs
   - crates/betterlite-logging/src/stream/**
+  - tools/oracle/helpers/b203.py
+  - tools/oracle/helpers/b203/**
+  - tools/oracle/src/helpers/logging/b203.rs
+  - tools/oracle/src/helpers/logging/b203/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L216-L321
@@ -96,5 +100,5 @@ pitfalls:
 - Terminal usage and DONE must each be emitted only when the pinned stream mapping emits them.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

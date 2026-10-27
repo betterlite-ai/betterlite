@@ -26,6 +26,7 @@ scope:
     - crates/betterlite-server/src/middleware/billable_request_metrics.rs
     - crates/betterlite-server/src/middleware/billable_request_metrics/**
     - crates/betterlite-server/src/middleware/billable_request_metrics/tests.rs
+    - crates/betterlite-server/src/middleware/billable_request_metrics/tests/**
   lint_tables: false
 
 references:
@@ -79,34 +80,34 @@ checks:
   commands:
     - id: llm-classification-tests
       why: LLM route classification does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_llm/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::classify_llm/)'
     - id: mcp-classification-tests
       why: MCP route classification does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_mcp/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::classify_mcp/)'
     - id: a2a-classification-tests
       why: A2A route classification does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_a2a/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::classify_a2a/)'
     - id: method-gate-tests
       why: Method gate for LLM classification (POST-only) or method-agnostic MCP/A2A classification does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::.*method_gate/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::.*method_gate/)'
     - id: classification-integration-tests
       why: Integrated classification does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::classify_billable/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::classify_billable/)'
     - id: header-extraction-tests
       why: Model ID header extraction does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::extract_model/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::extract_model/)'
     - id: lazy-resolution-tests
       why: Lazy factory resolution does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::lazy_resolution/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::lazy_resolution/)'
     - id: pass-through-tests
       why: Pass-through behavior without sinks does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::pass_through/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::pass_through/)'
     - id: failure-handling-tests
       why: Sink or recorder failure handling does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::failure_handling/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::failure_handling/)'
     - id: status-code-filtering-tests
       why: Status code filtering for recorder invocation does not work or tests are missing
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^billable_request_metrics::status_code/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::billable_request_metrics::status_code/)'
     - id: middleware-compile
       why: The middleware module does not compile
       run: cargo build --locked -p betterlite-server
@@ -147,5 +148,5 @@ pitfalls:
 review_level: standard
 
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,166 @@
+id: B3812
+title: Block or rewrite forbidden request tools and forced choices
+description: >-
+  Enforce tool permissions on chat completions requests before calling the model.
+  Extract tool names from OpenAI `tools`/`tool_choice` and legacy `functions`/`function_call` fields.
+  Use the decision from B3811 to check each tool's permissions.
+  In block mode, raise HTTP 400 with a guardrail violation message.
+  In rewrite mode, remove forbidden tool definitions from `tools` and `functions`, and change a forbidden forced choice (`tool_choice` or `function_call` set to a specific tool name) to `"none"`.
+
+  Implement the pre_call_hook that runs before the model is called.
+  Check each extracted tool name, collecting those that are denied.
+  Skip the guardrail entirely if no tools are present or if the event should not run.
+  Return data unchanged when no tools are forbidden.
+  Rewrite the request in place when forbidden tools exist and on_disallowed_action is rewrite.
+  Raise HTTPException(400) when blocked.
+  Report the denial reason in the violation message if the rule has one.
+
+  Port eight functions from LiteLLM's tool_permission.py: _check_tool_permission, _get_request_tool_name, _get_legacy_function_name, _get_named_tool_choice, _get_named_function_call, _collect_request_tools, and async_pre_call_hook.
+  The function _modify_request_with_permission_errors (38 characters) exceeds the 30-character name limit and must be renamed; use a shorter name like rewrite_forbidden_tools (23 chars) or apply_permission_errors (23 chars).
+  Count: **114 lines** (253-305, 606-613, 615-616, 618-626, 628-634, 636-656, 658-704, 789-838).
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/tool_permission_requests.rs
+    - crates/betterlite-guardrails/src/tool_permission_requests/**
+    - tools/oracle/cases/tool-permission/request-*.yaml
+    - tools/oracle/helpers/b3812.py
+    - tools/oracle/helpers/b3812/**
+    - tools/oracle/src/helpers/guardrails/b3812.rs
+    - tools/oracle/src/helpers/guardrails/b3812/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L253-L305
+    why: "_check_tool_permission: check tool name/type against permission rules, returning (is_allowed, rule_id, message)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L606-L613
+    why: "_get_request_tool_name: extract (tool_name, tool_type) from a tool definition"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L615-L616
+    why: "_get_legacy_function_name: extract tool name from a legacy function definition"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L618-L626
+    why: "_get_named_tool_choice: extract a forced tool name from tool_choice (ignore auto/none/required)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L628-L634
+    why: "_get_named_function_call: extract a forced tool name from function_call (ignore auto/none)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L636-L656
+    why: "_collect_request_tools: collect (tool_name, tool_type) tuples from tools, functions and forced choices"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L658-L704
+    why: "_modify_request_with_permission_errors: filter tools and functions arrays, set tool_choice and function_call to none if forbidden"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L789-L838
+    why: "async_pre_call_hook: orchestrates permission checking, blocking or rewriting, and applied-guardrail header mutation"
+
+dod:
+  - text: >-
+      Named tools are extracted from tools, functions, tool_choice and function_call fields.
+      Unnamed non-function tools are skipped.
+      No argument patterns are evaluated on the request path.
+    proof: [request-tool-extraction-tests]
+  - text: >-
+      Each extracted tool name is checked against permissions using B3811's decision logic.
+      Tools without a matching rule use the default_action.
+    proof: [request-permission-check-tests]
+  - text: >-
+      In block mode, a forbidden tool raises HTTP 400 with detail containing error and detection_message fields naming the denied tool and its rule_id if available.
+    proof: [request-block-mode-tests]
+  - text: >-
+      In rewrite mode, forbidden tools are removed from the tools array and functions array.
+      A forbidden tool_choice or function_call set to a specific tool name is changed to "none".
+    proof: [request-rewrite-mode-tests]
+  - text: >-
+      Guardrail runs only when should_run_guardrail returns true.
+      Returns data unchanged when no tools are present or should_run_guardrail is false.
+      Returns data unchanged when all tools are allowed.
+    proof: [request-early-return-tests]
+  - text: >-
+      The applied-guardrail header is added after all request modifications are complete, before returning.
+    proof: [request-header-mutation-tests]
+  - text: >-
+      A request with no forbidden tools passes through unchanged.
+    proof: [request-allowed-tools-tests]
+  - text: >-
+      Multiple forbidden tools in a single request are all removed in rewrite mode.
+    proof: [request-multiple-forbidden-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: request-tool-extraction-tests
+      why: Tool names are not extracted from tools, functions, tool_choice and function_call fields
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::extraction::/)'
+    - id: request-permission-check-tests
+      why: Extracted tool names are not checked against permissions from B3811
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::permission_check::/)'
+    - id: request-block-mode-tests
+      why: A forbidden tool in block mode does not raise HTTP 400 with the correct error format
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::block_mode::/)'
+    - id: request-rewrite-mode-tests
+      why: Forbidden tools are not properly removed or forbidden forced choices are not changed to none in rewrite mode
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::rewrite_mode::/)'
+    - id: request-early-return-tests
+      why: Guardrail does not return early when no tools present or should_run_guardrail is false
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::early_return::/)'
+    - id: request-header-mutation-tests
+      why: Applied-guardrail header is not added after modifications
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::header_mutation::/)'
+    - id: request-allowed-tools-tests
+      why: An allowed tool is modified or blocked when it should pass through unchanged
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::allowed_tools::/)'
+    - id: request-multiple-forbidden-tests
+      why: Multiple forbidden tools are not all removed in rewrite mode
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_requests::multiple_forbidden::/)'
+
+oracle_cases:
+  - tools/oracle/cases/tool-permission/request-allowed-tool.yaml
+  - tools/oracle/cases/tool-permission/request-forbidden-tool-block.yaml
+  - tools/oracle/cases/tool-permission/request-forbidden-tool-rewrite.yaml
+  - tools/oracle/cases/tool-permission/request-forbidden-tool-choice-block.yaml
+  - tools/oracle/cases/tool-permission/request-forbidden-tool-choice-rewrite.yaml
+  - tools/oracle/cases/tool-permission/request-forbidden-function-block.yaml
+  - tools/oracle/cases/tool-permission/request-forbidden-function-rewrite.yaml
+  - tools/oracle/cases/tool-permission/request-no-tools.yaml
+  - tools/oracle/cases/tool-permission/request-disabled-event.yaml
+  - tools/oracle/cases/tool-permission/request-multiple-forbidden-rewrite.yaml
+
+deviations:
+  - what: >-
+      HTTPException(400) detail has error and detection_message fields.
+      LiteLLM uses the same fields in its detail dict; betterlite's error message text is independent of LiteLLM's.
+    why: Matches LiteLLM's wire format exactly at the field level; message text differs only in content, not structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L823-L829
+  - what: >-
+      Request body modifications happen in place on the data dict parameter, matching LiteLLM's behavior.
+      This means the request passed to the model is the same object that was rewritten.
+    why: In-place modification matches LiteLLM's pattern and reduces allocations.
+
+out_of_scope:
+  - >-
+      CustomGuardrail.should_run_guardrail implementation; owned by the guardrail base contract (B104 or similar).
+      log_guardrail_information decorator; owned by the custom guardrail integration.
+      add_guardrail_to_applied_guardrails_header callback utility; owned by the callback infrastructure.
+  - >-
+      ToolPermissionGuardrail state and configuration (rules, default_action, on_disallowed_action); loaded and managed by B3810.
+  - >-
+      Request body parsing and wire types (ChatCompletionToolParam, Function); provided by the wire format crate.
+      UserAPIKeyAuth, DualCache, CallTypesLiteral; provided by proxy infrastructure.
+
+pitfalls:
+  - >-
+      The request path skips unnamed non-function tools. Only tools with a function subobject and name are checked.
+      Legacy function definitions and forced choices are checked even if unnamed.
+  - >-
+      tool_choice and function_call set to string values like "auto", "none", or "required" are not treated as forced selections.
+      Only string tool names or objects with a nested name field trigger forced-choice checks.
+  - >-
+      In rewrite mode, a tool that is removed from the tools array must also be removed from the functions array independently.
+      They use different naming schemes (tool_name vs function_name) so both must be filtered separately.
+  - >-
+      A forbidden tool_choice that is an object (not a string name) must be matched against the nested function.name, not the object itself.
+      The same applies to function_call objects.
+  - >-
+      Rewriting happens before the applied-guardrail header mutation. The header is added only after all data modifications.
+      This ensures consistent ordering and prevents the header from being added and then removed.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: security

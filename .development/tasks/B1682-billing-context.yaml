@@ -56,7 +56,6 @@ scope:
     - crates/betterlite-core/src/cost/context.rs
     - crates/betterlite-core/src/cost/context/**
     - crates/betterlite-logging/Cargo.toml
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/logging_state.rs
     - crates/betterlite-logging/src/cost_breakdown.rs
     - crates/betterlite-logging/src/cost_breakdown/**
@@ -118,6 +117,6 @@ pitfalls:
   - Hidden response metadata is read as an object attribute, so a dictionary key named _hidden_params cannot change billing identity.
   - Replacing a cost breakdown drops old additional costs and token-detail lines rather than accumulating them across calls.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

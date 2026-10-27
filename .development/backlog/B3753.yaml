@@ -2,8 +2,8 @@ id: B3753
 milestone: M6 guardrails
 title: Aporia moderation and Guardrails AI validation
 status: todo
-depends_on: [B219]
-file: null
+depends_on: [B218, B219]
+file: tasks/B3753-aporia-guardrails-ai-validation.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py"
   - "litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py"

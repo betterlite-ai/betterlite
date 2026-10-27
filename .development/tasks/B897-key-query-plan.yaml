@@ -257,6 +257,6 @@ pitfalls:
   - organization_id and exclude_team_id constrain only the own-key arm; team_id is a global filter.
   - Explicit sorting loses the token tie-breaker, and count may observe a later database state.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

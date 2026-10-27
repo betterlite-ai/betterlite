@@ -80,6 +80,6 @@ pitfalls:
   - A configured health-check or daily-tag retention alone must keep the cleanup job useful even when spend-log retention is unset.
   - Dropping a partition does not increment the runner's row-deletion progress counters.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

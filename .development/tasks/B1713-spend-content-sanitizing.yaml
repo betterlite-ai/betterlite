@@ -39,7 +39,6 @@ description: >-
   nonblank lines; allocate 370 implementation, 240 tests and 190 oracle/fuzz lines.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/spend_sanitize.rs
     - crates/betterlite-logging/src/spend_sanitize/**
     - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/spend_error_text.rs,corpus/spend_error_text/**}
@@ -93,6 +92,6 @@ pitfalls:
   - Credential-looking keys inside function arguments are user content, but nested secret_fields must still disappear.
   - A malformed echoed prompt must redact the remaining string rather than leave its unterminated body visible.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

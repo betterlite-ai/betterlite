@@ -385,6 +385,6 @@ pitfalls:
   branch.
 - topK wins over top_k during extraction, leaving the unused spelling in inference_params when both were supplied.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

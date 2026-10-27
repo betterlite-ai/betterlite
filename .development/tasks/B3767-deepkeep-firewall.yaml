@@ -1,0 +1,146 @@
+id: B3767
+title: DeepKeep firewall evaluation
+description: >-
+  Implement DeepKeep AI Firewall guardrail's API endpoint normalization, metadata extraction and merging,
+  fixed firewall identity, HTTP POST transport to the normalized endpoint, BLOCKED action enforcement, and
+  replacement semantics where empty returned arrays replace originals. Fail-open behavior applies only when
+  the upstream service is unreachable (connection failures, timeouts, or HTTP 502/503/504 status codes).
+  Dynamic parameters must not override the configured firewall_id.
+
+
+  Configuration carries: `api_key` (required, reads DEEPKEEP_API_KEY), `api_base` (required, reads
+  DEEPKEEP_API_BASE, normalized to end with /v3/openai/beta/litellm_basic_guardrail_api), `deepkeep_firewall_id`
+  (required, reads DEEPKEEP_FIREWALL_ID), `unreachable_fallback` (nested under optional_params, fail_open or
+  fail_closed, default fail_closed), and `extra_headers` (optional, mapping of header name to value; list form
+  is rejected with a warning). HTTP headers include Content-Type (application/json), X-API-Key (api_key value),
+  plus any extra_headers.
+
+
+  Metadata extraction merges litellm_metadata and metadata dicts, extracting user_api_key_* fields
+  (hash, alias, user_id, user_email, team_id, team_alias, end_user_id, org_id) and treating user_api_key_token
+  as an alias for user_api_key_hash when the hash is not explicitly provided. The request payload carries
+  texts, images, tools, tool_calls, structured_messages, the merged user metadata, litellm_version, model,
+  input_type, litellm_call_id, litellm_trace_id and fixed firewall_id that cannot be overridden by dynamic parameters.
+  The additional_provider_specific_params field merges the fixed firewall_id with any dynamic extra_body parameters
+  from get_guardrail_dynamic_request_body_params, filtering out firewall_id from the dynamic merge so it cannot override
+  the configured identity.
+
+
+  Response action == BLOCKED raises GuardrailRaisedException with blocked_reason or default message.
+  Return inputs merge original content with any guardrail-modified values (texts, images, tools, tool_calls,
+  structured_messages) from the response, checking presence with `is not None` so that empty-list
+  replacements are preserved and honored.  Supported event hooks are pre_call, post_call and during_call.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/deepkeep.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/guardrails/deepkeep/**
+    - crates/betterlite-config/src/sections/deepkeep_firewall.rs
+    - crates/betterlite-config/src/sections/deepkeep_firewall/**
+    - tools/oracle/helpers/b3767.py
+    - tools/oracle/helpers/b3767/**
+    - tools/oracle/src/helpers/guardrails/b3767.rs
+    - tools/oracle/src/helpers/guardrails/b3767/**
+    - crates/betterlite-guardrails/src/deepkeep/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L112-L447
+    why: The complete DeepKeepGuardrail class with __init__, _extract_user_api_key_metadata, _build_request_headers, _fail_open_passthrough, _handle_guardrail_request_error, _build_return_inputs, apply_guardrail and get_config_model methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/deepkeep.py
+    why: DeepKeepGuardrailConfigModel with api_key, api_base, deepkeep_firewall_id fields, and DeepKeepGuardrailConfigModelOptionalParams with unreachable_fallback nested under optional_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: The CustomGuardrail base class and its timeout field.
+dod:
+  - text: Endpoint normalization appends /v3/openai/beta/litellm_basic_guardrail_api to api_base if not already present,
+      stripping trailing slashes to avoid duplication.
+    proof: [oracle]
+  - text: Firewall ID from configuration is passed to the API and cannot be overridden by dynamic parameters.
+    proof: [deepkeep-tests]
+  - text: Metadata extraction merges litellm_metadata and metadata dicts, extracting user_api_key_* fields and
+      treating user_api_key_token as a fallback for user_api_key_hash when the hash is not present.
+    proof: [deepkeep-tests]
+  - text: Request payload carries all required fields including texts, images, tools, tool_calls, structured_messages,
+      merged user metadata, litellm_version, model, input_type, litellm_call_id, litellm_trace_id and fixed firewall_id.
+      The additional_provider_specific_params field merges the fixed firewall_id with any dynamic extra_body parameters,
+      filtering out firewall_id from the dynamic merge.
+    proof: [oracle]
+  - text: BLOCKED action raises GuardrailRaisedException with blocked_reason or default error message.
+    proof: [oracle]
+  - text: Non-BLOCKED actions return inputs with original content or guardrail-modified values, preserving empty-list
+      replacements (texts=[], images=[], etc.) when the guardrail returns them.
+    proof: [deepkeep-tests]
+  - text: Fail-open applies only when the service is unreachable (connection failures, timeouts, HTTP 502/503/504);
+      other upstream errors such as 401 or 400 raise DeepKeepGuardrailAPIError with the HTTP status/error details.
+    proof: [deepkeep-tests, oracle]
+  - text: Configuration loads api_key (required, DEEPKEEP_API_KEY env), api_base (required, DEEPKEEP_API_BASE env),
+      deepkeep_firewall_id (required, DEEPKEEP_FIREWALL_ID env), unreachable_fallback (optional, nested under optional_params,
+      default fail_closed) and extra_headers (optional mapping; list form is rejected with a warning).
+    proof: [deepkeep-tests, config-load]
+checks:
+  optional: []
+  commands:
+    - id: deepkeep-tests
+      why: the deepkeep guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/deepkeep_guardrail/)'
+    - id: config-load
+      why: the DeepKeep configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/deepkeep.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/deepkeep/pre-call-pass-through.yaml
+  - tools/oracle/cases/guardrails/deepkeep/endpoint-normalization.yaml
+  - tools/oracle/cases/guardrails/deepkeep/blocked-action.yaml
+  - tools/oracle/cases/guardrails/deepkeep/empty-replacement.yaml
+  - tools/oracle/cases/guardrails/deepkeep/metadata-extraction.yaml
+  - tools/oracle/cases/guardrails/deepkeep/firewall-id-fixed.yaml
+  - tools/oracle/cases/guardrails/deepkeep/request-payload-litellm-ids.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-502.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-timeout.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-fail-open.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-fail-closed.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-api-key.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-api-base.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-firewall-id.yaml
+deviations:
+  - what: DeepKeep error messages use betterlite's own wording in failure scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L260-L280
+  - what: Extra headers passed as a list instead of a mapping are rejected with a warning and ignored, rather than raising an error.
+    why: LiteLLM warns and ignores, preserving fail-open behavior on config misunderstandings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L156-L162
+out_of_scope:
+  - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook
+    wrapper logic); B3664/B3665/B3666 (parts of B104) orchestrate when DeepKeep guardrails are invoked.
+  - The threshold-based decision whether to run guardrail on a particular request (should_run_guardrail);
+    B3664/B3665/B3666 (parts of B104) own that decision logic.
+  - Other guardrail providers (AIM, Akto, Cisco, etc.); each gets its own task.
+pitfalls:
+  - >-
+    Endpoint normalization must check if api_base already ends with the guardrail endpoint path to avoid duplication.
+  - >-
+    Firewall ID must be fixed from configuration and never overridden by dynamic parameters; filter out firewall_id
+    from dynamic_params to ensure this.
+  - >-
+    Metadata extraction must check presence of user_api_key_hash before using user_api_key_token as a fallback;
+    do not use token as the hash if hash is already present.
+  - >-
+    Empty-list replacements (e.g., texts: [], images: []) must be preserved when present and honored in the
+    returned inputs, not treated as falsy and replaced with originals.
+  - >-
+    Fail-open applies only to connection failures (httpx.RequestError), timeouts (Timeout) and HTTP 502/503/504;
+    other errors such as 401 or 400 raise DeepKeepGuardrailAPIError, not GuardrailRaisedException.
+  - >-
+    additional_provider_specific_params forwards every dynamic extra_body param from get_guardrail_dynamic_request_body_params
+    (not just firewall_id), so a worker must not special-case or drop the other dynamic keys when building that merge.
+  - >-
+    DeepKeep API key must never be logged or shown in Debug output; mark the field as SecretString and use it only
+    in the X-API-Key header.
+  - >-
+    Extra headers as a list (from litellm_params.extra_headers in gateway route config) must be rejected with a warning,
+    not passed through or raise an error.
+  - >-
+    Response .json() must be called on the httpx response object; use a helper to extract the typed body.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

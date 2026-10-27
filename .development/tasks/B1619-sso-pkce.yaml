@@ -27,7 +27,6 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_pkce.rs
     - crates/betterlite-server/src/sso_pkce/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/sso_pkce.rs
     - crates/betterlite-config/src/sso_pkce/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-pkce-*
@@ -79,6 +78,6 @@ pitfalls:
   - PKCE_STRICT_CACHE_MISS does not turn a callback with no state parameter into a local 401.
   - A legacy plain-string verifier remains usable and emits a warning rather than being classified as corrupt.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

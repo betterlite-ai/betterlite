@@ -45,12 +45,10 @@ scope:
     - crates/betterlite-server/src/audit.rs
     - crates/betterlite-server/src/audit/**
     - crates/betterlite-logging/Cargo.toml
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/audit.rs
     - crates/betterlite-logging/src/audit/**
     - crates/betterlite-logging/src/registry.rs
     - crates/betterlite-logging/src/worker.rs
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/audit.rs
     - crates/betterlite-config/src/audit/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/audit-*
@@ -126,6 +124,6 @@ pitfalls:
   - A failed named callback resolution is not cached, so later dispatch can retry initialization.
   - The metadata permission for litellm_changed_by accepts only Boolean true in either key or team metadata.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

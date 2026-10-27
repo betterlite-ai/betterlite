@@ -55,18 +55,6 @@ scope:
     - crates/betterlite-auth/src/spend_reseed.rs
     - crates/betterlite-auth/src/spend_reseed/**
     - crates/betterlite-auth/Cargo.toml
-    - crates/betterlite-config/src/spend_reseed.rs
-    - crates/betterlite-config/src/spend_reseed/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-reseed-*
     - tools/oracle/src/helpers/auth/spend_reseed.rs
@@ -76,6 +64,8 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/spend-reseed/**
     - tools/oracle/fuzz/corpus/helper_case/spend-reseed-*
+    - crates/betterlite-config/src/sections/spend_reseed.rs
+    - crates/betterlite-config/src/sections/spend_reseed/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_counter_reseed.py#L47-L295
@@ -106,7 +96,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_reseed::tests::/) - test(/replays_the_/)'
     - id: config-tests
       why: The integer setting falls back instead of failing startup or is not consumed.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^spend_reseed::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::spend_reseed::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: New config seed is absent or fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/spend-reseed-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -129,6 +119,6 @@ pitfalls:
   - A clean Redis miss must not fall back to stale process memory, even after a batch miss.
   - The bounded LRU can evict an acquired lock; do not promise universal singleflight across eviction.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -32,6 +32,10 @@ scope:
   - tools/oracle/sdk_http/rerank_call.py
   - tools/oracle/cases/sdk-http/rerank-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/rerank-call-*
+  - tools/oracle/helpers/b1014.py
+  - tools/oracle/helpers/b1014/**
+  - tools/oracle/src/helpers/core_ops/b1014.rs
+  - tools/oracle/src/helpers/core_ops/b1014/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L30-L89
@@ -89,5 +93,5 @@ pitfalls:
 - The preliminary identity resolution must not strip the model prefix in arguments passed to rerank.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

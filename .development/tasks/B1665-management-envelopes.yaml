@@ -77,6 +77,6 @@ pitfalls:
   - Problem documents omit allowed when absent, whereas page links deliberately retain null prev and next fields.
   - Facets have has_more but no total count or first/last links; counted entity lists use the other envelope.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -114,5 +114,5 @@ pitfalls:
 - Async failure callbacks run in sync-then-async order, unlike success callbacks.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 1500
   max_new_expects: 0

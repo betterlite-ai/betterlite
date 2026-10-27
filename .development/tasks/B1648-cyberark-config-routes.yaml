@@ -40,6 +40,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/config_override/cyberark-routes-*
     - tools/oracle/cases/management/cyberark-config/**
     - tools/oracle/fuzz/corpus/http_case/cyberark-config-*
+    - tools/oracle/helpers/b1648.py
+    - tools/oracle/helpers/b1648/**
+    - tools/oracle/src/helpers/server/b1648.rs
+    - tools/oracle/src/helpers/server/b1648/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L651-L932
@@ -81,6 +85,6 @@ pitfalls:
   - The CyberArk boot snapshot is captured once, so deleting a second edited configuration restores deployment values rather than the first edit.
   - Unlike Vault, CyberArk explicitly restores runtime state when encrypted persistence fails after initialization.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

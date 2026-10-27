@@ -1,0 +1,127 @@
+id: B3617
+title: Pass-through config reads and team visibility
+description: >-
+  Read pass-through endpoint definitions from configuration and database, filter
+  by team permissions, and serve the GET configuration routes.
+
+  Implement functions to load endpoints from the config file (marked read-only),
+  load endpoints from the database (editable via UI), merge them with database
+  taking precedence for duplicate paths, and filter team-visible endpoints by
+  the allowed_passthrough_routes metadata. Expose two GET routes:
+  GET /config/pass_through_endpoint with optional query parameters endpoint_id
+  and team_id, and GET /config/pass_through_endpoint/team/{team_id} taking team_id
+  as a path parameter. Both routes combine config and database endpoints, respecting
+  the team's allowed routes when team_id is provided.
+
+  Preserve the is_from_config flag to distinguish persistent configuration from
+  database-stored endpoints, and keep the difference between persisted state and
+  installed route registry observable. Configuration endpoints use auto-generated
+  IDs at read time, while database endpoints have stable IDs. When filtering by
+  endpoint ID, return only database endpoints since config endpoints have
+  generated IDs. When filtering by team, validate the team exists and return 404
+  if not found, then apply the allowed_passthrough_routes metadata filter. Return
+  status 500 with error code db_not_connected_error when prisma_client is None.
+scope:
+  paths:
+    - crates/betterlite-server/src/endpoints/passthrough_config_reads.rs
+    - crates/betterlite-server/src/endpoints/passthrough_config_reads/**
+    - crates/betterlite-server/src/lib.rs
+    - tools/oracle/cases/passthrough_config/**
+    - tools/oracle/helpers/b3617.py
+    - tools/oracle/helpers/b3617/**
+    - tools/oracle/src/helpers/server/b3617.rs
+    - tools/oracle/src/helpers/server/b3617/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3414-L3446
+    why: _get_pass_through_endpoints_from_config loads config file endpoints, marks them read-only, skips malformed entries with a warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3449-L3454
+    why: Helper accessors for config field and request app.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3457-L3501
+    why: _get_pass_through_endpoints_from_db loads database endpoints, optionally filtering by endpoint_id, marks them as from database.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3504-L3548
+    why: _filter_endpoints_by_team_allowed_routes filters endpoints by team metadata, raises 404 if team not found.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3551-L3555
+    why: "GET /config/pass_through_endpoint route decorator, query-parameter version."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3556-L3560
+    why: "GET /config/pass_through_endpoint/team/{team_id} route decorator alias, path-parameter version."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3561-L3604
+    why: "Handler for both routes: merges config and database endpoints, filters by endpoint_id and/or team_id, returns 500 with db_not_connected_error when prisma_client is None."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3574-L3578
+    why: "Status 500 with CommonProxyErrors.db_not_connected_error when prisma_client is None."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3915-L3940
+    why: _find_endpoint_by_id searches endpoint list by ID.
+dod:
+  - text: _get_pass_through_endpoints_from_config returns endpoints from config_passthrough_endpoints with is_from_config=true, skips malformed endpoints with a warning, and returns empty list if config is None.
+    proof: [config-read-tests]
+  - text: _get_pass_through_endpoints_from_db returns all database endpoints with is_from_config=false, or filters to a specific endpoint_id if provided, handling connection failures gracefully.
+    proof: [db-read-tests]
+  - text: _filter_endpoints_by_team_allowed_routes raises 404 if team is not found, and filters endpoints to only those whose path is in team metadata allowed_passthrough_routes when the metadata exists.
+    proof: [team-filter-tests]
+  - text: GET /config/pass_through_endpoint with query parameters merges config and database endpoints, with database taking precedence for duplicate paths, and returns all endpoints or filters by endpoint_id and/or team_id.
+    proof: [route-tests, oracle]
+  - text: GET /config/pass_through_endpoint/team/{team_id} with path parameter returns only the endpoints the team is allowed to access (filtered by allowed_passthrough_routes metadata), or 404 if team not found.
+    proof: [team-param-route-tests, oracle]
+  - text: Both routes return status 500 with error code db_not_connected_error when prisma_client is None.
+    proof: [no-database-tests, oracle]
+  - text: _find_endpoint_by_id returns the endpoint matching the given ID, handling both dict and PassThroughGenericEndpoint types, and returns None if not found.
+    proof: [find-endpoint-tests]
+  - text: Both routes require user_api_key_auth dependency and return PassThroughEndpointResponse.
+    proof: [route-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: config-read-tests
+      why: config loading tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::(get_pass_through_endpoints_from_config|from_config)/)'
+    - id: db-read-tests
+      why: database loading tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::(get_pass_through_endpoints_from_db|from_db)/)'
+    - id: team-filter-tests
+      why: team filtering tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::filter_endpoints_by_team/)'
+    - id: find-endpoint-tests
+      why: endpoint lookup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::find_endpoint_by_id/)'
+    - id: route-tests
+      why: GET route tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::(get_pass_through_endpoints|route)/)'
+    - id: team-param-route-tests
+      why: team path-parameter route tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::(team_param|team_id)/)'
+    - id: no-database-tests
+      why: no-database error case tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_reads::.*no_database/)'
+oracle_cases:
+  - tools/oracle/cases/passthrough_config/get-all-endpoints.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoint-by-id.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoints-by-team-path-param.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoints-no-database.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoints-team-not-found.yaml
+deviations:
+  - what: When a database endpoint read fails, an empty list is returned instead of propagating the error.
+    why: LiteLLM's code catches all exceptions and returns an empty list, treating connectivity issues gracefully.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3464-L3471
+  - what: "Both routes return status 500 with error code db_not_connected_error and detail {\"error\": \"db_not_connected_error\"} when prisma_client is None."
+    why: LiteLLM explicitly checks for database availability and returns this error; it prevents serving stale or inconsistent endpoint data when the database is unreachable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3574-L3578
+  - what: Config endpoint IDs are auto-generated at read time and not stable across calls.
+    why: LiteLLM endpoints from config files are not persisted with IDs, so filtering by endpoint_id only queries the database.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3591-L3595
+out_of_scope:
+  - Config field parsing and schema validation (owned by config-related tasks).
+  - Database client initialization and connection pooling.
+  - Route decorator registration beyond what the route handler sets.
+  - Config general settings retrieval (depends on get_config_general_settings from B002).
+  - Update/create/delete operations on endpoints (owned by B102).
+pitfalls:
+  - Malformed endpoints in config are logged with a warning and skipped, not propagated as errors.
+  - is_from_config is a response-only field set at read time, never stored in config or database.
+  - Database precedence means an endpoint with the same path in both config and database shows only the database version.
+  - Team lookup validates the team exists but does not check team membership of the requesting user.
+  - When endpoint_id is provided, only database endpoints are returned because config endpoints use generated IDs.
+  - The allowed_passthrough_routes team metadata must be a Sequence[str] of path values for filtering to work.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

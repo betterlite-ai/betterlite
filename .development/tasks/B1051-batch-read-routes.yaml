@@ -107,23 +107,15 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/batch_read_routes.rs
-  - crates/betterlite-config/src/api/batch_read_routes/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-read-routes-*
   - tools/oracle/cases/api/batch-read-routes/**
   - tools/oracle/fixtures/batch-read-routes/**
+  - crates/betterlite-config/src/sections/batch_read_routes.rs
+  - crates/betterlite-config/src/sections/batch_read_routes/**
+  - tools/oracle/helpers/b1051.py
+  - tools/oracle/helpers/b1051/**
+  - tools/oracle/src/helpers/server/b1051.rs
+  - tools/oracle/src/helpers/server/b1051/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L395-L395
@@ -239,7 +231,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::batch_read_routes::tests::auth_invalid($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_read_routes::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::batch_read_routes::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-read-routes-*)"
@@ -277,5 +269,5 @@ pitfalls:
 - prepare_data_with_credentials writes file_id; retrieve_batch must move it to batch_id before calling the SDK.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0

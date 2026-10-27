@@ -1,0 +1,115 @@
+id: B4579
+title: CLI key management, migration and encryption commands
+description: >-
+  Build key list/generate/delete, cross-gateway key recreation, and encryption migration/check
+  output for betterlite-management-cli. The keys command manages API keys: list by user/team/
+  organization/hash/alias with optional team-keys inclusion and full-object return, display as
+  table or JSON output; generate with models/spend/duration/team/user/budget constraints; delete
+  by hash or alias; and import keys from another gateway with optional creation-date filtering
+  and dry-run preview. Preserve pagination at 100 records per page, naive timestamp filtering on
+  YYYY-MM-DD_HH:MM or YYYY-MM-DD format, truthy-only field copying (only copy key fields that
+  have a truthy value), per-key failure continuation (one failed import does not stop the rest),
+  and residual-legacy reporting in encryption output. The encryption command executes migration
+  or attestation: GET /credentials/migrate-encryption/check reports remaining legacy values,
+  and POST /credentials/migrate-encryption with dry_run true/false performs or simulates the
+  migration. Encryption output displays the residual_legacy count in the response and renders it
+  as a colored message. Every HTTP operation (list, generate, delete, import, migrate, check) is
+  backed by management client calls to KeysManagementClient or HTTPClient, injected for
+  testability; error responses are parsed and displayed to stderr.
+scope:
+  paths:
+    - tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+    - tools/management-cli/litellm/proxy/client/cli/commands/encryption.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L35-L112
+    why: keys group, list command with pagination, output formatting and table rendering
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L115-L171
+    why: generate command with model/spend/duration/team/user/budget options and JSON parsing
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L174-L194
+    why: delete command with key hash and alias options
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L197-L243
+    why: _parse_created_since_filter, _fetch_keys_paginated pagination and filtering logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L246-L421
+    why: _filter_keys_by_created_since, _display_dry_run_table, _prepare_key_import_data, _import_keys_to_destination, import_keys command with error handling and per-key failure continuation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/encryption.py#L1-L61
+    why: encryption group, migrate command with check and dry-run options, response parsing and output formatting
+dod:
+  - text: >-
+      The keys list command accepts page, size, user-id, team-id, organization-id, key-hash,
+      key-alias, --include-team-keys (toggle, default False), and --return-full-object (toggle,
+      default True) filters; returns full key objects by default; displays a table with key hash,
+      alias, user ID, team ID and spend; and outputs JSON on --format json.
+    proof: [list-command]
+  - text: >-
+      The keys generate command accepts models (comma-separated), aliases (JSON), spend,
+      duration, key-alias, team-id, user-id, budget-id and config (JSON) parameters; parses
+      JSON fields with BadParameter error handling; calls the client; and outputs the response
+      or prints HTTP errors to stderr with the response body.
+    proof: [generate-command]
+  - text: >-
+      The keys delete command accepts keys (comma-separated list of key hashes) and key-aliases
+      (comma-separated list of aliases), calls the client with both, and handles HTTP errors.
+    proof: [delete-command]
+  - text: >-
+      The keys import command fetches all keys from a source gateway using pagination (100 per
+      page), filters by created-since date if provided (format YYYY-MM-DD_HH:MM or YYYY-MM-DD),
+      displays a dry-run table with key alias, user ID and created date, imports keys to the
+      destination by calling generate with only truthy fields from the source, continues
+      importing remaining keys even if one fails, and reports counts of successfully imported
+      and failed keys.
+    proof: [import-command]
+  - text: >-
+      The encryption migrate command with --check sends GET /credentials/migrate-encryption/check,
+      without --check sends POST /credentials/migrate-encryption with dry_run query parameter
+      true when --dry-run is set, outputs the JSON response, and displays residual_legacy count
+      from the response with green text if zero and yellow if greater than zero.
+    proof: [encryption-command]
+  - text: Created-since filtering parses both YYYY-MM-DD_HH:MM and YYYY-MM-DD formats and filters keys by comparing parsed timestamp against key created_at field.
+    proof: [timestamp-parsing-both-formats]
+  - text: Key import continues importing remaining keys even when one key import fails, and reports the total count including failed attempts.
+    proof: [import-failure-continuation]
+checks:
+  optional: []
+  commands:
+    - id: list-command
+      why: keys list command does not accept all options or does not pass them to the client
+      run: grep -qF '@keys.command()' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '--include-team-keys' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '--return-full-object' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.list' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+    - id: generate-command
+      why: keys generate command does not handle JSON parsing or pass all parameters to the client
+      run: grep -qF 'def generate' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'json.loads' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'BadParameter' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.generate' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+    - id: delete-command
+      why: keys delete command does not parse comma-separated lists or pass them to the client
+      run: grep -qF 'def delete' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'split' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.delete' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+    - id: import-command
+      why: keys import command does not fetch all keys, filter, display dry-run table, or handle per-key failures
+      run: grep -qF 'def import_keys' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_fetch_keys_paginated' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_filter_keys_by_created_since' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_display_dry_run_table' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_import_keys_to_destination' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+    - id: encryption-command
+      why: encryption migrate command does not send the correct request or handle the response
+      run: grep -qF 'def migrate' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py && grep -qF '/credentials/migrate-encryption/check' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py && grep -qF 'dry_run' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py && grep -qF 'residual_legacy' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py
+    - id: timestamp-parsing-both-formats
+      why: created-since filtering does not parse both YYYY-MM-DD_HH:MM and YYYY-MM-DD formats correctly
+      run: grep -qF 'def _parse_created_since_filter' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '%Y-%m-%d_%H:%M' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '%Y-%m-%d' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && test "$(grep -c '%Y-%m-%d' tools/management-cli/litellm/proxy/client/cli/commands/keys.py)" -ge 2
+    - id: import-failure-continuation
+      why: key import does not continue after a failure or does not report counts correctly
+      run: grep -qF 'except Exception as e:' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'failed_count' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'imported_count' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - KeysManagementClient and HTTPClient implementation (B169 manages the client library).
+  - The actual /credentials/migrate-encryption and /credentials/migrate-encryption/check server endpoints (B785 implements the HTTP migration/attestation handlers).
+  - Advanced filtering, sorting, or field selection beyond what the listed options provide.
+  - Multi-page streaming or incremental display; pagination is load-all-at-once.
+pitfalls:
+  - Pagination is fixed at 100 records per page in import, not configurable; iteration stops when fewer than 100 records are returned on a page.
+  - Timestamp filtering parses created_since as a user-supplied string in YYYY-MM-DD_HH:MM or YYYY-MM-DD format and compares it against key created_at as an ISO 8601 datetime string; handle both timezone-aware and naive datetimes.
+  - Truthy-only field copying means only include a field in import_data if key.get(field) evaluates to True; do not copy empty strings, zero, False, or None.
+  - Per-key failure continuation in import_keys means one exception does not stop the loop; catch and log each error and continue with the next key.
+  - The import command shows total_count from the list response, and the import summary counts attempted keys (sum of imported plus failed), not the total_count from the gateway.
+  - Residual-legacy reporting uses response.get("report", {}) and then report.get("residual_legacy"); neither the report key nor residual_legacy is guaranteed, so compare with None and format accordingly.
+  - --return-full-object default is True in the CLI options but is passed explicitly to the client; --include-team-keys default is False.
+  - KeysManagementClient is initialized with base_url and api_key from the click context (ctx.obj); HTTPClient follows the same pattern.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

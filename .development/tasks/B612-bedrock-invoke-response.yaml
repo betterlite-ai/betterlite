@@ -233,6 +233,6 @@ pitfalls:
 - An empty tool_calls list bypasses the empty-text failure because the source tests None, not truthiness.
 - A Mistral parsing error with status 400 is wrapped by this caller as status 422.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

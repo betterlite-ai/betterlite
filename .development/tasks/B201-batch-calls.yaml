@@ -30,7 +30,7 @@ scope:
   - tools/oracle/helpers/batch_calls.py
   - tools/oracle/helpers/batch_calls/**
   - tools/oracle/cases/helpers/batch-calls/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/batch_calls-*"
   lint_tables: false
 references:
 - url: >-
@@ -78,8 +78,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'batch_calls' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/batch_calls-*")" &&
+      grep -lq 'batch_calls' tools/oracle/fuzz/corpus/helper_case/batch_calls-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -109,6 +109,7 @@ out_of_scope:
 - Provider batch-job APIs are B086; this is in-process fan-out.
 - The synchronous Python API surface and executor adaptation are B158/B166.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/batch_calls-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as batch_calls in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/batch_calls.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_calls.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The models branch waits in input order even though its docstring says first response.
 - Do not replace results with completion-order output in the ordinary batch path.
@@ -117,5 +118,5 @@ pitfalls:
 - Python waits for all futures on executor-context exit; its losing work is owned, not detached.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

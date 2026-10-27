@@ -1,0 +1,110 @@
+id: B3047
+title: Legacy minute-counter limits and errors
+description: >-
+  Implement the legacy per-minute rate-limit checking path for `betterlite-core::rate_limiters`
+  in `_PROXY_MaxParallelRequestsHandler`, building the original minute-key counter checks and
+  cache-object batching. The handler stores an internal_usage_cache reference and checks
+  five counter types (key, key-model, user, team, end-user) against their limits, retaining
+  dimension precedence (max_parallel_requests checked before tpm before rpm). Preserve the
+  legacy clock-minute retry interval (seconds to next minute boundary) and optional verbose
+  logging behavior keyed on `litellm.set_verbose`.
+
+  Cache keys segregate by entity type: key uses `{api_key}::{precise_minute}::request_count`;
+  key-model adds the model as `{api_key}::{model}::{precise_minute}::request_count`; user,
+  team and end-user follow the same minute-scoped pattern. When any limit is zero, raise a
+  429 with the appropriate rate_limit_type (CONCURRENT_REQUESTS for max_parallel_requests==0,
+  TOKENS for tpm==0, REQUESTS for rpm==0) and retry-after header. The batch cache writes
+  apply local_only=True and ttl=60 for immediate local consistency without waiting on
+  distributed storage.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rate_limiters.rs
+    - crates/betterlite-core/src/rate_limiters/**
+    - tools/oracle/cases/legacy-rate-limit-counters/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L45-L54
+    why: CacheObject TypedDict definition and _PROXY_MaxParallelRequestsHandler class declaration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L56-L66
+    why: __init__ constructor accepting internal_usage_cache and print_verbose logging method with litellm.set_verbose guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L67-L146
+    why: check_key_in_limits validation and dimension precedence (max_parallel_requests, tpm_limit, rpm_limit).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L148-L158
+    why: time_to_next_minute returns seconds until next clock minute boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L160-L202
+    why: raise_rate_limit_error with retry-after header, rate_limit_type, model resolution and fallback to CONCURRENT_REQUESTS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L204-L244
+    why: get_all_cache_objects async batch retrieval of six cache keys, returning CacheObject with all entries as None if batch result is None.
+
+dod:
+  - text: _PROXY_MaxParallelRequestsHandler constructor accepts an internal_usage_cache parameter and stores it.
+    proof: [constructor-tests]
+  - text: print_verbose logs to verbose_proxy_logger.debug and optionally prints to stdout when litellm.set_verbose is true, silently catching all exceptions.
+    proof: [verbose-logging-tests]
+  - text: time_to_next_minute returns a float representing seconds until the next minute boundary (zero at MM:00, near 60 at MM:59).
+    proof: [retry-interval-tests]
+  - text: raise_rate_limit_error always raises ProxyRateLimitError with status 429, a retry-after header containing seconds to next minute, and the supplied rate_limit_type or CONCURRENT_REQUESTS.
+    proof: [error-raising-tests]
+  - text: raise_rate_limit_error resolves requested_model through B3030's resolve_llm_provider_for_rate_limit, extracting llm_provider and resolved model name.
+    proof: [error-provider-tests]
+  - text: check_key_in_limits compares current counter values (or initializes new_val if current is None) against max_parallel_requests, tpm_limit and rpm_limit in that precedence order.
+    proof: [dimension-precedence-tests]
+  - text: When all three limits are zero (max_parallel_requests==0, tpm_limit==0, rpm_limit==0), check_key_in_limits raises a 429 with triggered_type selected by dimension precedence (CONCURRENT_REQUESTS if max_parallel_requests==0).
+    proof: [all-zero-tests]
+  - text: check_key_in_limits appends updated cache entries to values_to_update_in_cache and calls async_batch_set_cache with ttl=60 and local_only=True, then returns new_val.
+    proof: [cache-update-tests]
+  - text: get_all_cache_objects returns a CacheObject with all six entries as None when the async_batch_get_cache result is None, or maps each result[i] to its CacheObject field.
+    proof: [batch-object-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: constructor-tests
+      why: Constructor is missing or does not store internal_usage_cache
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::constructor/)'
+    - id: verbose-logging-tests
+      why: Verbose logging does not log to logger or does not check litellm.set_verbose
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::verbose/)'
+    - id: retry-interval-tests
+      why: time_to_next_minute returns incorrect interval or does not align to minute boundary
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::retry_interval/)'
+    - id: error-raising-tests
+      why: raise_rate_limit_error does not raise ProxyRateLimitError, missing retry-after, or wrong status/type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::error_raising/)'
+    - id: error-provider-tests
+      why: raise_rate_limit_error does not resolve provider or model, or does not use B3030's resolve function
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::error_provider/)'
+    - id: dimension-precedence-tests
+      why: Dimension precedence is wrong (should be max_parallel_requests, tpm, rpm) or current values not compared correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::dimension_precedence/)'
+    - id: all-zero-tests
+      why: All-zero case does not raise error with correct rate_limit_type or precedence is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::all_zero/)'
+    - id: cache-update-tests
+      why: Cache updates are not appended to values_to_update_in_cache, new_val missing keys, or format incorrect
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::cache_updates/)'
+    - id: batch-object-tests
+      why: get_all_cache_objects does not return CacheObject, handles None incorrectly, or field mapping is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::batch_object/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "`InternalUsageCache` async_batch_get_cache, async_batch_set_cache and async_increment_cache implementations; these are owned by a cache transport task and used by this task as they are."
+  - "The `async_pre_call_hook` and success/failure logging paths that call check_key_in_limits and get_all_cache_objects; those are owned by B3048 and B3049."
+  - "Request metadata parsing and throttled_limit fallback logic; those are owned by B002 (config) and B071 (budget throttling)."
+
+pitfalls:
+  - "Dimension precedence is strict: max_parallel_requests==0 triggers CONCURRENT_REQUESTS before tpm_limit==0 triggers TOKENS before rpm_limit==0 triggers REQUESTS. A reversed order diverges from LiteLLM."
+  - "print_verbose must silently catch exceptions and not propagate; a logging error during a request path must not break the path."
+  - "get_all_cache_objects returns all six fields as None if the batch result is None, not a partial array; this matches the API contract."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

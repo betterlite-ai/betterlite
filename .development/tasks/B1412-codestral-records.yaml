@@ -28,6 +28,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/{lib,error,codestral_records}.rs
+    - crates/betterlite-openai/src/codestral_records.rs
     - crates/betterlite-openai/src/codestral_records/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/codestral_record.rs

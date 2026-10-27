@@ -1,0 +1,238 @@
+id: B3066
+title: Schedule FOCUS exports with pod coordination
+description: >-
+  Build FOCUS's scheduled export job in betterlite-server::finops::focus and configuration in betterlite-config.
+  FocusLogger orchestrates the engine across pod-aware scheduling with optional Redis-backed locking.
+
+  Configuration defaults (overridable by constructor args):
+  provider defaults to "s3" (FOCUS_PROVIDER env var, case-insensitive);
+  export_format defaults to "parquet" (FOCUS_FORMAT);
+  frequency defaults to "hourly" (FOCUS_FREQUENCY: "hourly", "daily", or "interval");
+  cron_offset_minute defaults to 5 (FOCUS_CRON_OFFSET env var, no try/except — invalid values raise ValueError);
+  interval_seconds reads from FOCUS_INTERVAL_SECONDS with warn-and-fallback to 60 on parse error;
+  prefix defaults to "focus_exports" (FOCUS_PREFIX).
+  Lock identity for pod coordination is the string "focus_export_usage_data".
+
+  FocusLogger.initialize_focus_export_job acquires the lock if pod_lock_manager exists with redis_cache,
+  otherwise runs the export immediately without locking.
+  FocusLogger.export_usage_data is the public manual-trigger entry point: when called with no time bounds,
+  it exports all available data; when called with both start_time_utc and end_time_utc, it exports that window.
+  FocusLogger._compute_time_window derives the window based on frequency:
+  for "hourly", end_time is the current hour at :00 and start_time is one hour prior;
+  for "daily", end_time is today at 00:00 UTC and start_time is one day prior;
+  for "interval", end_time is now and start_time is now minus interval_seconds.
+
+  init_focus_export_background_job finds all registered FocusLogger instances (exact type match, excluding subclasses),
+  registers one with the scheduler using the trigger configuration from _build_scheduler_trigger,
+  and skips if no FocusLogger is registered.
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/focus.rs
+    - crates/betterlite-server/src/finops/focus/**
+    - crates/betterlite-config/src/sections/focus_export_schedule.rs
+    - crates/betterlite-config/src/sections/focus_export_schedule/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L31-L77"
+    why: FocusLogger.__init__ and _ensure_engine, including all configuration defaults and env var handling.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L79-L105"
+    why: export_usage_data method with no-bounds-means-all-data behavior and time-window construction.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L112-L132"
+    why: initialize_focus_export_job with pod_lock_manager checks and fallback to immediate export when locking unavailable.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L134-L156"
+    why: init_focus_export_background_job with exact type filtering and scheduler registration.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L158-L174"
+    why: _build_scheduler_trigger for cron and interval modes with minute/hour/second calculations.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L176-L218"
+    why: _run_scheduled_export, _export_all, _export_window, and _compute_time_window with per-frequency logic.
+dod:
+  - text: >-
+      FocusLogger.__init__ accepts provider, export_format, frequency, cron_offset_minute, interval_seconds, prefix,
+      and destination_config parameters; all except destination_config default to environment variables or constants.
+    proof: [constructor-env-defaults, constructor-parameter-override]
+  - text: >-
+      FOCUS_PROVIDER defaults to "s3" (case-insensitive); FOCUS_FORMAT defaults to "parquet";
+      FOCUS_FREQUENCY defaults to "hourly".
+    proof: [constructor-env-defaults]
+  - text: >-
+      FOCUS_INTERVAL_SECONDS is parsed with try/except; parse failures log a warning and fall back to None
+      (later used as 60 when building the cron trigger).
+    proof: [constructor-interval-parsing]
+  - text: >-
+      FOCUS_CRON_OFFSET env var is parsed as int() with no try/except; an invalid value raises ValueError.
+    proof: [constructor-cron-offset-error]
+  - text: >-
+      FOCUS_PREFIX defaults to "focus_exports"; prefix parameter overrides the env var, which overrides the default.
+    proof: [constructor-prefix-precedence]
+  - text: >-
+      export_usage_data raises ValueError when start_time_utc and end_time_utc are provided asymmetrically
+      (one present, one absent); accepts both or neither.
+    proof: [export-usage-data-bounds-validation]
+  - text: >-
+      export_usage_data calls _export_all when no time bounds are provided; calls _export_window when both
+      start_time_utc and end_time_utc are provided.
+    proof: [export-usage-data-routing]
+  - text: >-
+      initialize_focus_export_job checks if pod_lock_manager exists and has redis_cache;
+      if both are truthy, acquires the lock, runs _run_scheduled_export in a try block, and releases in finally.
+    proof: [pod-lock-acquire, pod-lock-release]
+  - text: >-
+      initialize_focus_export_job calls _run_scheduled_export immediately without acquiring a lock when
+      pod_lock_manager is None, falsy, or lacks redis_cache.
+    proof: [pod-lock-unavailable]
+  - text: >-
+      initialize_focus_export_job logs debug level "Focus export: unable to acquire pod lock" and returns
+      early if acquire_lock returns false.
+    proof: [pod-lock-acquire-fail]
+  - text: >-
+      init_focus_export_background_job filters registered loggers by exact type match on FocusLogger
+      (excluding subclasses like VantageLogger), selects the first one, and registers it with the scheduler.
+    proof: [scheduler-exact-type-match, scheduler-registration]
+  - text: >-
+      init_focus_export_background_job logs debug level "No Focus export logger registered; skipping scheduler"
+      and returns early if no matching FocusLogger is found.
+    proof: [scheduler-skip-empty]
+  - text: >-
+      _build_scheduler_trigger returns {"trigger": "interval", "seconds": <seconds>} for frequency "interval",
+      where <seconds> is interval_seconds if set else 60.
+    proof: [scheduler-interval-trigger]
+  - text: >-
+      _build_scheduler_trigger returns {"trigger": "cron", "minute": <m>, "second": 0} for frequency "hourly",
+      where <m> is clamped to [0, 59] from cron_offset_minute.
+    proof: [scheduler-hourly-trigger]
+  - text: >-
+      _build_scheduler_trigger returns {"trigger": "cron", "hour": <h>, "minute": <m>, "second": 0} for frequency "daily",
+      where total_minutes = max(0, cron_offset_minute), h = min(23, total_minutes // 60), m = min(59, total_minutes % 60).
+    proof: [scheduler-daily-trigger]
+  - text: >-
+      _build_scheduler_trigger raises ValueError("Unsupported frequency: <frequency>") for unrecognized frequency values.
+    proof: [scheduler-unsupported-frequency]
+  - text: >-
+      _compute_time_window for "hourly" frequency sets end_time to the current UTC hour (minute/second/microsecond = 0)
+      and start_time to one hour prior.
+    proof: [window-hourly]
+  - text: >-
+      _compute_time_window for "daily" frequency sets end_time to today 00:00 UTC and start_time to one day prior.
+    proof: [window-daily]
+  - text: >-
+      _compute_time_window for "interval" frequency sets end_time to now and start_time to now minus interval_seconds.
+    proof: [window-interval]
+  - text: >-
+      _compute_time_window raises ValueError("Unsupported frequency: <frequency>") for unrecognized frequency values.
+    proof: [window-unsupported-frequency]
+  - text: >-
+      Every mutant in the FocusLogger module is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: constructor-env-defaults
+      why: FocusLogger does not read environment variables or apply defaults for provider, format, frequency
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::constructor_defaults/)'
+    - id: constructor-parameter-override
+      why: FocusLogger constructor parameters do not override environment variables
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::constructor_overrides/)'
+    - id: constructor-interval-parsing
+      why: FOCUS_INTERVAL_SECONDS invalid values do not warn and fallback to None
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::interval_parsing_invalid/)'
+    - id: constructor-cron-offset-error
+      why: FOCUS_CRON_OFFSET invalid values do not raise ValueError
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::cron_offset_error/)'
+    - id: constructor-prefix-precedence
+      why: FOCUS_PREFIX environment variable does not respect precedence with constructor parameter and default
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::prefix_precedence/)'
+    - id: export-usage-data-bounds-validation
+      why: export_usage_data does not validate that both or neither time bounds are provided
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::export_usage_data_bounds/)'
+    - id: export-usage-data-routing
+      why: export_usage_data does not route to _export_all or _export_window based on time bounds
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export::export_usage_data_routing/)'
+    - id: pod-lock-acquire
+      why: initialize_focus_export_job does not acquire the pod lock when pod_lock_manager and redis_cache exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::pod_lock_acquire/)'
+    - id: pod-lock-release
+      why: initialize_focus_export_job does not release the lock in a finally block or runs scheduled export on acquire failure
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::pod_lock_release/)'
+    - id: pod-lock-unavailable
+      why: initialize_focus_export_job does not run the scheduled export immediately when pod_lock_manager is None or lacks redis_cache
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::pod_lock_unavailable/)'
+    - id: pod-lock-acquire-fail
+      why: initialize_focus_export_job does not log debug and return early when acquire_lock returns false
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::pod_lock_acquire_fail/)'
+    - id: scheduler-exact-type-match
+      why: init_focus_export_background_job does not filter FocusLogger by exact type or includes subclasses
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::exact_type_match/)'
+    - id: scheduler-registration
+      why: init_focus_export_background_job does not register the FocusLogger with the scheduler
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::scheduler_registration/)'
+    - id: scheduler-skip-empty
+      why: init_focus_export_background_job does not skip when no FocusLogger is registered
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::scheduler_skip_empty/)'
+    - id: scheduler-interval-trigger
+      why: _build_scheduler_trigger does not return correct interval configuration
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::trigger_interval/)'
+    - id: scheduler-hourly-trigger
+      why: _build_scheduler_trigger does not return correct cron configuration for hourly or does not clamp minute
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::trigger_hourly/)'
+    - id: scheduler-daily-trigger
+      why: _build_scheduler_trigger does not return correct cron configuration for daily or does not compute hour/minute correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::trigger_daily/)'
+    - id: scheduler-unsupported-frequency
+      why: _build_scheduler_trigger does not raise ValueError for unsupported frequency
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::trigger_unsupported/)'
+    - id: window-hourly
+      why: _compute_time_window does not compute correct hourly window with end_time at the hour and start_time one hour prior
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::window_hourly/)'
+    - id: window-daily
+      why: _compute_time_window does not compute correct daily window with end_time at midnight and start_time one day prior
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::window_daily/)'
+    - id: window-interval
+      why: _compute_time_window does not compute correct interval window with end_time = now and start_time = now - interval_seconds
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::window_interval/)'
+    - id: window-unsupported-frequency
+      why: _compute_time_window does not raise ValueError for unsupported frequency
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^focus_export_schedule::window_unsupported/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      FOCUS_CRON_OFFSET env var parsing raises ValueError directly on invalid input without try/except,
+      unlike FOCUS_INTERVAL_SECONDS which warns and falls back to None.
+    why: >-
+      LiteLLM's implementation at line 48 does not wrap the int() call in try/except.
+      The cron offset must be valid when set; an invalid value fails fast at construction time rather than silently degrading.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L47-L49"
+out_of_scope:
+  - >-
+    FocusLogger.dry_run_export_usage_data (litellm/integrations/focus/focus_logger.py:107-110)
+    is not called at the pinned commit; it is owned by the task that consumes it through the Vantage dry-run route (B073)
+    which implements its own simplified query-and-sample logic instead.
+pitfalls:
+  - >-
+    FOCUS_CRON_OFFSET is parsed as int(os.getenv("FOCUS_CRON_OFFSET", "5")) without try/except;
+    an invalid value raises ValueError at construction time.
+  - >-
+    cron_offset_minute is clamped to [0, 59] for hourly frequency but used as total minutes for daily frequency,
+    where it is split into hour (//60) and minute (%60) components.
+  - >-
+    interval_seconds must be an integer; if FOCUS_INTERVAL_SECONDS is set to a non-integer string,
+    log a warning and use 60 as the fallback.
+  - >-
+    export_usage_data requires both start_time_utc and end_time_utc or neither; asymmetric time bounds raise ValueError.
+  - >-
+    initialize_focus_export_job must check pod_lock_manager.redis_cache before attempting to acquire a lock;
+    the absence of redis_cache means the lock manager is not functional.
+  - >-
+    When acquire_lock fails, return early without running the scheduled export; do not attempt to acquire
+    again or run the export on lock failure.
+  - >-
+    init_focus_export_background_job must use exact type match (type(cb) is FocusLogger) to filter loggers,
+    not isinstance, to exclude subclasses like VantageLogger that have their own scheduler initialization.
+  - >-
+    _build_scheduler_trigger returns dicts with keys "trigger", "seconds" (for interval) or "trigger", "hour", "minute", "second" (for cron);
+    these keys are consumed directly by APScheduler's add_job method.
+  - >-
+    _compute_time_window uses UTC timezone for all calculations; ensure the returned FocusTimeWindow has UTC-aware datetimes.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

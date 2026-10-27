@@ -1,0 +1,379 @@
+id: B3615
+title: Pass-through HTTP route factory and completion adapter
+description: >-
+  Build an async handler and the create_pass_through_route factory that creates reusable
+  HTTP endpoint handlers in betterlite-server. Preserve endpoint markers, header merging,
+  and auth selection at route creation.
+
+  Implement the async handler (any name under 30 characters) that accepts fastapi_response:
+  Response, request: Request, adapter_id: str, and user_api_key_dict: UserAPIKeyAuth.
+  Resolve litellm_call_id from request headers via resolve_litellm_call_id (B198). Parse
+  request body as JSON. Select model with fallback priority: general_settings completion_model
+  or user_model (whichever is set takes priority; user_model wins if both are set), then
+  request model. Enrich data via add_litellm_data_to_request with general_settings, version,
+  proxy_config. Override user CLI settings (temperature, request_timeout, max_tokens, api_base).
+  Apply model alias mapping (litellm.model_alias_map and user_api_key_dict.aliases). Call
+  pre_call_hook on the logging object. Route the request: if api_key in data, call
+  litellm.aadapter_completion directly; elif model recognized or has default deployment or
+  matches deployment_names, use llm_router.aadapter_completion (specific_deployment=True for
+  deployment_names); elif user_model is set, call litellm.aadapter_completion; else raise
+  ProxyModelNotFoundError. Extract hidden_params (model_id, cache_key, api_base, response_cost).
+  Schedule an async update_request_status to success. Get custom headers via
+  ProxyBaseLLMRequestProcessing.get_custom_headers. Return the response. On exception, call
+  post_call_failure_hook and raise ProxyException with litellm_call_id headers.
+
+  Implement create_pass_through_route as a factory that takes endpoint: str, target: str, and
+  optional custom_headers, forward_headers, merge_query_params, dependencies, include_subpath,
+  cost_per_request, custom_llm_provider, is_streaming_request, query_params, default_query_params,
+  guardrails, config_file_path, timeout. The function has two branches: if target is a CustomLogger
+  or can be resolved via get_instance_fn, create an adapter_id and return an endpoint_func that
+  calls the handler built earlier in this task (by whatever name under 30 characters it uses); else
+  treat target as a URL and return an endpoint_func that calls pass_through_request via a _relay closure.
+  The URL branch parses request data via
+  _parse_request_data_by_content_type, checks the registry via is_registered_pass_through_route
+  and get_registered_pass_through_route (B3614), raises 404 or 405 as needed, merges config-supplied
+  passthrough_params, constructs full_target via construct_target_url_with_subpath (B3600),
+  converts custom_headers to a dict, merges query_params, reads request.state for the custom body
+  (LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY), and calls pass_through_request with all parameters.
+  The relay closure wraps pass_through_request in a finally block that cleans up three request.state
+  keys (LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY, LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY,
+  LITELLM_PASS_THROUGH_DEPLOYMENT_MODEL_INFO_STATE_KEY) before returning. Wrap the relay result in
+  open_sse_before_first_byte with ping_interval_seconds set to litellm.sse_keepalive_ping_interval_seconds
+  for streaming requests, None otherwise. Set LITELLM_PASS_THROUGH_ENDPOINT_MARKER attribute on
+  endpoint_func to True for auth discovery.
+
+scope:
+  paths:
+  - crates/betterlite-server/src/passthrough_route_factory.rs
+  - crates/betterlite-server/src/passthrough_route_factory/**
+  - tools/oracle/cases/passthrough/**
+  - tools/oracle/helpers/b3615.py
+  - tools/oracle/helpers/b3615/**
+  - tools/oracle/src/helpers/server/b3615.rs
+  - tools/oracle/src/helpers/server/b3615/**
+  lint_tables: false
+
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L201-L344
+  why: >-
+    chat_completion_pass_through_endpoint: async handler, request body parsing, litellm_call_id
+    resolution, model selection with fallback priority, add_litellm_data_to_request enrichment,
+    CLI override parameters, model alias mapping, pre_call_hook, routing decision logic with
+    llm_router, hidden_params extraction, update_request_status scheduling, custom headers,
+    exception handling with post_call_failure_hook and ProxyException.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1983-L2156
+  why: >-
+    create_pass_through_route factory: dual branches (CustomLogger vs URL), adapter_id generation,
+    endpoint_func closure structure for both branches, get_instance_fn resolution, _relay closure
+    with state cleanup (three state keys), get_request_route lookup, registry checks (is_registered_pass_through_route,
+    get_registered_pass_through_route), parameter merging from config, target URL construction,
+    request data parsing, query and body parameter handling, open_sse_before_first_byte wrapping,
+    endpoint marker setting with LITELLM_PASS_THROUGH_ENDPOINT_MARKER.
+
+dod:
+- text: >-
+    chat_completion_pass_through_endpoint correctly parses request body as JSON, resolves
+    litellm_call_id from headers, and initializes data dict with adapter_id.
+  proof:
+  - request-parsing-cases
+- text: >-
+    Model selection: user_model (if set) always overrides general_settings completion_model.
+    If neither is set, request model is used. Model aliases (global and per-key) are applied
+    after selection.
+  proof:
+  - model-selection-cases
+- text: >-
+    data is enriched via add_litellm_data_to_request and user CLI settings override temperature,
+    request_timeout, max_tokens, and api_base when provided.
+  proof:
+  - data-enrichment-cases
+- text: >-
+    pre_call_hook is called with user_api_key_dict, data, and call_type="text_completion"; the hook
+    result is stored back in data.
+  proof:
+  - pre-call-hook-cases
+- text: >-
+    Routing selects the adapter: litellm.aadapter_completion if api_key in data;
+    llm_router.aadapter_completion when model is recognized, has default deployment,
+    or matches deployment_names (specific_deployment=True for the last); litellm.aadapter_completion
+    if user_model is set; ProxyModelNotFoundError is raised when no route exists.
+  proof:
+  - routing-decision-cases
+- text: >-
+    hidden_params (model_id, cache_key, api_base, response_cost) are extracted from response._hidden_params
+    as strings or empty strings on missing keys.
+  proof:
+  - hidden-params-cases
+- text: >-
+    Custom headers are obtained via ProxyBaseLLMRequestProcessing.get_custom_headers with all
+    parameters and returned in fastapi_response.headers.
+  proof:
+  - custom-headers-cases
+- text: >-
+    Exceptions trigger post_call_failure_hook, log via log_llm_api_exception, and raise ProxyException
+    with litellm_call_id in response headers.
+  proof:
+  - exception-handling-cases
+- text: >-
+    create_pass_through_route factory creates endpoint functions for both CustomLogger adapters and
+    URL targets with all required parameters in scope.
+  proof:
+  - factory-basic-cases
+- text: >-
+    CustomLogger/adapter branch: adapter is resolved via get_instance_fn or the target itself is used;
+    adapter_id is generated; endpoint_func calls the handler built earlier in this task (by whatever
+    name under 30 characters it uses) and closes over adapter_id and user_api_key_auth dependency.
+  proof:
+  - adapter-branch-cases
+- text: >-
+    URL branch: endpoint_func calls _relay which invokes pass_through_request; _relay is wrapped in
+    a finally block that deletes three state keys; relay result is wrapped in open_sse_before_first_byte.
+  proof:
+  - url-branch-structure-cases
+- text: >-
+    URL branch correctly parses request data, checks registry (404 if not registered, 405 if method
+    not allowed), merges config-supplied passthrough_params, and constructs full_target.
+  proof:
+  - url-branch-logic-cases
+- text: >-
+    Query params, headers and custom body are merged correctly: query_params_data from parsing,
+    updated with route query_params, headers converted to dict, custom_body from state or parsed data.
+  proof:
+  - parameter-merging-cases
+- text: >-
+    request.state cleanup in finally block deletes all three state keys using hasattr and delattr.
+    State key string values match LiteLLM's literals: "litellm_pass_through_custom_body",
+    "litellm_pass_through_raw_body", "litellm_pass_through_deployment_model_info".
+  proof:
+  - state-cleanup-cases
+- text: >-
+    The endpoint marker attribute is set on endpoint_func with a string value of
+    "__litellm_pass_through_endpoint__" for auth endpoint discovery.
+  proof:
+  - endpoint-marker-cases
+- text: >-
+    ping_interval_seconds in open_sse_before_first_byte is set to litellm.sse_keepalive_ping_interval_seconds
+    for streaming requests, None otherwise.
+  proof:
+  - sse-keepalive-cases
+- text: >-
+    All default_query_params references (parameter name, parsing) are handled; parameter is passed through
+    to pass_through_request for completeness.
+  proof:
+  - constant-and-name-tests
+
+checks:
+  optional: []
+  commands:
+  - id: request-parsing-cases
+    why: >-
+      request body parsing or litellm_call_id resolution tests are missing, do not run or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_request_parsing($|::)/) - test(/replays_the_/)'
+  - id: model-selection-cases
+    why: >-
+      model selection and alias mapping tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_model_selection($|::)/) - test(/replays_the_/)'
+  - id: data-enrichment-cases
+    why: >-
+      data enrichment and CLI override tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_data_enrichment($|::)/) - test(/replays_the_/)'
+  - id: pre-call-hook-cases
+    why: >-
+      pre_call_hook invocation tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_pre_call_hook($|::)/) - test(/replays_the_/)'
+  - id: routing-decision-cases
+    why: >-
+      routing decision tests (api_key, model recognition, deployment, default) are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_routing_decision($|::)/) - test(/replays_the_/)'
+  - id: hidden-params-cases
+    why: >-
+      hidden_params extraction tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_hidden_params($|::)/) - test(/replays_the_/)'
+  - id: custom-headers-cases
+    why: >-
+      ProxyBaseLLMRequestProcessing.get_custom_headers invocation tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_custom_headers($|::)/) - test(/replays_the_/)'
+  - id: exception-handling-cases
+    why: >-
+      Exception handling (post_call_failure_hook, ProxyException) tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_exception_handling($|::)/) - test(/replays_the_/)'
+  - id: factory-basic-cases
+    why: >-
+      Factory function basic tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_route_factory_basic($|::)/) - test(/replays_the_/)'
+  - id: adapter-branch-cases
+    why: >-
+      Adapter branch tests (CustomLogger, get_instance_fn) are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_adapter_branch($|::)/) - test(/replays_the_/)'
+  - id: url-branch-structure-cases
+    why: >-
+      URL branch relay and state cleanup tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_url_branch_structure($|::)/) - test(/replays_the_/)'
+  - id: url-branch-logic-cases
+    why: >-
+      URL branch registry checks and parameter construction tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_url_branch_logic($|::)/) - test(/replays_the_/)'
+  - id: parameter-merging-cases
+    why: >-
+      Query param, header, and body merging tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_parameter_merging($|::)/) - test(/replays_the_/)'
+  - id: state-cleanup-cases
+    why: >-
+      State cleanup tests (hasattr, delattr) are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_state_cleanup($|::)/) - test(/replays_the_/)'
+  - id: endpoint-marker-cases
+    why: >-
+      LITELLM_PASS_THROUGH_ENDPOINT_MARKER attribute tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_endpoint_marker($|::)/) - test(/replays_the_/)'
+  - id: sse-keepalive-cases
+    why: >-
+      open_sse_before_first_byte ping interval tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_sse_keepalive($|::)/) - test(/replays_the_/)'
+  - id: constant-and-name-tests
+    why: >-
+      state-key constants, parameter names, or exception types have wrong names
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_constant_and_name/)'
+
+oracle_cases:
+- tools/oracle/cases/passthrough/chat-completion-endpoint-basic.yaml
+- tools/oracle/cases/passthrough/chat-completion-model-selection-default.yaml
+- tools/oracle/cases/passthrough/chat-completion-model-selection-cli.yaml
+- tools/oracle/cases/passthrough/chat-completion-model-selection-request.yaml
+- tools/oracle/cases/passthrough/chat-completion-model-selection-both-completion-and-cli.yaml
+- tools/oracle/cases/passthrough/chat-completion-model-alias-global.yaml
+- tools/oracle/cases/passthrough/chat-completion-model-alias-per-key.yaml
+- tools/oracle/cases/passthrough/chat-completion-cli-override-temperature.yaml
+- tools/oracle/cases/passthrough/chat-completion-cli-override-timeout.yaml
+- tools/oracle/cases/passthrough/chat-completion-routing-api-key.yaml
+- tools/oracle/cases/passthrough/chat-completion-routing-recognized-model.yaml
+- tools/oracle/cases/passthrough/chat-completion-routing-default-deployment.yaml
+- tools/oracle/cases/passthrough/chat-completion-routing-deployment-names.yaml
+- tools/oracle/cases/passthrough/chat-completion-routing-user-model.yaml
+- tools/oracle/cases/passthrough/chat-completion-exception-missing-model.yaml
+- tools/oracle/cases/passthrough/create-route-adapter-branch.yaml
+- tools/oracle/cases/passthrough/create-route-url-branch-basic.yaml
+- tools/oracle/cases/passthrough/create-route-url-branch-not-registered.yaml
+- tools/oracle/cases/passthrough/create-route-url-branch-method-not-allowed.yaml
+- tools/oracle/cases/passthrough/create-route-url-branch-default-query-params.yaml
+- tools/oracle/cases/passthrough/create-route-state-cleanup.yaml
+- tools/oracle/cases/passthrough/create-route-sse-keepalive-streaming.yaml
+- tools/oracle/cases/passthrough/create-route-sse-keepalive-non-streaming.yaml
+
+deviations:
+- what: >-
+    ProxyBaseLLMRequestProcessing.get_custom_headers is called but its implementation
+    (get_custom_headers, _process_chunk_with_cost_injection, and error/hook methods) are not built
+    by this task; they are owned by B004 or a shared proxy infrastructure task (gap D).
+  why: >-
+    This task builds the route factory which calls that method; the method's implementation
+    is a dependency owned elsewhere. betterlite calls the method with the same parameters
+    LiteLLM does until its owner lands.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L320-L328
+- what: >-
+    adapter_completion and get_instance_fn calls on LiteLLM objects are treated as external
+    dependencies; the factory passes parameters to them without validating their behavior.
+  why: >-
+    These functions implement LiteLLM's adapter protocol and the typed config instance resolver.
+    This task delegates to them as-is, matching LiteLLM's behavior of accepting adapters or
+    URLs transparently.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2005-L2008
+
+out_of_scope:
+- >-
+  adapter_completion and get_instance_fn from LiteLLM's adapter layer and instance resolution;
+  this task calls them as external dependencies for the CustomLogger branch.
+- >-
+  ProxyBaseLLMRequestProcessing.get_custom_headers and its related methods (ProxyBaseLLMRequestProcessing itself);
+  B004 or a shared proxy infrastructure task owns them (gap D).
+- >-
+  add_litellm_data_to_request, pre_call_hook, and post_call_failure_hook; these are imported
+  from the proxy context (proxy_server globals) and called by this task.
+- >-
+  litellm_call_id_headers, openai_error_type, openai_error_param, openai_error_status_code
+  and log_llm_api_exception; these are error handling utilities owned elsewhere and called from
+  the exception path.
+- >-
+  open_sse_before_first_byte wrapper for keepalive pings; this is owned by gap D (shared
+  proxy infrastructure); this task calls it with the relay result and ping interval.
+- >-
+  get_request_route lookup for the URL branch's path extraction; owned by gap D; this task
+  calls it to get the canonical route for registry lookups.
+
+pitfalls:
+- >-
+  Model selection: user_model (if set) always wins over completion_model, even when both are set.
+  If neither is set, request model is used. Test both parameters together to catch the actual
+  precedence.
+- >-
+  Model alias mapping has two stages: global litellm.model_alias_map, then user_api_key_dict.aliases.
+  Both are dicts and both can be None; apply them in order without overwriting the model twice.
+- >-
+  The routing decision has five branches: direct api_key (litellm.aadapter_completion), recognized model,
+  default/pattern router, specific deployment (specific_deployment=True), and finally user_model
+  (litellm.aadapter_completion). The user_model branch is the last fallback before ProxyModelNotFoundError.
+- >-
+  hidden_params is a dict that might not exist on the response object or might be None;
+  getattr with {} default and .get() with empty-string defaults handle both missing and None.
+- >-
+  The URL branch's _relay closure runs pass_through_request and must clean up state in finally
+  even if pass_through_request raises; check hasattr before delattr to avoid KeyError.
+- >-
+  Three distinct state keys are cleaned up with their full string names: "litellm_pass_through_custom_body",
+  "litellm_pass_through_raw_body", "litellm_pass_through_deployment_model_info". Omitting any key
+  breaks request isolation.
+- >-
+  The endpoint marker attribute carries a string value "__litellm_pass_through_endpoint__" on
+  endpoint_func (the inner function), not the factory itself, for auth to discover custom routes.
+- >-
+  open_sse_before_first_byte takes an awaitable (_relay()) and an optional ping_interval_seconds.
+  The interval is None for non-streaming (force synchronous read) or the config value for streaming.
+  If interval is wrong, keepalive breaks or SSE stalls.
+- >-
+  The factory accepts default_query_params in its signature and merges config-supplied passthrough_params
+  but does not apply default_query_params in the URL branch because it is never added to target_params.
+  The parameter is passed to pass_through_request as None for completeness; changing this would require
+  modifying target_params construction at line 2068-2076.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

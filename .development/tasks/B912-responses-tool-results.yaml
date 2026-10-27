@@ -91,5 +91,5 @@ pitfalls:
 - A tool-result list with no recognized parts becomes JSON text instead of an empty message.
 review_level: standard
 budget:
-  max_changed_lines: 580
+  max_changed_lines: 1500
   max_new_expects: 1

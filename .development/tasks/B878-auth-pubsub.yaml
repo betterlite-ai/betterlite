@@ -201,6 +201,6 @@ pitfalls:
   - A spend reset SET received by its publishing worker must not delete the freshly reset counter or floor marker.
   - Subscription success resets backoff before consumption, so repeated consume failures each wait five seconds.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

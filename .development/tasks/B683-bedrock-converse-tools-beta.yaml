@@ -254,6 +254,6 @@ pitfalls:
 - A systemTool key is sufficient for pass-through even when its value is None.
 - Computer beta values may duplicate a caller value, while eager, effort and compact beta additions explicitly deduplicate.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

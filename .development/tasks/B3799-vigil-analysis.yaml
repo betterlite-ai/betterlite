@@ -1,0 +1,162 @@
+id: B3799
+title: Vigil analysis retries and sanitized output
+description: >-
+  Build Vigil Guard analysis requests, transient retries and output construction for text/tool payloads.
+  Preserve metadata clamping, sanitized-text fallback and backend failure classification.
+
+  Implement the Vigil Guard guardrail helper functions that perform analysis, retries, metadata collection,
+  block-reason construction and sanitized output building. The guardrail sends text and tool-call arguments
+  to the Vigil Guard `/v1/guard/analyze` endpoint with a bearer token and metadata, retries once on transient
+  failures (429, 502, 503, 504, connection timeouts), and applies the returned decision (ALLOWED, SANITIZED,
+  BLOCKED) to update inputs. When sanitization is requested, replace texts and tool-call arguments with the
+  returned sanitizedText or outputText, falling back to the original if neither is present. When blocked,
+  build a reason from blockMessage, decisionReason, or the categories list, truncated to 500 characters.
+
+  Collect metadata from request_data and its nested metadata/litellm_metadata dicts, pulling only from the
+  allowlist: model, model_group, provider, region, deployment, user, user_id, session_id, conversation_id,
+  request_id, tenant_id, org_id. Clamp string values to 500 characters, arrays to 10 items, exclude booleans,
+  and add litellm_call_id when present. Preserve the order of metadata allowlist fields and the first
+  non-None value found across sources.
+
+  Build the output by comparing texts and tool-call lists before and after sanitization. If both are unchanged,
+  return the input verbatim (logs as "allow"). If either changed, return only texts, images, tools and
+  tool_calls, dropping structured_messages to prevent stale unsanitized payloads from reaching the model.
+
+  Extract text and arguments from tool calls by accessing the function.arguments field (strings only).
+  Update tool calls by reconstructing the function dict with the new arguments and preserving other fields.
+
+  Define the request and response types, the metadata allowlist, value-clamping limits (500 string chars,
+  10 array items, no booleans), valid-decision enum ("ALLOWED", "SANITIZED", "BLOCKED"), transient HTTP
+  status codes (429, 502, 503, 504), and the /v1/guard/analyze endpoint path. Use httpx error types to
+  classify transient failures: ConnectError, ConnectTimeout, ReadTimeout, RemoteProtocolError, and the
+  LiteLLM Timeout exception. Preserve the 10-second default timeout with 5-second connect timeout.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/vigil_guard.rs
+    - crates/betterlite-guardrails/src/vigil_guard/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L82-L89
+    why: The _AsyncPostHandler protocol definition for HTTP post requests
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L270-L297
+    why: _handle_backend_failure distinguishes fail_open and fail_closed policies with logging
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L299-L341
+    why: _build_output, _tool_call_arguments and _set_tool_call_arguments construct output and mutate tool calls
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L343-L395
+    why: _analyze posts the payload, _post_with_retry retries once on transient failures, _is_transient classifies exceptions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L397-L479
+    why: _build_block_reason, _resolve_sanitized_text, _collect_metadata, _clamp_metadata_value and _extract_call_id
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/vigil_guard.py
+    why: VigilGuardGuardrailConfigModel and its ui_friendly_name definition
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L1-L96
+    why: Constants, type aliases and module-level support (endpoint, timeouts, metadata limits, status codes, allowlist)
+
+dod:
+  - text: Vigil Guard type definitions (VigilGuardGuardrailConfigModel with api_base, api_key, and ui_friendly_name) exist and deserialize from LiteLLM's field names.
+    proof: [config-types-exist]
+  - text: The _AsyncPostHandler protocol matches the LiteLLM handler signature and is callable with url, headers, json payload and timeout.
+    proof: [handler-protocol-exists]
+  - text: _analyze sends a POST to /v1/guard/analyze with bearer authorization and full mode, returning the parsed analysis dict from the response.
+    proof: [analysis-oracle]
+  - text: _post_with_retry retries once on transient failures (429, 502, 503, 504, connection errors, timeouts) and succeeds or raises on the second attempt.
+    proof: [retry-oracle]
+  - text: _is_transient correctly identifies httpx connection, timeout and status errors plus LiteLLM Timeout as transient.
+    proof: [transient-oracle]
+  - text: _handle_backend_failure applies fail_open/fail_closed policy and either returns output via _build_output or raises GuardrailRaisedException.
+    proof: [failure-oracle]
+  - text: _build_output returns the input verbatim when texts and tool_calls are unchanged, or returns only texts/images/tools/tool_calls when changed.
+    proof: [output-oracle]
+  - text: _tool_call_arguments extracts (index, arguments) tuples from the function.arguments field of each tool call.
+    proof: [tool-extraction-oracle]
+  - text: _set_tool_call_arguments reconstructs a tool call with updated function.arguments while preserving other fields.
+    proof: [tool-update-oracle]
+  - text: _collect_metadata gathers values from the metadata allowlist in request_data and nested dicts, using the first non-None value per field and adding litellm_call_id.
+    proof: [metadata-oracle]
+  - text: _clamp_metadata_value truncates strings to 500 chars, arrays to 10 items, excludes booleans and returns None for empty arrays.
+    proof: [clamp-oracle]
+  - text: _extract_call_id retrieves litellm_call_id from logging_obj.litellm_call_id, request_data.litellm_call_id or request_data.metadata.litellm_call_id.
+    proof: [call-id-oracle]
+  - text: _build_block_reason returns blockMessage or decisionReason if present, or a comma-separated categories list, truncated to 500 characters, or "Blocked by policy".
+    proof: [block-reason-oracle]
+  - text: _resolve_sanitized_text returns sanitizedText or outputText from the analysis, or the original text if neither is present.
+    proof: [sanitize-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: config-types-exist
+      why: VigilGuardGuardrailConfigModel struct missing api_base/api_key fields or deserialization fails
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_config::(deserialize_api_fields|round_trip_api_key|round_trip_api_base)/)'
+    - id: handler-protocol-exists
+      why: AsyncPostHandler protocol missing or cannot be called with url, headers, json payload and timeout
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_handler_protocol::(post_with_url_headers_json|handler_method_signature)/)'
+    - id: analysis-oracle
+      why: Vigil Guard analysis behavior does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_analysis::/)'
+    - id: retry-oracle
+      why: Transient retry behavior does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_retry::/)'
+    - id: transient-oracle
+      why: Transient error classification does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_transient::/)'
+    - id: failure-oracle
+      why: Backend failure handling does not match LiteLLM policy
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_failure::/)'
+    - id: output-oracle
+      why: Output construction behavior does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_output::/)'
+    - id: tool-extraction-oracle
+      why: Tool call argument extraction does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_tool_extraction::/)'
+    - id: tool-update-oracle
+      why: Tool call argument update does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_tool_update::/)'
+    - id: metadata-oracle
+      why: Metadata collection does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_metadata::/)'
+    - id: clamp-oracle
+      why: Metadata value clamping does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_clamp::/)'
+    - id: call-id-oracle
+      why: Call ID extraction does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_call_id::/)'
+    - id: block-reason-oracle
+      why: Block reason construction does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_block_reason::/)'
+    - id: sanitize-oracle
+      why: Sanitized text resolution does not match LiteLLM
+      run: cargo nextest run --locked --no-tests=fail -E 'test(/^vigil_guard_sanitize::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Metadata allowlist field order and first non-None value precedence follow LiteLLM exactly: fields are checked in the order listed (model, model_group, provider, region, deployment, user, user_id, session_id, conversation_id, request_id, tenant_id, org_id), and the first source that provides a non-None value for each field is used."
+    why: "The metadata collection behavior must preserve LiteLLM's field precedence and ordering to ensure consistent behavior across implementations."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L418-L442"
+  - what: "Metadata string values are clamped to 500 characters, array items are limited to 10, and boolean values are excluded from metadata entirely."
+    why: "These limits prevent unbounded metadata from being sent to Vigil Guard and ensure compatibility with the service's payload constraints."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L35-L37"
+
+out_of_scope:
+  - "VigilGuardGuardrail class constructor, initialization and configuration resolution (belongs to B104 guardrail framework contracts)"
+  - "apply_guardrail main orchestration method that calls these helpers (depends on B104 framework orchestration)"
+  - "get_config_model and get_supported_event_hooks static methods (depend on B104 guardrail base class)"
+  - "Guardian base class features like guardrail_name, event_hook and logging callbacks (belong to B104)"
+
+pitfalls:
+  - "Metadata sources are checked in order: request_data itself first, then request_data.metadata, then request_data.litellm_metadata. The first non-None value per field stops the search; later sources for the same field are ignored."
+  - "The _is_transient check distinguishes httpx.HTTPStatusError status codes (transient if in the set 429/502/503/504) from other httpx exceptions (all transient) and the special LiteLLMTimeout (also transient)."
+  - "When texts or tool_calls are unchanged (content matches original), return the entire input dict verbatim to log as 'allow' rather than 'mask'. This requires value equality, not identity comparison."
+  - "Tool call arguments are JSON strings; _set_tool_call_arguments updates the function.arguments field in the tool call dict, not the parsed arguments object. Preserve the tool_id, id and index fields."
+  - "The endpoint path is /v1/guard/analyze relative to api_base (no trailing slash added). Bearer authorization uses the api_key with 'Bearer ' prefix. Content-Type is always application/json."
+  - "Block reason truncation happens after selection, not before: collect all candidates first, then truncate the chosen one to 500 characters."
+  - "Sanitized text fallback tries sanitizedText first, then outputText, then returns the original text. Both keys are optional in the analysis response."
+  - "The default timeout is 10 seconds for the request and 5 seconds for the connection. Preserve both when timeout is None, or use the provided timeout for the request with min(timeout, 5.0) for connect."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Pangea input and output transformations
 status: todo
 depends_on: [B002, B173, B189]
-file: null
+file: tasks/B3785-pangea-transformations.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/pangea/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/pangea.py"

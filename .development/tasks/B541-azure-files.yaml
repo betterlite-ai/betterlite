@@ -203,6 +203,6 @@ pitfalls:
 - The missing-client diagnostic still names OPENAI_API_KEY, so correcting its wording would change the source error.
 - Separate timeout/max_retries inputs are unused here; only litellm_params reaches client construction.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

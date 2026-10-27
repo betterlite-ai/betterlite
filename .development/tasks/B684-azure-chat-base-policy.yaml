@@ -327,6 +327,6 @@ pitfalls:
   spellings.
 - tool_choice date checks compare strings, while response_format date checks convert year/month to integers.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

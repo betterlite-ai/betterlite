@@ -2,8 +2,8 @@ id: B3978
 milestone: M7 observability
 title: Rubrik prompt and response moderation hooks
 status: todo
-depends_on: [B3975, B3976]
-file: null
+depends_on: [B3975, B3976, B184]
+file: tasks/B3978-rubrik-moderation.yaml
 covers:
   - "litellm/integrations/rubrik.py"
 parent: B114

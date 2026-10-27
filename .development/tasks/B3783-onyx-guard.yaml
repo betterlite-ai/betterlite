@@ -1,0 +1,103 @@
+id: B3783
+title: Onyx guard evaluation
+description: >-
+  Build the Onyx evaluation adapter using the pooled HTTP client and original proxy request and response conversion.
+  The guardrail validates requests and responses against an external Onyx Guard server at the key-bearing `/guard/evaluate/v1/{api_key}/litellm` endpoint.
+  Preserve fail-open backend errors while retaining explicit block exceptions.
+
+  The integration reads ONYX_API_KEY (required), ONYX_API_BASE (default https://ai-guard.onyx.security) and ONYX_TIMEOUT (default 10 seconds, truncated to integer) from the environment or the guardrail config.
+  The guardrail supports pre_call, during_call and post_call event hooks.
+  For requests, pass request_data.proxy_server_request to the server; for responses, extract the response from ModelResponse and send response.response.
+  The server returns a JSON object with allowed (boolean) and optional violated_rules (list of strings).
+  If allowed is false, raise an HTTPException with status 400 and a message built from violated_rules.
+  On any other backend error, log it and return inputs unchanged (fail-open).
+  The conversation_id for each call is logging_obj.litellm_call_id if available, else a random UUID.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/onyx.rs
+    - crates/betterlite-guardrails/src/onyx/tests.rs
+    - tools/oracle/cases/guardrails/onyx-*.yaml
+    - tools/oracle/helpers/b3783.py
+    - tools/oracle/helpers/b3783/**
+    - tools/oracle/src/helpers/guardrails/b3783.rs
+    - tools/oracle/src/helpers/guardrails/b3783/**
+    - crates/betterlite-guardrails/src/onyx/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L32-L149
+    why: The OnyxGuardrail class with get_supported_event_hooks, __init__, _validate_with_guard_server, apply_guardrail and get_config_model methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/__init__.py#L10-L23
+    why: The initialize_guardrail function that creates an OnyxGuardrail and registers it with the callback manager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/onyx.py#L22-L24
+    why: The OnyxGuardrailConfigModel ui_friendly_name method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/onyx.py
+    why: The complete OnyxGuardrailConfigModel with api_base, api_key and timeout fields.
+dod:
+  - text: The guardrail reads ONYX_API_KEY, ONYX_API_BASE and ONYX_TIMEOUT from the environment, with api_key required and the others having the documented defaults.
+    proof: [onyx-env-resolution]
+  - text: ONYX_TIMEOUT is truncated to integer; non-integer strings like "7.5" raise ValueError during initialization.
+    proof: [onyx-timeout-int-cast]
+  - text: For each request type (request or response), the guardrail extracts the payload, calls the Onyx server, and raises 400 with violated_rules on rejection.
+    proof: [oracle-request-block, oracle-response-block]
+  - text: On backend errors, the guardrail logs and returns inputs unchanged.
+    proof: [oracle-backend-error]
+  - text: The guardrail supports pre_call, during_call and post_call event hooks.
+    proof: [oracle-event-hooks]
+  - text: The conversation_id is taken from logging_obj.litellm_call_id if available, else a random UUID.
+    proof: [onyx-unit-tests]
+  - text: The configuration model has api_base, api_key and timeout fields with the documented defaults and description.
+    proof: [onyx-config-model]
+checks:
+  optional: []
+  commands:
+    - id: onyx-env-resolution
+      why: environment variable reading or default values differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::environment)'
+    - id: onyx-timeout-int-cast
+      why: ONYX_TIMEOUT integer truncation or non-integer string handling differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::timeout)'
+    - id: onyx-config-model
+      why: the config model structure or defaults do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::config_model)'
+    - id: onyx-unit-tests
+      why: unit tests for payload construction or conversation_id handling fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::)'
+    - id: oracle-request-block
+      why: the oracle comparison fails for a blocked request
+      run: cargo gate run B3783 --only oracle
+    - id: oracle-response-block
+      why: the oracle comparison fails for a blocked response
+      run: cargo gate run B3783 --only oracle
+    - id: oracle-backend-error
+      why: the oracle comparison fails for backend error handling
+      run: cargo gate run B3783 --only oracle
+    - id: oracle-event-hooks
+      why: the oracle comparison fails for any event hook type
+      run: cargo gate run B3783 --only oracle
+oracle_cases:
+  - tools/oracle/cases/guardrails/onyx-request-allowed.yaml
+  - tools/oracle/cases/guardrails/onyx-request-blocked.yaml
+  - tools/oracle/cases/guardrails/onyx-response-allowed.yaml
+  - tools/oracle/cases/guardrails/onyx-response-blocked.yaml
+  - tools/oracle/cases/guardrails/onyx-backend-timeout.yaml
+deviations:
+  - what: On backend errors other than HTTPException, the guardrail logs the error and returns inputs unchanged.
+    why: LiteLLM fails open and does not propagate the error; betterlite follows this behavior.
+  - what: The error message format for rejected requests is built from violated_rules as a comma-separated list.
+    why: LiteLLM constructs this message the same way; betterlite preserves the format.
+out_of_scope:
+  - The CustomGuardrail base class and its __init__, framework event hook registration, and the log_guardrail_information decorator are owned elsewhere (U1).
+  - The observation and logging framework that interfaces with the callback manager is owned elsewhere (U1).
+  - Message/response type conversions beyond what is shown in the apply_guardrail method.
+  - The initialize_guardrail function, guardrail_initializer_registry, and guardrail_class_registry from onyx/__init__.py are owned elsewhere (U1).
+pitfalls:
+  - "The payload extraction differs between request (proxy_server_request field) and response (ModelResponse.json().get('response')) input types; test both."
+  - "HTTPException is raised to signal a block; other exceptions must be caught and logged to implement fail-open behavior."
+  - "The conversation_id uses logging_obj.litellm_call_id if logging_obj is not None; provide a test mock for both paths."
+  - "The async_handler is obtained via get_async_httpx_client; it already has the timeout configured as a dependency from B173."
+  - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
+  - "ONYX_TIMEOUT is parsed with int(os.getenv(...)); the default 10.0 becomes 10, and non-integer strings like '7.5' raise ValueError, not a parse error message."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

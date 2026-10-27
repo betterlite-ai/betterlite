@@ -111,5 +111,5 @@ pitfalls:
 - Unexpected rate-check errors allow, but get_proxy_hook errors precede the protected block and propagate.
 review_level: security
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1500
   max_new_expects: 0

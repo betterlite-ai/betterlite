@@ -271,6 +271,6 @@ pitfalls:
   - ID-based tagging validates each row immediately before its write, so a later missing ID leaves earlier tags committed.
   - Removing one duplicate group tag leaves the remaining occurrence, and discovery counts both occurrences separately.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

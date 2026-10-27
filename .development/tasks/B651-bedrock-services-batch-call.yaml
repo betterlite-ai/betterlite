@@ -291,6 +291,6 @@ pitfalls:
 - Cancellation tolerates only two AWS error codes, and only after a terminal-or-cancelling status lookup confirms
   idempotence.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

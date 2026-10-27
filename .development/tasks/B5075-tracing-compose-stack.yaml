@@ -1,0 +1,218 @@
+id: B5075
+title: Local ClickHouse tracing Compose stack
+description: >-
+  Create docker-compose.tracing.yml and tracing-config.yaml for a local development environment
+  with proxy, Postgres, and ClickHouse services that exercise trace ingestion and retrieval.
+
+  The Compose stack boots three services with health-checked startup ordering. The proxy service
+  builds the runtime image from B5071 with arguments --config /app/tracing-config.yaml --port 4000.
+  The db service runs postgres:16 with POSTGRES_DB=litellm, POSTGRES_USER=litellm, POSTGRES_PASSWORD=litellm,
+  a pg_isready health check that retries 10 times at 5s interval with 5s timeout, and persists
+  to postgres_data volume. The clickhouse service runs clickhouse/clickhouse-server:26.9.6.6 with
+  CLICKHOUSE_USER=default, CLICKHOUSE_PASSWORD=local-tracing, CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1,
+  a clickhouse-client health check that retries 20 times at 5s interval with 5s timeout, and persists
+  to clickhouse_data volume.
+
+  All loopback ports bind to specific addresses: proxy on 127.0.0.1:4002 to 4000, Postgres on
+  127.0.0.1:15432 to 5432, ClickHouse on 127.0.0.1:18123 to 8123. The proxy depends_on both db
+  and clickhouse with condition service_healthy to ensure they are ready before the proxy starts.
+
+  Environment variables for the proxy: LITELLM_MASTER_KEY=local-tracing-master-key, LITELLM_SALT_KEY=sk-local-tracing-salt-key,
+  DATABASE_URL=postgresql://litellm:litellm@db:5432/litellm, STORE_MODEL_IN_DB=True, CLICKHOUSE_URL=http://default:local-tracing@clickhouse:8123,
+  CLICKHOUSE_READER_URL=http://default:local-tracing@clickhouse:8123, CLICKHOUSE_DATABASE=litellm,
+  OPENAI_API_KEY=${OPENAI_API_KEY:-} (empty default for local testing). The tracing-config.yaml file
+  specifies general_settings.tracing.store=clickhouse, model_name=gpt-6.1-sol with litellm_params
+  model=openai/gpt-6.1-sol and api_key from OPENAI_API_KEY environment variable, and master_key from
+  LITELLM_MASTER_KEY environment variable.
+
+  The volumes section declares postgres_data and clickhouse_data as named volumes that persist
+  across container restarts. The tracing-config.yaml mounts read-only into /app/tracing-config.yaml
+  in the proxy container.
+
+scope:
+  paths:
+    - packaging/docker/docker-compose.tracing.yml
+    - packaging/docker/tracing-config.yaml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.tracing.yml
+    why: Complete stack with service definitions, health checks, port bindings, volumes, environment variables and startup ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/tracing-config.yaml
+    why: Tracing configuration with model list and general_settings for ClickHouse backend.
+
+dod:
+  - text: docker-compose.tracing.yml defines the proxy service that builds from B5071 runtime image and runs with --config /app/tracing-config.yaml --port 4000 arguments.
+    proof: [compose-proxy-service]
+
+  - text: The proxy service environment includes LITELLM_MASTER_KEY=local-tracing-master-key and LITELLM_SALT_KEY=sk-local-tracing-salt-key.
+    proof: [compose-proxy-keys]
+
+  - text: DATABASE_URL is set to postgresql://litellm:litellm@db:5432/litellm and STORE_MODEL_IN_DB is True.
+    proof: [compose-database-url]
+
+  - text: ClickHouse URLs are set to http://default:local-tracing@clickhouse:8123 for both CLICKHOUSE_URL and CLICKHOUSE_READER_URL, with CLICKHOUSE_DATABASE=litellm.
+    proof: [compose-clickhouse-urls]
+
+  - text: OPENAI_API_KEY defaults to empty string if unset via ${OPENAI_API_KEY:-}.
+    proof: [compose-openai-api-key]
+
+  - text: The proxy service volume mounts tracing-config.yaml read-only into /app/tracing-config.yaml.
+    proof: [compose-config-mount]
+
+  - text: The proxy service port 4000 publishes to 127.0.0.1:4002.
+    proof: [compose-proxy-port]
+
+  - text: The proxy service depends_on db and clickhouse with condition service_healthy.
+    proof: [compose-depends-healthy]
+
+  - text: The db service uses postgres:16 image with POSTGRES_DB=litellm, POSTGRES_USER=litellm, POSTGRES_PASSWORD=litellm.
+    proof: [compose-db-service]
+
+  - text: The db service has healthcheck that runs pg_isready -U litellm -d litellm with 5s interval, 5s timeout, 10 retries.
+    proof: [compose-db-healthcheck]
+
+  - text: The db service persists to postgres_data volume at /var/lib/postgresql/data and publishes port 5432 to 127.0.0.1:15432.
+    proof: [compose-db-port]
+
+  - text: The clickhouse service uses clickhouse/clickhouse-server:26.9.6.6 image with CLICKHOUSE_USER=default, CLICKHOUSE_PASSWORD=local-tracing, CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1.
+    proof: [compose-clickhouse-service]
+
+  - text: The clickhouse service healthcheck runs clickhouse-client --user default --password local-tracing --query SELECT 1 with 5s interval, 5s timeout, 20 retries.
+    proof: [compose-clickhouse-healthcheck]
+
+  - text: The clickhouse service persists to clickhouse_data volume at /var/lib/clickhouse and publishes port 8123 to 127.0.0.1:18123.
+    proof: [compose-clickhouse-port]
+
+  - text: The compose stack defines postgres_data and clickhouse_data as named volumes with no configuration.
+    proof: [compose-volumes]
+
+  - text: tracing-config.yaml has model_list with gpt-6.1-sol model using openai/gpt-6.1-sol and api_key from OPENAI_API_KEY.
+    proof: [tracing-config-model]
+
+  - text: tracing-config.yaml has general_settings with master_key from LITELLM_MASTER_KEY and tracing.store=clickhouse.
+    proof: [tracing-config-settings]
+
+checks:
+  optional: []
+  commands:
+    - id: compose-proxy-service
+      why: The proxy service is missing, does not build from the runtime image, or lacks the correct command arguments.
+      run: >-
+        grep -q 'services:' packaging/docker/docker-compose.tracing.yml && grep -q 'litellm:' packaging/docker/docker-compose.tracing.yml && grep -q 'context:' packaging/docker/docker-compose.tracing.yml && grep -q 'target: runtime' packaging/docker/docker-compose.tracing.yml && grep -q '"--config", "/app/tracing-config.yaml"' packaging/docker/docker-compose.tracing.yml && grep -q '"--port", "4000"' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-proxy-keys
+      why: LITELLM_MASTER_KEY or LITELLM_SALT_KEY are missing or have wrong values.
+      run: >-
+        grep -q 'LITELLM_MASTER_KEY: local-tracing-master-key' packaging/docker/docker-compose.tracing.yml && grep -q 'LITELLM_SALT_KEY: sk-local-tracing-salt-key' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-database-url
+      why: DATABASE_URL or STORE_MODEL_IN_DB environment variable is missing or incorrect.
+      run: >-
+        grep -q 'DATABASE_URL: postgresql://litellm:litellm@db:5432/litellm' packaging/docker/docker-compose.tracing.yml && grep -q 'STORE_MODEL_IN_DB: "True"' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-clickhouse-urls
+      why: ClickHouse URLs or database name are missing or incorrect.
+      run: >-
+        grep -q 'CLICKHOUSE_URL: http://default:local-tracing@clickhouse:8123' packaging/docker/docker-compose.tracing.yml && grep -q 'CLICKHOUSE_READER_URL: http://default:local-tracing@clickhouse:8123' packaging/docker/docker-compose.tracing.yml && grep -q 'CLICKHOUSE_DATABASE: litellm' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-openai-api-key
+      why: OPENAI_API_KEY environment variable is missing or does not default to empty.
+      run: >-
+        grep -q 'OPENAI_API_KEY: ${OPENAI_API_KEY:-}' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-config-mount
+      why: tracing-config.yaml is not mounted read-only into /app/tracing-config.yaml.
+      run: >-
+        grep -q './tracing-config.yaml:/app/tracing-config.yaml:ro' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-proxy-port
+      why: Proxy port 4000 is not published to 127.0.0.1:4002.
+      run: >-
+        grep -q '127.0.0.1:4002:4000' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-depends-healthy
+      why: Proxy service does not depend on db and clickhouse with service_healthy condition.
+      run: >-
+        grep -q 'condition: service_healthy' packaging/docker/docker-compose.tracing.yml && grep -A4 'depends_on:' packaging/docker/docker-compose.tracing.yml | grep -q 'db:' && grep -A4 'depends_on:' packaging/docker/docker-compose.tracing.yml | grep -q 'clickhouse:'
+
+    - id: compose-db-service
+      why: The db service is missing or does not use postgres:16 with correct credentials.
+      run: >-
+        grep -q 'image: postgres:16' packaging/docker/docker-compose.tracing.yml && grep -q 'POSTGRES_DB: litellm' packaging/docker/docker-compose.tracing.yml && grep -q 'POSTGRES_USER: litellm' packaging/docker/docker-compose.tracing.yml && grep -q 'POSTGRES_PASSWORD: litellm' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-db-healthcheck
+      why: The db service healthcheck is missing or incorrect.
+      run: >-
+        grep -q 'pg_isready -U litellm -d litellm' packaging/docker/docker-compose.tracing.yml && grep -q 'interval: 5s' packaging/docker/docker-compose.tracing.yml && grep -q 'retries: 10' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-db-port
+      why: Postgres port 5432 is not published to 127.0.0.1:15432 or postgres_data volume is missing.
+      run: >-
+        grep -q '127.0.0.1:15432:5432' packaging/docker/docker-compose.tracing.yml && grep -q 'postgres_data:/var/lib/postgresql/data' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-clickhouse-service
+      why: The clickhouse service is missing or does not use correct image and credentials.
+      run: >-
+        grep -q 'image: clickhouse/clickhouse-server:26.9.6.6' packaging/docker/docker-compose.tracing.yml && grep -q 'CLICKHOUSE_USER: default' packaging/docker/docker-compose.tracing.yml && grep -q 'CLICKHOUSE_PASSWORD: local-tracing' packaging/docker/docker-compose.tracing.yml && grep -q 'CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-clickhouse-healthcheck
+      why: The clickhouse service healthcheck is missing or incorrect.
+      run: >-
+        grep -q 'clickhouse-client' packaging/docker/docker-compose.tracing.yml && grep -q 'local-tracing' packaging/docker/docker-compose.tracing.yml && grep -q 'retries: 20' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-clickhouse-port
+      why: ClickHouse port 8123 is not published to 127.0.0.1:18123 or clickhouse_data volume is missing.
+      run: >-
+        grep -q '127.0.0.1:18123:8123' packaging/docker/docker-compose.tracing.yml && grep -q 'clickhouse_data:/var/lib/clickhouse' packaging/docker/docker-compose.tracing.yml
+
+    - id: compose-volumes
+      why: postgres_data and clickhouse_data named volumes are not defined at the top level of the file.
+      run: >-
+        grep -q '^volumes:$' packaging/docker/docker-compose.tracing.yml && grep -q '^  postgres_data:$' packaging/docker/docker-compose.tracing.yml && grep -q '^  clickhouse_data:$' packaging/docker/docker-compose.tracing.yml
+
+    - id: tracing-config-model
+      why: tracing-config.yaml model list or model configuration is missing or incorrect.
+      run: >-
+        grep -q 'model_name: gpt-6.1-sol' packaging/docker/tracing-config.yaml && grep -q 'model: openai/gpt-6.1-sol' packaging/docker/tracing-config.yaml && grep -q 'api_key: os.environ/OPENAI_API_KEY' packaging/docker/tracing-config.yaml
+
+    - id: tracing-config-settings
+      why: tracing-config.yaml general_settings is missing or does not have correct master_key and tracing store.
+      run: >-
+        grep -q 'general_settings:' packaging/docker/tracing-config.yaml && grep -q 'master_key: os.environ/LITELLM_MASTER_KEY' packaging/docker/tracing-config.yaml && grep -q 'store: clickhouse' packaging/docker/tracing-config.yaml
+
+oracle_cases: []
+
+deviations:
+  - what: The compose stack is intended for local development with loopback port bindings, not for production deployment.
+    why: These are fixed local test ports that allow running multiple isolated stacks on the same machine without port conflicts. A deployment uses environment-specific port configuration and networking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.tracing.yml#L21-L22
+
+  - what: "ClickHouse and Postgres credentials are hardcoded as local-tracing-master-key and litellm/litellm respectively."
+    why: These are fixed development secrets for local environments. A production deployment supplies secrets through environment variables or secrets managers. Local development transparency is more valuable than secret rotation in shared dev stacks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.tracing.yml#L10-L11
+
+out_of_scope:
+  - "The manage_tracing function and runtime trace receiver/storage implementation. Owned by the tracing runtime task when it is assigned a concrete owner."
+  - "The TraceReceiver and ClickHouseSpendLogger classes referenced by manage_tracing. These belong to the tracing runtime implementation."
+  - "ClickHouse connection pooling, query optimization, or schema migration. The service is bootstrapped with defaults."
+  - "LiteLLM database schema for Postgres. Owned by B1232's migration script."
+  - "The proxy CLI startup contract. Owned by B003."
+  - "The proxy health check endpoints referenced in other Compose stacks. This stack exercises trace ingestion only."
+
+pitfalls:
+  - "Port numbers must bind to 127.0.0.1 (localhost only), not 0.0.0.0. Using 127.0.0.1:4002:4000 prevents accidental public exposure of the local stack."
+  - "depends_on with condition: service_healthy enforces startup ordering. The healthchecks are critical; without them the proxy may start before the database is ready."
+  - "The db healthcheck uses pg_isready with -U litellm -d litellm; the username and database name must match the POSTGRES_USER and POSTGRES_DB environment variables."
+  - "The clickhouse healthcheck uses --user default and --password local-tracing; these must match the CLICKHOUSE_USER and CLICKHOUSE_PASSWORD environment variables."
+  - "CLICKHOUSE_READER_URL and CLICKHOUSE_URL point to the same ClickHouse service (8123, not the management port 9000). Both must use the same credentials."
+  - "The clickhouse healthcheck retries 20 times because ClickHouse takes longer to initialize than Postgres; 10 retries is insufficient."
+  - "Postgres interval 5s and timeout 5s total 50 seconds (10 retries * 5s) for startup. ClickHouse interval 5s and timeout 5s total 100 seconds (20 retries * 5s). The proxy waits for both."
+  - "Environment variable OPENAI_API_KEY defaults to empty string with ${OPENAI_API_KEY:-}. If set, the proxy uses it for the test model. If unset, the stack boots and the model routes but API calls fail."
+  - "The tracing-config.yaml model list supplies one model gpt-6.1-sol for testing; additional models or deployments are not provided."
+  - "ClickHouse and Postgres volumes are named volumes managed by Docker, not bind mounts. They persist across docker-compose down and up."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

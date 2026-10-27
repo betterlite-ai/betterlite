@@ -85,6 +85,6 @@ pitfalls:
   - A deleted token's latest tombstone is selected before merging recovered metadata.
   - A unique team can fill CLI attribution but must not be inferred for an ordinary key.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

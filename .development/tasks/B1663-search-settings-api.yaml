@@ -43,12 +43,15 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/search_settings.rs
     - crates/betterlite-server/fuzz/corpus/search_settings/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/search_settings.rs
     - crates/betterlite-config/src/search_settings/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/search-settings-*
     - tools/oracle/cases/management/search-settings/**
     - tools/oracle/fuzz/corpus/http_case/search-settings-*
+    - tools/oracle/helpers/b1663.py
+    - tools/oracle/helpers/b1663/**
+    - tools/oracle/src/helpers/server/b1663.rs
+    - tools/oracle/src/helpers/server/b1663/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L473-L582
@@ -91,6 +94,6 @@ pitfalls:
   - A stored enabled=false must stay false even when this pod still has the web-search callback registered.
   - Native tool-search has top_k=5 and no enabled field; semantic filtering has top_k=10 and its own enabled switch.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

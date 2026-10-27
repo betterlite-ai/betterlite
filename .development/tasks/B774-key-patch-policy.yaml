@@ -268,6 +268,6 @@ pitfalls:
   - Unchanged spend is still a budget change because the live spend counter may exceed the stored row.
   - Only a caller who both created and still owns a personal key can take the creator bypass.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

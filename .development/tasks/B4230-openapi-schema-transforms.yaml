@@ -114,6 +114,6 @@ pitfalls:
   - Missing referenced definitions raise rather than returning empty schemas to surface schema composition errors.
   - Discriminator mappings are dropped during inlining because Swagger UI cannot resolve them in inline schemas.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

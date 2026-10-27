@@ -135,7 +135,6 @@ scope:
   - crates/betterlite-bedrock/src/aws_settings.rs
   - crates/betterlite-bedrock/src/aws_settings/**
   - Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/bedrock/aws_settings.rs
   - tools/oracle/src/helpers/bedrock/aws_settings/**
@@ -144,26 +143,9 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-aws-settings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/**
-  - crates/betterlite-config/src/providers/bedrock/bedrock_aws_settings.rs
-  - crates/betterlite-config/src/providers/bedrock/bedrock_aws_settings/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/bedrock_aws_settings_config.rs
-  - crates/betterlite-config/src/tests/bedrock_aws_settings_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_settings*
+  - crates/betterlite-config/src/sections/bedrock_aws_settings.rs
+  - crates/betterlite-config/src/sections/bedrock_aws_settings/**
   lint_tables: false
 references:
 - url: https://docs.rs/aws-config/latest/aws_config/
@@ -542,6 +524,6 @@ pitfalls:
 - 'Session-tag validation mutates optional_params first: an invalid value must not leave popped auth keys in a request
   body.'
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

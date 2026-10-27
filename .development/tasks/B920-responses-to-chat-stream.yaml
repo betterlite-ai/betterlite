@@ -124,5 +124,5 @@ pitfalls:
 - Empty text deltas are valid, while empty function/custom argument deltas are errors.
 review_level: standard
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 1

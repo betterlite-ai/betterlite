@@ -116,6 +116,6 @@ pitfalls:
   - MCPInfo's upstream protocol literal excludes 2026-07-28 even though MCPSpecVersion lists it.
   - A falsey malformed-looking pinned-tools value becomes None, but whitespace JSON is an error.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

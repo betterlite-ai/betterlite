@@ -1,0 +1,138 @@
+id: B3963
+title: Galileo response projection and trace payloads
+description: >-
+  Build Galileo's typed record, trace/span projection, UTC timestamp handling and content selection
+  across response families. Implement pure functions for message normalization, timestamp formatting
+  in ISO 8601 UTC format, token metric extraction, trace/span envelope construction and response
+  content selection across chat, text completion, embedding, image, transcription, rerank and
+  responses API families. Keep this layer pure apart from injected clock/UUID inputs so delivery
+  (B3964) and admission control (B3965) can both call it. The LLMResponse typed record carries
+  latency milliseconds, status code, input/output text, node type, model, token counts, cost,
+  optional logprobs and user-supplied tags/metadata. Naive datetimes from kwargs.standard_logging_object
+  use local timezone before conversion to UTC; fallback timestamps from start_time/end_time parameters
+  are converted to UTC if they lack timezone info. The _get_galileo_input_output_content function
+  is the content selection entry point, handling call_type and response_obj type dispatch to extract
+  input text, output text and input message structure suitable for both record projection and B3965's
+  admission control. Embeddings and speech produce markers instead of vectors/binary data. Tool calls
+  remain serialized JSON strings, not decomposed tool-call records. Token metrics compute totals from
+  per-token counts and preserve cost when available.
+scope:
+  paths:
+  - crates/betterlite-logging/src/galileo_payloads.rs
+  - crates/betterlite-logging/src/galileo_payloads/**
+  - tools/oracle/cases/logging/galileo-payloads/**
+  - tools/oracle/helpers/b3963.py
+  - tools/oracle/helpers/b3963/**
+  - tools/oracle/src/helpers/logging/b3963.rs
+  - tools/oracle/src/helpers/logging/b3963/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L67-L99
+  why: GalileoStandardLoggingFields and LLMResponse typed records.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L219-L244
+  why: Message normalization for trace input.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L246-L268
+  why: Timezone and timestamp formatting to UTC ISO 8601.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L269-L284
+  why: Token metric extraction and cost preservation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L286-L348
+  why: Trace and span envelope construction with metrics.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L459-L625
+  why: Content extraction across all response families and prompt handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L631-L656
+  why: Input text extraction from message lists with role-based fallback.
+dod:
+- text: Write tests named galileo_payload_construction and galileo_timestamp_handling under
+    galileo_payloads::tests. The first asserts correct message normalization, trace/span structure,
+    and token metric aggregation for all listed cases. The second asserts UTC conversion from naive
+    datetimes in both standard_logging_object and start_time/end_time fallback paths.
+  proof:
+  - galileo-payload-tests
+  - galileo-timestamp-tests
+- text: Every listed oracle case exercises content extraction and asserts exact selected input/output
+    text, message structure and node type across response families. Content markers (embeddings-output,
+    speech-output) and serialized tool calls must match the source exactly.
+  proof:
+  - oracle
+- text: Message normalization preserves role and concatenates multi-part content. Timestamp
+    normalization appends Z when the source string lacks timezone suffix and converts naive
+    datetimes to local time before UTC conversion.
+  proof:
+  - galileo-payload-tests
+  - galileo-timestamp-tests
+- text: Token metrics handle missing fields with zero and compute totals when total is missing.
+    Cost is preserved when present; embedding and speech responses return content markers; tool
+    calls remain JSON strings.
+  proof:
+  - galileo-payload-tests
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any
+    or broad suppressions.
+  proof:
+  - probe-python
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: galileo-payload-tests
+    why: the task-specific payload construction test is absent or fails
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::galileo_payload_construction(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: galileo-timestamp-tests
+    why: the task-specific timestamp handling test is absent or fails
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::galileo_timestamp_handling(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: probe-python
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/helpers/b3963.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/helpers/b3963.py)" && uv run --locked --project
+      tools/oracle ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle basedpyright tools/oracle/helpers
+oracle_cases:
+- tools/oracle/cases/logging/galileo-payloads/message-normalization.yaml
+- tools/oracle/cases/logging/galileo-payloads/timestamp-formats.yaml
+- tools/oracle/cases/logging/galileo-payloads/chat-content-extraction.yaml
+- tools/oracle/cases/logging/galileo-payloads/embedding-markers.yaml
+- tools/oracle/cases/logging/galileo-payloads/speech-markers.yaml
+- tools/oracle/cases/logging/galileo-payloads/text-completion-extraction.yaml
+- tools/oracle/cases/logging/galileo-payloads/transcription-extraction.yaml
+- tools/oracle/cases/logging/galileo-payloads/image-extraction.yaml
+- tools/oracle/cases/logging/galileo-payloads/rerank-extraction.yaml
+- tools/oracle/cases/logging/galileo-payloads/responses-api-extraction.yaml
+- tools/oracle/cases/logging/galileo-payloads/token-metrics-aggregation.yaml
+- tools/oracle/cases/logging/galileo-payloads/trace-envelope-construction.yaml
+- tools/oracle/cases/logging/galileo-payloads/error-level-status.yaml
+- tools/oracle/cases/logging/galileo-payloads/realtime-list-response.yaml
+- tools/oracle/cases/logging/galileo-payloads/pass-through-dict-response.yaml
+- tools/oracle/cases/logging/galileo-payloads/generic-dict-fallback.yaml
+deviations: []
+out_of_scope:
+- Galileo authentication and health checking (B3964).
+- Galileo trace delivery and queue management (B3964).
+- Callback record admission control and buffering (B3965).
+- Timer installation and flush scheduling.
+- Providers other than those listed above.
+pitfalls:
+- >-
+  Naive datetimes without tzinfo are assumed to be in local time, not UTC. Convert to local tzinfo
+  before calling astimezone(timezone.utc), not after.
+- >-
+  The message normalization fallback to [{"role": "user", "content": input_text}] triggers on any
+  falsy messages value, including empty list [], None, or missing messages; empty message lists are
+  not preserved and are replaced by the fallback.
+- >-
+  Tool calls in response content must remain as serialized JSON strings, not be decomposed or
+  rewritten as typed records.
+- >-
+  Timestamp normalization must handle ISO 8601 variants with offset notation (±HH:MM) and Z suffix;
+  strings without timezone suffix are assumed to be lacking timezone info and need Z appended.
+- >-
+  Token metric extraction must compute total_tokens from sum when total is zero but individual counts
+  are present; cost may be None and must not be included in the metrics dict if missing.
+- >-
+  The embeddings and speech families return literal marker strings ("embedding-output", "speech-output")
+  instead of attempting to serialize binary data or vector fields.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

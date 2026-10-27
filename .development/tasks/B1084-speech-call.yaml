@@ -45,19 +45,6 @@ scope:
   - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/speech_call.rs
   - crates/betterlite-core/src/api/speech_call/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/speech_call.rs
-  - crates/betterlite-config/src/api/speech_call/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/speech_call.rs
@@ -65,6 +52,12 @@ scope:
   - tools/oracle/sdk_http/speech_call.py
   - tools/oracle/cases/sdk-http/speech-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-call-*
+  - crates/betterlite-config/src/sections/speech_call.rs
+  - crates/betterlite-config/src/sections/speech_call/**
+  - tools/oracle/helpers/b1084.py
+  - tools/oracle/helpers/b1084/**
+  - tools/oracle/src/helpers/core_ops/b1084.rs
+  - tools/oracle/src/helpers/core_ops/b1084/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8237-L8719
@@ -121,10 +114,10 @@ checks:
   commands:
   - id: behavior-tests
     why: Every provider branch must have voice, credentials and option-input assertions in core/config.
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::speech_call::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::speech_call::/) - test(/::replays_corpus$/)'
   - id: config-tests
     why: Speech fallback settings must be accepted and applied by the production loader.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::speech_call::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::speech_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Normal SDK speech calls must execute through the HTTP capture driver.
     run: test -f tools/oracle/sdk_http/speech_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
@@ -152,5 +145,5 @@ pitfalls:
 - Global num_retries=0 falls through to 2 while an explicit max_retries=0 does not.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

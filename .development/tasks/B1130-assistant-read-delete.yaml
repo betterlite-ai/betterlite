@@ -24,6 +24,10 @@ scope:
   - tools/oracle/sdk_http/assistant_read_delete.py
   - tools/oracle/cases/sdk-http/assistant-read-delete/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-read-delete-*
+  - tools/oracle/helpers/b1130.py
+  - tools/oracle/helpers/b1130/**
+  - tools/oracle/src/helpers/core_ops/b1130.rs
+  - tools/oracle/src/helpers/core_ops/b1130/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L190
@@ -98,5 +102,5 @@ pitfalls:
 - A null list result is a bad request, while a null delete result is an internal server error.
 review_level: security
 budget:
-  max_changed_lines: 720
+  max_changed_lines: 1500
   max_new_expects: 0

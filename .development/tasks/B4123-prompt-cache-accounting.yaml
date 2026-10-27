@@ -1,0 +1,190 @@
+id: B4123
+title: Prompt cache dialect selection and breakpoint accounting
+description: >-
+  Build lower cache-policy helpers and records in `betterlite-prompts`, using injected
+  model/config inputs rather than reading globals or environment in provider code.
+  Preserve GPT version/model-map overrides, OpenAI host selection, external-breakpoint
+  census, four-slot accounting and dialect/external-count stamps.
+
+  This task owns the module-level validators, checks and counters that probe model metadata
+  and configuration to select cache dialect and measure breakpoints outside message bodies.
+  The `AnthropicCacheControlHook` class methods here decide whether Anthropic's `cache_control`
+  or OpenAI's `prompt_cache_breakpoint` dialect applies, perform census operations and stamp
+  those decisions onto injection points so later passes see them. No round-trip reads of
+  globals are allowed; all inputs come through constructor/method parameters.
+
+  Build in `betterlite-prompts::cache_accounting` and `betterlite-prompts::cache_accounting/**`.
+  Preserve the exact GPT version pattern (gpt-N or gpt-N.M), minimum version (5, 6),
+  model-cost catalog lookup (full name then suffix), and explicit `prompt_cache_options`
+  detection. The OpenAI API host check reads `api_base` parameter, then global `litellm.api_base`,
+  then environment variables `OPENAI_BASE_URL` and `OPENAI_API_BASE` in order, defaulting
+  to OpenAI's public host. The `anthropic_prompt_caching_ttl` setting accepts only "5m" or "1h",
+  defaulting to "ephemeral" (5-minute cache). The injection-point types and stamping functions
+  are designed so a later task (B4125) can thread provider-capability predicates through them
+  without reading globals. The maximum cache control blocks is 4 per
+  Anthropic and Bedrock limits; track reserved blocks from external (tool, top-level cache_control,
+  tool_config point) and internal census independently. Two message-list passes (one with full
+  role-targeted points, one deferred to skip unless the first list changes shape) depend on
+  the `_litellm_carry_unmatched_cache_control_points` flag and the Responses route's `instructions`
+  becoming a system message later. The module also records the injection stamps (`_litellm_openai_dialect`,
+  `_litellm_external_breakpoints`) read by downstream tasks.
+
+  Load config through `betterlite-config` and pass the typed TTL policy to the consuming
+  `betterlite-anthropic` (B568) and `betterlite-models` (B193) callees; these features are
+  injected contracts, not new reads from globals.
+
+scope:
+  paths:
+    - crates/betterlite-prompts/src/cache_accounting.rs
+    - crates/betterlite-prompts/src/cache_accounting/**
+    - tools/oracle/cases/helpers/cache-accounting/**
+    - tools/oracle/fuzz/corpus/helper_case/cache-accounting-*
+    - crates/betterlite-config/fuzz/corpus/config_yaml/prompt-cache-*
+    - crates/betterlite-config/src/sections/prompt_cache_accounting.rs
+    - crates/betterlite-config/src/sections/prompt_cache_accounting/**
+    - tools/oracle/helpers/b4123.py
+    - tools/oracle/helpers/b4123/**
+    - tools/oracle/src/helpers/prompts/b4123.rs
+    - tools/oracle/src/helpers/prompts/b4123/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L78-L89
+    why: Own _validated_object_mapping and _validated_object_list; preserve Pydantic-based validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L92-L100
+    why: Own supports_openai_prompt_cache_breakpoint; preserve exact GPT version pattern and minimum (5, 6).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L103-L108
+    why: Own _model_map_prompt_cache_breakpoint_flag; full name lookup before suffix in model_cost catalog.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L111-L121
+    why: Own targets_openai_api; preserve fallback chain and hostname equality/subdomain checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L124-L139
+    why: Own _carries_cache_breakpoint, _tool_carries_cache_breakpoint, _chat_transform_drops_tool_cache_control, _accepts_prompt_cache_breakpoint; preserve exact key checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L152-L180
+    why: Own AnthropicCacheControlHook._request_value, _request_user_agent, _request_system; preserve recursive mapping/list validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L282-L304
+    why: Own _targets_openai_prompt_cache_breakpoint and _resolve_provider; preserve None fallback on BadRequest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L306-L352
+    why: Own count_request_cache_breakpoints, count_external_cache_breakpoints, count_external_cache_breakpoints_on_messages_route; preserve census order and extra_body precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L354-L377
+    why: Own _blocks_reserved_outside_messages and _points_with_a_slot_left; preserve Bedrock tool_config slot semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L472-L485
+    why: Own _count_cache_control_blocks and _message_has_cache_control; preserve recursion into content arrays.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L633-L645
+    why: Own _default_control; preserve "5m"/"1h" TTL check and ephemeral default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L647-L689
+    why: Own _stamped_for_prompt_hook, _stamped_with_dialect, _stamped; preserve immutable injection-point copying.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L691-L715
+    why: Own _request_has_cache_control; preserve client-supplied breakpoint suppression of defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/anthropic_cache_control_hook.py#L1-L34
+    why: Own GATEWAY_INJECTED_CACHE_METADATA_KEY, GATEWAY_INJECTED_FOR_EVERY_DEPLOYMENT, CacheControlMessageInjectionPoint, CacheControlToolConfigInjectionPoint, CacheControlInjectionPoint types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L60-L75
+    why: Own MAX_CACHE_CONTROL_BLOCKS, CACHE_BREAKPOINT_KEYS, OPENAI_PROMPT_CACHE_BREAKPOINT_MIN_GPT_VERSION, _GPT_VERSION_PATTERN, OPENAI_PROMPT_CACHE_BREAKPOINT_BLOCK_TYPES, OPENAI_API_HOST, OPENAI_API_BASE_ENV_VARS constants; preserve exact values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L142-L149
+    why: Own CARRY_UNMATCHED_MESSAGE_POINTS and EXTERNAL_BREAKPOINTS_STAMP flag/stamp keys; preserve naming and semantics.
+dod:
+  - text: >-
+      Validators reject non-dict/non-list objects and preserve successful validation results.
+      GPT version parsing handles no-dot (gpt-5) and single-dot (gpt-4.5) formats; versions
+      compare as tuples (5,6) >= (5,6). Model map lookup checks full name first, then
+      model.rsplit("/",-1)[-1] suffix; missing entries return None. OpenAI API checks
+      `api_base` parameter, then `litellm.api_base`, then OPENAI_BASE_URL and OPENAI_API_BASE
+      environment variables in order, defaulting to api.openai.com; hostname match checks
+      exact equality and subdomain containment.
+    proof: [behavior-tests]
+  - text: >-
+      Cache-control carriers are any dict holding "cache_control" or "prompt_cache_breakpoint" key
+      (not necessarily non-null). Tools carry at top level (Anthropic) or in "function" (OpenAI).
+      Chat transform drops tool cache control only for search/video tool types. OpenAI accepts
+      cache breakpoints only on text, image, image_url, file, input_audio, input_text, input_image,
+      input_file content types (a closed set). Breakpoint counts recurse into message content arrays
+      and system blocks; top-level message carries one, each content block carries at most one.
+    proof: [behavior-tests]
+  - text: >-
+      Request methods extract nested values through validated mapping, preserving original structure.
+      User-Agent lookup is case-insensitive across header dict keys. System extraction handles both
+      string and list forms. Provider resolution returns None on BadRequestError without raising.
+    proof: [behavior-tests]
+  - text: >-
+      Breakpoint census counts client marks (messages, system, tools, top-level cache_control) and
+      config marks (cache_control_injection_points). External count includes tool marks, top-level
+      cache_control presence (0 or 1), envelope messages/system via extra_body, and tool_config points.
+      The Messages-route variant compares direct and envelope counts, returning the larger to reserve
+      capacity. Reserved blocks subtract external count and tool_config points from the 4-block maximum
+      when targeting Anthropic (0 for OpenAI). Points carry stamp key copies so downstream passes see
+      them without re-reading globals.
+    proof: [behavior-tests]
+  - text: >-
+      Default control builds `ChatCompletionCachedContent` with type "ephemeral", reading TTL from
+      `anthropic_prompt_caching_ttl` config and accepting only "5m" or "1h"; any other value
+      defaults to 5-minute ephemeral. The helper is called only after all gating checks pass
+      (model support, client marks present, one-shot suppression).
+    proof: [behavior-tests, config-tests]
+  - text: >-
+      Injection-point stamping preserves input sequences and creates copies when adding dialect
+      or external-breakpoint stamps; config-owned points are not mutated. Stamps record the result
+      of dialect detection and the client's external breakpoint count so later passes do not re-read
+      them. Request-cache-control gating suppresses defaults (not configured injection) when any
+      client mark is detected, on either the message list or in extra_body.
+    proof: [behavior-tests]
+  - text: Config loader exercises all valid and invalid TTL values and the default case.
+    proof: [config-tests, config-corpus]
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case seed replays.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Dialect detection, breakpoint counting and stamping must not read globals and must preserve LiteLLM semantics.
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^cache_accounting::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4123.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/cache-accounting-*)" && grep -rlq "cache_accounting" tools/oracle/fuzz/corpus/helper_case/cache-accounting-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves the TTL setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prompt_cache_accounting::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/prompt-cache-*)" && grep -rlq "anthropic_prompt_caching_ttl" crates/betterlite-config/fuzz/corpus/config_yaml/prompt-cache-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cache-accounting/gpt-version-parsing.yaml
+  - tools/oracle/cases/helpers/cache-accounting/model-map-lookup.yaml
+  - tools/oracle/cases/helpers/cache-accounting/openai-api-detection.yaml
+  - tools/oracle/cases/helpers/cache-accounting/carrier-detection.yaml
+  - tools/oracle/cases/helpers/cache-accounting/request-extraction.yaml
+  - tools/oracle/cases/helpers/cache-accounting/breakpoint-counting.yaml
+  - tools/oracle/cases/helpers/cache-accounting/default-control-ttl.yaml
+  - tools/oracle/cases/helpers/cache-accounting/injection-point-stamping.yaml
+deviations: []
+out_of_scope:
+  - 'litellm/integrations/anthropic_cache_control_hook.py: B4124 owns get_chat_completion_prompt (L182-L280),
+    _apply_message_injections (L379-L431), _resolve_target_indices (L433-L470), _safe_insert_cache_control_in_message
+    (L487-L514), _insert_prompt_cache_breakpoint_in_message (L516-L542), _system_block_with_breakpoint (L544-L553),
+    apply_to_anthropic_messages_request (L555-L631). B4125 owns get_default_injection_points (L717-L763),
+    messages_with_default_injections (L765-L812), maybe_seed_default_injection_points (L814-L862),
+    maybe_inject_cache_control (L938-L1008). B4126 owns integration_name (L1010-L1013),
+    should_run_prompt_management (L1015-L1022), _compile_prompt_helper (L1024-L1040),
+    async_compile_prompt_helper (L1042-L1059), async_get_chat_completion_prompt (L1061-L1090),
+    should_use_anthropic_cache_control_hook (L1092-L1096), get_custom_logger_for_anthropic_cache_control_hook (L1098-L1112).
+    B2204 owns record_gateway_injection (L864-L936).'
+  - No shared config parser or HTTP/row decoder; this task consumes already typed inputs injected as parameters.
+pitfalls:
+  - 'targets_openai_api checks api_base as the parameter first, before fallback to globals. The None-handling
+    order matters: if api_base is an empty string, globals are checked; if explicitly None, the check stops.'
+  - 'The GPT version tuple comparison requires both major and minor components; gpt-5 becomes (5, 0) and
+    gpt-4.5 becomes (4, 5), so the minimum version (5, 6) rejects gpt-5.0.'
+  - 'Model map lookup by suffix can match a different model alias than the input name (e.g., "gpt-4-turbo-2024-04-09"
+    matches "gpt-4-turbo" via suffix); the implementation reflects LiteLLM behavior exactly.'
+  - 'Tools in extra_body["tools"] replace the direct tools parameter in the external count census; the max
+    is taken to ensure neither envelope variant can exceed the cap by undefining one side.'
+  - 'Carried message points are forwarded only when carry_unmatched flag is set; role-targeted points
+    with no ordinal index are held back unless the flag indicates a later pass will complete the message list.'
+  - 'The oracle helper for this task is pre-registered as b4123 in the prompts group. Replace the
+    stub Op in tools/oracle/src/helpers/prompts/b4123.rs with an impl Helper whose Input is the
+    typed input, and write run in tools/oracle/helpers/b4123.py. The registry files (helpers/mod.rs,
+    the group files, dispatch.py) are not this task''s to edit.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

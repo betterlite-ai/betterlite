@@ -1,0 +1,170 @@
+id: B4742
+title: MCP AWS credential acquisition and request signing
+description: >-
+  Build the MCP-specific SigV4 auth adapter in betterlite-http::mcp_sigv4, with AWS credential acquisition
+  via explicit credentials, one-shot STS AssumeRole, or the AWS default credential chain, and signing of
+  every outgoing MCP request with AWS SigV4 signatures. Preserve defaults: aws_service_name defaults to
+  bedrock-agentcore, aws_region_name defaults to us-east-1, and generated role session names use the format
+  litellm-mcp-<integer epoch seconds>.
+
+  The MCPSigV4Auth adapter implements httpx2::Auth, so each request is signed on-the-fly during send.
+  Require botocore from boto3; raise ImportError if unavailable. Use boto3 and botocore directly for both
+  STS and the default chain (no hand-written signing), and reuse botocore.auth.SigV4Auth for canonical
+  request signing.
+
+  Credential acquisition precedence: when aws_role_name is present, call STS AssumeRole (using aws_access_key_id
+  and aws_secret_access_key to authenticate the STS call itself, if provided); when aws_role_name is absent
+  and both aws_access_key_id and aws_secret_access_key are provided, use explicit credentials directly;
+  otherwise fall back to boto3's default credential chain. If no credentials are found, raise ValueError
+  with a message naming the three options. Each request gets a fresh SigV4 signature covering all headers.
+  The requires_request_body flag is true so httpx2 supplies request.content for signing.
+
+scope:
+  paths:
+    - crates/betterlite-http/src/mcp_sigv4.rs
+    - crates/betterlite-http/src/mcp_sigv4/**
+    - tools/oracle/helpers/b4742.py
+    - tools/oracle/helpers/b4742/**
+    - tools/oracle/src/helpers/http/b4742.rs
+    - tools/oracle/src/helpers/http/b4742/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L262-L270
+    why: MCPSigV4Auth class header, docstring and requires_request_body flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L272-L317
+    why: MCPSigV4Auth.__init__ constructor with credential precedence order (STS when aws_role_name present, explicit when both keys provided, default chain as fallback) and default values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L319-L351
+    why: MCPSigV4Auth._assume_role static method for one-shot STS AssumeRole with optional explicit credentials, session name generation using epoch seconds, and Credentials return type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L353-L373
+    why: MCPSigV4Auth.auth_flow implementing httpx2.Auth generator pattern; builds AWSRequest, signs with SigV4Auth.add_auth, copies headers back to httpx request.
+
+dod:
+  - text: MCPSigV4Auth is an httpx2::Auth implementation with requires_request_body = true.
+    proof: [sigv4-auth-impl, sigv4-tests]
+  - text: MCPSigV4Auth.__init__ accepts aws_access_key_id, aws_secret_access_key, aws_session_token, aws_region_name, aws_service_name, aws_role_name and aws_session_name.
+    proof: [sigv4-tests, sigv4-explicit-creds]
+  - text: When aws_role_name is present, credentials are acquired via STS AssumeRole using aws_region_name; explicit credentials, if provided, authenticate the STS call itself.
+    proof: [sigv4-tests, sigv4-sts-assume-role, sigv4-sts-with-creds]
+  - text: When aws_role_name is absent and both aws_access_key_id and aws_secret_access_key are provided, use explicit credentials directly.
+    proof: [sigv4-tests, sigv4-explicit-creds]
+  - text: When neither aws_role_name nor explicit credentials are provided, use the AWS default credential chain via botocore.session.get_session().get_credentials().
+    proof: [sigv4-tests, sigv4-default-chain]
+  - text: When no credentials are found in any of the three paths, raise ValueError with a message naming explicit keys, STS AssumeRole and the default chain.
+    proof: [sigv4-tests, sigv4-no-creds-error]
+  - text: aws_service_name defaults to "bedrock-agentcore" if not provided.
+    proof: [sigv4-tests, sigv4-defaults]
+  - text: aws_region_name defaults to "us-east-1" if not provided.
+    proof: [sigv4-tests, sigv4-defaults]
+  - text: STS AssumeRole session name defaults to "litellm-mcp-<epoch seconds>" if aws_session_name not provided.
+    proof: [sigv4-tests, sigv4-sts-session-name]
+  - text: auth_flow implements the httpx2.Auth generator protocol, receiving every request, signing it with SigV4, and yielding the signed request.
+    proof: [sigv4-tests, sigv4-auth-flow]
+  - text: SigV4 signature covers all request headers and the request body (method, URL, body, headers).
+    proof: [sigv4-tests, sigv4-canonical-signing]
+  - text: ImportError is raised immediately if botocore is not available.
+    proof: [sigv4-tests, sigv4-import-error]
+  - text: New oracle helper operation for SigV4 signing integrates with pinned botocore behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: sigv4-auth-impl
+      why: MCPSigV4Auth does not implement httpx2::Auth or requires_request_body is not true.
+      run: grep -qE 'struct MCPSigV4Auth|impl.*Auth' crates/betterlite-http/src/mcp_sigv4.rs && grep -qE 'requires_request_body.*true' crates/betterlite-http/src/mcp_sigv4.rs
+    - id: sigv4-tests
+      why: SigV4 signing tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::/) - test(/replays_the_/)'
+    - id: sigv4-explicit-creds
+      why: Explicit credential path is not implemented or tested.
+      run: grep -qE 'aws_access_key_id.*aws_secret_access_key' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*explicit/)'
+    - id: sigv4-sts-assume-role
+      why: STS AssumeRole path is not implemented or tested.
+      run: grep -qE 'assume_role|STS' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*sts/)'
+    - id: sigv4-sts-with-creds
+      why: STS AssumeRole with explicit credentials for STS authentication is not tested.
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*sts.*creds/)'
+    - id: sigv4-default-chain
+      why: AWS default credential chain fallback is not implemented or tested.
+      run: grep -qE 'get_session|get_credentials' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*default/)'
+    - id: sigv4-no-creds-error
+      why: ValueError is not raised when no credentials are found.
+      run: grep -qE 'ValueError|No AWS credentials found' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*no_creds/)'
+    - id: sigv4-defaults
+      why: Default values for aws_service_name and aws_region_name are not set correctly.
+      run: grep -qE 'bedrock-agentcore|us-east-1' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*defaults?/)'
+    - id: sigv4-sts-session-name
+      why: STS session name is not generated correctly or tested.
+      run: grep -qE 'litellm-mcp-|time|epoch' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*session/)'
+    - id: sigv4-auth-flow
+      why: auth_flow does not implement the httpx2.Auth protocol or does not sign requests.
+      run: grep -qE 'fn auth_flow|SigV4Auth|add_auth' crates/betterlite-http/src/mcp_sigv4.rs
+    - id: sigv4-canonical-signing
+      why: Canonical SigV4 signature does not cover all headers and body.
+      run: grep -qE 'AWSRequest|headers|content' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*sign/)'
+    - id: sigv4-import-error
+      why: ImportError is not raised when botocore is unavailable.
+      run: grep -qE 'ImportError|botocore' crates/betterlite-http/src/mcp_sigv4.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::tests::.*import/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4742.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/mcp_sigv4-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-sigv4/explicit-credentials.yaml
+  - tools/oracle/cases/helpers/mcp-sigv4/sts-assume-role-with-creds.yaml
+  - tools/oracle/cases/helpers/mcp-sigv4/default-chain-mocked.yaml
+  - tools/oracle/cases/helpers/mcp-sigv4/canonical-signing-vectors.yaml
+
+deviations:
+  - what: MCPSigV4Auth is built as a pure Rust struct that relies on botocore/boto3 Python packages for credential acquisition and signing, called through FFI or as part of the client initialization phase, not directly by every request.
+    why: Rust applications using AWS APIs normally bind to Rust AWS SDKs (aws-sdk-rust, rusoto). This task builds a thin wrapper around Python's botocore to match LiteLLM's behavior exactly; the wrapper is part of the HTTP client setup, not request dispatch. A future task may optimize this by moving to pure Rust AWS signing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L262-L373
+  - what: The default credential chain relies on botocore.session.get_session() and environment variable lookup, which reads from the actual process environment at initialization time.
+    why: LiteLLM uses the same botocore default chain. The config loading task (B002) injects environment lookup; B4742 receives a prepared credentials object or falls back to botocore's standard chain. No separate environment injection is needed here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L306-L317
+
+out_of_scope:
+  - Credential caching across multiple requests; each MCPSigV4Auth instance holds a single credentials object for its lifetime.
+  - HTTP client construction and transport configuration; those are owned by B173 and B4744.
+  - Integration with the MCP client manager or configuration loading; those are owned by higher-level tasks.
+  - SDK network clients for STS; botocore's own HTTP transport is used for STS calls and credential chain queries.
+  - Custom SigV4 signing variants (SigV4 query string, unsigned payloads, event stream signing); use canonical SigV4 only.
+  - Bedrock-specific credential or payload transformations; this is a generic SigV4 signer for any AWS service.
+
+pitfalls:
+  - >-
+    MCP AWS config keys must match LiteLLM's exact spelling: aws_access_key_id, aws_secret_access_key,
+    aws_session_token (optional), aws_region_name, aws_service_name, aws_role_name, aws_session_name.
+    Typos in the configuration will be silently ignored as missing keys and fall through to the next precedence level.
+  - >-
+    When both aws_role_name and explicit credentials (aws_access_key_id, aws_secret_access_key) are provided,
+    aws_role_name takes precedence and the explicit credentials are used only to authenticate the STS AssumeRole
+    call itself, not as the final signing credentials.
+  - >-
+    The default chain (botocore.session.get_session().get_credentials()) reads environment variables, credential files,
+    and instance metadata in that order. Missing AWS credentials will raise ValueError at MCPSigV4Auth construction
+    time, not at request time.
+  - >-
+    STS AssumeRole requires the RoleArn to be a valid ARN; if it is not, the STS call will fail with a botocore
+    ClientError, which must propagate as an error to the caller.
+  - >-
+    The SigV4Auth.add_auth method modifies the AWSRequest in-place, adding Authorization, X-Amz-Date and
+    X-Amz-Security-Token (if a session token is present) headers; these must be copied back to the httpx request unchanged.
+  - >-
+    Session name generation uses int(time.time()) (epoch seconds), not milliseconds or a UUID, and must use the
+    exact format "litellm-mcp-<seconds>".
+  - >-
+    Each call to auth_flow (once per request) computes a fresh signature; signatures are not cached across requests
+    because each request may have different headers or timestamps.
+  - >-
+    botocore requires the request body (data) to be bytes or None for signing; an empty body is None or b"",
+    not an empty string.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

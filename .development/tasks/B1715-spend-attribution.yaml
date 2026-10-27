@@ -47,7 +47,6 @@ description: >-
   source lines; reserve 380 implementation and 420 tests/config/oracle integration.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/spend_metadata.rs
     - crates/betterlite-logging/src/spend_metadata/**
     - crates/betterlite-models/src/key_digest.rs
@@ -60,7 +59,6 @@ scope:
     - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/attribution.rs
     - crates/betterlite-server/src/spend/attribution/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_attribution.rs
     - crates/betterlite-config/src/spend_attribution/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_proxy_selection.rs,corpus/spend_proxy_selection/**}
@@ -120,6 +118,6 @@ pitfalls:
   - A hash-shaped untrusted key is hashed again unless the trusted metadata hash equals it.
   - metadata=None and metadata={} have different status/default-field projections.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

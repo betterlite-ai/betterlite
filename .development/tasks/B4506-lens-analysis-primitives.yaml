@@ -1,0 +1,111 @@
+id: B4506
+title: Lens evidence storage and structured analysis primitives
+description: >-
+  Build crates/betterlite-lens modules analysis and trace_store with disposable trace storage, quote validation, bounded catalog/feedback partitioning, structured-response repair and cancellation-safe concurrent execution.
+  The analysis module defines shared records for observations, extraction results, trace reviews and investigation candidates, injected callback ports (ModelCall, ReadContent, ReportProgress), and pure functions for structured JSON repair, evidence validation, concurrent operation batching and content partitioning.
+  The trace_store module implements a file-backed span storage with SQLite, preserving exact quote matching on either side of omission markers, separate initial spans and additional reads, and cleanup when any analysis stage exits.
+  Cover litellm/proxy/lens/analysis.py:1-200 (shared analysis records, type aliases and constants; structured_response, evidence_valid, concurrent_results, partition_items, partition_content, read_execution); litellm/proxy/lens/analysis.py:363-372 (feedback_pages); litellm/proxy/lens/trace_store.py:1-103 (imports, row adapters and TraceStore class with __init__, add, add_reads, evidence, parts, get, previous, count, catalogs; overview_content and trace_store context manager).
+  ModelCall, ReadContent and progress callback types are injected ports owned here; later tasks supply their implementations through the worker and server routes. Never depend on B132 or B4505/B4507/B4508/B4509 (those depend on this). Direct dependency: B4500 for record constructors, schema validation, analysis_checks and trace/evidence serialization. Use maintained SQLite support for bounded disk-backed storage; the repo pins rusqlite and sqlite3 versions, not in-memory collections. Structured model JSON (Decision, FinalDecision, Examined) is an untrusted decoder; add a cargo-fuzz target with corpus replay.
+scope:
+  paths:
+    - crates/betterlite-lens/src/analysis.rs
+    - crates/betterlite-lens/src/analysis/**
+    - crates/betterlite-lens/src/trace_store.rs
+    - crates/betterlite-lens/src/trace_store/**
+    - crates/betterlite-lens/fuzz/Cargo.toml
+    - crates/betterlite-lens/fuzz/fuzz_targets/structured_response.rs
+    - crates/betterlite-lens/fuzz/corpus/structured_response/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L1-L200
+    why: Shared analysis records and primitives this task owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L363-L372
+    why: feedback_pages function for bounded feedback catalog partitioning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/trace_store.py#L1-L103
+    why: TraceStore class and supporting functions for SQLite-backed span storage.
+  - url: https://docs.rs/rusqlite/latest/rusqlite/
+    why: SQLite bindings for bounded span storage.
+  - url: https://docs.rs/pydantic-core/latest/pydantic_core/
+    why: JSON validation patterns for structured response repair.
+dod:
+  - text: The analysis module exports Record, Observation, Extraction, SpanRead, TraceReview, Candidate, Clusters, Decision, FinalDecision, Examined and Investigation, with all constraints (max_length, ge/le bounds, literal variants) matching LiteLLM.
+    proof: [analysis-records]
+  - text: The analysis module exports injected callback type aliases ModelCall, ReadContent and ReportProgress as async Callable ports, without implementation.
+    proof: [analysis-callbacks]
+  - text: structured_response repairs JSON schema violations through one retry request and raises on remaining invalid JSON or validation failure.
+    proof: [analysis-tests]
+  - text: evidence_valid checks an Evidence record against a tuple of TracePart, returning true only when quote appears in at least one part's content across omission boundaries.
+    proof: [analysis-tests]
+  - text: concurrent_results runs an async operation over batches with bounded concurrency and yields results in completion order.
+    proof: [analysis-tests]
+  - text: concurrent_results defaults to concurrency 8 (ANALYSIS_CONCURRENCY constant) when the caller omits the concurrency argument, and a test asserts this literal default.
+    proof: [concurrent-results-default-tests]
+  - text: partition_items groups items into batches up to a size limit and partition_content divides spans into pages of at most 24000 bytes JSON.
+    proof: [analysis-tests]
+  - text: read_execution fetches pages from storage until exhausted, accumulating parts and tracking partial status, returning a final summary with empty parts.
+    proof: [analysis-tests]
+  - text: feedback_pages splits a claim's findings by check_id, returning tuples bounded by 8000 bytes JSON per page.
+    proof: [analysis-tests]
+  - text: TraceStore::new(connection) creates tables for spans (primary key span_id) and reads (unique on span_id, body pair).
+    proof: [trace-store-tests]
+  - text: TraceStore::add inserts or replaces spans; add_reads inserts reads only if not present; evidence returns the matching TracePart across both tables or None.
+    proof: [trace-store-tests]
+  - text: TraceStore::parts yields every stored span in span_id order; get returns one span or None; previous returns the preceding span_id or empty string.
+    proof: [trace-store-tests]
+  - text: TraceStore::count returns the total span count; catalogs yields pages of (span_id, parent_span_id, name, kind, overview_content) tuples bounded by 24000 bytes JSON per page.
+    proof: [trace-store-tests]
+  - text: overview_content applies a calculated limit to root spans (no parent_span_id) using max(160, min(2000, 12000 // max(root_count, 1))), and always uses 160 for non-root spans, preserving the first and last portions around the omission marker.
+    proof: [trace-store-tests, overview-content-formula-tests]
+  - text: trace_store context manager creates a TemporaryDirectory and TemporaryDirectory-backed SQLite database, cleaning up on exit.
+    proof: [trace-store-tests]
+  - text: The fuzz target feeds arbitrary bytes to Decision::model_validate_json and Examined::model_validate_json, seeded with valid examples, replaying the corpus in a test.
+    proof: [fuzz-corpus]
+  - text: Every mutant in analysis and trace_store modules is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: analysis-records
+      why: analysis module record types do not match the LiteLLM schema
+      run: grep -q "pub struct Observation" crates/betterlite-lens/src/analysis.rs && grep -q "pub struct Examined" crates/betterlite-lens/src/analysis.rs && grep -q "pub enum Decision" crates/betterlite-lens/src/analysis.rs
+    - id: analysis-callbacks
+      why: callback type aliases are missing or incorrectly defined
+      run: grep -q "type ModelCall" crates/betterlite-lens/src/analysis.rs && grep -q "type ReadContent" crates/betterlite-lens/src/analysis.rs && grep -q "type ReportProgress" crates/betterlite-lens/src/analysis.rs
+    - id: analysis-tests
+      why: analysis primitives tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^analysis::/) and not test(replays_)'
+    - id: concurrent-results-default-tests
+      why: concurrent_results default concurrency is not 8, or the default is not asserted in tests.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^analysis::concurrent_results::default_concurrency/)'
+    - id: trace-store-tests
+      why: trace storage tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^trace_store::/) and not test(replays_)'
+    - id: overview-content-formula-tests
+      why: overview_content does not apply the dynamic formula only to root spans, or does not use 160 for non-root spans.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^trace_store::overview_content::formula_root_only/)'
+    - id: fuzz-corpus
+      why: the analysis fuzz target or its seeded corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-lens/fuzz/fuzz_targets/structured_response.rs && test "$(ls crates/betterlite-lens/fuzz/corpus/structured_response 2>/dev/null | wc -l)" -ge 5 && cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(replays_the_structured_response_corpus)'
+oracle_cases: []
+deviations:
+  - what: Span storage is file-backed SQLite instead of LiteLLM's in-memory dictionary.
+    why: Betterlite needs bounded storage for large sample traces without allocating unbounded memory. SQLite with a temporary directory provides both disk-backing and deterministic cleanup on context exit. LiteLLM's memory-only design works for single-request analysis; a long-running worker must not accumulate spans across claims.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/trace_store.py#L17-L22
+out_of_scope:
+  - Evidence fetching and worker model inference; B4507, B4508, B4509 consume these primitives.
+  - The orchestrator that sequences extraction, investigation and grouping; B4509 owns that.
+  - Server routes and HTTP registration; B4503 and B4505 register handlers using these types.
+  - The worker executable and its model/read/progress callback implementations; B132 supplies those.
+pitfalls:
+  - concurrent_results manages asyncio tasks directly; ensure task cancellation and error collection in the finally block match LiteLLM's exception handling order.
+  - partition_items uses reduce to build batches; a zero limit or an item larger than the limit will cause batches to grow without bound. Validate limits and item sizes in tests.
+  - overview_content applies the formula max(160, min(2000, 12000 // max(root_count, 1))) only to root spans (no parent_span_id); non-root spans always use 160-character limit regardless of root_count.
+  - Evidence quote matching must preserve exact byte sequences across "\n[... content omitted ...]\n" boundaries; comparison uses "in" not "==" and splits preserve both sides.
+  - structured_response calls model twice (original request, then repair); the repair must not itself fail validation, so the schema must accept both Decision and FinalDecision shapes at the final step.
+  - The fuzz target must seed its corpus with valid examples so the harness finds real crashes, not just decoding errors. Include Decision and Examined variants.
+  - SQLite connections use execute and executemany; parameterized queries with ? placeholders protect against injection, even though this code doesn't read untrusted SQL.
+  - trace_store context manager holds the connection and TemporaryDirectory through yield; a task that drops the store early loses the database file before cleanup.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

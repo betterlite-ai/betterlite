@@ -103,8 +103,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/videos.rs
   - crates/betterlite-openai/src/videos/**
   - tools/oracle/Cargo.toml
@@ -313,6 +311,6 @@ pitfalls:
 - List cursor wrapping is inside the data-key branch, so first_id/last_id alone remain native even with a provider.
 - Deletion returns VideoObject without wrapping its id; applying the retrieve response transform would change it.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

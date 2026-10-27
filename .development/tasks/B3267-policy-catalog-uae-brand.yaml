@@ -1,0 +1,145 @@
+id: B3267
+title: UAE regulation and published competitor catalog records
+description: >-
+  Retain the local UAE regulatory compliance record with example_sentences, plus its published version without example_sentences, and the published competitor detection template as self-contained catalog fixtures.
+  LiteLLM's backup file contains one complete guardrail template record: uae-regulatory-compliance with three guardrailDefinitions (uae-data-protection-pii, uae-cultural-sensitivity-filter, uae-anti-discrimination-filter) and example_sentences that distinguish it from the published version.
+  LiteLLM's published root catalog contains the same uae-regulatory-compliance record without example_sentences for remote-response fixtures, plus the competitor-mention-detection template for brand protection.
+  Write each record to its own fragment file: `crates/betterlite-policy/assets/templates/local/uae-regulatory-compliance.json` (from the backup), `crates/betterlite-policy/assets/templates/published/uae-regulatory-compliance.json`, and `crates/betterlite-policy/assets/templates/published/competitor-mention-detection.json`.
+  Each fragment holds exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
+  The uae-regulatory-compliance record covers UAE Federal Decree-Law No. 45/2021 (Data Protection) and Federal Decree-Law No. 2/2015 (Anti-Discrimination) with masks for Emirates ID, UAE phone numbers, email, IBAN, credit cards and PO Box addresses.
+  Preserve exact field order and literal values from the pinned LiteLLM commit.
+scope:
+  paths:
+    - crates/betterlite-policy/assets/templates/local/uae-regulatory-compliance.json
+    - crates/betterlite-policy/assets/templates/published/uae-regulatory-compliance.json
+    - crates/betterlite-policy/assets/templates/published/competitor-mention-detection.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L1893-L2011
+    why: The complete local uae-regulatory-compliance record in the backup file with example_sentences, all three guardrails, and guardrailDefinitions with pattern_redaction_format.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1788-L1900
+    why: The complete published uae-regulatory-compliance record with all three guardrails and guardrailDefinitions without example_sentences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1901-L2016
+    why: The complete published competitor-mention-detection record with guardrailDefinitions and brand protection enrichment parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
+    why: The _load_policy_templates_from_local_backup function that loads the backup file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L632-L665
+    why: The get_policy_templates route that fetches from GitHub with fallback to local backup and respects LITELLM_LOCAL_POLICY_TEMPLATES env var.
+dod:
+  - text: The local uae-regulatory-compliance fragment contains the complete record with all three guardrail definitions and example_sentences.
+    proof: [catalog-data]
+  - text: The published uae-regulatory-compliance fragment contains the complete record with all three guardrail definitions and no example_sentences.
+    proof: [catalog-data]
+  - text: The published competitor-mention-detection fragment contains the complete record with all guardrail definitions and enrichment parameters.
+    proof: [catalog-data]
+  - text: All three fragments are valid JSON and each holds exactly one object.
+    proof: [catalog-data]
+  - text: >-
+      The local uae-regulatory-compliance record includes all required fields
+      (id, title, description, example_sentences, icon, iconColor, iconBg,
+      guardrails array with three entries, complexity, guardrailDefinitions
+      array with three entries, templateData, tags, and estimated_latency_ms)
+      with correct literal values matching the pinned commit.
+    proof: [catalog-data]
+  - text: >-
+      The published uae-regulatory-compliance record includes all required fields
+      (id, title, description, icon, iconColor, iconBg,
+      guardrails array with three entries, complexity, guardrailDefinitions
+      array with three entries, templateData, tags, and estimated_latency_ms)
+      with no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      The competitor-mention-detection record includes all required fields
+      (id, title, description, complexity, guardrails array, guardrailDefinitions array,
+      tags, templateData, estimated_latency_ms, and enrichment-related fields)
+      with correct literal values.
+    proof: [catalog-data]
+  - text: >-
+      Local uae-regulatory-compliance example sentences are verified as the four exact inputs:
+      "My Emirates ID is 784-1990-1234567-1",
+      "My email is ahmed@emiratesbank.ae and phone +971501234567",
+      "Write content criticizing the UAE royal family",
+      "Apply for loan using forged IBAN AE070331234567890123456".
+    proof: [catalog-data]
+  - text: >-
+      UAE regulatory record title is "UAE Regulatory Compliance", complexity is "Medium",
+      tags are ["Regulatory", "UAE"], and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      UAE guardrails array contains exactly three entries in order:
+      uae-data-protection-pii, uae-cultural-sensitivity-filter, uae-anti-discrimination-filter.
+    proof: [catalog-data]
+  - text: >-
+      Competitor-mention-detection record title is "Competitor Mention Detection",
+      complexity is "Medium", tags are ["Brand Protection"], and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      All guardrailDefinitions entries include complete litellm_params blocks
+      with correct pattern or category references.
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: a fragment is missing, is not one valid JSON object, or the UAE records or competitor template differ from the pinned LiteLLM records in keys, key order or literal values
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["uae-data-protection-pii", "uae-cultural-sensitivity-filter", "uae-anti-discrimination-filter"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "uae-regulatory-compliance"
+          and .title == "UAE Regulatory Compliance"
+          and .example_sentences | length == 4
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-red-500"
+          and .iconBg == "bg-red-50"
+          and .guardrails == $names
+          and .complexity == "Medium"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[]; has("litellm_params"))
+          and .templateData.policy_name == "uae-regulatory-compliance"
+          and .tags == ["Regulatory", "UAE"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/uae-regulatory-compliance.json \
+        && jq -e -s 'length == 1 and (.[0]
+          | ["uae-data-protection-pii", "uae-cultural-sensitivity-filter", "uae-anti-discrimination-filter"] as $names
+          | keys_unsorted == ["id", "title", "description", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "uae-regulatory-compliance"
+          and .title == "UAE Regulatory Compliance"
+          and (has("example_sentences") | not)
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-red-500"
+          and .iconBg == "bg-red-50"
+          and .guardrails == $names
+          and .complexity == "Medium"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[]; has("litellm_params"))
+          and .templateData.policy_name == "uae-regulatory-compliance"
+          and .tags == ["Regulatory", "UAE"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/published/uae-regulatory-compliance.json \
+        && jq -e -s 'length == 1 and (.[0]
+          | keys_unsorted == ["id", "title", "description", "icon", "iconColor", "iconBg", "guardrails", "complexity", "parameters", "llm_enrichment", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "competitor-mention-detection"
+          and .title == "Competitor Mention Detection"
+          and .complexity == "Medium"
+          and .tags == ["Brand Protection"]
+          and .estimated_latency_ms == 1
+          and (.guardrails | length) > 0
+          and (.guardrailDefinitions | length) > 0
+          and all(.guardrailDefinitions[]; has("litellm_params")))' crates/betterlite-policy/assets/templates/published/competitor-mention-detection.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Template loading and initialization. The loader _load_policy_templates_from_local_backup is covered by B3252. The route that uses the backup and published catalogs (get_policy_templates) is covered by B3253.
+  - Guardrail implementation behavior and pattern matching. The template records define only the policy structure and metadata; actual content filtering and guardrail application happen during policy execution.
+  - Other policy templates in the backup or published files. Those are owned by other catalog tasks (Australian PII, EU AI Act, aviation, safety, financial, etc.).
+  - Competitor enrichment implementation details. The competitor-mention-detection template references enrichment parameters; the actual LLM-based competitor discovery is covered by B3252.
+pitfalls:
+  - All three fragments must be valid JSON holding one object each. Syntax errors prevent loading during policy initialization; malformed JSON does not fall back to LiteLLM's defaults.
+  - The local uae-regulatory-compliance fragment requires exactly three guardrailDefinitions in their original order (uae-data-protection-pii, uae-cultural-sensitivity-filter, uae-anti-discrimination-filter); do not reorder, duplicate, or omit any.
+  - The local backup variant must include example_sentences (four sentences); the published variant must not include example_sentences. Do not mix the two.
+  - The published uae-regulatory-compliance and competitor-mention-detection records must preserve their exact field order from the pinned commit; reordering breaks policy matching and initialization.
+  - The published competitor-mention-detection record has a different key order than the regulatory record (with llm_enrichment and parameters fields); preserve the exact key order from LiteLLM.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

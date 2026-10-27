@@ -123,7 +123,6 @@ scope:
   - crates/betterlite-core/src/operation.rs
   - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/foundry_provider.rs
   - tools/oracle/src/helpers/provider/foundry_provider/**
@@ -384,6 +383,6 @@ pitfalls:
 - A model containing both an agents route and claude takes the agents branch.
 - Claude header forwarding differs from both agents and normal Foundry chat.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

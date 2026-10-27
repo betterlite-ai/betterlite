@@ -110,5 +110,5 @@ pitfalls:
 - A syntactically decoded response need not have the documented labels to count as encoded.
 review_level: security
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 1500
   max_new_expects: 1

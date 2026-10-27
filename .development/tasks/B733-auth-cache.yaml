@@ -109,23 +109,13 @@ scope:
     - tools/oracle/cases/helpers/auth-cache/**
     - tools/oracle/fuzz/corpus/helper_case/auth-cache-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/auth_cache.rs
-    - crates/betterlite-config/src/auth_cache/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-cache-*
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/auth_cache.rs
     - crates/betterlite-auth/fuzz/corpus/auth_cache/**
     - crates/betterlite-auth/fuzz/.gitignore
+    - crates/betterlite-config/src/sections/auth_cache.rs
+    - crates/betterlite-config/src/sections/auth_cache/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L1-L412
@@ -269,7 +259,7 @@ checks:
         --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_cache::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::auth_cache::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -421,6 +411,6 @@ pitfalls:
   - A failed typed cache read leaves the bad value in place and can log again on the next read.
   - The auth membership key orders team before user, while the reservation key orders user before team.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

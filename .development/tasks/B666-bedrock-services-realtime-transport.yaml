@@ -119,10 +119,7 @@ scope:
   - crates/betterlite-bedrock/src/realtime_transport.rs
   - crates/betterlite-bedrock/src/realtime_transport/**
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-http/Cargo.toml
-  - crates/betterlite-http/src/lib.rs
-  - crates/betterlite-http/src/error.rs
   - crates/betterlite-http/src/aws_duplex.rs
   - crates/betterlite-http/src/aws_duplex/**
   - tools/oracle/Cargo.toml
@@ -323,6 +320,6 @@ pitfalls:
   usage.
 - The source timeout argument is unused; adding a provider-local timeout would change the observable session lifetime.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

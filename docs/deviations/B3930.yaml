@@ -1,0 +1,11 @@
+task: B3930
+deviations:
+  - what: USE_DDTRACE=true is read but betterlite keeps the no-op NullTracer, where LiteLLM switches to the installed ddtrace tracer.
+    why: betterlite ships no Datadog APM client, so it always behaves like LiteLLM without ddtrace installed; a real tracer can implement apm::Tracer later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L66-L78
+  - what: Best-effort span tagging silently does nothing when a span lacks a supported tag method.
+    why: A missing Datadog method must not fail the request; betterlite's Span trait defaults to a no-op.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dd_tracing.py#L100-L123
+  - what: DD_BASE_URL resolves to None when unset rather than a literal URL.
+    why: It is an optional Datadog endpoint override with no fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_handler.py#L24-L29

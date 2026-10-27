@@ -11,6 +11,10 @@ scope:
   paths:
     - crates/betterlite-server/**
     - tools/oracle/cases/worker/**
+    - tools/oracle/helpers/b4177.py
+    - tools/oracle/helpers/b4177/**
+    - tools/oracle/src/helpers/oracle/b4177.rs
+    - tools/oracle/src/helpers/oracle/b4177/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L435-L466
@@ -82,5 +86,5 @@ pitfalls:
   - "Granian warnings for unsupported options are printed once at startup; they do not affect subsequent behavior. The flags are still parsed and validated by clap, so wrong values still raise click errors before the launch code runs."
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

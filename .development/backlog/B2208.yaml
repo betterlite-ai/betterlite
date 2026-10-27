@@ -1,14 +1,14 @@
 id: B2208
 milestone: M3 providers
 title: Shared cloud object names and authorization
-status: todo
+status: done
 depends_on: [B002, B171]
 file: tasks/B2208-cloud-storage.yaml
 covers:
   - "litellm/litellm_core_utils/cloud_storage_security.py"
 parent: B115
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 186

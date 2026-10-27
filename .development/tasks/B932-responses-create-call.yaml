@@ -37,6 +37,10 @@ scope:
   - tools/oracle/cases/sdk-http/responses-async-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-async-create-*
   - Cargo.lock
+  - tools/oracle/helpers/b932.py
+  - tools/oracle/helpers/b932/**
+  - tools/oracle/src/helpers/core_ops/b932.rs
+  - tools/oracle/src/helpers/core_ops/b932/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L575-L761
@@ -121,5 +125,5 @@ pitfalls:
 - The async wrapper stamps a mock response that the synchronous shortcut returned before stamping.
 review_level: security
 budget:
-  max_changed_lines: 540
+  max_changed_lines: 1500
   max_new_expects: 0

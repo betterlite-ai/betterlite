@@ -1,0 +1,265 @@
+id: B3960
+title: Argilla dataset mapping and batch logging
+description: >-
+  Build Argilla dataset discovery, field transformation mapping, sampling control and dual-mode
+  batch callbacks. Implement dataset lookup by name with ID caching, required transformation-object
+  validation, sync/async batch delivery with distinct wire formats, and sampling-rate logic with
+  fallback parsing.
+
+  Read ARGILLA_API_KEY, ARGILLA_BASE_URL (default http://localhost:6900/), ARGILLA_DATASET_NAME
+  (default litellm-completion), ARGILLA_BATCH_SIZE and ARGILLA_SAMPLING_RATE from B002; use B173
+  for GET /api/v1/me/datasets and bulk POST/PUT requests; build on B189's CustomLogger
+  initialization contract and B256's batch base and periodic flush. Validate that
+  argilla_transformation_object is a dict with all values in SUPPORTED_PAYLOAD_FIELDS (messages,
+  response); fail fast at initialization if invalid.
+
+  Dataset discovery: on first initialization, GET /api/v1/me/datasets?name=<name> with
+  X-Argilla-Api-Key header, extract items[0].id if items is a non-empty list, otherwise use the
+  name as-is. Cache the resolved ID for the session. Message/response extraction reads messages
+  from payload (list or single dict) and response as string or dict-with-choices. Field mapping
+  iterates the transformation object and populates fields from payload values.
+
+  Sync batch: POST /api/v1/datasets/{dataset_id}/records/bulk with the log_queue as JSON body
+  (array of items, each an {fields: {...}} record). Sample using LANGSMITH_SAMPLING_RATE (digit-only
+  parser, fallback 1.0). Clear queue on HTTP response (2xx or error); log errors but do not re-raise.
+  On batch-size threshold, call _send_batch immediately.
+
+  Async batch: PUT /api/v1/datasets/{dataset_id}/records/bulk with {items: [...]} envelope and
+  timeout=60000. Sample using ARGILLA_SAMPLING_RATE (digit-only parser, fallback 1.0). Support
+  async_dataset_hook chaining from other CustomLogger instances (B189): apply each hook in
+  litellm.callbacks, catching NotImplementedError, and skip logging if hook returns None.
+  Queue threshold triggers flush_queue from B256. async_log_failure_event omits the async_dataset_hook
+  loop entirely; only sampling and verbose_logger.info logging carry over before queueing.
+
+  Preserve the digit-only sampling parser (decimal string "0.5" falls back to 1.0). Do not change
+  the async timeout value. Sync queue clears after response even on error; async queue clears only
+  after successful flush from B256. Batch size defaults and overrides via env var or litellm.argilla_batch_size
+  follow B256 ownership.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/argilla_logging.rs
+    - crates/betterlite-logging/src/argilla_logging/**
+    - tools/oracle/cases/logging/argilla/**
+    - tools/oracle/helpers/b3960.py
+    - tools/oracle/helpers/b3960/**
+    - tools/oracle/src/helpers/logging/b3960.rs
+    - tools/oracle/src/helpers/logging/b3960/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L43-L71
+    why: ArgillaLogger.__init__ with transformation validation, credential resolution, HTTP client setup, batch size configuration and periodic flush.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L73-L81
+    why: validate_argilla_transformation_object checks dict type and validates all values are in SUPPORTED_PAYLOAD_FIELDS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L83-L117
+    why: "get_credentials_from_env resolves ARGILLA_API_KEY, ARGILLA_BASE_URL (default http://localhost:6900/), ARGILLA_DATASET_NAME (default litellm-completion), performs dataset GET to extract ID from items[0].id."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L119-L130
+    why: get_chat_messages extracts and normalizes messages from payload as list or single dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L132-L143
+    why: get_str_response extracts response as string or from dict-with-choices structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L145-L166
+    why: "_prepare_log_data applies transformation mapping to build ArgillaItem with fields dict populated from payload using transformation keys."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L168-L195
+    why: "_send_batch posts queue to /api/v1/datasets/{dataset_id}/records/bulk as JSON array, clears queue after any response, logs errors without re-raise."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L197-L227
+    why: "log_success_event samples using LANGSMITH_SAMPLING_RATE (digit-only parser, fallback 1.0), prepares data, adds to queue, sends on batch threshold."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L229-L269
+    why: "async_log_success_event samples using ARGILLA_SAMPLING_RATE (digit-only parser, fallback 1.0), applies async_dataset_hook from litellm.callbacks before queueing, calls flush_queue on batch threshold."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L271-L291
+    why: async_log_failure_event omits the async_dataset_hook loop from async_log_success_event; only sampling and verbose_logger.info logging carry over before queueing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L293-L335
+    why: "async_send_batch PUTs to /api/v1/datasets/{dataset_id}/records/bulk with {items: queue} envelope, timeout=60000, raise_for_status, clears queue on success."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/argilla.py#L1-20
+    why: ArgillaItem, ArgillaPayload, ArgillaCredentialsObject and SUPPORTED_PAYLOAD_FIELDS type declarations.
+
+dod:
+  - text: "ArgillaLogger initializes with transformation object validation, dataset ID resolution via GET /api/v1/me/datasets?name=<name>, and periodic flush setup from B256."
+    proof: [argilla-init-test, argilla-init-oracle]
+
+  - text: "validate_argilla_transformation_object raises when transformation_object is not a dict or contains values not in [messages, response]."
+    proof: [argilla-validation-test, argilla-validation-oracle]
+
+  - text: "Dataset GET returns items[0].id when items is non-empty list; uses name as-is otherwise. Resolution is cached for the session."
+    proof: [argilla-dataset-test, argilla-dataset-oracle]
+
+  - text: "Transformation mapping iterates transformation_object and populates fields dict from payload values, extracting messages as list and response as string."
+    proof: [argilla-mapping-test, argilla-mapping-oracle]
+
+  - text: "Sync log_success_event samples using LANGSMITH_SAMPLING_RATE (digit-only parser, fallback 1.0). Matching samples call _send_batch on batch threshold."
+    proof: [argilla-sync-sampling-test, argilla-sync-sampling-oracle]
+
+  - text: "Sync _send_batch POSTs to /api/v1/datasets/{dataset_id}/records/bulk with the queue as JSON array. Queue clears after response (2xx or error); errors are logged but not re-raised."
+    proof: [argilla-sync-batch-test, argilla-sync-batch-oracle]
+
+  - text: "Async async_log_success_event samples using ARGILLA_SAMPLING_RATE (digit-only parser, fallback 1.0). Matching samples apply async_dataset_hook from litellm.callbacks, skip logging if hook returns None."
+    proof: [argilla-async-sampling-test, argilla-async-sampling-oracle]
+
+  - text: "Async async_log_failure_event samples using ARGILLA_SAMPLING_RATE, logs to verbose_logger.info before processing, and omits the async_dataset_hook loop entirely. Matched samples are queued and trigger flush_queue on batch threshold."
+    proof: [argilla-async-failure-test, argilla-async-failure-oracle]
+
+  - text: "Async async_send_batch PUTs to /api/v1/datasets/{dataset_id}/records/bulk with {items: queue} envelope, timeout=60000, and clears queue on success."
+    proof: [argilla-async-batch-test, argilla-async-batch-oracle]
+
+  - text: "get_chat_messages raises Exception with message 'No chat messages found in payload.' when messages key is absent, and 'Invalid chat messages format: {payload_messages}' when format is invalid. get_str_response raises Exception with message 'No response found in payload.' when response key is absent, and 'Invalid response format: {response}' when format is invalid."
+    proof: [argilla-error-handling-test, argilla-error-handling-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: argilla-init-test
+      why: Initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-validation-test
+      why: Transformation object validation tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*validation($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-dataset-test
+      why: Dataset resolution tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*dataset($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-mapping-test
+      why: Field transformation mapping tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*mapping($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-sync-sampling-test
+      why: Sync sampling rate tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*sync.*sampling($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-sync-batch-test
+      why: Sync batch POST tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*sync.*batch($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-async-sampling-test
+      why: Async sampling rate and dataset hook tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*async.*sampling($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-async-failure-test
+      why: Async failure event tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*async.*failure($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-async-batch-test
+      why: Async batch PUT tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*async.*batch($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-error-handling-test
+      why: Message/response extraction error handling tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^argilla_logging::.*error($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: argilla-init-oracle
+      why: Missing initialization oracle cases
+      run: grep -rlq 'dataset.*resolution\|dataset.*id\|argilla.*init' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-validation-oracle
+      why: Missing transformation validation oracle cases
+      run: grep -rlq 'transformation.*object\|SUPPORTED_PAYLOAD_FIELDS\|valid.*transform' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-dataset-oracle
+      why: Missing dataset GET oracle cases
+      run: grep -rlq 'dataset.*get\|/me/datasets\|items\[0\]\.id' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-mapping-oracle
+      why: Missing field mapping oracle cases
+      run: grep -rlq 'mapping\|fields\|transformation.*map' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-sync-sampling-oracle
+      why: Missing sync sampling oracle cases
+      run: grep -rlq 'LANGSMITH_SAMPLING_RATE\|sync.*sample\|digit.*parser' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-sync-batch-oracle
+      why: Missing sync batch oracle cases
+      run: grep -rlq 'POST.*records/bulk\|sync.*batch\|queue.*clear' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-async-sampling-oracle
+      why: Missing async sampling and hook oracle cases
+      run: grep -rlq 'ARGILLA_SAMPLING_RATE\|async.*sample\|async_dataset_hook' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-async-failure-oracle
+      why: Missing async failure event oracle cases
+      run: grep -rlq 'async.*failure\|log_failure_event\|verbose_logger.info' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-async-batch-oracle
+      why: Missing async batch oracle cases
+      run: grep -rlq 'PUT.*records/bulk\|items.*envelope\|timeout.*60000' tools/oracle/cases/logging/argilla/ || exit 1
+
+    - id: argilla-error-handling-oracle
+      why: Missing error handling oracle cases for message/response extraction
+      run: grep -rlq 'No chat messages\|Invalid chat messages\|No response found\|Invalid response' tools/oracle/cases/logging/argilla/ || exit 1
+
+oracle_cases:
+  - tools/oracle/cases/logging/argilla/initialization-with-dataset-resolution.yaml
+  - tools/oracle/cases/logging/argilla/transformation-object-validation.yaml
+  - tools/oracle/cases/logging/argilla/dataset-get-with-caching.yaml
+  - tools/oracle/cases/logging/argilla/field-mapping-from-payload.yaml
+  - tools/oracle/cases/logging/argilla/sync-sampling-with-langsmith-rate.yaml
+  - tools/oracle/cases/logging/argilla/sync-batch-post-and-clear.yaml
+  - tools/oracle/cases/logging/argilla/async-sampling-with-argilla-rate.yaml
+  - tools/oracle/cases/logging/argilla/async-dataset-hook-chaining.yaml
+  - tools/oracle/cases/logging/argilla/async-failure-event-logging.yaml
+  - tools/oracle/cases/logging/argilla/async-batch-put-with-items-envelope.yaml
+  - tools/oracle/cases/logging/argilla/missing-chat-messages.yaml
+  - tools/oracle/cases/logging/argilla/invalid-chat-messages-format.yaml
+  - tools/oracle/cases/logging/argilla/missing-response.yaml
+  - tools/oracle/cases/logging/argilla/invalid-response-format.yaml
+
+deviations:
+  - what: >-
+      The sync sampling rate uses LANGSMITH_SAMPLING_RATE (a legacy name from an earlier integration),
+      while the async sampling rate uses ARGILLA_SAMPLING_RATE. Both are digit-only parsers that
+      fall back to 1.0 if the string is not all digits.
+    why: >-
+      The source code implements this distinction explicitly: sync uses a local digit-parser for
+      LANGSMITH_SAMPLING_RATE (line 60-62), while async uses a pre-computed digit-parsed
+      ARGILLA_SAMPLING_RATE from __init__ (line 231, 59-63).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L59-L63
+
+  - what: >-
+      The async timeout value is a fixed 60000 milliseconds (60 seconds) and cannot be overridden
+      by configuration or request parameters.
+    why: >-
+      The source hardcodes timeout=60000 in the async_send_batch call (line 324).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L324
+
+  - what: >-
+      The sync _send_batch clears the queue after any HTTP response (2xx success or error status),
+      while the async async_send_batch clears only on successful HTTP status before raise_for_status.
+    why: >-
+      Sync explicitly calls self.log_queue.clear() after the response handling block regardless of
+      status (lines 192-193); async clears only after raise_for_status succeeds (implied by the
+      structure at line 326).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L188-L193
+
+  - what: >-
+      The async_dataset_hook from other CustomLogger instances in litellm.callbacks is applied
+      before queueing the item. If any hook returns None, the item is not queued and the method
+      returns early.
+    why: >-
+      The source iterates litellm.callbacks, checks isinstance(callback, CustomLogger), and
+      awaits async_dataset_hook; if data becomes None after a hook call, it breaks the loop and
+      returns (lines 248-258).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L248-L258
+
+out_of_scope:
+  - B002 owns environment variable lookup and default value injection.
+  - B173 owns HTTP pool and sync/async request execution (module_level_client.get/post and async_httpx_client.put).
+  - B189 owns CustomLogger initialization contract and callback registry.
+  - B256 owns CustomBatchLogger base class, batch_size defaults, periodic_flush task setup and flush_queue implementation.
+  - Custom logger's async_dataset_hook execution is an external hook mechanism not owned by B114; B189 owns the registry but not dataset-specific hook implementations.
+  - The is_serializable helper function (lines 32-39) has no callers at the pin and is not built.
+
+pitfalls:
+  - The oracle helper at tools/oracle/src/helpers/logging/b3960.rs is pre-registered by the skeleton; do not add it to registry files.
+  - The sync sampling uses LANGSMITH_SAMPLING_RATE (legacy name), not ARGILLA_SAMPLING_RATE. This is a literal environment variable name in the source.
+  - Digit-only parser uses str.isdigit() after stripping whitespace; a float string like "0.5" fails the check and falls back to 1.0.
+  - Dataset ID caching uses the original name as key; if dataset resolution fails (empty items list), the name itself is used as the ID.
+  - Transformation object validation happens in __init__ before any request; invalid objects fail eagerly.
+  - async_dataset_hook is awaited; exceptions from hooks are caught and NotImplementedError is silently ignored (lines 254-255).
+  - sync _send_batch clears the queue even after an error response; async _send_batch only clears after successful raise_for_status.
+  - Batch size is inherited from B256's base class; override via ARGILLA_BATCH_SIZE env var or litellm.argilla_batch_size.
+  - get_chat_messages and get_str_response raise plain exceptions with literal messages on missing/invalid payload shapes; these error paths must be covered in tests and oracle cases.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

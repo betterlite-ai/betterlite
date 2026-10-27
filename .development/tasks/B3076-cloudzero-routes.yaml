@@ -1,0 +1,142 @@
+id: B3076
+title: Expose CloudZero settings and export routes
+description: >-
+  Register six HTTP routes for CloudZero FinOps management in betterlite-server.
+  Implement GET /cloudzero/settings to view current configuration with masking;
+  PUT /cloudzero/settings for partial updates; POST /cloudzero/init for initial setup;
+  POST /cloudzero/dry-run for export preview; POST /cloudzero/export for actual delivery;
+  and DELETE /cloudzero/delete to remove configuration.
+  Enforce admin-only mutations and exports, with admin-or-viewer read access for GET.
+  Preserve exception handling for database unavailability and decryption failures; return 400
+  when PUT receives no fields to update, 422 for malformed request bodies, 403 for authorization,
+  404 when DELETE targets absent settings, and 500 for unrecoverable errors.
+  Manual export reads and decrypts stored credentials; dry-run constructs a logger
+  from environment variables instead, requiring no prior initialization.
+  Sensitive API keys are masked with first and last 4 characters visible using B244's masker.
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/cloudzero_routes.rs
+    - crates/betterlite-server/src/finops/cloudzero_routes/**
+    - tools/oracle/cases/finops/cloudzero-routes/**
+    - tools/oracle/helpers/b3076.py
+    - tools/oracle/helpers/b3076/**
+    - tools/oracle/src/helpers/server/b3076.rs
+    - tools/oracle/src/helpers/server/b3076/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L133-L189"
+    why: get_cloudzero_settings route handler with admin/viewer permission check and masking.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L192-L266"
+    why: update_cloudzero_settings route with partial field update and update-before-init 404.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L345-L392"
+    why: init_cloudzero_settings route for initial setup with admin-only access.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L395-L450"
+    why: cloudzero_dry_run_export route with environment-based logger construction.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L453-L515"
+    why: cloudzero_export route reading stored credentials and calling logger.export_usage_data.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L518-L578"
+    why: delete_cloudzero_settings route with 404 handling for absent configuration.
+dod:
+  - text: GET /cloudzero/settings returns 200 with masked API key and other settings, or 200 with null fields if unconfigured, accessible only to admin and admin-view roles.
+    proof: [get-settings-cases]
+  - text: PUT /cloudzero/settings returns 400 with message "At least one field must be provided for update" when no fields are provided, before checking database state.
+    proof: [update-no-fields-cases]
+  - text: PUT /cloudzero/settings updates only provided fields when at least one is supplied, accessible only to PROXY_ADMIN role.
+    proof: [update-settings-cases]
+  - text: POST /cloudzero/init stores encrypted API key and other settings in database, fails with 403 for non-admin, accessible only to PROXY_ADMIN.
+    proof: [init-settings-cases]
+  - text: POST /cloudzero/dry-run constructs CloudZeroLogger from environment variables and returns export preview without requiring prior initialization, accessible only to PROXY_ADMIN.
+    proof: [dry-run-export-cases]
+  - text: POST /cloudzero/export reads stored credentials from database, constructs CloudZeroLogger, and calls export_usage_data with request parameters, accessible only to PROXY_ADMIN.
+    proof: [export-cases]
+  - text: DELETE /cloudzero/delete removes CloudZero settings from database, fails with 404 if settings are absent, accessible only to PROXY_ADMIN.
+    proof: [delete-settings-cases]
+  - text: All routes return 403 (not_allowed_access) when user lacks required role; 422 when request body is malformed JSON; 500 when database is unavailable.
+    proof: [auth-error-cases]
+  - text: Decryption failures in update and export routes raise HTTPException with 500 status and descriptive error message.
+    proof: [decryption-error-cases]
+  - text: API key masking uses SensitiveDataMasker.mask_dict preserving first 4 and last 4 characters matching LiteLLM behavior.
+    proof: [masking-cases]
+checks:
+  optional: []
+  commands:
+    - id: get-settings-cases
+      why: GET /cloudzero/settings route does not return masked settings or handle missing configuration
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::(get_settings|missing_settings)/)'
+    - id: update-no-fields-cases
+      why: PUT /cloudzero/settings route does not reject requests with no fields provided
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::update_no_fields/)'
+    - id: update-settings-cases
+      why: PUT /cloudzero/settings route does not update provided fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::update_settings/)'
+    - id: init-settings-cases
+      why: POST /cloudzero/init route does not store encrypted settings or enforce admin role
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::init_settings/)'
+    - id: dry-run-export-cases
+      why: POST /cloudzero/dry-run route does not construct environment-based logger or return preview data
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::dry_run_export/)'
+    - id: export-cases
+      why: POST /cloudzero/export route does not read stored credentials or call export_usage_data
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::export/)'
+    - id: delete-settings-cases
+      why: DELETE /cloudzero/delete route does not remove settings or handle absent configuration
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::delete_settings/)'
+    - id: auth-error-cases
+      why: Authorization and malformed-body error responses do not match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::(auth_|malformed_)/)'
+    - id: decryption-error-cases
+      why: Decryption failure handling does not raise appropriate errors
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::decrypt/)'
+    - id: masking-cases
+      why: API key masking does not preserve first 4 and last 4 characters
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::mask/)'
+oracle_cases:
+  - tools/oracle/cases/finops/cloudzero-routes/get-settings-admin-view.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/get-settings-admin.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/get-settings-user-forbidden.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/get-settings-missing.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/update-settings-no-fields.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/update-settings-admin.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/update-settings-admin-view-forbidden.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/update-settings-malformed-body.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/init-settings-success.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/init-settings-admin-view-forbidden.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/init-settings-malformed-body.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/dry-run-export-no-setup.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/dry-run-export-with-limit.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/dry-run-export-admin-only.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/export-with-credentials.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/export-without-settings.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/export-admin-only.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/delete-settings-success.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/delete-settings-not-found.yaml
+  - tools/oracle/cases/finops/cloudzero-routes/delete-settings-admin-only.yaml
+deviations:
+  - what: Update returns 500 when settings do not exist and at least one field is provided, due to KeyError on accessing missing fields from an empty dict.
+    why: LiteLLM's code contains unreachable dead code at lines 251-260 attempting to convert a 400 to 404; the validation at lines 223-227 raises 400 outside the try block, and _get_cloudzero_settings returns empty dict without raising at line 109, causing KeyError when accessing current_settings["api_key"] inside the try block, caught by the generic except Exception handler at line 261.
+  - what: Dry-run constructs the logger from environment variables without reading database credentials.
+    why: LiteLLM's dry_run_export_usage_data method on CloudZeroLogger does not require credentials; it constructs the logger from the environment and returns data without sending to CloudZero.
+  - what: API key is masked with the first 4 and last 4 characters visible; betterlite uses SensitiveDataMasker identical to LiteLLM.
+    why: LiteLLM's masking behavior preserves endpoint transparency across both implementations.
+out_of_scope:
+  - Settings accessor functions (_get_cloudzero_settings, _set_cloudzero_settings) owned by B3075.
+  - Setup detection functions (is_cloudzero_setup_in_db, is_cloudzero_setup_in_config, is_cloudzero_setup) owned by B3075.
+  - Request/response model definitions (CloudZeroInitRequest, CloudZeroSettingsUpdate, CloudZeroSettingsView, CloudZeroExportRequest, CloudZeroExportResponse) owned by B3079.
+  - User role predicate (user_api_key_has_admin_view) owned by B3079.
+  - SensitiveDataMasker implementation owned by B244.
+  - Database table and configuration repository owned by B725.
+  - CloudZeroLogger implementation and export methods owned by B3071.
+  - Encryption/decryption utilities owned by B1600.
+  - User authentication dependency injection owned by B052.
+pitfalls:
+  - Update endpoint has unreachable dead code at lines 251-260; the 400 validation at lines 223-227 is outside the try block and cannot be caught by the except HTTPException handler intended to convert it to 404.
+  - Update endpoint returns 500 (not 404) when settings do not exist and at least one field is provided, via KeyError on accessing missing dict keys.
+  - PUT endpoint rejects requests with no fields provided; at least one of api_key, connection_id, or timezone must be non-null, returning 400 "At least one field must be provided for update".
+  - Dry-run endpoint does not require prior initialization; it constructs CloudZeroLogger() with no arguments and reads environment variables, not database settings.
+  - Export endpoint must read stored credentials from _get_cloudzero_settings, which decrypts the API key; decryption failure raises HTTPException with 500 status.
+  - DELETE endpoint must check for absent settings with find_first before attempting delete; returning 404 requires explicit presence check.
+  - All error responses use CommonProxyErrors enum values, matching LiteLLM's CommonProxyErrors.not_allowed_access, CommonProxyErrors.db_not_connected_error.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

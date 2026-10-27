@@ -1,0 +1,187 @@
+id: B4001
+title: Project and batch ClickHouse spend rows with trace context
+description: >-
+  Build the spend-row projection from standard logging payloads, keeping trace/session
+  identity, cache counters and message privacy. Implement an injected ClickHouse batch
+  writer that queues rows until a batch fills or the flush interval expires, with bounded
+  retries and Lens context below tracing callers. Expose schema setup and Lens context
+  helpers so tracing and Lens-consuming tasks can depend on this leaf without bringing
+  in the full logger.
+
+  Implement ClickHouseBatchLogger extending CustomBatchLogger (B256). On __init__, accept
+  an optional ClickHouseStorage instance or read CLICKHOUSE_DATABASE (default "litellm")
+  and CLICKHOUSE_URL (default "") via clickhouse_storage_from_env. Start a periodic flush
+  task on first enqueue; flush at CLICKHOUSE_FLUSH_INTERVAL_SECONDS (default 1.0) intervals
+  or when queue reaches CLICKHOUSE_BATCH_SIZE (default 10,000). Queue never exceeds
+  CLICKHOUSE_MAX_BUFFERED_ROWS (default 200,000). Requeue failed batches at front before
+  new arrivals; drop after CLICKHOUSE_MAX_RETRIES (default 3) failures with error log.
+
+  Implement ClickHouseSpendLogger projecting StandardLoggingPayload to SpendLogRecord rows.
+  Capture W3C traceparent header (version-traceid-parentid-flags) from custom or proxy
+  request headers; reject all-zeros trace or span IDs. Strip only terminal _cache_hit[timestamp]
+  suffix from request IDs to recover raw provider response ID. Spend values are float,
+  matching LiteLLM's wire format. Ignore POST /v1/traces OTLP exports as non-LLM requests.
+  Cache counters come from OpenAI prompt_tokens_details, with Anthropic cache fields as
+  fallback. Redact messages and response when litellm.turn_off_message_logging is True.
+  Both success and failure callbacks enqueue the same row.
+
+  Build pure helper functions: parse_traceparent validates W3C format and rejects zero IDs,
+  returning (trace_id, span_id) or ("", ""). strip_cache_hit_suffix removes _cache_hit[timestamp]
+  suffix. Converters: _int rejects booleans, _to_ms multiplies seconds to milliseconds,
+  _json serializes with default=str, _cache_tokens extracts from OpenAI or Anthropic fields,
+  _find_traceparent searches custom then proxy headers case-insensitive, _request_tags
+  returns list or empty, _session_id returns explicit/metadata/trace session_id or empty,
+  _is_trace_ingest checks call_type prefix.
+
+  Implement is_lens_analysis returning current flag, lens_analysis context manager setting
+  True. Implement ensure_schema forwarding to ClickHouseStorage.ensure_schema with retention
+  parameters. Define SPEND_LOGS_TABLE constant.
+scope:
+  paths:
+    - crates/betterlite-logging/src/clickhouse.rs
+    - crates/betterlite-logging/src/clickhouse/**
+    - crates/betterlite-config/src/sections/clickhouse_spend_logging.rs
+    - crates/betterlite-config/src/sections/clickhouse_spend_logging/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L28-L32
+    why: clickhouse_storage_from_env reads CLICKHOUSE_DATABASE and CLICKHOUSE_URL from environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L38-L49
+    why: ClickHouseBatchLogger.__init__ initializes storage, row tracking and parent batch logger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L51-L53
+    why: start() creates the periodic flush task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L62-L68
+    why: periodic_flush waits for interval or stop signal, drains on timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L74-L79
+    why: enqueue extends log_queue and kicks off early flush if batch is full.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L81-L90
+    why: flush_queue swaps queue under lock, batches and inserts, preserving new arrivals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L95-L117
+    why: _insert calls storage.insert_rows, requeues failed batches, drops after max retries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L32-L33
+    why: strip_cache_hit_suffix removes trailing _cache_hit[timestamp].
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L36-L43
+    why: parse_traceparent validates W3C format and rejects zero ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L46-L47
+    why: _to_ms converts seconds to milliseconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L50-L51
+    why: _int rejects booleans and returns 0 for non-integers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L54-L57
+    why: _json serializes with default=str or returns empty string for None/empty.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L60-L61
+    why: _json_mapping wraps dict(mapping) in _json.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L64-L74
+    why: _find_traceparent searches custom headers then proxy request headers for traceparent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L77-L86
+    why: _cache_tokens extracts cache_read and cache_write from OpenAI or Anthropic fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L89-L92
+    why: _request_tags returns list of string tags or empty list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L95-L98
+    why: _session_id returns explicit, metadata, or trace session id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L101-L103
+    why: _is_trace_ingest rejects /v1/traces calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L106-L150
+    why: spend_log_row_from_payload projects StandardLoggingPayload to SpendLogRecord.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L156-L160
+    why: ClickHouseSpendLogger async success/failure callbacks both call _log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L162-L170
+    why: _log enqueues projected rows; ignores /v1/traces and catches exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/context.py#L9-L10
+    why: is_lens_analysis returns current Lens context state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/context.py#L13-L19
+    why: lens_analysis context manager sets and resets Lens flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/schema.py#L10-L11
+    why: ensure_schema forwards to storage.ensure_schema with retention parameters.
+dod:
+  - text: ClickHouseBatchLogger reads CLICKHOUSE_DATABASE (default "litellm") and CLICKHOUSE_URL (default "") via clickhouse_storage_from_env when no storage is injected.
+    proof: [clickhouse-env-defaults]
+  - text: ClickHouseBatchLogger uses CLICKHOUSE_BATCH_SIZE (default 10,000), CLICKHOUSE_FLUSH_INTERVAL_SECONDS (default 1.0), CLICKHOUSE_MAX_BUFFERED_ROWS (default 200,000) and CLICKHOUSE_MAX_RETRIES (default 3) from environment or constants.
+    proof: [clickhouse-env-defaults]
+  - text: periodic_flush waits for CLICKHOUSE_FLUSH_INTERVAL_SECONDS timeout or stop signal, then calls flush_queue.
+    proof: [clickhouse-tests]
+  - text: enqueue extends log_queue and creates an early flush task when queue size reaches batch_size.
+    proof: [clickhouse-tests]
+  - text: flush_queue swaps queue under lock, preserves new arrivals that arrive during insert, and batches rows into CLICKHOUSE_BATCH_SIZE chunks.
+    proof: [clickhouse-tests]
+  - text: _insert calls storage.insert_rows with table and batch; on failure increments attempt counter, requeues batch at front on retry, and drops batch after CLICKHOUSE_MAX_RETRIES attempts with error log.
+    proof: [clickhouse-tests]
+  - text: strip_cache_hit_suffix removes trailing _cache_hit[timestamp] suffix from request id.
+    proof: [clickhouse-tests]
+  - text: parse_traceparent validates W3C format (version-traceid-parentid-flags), returns (trace_id, span_id) or ("", "") if invalid, absent or contains zero ids.
+    proof: [clickhouse-tests]
+  - text: _to_ms converts seconds to milliseconds as integer or returns None for non-numeric input.
+    proof: [clickhouse-tests]
+  - text: _int rejects boolean values and non-integers, returning 0 for invalid input.
+    proof: [clickhouse-tests]
+  - text: _json serializes objects with default=str, returns empty string for None or empty string input.
+    proof: [clickhouse-tests]
+  - text: _find_traceparent searches custom_headers then proxy request headers for case-insensitive traceparent.
+    proof: [clickhouse-tests]
+  - text: _cache_tokens returns (cache_read, cache_write) from OpenAI prompt_tokens_details or Anthropic usage fields.
+    proof: [clickhouse-tests]
+  - text: _request_tags returns list of stringified request tags or empty list.
+    proof: [clickhouse-tests]
+  - text: _session_id returns explicit session_id, metadata session_id, payload trace_id, or empty string in that priority.
+    proof: [clickhouse-tests]
+  - text: _is_trace_ingest returns True when call_type starts with "/v1/traces".
+    proof: [clickhouse-tests]
+  - text: spend_log_row_from_payload projects StandardLoggingPayload to SpendLogRecord with trace context, cache tokens and redacted messages when turn_off_message_logging is True.
+    proof: [clickhouse-tests]
+  - text: ClickHouseSpendLogger both async_log_success_event and async_log_failure_event call _log.
+    proof: [clickhouse-tests]
+  - text: _log ignores /v1/traces calls and catches exceptions without raising to callback.
+    proof: [clickhouse-tests]
+  - text: is_lens_analysis returns current Lens context flag.
+    proof: [clickhouse-tests]
+  - text: lens_analysis context manager sets flag to True, resets on exit in finally block.
+    proof: [clickhouse-tests]
+  - text: ensure_schema forwards trace_retention_days and spend_log_retention_days to storage.ensure_schema.
+    proof: [clickhouse-tests]
+checks:
+  optional: []
+  commands:
+    - id: clickhouse-env-defaults
+      why: environment defaults do not match pinned LiteLLM constants
+      run: >-
+        grep -q "CLICKHOUSE_BATCH_SIZE.*10.?000" ../betterlite-worktrees/litellm/litellm/constants.py &&
+        grep -q "CLICKHOUSE_FLUSH_INTERVAL_SECONDS.*1\\.0" ../betterlite-worktrees/litellm/litellm/constants.py &&
+        grep -q "CLICKHOUSE_MAX_RETRIES.*3" ../betterlite-worktrees/litellm/litellm/constants.py &&
+        grep -q "CLICKHOUSE_MAX_BUFFERED_ROWS.*200.?000" ../betterlite-worktrees/litellm/litellm/constants.py
+    - id: clickhouse-tests
+      why: clickhouse tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^clickhouse_logging::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: Spend values are float throughout the pipeline, matching LiteLLM's SpendLogRecord.spend type.
+    why: Repository rules specify Decimal for monetary values in typical cases, but LiteLLM's traced spend projection uses float and SpendLogRecord declares float type; matching the wire contract preserves user-visible behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L131
+  - what: The batch logger does not enforce a hard 200,000-row queue capacity; fullness is an advisory backpressure signal only.
+    why: The fullness check is present in Python but not enforced to drop arrivals during normal enqueue; producers that check it can send 429 backpressure, but enqueue itself does not reject.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L70-L72
+  - what: Session ID falls back to trace ID from the payload when an explicit session_id is not present.
+    why: The spend logger mirrors the proxy's _get_session_id_for_spend_log helper, which prefers explicit session_id, then request_metadata.session_id, then payload trace_id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L95-L98
+  - what: Cache token fields use OpenAI prompt_tokens_details.cached_tokens first, then Anthropic cache_read_input_tokens as fallback.
+    why: Cache behavior differs across providers; this dual lookup preserves that difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L77-L87
+out_of_scope:
+  - "ClickHouseStorage.__init__, insert_rows, ensure_schema: native Rust bridge boundary."
+  - "SpendLogRecord data contract: shared record type across tracing/spend consumers."
+  - "Callback dispatch and registration: owned by B189's callback registry task."
+  - "TraceReceiver.start for schema setup calls: owned by the tracing receiver task."
+  - "Lens inference request routing: owned by proxy integration tasks."
+pitfalls:
+  - enqueue never awaits ClickHouse; producers must handle backpressure via is_full signaling, not queue blocking.
+  - flush_queue swaps the entire queue under lock before batching, ensuring new arrivals enqueued during insert are preserved at the end.
+  - Failed batches are requeued at the front; the queue is not cleared or reordered after insertion failure.
+  - _cache_hit suffix is _cache_hit[timestamp] with floating-point seconds; the regex must handle decimal points.
+  - parse_traceparent requires exact W3C format match; leading/trailing whitespace is stripped but missing segments invalidate the whole header.
+  - Cache token extraction tries OpenAI's nested prompt_tokens_details.cached_tokens first, then Anthropic's cache_read_input_tokens; neither is required, both default to 0.
+  - Request tags list may contain non-string items; _request_tags coerces each to str().
+  - Messages and response are redacted only when litellm.turn_off_message_logging is True, not based on any per-request flag.
+  - Traceparent is searched in custom headers, then proxy request headers, both case-insensitive on header name only (value is matched case-sensitively after lower()).
+  - _is_trace_ingest checks call_type string prefix, not exact match; "/v1/traces/span" would match and be ignored.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

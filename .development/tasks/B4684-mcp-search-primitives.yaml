@@ -98,5 +98,5 @@ oracle_cases:
   - tools/oracle/cases/mcp-search/tool-identity.yaml
   - tools/oracle/cases/mcp-search/empty-query.yaml
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

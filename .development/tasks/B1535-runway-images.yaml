@@ -81,5 +81,5 @@ pitfalls:
   - A dictionary output member lacking both url and b64_json still contributes an image entry and a charge.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

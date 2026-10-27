@@ -209,5 +209,5 @@ pitfalls:
 - Tool definition extraction is recursive over both dicts and lists to find all string values, including deeply nested schema descriptions.
 review_level: standard
 budget:
-  max_changed_lines: 1150
+  max_changed_lines: 1500
   max_new_expects: 0

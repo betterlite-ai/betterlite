@@ -1,0 +1,199 @@
+id: B3017
+title: Resolve session budget agents and proxy limit errors
+description: >-
+  Extract the read-only agent lookup and rate-limit error context into lower services consumed by the session hook.
+
+  Build betterlite-auth::agent_service with `get_agent_by_id(registry: &AgentRegistry, id: &str) -> Option<AgentRef>`
+  checking exact ID first, then legacy ID mapping. Accept an injected registry view carrying a list of agent entries
+  (agent_id, litellm_params) plus a separate legacy_id_map: HashMap<String, String>.
+
+  Add betterlite-auth::provider_resolution module with `resolve_rate_limit_provider(model: Option<&str>) -> (String, String)`
+  that attempts `B174::get_llm_provider(model)` first, falls back to router `model_list` alias scanning for deployments
+  matching `litellm_params.model`, and defensively returns the model unchanged (or empty) with "litellm_proxy" provider
+  when both fail. Preserve the resolution order: native provider → router alias → fallback, never raising secondary
+  exceptions out of the rate-limit raise path. Split the fallback into two explicit cases: when model is empty/None
+  returns ("", "litellm_proxy"); when model is given but both lookups fail returns (model, "litellm_proxy").
+
+  Extend betterlite-error with a new module rate_limit containing `ProxyRateLimitError` combining `HTTPException`
+  (status 429, stringified headers) and `B184::RateLimitError` (category, rate_limit_type, model, llm_provider).
+  Add `_coerce_message(detail: &dyn Any) -> String` that stringifies error objects by attempting JSON serialization,
+  extracting "error" or "message" keys from mappings, and falling back to Display when JSON fails.
+
+  Use betterlite-server state to access the optional router for alias resolution. Never depend on agent feature assembly or
+  the v3 rate limiter policy; inject the agent registry and router as dependencies. The ProxyRateLimitError Prometheus
+  exception_class_name stays "HTTPException" to preserve existing dashboard labels.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/agent.rs
+    - crates/betterlite-auth/src/agent/**
+    - crates/betterlite-auth/src/provider_resolution.rs
+    - crates/betterlite-auth/src/provider_resolution/**
+    - crates/betterlite-error/src/rate_limit.rs
+    - crates/betterlite-error/src/rate_limit/**
+    - crates/betterlite-server/src/state.rs
+    - tools/oracle/cases/rate-limit/**
+    - tools/oracle/helpers/b3017.py
+    - tools/oracle/helpers/b3017/**
+    - tools/oracle/src/helpers/auth/b3017.rs
+    - tools/oracle/src/helpers/auth/b3017/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L921-L943
+    why: >-
+      AgentRegistry.get_agent_by_id iterates agent_list checking agent.agent_id first,
+      then translates via config_agent_legacy_ids and checks again. AgentResponse has no legacy_id field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L428
+    why: AgentRegistry carries config_agent_legacy_ids as a registry-level mapping, not a per-entry field
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L14-L50
+    why: >-
+      resolve_llm_provider_for_rate_limit with three-step resolution:
+      litellm.get_llm_provider first, then _resolve_provider_from_router_alias,
+      then fallback preserving the original model string with "litellm_proxy" provider
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L44-L76
+    why: >-
+      Two explicit fallback cases: empty/None model returns ("", "litellm_proxy");
+      non-empty model with both lookups failing returns (original_model, "litellm_proxy")
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L78-L119
+    why: >-
+      _resolve_provider_from_router_alias scans router.model_list for deployment
+      where deployment.get("model_name") == model, extracts deployment["litellm_params"]["model"],
+      calls litellm.get_llm_provider on it, returns (resolved_model, custom_llm_provider) or None on any exception
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L69-L86
+    why: >-
+      _coerce_message(detail) checks None → "", str → str, Mapping with "error"/"message" keys,
+      falls back to JSON dump, then str() when JSON fails
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L101-L193
+    why: >-
+      ProxyRateLimitError.__init__ with detail, headers, category, rate_limit_type, model, llm_provider;
+      initializes HTTPException first (status_code=429, stringified headers),
+      then RateLimitError with message from _coerce_message, preserves headers and detail in both classes
+
+dod:
+  - text: >-
+      Agent lookup with get_agent_by_id checks exact ID first (agent.agent_id == id),
+      then legacy ID mapping (registry.legacy_id_map.get(id)), returning None when both miss.
+    proof: [agent-tests]
+  - text: >-
+      Agent registry is accepted as a read-only view carrying a list of agent entries
+      (agent_id, litellm_params) and a separate legacy_id_map, never mutating the registry.
+    proof: [agent-tests]
+  - text: >-
+      resolve_rate_limit_provider tries B174::get_llm_provider(model) first,
+      returns (resolved_model or original, custom_llm_provider) when it succeeds.
+    proof: [provider-resolver-tests]
+  - text: >-
+      On get_llm_provider exception, _resolve_provider_from_router_alias scans router.model_list,
+      iterates dictionaries checking deployment["model_name"] == model,
+      extracts deployment["litellm_params"]["model"], calls get_llm_provider on it,
+      returns (resolved_model or underlying, custom_llm_provider) when both calls succeed.
+    proof: [provider-resolver-tests]
+  - text: >-
+      Alias resolution returns None gracefully when router is None, model_list is empty,
+      deployment is not a dict, litellm_params is missing/not a dict, underlying_model is not a string,
+      or any underlying get_llm_provider call raises.
+    proof: [provider-resolver-tests]
+  - text: >-
+      When model is empty/None, resolve_rate_limit_provider returns ("", "litellm_proxy")
+      and never raises secondary exceptions out of the rate-limit path.
+    proof: [provider-resolver-empty, provider-resolver-tests]
+  - text: >-
+      When model is given but both get_llm_provider and alias resolution fail,
+      resolve_rate_limit_provider returns (model, "litellm_proxy") preserving
+      the original model string unchanged.
+    proof: [provider-resolver-fallback, provider-resolver-tests]
+  - text: >-
+      _coerce_message(detail) returns "" for None, passes through str,
+      extracts "error" or "message" from Mapping, recursively checks inner Mapping for "message",
+      falls back to serde_json::to_string, then to Display::to_string.
+    proof: [rate-limit-error-tests]
+  - text: >-
+      ProxyRateLimitError is a 429 that passes both isinstance(e, RateLimitError) and isinstance(e, axum::response::IntoResponse) checks.
+    proof: [oracle, rate-limit-error-tests]
+  - text: >-
+      ProxyRateLimitError::new(detail, headers, category, rate_limit_type, model, llm_provider)
+      initializes HTTPException first with status_code=429 and stringified headers,
+      then RateLimitError with message, category, rate_limit_type, preserving headers and detail in both.
+    proof: [rate-limit-error-tests]
+  - text: >-
+      ProxyRateLimitError default llm_provider is "litellm_proxy"; default model is "";
+      headers are stringified dict or None.
+    proof: [rate-limit-error-tests]
+  - text: Every oracle case for rate limit errors matches LiteLLM's status code, headers and message coercion.
+    proof: [oracle, rate-limit-error-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: agent-tests
+      why: agent service tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent::)'
+    - id: provider-resolver-tests
+      why: provider resolver tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::)'
+    - id: provider-resolver-empty
+      why: empty/None model fallback case test does not exist or fails
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::.*empty/)'
+    - id: provider-resolver-fallback
+      why: model-preserved fallback case test does not exist or fails
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::.*model_preserved/)'
+    - id: rate-limit-error-tests
+      why: rate limit error tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^rate_limit::)'
+
+oracle_cases:
+  - tools/oracle/cases/rate-limit/agent-exact-id.yaml
+  - tools/oracle/cases/rate-limit/agent-legacy-id.yaml
+  - tools/oracle/cases/rate-limit/agent-not-found.yaml
+  - tools/oracle/cases/rate-limit/provider-native-resolution.yaml
+  - tools/oracle/cases/rate-limit/provider-router-alias.yaml
+  - tools/oracle/cases/rate-limit/provider-fallback-empty.yaml
+  - tools/oracle/cases/rate-limit/provider-fallback-model-preserved.yaml
+  - tools/oracle/cases/rate-limit/error-string-detail.yaml
+  - tools/oracle/cases/rate-limit/error-map-detail.yaml
+  - tools/oracle/cases/rate-limit/error-with-category.yaml
+  - tools/oracle/cases/rate-limit/error-with-rate-limit-type.yaml
+
+deviations:
+  - what: >-
+      Agent registry is accepted as a read-only injected view,
+      not as a mutable registry with DB access or cache population.
+    why: >-
+      Registry mutation, database reads and startup population are responsibilities of B141 (agent feature owner).
+      B3017 consumes an already-populated registry snapshot to support rate-limit context in session hooks.
+
+out_of_scope:
+  - Agent registry mutation, database loading or cache population (B141).
+  - Agent route definitions, dispatch or pre-call hook assembly (B141).
+  - Rate limiter policy, admission decisions or v3 limiter internals (B072).
+  - The full rate limiter implementations that call ProxyRateLimitError (B3007, B072).
+  - The other LiteLLM rate limiter utility functions convert_priority_to_percent and map_v3_rate_limit_type.
+
+pitfalls:
+  - >-
+    Agent ID lookups must check exact ID equality before attempting legacy ID lookup.
+    LiteLLM iterates agent.agent_id == id first, then tries legacy mapping; reversing this breaks compatibility.
+  - >-
+    Router alias resolution must catch all exceptions (including from model_list iteration and inner get_llm_provider calls)
+    and return None rather than panicking, so secondary exceptions never escape the rate-limit raise path.
+  - >-
+    Each router alias resolution step (is router.model_list a list, is deployment a dict, does it have model_name,
+    is litellm_params a dict) must be guarded; a malformed deployment entry must not crash the whole resolution.
+  - >-
+    Header values in ProxyRateLimitError must be stringified to satisfy axum's typing,
+    while preserving the exact header names and values the limiter passed in.
+  - >-
+    _coerce_message must try JSON serialization and catch serialization failures gracefully,
+    falling back to Display::to_string for objects that cannot JSON-serialize.
+  - >-
+    ProxyRateLimitError defaults for missing/None arguments (model → "", llm_provider → "litellm_proxy")
+    must match LiteLLM's so downstream Prometheus labels and error categorization are consistent.
+  - >-
+    The two fallback cases must be explicit: empty/None model returns ("", "litellm_proxy");
+    non-empty model with both lookups failing preserves the original model string and returns (model, "litellm_proxy").
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

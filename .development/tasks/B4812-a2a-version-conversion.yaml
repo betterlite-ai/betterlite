@@ -1,0 +1,123 @@
+id: B4812
+title: A2A request, response and card version conversion
+description: >-
+  Build the best-effort 0.3/1.0 conversion layer for JSON-RPC replies, stream events, forwarded task requests and extended cards. Detect wire-format versions at runtime from payload shape, convert between the two protocol versions for responses and requests, and retain the original value on unknown shapes or conversion failures.
+
+  Implement version detection functions that infer whether a payload carries 0.3 format (discriminated by `kind` field) or 1.0 format (protobuf JSON with envelope keys like `message`, `task`, `statusUpdate`, `artifactUpdate`). Build conversion functions for JSON-RPC responses (send results), stream events, task objects, task lists, and agent cards. For request parameters, implement 0.3-downconversion from 1.0 when LiteLLM serves 1.0 to agents expecting 0.3; support seven task method variants plus tasks/list. On any conversion failure, return the input unchanged so a conversion bug never breaks an otherwise-valid response.
+
+  The module uses a best-effort pattern: conversion failures are caught, logged at debug level and the original payload is returned. Card downgrade drops `additionalInterfaces` to prevent the conversion from re-exposing backend authentication. Request ID extraction handles string and integer wire values. Task state enum mapping translates protobuf enum names to 0.3 wire strings by dropping the `TASK_STATE_` prefix, replacing underscores with dashes and validating against the 0.3 enum's allowed values.
+
+scope:
+  paths:
+    - crates/betterlite-a2a/src/version_convert.rs
+    - crates/betterlite-a2a/src/version_convert/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L43-L45
+    why: _dump_03 helper for pydantic model serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L48-L54
+    why: _best_effort best-effort conversion pattern.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L57-L71
+    why: normalize_jsonrpc_response for JSON-RPC response conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L74-L85
+    why: normalize_stream_event for streamed event conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L88-L101
+    why: normalize_request_params for request downconversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L104-L115
+    why: _detect_card_version shape detection using protocolVersion and supportedInterfaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L118-L130
+    why: normalize_agent_card card conversion with additionalInterfaces stripping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L133-L134
+    why: _as_request_id extraction of string/int request identifiers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L137-L150
+    why: _convert_result dispatch by method name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L153-L158
+    why: _detect_send_version shape detection for send results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L161-L197
+    why: _convert_send_result and _send_result_to send message response conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L200-L204
+    why: _convert_task task object conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L207-L235
+    why: _detect_list_tasks_version, _convert_list_tasks_result, _list_tasks_result_to for task list handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L238-L254
+    why: _task_to task object conversion with core/compat projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L257-L296
+    why: _detect_stream_version, _convert_stream_result and _stream_result_to for stream event conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L299-L317
+    why: _convert_agent_card card conversion with additionalInterfaces removal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L320-L338
+    why: _validate_message_or_task and _validate_stream_event pydantic model validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L341-L452
+    why: _lower_request_params, _lower_list_tasks_params, _proto_task_state_name_to_0_3, _flatten_create_push_notification_params and _parse helper functions for 1.0-to-0.3 request downconversion.
+dod:
+  - text: Version detection for JSON-RPC responses, stream events, send results and task lists distinguishes 0.3 (kind field) from 1.0 (envelope keys) format.
+    proof: [version-conversion-tests]
+  - text: normalize_jsonrpc_response converts a JSON-RPC result to target version, passing through errors and non-dict results unchanged.
+    proof: [version-conversion-tests]
+  - text: normalize_stream_event converts a streamed event result to target version, passing through errors and non-dict results unchanged.
+    proof: [version-conversion-tests]
+  - text: normalize_request_params down-converts 1.0 request parameters to 0.3 when served version is 1.0; no-op when already 0.3.
+    proof: [version-conversion-tests]
+  - text: normalize_agent_card converts an agent card to target version, detecting version from protocolVersion field or supportedInterfaces presence.
+    proof: [version-conversion-tests]
+  - text: Card downgrade to 0.3 strips additionalInterfaces to prevent re-exposing backend URLs; upgrade to 1.0 keeps all fields.
+    proof: [version-conversion-tests]
+  - text: Send result conversion handles both 0.3 (kind field) and 1.0 (message/task envelope) formats; fails gracefully on conversion errors.
+    proof: [version-conversion-tests]
+  - text: Task list conversion infers version from the first item, preserves non-dict items, and fails the whole list if a typed item fails.
+    proof: [version-conversion-tests]
+  - text: Request parameter lowering supports tasks/get, tasks/cancel, tasks/resubscribe, tasks/pushNotificationConfig/set, /get, /list, /delete, and tasks/list methods.
+    proof: [version-conversion-tests]
+  - text: Task state enum mapping drops TASK_STATE_ prefix, replaces underscores with dashes and validates against 0.3 enum values; unmapped states drop the status field.
+    proof: [version-conversion-tests]
+  - text: The create_push_notification_params flattening merges nested config/pushNotificationConfig and parent/configId fields for proto compatibility.
+    proof: [version-conversion-tests]
+  - text: On conversion failure, the original payload is returned unchanged and logged at debug level.
+    proof: [version-conversion-tests]
+  - text: Request ID extraction accepts string and integer values; non-string-int values become None.
+    proof: [version-conversion-tests]
+checks:
+  optional: []
+  commands:
+    - id: version-conversion-tests
+      why: version conversion behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^version_conversion::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Wire format detection infers version from payload shape at runtime instead of relying on a stored version tag. 0.3 payloads carry a `kind` field; 1.0 payloads use protobuf JSON with envelope keys like `message`, `task`, `statusUpdate`, `artifactUpdate`.
+    why: Payloads may arrive in either format from upstream agents; version detection happens at the conversion boundary, not when storing or routing the card.
+  - what: >-
+      Conversion failures are caught broadly, logged at debug level and the original payload is returned. This best-effort pattern prevents a conversion bug from breaking an otherwise-valid response.
+    why: The proxy sits between clients and agents; a conversion failure should not destroy data that could be useful to troubleshoot the real problem.
+  - what: >-
+      Card downgrade to 0.3 strips additionalInterfaces after successful conversion; a failed best-effort conversion retains the original card unchanged.
+    why: additionalInterfaces may expose backend authentication URLs that the LiteLLM-fronting merge in B4811 deliberately removes; a failed conversion returns the input as-is so the caller can decide whether to serve it.
+  - what: >-
+      Task state enum mapping validates the converted state against 0.3's enum values; an unmapped or unspecified state drops the status field from the lowered parameters instead of passing an unknown value.
+    why: The 0.3 enum has a fixed set of valid values; sending an invalid state to an agent expecting 0.3 would be rejected, so omitting it is safer than inventing a fallback.
+out_of_scope:
+  - The A2A SDK protobuf conversions (to_core_*, to_compat_*, pb2_v10 types, MessageToDict, ParseDict), sourced from the a2a crate's own compat module.
+  - HTTP request/response I/O and routing decisions; conversion functions receive already-parsed JSON dicts.
+  - URL sanitization on the response path; the eventual route owner (B142) retains responsibility for rewriting stored URLs before serving to clients.
+pitfalls:
+  - >-
+    Version detection for send results checks for `kind` field (0.3) or intersection with {message, task} keys (1.0). For stream events, the envelope key set includes statusUpdate and artifactUpdate. Empty dicts or dicts with no envelope keys return None (unknown version).
+  - >-
+    Card version detection uses `protocolVersion` as the authoritative indicator; only when absent or unrecognized does it fall back to checking for `supportedInterfaces` (1.0-only field). Cards with neither signal are treated as 0.3.
+  - >-
+    Request ID extraction handles string and integer JSON values; null, object and array request IDs become None. The bare string representation is used in protobuf wrappers even for integer IDs.
+  - >-
+    The create_push_notification_params flattening handles both 1.x shapes: `{config: {...}}` and `{pushNotificationConfig: {...}}`, and extracts taskId from a parent field like `"tasks/TASK-ID/config"`.
+  - >-
+    Task list conversion preserves non-dict items unchanged; only dict items are converted. If the version detection finds no suitable first item, no conversion happens.
+  - >-
+    The proto task state name mapping handles the UNSPECIFIED sentinel by returning None; the result is validated against the 0.3 enum's allowed values, and unrecognized names also return None.
+  - >-
+    Card downgrade must use best-effort conversion: the additionalInterfaces removal happens after successful conversion, but a failed conversion returns the original card, preventing data loss.
+  - >-
+    Stream event validation dispatches on `kind` field: "task" → Task, "status-update" → TaskStatusUpdateEvent, "artifact-update" → TaskArtifactUpdateEvent, otherwise Message.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

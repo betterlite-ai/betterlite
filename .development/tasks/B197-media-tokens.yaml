@@ -33,7 +33,7 @@ scope:
   - tools/oracle/helpers/media_tokens.py
   - tools/oracle/helpers/media_tokens/**
   - tools/oracle/cases/helpers/media-tokens/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/media_tokens-*"
   lint_tables: false
 references:
 - url: >-
@@ -93,8 +93,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'media_tokens' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/media_tokens-*")" &&
+      grep -lq 'media_tokens' tools/oracle/fuzz/corpus/helper_case/media_tokens-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -127,11 +127,12 @@ out_of_scope:
 - >-
   All image header/resize/tile primitives 134-329 are B258; source 343-690 and 954-1051 belong to B195/B196/B259.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/media_tokens-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as media_tokens in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/media_tokens.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/media_tokens.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Several image formats expose dimensions in headers without needing full decoding.
 - Python floors intermediate resize results; rounding only at the end changes tile boundaries.
 - A caller-selected fallback token count is distinct from swallowing every parse failure.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

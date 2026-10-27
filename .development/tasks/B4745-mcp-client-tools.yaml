@@ -1,0 +1,158 @@
+id: B4745
+title: MCP client tool listing and execution
+description: >-
+  Build the client-facing list and call operations with their different failure
+  policies and progress forwarding. Preserve `raise_on_error` logging levels and
+  propagation, cancellation, and optional `InputRequiredResult` acceptance
+  without retrying an executed tool.
+
+  Implement MCPClient.list_tools to use the B4740 pagination helper with a
+  per-server listing deadline that extends the global timeout, returning an empty
+  list on error by default or re-raising when the caller owns the exception.
+  Distinguish debug-level logs when raise_on_error=True (caller will surface the
+  failure) from error-level logs when False (this is the only error surface).
+  Detect broken-connection errors by substring and log a separate diagnostic.
+  CancelledError always propagates without recovery attempt.
+
+  Implement the error_tool_result static method to return the result type that
+  call_tool uses when swallowing an exception. It constructs the result by calling
+  the unresolved error_text_result helper. Manager call sites at
+  mcp_server_manager.py:6031,6287 also invoke this directly.
+
+  Implement MCPClient.call_tool with a nested on_progress callback that logs tool
+  progress and forwards to a host callback if provided, catching and warning on
+  callback failure without failing the tool. The nested _call_tool_operation
+  invokes the session runner with allow_input_required. Both exception and
+  success paths log at the tool level, with the same raise_on_error-dependent
+  logging strategy as list_tools: debug when the caller owns the exception,
+  error when this layer is the only surface. Return error_tool_result on exception
+  or the session result on success.
+
+  Cancel-timed-out messages follow the self.timeout deadline, not the tool
+  request itself. Trace exception types to detect broken-connection patterns and
+  log a separate diagnostic; traceback appears only at debug level.
+
+  All error messages and exception types remain betterlite's own; the oracle
+  ignores only /error/message. Progress callback failure does not affect the tool
+  result. An InputRequiredResult accepted through allow_input_required=True is
+  returned as is, and re-execution does not retry the same tool invocation.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/client/tools.rs
+    - crates/betterlite-mcp/src/client/tools/**
+    - crates/betterlite-mcp/src/client/tools/tests.rs
+    - tools/oracle/helpers/b4745.py
+    - tools/oracle/helpers/b4745/**
+    - tools/oracle/src/helpers/mcp/b4745.rs
+    - tools/oracle/src/helpers/mcp/b4745/**
+    - crates/betterlite-mcp/src/client/tools/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L871
+    why: list_tools implementation, raise_on_error logging levels, cancellation handling, broken-stream detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L873-L876
+    why: error_tool_result static method and delegation to error_text_result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L878-L958
+    why: call_tool implementation, on_progress callback, _call_tool_operation session runner, exception handling, cancellation timeout, broken-connection detection, raise_on_error behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/result_conversion.py#L60-L64
+    why: Unresolved error_text_result helper that constructs the error result from exception type and message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6031
+    why: Direct invocation of MCPClient.error_tool_result in OBO retry path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6287
+    why: Direct invocation of MCPClient.error_tool_result in multi-server dispatch path.
+
+dod:
+  - text: >-
+      list_tools returns an empty list when raise_on_error=False and an exception
+      occurs, or re-raises when raise_on_error=True, while logging at the
+      correct level (debug when caller owns, error when this layer is the only
+      surface) and detecting broken-connection errors.
+    proof: [list-tools-behavior-tests, oracle-mcp-client-tools]
+
+  - text: >-
+      call_tool accepts InputRequiredResult when allow_input_required=True, forwards
+      progress to a host callback with warning-only callback failure, returns an
+      error result on exception or the session result on success, with
+      raise_on_error-dependent logging and broken-connection detection.
+    proof: [call-tool-behavior-tests, oracle-mcp-client-tools]
+
+  - text: >-
+      error_tool_result constructs the result type using the unresolved
+      error_text_result helper and is invoked directly by manager call sites.
+    proof: [error-tool-result-tests, oracle-mcp-client-tools]
+
+  - text: >-
+      CancelledError and timeout messages propagate without recovery, logging only
+      the timeout context, not a trace.
+    proof: [call-tool-cancellation-tests, oracle-mcp-client-tools]
+
+checks:
+  optional: []
+  commands:
+    - id: list-tools-behavior-tests
+      why: list_tools error handling, logging levels, and broken-connection detection are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::tools::list_tools_tests::/)
+        - test(/replays_the_/)'
+    - id: call-tool-behavior-tests
+      why: call_tool progress callback, error result, logging levels, and cancellation are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::tools::call_tool_tests::/)
+        - test(/replays_the_/)'
+    - id: error-tool-result-tests
+      why: error_tool_result construction and manager invocation points are missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::tools::error_tool_result_tests::/)
+        - test(/replays_the_/)'
+    - id: call-tool-cancellation-tests
+      why: Cancellation and timeout handling do not propagate correctly or log unexpectedly.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::tools::cancellation_tests::/)
+        - test(/replays_the_/)'
+    - id: oracle-mcp-client-tools
+      why: The HTTP oracle does not replay list_tools and call_tool behavior with real or scripted MCP peers.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-client-tools)" &&
+        test -f tools/oracle/cases/helpers/mcp-client-tools/*.yaml &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-client-tools/list-tools-empty-catalog.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/list-tools-partial-on-deadline.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/list-tools-raise-on-error.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/list-tools-broken-connection-detection.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-success.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-error-result.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-input-required-accepted.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-input-required-rejected.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-progress-forwarding.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-progress-callback-failure.yaml
+  - tools/oracle/cases/helpers/mcp-client-tools/call-tool-cancellation.yaml
+
+deviations:
+  - what: >-
+      On CancelledError, the tool call log message names the context (timeout
+      after X seconds for URL) but does not propagate the full traceback to the
+      caller.
+    why: >-
+      Cancellation is an expected control flow signal, not a failure to surface
+      with a full stack trace. The timeout context helps operators understand why
+      the request did not complete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L925-L927
+
+out_of_scope:
+  - >-
+      error_text_result (litellm/proxy/_experimental/mcp_server/result_conversion.py:60-64)
+      is called by error_tool_result but is not owned by any task in depends_on. Its owner
+      is pending resolution of B136 (umbrella, unsplit). This helper must be available
+      and owned by a lower task before error_tool_result can build and pass tests.
+
+pitfalls:
+  - The max(self.timeout, MCP_TOOL_LISTING_TIMEOUT) deadline applies to the entire list walk, not each page, so a slow cursor replacement can consume the deadline before pagination completes.
+  - Progress callback failure logs a warning but does not propagate as a tool error; the tool result stands.
+  - Broken-connection detection uses substring matching on exception type names; ensure the pinned SDK exception types match the patterns used in list_tools and call_tool.
+  - "raise_on_error distinguishes two failure paths: when True, this layer logs at debug because the caller will surface the exception; when False, it logs at error because this is the only error surface."
+  - InputRequiredResult acceptance depends on allow_input_required=True and the upstream MCP protocol version; it is not retried as a separate tool invocation.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

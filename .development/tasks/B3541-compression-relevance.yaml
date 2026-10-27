@@ -73,6 +73,6 @@ pitfalls:
   - Caching parameter is set to `true` only when DualCache instance is not None; missing cache instance means caching=false.
   - Min-max normalization with zero range (all scores equal) returns all zeros, not the equal value (different from keeping the original).
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

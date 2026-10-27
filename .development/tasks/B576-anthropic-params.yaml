@@ -314,6 +314,6 @@ pitfalls:
 - The two max-token spellings overwrite in input order, rather than assigning a fixed preferred spelling.
 - reasoning_effort=none removes the whole output_config, including a structured-output format.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

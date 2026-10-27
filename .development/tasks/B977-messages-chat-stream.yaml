@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/messages_chat_stream.py
   - tools/oracle/cases/sdk-http/messages-chat-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-stream-*
+  - tools/oracle/helpers/b977.py
+  - tools/oracle/helpers/b977/**
+  - tools/oracle/src/helpers/core_ops/b977.rs
+  - tools/oracle/src/helpers/core_ops/b977/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L783-L1011
@@ -105,5 +109,5 @@ pitfalls:
 - The byte view starts with empty hidden params and does not itself implement provider-header forwarding.
 review_level: standard
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0

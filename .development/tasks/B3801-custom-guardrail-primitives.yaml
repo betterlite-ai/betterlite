@@ -1,0 +1,111 @@
+id: B3801
+title: Custom guardrail primitive library
+description: >-
+  Build the catalog of primitives (allow, block, flag, modify, regex, JSON, URL, HTTP, code detection, text utilities) that custom guardrail code calls at runtime.
+  Each primitive is a pure Rust function or async function that returns a typed result; LiteLLM's source provides behavior, defaults and error handling.
+  The primitives dictionary assembles all of them by name for lookup during custom code execution.
+  Preserve the 30-second HTTP timeout default, 60-second maximum, and allow fallback on SSRF validation and timeouts.
+  Keep code-language detection patterns for SQL, Python, JavaScript, TypeScript, Java, Go, Rust, shell, HTML and CSS, with regex errors returning false/empty lists rather than panicking.
+  The JSON schema validator tries the jsonschema crate, falls back to basic validation for type/required/properties, and returns false on any exception.
+  Text utilities are simple: contains, contains_any, contains_all operate case-sensitively; word_count splits on whitespace.
+  HTTP requests use LiteLLM's pooled async client, skip the Host header when validation is on, and thread the validated URL back in.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/primitives.rs
+  - crates/betterlite-guardrails/src/primitives/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L30-L105
+    why: Result types allow, block, flag, modify with their return shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L113-L187
+    why: Regex primitives with re.error handling, including regex_replace returning original text on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L203-L316
+    why: JSON primitives including json_stringify returning empty string on TypeError/ValueError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L328-L386
+    why: URL extraction and validation primitives including all_urls_valid.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L393-L637
+    why: HTTP timeout/method constants, HttpResponseResult TypedDict, and HTTP request primitives with SSRF validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L645-L744
+    why: Code detection including detect_code as bool wrapper over detect_code_languages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L752-L832
+    why: "Text utility primitives: contains, contains_any, contains_all, word count, char count, case and trim."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L840-L895
+    why: "Primitives registry get_custom_code_primitives with http_get and http_post convenience wrappers."
+dod:
+  - text: allow, block, flag, modify return their correct JSON shapes with required and optional fields.
+    proof: [primitives-tests]
+  - text: regex_match, regex_match_all return false on regex errors; regex_find_all returns empty list on error.
+    proof: [primitives-tests]
+  - text: >-
+      regex_replace returns original text unchanged on re.error (invalid regex pattern fallback).
+      Example: regex_replace("text", "[invalid", "x") returns "text" unchanged.
+    proof: [primitives-tests]
+  - text: json_parse returns null on JSONDecodeError or TypeError; json_schema_valid returns false on validation errors.
+    proof: [primitives-tests]
+  - text: >-
+      json_stringify returns empty string "" on TypeError or ValueError (unencodable object fallback).
+      Example: json_stringify({"key": object()}) returns "".
+    proof: [primitives-tests]
+  - text: extract_urls finds URLs; is_valid_url checks scheme and netloc; get_url_domain returns the netloc.
+    proof: [primitives-tests]
+  - text: >-
+      all_urls_valid returns true when text contains no URLs or when all extracted URLs are valid.
+      Example: all_urls_valid("no urls here") returns true; all_urls_valid("https://example.com") returns true.
+    proof: [primitives-tests]
+  - text: http_request validates URLs, clamps timeout to 0.1–60 seconds (default 30), rejects methods outside GET/POST/PUT/DELETE/PATCH, and returns HttpResponseResult with status_code, body (parsed JSON or text), headers and success/error fields.
+    proof: [primitives-tests]
+  - text: http_get and http_post are convenience wrappers; http_get calls http_request with method="GET", http_post with method="POST".
+    proof: [primitives-tests]
+  - text: http_request threads the Host header correctly when SSRF validation is enabled or disabled, using B171's validate_url and async_safe_get.
+    proof: [primitives-tests]
+  - text: >-
+      detect_code returns true when detect_code_languages finds any language, false when none detected.
+      Example: detect_code("def foo(): pass") returns true (Python detected); detect_code("plain text") returns false.
+    proof: [primitives-tests]
+  - text: contains_any returns true if any substring is found; contains_all returns true only if all substrings are found.
+    proof: [primitives-tests]
+  - text: >-
+      Example: contains_any("hello world", ["world", "missing"]) returns true (one match).
+      Example: contains_all("hello world", ["hello", "world"]) returns true; contains_all with ["hello", "missing"] returns false.
+    proof: [primitives-tests]
+  - text: contains, word_count and char_count work correctly; text utilities lower/upper/trim match Python behavior.
+    proof: [primitives-tests]
+  - text: get_custom_code_primitives returns a dict mapping every function name to its callable and includes safe Python builtins.
+    proof: [primitives-tests]
+checks:
+  optional: []
+  commands:
+    - id: primitives-tests
+      why: the primitives module's tests fail, do not exist, or do not cover behavior
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_management_behaviors::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_management_valid::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_custom_code_async::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_management_error::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_text_utilities::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_code_detection::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^primitives_registry::/)'
+oracle_cases: []
+deviations:
+  - what: HTTP timeout defaults to 30 seconds and caps at 60 seconds; LiteLLM has the same bounds.
+    why: Preventing unbounded waits in custom guardrail code is essential for latency.
+  - what: When SSRF validation is enabled, the Host header is stripped from outgoing HTTP requests and the validated host is added back.
+    why: SSRF validation requires separate transport of the host to prevent injection; LiteLLM does the same.
+  - what: Code detection returns false/empty rather than panicking on regex errors.
+    why: Custom guardrail code is untrusted; a malformed pattern from a previous operator must not crash the gateway.
+  - what: URL patterns detect http:// and https:// only; LiteLLM's regex is limited to these schemes.
+    why: Custom guardrails typically check content URLs only; ftp://, file://, gopher:// etc. are out of scope.
+out_of_scope:
+  - "B173 owns get_async_httpx_client and HTTP client pooling. B171 owns async_safe_get, validate_url and SSRFError for safe GET and SSRF validation."
+  - "HTTP body preparation and request execution (B173 pooled client methods)."
+  - "Python builtins beyond len, str, int, float, bool, list, dict, True, False, None."
+  - "Custom guardrail framework initialization and bounded execution (B3802 builds the sandbox for code execution)."
+  - "JSON Schema keywords beyond type, required, properties (fullSchema, additionalProperties, etc.)."
+pitfalls:
+  - regex_replace returns the original text unchanged on re.error, not an empty string or null; it preserves the input.
+  - json_stringify returns empty string on TypeError or ValueError; this is indistinguishable from serializing an empty string, so validate before calling.
+  - all_urls_valid returns true when no URLs are found in the text, not false; empty or non-URL text passes validation.
+  - HTTP requests are async and return HttpResponseResult, never throwing; custom code must check response["success"] and response["error"] to react to failures.
+  - http_get ignores body parameters; use http_request for methods other than GET.
+  - regex_match uses re.search (anywhere in text), while regex_match_all uses re.fullmatch (entire text); patterns must be written differently.
+  - json_parse returns null when parsing fails; code assuming a dict must check type before accessing keys.
+  - Timeout values are clamped to [0.1, 60] seconds, not rejected; values outside the range are silently adjusted.
+  - SSRF validation checks litellm.user_url_validation flag; when disabled, all URLs are allowed and Host headers pass through.
+  - Code detection uses case-insensitive regex with re.MULTILINE; patterns match anywhere in text, not at word boundaries.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

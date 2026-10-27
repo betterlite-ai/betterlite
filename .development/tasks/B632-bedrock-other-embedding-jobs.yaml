@@ -227,6 +227,6 @@ pitfalls:
   region.
 - A Failed job returned with HTTP 200 is a successful status lookup, not a transport exception.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

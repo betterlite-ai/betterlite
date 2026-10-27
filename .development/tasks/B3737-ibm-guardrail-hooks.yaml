@@ -1,0 +1,197 @@
+id: B3737
+title: IBM guardrail lifecycle and examples
+description: >-
+  Implement guardrail hooks that integrate IBM detector results into the proxy
+  request lifecycle across three event points and handle streaming responses.
+  Depend on B3736 for detector clients and status/message construction.
+
+  Implement async_pre_call_hook to call the detector on input messages before
+  sending to the LLM, extract text from multimodal and Responses-API content,
+  batch messages for detector server (one call) or loop for orchestrator (one
+  call per text), and raise ValueError with the violation message when
+  block_on_detection is true and violations are found. Implement
+  async_moderation_hook to run the same detection checks in parallel with the
+  LLM call, supporting the during_call mode without modifying the request.
+  Implement async_post_call_success_hook to check LLM response content,
+  extracting text from ModelResponse.choices, batching or looping per detector
+  mode, raising violations when block_on_detection is true, and detecting when
+  the response has no text content (e.g., tool calls) and skipping the check
+  gracefully. Implement async_post_call_streaming_iterator_hook as a pass-through
+  that yields streaming response items unchanged (the hook exists for compatibility
+  and may be extended by future tasks for response redaction or content modification).
+
+  Both async_pre_call_hook and async_moderation_hook call should_run_guardrail to
+  check if the hook is enabled for the current event type, and add_guardrail_to_applied_guardrails_header
+  to record that the guardrail ran. Post-call hooks do the same for guardrail_intervened
+  or after checking for text content. All hooks call iter_message_text to extract
+  string content from messages, respecting multimodal structures.
+
+  Document the IBM detector integration in docs/ibm-guardrails/README.md,
+  preserving features, configuration parameters (required and optional), API
+  endpoint formats, response shapes, supported event hooks (pre_call, during_call,
+  post_call), error handling, and environment variable usage. Remove Python-specific
+  usage examples (imports, litellm CLI invocations) that do not apply to a Rust
+  gateway, keeping provider-neutral documentation of parameters, response formats,
+  and the distinction between detector-server batching (multiple texts in one
+  request, nested list response) and orchestrator mode (one text per call, flat
+  list response). Carry example_config.yaml showing detector-server and orchestrator
+  configurations with required and optional parameters, and validate that the
+  example parses against the guardrail configuration schema.
+
+  IBM Guardrails has no unique risk (it does not access keys, budgets, or
+  credentials beyond auth_token from configuration or environment). Review level
+  is standard for all hooks and error handling code.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/ibm_hooks.rs
+    - crates/betterlite-guardrails/src/ibm_hooks/**
+    - docs/ibm-guardrails/README.md
+    - docs/ibm-guardrails/example_config.yaml
+    - tools/oracle/cases/helpers/ibm-hooks/**
+    - tools/oracle/fuzz/corpus/helper_case/ibm-hooks-*
+    - tools/oracle/helpers/b3737.py
+    - tools/oracle/helpers/b3737/**
+    - tools/oracle/src/helpers/guardrails/b3737.rs
+    - tools/oracle/src/helpers/guardrails/b3737/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L413-L482
+    why: async_pre_call_hook calls detector on input, raises violations when block_on_detection is true, and adds guardrail to header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L484-L551
+    why: async_moderation_hook runs detection in parallel, using the same logic as pre_call for during_call event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L553-L645
+    why: async_post_call_success_hook checks ModelResponse.choices for text, handles tool-call responses without text, and raises violations on detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L647-L661
+    why: async_post_call_streaming_iterator_hook yields streaming items unchanged as a pass-through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L672-L677
+    why: get_supported_event_hooks class method returning [pre_call, post_call, during_call] in that order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/README.md
+    why: Integration documentation, supported event hooks, configuration fields, examples and API endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/example_config.yaml
+    why: YAML configuration examples for detector server and orchestrator modes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py#L137-L146
+    why: iter_message_text extracts text from multimodal messages and Responses-API content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+    why: add_guardrail_to_applied_guardrails_header adds guardrail tracking to request data.
+
+dod:
+  - text: >-
+      async_pre_call_hook extracts message text, calls detector server with
+      batched messages or orchestrator one per text, and raises ValueError with
+      violation message when block_on_detection is true and violations found.
+    proof: [pre-call-behaviors, ibm-hooks-oracle]
+  - text: >-
+      async_moderation_hook calls should_run_guardrail and runs the same
+      detection logic as pre_call, recording guardrail_intervened status
+      without modifying the request data.
+    proof: [during-call-behaviors, ibm-hooks-oracle]
+  - text: >-
+      async_post_call_success_hook extracts text from ModelResponse.choices,
+      skips gracefully when no text content is present (e.g., tool calls),
+      and raises violations when block_on_detection is true.
+    proof: [post-call-behaviors, ibm-hooks-oracle]
+  - text: >-
+      async_post_call_streaming_iterator_hook yields streaming items unchanged;
+      it is a pass-through that does not modify response content.
+    proof: [streaming-behaviors]
+  - text: >-
+      All four hooks call should_run_guardrail to respect event_hook configuration
+      and call add_guardrail_to_applied_guardrails_header to record guardrail application.
+    proof: [hook-configuration-tests, ibm-hooks-oracle]
+  - text: >-
+      should_run_guardrail returns false when the hook is not enabled for the
+      current event type, and all hooks respect this decision.
+    proof: [hook-configuration-tests, ibm-hooks-oracle]
+  - text: >-
+      get_config_model returns the configuration model for the guardrail,
+      and get_supported_event_hooks returns [pre_call, post_call, during_call]
+      in that exact order.
+    proof: [class-method-tests, hook-configuration-tests]
+  - text: >-
+      Documentation at docs/ibm-guardrails/README.md covers features,
+      configuration parameters, API endpoints, response formats, supported event
+      hooks, error handling and environment variables, with Python-specific usage
+      examples removed. Example YAML configuration at docs/ibm-guardrails/example_config.yaml
+      documents detector-server and orchestrator modes.
+    proof: [docs-present, example-config-loads]
+  - text: >-
+      Example configuration file validates against the guardrail schema and
+      parses into the configuration model.
+    proof: [example-config-loads]
+
+checks:
+  optional: []
+  commands:
+    - id: pre-call-behaviors
+      why: Pre-call hook text extraction, detector calls, violation handling or header recording absent or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::pre_call::tests::/) - test(/replays_the_/)'
+    - id: during-call-behaviors
+      why: During-call hook event type checking, detector calls or status logging absent or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::during_call::tests::/) - test(/replays_the_/)'
+    - id: post-call-behaviors
+      why: Post-call hook response parsing, text extraction, empty-response handling or violations absent or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::post_call::tests::/) - test(/replays_the_/)'
+    - id: streaming-behaviors
+      why: Streaming iterator hook tests missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::streaming::tests::/) - test(/replays_the_/)'
+    - id: hook-configuration-tests
+      why: Hook event type checking, should_run_guardrail, get_config_model, get_supported_event_hooks or header recording absent or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::config::tests::/) - test(/replays_the_/)'
+    - id: class-method-tests
+      why: Class methods get_config_model or get_supported_event_hooks absent or return wrong values
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::class_methods::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails
+      run: test -f tools/oracle/helpers/b3737.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ibm-hooks-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ibm-hooks-*")" && grep -rlq "ibm_hooks" tools/oracle/fuzz/corpus/helper_case/ibm-hooks-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: ibm-hooks-oracle
+      why: Oracle cases exercising all event hooks, violations and error handling are missing or fail
+      run: test -d tools/oracle/cases/helpers/ibm-hooks && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/ibm-hooks)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/ibm-hooks
+    - id: docs-present
+      why: Configuration documentation or examples missing from docs/ibm-guardrails/
+      run: test -f docs/ibm-guardrails/README.md && test -f docs/ibm-guardrails/example_config.yaml
+    - id: example-config-loads
+      why: Example YAML does not validate or parse correctly
+      run: test -f docs/ibm-guardrails/example_config.yaml && cargo run --locked -p betterlite-config --quiet -- validate docs/ibm-guardrails/example_config.yaml
+
+oracle_cases:
+  - tools/oracle/cases/helpers/ibm-hooks/pre-call-detector-server-batch.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/pre-call-orchestrator-loop.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/pre-call-violations-raise.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/pre-call-block-disabled-no-raise.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/pre-call-not-enabled-skip.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/during-call-violations-raise.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/during-call-block-disabled-no-raise.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/post-call-text-from-choices.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/post-call-no-text-skip.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/post-call-violations-raise.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/streaming-pass-through.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/guardrail-header-recorded.yaml
+  - tools/oracle/cases/helpers/ibm-hooks/should-run-guardrail-checks-mode.yaml
+
+deviations: []
+
+out_of_scope:
+  - "Detector HTTP clients, score filtering, status projection and violation message construction: owned by B3736 (_call_detector_server, _call_orchestrator, _filter_detections_by_threshold, both _create_error_message_* methods)."
+  - "CustomGuardrail base class, decorator contract and should_run_guardrail gating: owned by framework (U1)."
+  - "Text extraction utility iter_message_text: inherited from framework utility (U1)."
+  - "Applied-guardrails header helper add_guardrail_to_applied_guardrails_header: owned by callback utilities (U3)."
+  - "Configuration parsing and environment resolution: owned by configuration crate (U4)."
+  - "ModelResponse and streaming response types: owned by wire format."
+
+pitfalls:
+  - "Detector server batches all input texts in one request returning nested lists (one per input text); orchestrator processes each text one at a time with flat list response. Hook code path must use the correct response shape for each mode via is_detector_server flag."
+  - "Post-call hook must check isinstance(choice, litellm.Choices) and choice.message.content is a string before extracting text; empty content (tool calls, etc.) is gracefully skipped to avoid sending empty/non-string content to IBM detector."
+  - "All hooks must call should_run_guardrail to respect event_hook configuration; returning false stops hook execution before any detector call. All hooks add guardrail name to applied_guardrails header unconditionally, even if should_run_guardrail returns false or no violations found."
+  - "ValueError is raised with the exact message format from B3736's _create_error_message_* constructors; message construction differs between detector server (per-message grouping) and orchestrator (flat list) modes."
+  - "Streaming iterator hook is a pass-through that yields items unchanged; it remains callable through dispatch even when never invoked, so it is not a dead-code candidate."
+  - "block_on_detection is set at initialization; when false, violations are detected but ValueError is not raised; hook returns normally without modification."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

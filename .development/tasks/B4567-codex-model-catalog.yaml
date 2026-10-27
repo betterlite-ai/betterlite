@@ -1,0 +1,181 @@
+id: B4567
+title: Codex catalog projection and fallback instructions
+description: >-
+  Build the codex_catalog module for betterlite-management-cli, translating LiteLLM's
+  catalog projection to Rust. The module builds a Codex model_catalog_json that
+  preserves installed metadata for known models, filters upgrade targets to served
+  models only, and supplies fallback metadata plus base_instructions for unknown models.
+  The catalog is built from the proxy's chat model listing and stock models from
+  installed Codex, then serialized to JSON. A model the installed Codex knows keeps its
+  full metadata from `codex debug models` output, but only the proxy decides priority
+  (enumeration order), visibility, supported_in_api flag, and whether an upgrade target
+  is listed (filtering to served models only). A model Codex does not know gets a
+  fallback CodexModel entry with standard defaults plus the base_instructions asset so
+  the agent always runs with a system prompt. An empty chat catalog returns None instead
+  of an empty JSON object since Codex refuses an empty catalog. The base_instructions
+  asset provides the fallback system prompt across all Codex versions, matching what
+  Codex itself uses for unknown models.
+scope:
+  paths:
+    - tools/management-cli/src/codex_catalog.rs
+    - tools/management-cli/src/codex_catalog/tests.rs
+    - tools/management-cli/src/codex_base_instructions.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L393-L507
+    why: The complete catalog code with model classes, catalog entry builder and main catalog function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L393-L427
+    why: CodexTruncationPolicy and CodexModel classes defining fallback metadata schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L429-L458
+    why: Stock model classes and catalog containers preserving Codex release schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L460-L478
+    why: codex_catalog_entry builder dispatching on stock model availability and filtering upgrades.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L481-L505
+    why: codex_model_catalog orchestration filtering chat models, building served set and final catalog JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_base_instructions.md#L1-L275
+    why: The bundled base_instructions asset used for fallback metadata on unknown models.
+dod:
+  - text: >-
+      CodexTruncationPolicy struct has mode="bytes" default and limit=10000 default;
+      CodexModel struct has all fields including slug, display_name, priority,
+      context_window, base_instructions with proper defaults matching Codex fallback behavior.
+    proof: [catalog-schemas]
+  - text: >-
+      StockCodexUpgrade and StockCodexModel structs preserve Codex schema with serde
+      default and unknown field handling so fields from future Codex versions ride
+      along untouched.
+    proof: [stock-schema-passthrough]
+  - text: >-
+      codex_catalog_entry returns a CodexModel for unknown models (stock is None)
+      with slug, display_name, priority, context_window, base_instructions fields set
+      from the listed model and provided instructions.
+    proof: [unknown-model-entry]
+  - text: >-
+      codex_catalog_entry returns a modified stock model for known models, overwriting
+      priority, visibility, supported_in_api, and upgrade fields while preserving all
+      other stock fields untouched.
+    proof: [known-model-entry]
+  - text: >-
+      codex_catalog_entry filters the stock model's upgrade field to None unless the
+      upgrade target model slug is in the served frozenset, preventing upgrades to
+      unavailable models.
+    proof: [upgrade-filtering]
+  - text: >-
+      codex_model_catalog returns None if there are no chat models (empty catalog),
+      never an empty JSON object {"models": []}.
+    proof: [empty-catalog-none]
+  - text: >-
+      codex_model_catalog filters input models to only chat models where mode is None
+      or in ["chat", "responses"], excluding all other modes.
+    proof: [chat-filtering]
+  - text: >-
+      codex_model_catalog builds a frozenset of served model IDs from chat-mode models,
+      used to filter upgrade targets so only accessible models can be upgrade destinations.
+    proof: [served-set]
+  - text: >-
+      codex_model_catalog indexes stock models by slug to determine which proxy models
+      have known Codex metadata, returning None for unknown models via get().
+    proof: [stock-lookup]
+  - text: >-
+      codex_model_catalog returns the final catalog as JSON string via serde serialization.
+    proof: [json-serialization]
+  - text: >-
+      Priority is assigned by enumeration index in the models sequence, so first chat
+      model gets priority 0, second gets priority 1, preserving input order in the
+      output catalog.
+    proof: [priority-enumeration]
+  - text: >-
+      codex_base_instructions.md exists and is non-empty, providing the fallback system
+      prompt asset bundled at build time for unknown models.
+    proof: [base-instructions-asset]
+checks:
+  optional: []
+  commands:
+    - id: catalog-schemas
+      why: CodexTruncationPolicy or CodexModel do not have correct defaults or fields
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::schema_/)'
+    - id: stock-schema-passthrough
+      why: Stock model structs do not preserve unknown fields or schema matches LiteLLM
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::stock_schema_/)'
+    - id: unknown-model-entry
+      why: codex_catalog_entry does not create fallback entry for unknown models correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::unknown_model_/)'
+    - id: known-model-entry
+      why: codex_catalog_entry does not copy and modify stock models correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::known_model_/)'
+    - id: upgrade-filtering
+      why: Upgrade filtering does not check if upgrade target is in served models
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::upgrade_filter_/)'
+    - id: empty-catalog-none
+      why: codex_model_catalog does not return None for empty chat models
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::empty_catalog_/)'
+    - id: chat-filtering
+      why: codex_model_catalog does not filter to chat-mode models correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::chat_filter_/)'
+    - id: served-set
+      why: Served models set is not built correctly from chat model IDs
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::served_set_/)'
+    - id: stock-lookup
+      why: Stock models are not indexed by slug for efficient lookup
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::stock_lookup_/)'
+    - id: json-serialization
+      why: Final catalog is not serialized to JSON correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::json_serialize_/)'
+    - id: priority-enumeration
+      why: Priority is not assigned by enumeration index or order is not preserved
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::priority_enum_/)'
+    - id: base-instructions-asset
+      why: codex_base_instructions.md does not exist or is empty
+      run: test -f tools/management-cli/src/codex_base_instructions.md && test -s tools/management-cli/src/codex_base_instructions.md
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Model sync and discovery from the proxy. The models argument comes from B4566's
+    fetch_model_listing or elsewhere in the sync path; this module consumes a pre-fetched
+    list.
+  - Stock model fetch from installed Codex. The stock argument is built by B4568's
+    stock_codex_models function from Codex's debug output.
+  - Codex executable or process launching. The catalog JSON is written to disk and
+    passed as environment variable by callers in B4568.
+  - The chat_models filter function and ListedModel type. Those are owned and defined
+    by B4566.
+pitfalls:
+  - >-
+    StockCodexModel and StockCodexCatalog must preserve all fields from the installed
+    Codex version, including those added in newer releases. Use serde(flatten) or
+    equivalent to allow extra fields so one catalog parses on all Codex versions;
+    strict schema matching causes validation errors on older versions that do not
+    provide defaults.
+  - >-
+    CodexModel must define every field required by Codex since model_catalog_json was
+    added (0.105.0) so one catalog parses on all Codex versions. Missing fields cause
+    validation errors when the catalog is loaded by older Codex versions.
+  - >-
+    An empty chat_models list returns None, never Some({"models": []}). Codex rejects
+    an empty model list and this is the correct behavior when no chat models are served.
+  - >-
+    Priority is assigned by enumerate index starting from 0, so models[0] gets priority
+    0 and models[n] gets priority n. The priority determines the order in Codex's model
+    picker. Do not remap or sort after building.
+  - >-
+    The upgrade field is conditional: stock models keep their upgrade only when the
+    target model slug is in the served frozenset. A known model with an upgrade pointing
+    to an unavailable model has upgrade set to None. Filtering ensures the agent can
+    only upgrade to a model that exists on the proxy.
+  - >-
+    Stock is a sequence that may not be ordered or unique by slug. If two stock models
+    have the same slug (from corrupted Codex output), the index-based lookup returns
+    the first match and others are overwritten during iteration. This is not an error;
+    the catalog processes the first occurrence.
+  - >-
+    The instructions argument is the same for all fallback models, provided at catalog
+    build time from codex_base_instructions.md. A model's prior context_window does not
+    affect which instructions it receives; all unknown models get the same fallback text.
+  - >-
+    The served frozenset is built from chat_models IDs, so it includes only models in
+    the chat list, not all input models. Upgrade targets are checked against this set
+    so non-chat models cannot be upgrade destinations.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

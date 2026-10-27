@@ -147,7 +147,6 @@ scope:
   - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-bedrock/fixtures/whitelisted_bedrock_models.txt
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/bedrock_provider.rs
   - tools/oracle/src/helpers/provider/bedrock_provider/**
@@ -499,6 +498,6 @@ pitfalls:
 - Legacy aws_bedrock_client credential extraction removes the optional client before it can fail.
 - Native Messages treats explicit converse as a bridge request before checking whether the model contains claude.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -23,10 +23,8 @@ description: >-
   205 behavioral tests, 110 oracle bridges, 80 fuzz/replay and 45 wiring lines (690 total).
 scope:
   paths:
-    - crates/betterlite-openai/src/lib.rs
     - crates/betterlite-openai/src/aleph_alpha.rs
     - crates/betterlite-openai/src/aleph_alpha/**
-    - crates/betterlite-openai/src/error.rs
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/aleph_reply.rs
     - crates/betterlite-openai/fuzz/corpus/aleph_reply/**
@@ -83,5 +81,5 @@ pitfalls:
   - Usage reads only choices[0], so summing every returned completion changes billed tokens.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0

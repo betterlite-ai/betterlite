@@ -110,6 +110,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-info/**
+    - tools/oracle/helpers/b778.py
+    - tools/oracle/helpers/b778/**
+    - tools/oracle/src/helpers/server/b778.rs
+    - tools/oracle/src/helpers/server/b778/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4178-L4491
@@ -263,6 +267,6 @@ pitfalls:
   - A successful aliases-only v2 response has key null, not the resolved token list.
   - Adding a non-null guard to the user_id equality check changes source authorization for ownerless keys.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

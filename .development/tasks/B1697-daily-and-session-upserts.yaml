@@ -121,6 +121,6 @@ pitfalls:
   - A turn at the stored last timestamp is in order, while an older turn still adds spend and tokens.
   - Daily upserts do not update model_group on conflict, despite replacing that field in PTU sentinel upserts.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

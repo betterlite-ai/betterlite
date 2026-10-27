@@ -1,0 +1,120 @@
+id: B3516
+title: Sandbox result records and E2B execution
+description: >-
+  Build crates/betterlite-models with shared sandbox ContainerHandle and CodeExecutionResult records,
+  a capped line reader for 10 MiB output, and crates/betterlite-provider with the E2B sandbox provider
+  over the pooled HTTP client. E2B containers are created with POST /sandboxes, executed via HTTPS
+  Jupyter endpoints returning NDJSON, and deleted with DELETE /sandboxes/{id}; preserve hidden access
+  tokens in the handle, the inability to execute without them, delete-404 returning false, and the first
+  error/execution-count record. Ordered stdout/stderr concatenation comes from parsing type-tagged
+  NDJSON lines and extracting messages in encounter order. The 10 MiB cap counts UTF-8 line bytes
+  excluding separators and fuzz the NDJSON decoder.
+  Defaults: API base https://api.e2b.app, template code-interpreter-v1, domain e2b.app, Jupyter
+  port 49999, timeout 300 seconds, secure true, internet access true. Credentials come from E2B_API_KEY
+  environment variable through the injected config lookup supplied by B002; full secret-manager lookup
+  remains unresolved. Every call through AsyncHTTPHandler from betterlite-http, no separate HTTP stack.
+scope:
+  paths:
+    - crates/betterlite-models/src/sandbox.rs
+    - crates/betterlite-models/src/sandbox/**
+    - crates/betterlite-provider/src/e2b.rs
+    - crates/betterlite-provider/src/e2b/**
+    - crates/betterlite-provider/fuzz/fuzz_targets/sandbox_ndjson.rs
+    - crates/betterlite-provider/fuzz/corpus/sandbox_ndjson/**
+    - tools/oracle/cases/sandbox/**
+    - tools/oracle/helpers/b3516.py
+    - tools/oracle/helpers/b3516/**
+    - tools/oracle/src/helpers/models/b3516.rs
+    - tools/oracle/src/helpers/models/b3516/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L1-L93
+    why: Base record types ContainerHandle and CodeExecutionResult, SANDBOX_MAX_OUTPUT_BYTES constant, BaseSandboxConfig trait with _read_capped_lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L1-L188
+    why: Complete E2B provider implementation, API endpoints, NDJSON parsing, header handling and container management.
+  - url: https://docs.e2b.dev/api
+    why: E2B REST API documentation for sandbox creation, execution and deletion.
+dod:
+  - text: >-
+      ContainerHandle record carries id, provider, domain and _hidden_params (access tokens, API key, base URL).
+      CodeExecutionResult carries stdout, stderr, results list, error dict, execution_count and object="code_execution".
+    proof: [models-tests]
+  - text: The _read_capped_lines function stops reading when cumulative UTF-8 byte count exceeds 10 MiB and raises with the 10 MiB value in the message.
+    proof: [models-tests]
+  - text: E2B validate_environment requires E2B_API_KEY and raises with that variable name if missing.
+    proof: [e2b-tests]
+  - text: >-
+      E2B acreate_sandbox POSTs to {api_base}/sandboxes with templateID, timeout, secure, allow_internet_access and metadata,
+      stores envdAccessToken and trafficAccessToken as hidden_params, defaults to https://api.e2b.app and 300 seconds.
+    proof: [e2b-oracle]
+  - text: E2B arun_code requires envdAccessToken in handle._hidden_params and raises with a message naming ContainerHandle.
+    proof: [e2b-tests]
+  - text: >-
+      E2B arun_code POSTs to https://{JUPYTER_PORT}-{id}.{domain}/execute with X-Access-Token and conditional
+      E2B-Traffic-Access-Token headers, streams response, parses NDJSON, and returns CodeExecutionResult with first error
+      (name/value/traceback fields) and first execution_count.
+    proof: [e2b-tests, e2b-oracle]
+  - text: E2B adelete_sandbox returns false on 404 HTTPStatusError, otherwise true on 2xx, with or without stored credentials.
+    proof: [e2b-tests, e2b-oracle]
+  - text: stdout and stderr are concatenated in encounter order from type-tagged NDJSON messages; results are dicts from result-type messages minus the type field.
+    proof: [e2b-tests]
+  - text: The NDJSON parser handles malformed JSON gracefully, extracts only valid JSON objects, filters by type field and iterates once per encounter.
+    proof: [e2b-tests]
+  - text: >-
+      The sandbox NDJSON decoder has a cargo-fuzz target at crates/betterlite-provider/fuzz/fuzz_targets/sandbox_ndjson.rs,
+      seeded with oracle case response bodies, and replays_the_sandbox_ndjson_corpus parses every file without a panic.
+    proof: [e2b-fuzz-corpus]
+  - text: Every mutant in CodeExecutionResult field assignment and error/count extraction is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: models-tests
+      why: the models crate tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^sandbox/)'
+    - id: e2b-tests
+      why: the E2B provider tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^e2b::/')
+    - id: e2b-fuzz-corpus
+      why: the sandbox NDJSON fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/sandbox_ndjson.rs && test -n "$(ls -A crates/betterlite-provider/fuzz/corpus/sandbox_ndjson)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_sandbox_ndjson_corpus)'
+    - id: e2b-oracle
+      why: E2B sandbox cases do not match LiteLLM on client response or provider requests
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/
+oracle_cases:
+  - tools/oracle/cases/sandbox/e2b-create.yaml
+  - tools/oracle/cases/sandbox/e2b-run.yaml
+  - tools/oracle/cases/sandbox/e2b-run-env-vars.yaml
+  - tools/oracle/cases/sandbox/e2b-run-without-token.yaml
+  - tools/oracle/cases/sandbox/e2b-delete.yaml
+  - tools/oracle/cases/sandbox/e2b-delete-404.yaml
+deviations:
+  - what: E2B access tokens are stored in handle._hidden_params and never appear in logs or error messages.
+    why: They are credentials required to execute code on a running sandbox; leaking them is a security issue.
+  - what: betterlite rejects execution from a bare sandbox ID, while LiteLLM's e2b module also requires the handle from creation.
+    why: The hidden tokens returned at creation time are the only way to reach the Jupyter endpoint; a bare ID cannot work.
+  - what: >-
+      When E2B_API_KEY is missing and not available from os.environ, betterlite raises with a message about E2B_API_KEY,
+      whereas LiteLLM attempts get_secret_str("E2B_API_KEY") to consult its configured secret manager.
+    why: Full secret-manager dispatch is unresolved; betterlite uses only the env var lookup supplied by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L42-L46
+  - what: >-
+      When acreate_sandbox is called with metadata, betterlite drops it (metadata is not listed in the function signature),
+      whereas LiteLLM forwards it into the sandbox-creation POST body under the metadata key.
+    why: Sandbox metadata is beyond the scope of this task; only template, timeout, secure and allow_internet_access are supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L48-L69
+out_of_scope:
+  - E2B metadata or other sandbox options beyond template, timeout, secure and allow_internet_access.
+  - Retries, timeouts, and connection pooling; those come from AsyncHTTPHandler in betterlite-http (B173).
+  - Environment variable expansion or secret-manager full dispatch (get_secret_str beyond os.environ/); needs the unresolved B129 leaf.
+  - The four unused BaseSandboxConfig raise-only methods; no provider calls them and they do not enter production.
+pitfalls:
+  - The 10 MiB limit is on UTF-8 byte count of each line, not the total response. Accumulate per line and reject when exceeding the limit mid-read.
+  - E2B NDJSON parsing uses Python's strip() logic (whitespace removal). Nested functions _try_parse and of_type operate on the messages tuple after filtering out unparseable lines; do not add them as separate passes.
+  - delete_sandbox accepts either a ContainerHandle or a bare string ID; when given a string, construct a minimal handle with no hidden params, so deletion without stored credentials falls back to the parameter arguments.
+  - cargo fuzz init writes a fuzz/.gitignore that ignores corpus/. Drop that line, since the corpus is committed and replayed.
+  - The fuzz crate is its own workspace and runs on nightly. The replay test runs on the pinned stable toolchain and calls the parser directly.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

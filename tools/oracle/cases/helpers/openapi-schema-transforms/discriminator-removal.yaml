@@ -1,0 +1,32 @@
+kind: helper
+name: discriminator-removal
+call:
+  openapi_schema_transforms:
+    function: inline_request_body
+    example: {model: luna, questions: [{type: predicate, name: refund}]}
+    schema:
+      type: object
+      required: [model, questions]
+      properties:
+        model: {type: string}
+        questions:
+          type: array
+          items:
+            oneOf: [{"$ref": "#/$defs/Choice"}, {"$ref": "#/$defs/Predicate"}]
+            discriminator:
+              propertyName: type
+              mapping: {choice: "#/$defs/Choice", predicate: "#/$defs/Predicate"}
+        loose: {discriminator: {mapping: {a: {"$ref": "#/$defs/Predicate"}}}}
+      "$defs":
+        Choice:
+          type: object
+          title: Choice
+          properties: {type: {const: choice}, choices: {type: array, items: {type: string}}}
+        Predicate:
+          type: object
+          title: Predicate
+          description: shared
+          properties: {type: {const: predicate}, name: {type: string}}
+env: {}
+compare:
+  ignore: []

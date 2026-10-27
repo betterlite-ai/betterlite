@@ -1,14 +1,14 @@
 id: B3890
 milestone: M7 observability
 title: Carried budget snapshot records for metrics
-status: todo
+status: done
 depends_on: []
 file: tasks/B3890-metrics-budget-snapshots.yaml
 covers:
   - "litellm/types/proxy/carried_budget_state.py"
 parent: B111
 split_from: B111
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 207

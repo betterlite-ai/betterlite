@@ -38,6 +38,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/signup_defaults/**
     - tools/oracle/cases/management/signup-defaults/**
     - tools/oracle/fuzz/corpus/http_case/signup-defaults-*
+    - tools/oracle/helpers/b1657.py
+    - tools/oracle/helpers/b1657/**
+    - tools/oracle/src/helpers/server/b1657.rs
+    - tools/oracle/src/helpers/server/b1657/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L852-L998
@@ -79,6 +83,6 @@ pitfalls:
   - Object-team budget updates run before the shared store_model_in_db guard, so disabled storage can still leave team budgets changed.
   - organization_id="" is supplied and must be checked, while teams=[] deliberately avoids the team existence query.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

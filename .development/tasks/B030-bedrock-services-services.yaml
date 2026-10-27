@@ -258,6 +258,6 @@ pitfalls:
 - Native S3 file support does not create the enterprise managed_files hook.
 - A database alone cannot satisfy the managed batch runner guard.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

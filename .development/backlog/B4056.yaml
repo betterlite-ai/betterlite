@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Bitbucket prompt compilation and initialization
 status: todo
 depends_on: [B4050, B4055]
-file: null
+file: tasks/B4056-bitbucket-prompt-compilation.yaml
 covers:
   - "litellm/integrations/bitbucket/{bitbucket_prompt_manager,__init__}.py"
 parent: B117

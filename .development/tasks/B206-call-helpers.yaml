@@ -36,7 +36,7 @@ scope:
   - tools/oracle/helpers/call_helpers.py
   - tools/oracle/helpers/call_helpers/**
   - tools/oracle/cases/helpers/call-helpers/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/call_helpers-*"
   - crates/betterlite-config/**
   lint_tables: false
 references:
@@ -85,8 +85,8 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'call_helpers' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/call_helpers-*")"
+      && grep -lq 'call_helpers' tools/oracle/fuzz/corpus/helper_case/call_helpers-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-yaml-corpus
@@ -125,11 +125,12 @@ out_of_scope:
   pure typed projections. safe_deep_copy,filter_exceptions_from_params,independent_snapshot,filter_internal_params
   belong to B2204 below provider and core callers; B166 owns Python wrapper object classification.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/call_helpers-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as call_helpers in the models group. Replace the stub Op in tools/oracle/src/helpers/models/call_helpers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_helpers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A typed source exception is retained inside Rust even when omitted from a serializable logging projection.
 - Do not let a request set the proxy-stamped OAuth or budget reservation markers.
 - Provider headers are broadly forwarded with prefixing; an allowlist would wrongly drop rate-limit and vendor metadata.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

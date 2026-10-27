@@ -292,6 +292,6 @@ pitfalls:
 - The raw URL substring selector can choose /models/chat/completions even when the hostname predicate would reject
   that base.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

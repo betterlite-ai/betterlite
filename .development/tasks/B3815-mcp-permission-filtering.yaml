@@ -1,0 +1,109 @@
+id: B3815
+title: Filter end-user MCP tools and check registered server references
+description: >-
+  Build two guardrails that filter MCP tool access. The end-user permission guardrail restricts tool definitions to the end user's direct MCP servers and access groups from their object_permission; it defaults on and passes through when no restrictions exist. The security guardrail validates that MCP servers referenced in litellm_proxy URLs are registered on the gateway; it defaults to alert (not block) and only blocks when on_violation is literally "block".
+
+  The end-user guardrail runs on request input only (pre_call), using the same cached get_end_user_object path that auth already uses so no extra database round-trip occurs when the cache is warm. Missing end_user_id, missing DB, missing identity, lookup failure and empty permission restrictions all pass through, with a warning on lookup failure. Split MCP tool names at the first hyphen to extract the server name (github-create_issue → github); non-MCP tools and unrecognized formats are kept unchanged.
+
+  The security guardrail extracts server names from tools with type=mcp and litellm_proxy server_url prefix, compares against the registered MCP server manager's registry keys and reports unregistered names sorted alphabetically in HTTP 400 errors when blocking. It defaults off (default_on=false) and defaults to alert behavior unless on_violation is explicitly set to "block". It does not branch on input_type despite its request-only documentation.
+
+  Both guardrails register through initialize_guardrail functions following the existing callback pattern. End-user defaults to on unless the raw guardrail dict explicitly sets default_on to false; the security initializer maps anything except literal on_violation=block to alert. Both use the cached auth lookup from B739; preserve its existing failure boundary and behavior.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/mcp_end_user_permission.rs
+    - crates/betterlite-guardrails/src/mcp_end_user_permission/**
+    - crates/betterlite-guardrails/src/mcp_security.rs
+    - crates/betterlite-guardrails/src/mcp_security/**
+    - tools/oracle/cases/guardrails/mcp_end_user_permission/**
+    - tools/oracle/cases/guardrails/mcp_security/**
+    - tools/oracle/helpers/b3815.py
+    - tools/oracle/helpers/b3815/**
+    - tools/oracle/src/helpers/guardrails/b3815.rs
+    - tools/oracle/src/helpers/guardrails/b3815/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/__init__.py
+    why: Initialize guardrail and register in the callback system, with default_on handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L43-L66
+    why: MCPEndUserPermissionGuardrail init and apply_guardrail entry point for request filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L71-L112
+    why: Tool filtering logic, permission extraction and server name splitting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L118-L199
+    why: End user object resolution, permission handling and MCP server expansion from access groups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L204-L247
+    why: Config model exposure and tool name extraction from both OpenAI and Anthropic tool formats.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/mcp_end_user_permission.py
+    why: Config model type and ui_friendly_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_security/__init__.py
+    why: MCP security guardrail initialization with on_violation handling and registry callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_security/mcp_security_guardrail.py#L24-L72
+    why: Security guardrail constructor, pre_call hook, unregistered server detection and blocking/alerting behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_security/mcp_security_guardrail.py#L74-L110
+    why: MCP server extraction from litellm_proxy URLs and registry lookups.
+dod:
+  - text: MCPEndUserPermissionGuardrail applies to pre_call events only and filters tools on the request side.
+    proof: [mcp-permission-tests]
+  - text: End user ID is resolved from user_api_key_end_user_id in request_data or litellm_metadata, and end user object is fetched through the same cached auth path as B739.
+    proof: [mcp-permission-tests]
+  - text: When no end_user_id, missing DB, lookup failure or empty mcp_servers and mcp_access_groups restrictions exist, all tools pass through unchanged, with a warning logged on lookup failure.
+    proof: [mcp-permission-tests]
+  - text: MCP tool names are split at the first hyphen; tools without a hyphen or non-MCP format are kept unchanged.
+    proof: [mcp-permission-tests]
+  - text: Tools filtered by the end-user guardrail are removed from the request tools list, and a debug message logs removed count and names.
+    proof: [mcp-permission-tests]
+  - text: MCPSecurityGuardrail applies to pre_call events and detects unregistered litellm_proxy MCP server references.
+    proof: [mcp-security-tests]
+  - text: Server names are extracted from tools with type=mcp and server_url starting with LITELLM_PROXY_MCP_SERVER_URL_PREFIX.
+    proof: [mcp-security-tests]
+  - text: Unregistered servers are detected by comparing against MCPServerManager::get_registry keys and reported as HTTP 400 when on_violation=block.
+    proof: [mcp-security-tests]
+  - text: MCPSecurityGuardrail defaults off (default_on=false) unless explicitly enabled in configuration.
+    proof: [mcp-security-tests]
+  - text: When on_violation is alert (default when not explicitly block), a warning is logged instead of raising an exception.
+    proof: [mcp-security-tests]
+  - text: Guardrail initializers register via logging_callback_manager.add_litellm_callback and follow the callback pattern established in B189.
+    proof: [mcp-permission-tests, mcp-security-tests]
+  - text: All behavior from the listed oracle cases matches LiteLLM on tool filtering, permission handling and server validation.
+    proof: [mcp-oracle]
+checks:
+  optional: []
+  commands:
+    - id: mcp-permission-tests
+      why: end-user permission guardrail tests fail, do not exist or have missing behavior cases
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(mcp_end_user_permission::)'
+    - id: mcp-security-tests
+      why: MCP security guardrail tests fail, do not exist or have missing behavior cases
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(mcp_security::)'
+    - id: mcp-oracle
+      why: the listed oracle cases fail or do not exist
+      run: cargo run --locked -p betterlite-oracle -- tools/oracle/cases/guardrails/mcp_end_user_permission/ tools/oracle/cases/guardrails/mcp_security/
+oracle_cases:
+  - tools/oracle/cases/guardrails/mcp_end_user_permission/no-end-user-id.yaml
+  - tools/oracle/cases/guardrails/mcp_end_user_permission/end-user-no-restrictions.yaml
+  - tools/oracle/cases/guardrails/mcp_end_user_permission/end-user-with-direct-servers.yaml
+  - tools/oracle/cases/guardrails/mcp_end_user_permission/end-user-with-access-groups.yaml
+  - tools/oracle/cases/guardrails/mcp_end_user_permission/end-user-mixed-tools.yaml
+  - tools/oracle/cases/guardrails/mcp_end_user_permission/lookup-failure-passes-through.yaml
+  - tools/oracle/cases/guardrails/mcp_security/no-mcp-tools.yaml
+  - tools/oracle/cases/guardrails/mcp_security/registered-servers-allowed.yaml
+  - tools/oracle/cases/guardrails/mcp_security/unregistered-servers-blocked.yaml
+  - tools/oracle/cases/guardrails/mcp_security/unregistered-servers-alert.yaml
+  - tools/oracle/cases/guardrails/mcp_security/mixed-mcp-types.yaml
+deviations: []
+out_of_scope:
+  - Tool permission evaluation at call time (B3813) and response enforcement (B3814).
+  - Access group expansion via MCPRequestHandler._get_mcp_servers_from_access_groups, owned by B4669.
+  - MCP server registry management beyond registry lookups.
+  - Configuration UI and settings exposure beyond the basic config model.
+  - CustomGuardrail base class implementation and callback dispatcher integration (B104 foundation).
+  - Tool name extraction from LiteLLM's lower tool_name_extraction module.
+pitfalls:
+  - The end-user guardrail defaults to on (default_on=true) only when the raw guardrail dict does not explicitly set default_on to false; normalize the None case upfront to avoid confusion with Pydantic's false normalization.
+  - Split MCP tool names at the first hyphen only; names like "my-github-repo-read" must become "my", not traverse multiple hyphens.
+  - Server name extraction from litellm_proxy URLs must check the full prefix and only strip the prefix when the remainder is non-empty to avoid adding an empty string to the set.
+  - The security guardrail maps every on_violation value except literal "block" to "alert"; do not default to "block" at application time if initialization sets it to "alert".
+  - End-user object lookup uses the same cache and failure boundary as auth (B739); preserve the warning on lookup failure and the passthrough on None, do not add new exception handling.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

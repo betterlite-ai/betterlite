@@ -278,6 +278,6 @@ pitfalls:
   passed to reply projection.
 - The embedding stub returns None; it is not a provider error.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

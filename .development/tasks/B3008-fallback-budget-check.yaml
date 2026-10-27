@@ -18,9 +18,12 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - deny.toml
     - crates/betterlite-auth/**
     - tools/oracle/cases/auth/**
+    - tools/oracle/helpers/b3008.py
+    - tools/oracle/helpers/b3008/**
+    - tools/oracle/src/helpers/oracle/b3008.rs
+    - tools/oracle/src/helpers/oracle/b3008/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_budget.py
@@ -125,5 +128,5 @@ pitfalls:
   - UserAPIKeyAuth.spend and user_spend are optional (may be None); use 0.0 as the fallback value when reading them. Do not compare None against a max_budget.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 1

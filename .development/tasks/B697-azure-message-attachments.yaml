@@ -252,6 +252,6 @@ pitfalls:
   inputs.
 - role uses an independent if before the metadata/content/attachments chain; it is still forwarded.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -119,5 +119,5 @@ pitfalls:
 - vertex_ai appears in the cancellation annotation but has no dispatch branch.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1500
   max_new_expects: 0

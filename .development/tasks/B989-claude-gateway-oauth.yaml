@@ -113,23 +113,15 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/claude_gateway_oauth.rs
-  - crates/betterlite-config/src/api/claude_gateway_oauth/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/claude-gateway-oauth-*
   - tools/oracle/cases/api/claude-gateway-oauth/**
   - tools/oracle/fixtures/claude-gateway-oauth/**
+  - crates/betterlite-config/src/sections/claude_gateway_oauth.rs
+  - crates/betterlite-config/src/sections/claude_gateway_oauth/**
+  - tools/oracle/helpers/b989.py
+  - tools/oracle/helpers/b989/**
+  - tools/oracle/src/helpers/server/b989.rs
+  - tools/oracle/src/helpers/server/b989/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L200-L200
@@ -227,7 +219,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::unauthenticated_route_contract($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::claude_gateway_oauth::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/claude-gateway-oauth-*)"
@@ -259,5 +251,5 @@ pitfalls:
   default.
 review_level: security
 budget:
-  max_changed_lines: 460
+  max_changed_lines: 1500
   max_new_expects: 0

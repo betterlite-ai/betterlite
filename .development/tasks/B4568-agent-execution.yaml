@@ -1,0 +1,113 @@
+id: B4568
+title: Agent preparation, catalog validation and execution
+description: >-
+  Build the Codex catalog fetch/write/read-back sequence, stop-hook preparation, and the common launch pipeline.
+  Preserve best-effort model sync: when fetch, write or read-back fails, log a skip reason and launch anyway with the agent's built-in models.
+  User arguments win over sync arguments (sync args come before the user's command).
+  A rejected catalog stays on disk under ~/.codex/litellm-models.json for debugging.
+  pi gets a separate prepare_pi call even when --skip-verify is passed.
+
+  Build prepare_codex, which either installs a routed Stop hook or warns if the Codex config already names one.
+  Call install_statusline_script from B4562 to get the command path; a ClaudeSettingsError becomes AgentRunError.
+  Warn and return an empty tuple if codex_declares_stop_hooks returns true.
+
+  Build codex_model_catalog_path to find ~/.codex/litellm-models.json or $CODEX_HOME/litellm-models.json.
+  Build _replace_file to write the catalog atomically through a temp file in the same directory.
+
+  Build _codex_debug_models, _stock_codex_models and codex_model_sync_args to fetch the proxy's model list, sync it to a file Codex reads, and hand back -c model_catalog_json=... or a skip reason.
+  The command `codex debug models` lists what Codex would launch with (its built-in models plus any catalog override).
+  On Windows, quote the command for cmd.exe.
+  Timeout the debug call at 10 seconds; a timeout or non-zero exit becomes ModelSyncSkipped.
+  Codex releases before 0.130.0 have no debug command; report that the same way.
+
+  Build agent_model_sync_env to dispatch between OpenCode (returns env) and Codex (returns args) and handle --skip-verify by returning a skip reason instead of calling the network.
+
+  Build run_agent to compose everything: verify the proxy key unless --skip-verify, sync models, prepare hooks, build environment, hand off to the agent.
+  On success this function never returns (the process is replaced).
+  Raise AgentRunError for missing binary, unreachable proxy, rejected key, or a failed preflight sync.
+  Warnings for skipped model sync do not block launch.
+  Inject reattach_terminal to restore the controlling terminal if it was lost; call it before handoff.
+
+  Codex catalog writes include the proxy's model_list as fetched from /v1/models, merged with stock Codex models from `codex debug models`, and completed with fallback metadata for unknown models from the asset passed to B4567.
+  The returned JSON file name is litellm-models.json (Codex expects exactly that).
+  A failed read-back (the second `codex debug models` call) skips Codex sync; OpenCode listing never reads back (it is pure env).
+scope:
+  paths:
+    - tools/management-cli/src/agent_run.rs
+    - tools/management-cli/src/agent_run/**
+    - tools/oracle/cases/agents/pi-launch.yaml
+    - tools/oracle/cases/agents/codex-launch.yaml
+    - tools/oracle/cases/agents/opencode-launch.yaml
+    - tools/oracle/helpers/b4568.py
+    - tools/oracle/helpers/b4568/**
+    - tools/oracle/src/helpers/oracle/b4568.rs
+    - tools/oracle/src/helpers/oracle/b4568/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L223-L239
+    why: prepare_codex and its call to install_statusline_script.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L508-L621
+    why: codex_model_catalog_path, _replace_file, _codex_debug_models, _stock_codex_models, codex_model_sync_args.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L624-L650
+    why: agent_model_sync_env dispatch and skip_verify handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L768-L821
+    why: run_agent pipeline, environment composition, handoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L270-L287
+    why: ModelSyncSkipped, ModelSyncArgs, ModelSyncResult, _NO_EXTRA_ENV, _PREPARERS type alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L242-L244
+    why: _Preparer type alias and _PREPARERS mapping of agent name to preparer function.
+dod:
+  - text: prepare_codex calls install_statusline_script and wraps ClaudeSettingsError as AgentRunError, warns if codex_declares_stop_hooks is true, and returns -c hooks.Stop=... flags or empty tuple.
+    proof: [agent-execution-tests]
+  - text: codex_model_catalog_path resolves CODEX_HOME env var or defaults to ~/.codex, returns the litellm-models.json path.
+    proof: [agent-execution-tests]
+  - text: _replace_file writes a file atomically through a temp file in the same directory and cleans up the temp file on OSError.
+    proof: [agent-execution-tests]
+  - text: _codex_debug_models calls codex with (binary, *args, "debug", "models"), quotes for Windows, times out at CODEX_DEBUG_TIMEOUT_SECONDS, and returns stdout on success or ModelSyncSkipped with the error/stderr.
+    proof: [agent-execution-tests]
+  - text: _stock_codex_models parses the JSON catalog from `codex debug models` or returns ModelSyncSkipped with a validation error message.
+    proof: [agent-execution-tests]
+  - text: codex_model_sync_args fetches the proxy's models, reads the instructions asset, merges stock models with proxy models, writes the catalog atomically, reads it back, and returns -c model_catalog_json=... or a skip reason.
+    proof: [agent-execution-tests]
+  - text: agent_model_sync_env dispatches by agent binary name (codex vs opencode), handles --skip-verify by returning skip reason, and returns ModelSyncResult.
+    proof: [agent-execution-tests]
+  - text: run_agent verifies the proxy key before syncing models (unless --skip-verify), prepares hooks, composes environment and args, and calls launcher without returning.
+    proof: [agent-execution-tests, oracle]
+  - text: run_agent handles ModelSyncSkipped by warning and continuing, places sync args before user args, and calls _hand_off with the final command list and environment.
+    proof: [agent-execution-tests, oracle]
+  - text: run_agent raises AgentRunError for missing binary, missing docs links, unreachable proxy, rejected key, and wraps AgentRunError from preparers.
+    proof: [agent-execution-tests]
+  - text: run_agent calls reattach_terminal if provided, just before handoff.
+    proof: [agent-execution-tests]
+  - text: Every oracle case passes with the same agent behavior, environment setup and model catalog sync that LiteLLM shows.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: agent-execution-tests
+      why: tests for agent execution, preparation and catalog sync fail or do not exist
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_run::tests::/)'
+oracle_cases:
+  - tools/oracle/cases/agents/pi-launch.yaml
+  - tools/oracle/cases/agents/codex-launch.yaml
+  - tools/oracle/cases/agents/opencode-launch.yaml
+deviations:
+  - what: The betterlite management CLI runs as a Rust native binary, not a Python process.
+    why: betterlite is a Rust gateway; the CLI must remain compatible as a native executable, not depend on Python.
+  - what: process::replace (or the native equivalent) is called only for the agent binary, never for a proxy process or fallback.
+    why: The betterlite proxy runs out-of-process as a managed child; the CLI does not launch or manage a local gateway.
+out_of_scope:
+  - The banner shown when starting the gateway, and the gateway startup contract. B121 owns the banner; the native launcher replaces the Python invocation with a concrete executable/startup contract.
+  - The HTTPClient for fetching models. B169 (or its leaf) owns the client; this task injects it as an injected requests.get dependency.
+  - Storage of credentials and token refresh. B135 (or its leaf) owns token storage; this task injects it as secrets read through context_secret_vault.
+pitfalls:
+  - _PREPARERS maps binary name (e.g. "codex", "pi") to a preparer function, placed above both prepare_codex and prepare_pi so neither sees the other.
+  - _codex_debug_models must call _windows_command to quote the binary and args for cmd.exe on Windows; the result goes through subprocess.run exactly.
+  - The 10-second timeout on `codex debug models` is CODEX_DEBUG_TIMEOUT_SECONDS; Codex 0.130.0+ prints JSON to stdout; earlier versions have no such command.
+  - catalog read-back calls `codex debug models` a second time with the -c override already in place; a failure skips Codex sync but does not raise.
+  - ModelSyncSkipped.reason becomes a warn() message to the user, not an exception. Best-effort means launch anyway.
+  - run_agent replaces the process and never returns on success; reattach_terminal is the last thing before _hand_off.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

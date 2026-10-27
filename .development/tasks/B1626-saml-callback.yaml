@@ -38,12 +38,15 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/saml_callback.rs
     - crates/betterlite-server/src/saml_callback/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/saml_assertion.rs
     - crates/betterlite-config/src/saml_assertion/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*
     - tools/oracle/cases/sso/saml-callback/**
     - tools/oracle/fixtures/multipart-oracle/saml-callback/**
+    - tools/oracle/helpers/b1626.py
+    - tools/oracle/helpers/b1626/**
+    - tools/oracle/src/helpers/auth/b1626.rs
+    - tools/oracle/src/helpers/auth/b1626/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L70-L95
@@ -93,6 +96,6 @@ pitfalls:
   - The authn-request cache key is not deleted by response binding; assertion-ID consumption, not that key's removal, detects a repeated assertion.
   - A truthy attribute list containing only empty strings stops candidate search and yields no attribute value.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

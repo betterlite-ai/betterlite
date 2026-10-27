@@ -1,0 +1,161 @@
+id: B3813
+title: Enforce tool permissions on complete and streamed model responses
+description: >-
+  Evaluate and rewrite modern tool calls, legacy function calls and Anthropic tool-use blocks
+  in complete responses and buffered streams. Extract tool calls from response choices using
+  extract_response_tools to collect all modern tool_calls and legacy function_call
+  fields, anthropic_to_tool_call to convert Anthropic tool_use content blocks to
+  the unified ChatCompletionMessageToolCall format, and legacy_to_tool_call to
+  synthesize OpenAI-compatible tool calls from legacy function_call objects with stable IDs.
+  Evaluate every extracted tool call through _evaluate_tool_calls, which applies the same
+  permission rules from B3811 and collects only the denied tools, raising a GuardrailRaisedException
+  on the first denial in block mode. Rewrite denied tool calls in place: rewrite_openai_responses
+  removes denied tool_calls and function_call entries from OpenAI responses, appends error messages
+  to choice.message.content, and changes finish_reason from tool_calls or function_call to stop
+  when all tools are removed. For Anthropic responses, rewrite_anthropic_responses
+  removes tool_use blocks, appends error text blocks and changes stop_reason from tool_use to
+  end_turn. Keep all response conversion and rewriting below the streaming hook so the streaming
+  path never depends on a later integration task.
+
+  The async_post_call_success_hook processes complete responses; the streaming_iterator_hook
+  buffers every chunk, detects whether the stream is OpenAI-style (assembled with stream_chunk_builder)
+  or Anthropic SSE (assembled with assemble_anthropic_sse_stream), applies the same evaluation and
+  rewrite helpers, and reconstructs the stream for output. Pass unrecognized non-raw chunks through;
+  block and raise GuardrailRaisedException when an allegedly raw SSE stream is unparseable. The streaming
+  path does not call should_run_guardrail locally; that check happens at the caller.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/tool_permission_responses.rs
+    - crates/betterlite-guardrails/src/tool_permission_responses/**
+    - tools/oracle/cases/tool-permission/response-*.yaml
+    - tools/oracle/cases/tool-permission/streaming-*.yaml
+    - tools/oracle/helpers/b3813.py
+    - tools/oracle/helpers/b3813/**
+    - tools/oracle/src/helpers/guardrails/b3813.rs
+    - tools/oracle/src/helpers/guardrails/b3813/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L70-L73
+    why: _is_tool_use_block helper for detecting Anthropic tool_use content blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L470-L472
+    why: _legacy_function_call_id for synthesizing stable IDs for legacy function calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L474-L489
+    why: legacy_to_tool_call conversion from legacy format to ChatCompletionMessageToolCall.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L491-L513
+    why: extract_response_tools collects all tool calls from response choices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L515-L527
+    why: anthropic_to_tool_call converts Anthropic tool_use blocks to unified format.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L529-L534
+    why: _get_anthropic_content_blocks extracts content array from Anthropic responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L536-L541
+    why: extract_anthropic_tools collects tool calls from Anthropic content blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L543-L569
+    why: _evaluate_tool_calls applies permissions to all tool calls and collects denials; raises on first denial in block mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L571-L604
+    why: rewrite_anthropic_responses removes tool_use blocks and appends error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L706-L723
+    why: permission_error_result builds ToolResult for an error message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L725-L787
+    why: rewrite_openai_responses removes denied tool calls and appends error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L840-L890
+    why: async_post_call_success_hook processes complete responses and applies permission checking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L892-L953
+    why: async_post_call_streaming_iterator_hook buffers and evaluates streamed responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L955-L967
+    why: _check_assembled_stream shared helper for evaluating assembled responses.
+
+dod:
+  - text: Tool calls are extracted from response choices using both modern tool_calls and legacy function_call fields, with stable synthetic IDs for legacy function calls.
+    proof: [extraction-cases]
+  - text: Anthropic tool_use content blocks are detected with _is_tool_use_block and converted to ChatCompletionMessageToolCall format with anthropic_to_tool_call.
+    proof: [anthropic-conversion-cases]
+  - text: All extracted tool calls are evaluated through _evaluate_tool_calls, which applies permission rules from B3811 and collects denied tools without stopping.
+    proof: [evaluation-cases]
+  - text: Denied tool calls in OpenAI responses are removed via rewrite_openai_responses; error messages are appended to choice.message.content; finish_reason is changed to stop when all tools are removed.
+    proof: [openai-rewrite-cases]
+  - text: Denied tool_use blocks in Anthropic responses are removed via rewrite_anthropic_responses; error text is appended; stop_reason changes to end_turn when no tool_use blocks remain.
+    proof: [anthropic-rewrite-cases]
+  - text: async_post_call_success_hook skips guardrail evaluation when should_run_guardrail returns false and passes through responses with no tool calls.
+    proof: [success-hook-cases]
+  - text: streaming_iterator_hook buffers all chunks before evaluation, detects OpenAI-style streams with stream_chunk_builder and Anthropic SSE with assemble_anthropic_sse_stream, and passes unrecognized non-raw chunks through.
+    proof: [streaming-detection-cases]
+  - text: Unparseable raw SSE streams raise GuardrailRaisedException with a blocking message before yielding chunks.
+    proof: [streaming-error-cases]
+  - text: Reconstructed streams from evaluated ModelResponse use MockResponseIterator to yield chunks; Anthropic streams are re-encoded with anthropic_sse_chunks_from_response.
+    proof: [stream-reconstruction-cases]
+  - text: When stream buffer capacity is exceeded, GuardrailRaisedException is raised with a clear message before unlimited collection occurs.
+    proof: [buffer-overflow-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: extraction-cases
+      why: tool call extraction from responses is missing, incomplete or incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::(extract|legacy)/)'
+    - id: anthropic-conversion-cases
+      why: Anthropic tool_use block detection or conversion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::(anthropic|tool_use)/)'
+    - id: evaluation-cases
+      why: permission evaluation on tool calls is missing or stops at first denial
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::evaluate/)'
+    - id: openai-rewrite-cases
+      why: OpenAI response rewriting is missing, incomplete or incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::openai_rewrite/)'
+    - id: anthropic-rewrite-cases
+      why: Anthropic response rewriting is missing, incomplete or incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::anthropic_rewrite/)'
+    - id: success-hook-cases
+      why: success hook guard checks or passthrough are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::success_hook/)'
+    - id: streaming-detection-cases
+      why: streaming format detection or chunk buffering is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::(streaming|detect)/)'
+    - id: streaming-error-cases
+      why: unparseable SSE error handling is missing or doesn't block
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::unparseable/)'
+    - id: stream-reconstruction-cases
+      why: stream reconstruction with MockResponseIterator or anthropic_sse_chunks_from_response is missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::reconstruct/)'
+    - id: buffer-overflow-cases
+      why: stream buffer overflow detection is missing or doesn't raise
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::buffer_overflow/)'
+
+oracle_cases:
+  - tools/oracle/cases/tool-permission/response-openai-allowed-tool.yaml
+  - tools/oracle/cases/tool-permission/response-openai-denied-tool-block.yaml
+  - tools/oracle/cases/tool-permission/response-openai-denied-tool-rewrite.yaml
+  - tools/oracle/cases/tool-permission/response-openai-multiple-denied.yaml
+  - tools/oracle/cases/tool-permission/response-anthropic-allowed-tool.yaml
+  - tools/oracle/cases/tool-permission/response-anthropic-denied-tool-block.yaml
+  - tools/oracle/cases/tool-permission/response-anthropic-denied-tool-rewrite.yaml
+  - tools/oracle/cases/tool-permission/streaming-openai-complete.yaml
+  - tools/oracle/cases/tool-permission/streaming-openai-denied.yaml
+  - tools/oracle/cases/tool-permission/streaming-anthropic-complete.yaml
+  - tools/oracle/cases/tool-permission/streaming-anthropic-denied.yaml
+  - tools/oracle/cases/tool-permission/streaming-invalid-sse.yaml
+deviations:
+  - what: Stream buffer capacity for streamed responses has an explicit limit; exceeding it raises GuardrailRaisedException rather than collecting unbounded chunks as LiteLLM does.
+    why: A gateway on the public internet must bound memory allocation to untrusted streams. The limit is configurable; the default is set to a reasonable per-request capacity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L892-L953
+out_of_scope:
+  - "add_guardrail_to_applied_guardrails_header callback utility is owned by B189 (callback infrastructure)."
+  - "should_run_guardrail check and @log_guardrail_information decorator are owned by B3664 (CustomGuardrail)."
+  - "GuardrailRaisedException constructor and translation to HTTP responses is owned by a lower guardrail infrastructure task, not listed here."
+  - "anthropic_sse.is_raw_sse_stream, assemble_anthropic_sse_stream, anthropic_sse_chunks_from_response SSE decoding and encoding are owned by the lower SSE assembly task."
+  - "base_model_iterator.MockResponseIterator constructor and async iteration are owned by the lower model iterator task."
+  - "stream_chunk_builder from B2227 (betterlite-streaming::streamed_response_assembly) is used as-is; do not reimplement."
+pitfalls:
+  - "Evaluate all tool calls before selecting the first denial to raise; _evaluate_tool_calls collects all denials without stopping, and only the first denial is raised in block mode."
+  - "Legacy function calls need synthetic IDs derived from choice index; the same ID must be used when looking up the error result to avoid mismatches."
+  - "Anthropic tool_use blocks are removed by ID match; a tool_use block without an id field (falsey) never matches an error result and stays in the response."
+  - "finish_reason changes only when all tool_calls in a choice are removed, not when some are removed; the finish_reason must be a tool-calling reason (tool_calls or function_call) before changing it."
+  - "Anthropic content blocks are replaced in place, and the response object is mutated directly; logging of the response sees the rewritten version."
+  - "Streaming path does not call should_run_guardrail locally; the check happens at the ProxyLogging caller before this hook is invoked."
+  - "Non-raw SSE chunks that fail to assemble (return None from assemble_anthropic_sse_stream) are passed through unchanged, not treated as errors."
+  - "Raw SSE streams that cannot be parsed are blocked immediately with GuardrailRaisedException, not passed through or partially processed."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -83,5 +83,5 @@ pitfalls:
   - The async BFL-specific handler calls the synchronous transformer at the pin, so both entry paths must enforce the media policy.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

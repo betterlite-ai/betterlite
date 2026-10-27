@@ -23,6 +23,10 @@ scope:
   - crates/betterlite-http/**
   - crates/betterlite-openai/**
   - tools/oracle/cases/chat/**
+  - tools/oracle/helpers/b005.py
+  - tools/oracle/helpers/b005/**
+  - tools/oracle/src/helpers/oracle/b005.rs
+  - tools/oracle/src/helpers/oracle/b005/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py
@@ -84,5 +88,5 @@ pitfalls:
   of a second fuzz crate.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

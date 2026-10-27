@@ -1,0 +1,238 @@
+id: B4685
+title: MCP semantic tool index and request filtering
+description: >-
+  Implement SemanticMCPToolFilter in betterlite-server::mcp::semantic_filter, a stateful
+  service that builds and maintains a semantic router index of MCP tools and filters available
+  tools based on embedding similarity to user queries. The filter runs as an optional hook that
+  reduces context window consumption when multiple MCP servers are connected.
+
+  SemanticMCPToolFilter holds enabled (bool), embedding_model (string), top_k (int, default 10),
+  similarity_threshold (f64, default 0.3), and a tool_router (optional semantic-router instance).
+  It is initialized with these parameters and builds a router asynchronously from the MCP registry
+  on startup (build_router_from_mcp_registry). Tool information is extracted as (name, description)
+  tuples; descriptions default to name when absent.
+
+  build_router_from_mcp_registry fetches all MCP tools from the global registry (no auth checks)
+  in parallel, converts them to semantic-router Routes with tool name, description, and similarity
+  threshold, builds a SemanticRouter with LiteLLMRouterEncoder, and logs the count. It handles
+  failures: logs and continues on per-server failures; returns early if no tools are found; if
+  encoding setup fails, logs the error and sets tool_router to None, re-raising encoding errors
+  after logging.
+
+  _ensure_tools_indexed runs asynchronously on each request to index any request-time tools
+  the startup build never saw (tools from authenticated servers requiring per-user credentials
+  that were filtered out at startup). It checks efficiently (single pass, no allocation) for
+  missing tools; if none are missing, returns immediately. If missing tools exist, acquires a
+  lock, re-checks, then async-adds missing tools to the router. Embedding errors here raise
+  and are scoped to the calling request (no shared error state).
+
+  filter_tools(query, available_tools, top_k=None) returns the filtered tools list, ordered by
+  semantic similarity and limited to top_k. Early returns when disabled, no tools available,
+  no query, or context window error occurred during build. Calls _ensure_tools_indexed, then
+  queries the router with route_filter=available_names for semantic matches. Returns all tools
+  on match failure. Converts router results to tool names, looks them up by exact name, then by
+  suffix match (tolerating client-side namespace prefixes from MCP), returns tools in router order,
+  and deduplicates by object identity. On context window error during filtering, raises
+  ToolFilterContextWindowError with the embedding model name, stage (build or request-time
+  indexing), and original error message. On other failures, logs and returns all tools without
+  raising.
+
+  extract_user_query(messages) iterates messages in reverse, finds the last message with role=user,
+  extracts content as a string. If content is a string, returns it. If content is a list of blocks
+  (dicts or values), concatenates text blocks (extracting "text" from dicts, converting others to
+  string) with spaces. Returns empty string if no user message is found.
+
+  _is_context_window_error(error: Option<Exception>) returns true if the exception tree contains
+  ContextWindowExceededError or a string match on context-window-exceeded (from exception_mapping_utils).
+  It traverses the exception cause chain; an error that is None returns false.
+
+  ToolFilterContextWindowError is a custom exception. Initialize with embedding_model
+  (string), stage (string naming where the error occurred: "the MCP tool descriptions during
+  semantic router build" or "the user query or the MCP tool descriptions being indexed"), and
+  original_error (string). The message format is: "MCP semantic tool filtering could not run:
+  embedding model '{embedding_model}' exceeded its context window while embedding {stage}. The
+  request was blocked instead of silently passing all tools through. Switch to an embedding model
+  with a larger context window, or disable semantic tool filtering."
+
+  _name_matches_canonical(client_name: str, canonical: str) -> bool returns true if client_name
+  refers to the canonical MCP tool name, handling client-side namespace prefixes. Returns true if
+  names are equal. Returns false if canonical does not contain MCP_TOOL_PREFIX_SEPARATOR. Returns
+  false if client_name is not longer than canonical. Returns false if client_name does not end
+  with canonical. Returns true if the separator before canonical in client_name is _ or -, else
+  false. This match tolerates prefixes like "client_alias_canonical" when canonical is
+  "server_tool", preserving the client-facing name in the returned tool.
+
+  _tool_map is a dict keying tool name strings to tool objects (MCPTool from mcp SDK or OpenAI
+  function dict). It is built once at startup and indexed lazily with request-time tools.
+  _index_sync_lock is an async lock guarding concurrent adds during request-time indexing, so
+  one request's missing tools don't corrupt the index.
+
+  Errors: ToolFilterContextWindowError when embedding overflows context window during
+  build or request filtering; no other exceptions propagate (failures log and return all tools).
+  Warnings are issued when no tools are found in the registry, when a server fails to return
+  tools, when the router cannot be built, or when filtering fails but is not a context window
+  overflow.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/semantic_filter.rs
+    - crates/betterlite-server/src/mcp/semantic_filter/**
+    - crates/betterlite-server/src/mcp/semantic_filter/tests.rs
+    - tools/oracle/cases/helpers/semantic-filter/**
+    - tools/oracle/fuzz/corpus/helper_case/semantic-filter-*
+    - tools/oracle/helpers/b4685.py
+    - tools/oracle/helpers/b4685/**
+    - tools/oracle/src/helpers/server/b4685.rs
+    - tools/oracle/src/helpers/server/b4685/**
+    - crates/betterlite-server/src/mcp/semantic_filter/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L23-L36
+    why: SemanticToolFilterContextWindowError exception with embedding model, stage and original error message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L39-L47
+    why: _is_context_window_error traverses exception tree for ContextWindowExceededError and context-window string match.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L50-L79
+    why: SemanticMCPToolFilter.__init__ with enabled, top_k, similarity_threshold, embedding_model, router_instance and tool_router fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L81-L116
+    why: build_router_from_mcp_registry fetches tools from all servers in parallel, converts to routes, builds semantic router, logs tools count and handles failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L118-L132
+    why: _extract_tool_info extracts (name, description) from MCPTool objects or OpenAI function dicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L134-L184
+    why: _build_router converts tools to routes, builds SemanticRouter with LiteLLMRouterEncoder, handles context window errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L186-L196
+    why: _has_tools_missing_from_index and _tools_missing_from_index check and collect tools not yet in the semantic index.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L198-L259
+    why: _ensure_tools_indexed indexes request-time tools missing from startup, async-only with lock guarding concurrent adds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L261-L335
+    why: filter_tools main entry point returning filtered and ordered tool list, with early returns and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L337-L350
+    why: _extract_tool_names_from_matches extracts name list from semantic router match results (single or list).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L352-L387
+    why: _name_matches_canonical tolerates client namespace prefixes in tool names (client_alias_canonical matches canonical).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L389-L432
+    why: _get_tools_by_names looks up tools by semantic router match names with exact and suffix matching, preserving client names and deduplicating by object identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L434-L459
+    why: extract_user_query extracts content from last user message, handling string and list block content with text fallback.
+
+dod:
+  - text: SemanticMCPToolFilter is initialized with embedding_model, top_k (default 10), similarity_threshold (default 0.3) and enabled (bool).
+    proof: [filter-init, filter-tests]
+  - text: build_router_from_mcp_registry fetches all MCP tools from the global registry in parallel without auth checks, converts to routes, builds a semantic router, and logs the tool count.
+    proof: [filter-tests, build-router-parallel]
+  - text: build_router_from_mcp_registry handles per-server failures gracefully, returning early if no tools are found or setting tool_router to None if encoding fails.
+    proof: [filter-tests, build-router-failure]
+  - text: _extract_tool_info returns (name, description) tuple from MCPTool or OpenAI dict, defaulting description to name when absent.
+    proof: [filter-tests]
+  - text: _ensure_tools_indexed efficiently checks for missing tools (single pass, no allocation), acquires a lock only if missing tools exist, then async-adds them to the router.
+    proof: [filter-tests, ensure-indexed-efficient]
+  - text: _ensure_tools_indexed handles embedding errors by raising ToolFilterContextWindowError and scoping other errors to the calling request without shared state.
+    proof: [filter-tests, ensure-indexed-errors]
+  - text: filter_tools returns filtered tools ordered by semantic similarity, limited to top_k, with early returns for disabled filter, no tools, or no query.
+    proof: [filter-tests, filter-main-flow]
+  - text: filter_tools calls route_filter=available_names to semantic router and deduplicates results by object identity.
+    proof: [filter-tests]
+  - text: filter_tools raises ToolFilterContextWindowError with embedding model, stage and original error on context window overflow.
+    proof: [filter-tests, filter-context-error]
+  - text: filter_tools logs and returns all tools on non-context-window failures without raising.
+    proof: [filter-tests, filter-graceful-fail]
+  - text: extract_user_query iterates messages in reverse, finds last user message, extracts string or concatenates text from list blocks with space separator.
+    proof: [filter-tests, extract-query-order]
+  - text: _name_matches_canonical returns true for exact match or when client_name suffix-matches canonical with _ or - separator, preserving client-facing names.
+    proof: [filter-tests, name-match-canonical]
+  - text: _get_tools_by_names looks up tools by exact name, then by suffix match with shortest-name preference, returns tools in router order and deduplicates by identity.
+    proof: [filter-tests]
+  - text: _is_context_window_error traverses exception cause chain for ContextWindowExceededError or context-window string match, returning false for None.
+    proof: [filter-tests]
+  - text: ToolFilterContextWindowError message includes embedding model, stage and original error text with recovery advice.
+    proof: [filter-tests]
+  - text: New oracle helper operation for semantic filter integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: filter-init
+      why: SemanticMCPToolFilter initialization or fields are missing.
+      run: grep -qE 'struct SemanticMCPToolFilter|pub struct SemanticMCPToolFilter' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'enabled.*bool|embedding_model|top_k|similarity_threshold' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: filter-tests
+      why: Semantic filter tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::semantic_filter::tests::/) - test(/replays_the_/)'
+    - id: build-router-parallel
+      why: build_router_from_mcp_registry does not fetch tools from servers in parallel.
+      run: grep -qE 'build_router_from_mcp_registry' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'join_all|futures|parallel' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: build-router-failure
+      why: build_router_from_mcp_registry does not handle failures gracefully.
+      run: grep -qE 'continue|return|warn|log' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'if no tools|if.*empty' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: ensure-indexed-efficient
+      why: _ensure_tools_indexed does not check for missing tools efficiently or does not skip when none exist.
+      run: grep -qE '_has_tools_missing_from_index|_ensure_tools_indexed' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'return.*if' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: ensure-indexed-errors
+      why: _ensure_tools_indexed does not scope embedding errors or does not raise context window errors.
+      run: grep -qE '_ensure_tools_indexed' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'ToolFilterContextWindowError|raise|scoped' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: filter-main-flow
+      why: filter_tools does not implement main filtering flow with early returns.
+      run: grep -qE 'fn filter_tools|async fn filter_tools' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'if.*enabled|if.*available|if.*query' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: filter-context-error
+      why: filter_tools does not raise ToolFilterContextWindowError on context window overflow.
+      run: grep -qE 'ToolFilterContextWindowError' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'embedding_model|stage' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: filter-graceful-fail
+      why: filter_tools does not log and return all tools on non-context-window failures.
+      run: grep -qE 'filter_tools' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'error\(|return available_tools' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: extract-query-order
+      why: extract_user_query does not iterate messages in reverse or does not concatenate text blocks.
+      run: grep -qE 'extract_user_query' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'rev\(\)|reversed' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: name-match-canonical
+      why: _name_matches_canonical does not match client prefixes with _ or - separator.
+      run: grep -qE '_name_matches_canonical' crates/betterlite-server/src/mcp/semantic_filter.rs && grep -qE 'ends_with|suffix|separator.*_.*-' crates/betterlite-server/src/mcp/semantic_filter.rs
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4685.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/semantic-filter-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/semantic-filter/init-disabled.yaml
+  - tools/oracle/cases/helpers/semantic-filter/build-empty-registry.yaml
+  - tools/oracle/cases/helpers/semantic-filter/filter-disabled.yaml
+  - tools/oracle/cases/helpers/semantic-filter/filter-no-tools.yaml
+  - tools/oracle/cases/helpers/semantic-filter/filter-no-query.yaml
+  - tools/oracle/cases/helpers/semantic-filter/filter-semantic-match.yaml
+  - tools/oracle/cases/helpers/semantic-filter/filter-client-prefix-match.yaml
+  - tools/oracle/cases/helpers/semantic-filter/extract-query-string.yaml
+  - tools/oracle/cases/helpers/semantic-filter/extract-query-list-blocks.yaml
+
+deviations:
+  - what: SemanticMCPToolFilter is initialized with a LiteLLM Router instance for embedding calls, rather than a direct embedding client.
+    why: betterlite's router already owns embedding dispatch to all providers. Passing the router reuses its caching and request tracking instead of adding a separate embedding client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L53-L75
+  - what: Context window errors from embedding during build or request-time indexing are raised as ToolFilterContextWindowError with recovery advice, blocking the request instead of silently passing all tools.
+    why: Silent fallback would hide performance regressions and tool selection degradation when context overflows. Operators need visibility to switch embedding models or disable filtering.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L286-L335
+  - what: "\"tool_router is None\" means the startup build of the semantic index failed (logging the error), so filter_tools returns all tools without attempting to match. No context window error was stored; that is a separate condition."
+    why: Startup failures are logged separately. If build fails, filtering cannot work and must degrade gracefully. Context window overflow is a specific case that raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L299-L301
+  - what: _ensure_tools_indexed uses an async lock to guard concurrent adds of request-time tools, preventing races when multiple requests arrive for authenticated servers before indexing completes.
+    why: betterlite may run multiple concurrent requests. The lock ensures the tool map and router remain consistent when one request adds tools another request is querying.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L224-L259
+
+out_of_scope:
+  - Hook registration and request preprocessing; the hook that calls filter_tools comes in B4686.
+  - MCP server discovery, tool fetching and tool expansion; those come from B4680 and B4683.
+  - Configuration loading; this task receives parameters at initialization and raises on invalid inputs.
+  - Tool invocation and execution; tool matching is for filtering only, not execution.
+  - The semantic-router library itself; B327 owns the router infrastructure and this task uses it.
+
+pitfalls:
+  - "_name_matches_canonical allows both _ and - as separators because clients use either regardless of MCP_TOOL_PREFIX_SEPARATOR configuration. A check for separator in canonical prevents false matches on unrelated names that happen to end the same way."
+  - "_ensure_tools_indexed acquires a lock only after checking for missing tools. The check is allocation-free (single pass) and the lock is released as soon as new tools are added."
+  - "build_router_from_mcp_registry fetches from every server without auth checks, so request-time indexing (_ensure_tools_indexed) adds authenticated tools later. Mixing startup and request-time tools requires careful error scoping so one user's embedding failure does not affect others."
+  - "Context window errors have two stages: build (startup, shared error state) and request-time indexing (per-request, no shared state). Both must raise ToolFilterContextWindowError with the appropriate stage name."
+  - "Deduplication in _get_tools_by_names uses object identity (id() in Python, pointer equality in Rust) to prevent returning the same tool twice when multiple canonical names alias the same tool object."
+  - "filter_tools returns all tools on match failure (semantic router returns no matches), not an empty list. This preserves functionality when the semantic index degrades."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

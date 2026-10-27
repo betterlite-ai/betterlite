@@ -132,29 +132,8 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-nova-chat/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_nova_chat*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/**
-  - crates/betterlite-config/src/providers/bedrock/nova_chat.rs
-  - crates/betterlite-config/src/providers/bedrock/nova_chat/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/bedrock_nova_chat_config.rs
-  - crates/betterlite-config/src/tests/bedrock_nova_chat_config/**
-  - crates/betterlite-config/src/providers/amazon_nova.rs
-  - crates/betterlite-config/src/providers/amazon_nova/**
-  - crates/betterlite-config/src/providers/amazon_nova/bedrock_nova_chat.rs
-  - crates/betterlite-config/src/providers/amazon_nova/bedrock_nova_chat/**
+  - crates/betterlite-config/src/sections/bedrock_nova_chat.rs
+  - crates/betterlite-config/src/sections/bedrock_nova_chat/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L37-L183
@@ -401,6 +380,6 @@ pitfalls:
   block.
 - The direct response model prefix is amazon-nova/, while the provider identifier is amazon_nova.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

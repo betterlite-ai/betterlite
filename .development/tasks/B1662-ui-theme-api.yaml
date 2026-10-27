@@ -45,13 +45,16 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/ui_theme_input.rs
     - crates/betterlite-server/fuzz/corpus/ui_theme_input/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/ui_theme.rs
     - crates/betterlite-config/src/ui_theme/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-theme-*
     - tools/oracle/cases/management/ui-theme/**
     - tools/oracle/fixtures/multipart-oracle/ui-logo-*
     - tools/oracle/fuzz/corpus/http_case/ui-theme-*
+    - tools/oracle/helpers/b1662.py
+    - tools/oracle/helpers/b1662/**
+    - tools/oracle/src/helpers/server/b1662.rs
+    - tools/oracle/src/helpers/server/b1662/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L130-L195
@@ -102,6 +105,6 @@ pitfalls:
   - Null and omitted theme fields clear the corresponding runtime environment names even though null fields are omitted from the saved theme object.
   - Upload validation checks the filename extension, so an empty .svg upload succeeds without an SVG parser.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

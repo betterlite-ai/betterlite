@@ -26,6 +26,10 @@ scope:
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_stream_driver.py
   - tools/oracle/cases/sdk-http/responses-stream-driver/**
+  - tools/oracle/helpers/b927.py
+  - tools/oracle/helpers/b927/**
+  - tools/oracle/src/helpers/core_ops/b927.rs
+  - tools/oracle/src/helpers/core_ops/b927/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L954-L992
@@ -113,5 +117,5 @@ pitfalls:
 - Cached completed_response exists before any events are consumed,but logging waits until its terminal event is yielded.
 review_level: security
 budget:
-  max_changed_lines: 755
+  max_changed_lines: 1500
   max_new_expects: 1

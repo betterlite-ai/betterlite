@@ -1,0 +1,154 @@
+id: B3072
+title: Publish Lago and OpenMeter usage events
+description: >-
+  Implement both Lago and OpenMeter success-callback adapters in
+  `betterlite-logging::finops::metering`. Each adapter inherits from
+  `CustomLogger` and posts usage events after a successful request.
+
+  Lago posts UUIDs as transaction IDs and routes events to a configured
+  subscription (selected from LAGO_API_CHARGE_BY: end_user_id, team_id,
+  user_id). OpenMeter sends CloudEvents and distinguishes between
+  request-supplied user (when OPENMETER_TRUST_REQUEST_USER is "true",
+  the default) and key-bound user_api_key_user_id (the fallback when
+  trust is disabled or the request has no user).
+
+  Both adapters extract usage (prompt_tokens, completion_tokens,
+  total_tokens) from ModelResponse and EmbeddingResponse when present,
+  and extract cost from response_cost in the callback. Preserve sync
+  and async event delivery using owned HTTP operations, not a second
+  gateway client.
+
+  Configuration: Lago requires LAGO_API_BASE, LAGO_API_KEY and
+  LAGO_API_EVENT_CODE; optionally reads LAGO_API_CHARGE_BY (default:
+  end_user_id). OpenMeter requires OPENMETER_API_KEY; optionally reads
+  OPENMETER_API_ENDPOINT (default: https://openmeter.cloud),
+  OPENMETER_EVENT_TYPE (default: litellm_tokens) and
+  OPENMETER_TRUST_REQUEST_USER (default: true).
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/metering.rs
+    - crates/betterlite-logging/src/finops/metering/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L21-L28
+    why: Lago and OpenMeter UTC datetime utilities, preserved in both adapters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L32-L36
+    why: Lago __init__, HTTP client initialization with super().__init__().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L38-L61
+    why: validate_environment checks for LAGO_API_KEY, LAGO_API_BASE, LAGO_API_EVENT_CODE and raises on missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L63-L121
+    why: _common_logic extracts model, cost, usage tokens, and subscription ID from charge_by, with UUID transaction ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L123-L153
+    why: Lago log_success_event builds URL from base, posts JSON with Bearer auth and handles response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L155-L191
+    why: Lago async_log_success_event mirrors sync with httpx async post, preserving try/except and debug logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L19-L26
+    why: OpenMeter UTC datetime utility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L30-L34
+    why: OpenMeter __init__, HTTP client initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L36-L49
+    why: OpenMeter validate_environment checks for OPENMETER_API_KEY and raises on missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L51-L97
+    why: _common_logic builds CloudEvents record with specversion, type, id, time, subject (user from request or key-bound), source and data; OPENMETER_TRUST_REQUEST_USER and key fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L99-L123
+    why: OpenMeter log_success_event builds CloudEvents header and posts with content-type application/cloudevents+json.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L125-L149
+    why: OpenMeter async_log_success_event mirrors sync with httpx async post and error handling.
+
+dod:
+  - text: LagoLogger.__init__ calls super().__init__(), validates environment, and initializes sync and async HTTP handlers from B173 imports.
+    proof: [lago-init]
+  - text: LagoLogger.validate_environment raises Exception with missing_keys list if LAGO_API_KEY, LAGO_API_BASE or LAGO_API_EVENT_CODE are missing.
+    proof: [lago-validate]
+  - text: LagoLogger._common_logic extracts model, cost, usage tokens (prompt_tokens, completion_tokens, total_tokens) from response, and resolves subscription ID from charge_by.
+    proof: [lago-common]
+  - text: Lago charge_by reads LAGO_API_CHARGE_BY (default "end_user_id"), validates it is in ["end_user_id", "team_id", "user_id"], and raises Exception on invalid value.
+    proof: [lago-charge-by]
+  - text: LagoLogger.log_success_event posts to LAGO_API_BASE/api/v1/events with application/json content type, JSON body containing event{transaction_id (UUID), external_subscription_id, code, properties} and Bearer auth.
+    proof: [lago-post]
+  - text: LagoLogger.async_log_success_event posts asynchronously with the same payload and auth, re-raising the original HTTP exception after logging response.text at debug level.
+    proof: [lago-async]
+  - text: OpenMeterLogger.__init__ calls super().__init__(), validates environment, and initializes sync and async HTTP handlers.
+    proof: [openmeter-init]
+  - text: OpenMeterLogger.validate_environment raises Exception with missing_keys list if OPENMETER_API_KEY is missing.
+    proof: [openmeter-validate]
+  - text: OpenMeterLogger._common_logic builds CloudEvents with specversion "1.0", type from OPENMETER_EVENT_TYPE (default "litellm_tokens"), id, time, subject, source and data.
+    proof: [openmeter-common]
+  - text: OpenMeter subject reads from request user if OPENMETER_TRUST_REQUEST_USER is "true" (default), falls back to user_api_key_user_id, and raises Exception if neither is present.
+    proof: [openmeter-subject]
+  - text: OpenMeterLogger.log_success_event posts to OPENMETER_API_ENDPOINT/api/v1/events (default https://openmeter.cloud/api/v1/events) with application/cloudevents+json content type, CloudEvents JSON and Bearer auth.
+    proof: [openmeter-post]
+  - text: "OpenMeterLogger.async_log_success_event posts asynchronously with the same payload and auth, wrapping httpx.HTTPStatusError into Exception(f\"OpenMeter logging error: {e.response.text}\")."
+    proof: [openmeter-async]
+
+checks:
+  optional: []
+  commands:
+    - id: lago-init
+      why: LagoLogger.__init__ initialization tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::lago::init/)'
+    - id: lago-validate
+      why: LagoLogger.validate_environment missing-key tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::lago::validate/)'
+    - id: lago-common
+      why: LagoLogger._common_logic extraction tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::lago::common_logic/)'
+    - id: lago-charge-by
+      why: Lago charge_by selection and validation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::lago::charge_by/)'
+    - id: lago-post
+      why: Lago POST payload construction and auth tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::lago::post/)'
+    - id: lago-async
+      why: Lago async_log_success_event tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::lago::async_/)'
+    - id: openmeter-init
+      why: OpenMeterLogger.__init__ initialization tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::openmeter::init/)'
+    - id: openmeter-validate
+      why: OpenMeterLogger.validate_environment tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::openmeter::validate/)'
+    - id: openmeter-common
+      why: OpenMeterLogger._common_logic CloudEvents building tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::openmeter::common_logic/)'
+    - id: openmeter-subject
+      why: OpenMeter subject resolution and fallback tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::openmeter::subject/)'
+    - id: openmeter-post
+      why: OpenMeter POST payload and auth tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::openmeter::post/)'
+    - id: openmeter-async
+      why: OpenMeter async_log_success_event tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::metering::openmeter::async_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: When Lago subscription_id cannot be resolved (all charge_by options are None), an error is raised instead of silently logging.
+    why: LiteLLM raises Exception; betterlite preserves this behavior to catch configuration errors early.
+  - what: OpenMeter raises an error if both request user and key-bound user_api_key_user_id are missing, rather than using a fallback account.
+    why: LiteLLM raises Exception; betterlite preserves this to ensure events are always properly attributed.
+  - what: HTTP errors from Lago and OpenMeter cause the callback to raise, which fails the request and stops retry.
+    why: LiteLLM's post() raises on HTTP errors; betterlite preserves this error propagation to ensure delivery is observable.
+
+out_of_scope:
+  - UUID generation is provided by the uuid crate; this task uses it in the Lago payload.
+  - HTTPHandler and get_async_httpx_client are imported from B173; this task uses their post and async post operations.
+  - ModelResponse and EmbeddingResponse usage extraction is based on hasattr checks, mirroring LiteLLM's type checking without new dependencies.
+  - Date/time formatting is done with chrono or DateTime methods to preserve ISO 8601 format.
+
+pitfalls:
+  - "Lago transaction_id is a fresh UUID.v4 for every event; do not reuse the litellm_call_id."
+  - "Lago charge_by must select from [end_user_id, team_id, user_id] exactly; empty string or a typo raises Exception."
+  - "Lago API_BASE may or may not end with /; check and append /api/v1/events only when needed."
+  - "OpenMeter TRUST_REQUEST_USER value is case-insensitive and compared to \"true\"; any other value (including \"True\") disables request user."
+  - "OpenMeter subject must always be a string, even if user_api_key_user_id is numeric; convert with to_string()."
+  - "OpenMeter API_ENDPOINT defaults to https://openmeter.cloud, not an empty string; concatenate /api/v1/events only once."
+  - "Both adapters must call super().__init__() to inherit CustomLogger initialization and callback registration."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

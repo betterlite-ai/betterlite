@@ -38,7 +38,7 @@ scope:
   - tools/oracle/helpers/url_destination.py
   - tools/oracle/helpers/url_destination/**
   - tools/oracle/cases/helpers/url-origin/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/url_origin-*"
   lint_tables: false
 references:
 - url: >-
@@ -109,8 +109,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'url_origin' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'url_destination' tools/oracle/fuzz/corpus/helper_case
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/url_origin-*")" &&
+      grep -lq 'url_origin' tools/oracle/fuzz/corpus/helper_case/url_origin-* && grep -lq 'url_destination' tools/oracle/fuzz/corpus/helper_case/url_origin-*
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -145,6 +145,7 @@ out_of_scope:
   encode_url_path_segment/segments are B171; safe_get/safe_async_get, SSRF DNS resolution and their download-only
   helpers remain blocked by the open Max decision; provider follow-up URL origin checks remain in B009.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/url_origin-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as url_origin and url_destination in the http group. Replace the stub Op in tools/oracle/src/helpers/http/url_origin.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/url_origin.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An origin check compares parsed scheme, normalized host and effective port, never suffixes or string prefixes.
 - Path percent-encoding and URL joining can normalize dot segments at different times; test both before sending.
@@ -154,5 +155,5 @@ pitfalls:
   and x-goog-api-key as well as standard credentials.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

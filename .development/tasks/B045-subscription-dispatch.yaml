@@ -46,6 +46,10 @@ scope:
     - crates/betterlite-server/src/lib.rs
     - tools/oracle/cases/providers/subscriptions/**
     - tools/oracle/fixtures/subscriptions/**
+    - tools/oracle/helpers/b045.py
+    - tools/oracle/helpers/b045/**
+    - tools/oracle/src/helpers/core_ops/b045.rs
+    - tools/oracle/src/helpers/core_ops/b045/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2634-L2651
@@ -96,5 +100,5 @@ pitfalls:
   - Mounting an additional copy of an API family route would panic before any subscription request can run.
 review_level: security
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -124,5 +124,5 @@ pitfalls:
 - A compaction edit with no visible effect is hidden, whereas a clear edit is always returned when present.
 review_level: standard
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1500
   max_new_expects: 0

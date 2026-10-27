@@ -36,7 +36,7 @@ scope:
   - tools/oracle/helpers/provider_defaults_a.py
   - tools/oracle/helpers/provider_defaults_a/**
   - tools/oracle/cases/helpers/provider-defaults-a/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/provider_defaults_a-*"
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L566-L757
@@ -68,8 +68,8 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'provider_defaults_a' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_defaults_a-*")"
+      && grep -lq 'provider_defaults_a' tools/oracle/fuzz/corpus/helper_case/provider_defaults_a-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -114,10 +114,11 @@ out_of_scope:
 - Identity and prefix parsing B209; final get_llm_provider integration B174; github_copilot/chatgpt authentication
   flows B045, never called by these tests.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/provider_defaults_a-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as provider_defaults_a in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_defaults_a.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_defaults_a.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

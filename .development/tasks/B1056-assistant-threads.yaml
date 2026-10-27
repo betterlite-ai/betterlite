@@ -25,6 +25,10 @@ scope:
   - tools/oracle/sdk_http/assistant_threads.py
   - tools/oracle/cases/sdk-http/assistant-threads/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-threads-*
+  - tools/oracle/helpers/b1056.py
+  - tools/oracle/helpers/b1056/**
+  - tools/oracle/src/helpers/core_ops/b1056.rs
+  - tools/oracle/src/helpers/core_ops/b1056/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L526-L835
@@ -90,5 +94,5 @@ pitfalls:
 - A provider null result is returned as null by these wrappers.
 review_level: security
 budget:
-  max_changed_lines: 680
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -87,7 +87,6 @@ scope:
     - crates/betterlite-auth/src/auth_key_lookup/**
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
-    - deny.toml
     - tools/oracle/src/helpers/server/auth_key_lookup.rs
     - tools/oracle/src/helpers/server/auth_key_lookup/**
     - tools/oracle/helpers/auth_key_lookup.py
@@ -362,6 +361,6 @@ pitfalls:
   - check_db_only plus check_cache_only fails before SQL here, unlike the team lookup's writer precedence.
   - A database outage preserves minted session grants, while a definitive deletion or membership removal denies access.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

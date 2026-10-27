@@ -1,0 +1,230 @@
+id: B3393
+title: Skill listing and provider-specific pagination
+description: >-
+  Build the list native operation for betterlite-core::api::skills, implementing both
+  sync (list_skills) and async (alist_skills) entry points that handle external query overlays
+  and hosted-registry limit/offset contracts separately. Reuse B3390's validate_environment,
+  transform_list_skills_request, and list-response contracts (ListSkillsParams, ListSkillsResponse).
+  Use B3391's _get_litellm_skills_handler and _get_user_api_key_auth_from_kwargs helpers.
+  Use B247's Logging.update_from_kwargs for pre-call logging. Route provider-specific calls
+  through B185/B186's exception_type mapping and use B198's request_timeout constant
+  (default 6000 seconds) when timeout is None or 0.
+
+  list_skills defaults custom_llm_provider to "anthropic" and routes to the hosted handler
+  when provider is "litellm_proxy", passing limit or 20 with fixed offset=0 and omitting
+  page, source, and extra_query. For external providers, assemble ListSkillsParams from limit,
+  page, and source parameters; merge extra_query if provided (external query overlays the list
+  parameters); call validate_environment to get headers; transform the request with
+  transform_list_skills_request to get URL and query parameters; log pre-call metrics with
+  query_params in optional_params; and dispatch via HTTP handler. Do not enforce a local
+  maximum of 100; validation failures from the provider are preserved. alist_skills wraps
+  list_skills in an async context, copying context variables with contextvars.copy_context,
+  running the sync function in an executor, and awaiting any returned coroutine.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/skills/list.rs
+    - crates/betterlite-core/src/api/skills/list/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L264-L324"
+    why: "alist_skills async entry point with context preservation and exception mapping."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L327-L444"
+    why: "list_skills sync entry point with hosted/external routing, parameter assembly,
+      and HTTP dispatch with separate external query overlays."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577"
+    why: "REQUEST_TIMEOUT is 6000 seconds by default, used when timeout is None or 0
+      (truthiness test)."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_skills.py#L22-L33"
+    why: "ListSkillsParams contains limit, page, and source query parameters."
+
+dod:
+  - text: >-
+      list_skills defaults custom_llm_provider to "anthropic", routes to hosted handler when
+      provider is "litellm_proxy", otherwise selects external provider config and dispatches
+      via HTTP handler.
+    proof: [list-skill-routing]
+
+  - text: >-
+      list_skills accepts limit, page, source, extra_headers, extra_query, timeout, and
+      custom_llm_provider; assembles ListSkillsParams from limit, page, and source parameters.
+    proof: [parameter-assembly]
+
+  - text: >-
+      For hosted listing, limit defaults to 20 (via "limit or 20"), offset is fixed at 0,
+      and page, source, and extra_query are not forwarded to the hosted handler.
+    proof: [hosted-pagination]
+
+  - text: >-
+      For external listing, extra_query is merged into the assembled list_params after
+      limit, page, and source are added, so external query overlays modify the final
+      parameters sent to B3390.
+    proof: [extra-query-overlay]
+
+  - text: >-
+      list_skills calls B3390's validate_environment and transform_list_skills_request to
+      produce URL and query parameters from GenericLiteLLMParams and the assembled
+      ListSkillsParams.
+    proof: [request-transformation]
+
+  - text: >-
+      list_skills logs pre-call metrics via B247's Logging.update_from_kwargs with the
+      query parameters as optional_params.
+    proof: [pre-call-logging]
+
+  - text: >-
+      timeout=None or timeout=0 falls back to B198's request_timeout constant (6000 seconds);
+      explicit timeout values are preserved.
+    proof: [timeout-default]
+
+  - text: >-
+      Both sync list_skills and async alist_skills handle exceptions through B185/B186's
+      exception_type, mapping provider errors to LiteLLM-compatible exceptions.
+    proof: [exception-mapping]
+
+  - text: >-
+      async alist_skills copies context variables with contextvars.copy_context, runs the sync
+      function in an executor, and awaits any returned coroutine from the sync path.
+    proof: [async-context-preservation]
+
+  - text: >-
+      list_skills raises ValueError with message 'LIST skills is not supported for
+      {custom_llm_provider}' when B157's ProviderConfigManager.get_provider_skills_api_config
+      returns None for the provider.
+    proof: [unsupported-provider-error]
+
+  - text: >-
+      Provider-specific validation failures in validate_environment and
+      transform_list_skills_request are preserved and propagated as exceptions to the caller.
+    proof: [validation-failures]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: list-skill-routing
+      why: list_skills does not route to hosted or external providers correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::list_skill_(routing|hosted|external)/)'
+
+    - id: parameter-assembly
+      why: list_skills does not assemble ListSkillsParams correctly from limit, page, and
+        source parameters.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::list_skill_(parameter_assembly|params)/)'
+
+    - id: hosted-pagination
+      why: Hosted listing does not default limit to 20, does not fix offset to 0, or
+        forwards page, source, or extra_query to the hosted handler.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(hosted_pagination|hosted_limit|hosted_offset)/)'
+
+    - id: extra-query-overlay
+      why: extra_query is not merged into list_params, or does not overlay the assembled
+        parameters before transformation.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(extra_query|extra_query_overlay)/)'
+
+    - id: request-transformation
+      why: Request transformation via B3390 does not apply validate_environment and
+        transform_list_skills_request correctly, or does not return URL and query parameters.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(list_skill_request|list_skill_transformation)/)'
+
+    - id: pre-call-logging
+      why: Pre-call logging via B247 is missing or does not capture query parameters
+        in optional_params.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(list_skill_logging|pre_call_logging)/)'
+
+    - id: timeout-default
+      why: timeout=None or 0 does not fall back to request_timeout constant, or explicit
+        timeouts are not preserved.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(timeout_default|timeout)/)'
+
+    - id: exception-mapping
+      why: Exceptions are not mapped through B185/B186's exception_type or custom_llm_provider
+        is not used for exception selection.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(exception_mapping|exception_type)/)'
+
+    - id: async-context-preservation
+      why: async functions do not copy context, run sync code in executor, or do not await
+        returned coroutines correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(async_context|alist_skills)/)'
+
+    - id: unsupported-provider-error
+      why: list_skills does not raise ValueError with the correct message when
+        ProviderConfigManager.get_provider_skills_api_config returns None.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(unsupported_provider|list_skill_error)/)'
+
+    - id: validation-failures
+      why: Provider-specific validation failures are not preserved or are silently dropped
+        instead of propagating to the caller.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(validation_failure|validate_environment_failure)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: For external listing, extra_query is merged into the assembled list_params after
+      limit, page, and source are added, allowing external query overlays to modify the final
+      parameters.
+    why: LiteLLM accepts extra_query for consistency with other operations and allows SDK
+      callers to override query parameters. Assembling the list_params first and then
+      merging external overlays maintains the same interface and enables per-call customization.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L395-L397"
+
+  - what: For hosted listing, extra_query is not forwarded to the hosted handler, and page
+      and source parameters are also omitted from the hosted call.
+    why: The hosted-registry contract uses only limit (default 20) and fixed offset (0) for
+      pagination, and does not support page tokens or source filtering at this layer.
+      Accepting but not forwarding these parameters maintains the interface while respecting
+      the hosted handler's contract.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L368-L376"
+
+  - what: No local enforcement of a maximum limit of 100 is applied; provider-specific
+      validation failures are preserved and propagated.
+    why: The Anthropic Skills API enforces its own maximum limit, and any validation failure
+      from the provider's validate_environment or transformation layer is already returned
+      as an exception to the caller. Duplicating validation logic locally would diverge from
+      LiteLLM's behavior and complicate error handling.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L279"
+
+out_of_scope:
+  - >-
+    HTTP handler dispatch: list_skills_handler and async_list_skills_handler are unresolved;
+    these handlers own the actual HTTP calls and response decoding.
+
+  - >-
+    Provider config selection: ProviderConfigManager.get_provider_skills_api_config
+    (litellm/utils.py:9245-9260) is owned by B157; it is a dependency only.
+
+  - >-
+    Hosted handler construction and transformations: LiteLLMSkillsTransformationHandler
+    list_skills_handler is unresolved.
+
+  - >-
+    The @client lifecycle decorator (litellm/utils.py:1674-2315) is owned by B157; it is a dependency only.
+
+pitfalls:
+  - For hosted listing, limit defaults to "limit or 20" via a truthiness check. Code that
+    treats 0 as a valid limit will diverge from LiteLLM's hosted behavior.
+
+  - For hosted listing, offset is always fixed to 0. Code that passes offset from the caller
+    or derives it from a page token will diverge from LiteLLM's hosted contract.
+
+  - external extra_query overlays the assembled list_params. Code that always prefers the
+    original parameters or applies extra_query before assembling will diverge from LiteLLM.
+
+  - The hosted handler does not support page, source, or extra_query parameters at all.
+    Code that forwards these parameters to the hosted handler will diverge from LiteLLM.
+
+  - timeout=None and timeout=0 both trigger the REQUEST_TIMEOUT fallback via truthiness test.
+    Code that treats None and 0 differently will diverge from LiteLLM.
+
+  - The hosted handler is lazily imported only when custom_llm_provider="litellm_proxy". Code
+    that tries to import or initialize it earlier will create unnecessary module dependencies.
+
+  - Provider-specific validation failures are preserved and propagated. Code that silently
+    drops or replaces validation errors will diverge from LiteLLM's behavior.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

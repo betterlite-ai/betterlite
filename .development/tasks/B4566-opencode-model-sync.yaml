@@ -1,0 +1,104 @@
+id: B4566
+title: Agent model listing and OpenCode provider projection
+description: >-
+  Build the opencode module for betterlite-management-cli, translating LiteLLM's
+  model listing decoder and OpenCode provider projection. Fetch the proxy's model
+  list with GET /v1/models using Bearer auth and a 10-second timeout, returning
+  a tuple of ListedModel or a skip reason on network error, non-200 status or
+  invalid JSON. Filter models to entries where mode is None or in {"chat",
+  "responses"}, omitting other modes and incomplete limits. Generate OpenCode's
+  OPENCODE_CONFIG_CONTENT JSON string declaring the proxy as the litellm provider
+  with npm package "@ai-sdk/openai-compatible", including one model entry per
+  chat-capable model with limits only when both max_input_tokens and max_output_tokens
+  are present. The opencode_model_sync_env function fetches models, checks that
+  OPENCODE_CONFIG_CONTENT_ENV is not already set, wraps the list as config JSON
+  and returns it as an env dict or a skip reason. Own ListedModel, ModelSyncSkipped,
+  ModelSyncArgs and ModelSyncResult contracts for B4567 and B4568 to consume. The
+  module consumes OPENAI_API_KEY_ENV, OPENCODE_CONFIG_CONTENT_ENV, OPENCODE_PROVIDER_ID,
+  OPENCODE_PROVIDER_NAME and OPENCODE_PROVIDER_NPM constants from B4564.
+scope:
+  paths:
+    - tools/management-cli/src/opencode.rs
+    - tools/management-cli/src/opencode/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L257-L287
+    why: ListedModel, _ModelListing, ModelSyncSkipped, ModelSyncArgs and ModelSyncResult type definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L290-L291
+    why: _chat_models filters models by mode in the None/"chat"/"responses" frozenset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L294-L311
+    why: _fetch_model_listing with GET /v1/models, Bearer auth, timeout, error handling and skip reasons.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L314-L345
+    why: _OpenCodeLimit, _OpenCodeModel, _OpenCodeProviderOptions, _OpenCodeProvider, _OpenCodeConfig and _opencode_model_entry data structures and entry builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L348-L368
+    why: opencode_provider_config builds and returns OPENCODE_CONFIG_CONTENT JSON with the proxy as "litellm" provider and chat-capable models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L371-L390
+    why: opencode_model_sync_env checks for existing OPENCODE_CONFIG_CONTENT, fetches models, generates config and returns env dict or skip reason.
+dod:
+  - text: >-
+      chat_models filters to models where mode is None or in {"chat", "responses"},
+      returning a vec of ListedModel; other modes and models without both input
+      and output limits are filtered out for the config.
+    proof: [chat-mode-filtering]
+  - text: >-
+      fetch_model_listing makes GET /v1/models with Authorization Bearer {api_key}
+      header and 10-second timeout, returning Vec<ListedModel> on success or
+      ModelSyncSkipped with a reason on network error, non-200 status or invalid JSON.
+    proof: [fetch-endpoint]
+  - text: >-
+      opencode_model_entry returns an OpenCodeModel with name set to model.id; limit
+      is included only when both max_input_tokens and max_output_tokens are present,
+      mapping them to context and output fields.
+    proof: [opencode-limits]
+  - text: >-
+      opencode_provider_config returns a JSON string with the proxy as the "litellm"
+      provider, npm set to "@ai-sdk/openai-compatible", baseURL as {base_url}/v1,
+      apiKey as {env:OPENAI_API_KEY_ENV}, and one model entry per chat-capable model.
+    proof: [opencode-config]
+  - text: >-
+      opencode_model_sync_env checks that OPENCODE_CONFIG_CONTENT_ENV is not set
+      in base_env; fetches the model list; builds the config JSON; returns a BTreeMap
+      mapping OPENCODE_CONFIG_CONTENT_ENV to the config or a ModelSyncSkipped reason.
+    proof: [sync-env]
+  - text: >-
+      ListedModel, ModelSyncSkipped, ModelSyncArgs and ModelSyncResult are owned here
+      for reuse by B4567 codex_model_catalog and B4568 agent_model_sync_env.
+    proof: [shared-types]
+checks:
+  optional: []
+  commands:
+    - id: chat-mode-filtering
+      why: chat_models does not filter correctly by mode or return models
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::chat_mode_/)'
+    - id: fetch-endpoint
+      why: fetch_model_listing does not fetch /v1/models or does not send Bearer auth or timeout correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::fetch_/)'
+    - id: opencode-limits
+      why: opencode_model_entry does not map max_input_tokens/max_output_tokens to context/output or does not omit limits when incomplete
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::model_entry_/)'
+    - id: opencode-config
+      why: opencode_provider_config does not return JSON or does not include the "litellm" provider or models
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::provider_config_/)'
+    - id: sync-env
+      why: opencode_model_sync_env does not check for existing OPENCODE_CONFIG_CONTENT or does not return env dict or skip reason
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::model_sync_env_/)'
+    - id: shared-types
+      why: ListedModel, ModelSyncSkipped, ModelSyncArgs or ModelSyncResult are not defined and exported
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::contracts_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Agent dispatch and launching. opencode_model_sync_env is called by B4568's agent_model_sync_env and run_agent.
+  - Codex and pi model sync. Those are owned by B4568 through codex_model_sync_args and B4565 through prepare_pi.
+  - The HTTP client implementation. fetch_model_listing receives a transport so tests inject a mock; the real implementation uses an injected HTTP client from B134's management client or a default.
+pitfalls:
+  - fetch_model_listing takes a configurable transport for GET, defaulting to a provided HTTP client, so injection points match the test boundary.
+  - The chat modes frozenset must include "responses" mode explicitly because mode can be None (unknown), "chat", "responses", or other unknown modes that are excluded; only None and the two known modes pass.
+  - "opencode_model_entry builds an OpenCodeModel with limit: None (excluded from JSON) when either token limit is missing, not when both are missing, so incomplete limits drop cleanly from JSON output."
+  - opencode_provider_config uses model.id as both slug and name, so proxy model names appear in the OpenCode UI exactly as listed; if a model ID changes, OpenCode's picker changes too without the config being re-run.
+  - OPENCODE_CONFIG_CONTENT_ENV check is on the input base_env map, not the runtime environment, so a stale env var in the calling process is overridden by the returned map only if the caller merges it; failing to merge means OpenCode sees the old config.
+  - "apiKey in the OpenCode config uses {env:OPENAI_API_KEY_ENV}, not a literal key, so build_agent_env must export OPENAI_API_KEY_ENV for OpenCode to read it; an unset OPENAI_API_KEY_ENV means OpenCode falls back to a saved key or fails."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -22,7 +22,7 @@ scope:
   - tools/oracle/helpers/bedrock_prompt.py
   - tools/oracle/helpers/bedrock_prompt/**
   - tools/oracle/cases/helpers/bedrock-prompt/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/bedrock_prompt-*"
   lint_tables: false
 references:
 - url: >-
@@ -77,8 +77,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'bedrock_prompt' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_prompt-*")" &&
+      grep -lq 'bedrock_prompt' tools/oracle/fuzz/corpus/helper_case/bedrock_prompt-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -108,11 +108,12 @@ out_of_scope:
   Image/MIME helpers B227, tool results and Bedrock ID sanitizer B228, content/order helpers B229, processor B230,
   tool/cache blocks B231.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/bedrock_prompt-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as bedrock_prompt in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/bedrock_prompt.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_prompt.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Keep the first authoritative Bedrock duplicate block; do not reuse Anthropic's last-result repair blindly.
 - A global reverse-name cache leaks state between requests and is forbidden.
 - Cache TTL eligibility is a model capability, not a property of every Bedrock model.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

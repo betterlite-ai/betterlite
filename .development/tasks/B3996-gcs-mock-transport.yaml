@@ -1,0 +1,121 @@
+id: B3996
+title: Supply GCS mock transport and authentication behavior
+description: >-
+  Provide injectable GCS mock HTTP and auth behavior for the logger's GCS_MOCK branch, including
+  fallthrough to the real client for other URLs. Implement GET and DELETE handlers that intercept
+  storage.googleapis.com URLs with 150ms default latency simulation, returning canned responses:
+  GET returns 200 with a complete StandardLoggingPayload JSON object, DELETE returns 204 No Content
+  with empty body. Mock Vertex AI auth methods (_ensure_access_token_async, _ensure_access_token,
+  _get_token_and_url) to return fixed values ("mock-gcs-token", "mock-project-id",
+  "https://storage.googleapis.com") when enabled, allowing testing without real credentials.
+
+  Compose the mocks with B191's factory-generated POST handler through MockClientConfig contract
+  returning {"kind": "storage#object", "name": "mock-object"} at 200 status with default 150ms
+  latency. Wire through should_use_gcs_mock and create_mock_gcs_client called at instance
+  initialization. Keep all mock state instance-owned with idempotent guards (_mocks_initialized
+  flag, hasattr checks) to prevent multiple patch attempts. Read GCS_MOCK_LATENCY_MS environment
+  variable at initialization, defaulting to 150ms. Non-GCS URLs fall through to the real HTTP
+  client without modification.
+
+  Count: 165 implementation lines from litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py.
+scope:
+  paths:
+    - crates/betterlite-logging/src/gcs_mock.rs
+    - crates/betterlite-logging/src/gcs_mock/**
+    - tools/oracle/cases/logging/gcs-mock/**
+    - tools/oracle/fuzz/corpus/http_case/gcs-mock-*
+    - tools/oracle/helpers/b3996.py
+    - tools/oracle/helpers/b3996/**
+    - tools/oracle/src/helpers/logging/b3996.rs
+    - tools/oracle/src/helpers/logging/b3996/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L23-L32
+    why: >-
+      MockClientConfig instantiation with POST default response {"kind": "storage#object",
+      "name": "mock-object"}, status 200, default_latency_ms 150, url_matchers matching
+      "storage.googleapis.com", patch_async_handler True, patch_sync_client False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L46-L105
+    why: GET handler with canned StandardLoggingPayload JSON response and mock latency sleep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L108-L143
+    why: DELETE handler returns 204 with empty body, falling back to original on non-mock URLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L146-L182
+    why: Factory initializer installing GET/DELETE patches with idempotent initialization guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L185-L235
+    why: Three nested auth method mocks storing originals and returning fixed literal token values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L34-L34
+    why: Factory-generated POST handler and should_use_gcs_mock binding.
+dod:
+  - text: >-
+      GCS mock GET requests to storage.googleapis.com return 200 with a complete mock StandardLoggingPayload
+      JSON (all fields present, zero costs, mock IDs), while other URLs pass through to the real handler
+      unchanged. DELETE returns 204 with empty body, also mocking only storage.googleapis.com. POST returns
+      {"kind": "storage#object", "name": "mock-object"} at 200. Mock latency resolves from
+      GCS_MOCK_LATENCY_MS environment variable or defaults 150 milliseconds, applied uniformly to all handlers.
+    proof: [behavior-tests, oracle, http-corpus]
+  - text: >-
+      Auth mocks (_ensure_access_token_async, _ensure_access_token, _get_token_and_url) return the
+      literal fixed values ("mock-gcs-token", "mock-project-id", "https://storage.googleapis.com") once
+      installed. Installation is idempotent via hasattr guard; patching happens at module initialization
+      when should_use_gcs_mock or create_mock_gcs_client is first called. Patches apply globally to
+      VertexBase class, affecting all instances when GCS_MOCK environment variable is set.
+    proof: [behavior-tests, oracle, auth-corpus]
+  - text: >-
+      GCS_MOCK environment variable activates global monkeypatching of AsyncHTTPHandler.get, AsyncHTTPHandler.delete,
+      and VertexBase auth methods at module initialization time. Fallthrough for non-mocked URLs and missing
+      original handlers raises RuntimeError rather than silently succeeding. Idempotent guards prevent re-patching
+      on multiple initialization calls.
+    proof: [behavior-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Mock GET/DELETE must intercept only GCS URLs, return exact canned payloads and respect configured latency.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_mock::tests::/) - test(/::replays_corpus$/)'
+    - id: auth-corpus
+      why: Auth mocks must be installed once and return fixed literal values without network calls.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/gcs-mock-auth-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3996::tests::replays_corpus$/)'
+    - id: http-corpus
+      why: The HTTP case decoder must replay GET/DELETE mock cases with fallthrough assertions.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/gcs-mock/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::tests::replays_the_http_case_corpus$/)'
+oracle_cases:
+  - tools/oracle/cases/logging/gcs-mock/post-mocked-storage-url-returns-factory-response.yaml
+  - tools/oracle/cases/logging/gcs-mock/post-non-storage-url-passes-through.yaml
+  - tools/oracle/cases/logging/gcs-mock/get-mocked-storage-url-returns-canned-payload.yaml
+  - tools/oracle/cases/logging/gcs-mock/get-non-storage-url-passes-through.yaml
+  - tools/oracle/cases/logging/gcs-mock/delete-mocked-storage-url-returns-204-empty.yaml
+  - tools/oracle/cases/logging/gcs-mock/delete-non-storage-url-passes-through.yaml
+  - tools/oracle/cases/logging/gcs-mock/mock-latency-default-150ms.yaml
+  - tools/oracle/cases/logging/gcs-mock/mock-latency-from-config.yaml
+  - tools/oracle/cases/logging/gcs-mock/auth-mocks-return-fixed-literals.yaml
+  - tools/oracle/cases/logging/gcs-mock/auth-mocks-install-once.yaml
+deviations:
+  - what: >-
+      GCS mock mode is activated globally via the GCS_MOCK environment variable and patches
+      AsyncHTTPHandler.get, AsyncHTTPHandler.delete, and VertexBase auth methods
+      (_ensure_access_token_async, _ensure_access_token, _get_token_and_url) globally at
+      module initialization time. This diverges from the intended injected fixture pattern
+      where tests pass mock factories to client constructors. The current implementation uses
+      application-wide patching that affects all Vertex and GCS clients when GCS_MOCK is set,
+      not instance-local mock state.
+    why: >-
+      The LiteLLM implementation at the pinned commit uses global monkeypatching activated via
+      environment variable. Following this approach preserves compatibility with the existing
+      GCS mock test framework and allows the mock to function without changes to
+      GCSBucketBase.__init__ beyond calling the mock setup functions. A future decision would
+      be needed to move to instance-scoped fixture injection as originally outlined.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L185-L235
+out_of_scope:
+  - B191 owns mock_client_factory.create_mock_client_factory, MockClientConfig and MockResponse; they require a concrete shared owner and are not implemented here.
+  - B002 owns environment loading for GCS_MOCK and GCS_MOCK_LATENCY_MS; this task consumes the resolved values.
+  - B173 owns the real AsyncHTTPHandler and fallthrough to actual httpx/aiohttp clients; mocks intercept before that boundary.
+  - GCSBucketBase construction is B3997; this task provides only the injectable mock factory.
+pitfalls:
+  - The mock GET handler returns a complete JSON object as bytes, not streaming chunks; callers must handle this as a full response, not a stream boundary.
+  - Auth mocks are installed on the VertexBase class globally when the factory is first called, not locally per instance; test isolation requires careful mock cleanup between test runs.
+  - Fallthrough for non-mocked URLs must preserve exact request parameters (headers, data, json, timeout, stream, content) to avoid altering unintended calls.
+  - Mock latency sleeps before returning; a zero-duration sleep still applies asyncio.sleep() and yields control, not a no-op.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

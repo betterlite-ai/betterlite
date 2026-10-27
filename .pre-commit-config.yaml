@@ -14,9 +14,9 @@ repos:
       # Codex keeps .codex/ read-only for its agents, and these two fixers open every file for writing
       # rustfmt ends every .rs file, and an empty one as a single newline that this fixer would strip again
       - id: end-of-file-fixer
-        exclude: ^\.codex/|\.rs$
+        exclude: ^\.codex/|\.rs$|/fuzz/corpus/
       - id: trailing-whitespace
-        exclude: ^\.codex/
+        exclude: ^\.codex/|/fuzz/corpus/
 
   - repo: local
     hooks:
@@ -70,6 +70,18 @@ repos:
         entry: zizmor --offline
         language: system
         files: ^\.github/(workflows/[^/]+|actions/[^/]+/action)\.ya?ml$
+      - id: ruff-helpers
+        name: ruff on the oracle Python helpers
+        entry: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers
+        language: system
+        files: ^tools/oracle/helpers/.*\.py$
+        pass_filenames: false
+      - id: basedpyright-helpers
+        name: basedpyright on the oracle Python helpers
+        entry: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+        language: system
+        files: ^tools/oracle/helpers/.*\.py$
+        pass_filenames: false
       - id: clippy
         name: cargo clippy
         entry: cargo clippy --workspace --all-targets --locked -- -D warnings

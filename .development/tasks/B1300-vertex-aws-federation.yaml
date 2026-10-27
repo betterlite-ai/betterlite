@@ -25,7 +25,6 @@ scope:
   paths:
     - Cargo.toml
     - Cargo.lock
-    - deny.toml
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/aws_federation.rs
     - crates/betterlite-vertex/src/aws_federation/**
@@ -78,6 +77,6 @@ pitfalls:
   - A supplier captured as a frozen access-key tuple loses later aws_session_token rotations.
   - The universe_domain field is a federation option, not a replacement inference api_base.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

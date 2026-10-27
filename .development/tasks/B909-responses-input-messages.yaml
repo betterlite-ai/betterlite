@@ -113,5 +113,5 @@ pitfalls:
 - A thinking block requires a truthy signature rather than a specific signature type; extra validation would drop pinned inputs.
 review_level: standard
 budget:
-  max_changed_lines: 770
+  max_changed_lines: 1500
   max_new_expects: 1

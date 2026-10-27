@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Argilla dataset mapping and batch logging
 status: todo
 depends_on: [B002, B173, B189, B256]
-file: null
+file: tasks/B3960-argilla-logging.yaml
 covers:
   - "litellm/integrations/argilla.py"
   - "litellm/types/integrations/argilla.py"

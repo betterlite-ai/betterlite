@@ -1,0 +1,143 @@
+id: B4584
+title: Local autoroute process lifecycle and recovery commands
+description: >-
+  Translate LiteLLM's ephemeral proxy launch, readiness polling, PID tracking, termination
+  and settings restore into betterlite's native CLI. Build process-lifecycle helpers
+  that detect missing proxy runtime modules (fastapi, uvicorn, backoff, orjson, websockets,
+  apscheduler), probe port availability before launching, start a native betterlite gateway
+  subprocess with config/port arguments, poll its /health/liveliness endpoint until healthy
+  or timeout, and write/read/clear JSON PID records for recovery. Build process control:
+  graceful SIGTERM escalating to SIGKILL with a five-second grace period, PID existence checks
+  using signal(0), and log-file tailing to a stop event. Build command orchestration
+  for autoroute configure/start/stop with temporary settings backup/restore, master-key
+  reuse from the generated config, and setup ordering. Preserve fixed-port refusal (port
+  4000 is silently rebound by the litellm proxy launcher), corrupt-PID recovery that clears
+  the record without blocking cleanup, backup-exists refusal before start, and signal handler
+  registration for clean teardown even after Ctrl-C. Deprecated up/down aliases stay hidden
+  and hidden-command registered. The start command backs up Claude settings, merges
+  them with gateway base_url and master_key, writes them, launches the proxy, polls readiness,
+  then enters a foreground log stream with atexit/signal cleanup. The stop command handles
+  corrupt PID JSON, restores backed-up Claude settings and logs outcome to stderr for
+  visibility in atexit handlers. Build runtime checks that the betterlite gateway executable
+  exists and is available (not the Python proxy path), and translate missing-module diagnostics
+  into concrete native-runtime availability messaging. A child proxy must not outlive its
+  CLI owner: process death signaling follows the native container rule.
+scope:
+  paths:
+    - tools/management-cli/src/autoroute/process.rs
+    - tools/management-cli/src/autoroute/process/**
+    - tools/management-cli/src/autoroute/commands.rs
+    - tools/management-cli/src/autoroute/commands/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L45-L53
+    why: missing_proxy_runtime_modules detects fastapi, uvicorn, backoff, orjson, websockets, apscheduler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L59-L66
+    why: is_port_available probes 127.0.0.1 with REUSEADDR before binding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L69-L86
+    why: launch_proxy spawns -m litellm.proxy.proxy_cli with config, port and host args, stdout/stderr to log file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L95-L110
+    why: poll_liveliness GET /health/liveliness until 200, process exit, or 30s timeout; last log tail on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L113-L138
+    why: PID record serialization with Pydantic TypeAdapter; corrupt JSON raises UpError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L141-L162
+    why: is_running uses signal(0) to detect existence; terminate does SIGTERM grace period then SIGKILL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L165-L177
+    why: stream_log tails log file in a thread until stop event, waiting for file creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L49-L77
+    why: _ensure_master_key reuses persisted key or mints token_urlsafe(32); fails on corrupt config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L101-L218
+    why: start command checks missing modules, existing/running pid, backup/port, then launch/poll/settings/log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L221-L245
+    why: stop command tolerates corrupt PID, terminates process, clears record, restores settings with stderr messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L248-L272
+    why: up/down deprecated aliases with yellow stderr warnings; hidden=True in decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L134-L144
+    why: Port 4000 explicitly forbidden; launcher silently rebinds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L128-L132
+    why: Backup path existence blocks start if present; indicates crash recovery needed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L187-L205
+    why: _teardown lock prevents duplicate execution from atexit and signal handler.
+dod:
+  - text: missing_proxy_runtime_modules returns a tuple of module names (fastapi, uvicorn, backoff, orjson, websockets, apscheduler) that cannot be imported.
+    proof: [missing-proxy-runtime-modules]
+  - text: Port 4000 is explicitly rejected with a ClickException message explaining the proxy's silent rebinding behavior.
+    proof: [port-4000-rejected]
+  - text: is_port_available checks port availability on 127.0.0.1 and returns false when in use; unavailable ports raise ClickException in start.
+    proof: [port-in-use-refusal]
+  - text: Existing running process is detected by reading PID record and calling is_running; raises ClickException if process is already running.
+    proof: [already-running-detection]
+  - text: AUTOROUTE_BACKUP_PATH existence check prevents start from running when backup exists from a previous session.
+    proof: [backup-exists-refusal]
+  - text: _ensure_master_key loads config.yaml, extracts persisted master key via master_key_from_config, mints fresh key via secrets.token_urlsafe(32) when absent, and rewrites config.
+    proof: [master-key-reuse]
+  - text: terminate sends SIGTERM, waits up to grace_period seconds with polling, then escalates to SIGKILL if process still running.
+    proof: [sigterm-sigkill-escalation]
+  - text: is_running sends signal(0) to check process existence, returning false on ProcessLookupError and true on PermissionError or success.
+    proof: [signal-0-semantics]
+  - text: Settings backup/restore order writes original settings to AUTOROUTE_BACKUP_PATH before writing merged settings to CLAUDE_SETTINGS_PATH; restore reverses the order.
+    proof: [backup-restore-order]
+  - text: Teardown is protected by a lock acquired once via blocking=False; concurrent signal/atexit calls return early if lock already held.
+    proof: [teardown-lock]
+  - text: Deprecated aliases up and down print yellow deprecation notice to stderr and invoke start/stop with same options.
+    proof: [deprecated-alias-warnings]
+deviations:
+  - what: betterlite launches a native gateway executable instead of litellm.proxy.proxy_cli subprocess.
+    why: Prerequisite 3 requires native executable contract; Python proxy module is not shipped with the CLI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L69-L86
+oracle_cases: []
+checks:
+  optional: []
+  commands:
+    - id: missing-proxy-runtime-modules
+      why: missing_proxy_runtime_modules does not detect unavailable modules or returns wrong names
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_process::tests::missing_proxy_runtime_modules/)'
+    - id: port-4000-rejected
+      why: port 4000 is not explicitly rejected with the correct error message
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::port_4000_rejected/)'
+    - id: port-in-use-refusal
+      why: port-in-use check does not detect unavailable ports or does not raise ClickException
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::port_in_use_refusal/)'
+    - id: already-running-detection
+      why: existing process detection does not read PID record or does not detect running processes correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::already_running_detection/)'
+    - id: backup-exists-refusal
+      why: start does not check for AUTOROUTE_BACKUP_PATH existence or does not refuse when backup exists
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::backup_exists_refusal/)'
+    - id: master-key-reuse
+      why: _ensure_master_key does not extract persisted key, does not mint new key when absent, or does not update config correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::master_key_reuse/)'
+    - id: sigterm-sigkill-escalation
+      why: terminate does not send SIGTERM or escalate to SIGKILL after grace period
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_process::tests::sigterm_sigkill_escalation/)'
+    - id: signal-0-semantics
+      why: is_running does not use signal(0) correctly or does not handle ProcessLookupError and PermissionError
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_process::tests::signal_0_semantics/)'
+    - id: backup-restore-order
+      why: settings backup is not written before settings write, or restore does not reverse the order
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::backup_restore_order/)'
+    - id: teardown-lock
+      why: teardown is not protected by a lock or concurrent calls are not prevented from double-restoring
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::teardown_lock/)'
+    - id: deprecated-alias-warnings
+      why: deprecated aliases do not print warning to stderr or do not invoke the current command correctly
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_commands::tests::deprecated_alias_warnings/)'
+pitfalls:
+  - Port 4000 is rejected by name, not by probe failure (launchers silently rebind it).
+  - Corrupt PID JSON in stop() is logged to stderr and cleared; it does not block restoration.
+  - Master key is read from generated config's general_settings only, not from litellm_settings.
+  - Backup path is checked before process start; its existence indicates a crash without proper cleanup.
+  - _teardown() is registered with atexit and called from signal handlers; the restored lock prevents double execution.
+  - Process.poll() returning None means still running; any other value means exited with that code.
+  - Terminate uses signal(SIGTERM) first, waits five seconds with polling, then signal(SIGKILL) if still alive.
+  - is_running returns True on PermissionError (process owned by other user); only ProcessLookupError means gone.
+  - Log streaming thread is daemon=True and exits when stop event is set or log file is not found.
+out_of_scope:
+  - B4562 owns install_statusline_script, load_json_or_empty, merge_claude_settings, write_claude_settings.
+  - B4575 owns secure_create, write_backup, restore_claude_settings and backup/error contracts.
+  - B4583 owns master_key_from_config, run_configure_wizard and shared local paths.
+  - Banner display and local gateway executable contract is prerequisite 3; translate missing-module diagnostics and route launch to native binary, not Python proxy_cli.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

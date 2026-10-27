@@ -1,0 +1,158 @@
+id: B3741
+title: Agent 365 delegated tokens and evaluation payloads
+description: >-
+  Build Agent 365 construction with Entra On-Behalf-Of token acquisition and caching,
+  typed token-exchange errors, and evaluation payload assembly with session identity.
+  Hash the assertion with SHA256 for the bounded 1,000-entry LRU cache with 60-second
+  expiry margin; retain the production endpoint, resource app ID and scope name as
+  constants. Use the authenticated key_alias as agent identity in the evaluation payload,
+  and resolve conversation ID from MCP session metadata, headers, or fall back to per-call
+  litellm_call_id or generated UUID. Distinguish missing/non-string access tokens from
+  gateway-owned Entra credential errors (identified by error code in _GATEWAY_OWNED_TOKEN_ERRORS)
+  and assertion-validation errors (AADSTS 50027 prefix) within the same rejection. Token
+  parsing returns _DEFAULT_TOKEN_TTL_SECONDS when expires_in is malformed or absent.
+
+  Implement Agent365TokenExchangeError.__init__ with status_code, error_code, description
+  and aadsts_codes, and its gateway_owned property to return true when error_code is in
+  the gateway-owned set and no AADSTS code starts with ASSERTION_ERROR_AADSTS_PREFIX.
+  Implement Agent365MalformedResponseError as a simple exception. Implement Agent365ThrottledError.__init__
+  with status_code. Implement Agent365Guardrail with records_own_guardrail_information=True,
+  storing tenant_id, client_id, client_secret, request_timeout (default 10.0),
+  unreachable_fallback (default fail_closed), and an OrderedDict-backed _obo_token_cache
+  guarded by _obo_cache_lock. The class declaration and __init__ method wire the async_handler
+  (defaulting to get_async_httpx_client with GuardrailCallback provider), initialize the
+  logger, and delegate to CustomGuardrail with get_supported_event_hooks returning pre_mcp_call.
+
+  Implement get_config_model returning Agent365GuardrailConfigModel. Implement _parse_expires_in
+  to return float(raw) when raw is numeric or numeric string, otherwise _DEFAULT_TOKEN_TTL_SECONDS.
+  Implement _parse_aadsts_codes to validate raw with TypeAdapter(tuple[int, ...]), returning
+  an empty tuple on validation error. Implement entra_assertion to return the bearer value
+  when it is a non-empty string with exactly two dots (compact JWS format), otherwise None.
+  Use a constant name for the AADSTS prefix that is 30 characters or fewer (e.g., ASSERTION_ERROR_AADSTS_PREFIX
+  at 29 characters, or AADSTS_ASSERTION_ERROR_PREFIX).
+
+  Implement _resolve_conversation_id as a static method that tries the litellm_logging_obj's
+  mcp_tool_call_metadata.mcp_session_id first, then searches metadata/litellm_metadata
+  headers for the mcp-session-id header (case-insensitive), then uses litellm_call_id, and
+  finally generates a UUID. Implement _build_evaluate_payload to assemble the JSON body
+  with tool.name, serverName, conversationId, optional agentId from key_alias, and optional
+  arguments when it is a dict. Implement _get_obo_token to hash the assertion with SHA256,
+  check cache with expiry margin, POST to the token endpoint with OBO parameters, raise
+  Agent365ThrottledError for 408/429, raise httpx.HTTPStatusError for 5xx, parse the
+  response JSON, raise Agent365TokenExchangeError for 4xx with error/error_description/error_codes,
+  validate that access_token is a non-empty string, cache with LRU eviction at 1,000 entries,
+  and return the token. Implement _post_allowing_error_status to call async_handler.post with
+  the given URL, data, json, headers and timeout, catching httpx.HTTPStatusError and
+  returning its response without re-raising. Implement _evict_obo_token as a lock-protected
+  cache removal by SHA256-hashed assertion key.
+
+  Implement Agent365GuardrailConfigModel with tenant_id, client_id, client_secret fields
+  (all optional, falling back to environment variables), unreachable_fallback (Literal
+  fail_closed|fail_open, default fail_closed), and ui_friendly_name() returning "Microsoft Agent 365".
+  Write the behavior rstest functions agent_365_token_behaviors in adjacent tests.rs files,
+  with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. The helper operations agent_365_token_exchange, agent_365_payload_assembly
+  are already registered; each operation has its own Rust and Python adapter file and corpus seed.
+  Budget 200 token/cache logic, 100 error types, 100 payload assembly, 120 configuration/wiring
+  and 280 tests/helpers (800 total).
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/agent_365_tokens.rs
+    - crates/betterlite-guardrails/src/agent_365_tokens/**
+    - crates/betterlite-guardrails/src/agent_365_config.rs
+    - crates/betterlite-guardrails/src/agent_365_config/**
+    - tools/oracle/cases/helpers/agent-365-tokens/**
+    - tools/oracle/fuzz/corpus/helper_case/agent-365-tokens-*
+    - tools/oracle/helpers/b3741.py
+    - tools/oracle/helpers/b3741/**
+    - tools/oracle/src/helpers/guardrails/b3741.rs
+    - tools/oracle/src/helpers/guardrails/b3741/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L1-L88
+    why: Imports, constants, token expiry and AADSTS code parsing utilities.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L116-L189
+    why: Error classes, guardrail initialization, config model and event hook registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L386-L509
+    why: OBO token acquisition with caching, payload building, conversation ID resolution and error-preserving POST.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L558-L561
+    why: Token cache eviction for failed OBO exchanges.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/agent_365.py#L1-L49
+    why: Configuration constants, config model fields and friendly name.
+dod:
+  - text: OBO token cache uses SHA256 hashing, respects 1,000-entry LRU eviction, and checks expiry with 60-second margin before returning cached tokens.
+    proof: [agent-365-token-behaviors, oracle]
+  - text: Token parsing returns default TTL on malformed/missing expires_in; access_token validation rejects non-string or empty values; AADSTS code parsing tolerates invalid input.
+    proof: [agent-365-token-behaviors, agent-365-token-python, oracle]
+  - text: gateway_owned distinguishes assertion errors (AADSTS 50027) from client-credential errors even within the same error_code rejection.
+    proof: [agent-365-token-behaviors, oracle]
+  - text: Conversation ID resolution tries mcp_session_id from logging, mcp-session-id header (case-insensitive), litellm_call_id, and generates UUID as final fallback.
+    proof: [agent-365-token-behaviors, oracle]
+  - text: Evaluation payload includes tool.name, serverName, conversationId, optional agentId from key_alias, and optional arguments when present as dict.
+    proof: [agent-365-token-behaviors, oracle]
+  - text: Entra assertion validation accepts only compact JWS (three dot-separated parts); virtual keys, session bearers and opaque tokens yield None.
+    proof: [agent-365-token-behaviors, agent-365-token-python, oracle]
+  - text: "_post_allowing_error_status catches httpx.HTTPStatusError and returns the response without re-raising, preserving error status for caller inspection."
+    proof: [agent-365-token-behaviors, oracle]
+  - text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+    proof: [agent-365-token-corpus]
+checks:
+  optional: []
+  commands:
+    - id: agent-365-token-behaviors
+      why: Token exchange, caching, or payload assembly tests are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::agent_365_token_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: agent-365-token-python
+      why: The oracle adapters fail strict Python checks
+      run: test -f tools/oracle/helpers/b3741.py && test -f tools/oracle/helpers/b3741.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: agent-365-token-corpus
+      why: The helper fuzz target or nonempty committed corpus is missing, or corpus replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" && grep -rlq 'agent_365_token_exchange\|agent_365_payload_assembly' tools/oracle/fuzz/corpus/helper_case/agent-365-tokens-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case/agent-365-tokens-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/agent-365-tokens/assertion-compact-jws-format.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/assertion-rejects-virtual-key.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/assertion-rejects-opaque-token.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/parse-expires-in-numeric.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/parse-expires-in-malformed-fallback.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/parse-aadsts-codes-valid.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/parse-aadsts-codes-invalid-fallback.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/gateway-owned-client-credential-error.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/assertion-error-within-invalid-client.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/obo-cache-sha256-hashing.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/obo-cache-lru-eviction.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/obo-cache-expiry-margin.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/token-throttle-408.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/token-throttle-429.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/token-server-error-500.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/token-malformed-json-response.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/token-access-token-non-string.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/conversation-id-from-mcp-session-metadata.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/conversation-id-from-header-case-insensitive.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/conversation-id-from-call-id.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/conversation-id-generated-uuid.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/payload-with-arguments-dict.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/payload-without-arguments.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/payload-agent-id-from-key-alias.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/post-allowing-error-status-5xx.yaml
+  - tools/oracle/cases/helpers/agent-365-tokens/post-allowing-error-status-404.yaml
+deviations:
+  - what: Token cache uses SHA256 hashing of the assertion instead of the assertion as a direct key.
+    why: LiteLLM uses hashlib.sha256 to keep assertion byte sequences out of structured memory, and the bounded cache provides cryptographic-grade distinction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L436-L438
+  - what: Conversation ID resolution uses exact case-insensitive header matching for mcp-session-id instead of a regex-based search.
+    why: HTTP headers are always case-insensitive per RFC 7230; exact string comparison with case normalization is simpler and avoids regex overhead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L424-L430
+out_of_scope:
+  - "CustomGuardrail base class construction and initialization (__init__) is owned by B3664, B3665, and B3666."
+  - "should_run_guardrail checking, add_standard_logging_guardrail_information_to_request_data, and log_guardrail_information decorator are unresolved B104 dependencies."
+  - "async_pre_call_hook, verdict enforcement, error handling (_handle_caller_fault, _handle_unavailable, _handle_throttled, _enforce_verdict) and verdict recording are B3742's responsibility."
+pitfalls:
+  - 'The oracle helpers for this task are pre-registered as agent_365_token_exchange and agent_365_payload_assembly in the guardrails group. Replace the stub Ops in tools/oracle/src/helpers/guardrails/b3741.rs and agent_365_payload_assembly.rs with impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3741.py and agent_365_payload_assembly.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - OBO token cache insertion happens first, then eviction occurs; when the cache reaches 1,001 entries, the oldest is evicted after inserting the new one, maintaining at most 1,000.
+  - The mcp-session-id header search must be case-insensitive (e.g., "MCP-Session-ID" == "mcp-session-id") to handle client-provided headers correctly.
+  - Token parsing must distinguish missing/non-string access_token fields; a missing field is a decode error, a non-string is a validation error, and either raises Agent365MalformedResponseError.
+  - AADSTS code parsing uses TypeAdapter validation to ensure a tuple of ints; a non-tuple or non-integer list silently returns empty tuple, preserving fallback behavior.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

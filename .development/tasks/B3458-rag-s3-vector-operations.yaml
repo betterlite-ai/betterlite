@@ -1,0 +1,147 @@
+id: B3458
+title: S3 Vectors signed ingestion operations
+description: >-
+  Build four reusable signed S3 Vectors request methods that receive resolved state (bucket name,
+  index name, AWS region, credentials, and an HTTP client) and execute against AWS S3 Vectors APIs.
+  These helpers are called by B3459's ingestion workflow, never by application code directly.
+
+  `_sign_and_execute_request` (lines 191-264) takes method (PUT, POST, or GET), URL, optional JSON
+  body and optional headers. It hashes the body with SHA256 (or empty bytes for no body), sets
+  x-amz-content-sha256 header to the hex digest, acquires AWS credentials from vector_store_config
+  using BaseAWSLLM's get_credentials (aws_access_key_id, aws_secret_access_key, aws_session_token,
+  aws_session_name, aws_profile_name, aws_role_name, aws_web_identity_token, aws_sts_endpoint,
+  aws_external_id), signs with SigV4 for service 's3vectors' and the resolved aws_region_name, and
+  executes the request through the injected async_httpx_client. Returns the response object.
+
+  `_ensure_vector_bucket_exists` (lines 266-314) calls GetVectorBucket API. On any error response,
+  calls CreateVectorBucket API. Returns on 200, 201 or 409 (already exists); otherwise raises error.
+
+  `_ensure_vector_index_exists` (lines 316-365) calls GetIndex API. On any error response, calls
+  CreateIndex API with dimension, distance_metric and non_filterable_metadata_keys. Dimension comes
+  from vector_store_config or defaults to S3_VECTORS_DEFAULT_DIMENSION=1024; distance_metric defaults
+  to S3_VECTORS_DEFAULT_DISTANCE_METRIC; non_filterable_metadata_keys defaults to
+  S3_VECTORS_DEFAULT_NON_FILTERABLE_METADATA_KEYS. Returns on 200, 201 or 409 (already exists).
+
+  `_put_vectors` (lines 367-397) calls PutVectors API with a sequence of vector entries. Each entry
+  has key (string), data (float32 embedding list), and metadata (string mapping). Succeeds on 200
+  or 201; otherwise raises error.
+
+  All endpoints use https://s3vectors.{aws_region_name}.api.aws/{OperationName} and SigV4 service
+  name 's3vectors'. Preserve exact field names (vectorBucketName, indexName, distanceMetric,
+  dataType: "float32") and get-error-to-create fallback pattern for bucket and index checks.
+  Treat 409 responses as successful resource creation (already exists).
+
+  Helper functions s3_vectors_ingest_target and s3_vectors_ingest_embedding_options (from
+  transformation.py) are built in B3459, which calls them during initialization. s3_vectors_ingest_target
+  splits vector_store_id as "bucket_name:index_name" when present, uses vector_bucket_name as
+  fallback for the bucket part, and raises ValueError(S3_VECTORS_STORE_ID_ERROR) when neither is
+  provided. s3_vectors_ingest_embedding_options returns {model: value} when vector_store_config
+  contains litellm_embedding_model or embedding_model, overriding the input embedding config.
+scope:
+  paths:
+    - crates/betterlite-rag/src/s3_vectors_ingestion.rs
+    - crates/betterlite-rag/src/s3_vectors_ingestion/tests.rs
+    - crates/betterlite-rag/src/s3_vectors_ingestion/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L191-L264
+    why: "_sign_and_execute_request body hashing, SigV4 signing with service 's3vectors', and HTTP dispatch."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L266-L314
+    why: "_ensure_vector_bucket_exists GetVectorBucket/CreateVectorBucket API calls, error-to-create and 409 handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L316-L365
+    why: "_ensure_vector_index_exists GetIndex/CreateIndex API calls, dimension/distance_metric defaults and 409 handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L367-L397
+    why: "_put_vectors API call shape with vectorBucketName, indexName and vectors."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L36-L73
+    why: "split_s3_vectors_store_id, s3_vectors_ingest_target and s3_vectors_ingest_embedding_options logic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2037-L2039
+    why: "S3_VECTORS_DEFAULT_DIMENSION=1024, S3_VECTORS_DEFAULT_DISTANCE_METRIC and S3_VECTORS_DEFAULT_NON_FILTERABLE_METADATA_KEYS."
+dod:
+  - text: "_sign_and_execute_request hashes body with SHA256 (or empty bytes if no body), sets x-amz-content-sha256 header to hex digest, calls get_credentials and SigV4Auth with service 's3vectors'."
+    proof: [sign-and-execute-tests]
+  - text: "_sign_and_execute_request raises error for unsupported HTTP methods."
+    proof: [sign-and-execute-unsupported-method]
+  - text: "_ensure_vector_bucket_exists calls GetVectorBucket first, calls CreateVectorBucket on any error, returns on 200/201/409."
+    proof: [bucket-exists-get-then-create, bucket-exists-409]
+  - text: "_ensure_vector_index_exists calls GetIndex first, calls CreateIndex on any error, returns on 200/201/409."
+    proof: [index-exists-get-then-create, index-exists-409]
+  - text: "_ensure_vector_index_exists includes dimension (default 1024), distance_metric and non_filterable_metadata_keys in CreateIndex request."
+    proof: [index-exists-dimension]
+  - text: "_put_vectors calls PutVectors API with vectorBucketName, indexName and vectors array, succeeds on 200/201."
+    proof: [put-vectors-tests]
+  - text: "s3_vectors_ingest_target with vector_store_id='bucket:index' returns both parts; with 'index' and vector_bucket_name='bucket' returns (bucket, index)."
+    proof: [ingest-target-split, ingest-target-fallback]
+  - text: "s3_vectors_ingest_target with neither vector_store_id nor vector_bucket_name raises ValueError with S3_VECTORS_STORE_ID_ERROR."
+    proof: [ingest-target-missing-error]
+  - text: "s3_vectors_ingest_embedding_options returns {model: litellm_embedding_model} when present in config, falls back to embedding_model, otherwise returns input unchanged."
+    proof: [ingest-embedding-override]
+  - text: "All endpoints use https://s3vectors.{aws_region_name}.api.aws with SigV4 signing service 's3vectors'."
+    proof: [endpoint-check, service-name-check]
+checks:
+  optional: []
+  commands:
+    - id: sign-and-execute-tests
+      why: "_sign_and_execute_request does not hash body or sign with SigV4"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*sign.*execute/)'
+    - id: sign-and-execute-unsupported-method
+      why: "_sign_and_execute_request does not raise error for unsupported method"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*unsupported.*method/)'
+    - id: bucket-exists-get-then-create
+      why: "_ensure_vector_bucket_exists does not call GetVectorBucket before CreateVectorBucket"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*bucket.*get.*then.*create/)'
+    - id: bucket-exists-409
+      why: "_ensure_vector_bucket_exists does not handle 409 as success"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*bucket.*409/)'
+    - id: index-exists-get-then-create
+      why: "_ensure_vector_index_exists does not call GetIndex before CreateIndex"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*index.*get.*then.*create/)'
+    - id: index-exists-409
+      why: "_ensure_vector_index_exists does not handle 409 as success"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*index.*409/)'
+    - id: index-exists-dimension
+      why: "_ensure_vector_index_exists does not include dimension or use default 1024"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*index.*dimension/)'
+    - id: put-vectors-tests
+      why: "_put_vectors does not call PutVectors API correctly"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*put.*vectors/)'
+    - id: ingest-target-split
+      why: "s3_vectors_ingest_target does not split vector_store_id on colon"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*ingest.*target.*split/)'
+    - id: ingest-target-fallback
+      why: "s3_vectors_ingest_target does not use vector_bucket_name as fallback"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*ingest.*target.*fallback/)'
+    - id: ingest-target-missing-error
+      why: "s3_vectors_ingest_target does not raise error when both are missing"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*ingest.*target.*missing/)'
+    - id: ingest-embedding-override
+      why: "s3_vectors_ingest_embedding_options does not override embedding model"
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_ingestion::.*ingest.*embedding/)'
+    - id: endpoint-check
+      why: "endpoints do not use https://s3vectors.{region}.api.aws"
+      run: grep -q 's3vectors.*api\.aws' crates/betterlite-rag/src/s3_vectors_ingestion.rs
+    - id: service-name-check
+      why: "SigV4 signing does not use service name 's3vectors'"
+      run: grep -q '"s3vectors"' crates/betterlite-rag/src/s3_vectors_ingestion.rs
+oracle_cases: []
+deviations:
+  - what: "When GetVectorBucket or GetIndex fails (non-200 response), betterlite treats it as 'does not exist' and attempts creation rather than propagating the error."
+    why: "LiteLLM's pin shows this get-error-to-create pattern (lines 288-314, 324-330)."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L288-L330
+out_of_scope:
+  - >-
+    _get_dimension_from_embedding_request, _get_dimension_from_config, _ensure_config_initialized, embed, store, query_vector_store and S3VectorsRAGIngestion.__init__:
+    owned by B3459, which calls these signed request helpers.
+  - >-
+    The complete transformation.py file:
+    B049 owns the vector store provider implementations; B3458 reimplements s3_vectors_ingest_target and s3_vectors_ingest_embedding_options logic.
+pitfalls:
+  - "SigV4 signing requires exact body hash: hashlib.sha256 on UTF-8 encoded JSON body, or on empty bytes for requests without a body. The x-amz-content-sha256 header must carry the hex digest."
+  - "The service name in SigV4Auth must be 's3vectors' (not 's3' or 'vectors'), and the region must match aws_region_name resolved from configuration."
+  - "GetVectorBucket, CreateVectorBucket, GetIndex, CreateIndex and PutVectors all use POST method, despite their names suggesting otherwise."
+  - "CreateVectorBucket and CreateIndex both return 409 on ConflictException (resource already exists) and must be treated as successful creation, not an error."
+  - "s3_vectors_ingest_target and s3_vectors_ingest_embedding_options are called during initialization (B3459), not by these signed request methods. These helpers receive bucket and index already resolved."
+  - "The split_s3_vectors_store_id helper validates that both bucket and index parts are non-empty strings."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

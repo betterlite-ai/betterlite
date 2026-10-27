@@ -62,6 +62,6 @@ pitfalls:
   - A swallowed new_user error is not successful provisioning until the ensure wrapper finds the user row.
   - created_users excludes the winner of a concurrent insert even though all_member_ids includes that user.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

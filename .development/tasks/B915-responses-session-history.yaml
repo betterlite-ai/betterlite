@@ -131,5 +131,5 @@ pitfalls:
 - Empty cold-storage results do not erase the stored request and malformed metadata does not fail the request.
 review_level: security
 budget:
-  max_changed_lines: 755
+  max_changed_lines: 1500
   max_new_expects: 1

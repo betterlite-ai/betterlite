@@ -158,6 +158,6 @@ pitfalls:
   - Deleted keys carry both org_id and organization_id, which must not be collapsed into one field.
   - A user's password can be read internally but Field(exclude=True) wins even over a serialization include request.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -77,8 +77,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/image_generation.rs
   - crates/betterlite-openai/src/image_generation/**
   - tools/oracle/Cargo.toml
@@ -303,6 +301,6 @@ pitfalls:
 - The family selector is case-sensitive and treats every unknown non-DALL-E name as GPT image.
 - An unsupported option already in optional_params bypasses validation; tests must distinguish the two input maps.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

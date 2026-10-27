@@ -1,0 +1,231 @@
+id: B3790
+title: Pillar protection payloads and response evidence
+description: >-
+  Build Pillar request/header projection, response decisions and bounded URL-encoded evidence headers. Prepare headers
+  with boolean configuration from provided values, environment variables or defaults; build request payloads with
+  extracted model/provider and metadata; call the /api/v1/protect endpoint and process responses including session ID
+  storage, evidence truncation within the 8 KiB header budget, and error handling with fallback behavior. Preserve
+  boolean precedence (explicit > environment > default), the evidence truncation algorithm that reduces evidence text
+  with halving step sizes, the default allow fallback on backend errors, and header/metadata construction for response
+  evidence. Do not implement the async hook methods (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook)
+  or the guardrail constructor that calls get_async_httpx_client; those belong to the B108 umbrella. Do not implement
+  add_guardrail_to_applied_guardrails_header; that needs a separate U3 owner for applied-guardrail header bookkeeping.
+scope:
+  paths:
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/pillar.rs
+    - crates/betterlite-guardrails/src/pillar/**
+    - tools/oracle/cases/helpers/pillar/**
+    - tools/oracle/fuzz/corpus/helper_case/pillar-*
+    - tools/oracle/helpers/b3790.py
+    - tools/oracle/helpers/b3790/**
+    - tools/oracle/src/helpers/guardrails/b3790.rs
+    - tools/oracle/src/helpers/guardrails/b3790/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L75-L168
+  why: _encode_json_for_header, _truncate_evidence_payload, build_pillar_response_headers; URL encoding, evidence
+    truncation within 8 KiB budget, and metadata header construction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L502-L838
+  why: _handle_api_error, _prepare_headers, _set_bool_header, _resolve_bool_config, _parse_bool_value,
+    _extract_model_and_provider, _prepare_payload, _call_pillar_api, _process_pillar_response, _raise_pillar_detection_exception;
+    configuration precedence, boolean parsing, provider detection, error fallback, request construction, API calls,
+    response handling including session/evidence metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L48-L73
+  why: _PillarProtectResponse TypedDict, _PillarProtectHTTPResponse and _PillarProtectHTTPClient protocol definitions
+    for response type contracts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L1-L48
+  why: Import, constant and exception declarations; TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY usage.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/pillar.py#L10-L57
+  why: PillarGuardrailConfigModel, PillarGuardrailConfigModelOptionalParams with all settings (api_key, api_base,
+    on_flagged_action default monitor, async_mode, persist_session, include_scanners, include_evidence,
+    fallback_on_error default allow, timeout default 5.0); ui_friendly_name returns "Pillar Guardrail".
+dod:
+- text: >-
+    _encode_json_for_header uses ensure_ascii=False, separators=(",", ":") and quote with safe="" to match LiteLLM's
+    output exactly.
+  proof:
+  - encode-behavior
+- text: >-
+    _truncate_evidence_payload truncates list and dict evidence within max_bytes using the halving step algorithm,
+    preserves non-list evidence encoding, and returns (truncated_evidence, encoded_value, was_truncated).
+  proof:
+  - truncate-behavior
+- text: >-
+    _resolve_bool_config respects precedence (explicit > environment > default), _parse_bool_value accepts "true",
+    "1", "yes", "y", "on" as true and "false", "0", "no", "n", "off" as false, and invalid strings raise ValueError
+    with "Unrecognised boolean value".
+  proof:
+  - bool-parsing
+- text: >-
+    _prepare_headers adds Authorization, Content-Type, plr_* conditional headers, and X-LiteLLM-* context headers
+    only when values are present in user_api_key_dict.
+  proof:
+  - header-construction
+- text: >-
+    _extract_model_and_provider calls get_llm_provider from B174 with the request model, custom_llm_provider, api_base
+    and api_key, returns (clean_model, provider), and falls back to (model, custom_llm_provider or provider or "unknown")
+    on exception.
+  proof:
+  - model-extraction
+- text: >-
+    _prepare_payload builds dict with messages, tools, metadata source/version, optional user_id, optional session_id
+    from metadata.pillar_session_id, and extracted model/provider, matching LiteLLM's /api/v1/protect contract.
+  proof:
+  - payload-construction
+- text: >-
+    _call_pillar_api POSTs to {api_base}/api/v1/protect with headers, payload and timeout, calls raise_for_status(),
+    and returns response.json().
+  proof:
+  - api-call
+- text: >-
+    _process_pillar_response stores flagged, scanners (when include_scanners), evidence (when include_evidence) and
+    session_id into metadata or metadata alias, builds response headers with build_pillar_response_headers, and raises
+    HTTPException(400) on flagged when on_flagged_action is "block".
+  proof:
+  - response-processing
+- text: >-
+    _handle_api_error returns data unchanged when fallback_on_error is "allow", and raises HTTPException(503) with
+    error detail when "block".
+  proof:
+  - error-fallback
+- text: build_pillar_response_headers encodes scanners/evidence into x-pillar-* headers, applies _truncate_evidence_payload
+    to evidence with MAX_PILLAR_HEADER_VALUE_BYTES (8 KiB), and sets pillar_response_headers and TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY
+    in metadata.
+  proof:
+  - response-headers
+- text: Every oracle case exactly reproduces LiteLLM's request/response/header behavior for the scenario listed.
+  proof:
+  - oracle-cases
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: encode-behavior
+    why: JSON encoding or URL quoting does not match LiteLLM
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::encode_json_for_header_tests/)'
+  - id: truncate-behavior
+    why: Evidence truncation algorithm, max_bytes limit or return shape is incorrect
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::truncate_evidence_payload_tests/)'
+  - id: bool-parsing
+    why: Boolean parsing precedence, accepted values or error message is wrong
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::bool_parsing_tests/)'
+  - id: header-construction
+    why: Headers are missing, incorrect or added when they should not be
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::header_construction_tests/)'
+  - id: model-extraction
+    why: get_llm_provider call or fallback does not match LiteLLM
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::model_extraction_tests/)'
+  - id: payload-construction
+    why: Payload dict structure or /api/v1/protect contract is wrong
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::payload_construction_tests/)'
+  - id: api-call
+    why: HTTP POST, URL construction, raise_for_status call or response parsing is incorrect
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::api_call_tests/)'
+  - id: response-processing
+    why: Metadata storage, header construction or exception raising does not match
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::response_processing_tests/)'
+  - id: error-fallback
+    why: Fallback action selection or error response structure is wrong
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::error_fallback_tests/)'
+  - id: response-headers
+    why: Header encoding, truncation, metadata keys or MAX_PILLAR_HEADER_VALUE_BYTES limit is incorrect
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^pillar_protection::response_headers_tests/)'
+  - id: oracle-cases
+    why: Any oracle case does not match LiteLLM's exact request, response or headers
+    run: >-
+      cargo gate run B3790 --only oracle
+oracle_cases:
+- tools/oracle/cases/guardrails/pillar/encode-json-basic.yaml
+- tools/oracle/cases/guardrails/pillar/encode-json-unicode.yaml
+- tools/oracle/cases/guardrails/pillar/truncate-evidence-list-oversized.yaml
+- tools/oracle/cases/guardrails/pillar/truncate-evidence-dict-text.yaml
+- tools/oracle/cases/guardrails/pillar/bool-explicit-precedence.yaml
+- tools/oracle/cases/guardrails/pillar/bool-env-fallback.yaml
+- tools/oracle/cases/guardrails/pillar/bool-default-fallback.yaml
+- tools/oracle/cases/guardrails/pillar/headers-with-context.yaml
+- tools/oracle/cases/guardrails/pillar/headers-no-context.yaml
+- tools/oracle/cases/guardrails/pillar/model-provider-extraction.yaml
+- tools/oracle/cases/guardrails/pillar/model-provider-fallback.yaml
+- tools/oracle/cases/guardrails/pillar/payload-basic.yaml
+- tools/oracle/cases/guardrails/pillar/payload-with-session.yaml
+- tools/oracle/cases/guardrails/pillar/response-flagged-monitor.yaml
+- tools/oracle/cases/guardrails/pillar/response-flagged-block.yaml
+- tools/oracle/cases/guardrails/pillar/response-headers-truncated.yaml
+- tools/oracle/cases/guardrails/pillar/error-allow-fallback.yaml
+- tools/oracle/cases/guardrails/pillar/error-block-fallback.yaml
+pitfalls:
+- >-
+  _truncate_evidence_payload encodes JSON on every iteration (including the empty list initial state) to check
+  byte length, not character count; missing ensure_ascii=False or separators breaks comparison to 8 KiB.
+- >-
+  Boolean parsing accepts string/int/bool inputs and normalizes lowercase; "true" (string from env) must equal
+  true (bool from config), not depend on the source type.
+- >-
+  _resolve_bool_config checks provided_value is not None (not falsy), so 0 or False are valid overrides to default,
+  not fallthrough to environment.
+- >-
+  _prepare_headers stores X-LiteLLM-* context headers only when user_api_key_dict fields are truthy; missing values
+  skip the header, not set empty string.
+- >-
+  _extract_model_and_provider calls get_llm_provider which may raise; fallback returns (model or "unknown", provider
+  or "unknown"), not the raw custom_llm_provider if both provider and custom_llm_provider are None.
+- >-
+  _process_pillar_response gets metadata_field from get_metadata_variable_name_from_kwargs (B206), which may not be
+  "metadata"; the function ensures both the resolved field and "metadata" alias exist in original_data.
+- >-
+  _process_pillar_response stores pillar_session_id in metadata for reuse in next call, and pillar_session_id_response
+  for the response headers; response header uses the response version, not the persisted one.
+- >-
+  _call_pillar_api calls raise_for_status() before json() to detect HTTP errors; httpx raises HTTPException on non-2xx
+  status before returning a response body.
+- >-
+  _handle_api_error is not called for HTTPException raised by _process_pillar_response (blocked detection); the try/except
+  in run_pillar_guardrail re-raises isinstance(e, HTTPException) without fallback.
+- >-
+  Fallback behavior: transient API errors (timeout, connection, non-200 status) trigger fallback; blocked content triggers
+  exception immediately and does not consult fallback_on_error.
+out_of_scope:
+- >-
+  `get_config_model` and `get_supported_event_hooks` static/class methods: B108 (umbrella) covers guardrail lifecycle
+  and hook registration.
+- >-
+  `async_pre_call_hook`, `async_moderation_hook`, `async_post_call_success_hook`: guardrail hook implementations that
+  call run_pillar_guardrail; owned by umbrella B108.
+- >-
+  `PillarGuardrail.__init__` and HTTP client acquisition via `get_async_httpx_client`; owned by umbrella B108.
+- >-
+  `add_guardrail_to_applied_guardrails_header`: applied-guardrail header bookkeeping; owned by U3.
+- >-
+  `should_run_guardrail`: guardrail framework method; owned by framework task (U1).
+deviations:
+- what: Transient error logging uses the framework's logger, not LiteLLM's verbose_proxy_logger
+  why: betterlite logging is centralized through B189 callback registration
+- what: User context headers (X-LiteLLM-*) omit values from user_api_key_dict.litellm_params_metadata to match Pillar's
+    security model without exposing extra metadata
+  why: LiteLLM's implementation checks "metadata excluded for security"; betterlite matches that behavior
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L562
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

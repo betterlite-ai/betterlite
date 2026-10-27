@@ -38,7 +38,6 @@ scope:
   paths:
     - crates/betterlite-db/src/redis_spend.rs
     - crates/betterlite-db/src/redis_spend/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/redis-spend-*
@@ -107,6 +106,6 @@ pitfalls:
   - The daily-tag queue is deliberately absent from the main seven-slot pipeline.
   - Malformed JSON is discovered after destructive LPOP and cannot be treated as a harmless cache miss.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

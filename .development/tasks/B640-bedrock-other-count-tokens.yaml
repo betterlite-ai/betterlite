@@ -299,6 +299,6 @@ pitfalls:
 - setdefault does not replace explicit null max_tokens or anthropic_version, and the sanitizer does not prefix an
   empty name.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

@@ -126,7 +126,6 @@ scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-azure/src/azure_managed_identity.rs
   - crates/betterlite-azure/src/azure_managed_identity/**
   - tools/oracle/Cargo.toml
@@ -140,26 +139,9 @@ scope:
   - crates/betterlite-azure/fuzz/fuzz_targets/azure_managed_identity.rs
   - crates/betterlite-azure/fuzz/corpus/azure_managed_identity/**
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/azure.rs
-  - crates/betterlite-config/src/providers/azure/**
-  - crates/betterlite-config/src/providers/azure/azure_managed_identity.rs
-  - crates/betterlite-config/src/providers/azure/azure_managed_identity/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/azure_managed_identity_config.rs
-  - crates/betterlite-config/src/tests/azure_managed_identity_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - crates/betterlite-config/src/sections/azure_managed_identity.rs
+  - crates/betterlite-config/src/sections/azure_managed_identity/**
   lint_tables: false
 references:
 - url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/managed_identity.py#L73-L151
@@ -400,6 +382,6 @@ pitfalls:
 - The SDK outer selector tests truthiness, but MSAL protocol selection tests environment-key presence.
 - A configured pod authority skips the availability probe even when its value is empty.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

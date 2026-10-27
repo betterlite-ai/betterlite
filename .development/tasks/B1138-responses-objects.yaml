@@ -33,8 +33,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/api.rs
   - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/responses_objects.rs
@@ -116,5 +114,5 @@ pitfalls:
 - A cost mapping without total_cost yields null, not zero and not the original mapping.
 review_level: standard
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 1500
   max_new_expects: 1

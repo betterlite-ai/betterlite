@@ -36,6 +36,10 @@ scope:
     - crates/betterlite-server/fuzz/corpus/scim_resource/user-lifecycle-*
     - tools/oracle/cases/management/scim-user-lifecycle/**
     - tools/oracle/fuzz/corpus/http_case/scim-user-lifecycle-*
+    - tools/oracle/helpers/b1638.py
+    - tools/oracle/helpers/b1638/**
+    - tools/oracle/src/helpers/server/b1638.rs
+    - tools/oracle/src/helpers/server/b1638/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L160-L232
@@ -75,6 +79,6 @@ pitfalls:
   - POST accepts active=false but does not pass active to its metadata builder, so implementing immediate deactivation there would change the pinned response.
   - Empty groups on PUT preserve membership because identity providers update profile fields independently of group pushes.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -82,8 +82,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/text_completion_transport.rs
   - crates/betterlite-openai/src/text_completion_transport/**
   - tools/oracle/Cargo.toml
@@ -240,6 +238,6 @@ pitfalls:
 - Buffered async resolves its HTTP client through BaseOpenAILLM, while async streaming uses aclient_session directly;
   only the former can select network_mock automatically.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

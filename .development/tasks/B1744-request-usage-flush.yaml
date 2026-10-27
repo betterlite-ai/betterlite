@@ -88,6 +88,6 @@ pitfalls:
   - Tool usage drains only 10000 records per pass while model usage drains its whole snapshot.
   - A baseline-only or shadow-funnel-only backlog must wake the job even when there are no request-log rows.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

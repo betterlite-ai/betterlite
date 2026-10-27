@@ -1,0 +1,203 @@
+id: B3886
+title: Prometheus scrape rendering and authentication
+description: >-
+  Port prometheus scrape rendering and endpoint authentication to Rust in three parts:
+  crates/betterlite-prometheus for ASGI rendering, crates/betterlite-server for auth
+  middleware, and the integration point in crates/betterlite to mount the endpoint.
+
+  The scrape endpoint serves /metrics and /metrics/* with content negotiation, repeated
+  name[] parameter selection, gzip compression, coalesced rendering (sharing one render
+  per distinct output across concurrent scrapes), and 64-KiB response chunks.
+
+  Implement ScrapeRequest, a frozen dataclass carrying the encoder, content-type, gzip
+  flag and filtered metric names that normalize header spellings and metric selection so
+  that concurrent identical requests share one render. parse_scrape_request reads the
+  Accept and Accept-Encoding headers and the repeated name[] query parameters to build
+  a request. render_scrape applies the encoder to a registry (or a restricted view of it)
+  and conditionally gzips the bytes.
+
+  Build CoalescedScrapeRenderer, which holds a Prometheus registry and tracks in-flight
+  render tasks keyed by ScrapeRequest. When render() is called with a request, it checks
+  if that request is already rendering; if so, it returns the inflight future. If not, it
+  spawns a worker-thread task, adds it to the inflight map, registers a callback to forget
+  the task when done, and returns the future. _chunks splits a byte string into 64-KiB
+  chunks for streaming.
+
+  make_metrics_asgi_app takes a registry and returns an ASGI app that calls Request() on
+  the ASGI scope and receive, calls parse_scrape_request on the headers and name[] params,
+  renders the scrape, and streams the response back in chunks with the appropriate
+  Content-Type and optional Content-Encoding: gzip header. The app does not handle
+  authentication; that is the middleware's job.
+
+  Implement PrometheusAuthMiddleware in betterlite-server. It runs only on HTTP requests
+  to /metrics or paths starting with /metrics/ (checked with starlette's get_route_path).
+  _is_metrics_route checks if the route path equals /metrics or starts with /metrics/;
+  this is true for both /metrics and /metrics/my_metric but false for /metricsfoo.
+
+  The middleware reads require_auth_for_metrics_endpoint from the config (via betterlite-config,
+  default true). If false, the request passes through to the inner app without auth.
+  If true, the middleware calls virtual_key_auth on the request. On auth
+  failure, send a 401 with a JSON body containing the error message and a hint about
+  the require_auth_for_metrics_endpoint setting. Important: buffer the incoming ASGI
+  receive messages during auth (since virtual_key_auth reads the body) and replay
+  them to the inner app if auth succeeds.
+
+  Wire the endpoint into the betterlite binary. At startup, check PROMETHEUS_MULTIPROC_DIR;
+  if set, create a new CollectorRegistry with MultiProcessCollector, otherwise use the
+  global REGISTRY. Call make_metrics_asgi_app with the registry. Mount the ASGI app at
+  /metrics on the main router using axum's mount. Add the auth middleware to the stack
+  before the mount (or wrap the metrics app with the middleware).
+
+  Oracle cases with the real gateway and real proxy_server: every path under /metrics/,
+  requests with correct/missing/wrong auth headers (the six header names LiteLLM reads),
+  gzip requests and non-gzip requests, repeated name[] parameters with valid and unknown
+  metric names, and the fast-path pass-through when auth is disabled. Compare Content-Type,
+  Content-Encoding, response status and chunked transfer. No oracle helper; all cases call
+  the real route.
+
+scope:
+  paths:
+    - crates/betterlite-prometheus/src/scrape_endpoint.rs
+    - crates/betterlite-prometheus/src/scrape_endpoint/tests.rs
+    - crates/betterlite-server/src/prometheus_auth_middleware.rs
+    - crates/betterlite-server/src/prometheus_auth_middleware/tests.rs
+    - crates/betterlite/src/prometheus_mount.rs
+    - tools/oracle/cases/prometheus-scrape/**
+    - tools/oracle/helpers/b3886.py
+    - tools/oracle/helpers/b3886/**
+    - tools/oracle/src/helpers/prometheus/b3886.rs
+    - tools/oracle/src/helpers/prometheus/b3886/**
+    - crates/betterlite-prometheus/src/scrape_endpoint/tests/**
+    - crates/betterlite-server/src/prometheus_auth_middleware/tests/**
+    - crates/betterlite/src/prometheus_mount/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L30-L48
+    why: ScrapeRequest dataclass, parse_scrape_request and render_scrape functions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L57-L79
+    why: CoalescedScrapeRenderer class with render, _forget and _chunks methods
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L82-L100
+    why: make_metrics_asgi_app factory and metrics_app ASGI handler
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/prometheus_auth_middleware.py#L22-L24
+    why: _is_metrics_route check with get_route_path and startswith logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/prometheus_auth_middleware.py#L41-L117
+    why: PrometheusAuthMiddleware.__init__, __call__, auth check, buffering and replay
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4565-L4592
+    why: _mount_metrics_endpoint with PROMETHEUS_MULTIPROC_DIR handling and app.mount
+
+dod:
+  - text: ScrapeRequest carries encoder, content_type, gzipped flag and metric_names as a frozen
+      tuple, and two requests with the same values compare equal for deduplication.
+    proof: [scrape-request-tests]
+  - text: parse_scrape_request reads Accept and Accept-Encoding headers and name[] params,
+      normalizing them to a ScrapeRequest.
+    proof: [scrape-request-tests]
+  - text: render_scrape calls the encoder on the registry or its restricted view, and gzips
+      the bytes only when the request flags it.
+    proof: [scrape-request-tests]
+  - text: CoalescedScrapeRenderer.render shares one in-flight task across concurrent identical
+      requests and forgets the task when it completes.
+    proof: [coalesced-scrape-tests]
+  - text: _chunks splits bytes into 64-KiB chunks for streaming.
+    proof: [scrape-request-tests]
+  - text: make_metrics_asgi_app returns an ASGI app that calls Request, parses the scrape,
+      renders, and streams with correct Content-Type and optional Content-Encoding headers.
+    proof: [oracle-prometheus-scrape]
+  - text: _is_metrics_route returns true for /metrics and /metrics/* paths but false for /metricsfoo.
+    proof: [auth-middleware-tests]
+  - text: PrometheusAuthMiddleware skips auth when require_auth_for_metrics_endpoint is false,
+      and runs auth when it is true or unset (default true).
+    proof: [auth-middleware-tests]
+  - text: On auth failure, the middleware sends 401 with a JSON body containing the error message
+      and a hint about the setting.
+    proof: [oracle-prometheus-scrape]
+  - text: The middleware buffers ASGI receive messages during auth and replays them to the inner
+      app if auth succeeds.
+    proof: [auth-middleware-tests]
+  - text: The binary creates a CollectorRegistry with MultiProcessCollector when PROMETHEUS_MULTIPROC_DIR
+      is set, and uses the global REGISTRY otherwise.
+    proof: [mount-tests]
+  - text: The /metrics endpoint is mounted at /metrics and passes all oracle cases with correct
+      Content-Type, Content-Encoding, status and response body.
+    proof: [oracle-prometheus-scrape]
+  - text: Concurrent scrapes with identical Accept/Accept-Encoding/name[] request the same render
+      exactly once and share its bytes.
+    proof: [oracle-prometheus-scrape]
+  - text: Scrape responses stream in 64-KiB chunks when the body is larger than that.
+    proof: [oracle-prometheus-scrape]
+
+checks:
+  optional: []
+  commands:
+    - id: scrape-request-tests
+      why: ScrapeRequest, parse_scrape_request, render_scrape or _chunks are missing or fail tests
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_request::/)'
+    - id: coalesced-scrape-tests
+      why: CoalescedScrapeRenderer tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^coalesced_scrape_renderer::/)'
+    - id: auth-middleware-tests
+      why: PrometheusAuthMiddleware tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_auth_middleware::/)'
+    - id: mount-tests
+      why: Prometheus endpoint mounting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^prometheus_mount::/)'
+    - id: oracle-prometheus-scrape
+      why: HTTP oracle cases for /metrics endpoint authentication and rendering fail
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(prometheus_scrape_)'
+
+oracle_cases:
+  - tools/oracle/cases/prometheus-scrape/auth-disabled.yaml
+  - tools/oracle/cases/prometheus-scrape/auth-missing-key.yaml
+  - tools/oracle/cases/prometheus-scrape/auth-wrong-key.yaml
+  - tools/oracle/cases/prometheus-scrape/header-authorization.yaml
+  - tools/oracle/cases/prometheus-scrape/header-api-key.yaml
+  - tools/oracle/cases/prometheus-scrape/header-x-api-key.yaml
+  - tools/oracle/cases/prometheus-scrape/content-negotiation-text.yaml
+  - tools/oracle/cases/prometheus-scrape/content-negotiation-proto.yaml
+  - tools/oracle/cases/prometheus-scrape/gzip-accept.yaml
+  - tools/oracle/cases/prometheus-scrape/gzip-no-accept.yaml
+  - tools/oracle/cases/prometheus-scrape/metric-name-filtering.yaml
+  - tools/oracle/cases/prometheus-scrape/unknown-metric-name.yaml
+  - tools/oracle/cases/prometheus-scrape/concurrent-identical-requests.yaml
+  - tools/oracle/cases/prometheus-scrape/large-response-chunking.yaml
+
+deviations:
+  - what: Rendering happens in a Tokio blocking task (worker thread) instead of on the event loop,
+      so large scrapes do not block other requests.
+    why: The gateway runs inference and logging concurrently; a 50+MB scrape on the event loop
+      would stall every other task. LiteLLM uses prometheus_client.make_asgi_app directly, which
+      blocks the ASGI loop for the whole duration of collecting and encoding the registry.
+  - what: The 401 response body when auth fails is application/json with a hint about the
+      require_auth_for_metrics_endpoint setting, matching LiteLLM's message shape.
+    why: Auth failures must preserve the JSON format so clients that parse responses can detect
+      them and optionally log the hint. Preserve LiteLLM's helpful message.
+
+out_of_scope:
+  - The per-request budget timeout or any budget-related work that calls metrics after the scrape
+    completes. That is B3884's responsibility (refresh during the scrape, emit after).
+  - Multiprocess-directory cleanup and worker-exit notifications. That is B3887's responsibility.
+  - The Prometheus scrape protocol details beyond what prometheus_client.exposition module provides
+    (encoder selection, content-type negotiation, gzip support).
+  - Routes other than /metrics and /metrics/*. This task mounts only /metrics.
+
+pitfalls:
+  - Prometheus registry rendering is CPU-intensive for large metric sets. The worker thread must
+    not panic or deadlock; use a timeout or cancellation token if needed. LiteLLM does not, so
+    neither does this task.
+  - Starlette's get_route_path matches the literal path without query parameters. A request to
+    /metrics?name[]=foo has route_path = "/metrics", and "/metrics/cpu" has route_path = "/metrics/cpu".
+    This matches LiteLLM's startswith check.
+  - The restricted_registry(name_list) call filters metrics by name. An empty name_list gives the
+    full registry; an unknown metric name filters to nothing, returning only TYPE and HELP lines.
+  - Buffering ASGI messages can hold memory during auth; set a reasonable limit or stream the body
+    for large payloads. LiteLLM buffers without a limit; betterlite may be tighter if needed.
+    For now match LiteLLM's approach.
+  - The multiprocess directory is a deployment detail; PROMETHEUS_MULTIPROC_DIR is read at mount
+    time, not startup. Changing it at runtime requires remounting or restarting the worker; this
+    task does not support hot reload of the multiprocess setting.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

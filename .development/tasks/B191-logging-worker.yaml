@@ -18,8 +18,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/worker.rs
   - crates/betterlite-logging/src/worker/**
   - crates/betterlite-logging/tests/fixtures/**
@@ -29,7 +27,7 @@ scope:
   - tools/oracle/helpers/worker_trace.py
   - tools/oracle/helpers/worker_trace/**
   - tools/oracle/cases/helpers/logging-worker/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/worker_trace-*"
   lint_tables: false
 references:
 - url: >-
@@ -94,8 +92,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'worker_trace' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/worker_trace-*")" &&
+      grep -lq 'worker_trace' tools/oracle/fuzz/corpus/helper_case/worker_trace-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -122,11 +120,12 @@ out_of_scope:
   tests: their Rust equivalents are injected transport fixtures owned by each exporter task, not production mocks
   here. test_httpx.py is empty at the pin.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/worker_trace-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as worker_trace in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/worker_trace.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/worker_trace.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   A dequeued event waiting for a semaphore still belongs to the worker and must be included in shutdown accounting.
 - Callback context must be captured before enqueue, not read from whichever task later runs it.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

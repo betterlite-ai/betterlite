@@ -1,7 +1,7 @@
 id: B3151
 milestone: M4 keys, spend and management
 title: ROI identity matching and report summaries
-status: todo
+status: done
 depends_on: [B3150]
 file: tasks/B3151-roi-summaries.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/roi_calculator/analytics.py"
 parent: B076
 split_from: B076
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 236

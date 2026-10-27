@@ -320,6 +320,6 @@ pitfalls:
 - The final-message event emits only a stop marker, so its text never appears unless content deltas already carried
   it.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

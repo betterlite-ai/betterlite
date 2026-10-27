@@ -101,19 +101,9 @@ scope:
     - crates/betterlite-db/src/database_refresh_loop/fixtures.rs
     - crates/betterlite-db/src/database_refresh_loop/fixtures/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/database_refresh_loop.rs
-    - crates/betterlite-config/src/database_refresh_loop/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*
+    - crates/betterlite-config/src/sections/database_refresh_loop.rs
+    - crates/betterlite-config/src/sections/database_refresh_loop/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L154-L165
@@ -200,7 +190,7 @@ checks:
         && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh_loop::tests::postgres_failure_effects$/)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_refresh_loop::tests::/)
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::database_refresh_loop::tests::/)
         - test(/replays_the_/)'
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
@@ -245,15 +235,15 @@ out_of_scope:
   - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir: Prisma filesystem/tool discovery
     is absent from the native runner.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
+    has no equivalent process in native tokio-postgres; owned pool tasks replace it.'
   - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
+    has no equivalent process in native tokio-postgres; owned pool tasks replace it.'
 pitfalls:
   - 'The oracle helper for this task is pre-registered as database_refresh_loop in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_refresh_loop.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_refresh_loop.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Expiry equality is not expired, but exactly 180 seconds of runway is already eligible for refresh.
   - A replacement callback can fail after publication; restoring credentials then does not restore the old pool.
   - There is no random jitter and no warn-level fallback in this loop.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

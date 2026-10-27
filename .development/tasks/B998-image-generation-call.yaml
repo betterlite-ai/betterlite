@@ -39,19 +39,6 @@ scope:
   - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_generation_call.rs
   - crates/betterlite-core/src/api/image_generation_call/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/image_generation_call.rs
-  - crates/betterlite-config/src/api/image_generation_call/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_generation_call.rs
@@ -59,6 +46,12 @@ scope:
   - tools/oracle/sdk_http/image_generation_call.py
   - tools/oracle/cases/sdk-http/image-generation-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*
+  - crates/betterlite-config/src/sections/image_generation_call.rs
+  - crates/betterlite-config/src/sections/image_generation_call/**
+  - tools/oracle/helpers/b998.py
+  - tools/oracle/helpers/b998/**
+  - tools/oracle/src/helpers/core_ops/b998.rs
+  - tools/oracle/src/helpers/core_ops/b998/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L183-L561
@@ -112,10 +105,10 @@ checks:
   commands:
   - id: behavior-tests
     why: Generation dispatch needs assertions for defaults, all branch selections and credential precedence.
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::image_generation_call::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::image_generation_call::/) - test(/::replays_corpus$/)'
   - id: config-tests
     why: Every Azure/global fallback must load through the production configuration loader.
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::image_generation_call::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_generation_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Provider comparisons must use the SDK HTTP driver with a typed operation adapter.
     run: test -f tools/oracle/sdk_http/image_generation_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
@@ -143,5 +136,5 @@ pitfalls:
 - The overloads add no behavior; counting them as implementation hid the function split in the previous estimate.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

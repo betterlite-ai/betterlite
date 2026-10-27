@@ -102,5 +102,5 @@ pitfalls:
 - get_websocket_url calls the provider's complete-URL override before replacing scheme strings.
 review_level: security
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 1500
   max_new_expects: 1

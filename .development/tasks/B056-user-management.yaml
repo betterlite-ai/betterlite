@@ -58,6 +58,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-management/**
+    - tools/oracle/helpers/b056.py
+    - tools/oracle/helpers/b056/**
+    - tools/oracle/src/helpers/server/b056.rs
+    - tools/oracle/src/helpers/server/b056/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L482-L672
@@ -107,6 +111,6 @@ pitfalls:
   - Object permissions can remain after generation fails; team writes can remain after organization failure.
   - An explicit empty teams list suppresses defaults but still triggers the post-write team-ID read.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

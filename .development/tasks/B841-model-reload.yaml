@@ -162,6 +162,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as model_reload in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_reload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_reload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Duplicate public model names can refer to several deployments and must survive reload.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

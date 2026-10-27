@@ -220,6 +220,6 @@ pitfalls:
 - trainingType is inserted before client initialization, so a failed credential setup still leaves the caller request
   mutated.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

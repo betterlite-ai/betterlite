@@ -37,6 +37,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/team-merge-patch/**
+    - tools/oracle/helpers/b2370.py
+    - tools/oracle/helpers/b2370/**
+    - tools/oracle/src/helpers/server/b2370.rs
+    - tools/oracle/src/helpers/server/b2370/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2568-L2642
@@ -78,6 +82,6 @@ pitfalls:
   - A patch without metadata does not perform this adapter's missing-team lookup; its error comes from update_team.
   - The merge depth limit counts dictionary recursion; replacing with an array is not recursive array patching.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

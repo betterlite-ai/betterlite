@@ -86,5 +86,5 @@ pitfalls:
   - The ssml_body field carries signed JSON here, not an XML payload.
 review_level: security
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0

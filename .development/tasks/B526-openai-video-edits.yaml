@@ -76,8 +76,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/video_edits.rs
   - crates/betterlite-openai/src/video_edits/**
   - tools/oracle/Cargo.toml
@@ -228,6 +226,6 @@ pitfalls:
 - video_file is checked against None, so an empty supplied file still selects multipart instead of the video ID.
 - Character response IDs are not wrapped by these methods despite retrieve accepting wrapped IDs.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

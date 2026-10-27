@@ -114,6 +114,10 @@ pub(crate) struct Policy {
     #[schemars(description = "Review rounds before a task goes back to the architect.")]
     pub(crate) max_review_rounds: u32,
     #[schemars(
+        description = "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung."
+    )]
+    pub(crate) max_blocked_reports: u32,
+    #[schemars(
         description = "Times the Stop hook sends an agent back before it lets the run end red."
     )]
     pub(crate) max_hook_blocks: u32,

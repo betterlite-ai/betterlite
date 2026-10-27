@@ -1,0 +1,7 @@
+kind: helper
+name: usage-counters-summed-field-by-field
+call:
+  bedrock_chunking:
+    step: {"merge": {"chunks": [{"content": [{"text": {"text": "a"}}], "response": {"usage": {"topicPolicyUnits": 2, "contentPolicyUnits": null, "futureCounter": 3}}, "fragment_group_size": 1}, {"content": [{"text": {"text": "b"}}], "response": {"usage": {"topicPolicyUnits": 4, "wordPolicyUnits": 5, "futureCounter": 7}}, "fragment_group_size": 1}, {"content": [{"text": {"text": "c"}}], "response": {"usage": null, "action": null}, "fragment_group_size": 1}]}}
+env: {}
+compare: {ignore: []}

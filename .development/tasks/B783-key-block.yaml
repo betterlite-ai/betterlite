@@ -110,6 +110,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-block/**
+    - tools/oracle/helpers/b783.py
+    - tools/oracle/helpers/b783/**
+    - tools/oracle/src/helpers/server/b783.rs
+    - tools/oracle/src/helpers/server/b783/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7237-L7603
@@ -263,6 +267,6 @@ pitfalls:
   - The format validator accepts sk-a despite its docstring claiming a minimum length of 20.
   - An unhealthy callback test is normally HTTP 200; malformed callback metadata is HTTP 500.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -93,8 +93,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/vector_stores.rs
   - crates/betterlite-openai/src/vector_stores/**
   - tools/oracle/Cargo.toml
@@ -450,6 +448,6 @@ pitfalls:
 - Search preserves the query suffix before adding its path; the attached-file helpers do not use that partition
   step.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,94 @@
+id: B3274
+title: Search query pricing and provider usage
+description: >-
+  Add search provider cost calculation to crates/betterlite-cost. Build the cost per query function that accepts
+  model name, provider name, search query count and optional parameters (like max_results), and returns (input_cost,
+  output_cost) tuple with costs as Decimal.
+
+  Implement search_provider_cost_per_query(model, custom_llm_provider=None, number_of_queries=1, optional_params=None)
+  that calls B2225 get_model_info to fetch pricing metadata (input_cost_per_query and tiered_pricing), checks for
+  tiered pricing on max_results, and returns the calculated total cost. For parallel_ai provider, delegate to its own
+  cost calculator and validate provider usage through a pydantic TypeAdapter. Preserve parallel_ai's separate usage-aware
+  calculation including mode dispatch between basic/advanced/fast/turbo, SKU-based usage counting on the literals sku_search
+  and sku_search_additional_results, and the $0.001 additional-result cost constant.
+
+  Export search_provider_cost_per_query from the main module. Provider usage validation accepts a tuple of mappings
+  and returns None on validation failure, falling back to parameter defaults when usage is unavailable. Tiered pricing
+  selects the tier that contains max_results (default 10); out-of-range values fallback to the highest tier. Flat
+  pricing uses input_cost_per_query as-is, defaulting to 0.0 when unset.
+
+  Build oracle cases for every combination of provider, pricing model, max_results range and optional_params shape.
+  Include cases for parallel_ai with its own usage validation, cases for providers with tiered pricing (like exa_ai),
+  and cases for flat-rate providers. An oracle case that verifies the returned (input_cost, output_cost) tuple and
+  matches LiteLLM on mutable model info cache behavior.
+
+scope:
+  paths:
+    - crates/betterlite-cost/src/search.rs
+    - crates/betterlite-cost/src/search/**
+    - tools/oracle/cases/search/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/cost_calculator.py#L1-85
+    why: The complete search provider cost calculator module; all functions and constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/parallel_ai/search/cost_calculator.py#L1-91
+    why: Parallel AI search cost calculation with mode dispatch, SKU-based usage counting, and tiered pricing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6416-L6497
+    why: get_model_info function that provides model pricing metadata (B2225).
+
+dod:
+  - text: search_provider_cost_per_query returns (input_cost, Decimal(0)) where input_cost = number_of_queries * cost_per_query, both as Decimal.
+    proof: [search-cost-tests]
+  - text: Model pricing metadata loads from get_model_info, with input_cost_per_query and tiered_pricing fields.
+    proof: [search-cost-tests]
+  - text: Tiered pricing selects the tier containing max_results (default 10), or the highest tier if out of range.
+    proof: [search-cost-tests]
+  - text: Flat pricing uses input_cost_per_query directly, defaulting to Decimal(0) when unset.
+    proof: [search-cost-tests]
+  - text: Provider usage is validated as a tuple of mappings; validation failure returns None and triggers fallback to optional_params defaults.
+    proof: [search-cost-tests]
+  - text: parallel_ai provider delegates to its own cost calculator, selecting the pricing model by mode (basic/advanced/fast/turbo) or processor=="pro" as "advanced".
+    proof: [search-cost-tests]
+  - text: parallel_ai usage counting accepts SKU literals "sku_search" and "sku_search_additional_results"; additional results beyond the default 10 cost $0.001 each.
+    proof: [search-cost-tests]
+  - text: oracle cases cover flat-rate providers, tiered pricing providers, parallel_ai with usage tracking and mode selection, and edge cases like missing or invalid parameters.
+    proof: [search-pricing-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: search-cost-tests
+      why: search cost calculation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-cost --no-tests=fail -E 'test(/^search_pricing::/) | test(/^search_cost_calculation::/)' || cargo nextest run --locked -p betterlite-cost --no-tests=fail
+    - id: search-pricing-oracle
+      why: oracle cases are missing or fail against the booted gateways
+      run: test -d tools/oracle/cases/search && test "$(find tools/oracle/cases/search -name '*pricing*' -o -name '*cost*' | wc -l)" -gt 0
+
+oracle_cases: []
+
+deviations:
+  - what: betterlite accepts optional_params as a typed mapping instead of parsing them directly from request parameters.
+    why: Rust requires explicit types for request data; mapping wrapper allows callers to pass validated data without re-parsing.
+  - what: Provider usage validation returns None on error instead of raising; callers fall back to parameter defaults.
+    why: Missing or malformed usage data should not crash the cost calculation; falling back to parameter defaults matches LiteLLM's behavior.
+
+out_of_scope:
+  - HTTP route registration and request handling; that belongs to B3272 or B3275.
+  - Search tool registry and selection logic; that is B3271 and B3273.
+  - Provider-specific transformations and setup; that is B3270.
+  - Spend tracking and ledger updates; that is M4 tasks.
+
+pitfalls:
+  - "parallel_ai mode dispatch: 'fast' and 'turbo' select their own pricing models, processor=='pro' selects 'advanced' mode, otherwise defaults to 'basic' standard search model."
+  - "parallel_ai SKU-based usage counting: _usage_count extracts matching 'sku_search' and 'sku_search_additional_results' items from the usage sequence; results are summed, not counted individually."
+  - "parallel_ai additional results cost $0.001 each (PARALLEL_AI_ADDITIONAL_RESULT_COST), applied to results beyond the default max of 10; when usage is present, the count comes from the SKU, otherwise from max_results - 10."
+  - "max_results defaults to 10 when missing from optional_params; tiered_pricing tiers are checked in order, and out-of-range falls back to the highest tier."
+  - "input_cost_per_query may be 0.0, None, or a missing field; treat None and missing as Decimal(0), and None optional_params as an empty mapping."
+  - "output_cost is always Decimal(0) for search providers; never read it from metadata or calculate it separately."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

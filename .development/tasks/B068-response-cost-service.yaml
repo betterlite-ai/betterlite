@@ -144,6 +144,6 @@ pitfalls:
   - The response wrapper honors the provider cost header even when custom pricing would otherwise override usage-reported cost.
   - Websocket tier recursion shares one breakdown receiver, so only the final partition's breakdown remains.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

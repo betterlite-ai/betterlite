@@ -1,0 +1,24 @@
+kind: helper
+name: secret-codec-missing-key
+call:
+  secret_codec:
+    salt_key: null
+    master_key: null
+    general_settings: null
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    steps:
+      - {op: encrypt_value, value: hello, new_key: null}
+      - {op: encrypt_value, value: hello, new_key: salt-one}
+      - {op: encrypt_value, value: {a: 1}, new_key: null}
+      - {op: decrypt_value, value: "", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "*", field: api_key, report: debug, keep_original: true}
+      - {op: decrypt_with, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", signing_key: salt-one}
+      - {op: encrypt_bearer, value: payload, prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8", prefix: litellm_login_}
+      - {op: encrypt_map, value: {a: "1"}, new_key: null}
+      - {op: decode_map, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXPg3fa5gBvN9CDmncHUEtnze9", field: headers}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: "LiteLLM raises Python's own AttributeError text for a None key; betterlite writes its own message"}
+    - {pointer: /value/8/error/message, why: "LiteLLM raises Python's own AttributeError text for a None key; betterlite writes its own message"}

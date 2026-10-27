@@ -1,0 +1,119 @@
+id: B3969
+title: Literal AI step projection and GraphQL batches
+description: >-
+  Build Literal AI steps and GraphQL query/variable generation, including literal
+  prompt attributes and thread/parent/root links. Implement all four success/failure
+  callbacks with distinct sync and async flushing behavior: sync _send_batch does
+  not clear the queue after posting, while async callbacks trigger flush_queue which
+  drains it on success or error.
+
+  Initialize with LITERAL_API_URL (default https://cloud.getliteral.ai), LITERAL_API_KEY
+  from environment or constructor parameter, LITERAL_BATCH_SIZE parsed as integer (no
+  default), and sync/async HTTP clients from B173. Build step records from standard_logging_payload,
+  extracting model_parameters, messages, response and metadata from both clean_metadata
+  and litellm_params. Pop tools from settings; preserve message.__literal_prompt__
+  attributes for prompt_id/variables injection.
+
+  Generate GraphQL mutation with variable placeholders ($id_0, $threadId_0, ...) and
+  ingestStep calls per step, filtering only non-None values into the variables dict.
+  Build step record with literalai_thread_id, literalai_parent_id, and literalai_root_run_id
+  from metadata, mapping to threadId, parentId and rootRunId respectively, computing
+  duration as (end_time - start_time).total_seconds(). Apply tag precedence: tags
+  metadata key before literalai_tags key. Preserve x-client-name: litellm header
+  and error/success logging on response status.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/literal_ai.rs
+    - crates/betterlite-logging/src/literal_ai/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L21-L44
+    why: LiteralAILogger.__init__ reads LITERAL_API_URL, LITERAL_API_KEY, LITERAL_BATCH_SIZE and initializes HTTP clients.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L46-L63
+    why: log_success_event appends prepared data to queue and calls _send_batch on batch threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L65-L78
+    why: log_failure_event mirrors success callback, appending to queue and flushing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L80-L102
+    why: _send_batch POSTs GraphQL query/variables and does not clear queue on error or success.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L104-L121
+    why: async_log_success_event appends data and calls flush_queue on batch threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L123-L136
+    why: async_log_failure_event mirrors async success, calling flush_queue on threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L138-L162
+    why: async_send_batch POSTs GraphQL and catches HTTPStatusError separately from generic exceptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L164-L221
+    why: _prepare_log_data builds step dict from standard_logging_payload, pops tools, injects prompt attributes, computes duration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L223-L243
+    why: _steps_query_variables_builder constructs GraphQL variable placeholders for all steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L245-L271
+    why: _steps_ingest_steps_builder constructs ingestStep calls with variable references.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L273-L278
+    why: _steps_query_builder assembles complete GraphQL mutation from variables and ingest builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L280-L295
+    why: _steps_variables_builder calls serialize_step to filter non-None values into variable dict.
+
+dod:
+  - text: "LiteralAILogger.__init__ reads LITERAL_API_URL, LITERAL_API_KEY, LITERAL_BATCH_SIZE from environment and builds headers with x-client-name: litellm."
+    proof: [literal-ai-tests]
+  - text: log_success_event calls _prepare_log_data, appends to queue and invokes _send_batch when queue length reaches batch_size, wrapping all in try/except that logs exceptions without re-raising.
+    proof: [literal-ai-tests]
+  - text: log_failure_event mirrors log_success_event with identical queue, flush and warn-and-drop logic.
+    proof: [literal-ai-tests]
+  - text: async_log_success_event calls _prepare_log_data, appends to queue and invokes flush_queue when queue length reaches batch_size, wrapping all in try/except that logs exceptions without re-raising.
+    proof: [literal-ai-tests]
+  - text: async_log_failure_event mirrors async_log_success_event with identical queue, flush and warn-and-drop logic.
+    proof: [literal-ai-tests]
+  - text: _send_batch POSTs GraphQL query and variables to LITERAL_API_URL/api/graphql; does not clear queue on HTTP error or success response.
+    proof: [literal-ai-tests]
+  - text: async_send_batch POSTs GraphQL query/variables asynchronously and catches HTTPStatusError separately from generic exceptions.
+    proof: [literal-ai-tests]
+  - text: _prepare_log_data requires standard_logging_object in kwargs and builds step dict from model_parameters, messages and response.
+    proof: [literal-ai-tests]
+  - text: _prepare_log_data pops tools from model_parameters and preserves message.__literal_prompt__ attributes (prompt_id, variables, uuid).
+    proof: [literal-ai-tests]
+  - text: _prepare_log_data applies tag precedence, reading tags before literalai_tags from metadata.
+    proof: [literal-ai-tests]
+  - text: _prepare_log_data sets threadId from literalai_thread_id, parentId from literalai_parent_id and rootRunId from literalai_root_run_id.
+    proof: [literal-ai-tests]
+  - text: _prepare_log_data computes duration as (end_time - start_time).total_seconds().
+    proof: [literal-ai-tests]
+  - text: _steps_query_variables_builder generates GraphQL variable declarations ($id_0, $threadId_0, etc.) for each step.
+    proof: [literal-ai-tests]
+  - text: _steps_ingest_steps_builder generates ingestStep mutation calls with variable references for each step.
+    proof: [literal-ai-tests]
+  - text: _steps_query_builder composes mutation with variable declarations and ingest step calls.
+    proof: [literal-ai-tests]
+  - text: _steps_variables_builder filters non-None values into variable dict, naming each with step index suffix (key_0, key_1, etc.).
+    proof: [literal-ai-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: literal-ai-tests
+      why: the literal ai tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^literal_ai_logging::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: x-env header is conditionally added when env parameter is passed to __init__, but no environment variable lookup is specified for this header.
+    why: LiteLLM accepts an env parameter in the constructor and may populate the header; betterlite needs explicit configuration of what value to use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L34-L35
+
+out_of_scope: []
+
+pitfalls:
+  - _send_batch does not clear the queue after sending; the base CustomBatchLogger does not auto-drain sync sends, so callers retry on queue overflow.
+  - async_send_batch clears the async queue through inherited flush_queue on success or error, while _send_batch does not.
+  - GraphQL variables are filtered to non-None values only, avoiding empty/null argument transmission.
+  - Literal prompt attributes (prompt_id, variables, uuid) are mutated onto message dicts during _prepare_log_data, not returned separately.
+  - Tag precedence reads metadata['tags'] before metadata['literalai_tags']; both keys may be absent.
+  - Duration is computed as (end_time - start_time).total_seconds(), a float that should preserve microsecond precision from the timedelta.
+  - "x-client-name header is literal \"litellm\", not a placeholder or derived value."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

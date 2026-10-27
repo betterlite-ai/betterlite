@@ -1,0 +1,201 @@
+id: B4578
+title: CLI model management and YAML imports
+description: >-
+  Build the models command group for the management CLI, porting LiteLLM's model management
+  from litellm/proxy/client/cli/commands/models.py to Rust. Commands dispatch through
+  an injected HTTP client (from B4560's CLI context) to model endpoints: list with table/json
+  output, add and update with multiple --param and --info key=value options split on the first
+  =, delete and get (by --id or --name, at least one required), info with flexible --columns
+  selection (defaults to public_model,upstream_model,updated_at), and import from YAML files
+  with --dry-run and regex filtering on litellm_params.model and model_info.access_groups.
+
+  Formatting helpers convert ISO datetime strings (with "Z" as "+00:00") and Unix timestamps
+  to minute-resolution YYYY-MM-DD HH:MM, and per-token costs to dollar amounts per 1000 tokens
+  formatted to 4 decimal places. On parse errors or None values, they return empty strings.
+
+  Import validates that model_list key exists and holds a list, filters models by regex against
+  model_id and access_groups, displays filtered models in a table (regardless of --dry-run;
+  rejected models are never shown), counts attempts per provider (even on API errors), and
+  shows a provider summary. Dry-run changes the table title but does not call client.models.new().
+  API errors in the import loop are silently ignored (try/except). Info command warns to stderr
+  for unknown columns but continues rendering valid ones.
+scope:
+  paths:
+    - tools/management-cli/src/commands/models.rs
+    - tools/management-cli/src/commands/models/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L46-L61
+    why: _get_model_info_obj_from_yaml extracts model name, params, info, and provider
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L64-L73
+    why: format_iso_datetime_str parses ISO strings with Z as +00:00, formats to minute resolution
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L76-L84
+    why: format_timestamp converts Unix timestamps to YYYY-MM-DD HH:MM format
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L87-L97
+    why: format_cost_per_1k_tokens multiplies by 1000 and formats to $X.XXXX with 4 decimal places
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L100-L103
+    why: create_client builds Client from cli_context_values (base_url, api_key)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L111-L151
+    why: list_models command with --format option and table/json output
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L154-L181
+    why: add_model command with multiple --param and --info options, split on first =
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L184-L191
+    why: delete_model command calls client.models.delete(model_id=...)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L194-L205
+    why: get_model command requires either --id or --name, validates at least one provided
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L208-L302
+    why: get_models_info command with flexible --columns and column configuration
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L305-L332
+    why: update_model command with multiple --param and --info options
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L335-L352
+    why: _filter_model validates required fields and applies model_id and access_groups regexes
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L355-L364
+    why: _print_models_table displays model_name, upstream model_id, and access_groups
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L367-L378
+    why: _print_summary_table counts models per provider and shows total
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L381-L390
+    why: get_model_list_from_yaml_file validates model_list key and type
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L393-L397
+    why: _get_filtered_model_list applies model_id and access_groups regex filters
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L407-L459
+    why: import_models command with dry-run flag and regex filtering
+dod:
+  - text: >-
+      list_models outputs a table with id, object, created (formatted timestamp/datetime),
+      owned_by columns, or JSON when --format=json is specified.
+    proof: [list-models]
+  - text: >-
+      add_model parses multiple --param and --info as key=value, splits each on the first =,
+      builds model_params and model_info dicts, and calls client.models.new().
+    proof: [add-model]
+  - text: >-
+      delete_model calls client.models.delete(model_id=model_id) and outputs the result.
+    proof: [delete-model]
+  - text: >-
+      get_model requires either --id or --name (at least one), rejects both missing with
+      a UsageError, and calls client.models.get().
+    proof: [get-model]
+  - text: >-
+      get_models_info outputs table with flexible --columns (default public_model,upstream_model,
+      updated_at) from a fixed set of column configs, warns to stderr for unknown columns,
+      or JSON when --format=json is specified.
+    proof: [info-models]
+  - text: >-
+      update_model parses multiple --param and --info like add_model and calls
+      client.models.update(model_id=..., model_params=..., model_info=...).
+    proof: [update-model]
+  - text: >-
+      format_cost_per_1k_tokens multiplies cost by 1000, formats to 4 decimal places with
+      $ prefix ($X.XXXX), returns empty string on None, and returns str(cost) on parse error.
+    proof: [cost-format]
+  - text: >-
+      format_iso_datetime_str parses ISO strings with Z replaced as +00:00, formats to
+      YYYY-MM-DD HH:MM, returns empty on None, and returns str(value) on error.
+    proof: [iso-format]
+  - text: >-
+      format_timestamp formats Unix timestamp integers to YYYY-MM-DD HH:MM, returns empty
+      on None, and returns str(timestamp) on error.
+    proof: [unix-format]
+  - text: >-
+      import_models loads YAML, validates model_list key exists and is a list, filters by
+      model_id regex and access_groups regex, displays filtered models table regardless of
+      --dry-run, silently ignores API errors in the import loop, and shows provider summary.
+    proof: [import-models]
+  - text: >-
+      _filter_model returns false if model_name missing, litellm_params missing, model_id
+      not a string, model_id doesn't match model_regex (if given), or no access_groups string
+      matches access_group_regex (if given).
+    proof: [filter-model]
+  - text: >-
+      _print_models_table skips if list empty, else prints table with model_name, upstream
+      model_id, and access_groups_str (comma-space joined or empty if none).
+    proof: [print-models]
+  - text: >-
+      _print_summary_table prints provider counts per provider and total with "[bold]" tags.
+    proof: [print-summary]
+checks:
+  optional: []
+  commands:
+    - id: list-models
+      why: list_models does not output table and JSON formats
+      run: grep -qF 'list_models' tools/management-cli/src/commands/models.rs && grep -qE 'table|json' tools/management-cli/src/commands/models.rs
+    - id: add-model
+      why: add_model does not parse --param and call client.models.new()
+      run: grep -qF 'add_model' tools/management-cli/src/commands/models.rs && grep -qF 'split' tools/management-cli/src/commands/models.rs && grep -qE 'models\.new|new_model' tools/management-cli/src/commands/models.rs
+    - id: delete-model
+      why: delete_model does not call client.models.delete()
+      run: grep -qF 'delete_model' tools/management-cli/src/commands/models.rs && grep -qE 'models\.delete|delete_model' tools/management-cli/src/commands/models.rs
+    - id: get-model
+      why: get_model does not require either --id or --name and validate at least one
+      run: grep -qF 'get_model' tools/management-cli/src/commands/models.rs && grep -qE 'model_id\.is_none\(\).*&&.*model_name\.is_none\(\)|model_id\.is_none\(\).*model_name\.is_none\(\)' tools/management-cli/src/commands/models.rs
+    - id: info-models
+      why: get_models_info does not support --columns and column configuration
+      run: grep -qF 'get_models_info' tools/management-cli/src/commands/models.rs && grep -qF 'columns' tools/management-cli/src/commands/models.rs && grep -qF 'column_config' tools/management-cli/src/commands/models.rs
+    - id: update-model
+      why: update_model does not parse --param and --info or call client.models.update()
+      run: grep -qF 'update_model' tools/management-cli/src/commands/models.rs && grep -qE 'models\.update|update_model' tools/management-cli/src/commands/models.rs && grep -qF 'split' tools/management-cli/src/commands/models.rs
+    - id: cost-format
+      why: format_cost_per_1k_tokens does not multiply by 1000 and format to $X.XXXX
+      run: grep -qF 'format_cost' tools/management-cli/src/commands/models.rs && grep -qE '1000|1e3' tools/management-cli/src/commands/models.rs && grep -qF '"$' tools/management-cli/src/commands/models.rs
+    - id: iso-format
+      why: format_iso_datetime_str does not parse ISO format and format to YYYY-MM-DD HH:MM
+      run: grep -qF 'format_iso_datetime' tools/management-cli/src/commands/models.rs && grep -qE 'parse|DateTime|chrono' tools/management-cli/src/commands/models.rs && grep -qF 'YYYY-MM-DD' tools/management-cli/src/commands/models.rs
+    - id: unix-format
+      why: format_timestamp does not format Unix timestamps to YYYY-MM-DD HH:MM
+      run: grep -qF 'format_timestamp' tools/management-cli/src/commands/models.rs && grep -qE 'from_timestamp|DateTime|chrono' tools/management-cli/src/commands/models.rs
+    - id: import-models
+      why: import_models does not load YAML, validate, filter and handle dry-run
+      run: grep -qF 'import_models' tools/management-cli/src/commands/models.rs && grep -qF 'model_list' tools/management-cli/src/commands/models.rs && grep -qE 'dry.run|dry_run' tools/management-cli/src/commands/models.rs && grep -qF 'regex' tools/management-cli/src/commands/models.rs
+    - id: filter-model
+      why: _filter_model does not validate model structure and apply regexes
+      run: grep -qF 'filter_model' tools/management-cli/src/commands/models.rs && grep -qE 'model_name|litellm_params' tools/management-cli/src/commands/models.rs
+    - id: print-models
+      why: _print_models_table does not print table with model details
+      run: grep -qF 'print_models_table' tools/management-cli/src/commands/models.rs && grep -qE 'Table|table' tools/management-cli/src/commands/models.rs
+    - id: print-summary
+      why: _print_summary_table does not print provider counts
+      run: grep -qF 'print_summary_table' tools/management-cli/src/commands/models.rs && grep -qF 'provider' tools/management-cli/src/commands/models.rs
+oracle_cases: []
+deviations:
+  - what: No commands are registered with Click decorators in this task; command registration and CLI group assembly happens elsewhere.
+    why: Following Rust patterns, this task owns the helper functions and command logic, while command registration happens in a separate layer.
+  - what: Table rendering uses Rust table libraries (prettytable, tabled, comfy-table, etc.) instead of Python's rich module.
+    why: betterlite uses Rust ecosystem libraries; visual output conveys the same information but formatting differs slightly.
+  - what: YAML parsing uses serde_yaml and Result types for error handling instead of try/except.
+    why: Rust idiom; behavior is equivalent (invalid YAML exits with an error message).
+out_of_scope:
+  - Client HTTP implementation and API integration; the CLI receives an injected HTTP client from B4560's context.
+  - CLI command registration and parameter binding; that happens in the CLI group assembly, not in this module.
+  - YAML schema validation beyond model_list key existence and type; individual model field validation is server-side.
+pitfalls:
+  - >-
+    The add and update commands split each param on the first = only, so values can contain =:
+    `"key=value=more"` becomes `("key", "value=more")`, not three parts.
+  - >-
+    format_iso_datetime_str replaces "Z" with "+00:00" before parsing, since ISO 8601 "Z" is
+    not accepted by all ISO parsers without this substitution.
+  - >-
+    format_timestamp expects a Unix timestamp as an integer. The list command converts string
+    digits to i64/i32 before passing to format_timestamp.
+  - >-
+    import_models silently ignores errors from client.models.new() in the loop, so the summary
+    counts attempted imports (including failures), not successful ones.
+  - >-
+    _filter_model returns false if model_name is missing, litellm_params is missing, or model_id
+    is not a string. This filters out corrupt or incomplete model records.
+  - >-
+    get_models_info prints warnings to stderr for unknown column names but continues rendering
+    with valid columns; it does not fail or raise.
+  - >-
+    import_models displays the filtered model table and provider summary regardless of --dry-run;
+    the flag only prevents API calls. Rejected (filtered) models do not appear in tables.
+  - >-
+    _get_model_info_obj_from_yaml extracts provider as the string before the first "/" in model_id,
+    or the entire model_id if "/" is absent. Empty access_groups list formats as empty string.
+  - >-
+    get_model accepts both --id and --name provided together and passes both to client.models.get();
+    the check only rejects the case where neither is provided.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

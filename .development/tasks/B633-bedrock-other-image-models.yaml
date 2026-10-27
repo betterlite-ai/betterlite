@@ -127,26 +127,9 @@ scope:
   - tools/oracle/cases/helpers/providers/bedrock-other-image-models/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/providers.rs
-  - crates/betterlite-config/src/providers/**
-  - crates/betterlite-config/src/providers/bedrock.rs
-  - crates/betterlite-config/src/providers/bedrock/**
-  - crates/betterlite-config/src/providers/bedrock/bedrock_image_models.rs
-  - crates/betterlite-config/src/providers/bedrock/bedrock_image_models/**
-  - crates/betterlite-config/src/tests.rs
-  - crates/betterlite-config/src/tests/bedrock_image_models_config.rs
-  - crates/betterlite-config/src/tests/bedrock_image_models_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_image_models*
+  - crates/betterlite-config/src/sections/bedrock_other_image_models.rs
+  - crates/betterlite-config/src/sections/bedrock_other_image_models/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_titan_transformation.py#L30-L139
@@ -389,6 +372,6 @@ pitfalls:
 - Titan pops imageGenerationConfig twice, so the apparent second override is empty in ordinary execution.
 - TypedDict construction does not enforce the listed Nova parameter annotations or reject unknown fields.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

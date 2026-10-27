@@ -1,0 +1,163 @@
+id: B4509
+title: Group Lens observations and orchestrate sample analysis
+description: >-
+  Build crates/betterlite-lens module coordinator to group observations into
+  candidate patterns and orchestrate the two-pass sample analysis flow with
+  compact run aliases, restored public IDs and progress reporting. The coordinator
+  handles execution-alias mapping at the public boundary, orchestrates extraction,
+  grouping and investigation stages using the LLM to consolidate candidates, and
+  tracks coverage from sample selection through investigation completion.
+  Cover litellm/proxy/lens/analysis.py:599-646 (analyze_sample entry point with
+  nested read_alias mapping); litellm/proxy/lens/analysis.py:649-707 (_analyze_sample
+  main coordinator with nested limited_model semaphore); litellm/proxy/lens/analysis.py:710-755
+  (cluster_batches with nested consolidate, iterating observation batches and
+  registry pages); litellm/proxy/lens/analysis.py:758-759 (candidate_size partitioning
+  function); litellm/proxy/lens/analysis.py:762-836 (merge_candidates consolidation
+  with nested validate_groups); litellm/proxy/lens/analysis.py:882-884 (observation_batches
+  partitioning).
+  Direct dependencies: B4500 for Sample/Result/Coverage/RunAssessment construction
+  and wire-ID restoration; B4506 for partition_items, structured_response, shared
+  Candidate/Clusters/Observation records and ModelCall/ReadContent/ReportProgress
+  callback contracts; B4507 for examine_executions that extracts observations from
+  executions; B4508 for investigate_candidates that validates candidates. The task
+  exports a root-level analyze_sample async function that orchestrates the full
+  sample analysis; helper functions are internal. Preserve semaphore concurrency
+  limits per claim.job.settings, model-based candidate consolidation across sorted
+  registry pages, two-phase grouping (accumulation then registry comparison), execution-ID
+  mapping at the public boundary, and progress reporting on each stage (Reading executions,
+  Grouping observations, Checking original evidence). Candidates are sorted by (check_id,
+  kind) before registry comparison; previously-grouped candidates from accumulation
+  carry their full expanded execution_id sets into registry. Invalid groupings where
+  execution_ids appear outside their source candidates are discarded, original candidates
+  are kept as fallbacks, and duplicate execution_id references trigger structured_response
+  repair and conversion.
+scope:
+  paths:
+    - crates/betterlite-lens/src/coordinator.rs
+    - crates/betterlite-lens/src/coordinator/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L599-L646
+    why: analyze_sample entry point that maps execution IDs to compact run aliases and back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L649-L707
+    why: _analyze_sample coordinator that orchestrates extraction, grouping and investigation stages with semaphore concurrency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L710-L755
+    why: cluster_batches that accumulates candidates from observation batches, then compares consolidated candidates against registry with two-phase grouping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L758-L759
+    why: candidate_size function that computes JSON-serializable size for partitioning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L762-L836
+    why: merge_candidates model-based consolidation with validation of execution_id references and active/settled candidate separation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L882-L884
+    why: observation_batches partitioning function that groups observations by check_id and kind.
+dod:
+  - text: analyze_sample maps executions to compact run aliases (r0, r1, ...), calls _analyze_sample with aliased sample, and restores public execution IDs in all result fields (assessments, findings evidence).
+    proof: [alias-mapping-tests]
+  - text: >-
+      Empty sample.executions returns Result(coverage(eligible, selected=0), findings=(), assessments=()) without creating a semaphore,
+      calling examine_executions or cluster_batches.
+    proof: [empty-executions-tests]
+  - text: _analyze_sample orchestrates extraction through examine_executions, groups observations into candidates through cluster_batches, and investigates through investigate_candidates, returning Result with findings, assessments and final coverage.
+    proof: [coordinator-tests]
+  - text: >-
+      Empty observations after extraction returns Result(coverage, assessments, findings=()) without calling observation_batches,
+      cluster_batches or investigate_candidates.
+    proof: [empty-observations-tests]
+  - text: _analyze_sample creates a Semaphore bounded by claim.job.settings.concurrency and passes limited_model that acquires/releases permits to both examine_executions and cluster_batches.
+    proof: [concurrency-limit-tests]
+  - text: cluster_batches accumulates candidates from observation batches by calling consolidate, then compares accumulated candidates against registry in a second phase by sorted (check_id, kind).
+    proof: [cluster-batches-tests]
+  - text: cluster_batches partitions both accumulated and registry candidates before merging, using candidate_size for partition limits of 16000 bytes for accumulation and 8000 bytes for registry comparison.
+    proof: [candidate-partitioning-tests]
+  - text: consolidate rebinds active candidates across registry pages, building a registry of settled and active candidates, with entries neither duplicated nor lost across pages.
+    proof: [consolidate-tests]
+  - text: merge_candidates builds aliased identities (p0, p1, ...), calls structured_response with Clusters schema, and expands candidate references back to original execution_ids.
+    proof: [merge-candidates-tests]
+  - text: validate_groups rejects a response (triggering structured_response repair) only when a reference is duplicated across groups; an identity absent from every group is not an error.
+    proof: [duplicate-reference-tests]
+  - text: merge_candidates separates candidates into active (incoming) and settled (prior pages) based on index position, returning both tuples for accumulation or registry separation.
+    proof: [active-settled-tests]
+  - text: >-
+      merge_candidates filters candidates with empty execution_ids or identities absent from/mismatched with the identities map,
+      keeping only valid candidates; invalid groupings are discarded by this filter, separate from the duplicate-reference validation.
+    proof: [invalid-grouping-tests]
+  - text: observation_batches sorts observations by (check_id, kind) and partitions by JSON serialized size with 16000-byte limit.
+    proof: [observation-batches-tests]
+  - text: candidate_size computes the sum of title length, hypothesis length, check_id length and 200 bytes for JSON overhead.
+    proof: [candidate-size-tests]
+  - text: Progress reporting includes stage names (Reading executions, Grouping observations, Checking original evidence) and Coverage updates with eligible, selected, screened, partial, unassessable, grouping_batches, grouped_batches, candidates and investigated counts.
+    proof: [progress-reporting-tests]
+checks:
+  optional: []
+  commands:
+    - id: alias-mapping-tests
+      why: analyze_sample execution-ID aliasing or restoration is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::analyze_sample::alias/)'
+    - id: empty-executions-tests
+      why: empty executions case returns Result with coverage but no examinations or grouping
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::empty_executions/)'
+    - id: coordinator-tests
+      why: _analyze_sample orchestration, stage ordering or result assembly is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::analyze_sample::orchestration/)'
+    - id: empty-observations-tests
+      why: empty observations case returns Result with coverage and assessments but no grouping or investigation
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::empty_observations/)'
+    - id: concurrency-limit-tests
+      why: semaphore concurrency limit or limited_model implementation is missing
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::concurrency/)'
+    - id: cluster-batches-tests
+      why: cluster_batches two-phase grouping or candidate accumulation is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::cluster_batches::/) and not test(candidate_partitioning)'
+    - id: candidate-partitioning-tests
+      why: candidate partitioning with candidate_size or partition limits is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::candidate_partitioning/)'
+    - id: consolidate-tests
+      why: consolidate candidate accumulation or registry settlement is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::consolidate/)'
+    - id: merge-candidates-tests
+      why: merge_candidates model invocation or response processing is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::merge_candidates::/) and not test(active_settled_) and not test(invalid_grouping_) and not test(duplicate_reference_)'
+    - id: duplicate-reference-tests
+      why: validate_groups duplicate-reference detection or structured_response repair triggering is missing
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::duplicate_reference/)'
+    - id: active-settled-tests
+      why: merge_candidates active/settled candidate separation by index is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::active_settled/)'
+    - id: invalid-grouping-tests
+      why: merge_candidates filters candidates with invalid execution_ids or mismatched identities
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::invalid_grouping/)'
+    - id: observation-batches-tests
+      why: observation_batches sorting by (check_id, kind) or partitioning is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::observation_batches/)'
+    - id: candidate-size-tests
+      why: candidate_size computation or partition-limit application is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::candidate_size/)'
+    - id: progress-reporting-tests
+      why: progress callback invocations, stage names or coverage updates are missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^coordinator::progress_reporting/)'
+oracle_cases: []
+deviations:
+  - what: Coordinator uses tokio Semaphore to limit concurrent model invocations across both examination and grouping stages.
+    why: The coordinator must enforce bounded concurrency from claim.job.settings across two separate call sites (examine_executions and cluster_batches); a tokio Semaphore acquired before and released after model calls ensures the limit applies globally to the entire orchestration rather than per-stage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L649-L707
+  - what: Execution-ID aliasing uses String format (r0, r1, ...) instead of Python's dict iteration, mapping deterministically in order.
+    why: Rust requires explicit mapping; sorted iteration ensures deterministic alias assignment matching the sample order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L602-L603
+out_of_scope:
+  - Extraction and investigation implementations; B4507 and B4508 own those stages.
+  - Evidence storage and structured response repair; B4506 owns those primitives.
+  - Record definitions for Sample, Result, Coverage, Candidate, Clusters, etc.; B4500 and B4506 own those.
+  - Server routes and HTTP registration; B4503 and B4505 register handlers using this coordinator.
+  - Worker implementation and LiteLLM model-call retry logic; B132 supplies those.
+pitfalls:
+  - consolidate rebinds active to incoming candidates at the start, then accumulates settled across pages; ensure retained/settled lists are not duplicated across page iterations.
+  - merge_candidates calls structured_response with response_schema set to Clusters.model_json_schema(); validation happens inside structured_response and raises on invalid JSON.
+  - validate_groups closure is called by structured_response; the string error (if not None) triggers repair and conversion, so ensure the Clusters response includes candidates with non-empty execution_ids.
+  - candidate_size is called for every candidate during partition_items; the sum must match the total for the candidate when serialized to JSON, including field names and separators.
+  - execution_ids in merge_candidates are expanded by looking up each identity in the identities mapping; an identity not in the map means the model generated invalid references, caught by valid tuple filtering.
+  - registry comparison sorts candidates by (check_id, kind) to group related patterns; candidates with different kinds are kept separate even if check_id matches.
+  - consolidated candidates from accumulation enter the registry comparison with full expanded execution_id sets; do not re-expand them again in the final partition.
+  - progress callback is invoked with a Coverage snapshot; mutations to coverage between calls show cumulative progress, not incremental state changes.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

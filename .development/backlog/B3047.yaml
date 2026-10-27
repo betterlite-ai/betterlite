@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Legacy minute-counter limits and errors
 status: todo
 depends_on: [B732, B3030]
-file: null
+file: tasks/B3047-legacy-rate-limit-counters.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter.py"
 parent: B072

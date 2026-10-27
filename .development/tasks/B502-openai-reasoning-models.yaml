@@ -104,8 +104,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/reasoning_models.rs
   - crates/betterlite-openai/src/reasoning_models/**
   - tools/oracle/Cargo.toml
@@ -354,6 +352,6 @@ pitfalls:
 - Search variants return before regular reasoning and temperature guards, so a shared final guard would add rejections
   the source never makes.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

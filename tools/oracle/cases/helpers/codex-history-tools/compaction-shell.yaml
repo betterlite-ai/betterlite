@@ -1,0 +1,16 @@
+kind: helper
+name: compaction-shell
+call:
+  codex_history_tools:
+    operation: normalize
+    input:
+      - type: context_compaction
+        encrypted_content: cipher
+        extra: 1
+      - type: local_shell_call
+        call_id: c
+        action:
+          command: ls
+compare:
+  ignore: []
+env: {}

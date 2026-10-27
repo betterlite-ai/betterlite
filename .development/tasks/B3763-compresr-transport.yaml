@@ -95,5 +95,5 @@ pitfalls:
   - "The fail_open/fail_closed decision happens at the HTTP-failure point; a 200 response with unexpected shape is still handled by the fail policy, not by a separate \"bad shape\" path."
 review_level: standard
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 1500
   max_new_expects: 0

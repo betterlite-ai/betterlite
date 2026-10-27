@@ -1,0 +1,201 @@
+id: B3809
+title: LLM guardrail judge criteria and decisions
+description: >-
+  Build weighted judge criteria, prompt construction, recursion suppression and verdict
+  conversion. Preserve fail-open judge exceptions, score clamping to [0, 100] with default
+  100, and 422 blocks below the configured threshold. Instantiate LLMAsAJudgeGuardrail
+  with judge_model, criteria list, overall_threshold and on_failure (block or log) modes.
+  Support pre_call, during_call and post_call event hooks, extracting the latest user
+  message from structured_messages for request evaluation and texts from the response.
+  Score results map to verdicts with criterion name, score, reasoning, passed flag and
+  weight; clamp overall_score to [0, 100], defaulting to 100 on invalid parse. Block
+  with status 422 when overall_score < overall_threshold and on_failure is block, log-only
+  when on_failure is log. Add eval_information to request_data.metadata with eval_name,
+  overall_score, passed, judge_model, threshold and verdicts; merge multiple eval results
+  as a list. Suppress recursive judge calls via _is_logged_judge_call, checking request
+  metadata's INTERNAL_CALL_ORIGIN_METADATA_KEY against LLM_AS_A_JUDGE_GUARDRAIL_CALL_ORIGIN.
+  Initialize with weights that sum to 100 (within 0.5 tolerance), validate on_failure is
+  block or log, and coerce mode to GuardrailEventHooks. Fail-open on judge call exceptions,
+  logging the error and returning inputs unchanged. Converge event_type from _event_type_for
+  by detecting which configured hook matches the input_type's lifecycle.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/judge.rs
+    - crates/betterlite-guardrails/src/judge/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/guardrails/judge-*.yaml
+    - crates/betterlite-config/src/sections/guardrail_judge.rs
+    - crates/betterlite-config/src/sections/guardrail_judge/**
+    - tools/oracle/helpers/b3809.py
+    - tools/oracle/helpers/b3809/**
+    - tools/oracle/src/helpers/guardrails/b3809.rs
+    - tools/oracle/src/helpers/guardrails/b3809/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L81-L89
+    why: _is_logged_judge_call detects recursive judge calls via INTERNAL_CALL_ORIGIN_METADATA_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L120-L137
+    why: _get_litellm_param reads from litellm_params attribute, guardrail dict, or default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L140-L147
+    why: _coerce_event_hook converts mode string or list to GuardrailEventHooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L150-L155
+    why: _text_under_review extracts texts array or latest user message from structured_messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L158-L177
+    why: _build_judge_prompt renders criteria, conversation and text_under_review blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L200-L223
+    why: LLMAsAJudgeGuardrail.__init__ stores judge_model, criteria, overall_threshold, on_failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L225-L232
+    why: get_supported_event_hooks and should_run_guardrail suppress recursion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L234-L256
+    why: _run_judge calls judge completion, parses JSON, returns verdict dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L258-L341
+    why: apply_guardrail extracts text, calls judge, clamps score, blocks or logs, updates metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L343-L345
+    why: _event_type_for returns configured hook matching input_type lifecycle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L348-L386
+    why: initialize_guardrail validates config, constructs instance, registers callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L37-L72
+    why: Judge system prompts, labels, lifecycle hooks and failure modes.
+
+dod:
+  - text: _is_logged_judge_call returns false unless event_type is logging_only and litellm_params.metadata contains the judge call origin marker.
+    proof: [judge-recursion-tests]
+
+  - text: _get_litellm_param returns the value from litellm_params attribute, guardrail dict under the key, or the guardrail dict parsed as an object attribute, or default.
+    proof: [judge-config-tests]
+
+  - text: _coerce_event_hook converts a string mode to GuardrailEventHooks, a list of strings to a list of hooks, Mode/hook to itself, or None to post_call default.
+    proof: [judge-config-tests]
+
+  - text: _text_under_review returns joined texts from inputs for response evaluation, or the latest user message from structured_messages for request evaluation.
+    proof: [judge-text-tests]
+
+  - text: _build_judge_prompt constructs the criteria block listing name, weight and description; conversation block from structured_messages or request_data.messages; and text_under_review labeled as Latest request turn or Assistant response.
+    proof: [judge-prompt-tests]
+
+  - text: LLMAsAJudgeGuardrail stores judge_model, criteria, overall_threshold, on_failure and event_hook, calling super().__init__ with guardrail_name and supported_event_hooks.
+    proof: [judge-construct-tests]
+
+  - text: get_supported_event_hooks returns the list [pre_call, during_call, post_call] regardless of instance configuration.
+    proof: [judge-construct-tests]
+
+  - text: should_run_guardrail returns false for recursive judge calls (logging_only events from the judge itself), delegating to super for other cases.
+    proof: [judge-recursion-tests]
+
+  - text: _run_judge calls the judge completion with response_format json_object and temperature 0, extracts content from the response, and parses the JSON verdict dict.
+    proof: [judge-call-tests]
+
+  - text: apply_guardrail fails open when judge call raises any exception, logging a warning and returning inputs unchanged.
+    proof: [judge-call-tests, judge-oracle]
+
+  - text: apply_guardrail handles a missing overall_score key by defaulting to 100, clamping to [0, 100], and continuing normally to write eval_information and check the threshold.
+    proof: [judge-verdict-tests]
+
+  - text: apply_guardrail handles a present non-numeric overall_score value by catching the exception and returning inputs immediately without writing eval_information.
+    proof: [judge-verdict-tests]
+
+  - text: apply_guardrail computes passed as overall_score >= overall_threshold and adds eval_information to request_data.metadata.
+    proof: [judge-verdict-tests]
+
+  - text: apply_guardrail merges multiple eval_information by appending to a list, starting a new list on the second entry.
+    proof: [judge-verdict-tests]
+
+  - text: apply_guardrail raises HTTPException with status 422 when passed is false and on_failure is block, including overall_score, threshold and verdicts in the detail.
+    proof: [judge-block-tests, judge-oracle]
+
+  - text: apply_guardrail logs eval_information and returns inputs unchanged when on_failure is log, regardless of passed.
+    proof: [judge-log-tests]
+
+  - text: _event_type_for returns the first configured hook matching input_type's lifecycle (pre_call/during_call/logging_only for request, post_call/logging_only for response), or None if none or multiple match.
+    proof: [judge-event-type-tests]
+
+  - text: initialize_guardrail validates guardrail_name, judge_model, criteria list, weight sum (100 ± 0.5), on_failure (block or log), constructs instance and registers with add_litellm_callback.
+    proof: [judge-initialize-tests]
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: judge-recursion-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_recursion_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-config-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_config_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-text-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_text_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-prompt-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_prompt_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-construct-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_construct_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-call-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_call_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-verdict-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_verdict_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-block-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_block_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-log-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_log_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-event-type-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_event_type_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-initialize-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::judge_initialize_tests_behavior($|::)/) - test(/replays_the_/)'
+
+    - id: judge-oracle
+      why: judge behavior does not match LiteLLM on fail-open, block, or log decisions
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/judge-*.yaml
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/judge-request.yaml
+  - tools/oracle/cases/guardrails/judge-response.yaml
+  - tools/oracle/cases/guardrails/judge-fail-open.yaml
+  - tools/oracle/cases/guardrails/judge-block.yaml
+  - tools/oracle/cases/guardrails/judge-log.yaml
+
+out_of_scope:
+  - judge_acompletion (owned by B4080, shared judge helper from litellm/litellm_core_utils/llm_judge.py)
+  - parse_json_verdict (owned by B4080, shared judge helper from litellm/litellm_core_utils/llm_judge.py)
+  - extract_text_from_content (owned by B4080, shared judge helper from litellm/litellm_core_utils/llm_judge.py)
+  - default_router_provider (owned by B4080, shared judge helper from litellm/litellm_core_utils/llm_judge.py)
+
+deviations:
+  - what: Judge calls include metadata with INTERNAL_CALL_ORIGIN_METADATA_KEY to suppress recursion at the logging_only hook level.
+    why: Rust constructor directly injects marker rather than inspecting call stack.
+  - what: Score clamping uses min(100.0, max(0.0, score)) to produce a valid range, with default 100 for invalid JSON parse.
+    why: "Matches LiteLLM behavior: clamp before checking threshold, default open on parse failure."
+  - what: Eval information merges as a list when multiple judges run; individual entry is not wrapped in a list.
+    why: "Matches LiteLLM logic: first entry is scalar, second and later entries append to a list."
+
+pitfalls:
+  - "Criterion weights must sum to 100 within 0.5 tolerance; a weight total of 99.5 or 100.5 is valid, but 99.4 or 100.6 is rejected during initialize_guardrail."
+  - "_coerce_event_hook(None) returns post_call, not a list; check that event hook matching in constructor allows both single hooks and lists."
+  - "_is_logged_judge_call only suppresses logging_only event hooks; pre_call, during_call and post_call hooks are not affected even if they are recursive."
+  - "_text_under_review calls get_last_user_message only for request evaluation; response evaluation joins the texts array directly without traversing messages."
+  - "apply_guardrail defaults overall_score to 100 when the key is missing from the verdict dict, allowing normal eval_information write and threshold check; a non-numeric overall_score value causes an immediate return without eval_information."
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

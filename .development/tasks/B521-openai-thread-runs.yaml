@@ -64,8 +64,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/thread_runs.rs
   - crates/betterlite-openai/src/thread_runs/**
   - tools/oracle/Cargo.toml
@@ -259,6 +257,6 @@ pitfalls:
 - async_run_thread_stream is a regular function returning a manager, so awaiting it changes the SDK seam.
 - The stream parameter is accepted by arun_thread but never forwarded to create_and_poll.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

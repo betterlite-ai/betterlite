@@ -42,7 +42,6 @@ scope:
     - tools/oracle/helpers/websearch_tool_records.py
     - tools/oracle/helpers/websearch_tool_records/**
     - Cargo.toml
-    - deny.toml
   lint_tables: false
 
 references:
@@ -187,5 +186,5 @@ out_of_scope:
 
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0

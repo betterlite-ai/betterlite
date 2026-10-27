@@ -1,0 +1,8 @@
+kind: helper
+name: score-finite-not-bool
+call:
+  routing_decision_headers:
+    function: complexity
+    request: {metadata: {routing_decision: {router_type: complexity, score: true}}}
+env: {}
+compare: {ignore: []}

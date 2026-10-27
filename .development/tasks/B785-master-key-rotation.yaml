@@ -99,6 +99,10 @@ scope:
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/master-key-rotation/**
     - crates/betterlite-server/src/master_key_rotation/fixtures/**
+    - tools/oracle/helpers/b785.py
+    - tools/oracle/helpers/b785/**
+    - tools/oracle/src/helpers/server/b785.rs
+    - tools/oracle/src/helpers/server/b785/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5368-L5445
@@ -246,6 +250,6 @@ out_of_scope:
 pitfalls:
   - The check endpoint can scan legacy encryption while POST dry_run still requires aes-256-gcm.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

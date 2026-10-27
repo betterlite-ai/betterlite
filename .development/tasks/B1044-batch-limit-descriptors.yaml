@@ -79,20 +79,6 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/batch_limit_descriptors.rs
-  - crates/betterlite-config/src/api/batch_limit_descriptors/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/batch-limit-descriptors-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/batch_limit_descriptors.rs
@@ -101,6 +87,8 @@ scope:
   - tools/oracle/helpers/batch_limit_descriptors/**
   - tools/oracle/fuzz/corpus/helper_case/batch_limit_descriptors-*
   - tools/oracle/cases/helpers/batch-limit-descriptors/**
+  - crates/betterlite-config/src/sections/batch_limit_descriptors.rs
+  - crates/betterlite-config/src/sections/batch_limit_descriptors/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L414-L414
@@ -157,7 +145,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::batch_limit_descriptors::/)
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api|sections)::batch_limit_descriptors::/)
       - test(/::replays_corpus$/)'
   - id: case-file-bound-model-precedence
     why: the file-bound-model-precedence behavior or its assertions are absent
@@ -176,7 +164,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_limit_descriptors::tests::key_requires_access_check($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_limit_descriptors::tests::loads_settings($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::batch_limit_descriptors::tests::loads_settings($|::)/)'
   - id: config-corpus
     why: no newly added key-bearing config seed reaches the production loader
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-limit-descriptors-*)"
@@ -221,5 +209,5 @@ pitfalls:
   its level and fallback instead of turning it into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 1500
   max_new_expects: 1

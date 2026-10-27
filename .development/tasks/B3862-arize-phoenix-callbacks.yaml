@@ -1,0 +1,141 @@
+id: B3862
+title: Arize and Phoenix tracing callbacks
+description: >-
+  Build Arize sampling and Phoenix project-routing callbacks over the shared legacy provider/lifecycle implementation.
+  Preserve callback registration behavior, project-provider retention, health checks and request-specific span context.
+
+  For Arize, implement sampling at the request level: read arize_success_sampling_rate and arize_error_sampling_rate from
+  standard_callback_dynamic_params, reject sampled-out requests with a cached decision before calling the base handler,
+  and override set_attributes to route to _utils.set_attributes with ArizeOTELAttributes. construct_dynamic_otel_headers
+  extracts arize_space_id, arize_space_key and arize_api_key from dynamic params and returns them as header pairs for
+  per-request credential override. Do not register on the proxy's open_telemetry_logger; Arize coexists alongside the
+  primary otel callback.
+
+  For Phoenix, implement per-project TracerProvider caching with an LRU limit of 64 providers per instance. Route request
+  and guardrail spans to the project's tracer, building project context from metadata (phoenix_project_name_override, then
+  phoenix_project_name) with a fallback to environment variables and then "default". In proxy mode, create a parent span
+  on Phoenix's tracer to preserve hierarchy; in SDK mode, propagate traceparent headers for distributed tracing without
+  a local parent. Cache providers in an OrderedDict protected by a reentrant lock. Per-request header injection happens
+  through the base exporter infrastructure (B3850), not through an override of construct_dynamic_otel_headers.
+
+  Both callbacks override _init_tracing to build private TracerProviders instead of using the global provider. Health checks
+  verify credentials by calling the config getter functions. Both inherit the base success/failure lifecycle from OpenTelemetry (B3859).
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/src/otel.rs
+    - crates/betterlite-logging/src/otel/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L33-L163
+    why: ArizeLogger sampling constants, class declaration, __init__, _init_tracing, _handle_success, _handle_failure, sampling rate resolution
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L206-L296
+    why: ArizeLogger async_service_success_hook, async_service_failure_hook, async_health_check, construct_dynamic_otel_headers
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L165-L204
+    why: get_arize_config reads ARIZE_SPACE_ID, ARIZE_SPACE_KEY, ARIZE_API_KEY, ARIZE_PROJECT_NAME, ARIZE_ENDPOINT, ARIZE_HTTP_ENDPOINT; derives protocol and endpoint
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L47-L91
+    why: ArizePhoenixLogger cache limit, class declaration, _init_tracing
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L122-L384
+    why: Per-project TracerProvider management, project name resolution, proxy context and span handling
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L386-L445
+    why: get_arize_phoenix_config reads PHOENIX_API_KEY, PHOENIX_COLLECTOR_ENDPOINT, PHOENIX_COLLECTOR_HTTP_ENDPOINT, PHOENIX_PROJECT_NAME; derives protocol and endpoint; builds otlp_auth_headers with protocol-specific header casing; raises ValueError when Phoenix Cloud without api_key
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L447-L459
+    why: ArizePhoenixLogger async_health_check
+dod:
+  - text: >-
+      get_arize_config reads ARIZE_SPACE_ID, ARIZE_SPACE_KEY, ARIZE_API_KEY, ARIZE_PROJECT_NAME, ARIZE_ENDPOINT and
+      ARIZE_HTTP_ENDPOINT. When both ARIZE_ENDPOINT and ARIZE_HTTP_ENDPOINT are set, ARIZE_ENDPOINT wins: protocol is
+      otlp_grpc and endpoint is the literal ARIZE_ENDPOINT value. When only ARIZE_HTTP_ENDPOINT is set, protocol is
+      otlp_http and endpoint is the literal value. When neither is set, protocol defaults to otlp_grpc and endpoint
+      defaults to https://otlp.arize.com/v1. Returns ArizeConfig with all six fields.
+    proof: [helper-python]
+  - text: ArizeLogger applies success_sampling_rate and error_sampling_rate from request params before calling the base handler, caching the decision in _otel_internal_state per request.
+    proof: [arize-tests]
+  - text: ArizeLogger.construct_dynamic_otel_headers extracts arize_space_id, arize_space_key and arize_api_key from standard_callback_dynamic_params and returns them as request headers for per-request credential override.
+    proof: [arize-tests]
+  - text: ArizeLogger.async_health_check calls get_arize_config and returns healthy when space_id or space_key and api_key are set.
+    proof: [arize-tests]
+  - text: >-
+      get_arize_phoenix_config reads PHOENIX_API_KEY, PHOENIX_COLLECTOR_ENDPOINT, PHOENIX_COLLECTOR_HTTP_ENDPOINT and
+      PHOENIX_PROJECT_NAME (defaults to 'default'). Protocol is otlp_grpc when endpoint starts with grpc:// or contains
+      :4317 without /v1/traces already in the path; otherwise otlp_http. When endpoint contains app.phoenix.arize.com,
+      it is returned unnormalized without appending /v1/traces; when set to other values, /v1/traces is appended if
+      missing; when unset, defaults to http://localhost:6006/v1/traces. otlp_auth_headers is built as 'authorization=Bearer <key>'
+      for otlp_grpc or 'Authorization=Bearer <key>' for otlp_http when api_key is set. Raises ValueError when api_key
+      is unset and endpoint contains app.phoenix.arize.com.
+    proof: [helper-python]
+  - text: ArizePhoenixLogger routes each request to its project's TracerProvider, creating/caching/evicting on LRU until 64 providers.
+    proof: [phoenix-tests]
+  - text: Phoenix project name is resolved in priority order; metadata override, metadata field, env variable, then "default".
+    proof: [phoenix-tests]
+  - text: In proxy mode, Phoenix creates a parent span on its own tracer; in SDK mode, it propagates incoming traceparent headers.
+    proof: [phoenix-tests]
+  - text: ArizePhoenixLogger.async_health_check calls get_arize_phoenix_config and returns healthy when otlp_auth_headers is set (indicating api_key was present); when api_key is unset and endpoint is Phoenix Cloud, the ValueError from get_arize_phoenix_config propagates uncaught.
+    proof: [phoenix-tests]
+  - text: Every mutant in both callbacks is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: helper-python
+      why: Config getters must read env vars and derive endpoints/protocol with the correct precedence and defaults
+      run: |-
+        # Verify get_arize_config reads six env vars and derives endpoint/protocol
+        grep -q "ARIZE_SPACE_ID\|ARIZE_SPACE_KEY\|ARIZE_API_KEY\|ARIZE_PROJECT_NAME\|ARIZE_ENDPOINT\|ARIZE_HTTP_ENDPOINT" crates/betterlite-logging/src/otel/config.rs || grep -q "\"ARIZE_SPACE_ID\"\|\"ARIZE_SPACE_KEY\"\|\"ARIZE_API_KEY\"\|\"ARIZE_PROJECT_NAME\"\|\"ARIZE_ENDPOINT\"\|\"ARIZE_HTTP_ENDPOINT\"" crates/betterlite-logging/src/otel/config.rs
+        # Verify get_arize_phoenix_config reads PHOENIX_* env vars and raises on Phoenix Cloud without key
+        grep -q "PHOENIX_API_KEY\|PHOENIX_COLLECTOR_ENDPOINT\|PHOENIX_COLLECTOR_HTTP_ENDPOINT\|PHOENIX_PROJECT_NAME\|app.phoenix.arize.com" crates/betterlite-logging/src/otel/config.rs || grep -q "\"PHOENIX_API_KEY\"\|\"PHOENIX_COLLECTOR_ENDPOINT\"\|\"PHOENIX_COLLECTOR_HTTP_ENDPOINT\"\|\"PHOENIX_PROJECT_NAME\"\|app.phoenix.arize.com" crates/betterlite-logging/src/otel/config.rs
+    - id: arize-tests
+      why: Arize callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^arize_callback::/) + test(arize)'
+    - id: phoenix-tests
+      why: Phoenix callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^phoenix_callback::/) + test(phoenix)'
+oracle_cases: []
+deviations:
+  - what: Arize does not register on the proxy's open_telemetry_logger attribute, allowing coexistence with the primary otel callback.
+    why: Multiple OTEL integrations must not fight over the singleton; each gets its own TracerProvider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L151-L156
+  - what: Phoenix project-name resolution happens per request, not at initialization, so projects can be routed dynamically through metadata.
+    why: LiteLLM routes to one project at startup; betterlite supports per-request routing for multi-tenant scenarios.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L263-L285
+  - what: ArizePhoenixLogger.async_health_check with endpoint=app.phoenix.arize.com and PHOENIX_API_KEY unset propagates ValueError uncaught instead of returning an unhealthy status.
+    why: get_arize_phoenix_config raises ValueError when the resolved endpoint is Phoenix Cloud and api_key is None; async_health_check does not catch this exception, so it propagates to the caller. This is the actual LiteLLM behavior at the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L435-L448
+out_of_scope:
+  - Phoenix prompt retrieval and template rendering (B3864).
+  - Langfuse, AgentOps and other vendor callbacks (B3863, B3851).
+  - The shared Arize attribute mapping; that lives in B3861.
+pitfalls:
+  - >-
+    ArizeLogger._random_draw is injected as a Callable to allow deterministic tests; never seed a global random.
+  - >-
+    The arize_success_sampling_rate and arize_error_sampling_rate params are read from standard_callback_dynamic_params, not litellm_params.
+  - >-
+    get_arize_config endpoint derivation follows this logic: grpc_endpoint takes priority, then http_endpoint, else
+    default https://otlp.arize.com/v1; protocol follows the endpoint choice.
+  - >-
+    get_arize_phoenix_config endpoint normalization appends /v1/traces when the path does not already contain it;
+    localhost:6006/v1/traces is the hardcoded default when no collector endpoint is configured.
+  - >-
+    get_arize_phoenix_config otlp_auth_headers uses lowercase 'authorization' for otlp_grpc and capitalized
+    'Authorization' for otlp_http per OTLP spec conventions.
+  - >-
+    get_arize_phoenix_config raises ValueError (not caught by async_health_check) when api_key is unset and endpoint
+    contains app.phoenix.arize.com; the exception propagates to the caller.
+  - >-
+    Phoenix's per-project cache is protected by a lock and evicts on LRU when it exceeds 64 entries; concurrent requests
+    for different projects will not block once cached.
+  - >-
+    _get_phoenix_context returns (context, parent_span) tuple where parent_span is only non-None in proxy mode; the
+    caller uses the context for child spans.
+  - >-
+    _otel_internal_state is a mutable dict stored in kwargs; mutations persist across success/failure/guardrail handlers
+    on the same request.
+  - >-
+    Phoenix project resolution prefers env var, then request metadata phoenix_project_name (only from auth_metadata when
+    proxy mode, never from client request metadata directly), then defaults to 'default' to prevent clients from routing
+    spans to arbitrary projects.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

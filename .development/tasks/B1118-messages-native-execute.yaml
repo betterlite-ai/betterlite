@@ -33,6 +33,10 @@ scope:
   - tools/oracle/sdk_http/messages_native_execute.py
   - tools/oracle/cases/sdk-http/messages-native-execute/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-native-execute-*
+  - tools/oracle/helpers/b1118.py
+  - tools/oracle/helpers/b1118/**
+  - tools/oracle/src/helpers/core_ops/b1118.rs
+  - tools/oracle/src/helpers/core_ops/b1118/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L115-L225
@@ -131,5 +135,5 @@ pitfalls:
 - Removing litellm_params from the hook result does not remove a preexisting copy from original kwargs.
 review_level: security
 budget:
-  max_changed_lines: 780
+  max_changed_lines: 1500
   max_new_expects: 0

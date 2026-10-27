@@ -1,0 +1,19 @@
+{
+  "date": "",
+  "entity_id": "",
+  "entity_alias": null,
+  "api_key": null,
+  "key_alias": null,
+  "user_id": null,
+  "user_email": null,
+  "model": null,
+  "spend": "0.25",
+  "flat_cost": "0.25",
+  "prompt_tokens": 7,
+  "completion_tokens": 7,
+  "api_requests": 7,
+  "successful_requests": 7,
+  "failed_requests": 7,
+  "cache_read_input_tokens": 7,
+  "cache_creation_input_tokens": 7
+}

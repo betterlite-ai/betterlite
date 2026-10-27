@@ -1,0 +1,179 @@
+id: B4117
+title: Gate search reruns by API surface and preserve thinking
+description: >-
+  Build the three search-loop eligibility checkers in crates/betterlite-websearch and their
+  dispatcher, deciding when an agentic loop should execute. `async_should_run_agentic_loop`
+  checks the `_agentic_loop_api_surface` kwarg to route between Anthropic Messages, Chat
+  Completions and Responses implementations. Each checker filters by enabled providers,
+  verifies that tools include a web search tool via the strict dialect-specific recognizer
+  from B4111, calls the call-detection function from B4112 to find search tool calls in the
+  response, and returns whether the loop should run plus a dict of tool call metadata.
+  For Anthropic, extract and preserve thinking/redacted_thinking blocks from the response
+  content, prepending them to follow-up messages to maintain model reasoning context.
+
+  The public interface is a single async method on a logger/state object with signature
+  `async_should_run_agentic_loop(response, model, messages, tools, stream, custom_llm_provider, kwargs)
+  -> tuple[bool, dict]` with two overloaded paths for Chat Completions and Responses via
+  `_agentic_loop_api_surface` value. When the value is neither recognized surface, use
+  the Anthropic-Messages gate (default path). Return `(True, {"tool_calls": [...], "provider": "...",
+  "response_format": "anthropic"|"openai"|"responses", "thinking_blocks": [...]})` when
+  a search loop should run, or `(False, {})` when it should not.
+
+  Preserve enabled_providers filtering, exact tool name checks per API surface (permissive
+  for Anthropic, strict for Chat Completions, permissive with native types for Responses),
+  and the precise order of extraction and return fields matching LiteLLM's behavior.
+  Stream handling is delegated to B4112's transform_request; when stream=true, B4112 returns
+  should_intercept=false, and the gate returns (false, {}) like any other non-match.
+
+scope:
+  paths:
+    - crates/betterlite-websearch/src/loop_eligibility.rs
+    - crates/betterlite-websearch/src/loop_eligibility/**
+    - crates/betterlite-websearch/src/tests.rs
+    - tools/oracle/cases/chat/**
+    - tools/oracle/helpers/b4117.py
+    - tools/oracle/helpers/b4117/**
+    - tools/oracle/src/helpers/websearch/b4117.rs
+    - tools/oracle/src/helpers/websearch/b4117/**
+    - crates/betterlite-websearch/src/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L677-L787
+    why: The dispatcher that routes by _agentic_loop_api_surface and the Anthropic gate with thinking block extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L789-L847
+    why: The Chat Completions-specific gate with strict tool detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L849-897
+    why: The Responses API gate with native type support in tool detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L1-L50
+    why: The CHAT_COMPLETION_AGENTIC_SURFACE and RESPONSES_AGENTIC_SURFACE constants used to dispatch.
+
+dod:
+  - text: >-
+      The dispatcher routes by `_agentic_loop_api_surface` kwarg value:
+      "chat_completions" calls Chat Completions gate, "responses" calls Responses gate,
+      all others (including absent) call Anthropic Messages gate (default).
+    proof: [websearch-dispatcher]
+  - text: >-
+      The Anthropic Messages gate (default dispatcher path) calls `is_web_search_tool`,
+      detects tool calls via `WebSearchTransformation.transform_request("anthropic")`,
+      and extracts thinking/redacted_thinking blocks from response content, returning
+      them in the dict under "thinking_blocks" key.
+    proof: [websearch-anthropic-gate, websearch-gates-oracle]
+  - text: >-
+      The Chat Completions gate calls `is_web_search_tool_chat_completion`, detects
+      tool calls via `WebSearchTransformation.transform_request("openai")`, and does
+      not extract thinking blocks (response_format is "openai").
+    proof: [websearch-chat-gate, websearch-gates-oracle]
+  - text: >-
+      The Responses API gate calls `is_web_search_tool_responses`, detects tool calls
+      via `WebSearchTransformation.transform_request("responses")`, and does not extract
+      thinking blocks (response_format is "responses").
+    proof: [websearch-responses-gate, websearch-gates-oracle]
+  - text: >-
+      Every gate filters by enabled_providers: returns (False, {}) when provider is
+      present in the enabled_providers list and custom_llm_provider is not in it.
+    proof: [websearch-provider-filter]
+  - text: >-
+      Every gate returns (False, {}) when tools list has no web search tool (all three
+      use their respective is_web_search_tool_* detection function).
+    proof: [websearch-tool-check]
+  - text: >-
+      Every gate returns (False, {}) when WebSearchTransformation.transform_request
+      returns should_intercept=False (no tool calls detected in response).
+    proof: [websearch-no-calls-oracle, websearch-gates-oracle]
+  - text: >-
+      When should_intercept is True, every gate returns (True, tools_dict) with
+      keys "tool_calls", "tool_type"="websearch", "provider", "response_format".
+      The Anthropic gate adds "thinking_blocks" key; Chat and Responses gates omit it.
+    proof: [websearch-return-format, websearch-gates-oracle]
+  - text: >-
+      When stream=true, WebSearchTransformation.transform_request (B4112) returns
+      (should_intercept=false, tool_calls=[]), and the gate returns (False, {}) as a result.
+      Integration oracle cases verify the composed outcome across all three formats.
+    proof: [websearch-no-calls-oracle, websearch-gates-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: websearch-dispatcher
+      why: the dispatcher does not exist or fails to route by _agentic_loop_api_surface
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/dispatcher/)'
+    - id: websearch-anthropic-gate
+      why: the Anthropic Messages gate does not exist or fails its unit tests
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/anthropic_gate|thinking_blocks/)'
+    - id: websearch-chat-gate
+      why: the Chat Completions gate does not exist or fails its unit tests
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/chat_completion_gate/)'
+    - id: websearch-responses-gate
+      why: the Responses API gate does not exist or fails its unit tests
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/responses_gate/)'
+    - id: websearch-provider-filter
+      why: provider filtering does not work or is not tested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/provider_filter/)'
+    - id: websearch-tool-check
+      why: tool detection in gates does not use strict recognizers or is not tested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/tool.*check/)'
+    - id: websearch-return-format
+      why: return dict format is wrong or lacks required keys
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/return.*format|keys/)'
+    - id: websearch-gates-oracle
+      why: oracle cases for all three gates fail against LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat)" &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/chat/websearch-gates-*.yaml
+    - id: websearch-no-calls-oracle
+      why: oracle cases for non-WebSearch responses fail against LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat)" &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/chat/websearch-no-intercept-*.yaml
+
+oracle_cases:
+  - tools/oracle/cases/chat/websearch-gates-anthropic-basic.yaml
+  - tools/oracle/cases/chat/websearch-gates-anthropic-thinking.yaml
+  - tools/oracle/cases/chat/websearch-gates-anthropic-redacted-thinking.yaml
+  - tools/oracle/cases/chat/websearch-gates-chat-basic.yaml
+  - tools/oracle/cases/chat/websearch-gates-responses-basic.yaml
+  - tools/oracle/cases/chat/websearch-gates-provider-filter.yaml
+  - tools/oracle/cases/chat/websearch-no-intercept-no-tool.yaml
+  - tools/oracle/cases/chat/websearch-no-intercept-stream.yaml
+
+deviations: []
+
+out_of_scope:
+  - The full agentic loop execution (B4115, B4118, B4119).
+  - Callback registration and configuration (B4116).
+  - Search tool authorization (B4114).
+  - The _agentic_loop_api_surface kwarg is set by B2415 (Responses-surface hooks) and its
+    Chat Completions counterpart in the chat-surface task series; this gate only reads the
+    kwarg value to dispatch.
+  - The `AgenticLoopPlan`, `AgenticLoopRequestPatch` or callback contract types, owned by
+    B189; gates return only metadata (tool_calls list and format hints), not plan objects.
+
+pitfalls:
+  - >-
+    Thinking blocks appear only in Anthropic Messages responses, in the content array
+    under type "thinking" or "redacted_thinking". Extract them as dicts, handling both
+    dict and object (pydantic) response types. Only the Anthropic gate adds them to
+    tools_dict; Chat Completions and Responses gates never include this key.
+  - >-
+    The three tool detectors have different strict levels: `is_web_search_tool_chat_completion`
+    rejects native types, `is_web_search_tool_responses` accepts them with `web_search_`
+    prefixes, and `is_web_search_tool` accepts all. Use the exact function per surface.
+  - >-
+    The enabled_providers filter is on custom_llm_provider (a string like "anthropic",
+    "openai", "bedrock"), not on the raw provider field in the request. Use equality
+    check against the list, not substring or prefix matching.
+  - >-
+    When `WebSearchTransformation.transform_request` returns `should_intercept=False`,
+    it means no web search tool calls were detected in the response (including when stream=true).
+    Return (False, {}) immediately; do not build or return a tools_dict.
+  - >-
+    The tools_dict keys must match LiteLLM exactly: "tool_calls" (list), "tool_type"
+    (string "websearch"), "provider" (string), "response_format" (string "anthropic",
+    "openai", or "responses"), and "thinking_blocks" (list, Anthropic gate only).
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

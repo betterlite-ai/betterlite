@@ -82,8 +82,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/fine_tuning.rs
   - crates/betterlite-openai/src/fine_tuning/**
   - tools/oracle/Cargo.toml
@@ -279,6 +277,6 @@ pitfalls:
 - Azure canceling is mapped to terminal cancelled, even though the upstream job may still be cancelling.
 - List returns the SDK page without per-job Azure normalization; do not apply the single-job normalizer to its entries.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

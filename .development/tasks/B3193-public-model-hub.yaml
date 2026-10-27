@@ -1,0 +1,141 @@
+id: B3193
+title: Legacy and paginated public model hub queries
+description: >-
+  Build GET `/public/model_hub`, `/public/v1/model_hub` and `/public/v1/model_hub/{facet}` in
+  `betterlite-server::public_endpoints::model_hub`. The legacy route fetches published model
+  groups and their latest health snapshots, swallowing health lookup failures so the models
+  still return. The v1 list and facet routes page, sort and filter the same groups through
+  the shared list framework, enriching each page's rows with health only when the database
+  is available, translating other failures to problem documents. Accept only three facet names
+  (`providers`, `modes`, `features`) and reject others with a 400 problem. Preserve default
+  page size 50, maximum 100, model-group ascending order with model-group tiebreaker, repeated
+  capability filters with OR semantics, and unconditional public scope. Reuse the list framework's
+  existing `handle_list` and `handle_facet` from B1702, construct typed list specs and exception
+  records through B1701 and B1665, and call `user_api_key_auth` for v1 route authentication,
+  though the missing entry point is a prerequisite. Load `litellm_settings.public_model_groups`
+  (default `None`) through B002. Install the three routes in B003's server and use its error
+  integration to map failures to problem documents where needed. Invoke B860's Postgres
+  fixture for health rows and lookup failures in tests. Every call to an unresolved callee
+  (`_get_model_group_info`, Prisma health methods, `_convert_health_check_to_dict`,
+  `user_api_key_auth` entry) must wait for that task to exist.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/public_endpoints/model_hub.rs
+    - crates/betterlite-server/src/public_endpoints/model_hub/**
+    - tools/oracle/cases/public/model-hub/**
+    - tools/oracle/fuzz/corpus/http_case/model-hub-*
+    - tools/oracle/helpers/b3193.py
+    - tools/oracle/helpers/b3193/**
+    - tools/oracle/src/helpers/server/b3193.rs
+    - tools/oracle/src/helpers/server/b3193/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L216-L265
+    why: Legacy `/public/model_hub` route, health map construction, swallowed exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L1-L323
+    why: Entire v1 module; list/facet routes, health lookup protocol, feature extraction,
+      cells mapping, list spec definition, published rows supplier, executor with optional
+      page enrichment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L48-L70
+    why: HealthSnapshotLookup protocol contract and PrismaHealthSnapshotLookup.latest_for
+      implementation signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L78-L98
+    why: Health enrichment callables; _with_health and HealthEnricher invoked as list callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L103-L159
+    why: List spec constants, feature extraction, cells mapping, filter/sort/facet definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L187-L223
+    why: Published rows supplier and executor factory; conditional health lookup setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L226-L273
+    why: "v1 model_hub list handler, request logging, exception translation."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L276-L323
+    why: "v1 model_hub facet handler, literal facet enum, facet name validation."
+
+dod:
+  - text: Legacy and v1 list routes return the exact published groups as the source, with
+      default sort, paging and population from `litellm.public_model_groups`.
+    proof: [model-hub-tests, oracle]
+  - text: Health enrichment fetches and attaches the latest check per model when the database
+      is available; legacy failures are silent and v1 failures are problem documents; facets
+      never fetch health.
+    proof: [model-hub-tests, oracle, model-hub-corpus]
+  - text: List and facet handlers reject unsupported facets, filter operators and sort fields
+      with 400 problem documents listing the accepted set, exactly as the source does.
+    proof: [model-hub-tests, oracle]
+  - text: Authentication dependency is resolved and public routes are registered at the correct
+      prefix under the composition module B077.
+    proof: [oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: model-hub-tests
+      why: Model group population, health lookup, enrichment and exception handling are missing
+        or incorrect.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::model_hub::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::model_hub_/)'
+    - id: model-hub-corpus
+      why: The HTTP-case decoder does not replay new model-hub requests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/model-hub-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/public/model-hub/legacy-route-basic.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-health-swallowed.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-no-database.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-no-router-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-default-page.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-filter-providers.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-filter-features-or.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-sort-by-cost.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-search-by-group.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-pagination-and-tiebreaker.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-health-enriched-success.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-health-lookup-failure-problem.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-no-router-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-bad-filter-operator-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-unsupported-sort-field-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-providers.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-modes.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-features-or-semantics.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-unsupported-facet-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-with-filter.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-health-not-fetched.yaml
+
+deviations:
+  - what: >-
+      When a facet name is not one of `providers`, `modes` or `features`, the 400 response lists
+      the accepted names in a problem document body, whereas the source does a 422 HTTPException.
+    why: The list framework's problem-document boundary is the sole failure surface for v1 public
+      routes, and 400 is the standard for invalid operation parameters across betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L282-L284
+
+out_of_scope:
+  - B060 owns `_get_model_group_info` (litellm/proxy/proxy_server.py:16320-16351), which
+    supplies model-group records by calling llm_router.get_model_group_info without checking
+    for a None router; B3193 calls it to populate the published groups.
+  - B130 or a health-read leaf owns `PrismaClient.get_all_latest_health_checks` and
+    `PrismaClient.get_latest_health_checks_for_models` (litellm/proxy/utils.py:6984-6990),
+    which fetch the stored latest checks; B3193 uses them for health enrichment.
+  - B130 or a health-read leaf owns `_convert_health_check_to_dict` (litellm/proxy/health_endpoints/_health_endpoints.py:615-630),
+    which serializes a check to a dict; the legacy route uses it before returning.
+  - B052 owns `user_api_key_auth` (litellm/proxy/auth/user_api_key_auth.py:3433-3529),
+    a FastAPI Depends callback; B3193's v1 routes use it to authenticate without requiring a
+    master key.
+
+pitfalls:
+  - The oracle helper for this task is pre-registered as b3193 in the server group. Replace
+    the stub Op in tools/oracle/src/helpers/server/b3193.rs with an impl Helper whose Input
+    is ModelHubRequest, and write run in tools/oracle/helpers/b3193.py. The registry files
+    (helpers/mod.rs, the group files, dispatch.py) are not this task's to edit.
+  - Health enrichment returns a read-only proxy, not a mutable copy, so concurrent requests
+    never see each other's added fields; use row.model_copy(update=...) or equivalent.
+  - The list framework invokes callbacks like _cells and _serialize on every row it touches,
+    including during facet operations, so they must be fast and handle every published record.
+  - Facet names are matched as case-sensitive exact strings; modes are the `mode` field,
+    providers come from the `providers` array and features are the sorted `supports_*` flags.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

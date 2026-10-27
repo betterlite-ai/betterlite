@@ -47,5 +47,5 @@ pitfalls:
   - Each guardrailDefinitions entry in this record includes a complete litellm_params block with guardrail, mode, patterns array and pattern_redaction_format. Do not drop any definitions.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

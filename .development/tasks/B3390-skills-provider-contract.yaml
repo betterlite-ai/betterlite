@@ -1,0 +1,148 @@
+id: B3390
+title: Skills wire records and Anthropic request transformations
+description: >-
+  Build typed Skills API request and response records for betterlite-anthropic,
+  together with the provider contract that transforms between wire formats and Anthropic's
+  API. Reuse B171's encode_url_path_segment for skill ID encoding, B567's AnthropicModelInfo
+  credentials helper for authentication, and B2202's BaseLLMException for error construction.
+  Preserve the anthropic-beta header merge logic, truthy list-parameter filtering (limit,
+  page, source with no falsy defaults), literal URL concatenation (no inserted /v1 when the
+  base already contains one), and provider response validation. The base Python abstract class
+  becomes a typed Rust config trait with a concrete Anthropic implementation; unused abstract
+  method bodies in the pin (without callers) are out of scope.
+
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/skills.rs
+    - crates/betterlite-anthropic/src/skills/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/skills/transformation.py#L1-L33"
+    why: "The base Skills API configuration class that every provider inherits from."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/skills/transformation.py#L224-L235"
+    why: "The base get_error_class method that constructs exceptions for provider errors."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/transformation.py#L36-L71"
+    why: "Anthropic validate_environment with beta header merge logic for list-or-string handling."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/transformation.py#L73-L88"
+    why: "Anthropic get_complete_url with truthy skill ID encoding and literal base handling."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/transformation.py#L90-L113"
+    why: "Anthropic create skill request and response transformations."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/transformation.py#L115-L151"
+    why: "Anthropic list skills request and response transformations."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/transformation.py#L153-L176"
+    why: "Anthropic get skill request and response transformations."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/transformation.py#L178-L201"
+    why: "Anthropic delete skill request and response transformations."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_skills.py#L12-L90"
+    why: "Wire types for skill CRUD: CreateSkillRequest, ListSkillsParams, Skill, ListSkillsResponse, DeleteSkillResponse."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/skills/readme.md"
+    why: "Skills API documentation and beta version constant."
+
+dod:
+  - text: >-
+      Every Skills API wire type (CreateSkillRequest, ListSkillsParams, Skill, ListSkillsResponse,
+      DeleteSkillResponse) is defined and can be serialized from and deserialized to JSON.
+    proof: [wire-types-tests]
+
+  - text: >-
+      The base Skills API config trait exists with abstract methods for request/response
+      transformations and a concrete get_error_class method using B2202 exceptions.
+    proof: [config-trait-tests]
+
+  - text: >-
+      AnthropicSkillsConfig implements the config trait and correctly builds URLs using B171's
+      encode_url_path_segment for skill IDs, returning the full "/v1/{endpoint}" URL.
+    proof: [anthropic-url-tests]
+
+  - text: >-
+      The anthropic-beta header merge preserves list-or-string handling: when the header is absent,
+      it is set to the skill beta version; when it is a list, the version is appended if missing;
+      when it is a string, it becomes a list containing both values if the version is missing.
+    proof: [anthropic-header-tests]
+
+  - text: >-
+      List skills request filtering returns only truthy query parameters (no default 0 or false values).
+    proof: [list-params-tests]
+
+  - text: >-
+      Provider response bodies are validated as JSON and mapped to their respective response types.
+    proof: [wire-types-tests]
+
+  - text: >-
+      Anthropic credentials use B567's AnthropicModelInfo.get_auth_header and get_api_base helpers.
+    proof: [anthropic-url-tests]
+
+checks:
+  optional:
+  - mutants
+  commands:
+    - id: wire-types-tests
+      why: Wire types do not deserialize from JSON with correct field defaults or tests are missing.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::skills_wire_types/)'
+
+    - id: config-trait-tests
+      why: Skills config trait definition is missing or methods are not declared.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::skills_config_trait/)'
+
+    - id: anthropic-url-tests
+      why: AnthropicSkillsConfig does not build correct URLs or encode skill IDs through B171.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::skills_anthropic_url/)'
+
+    - id: anthropic-header-tests
+      why: AnthropicSkillsConfig.validate_environment does not merge anthropic-beta header correctly.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::skills_beta_merge/)'
+
+    - id: list-params-tests
+      why: transform_list_skills_request does not filter truthy parameters or tests are missing.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::skills_list_params/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - >-
+    The base Skills API abstract method bodies (custom_llm_provider, validate_environment,
+    get_complete_url, transform_*_request, transform_*_response) that define the interface
+    but have no caller at the pin are not implemented; concrete overrides in AnthropicSkillsConfig
+    provide the live behavior.
+
+  - >-
+    Skill version operations (CreateSkillVersionRequest, SkillVersion, ListSkillVersionsResponse,
+    DeleteSkillVersionResponse) have no caller at the pin and are not implemented.
+
+  - >-
+    AnthropicSkillsConfig.custom_llm_provider property has no caller at the pin and is not
+    built; the provider name is supplied separately to the transport layer.
+
+pitfalls:
+  - "The anthropic-beta header can be a list, a string, or absent: preserve the merge logic
+    that converts a string to a list and appends the skills version if not already present."
+
+  - "List parameters with falsy values (None, 0, empty strings) must be omitted from the query
+    string; betterlite does not add defaults that LiteLLM drops."
+
+  - "The Anthropic API base from B567 may already contain /v1, so get_complete_url must concatenate
+    literally without assuming the structure; skill URLs become {base}/v1/skills/{encoded_id}."
+
+  - "The ANTHROPIC_SKILLS_API_BETA_VERSION constant is skills-2025-10-02 at the pinned commit;
+    look it up from config or constants if B3390 defines its own settings."
+
+  - "Response bodies from the provider are outside-byte boundaries: every field decode must validate
+    the JSON structure against the Skill/ListSkillsResponse/DeleteSkillResponse types, not assume
+    it matches the schema."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

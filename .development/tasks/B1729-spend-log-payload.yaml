@@ -111,6 +111,6 @@ pitfalls:
   - A single nonempty database field normally suppresses cold retrieval for all three fields.
   - Metadata JSON that decodes to a scalar remains a scalar; only invalid JSON becomes an empty object.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

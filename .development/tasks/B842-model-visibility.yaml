@@ -90,19 +90,9 @@ scope:
     - tools/oracle/cases/helpers/model-visibility/**
     - tools/oracle/fuzz/corpus/helper_case/model-visibility-*
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/model_visibility.rs
-    - crates/betterlite-config/src/model_visibility/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-visibility-*
+    - crates/betterlite-config/src/sections/model_visibility.rs
+    - crates/betterlite-config/src/sections/model_visibility/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L1-L118
@@ -167,7 +157,7 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: Require production acceptance and normalization of model_list_healthy_only.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_visibility::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_visibility::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: Require a new health-listing config seed and replay it through the existing parser.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/model-visibility-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -205,6 +195,6 @@ pitfalls:
   - A wildcard's hidden row is only a candidate; a visible sibling resolved for the requested name prevents hiding it.
   - healthy_only=false cannot undo the proxy-wide setting, and an unexpected health lookup error still propagates.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

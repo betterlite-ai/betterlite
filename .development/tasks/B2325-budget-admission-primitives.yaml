@@ -44,18 +44,6 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/budget_window.rs
     - crates/betterlite-auth/fuzz/corpus/budget_window/**
-    - crates/betterlite-config/src/budget_primitives.rs
-    - crates/betterlite-config/src/budget_primitives/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-primitives-*
     - tools/oracle/src/helpers/auth/budget_primitives.rs
@@ -65,6 +53,8 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/budget-primitives/**
     - tools/oracle/fuzz/corpus/helper_case/budget-primitives-*
+    - crates/betterlite-config/src/sections/budget_primitives.rs
+    - crates/betterlite-config/src/sections/budget_primitives/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/budget_throttle.py#L19-L56
@@ -93,7 +83,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_primitives::tests::/) - test(/replays_the_/)'
     - id: config-tests
       why: The throttle setting does not reach production policy.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^budget_primitives::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::budget_primitives::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: The actual throttle key lacks a new loader seed.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/budget-primitives-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -121,6 +111,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as budget_primitives in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/budget_primitives.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_primitives.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An opted-in zero limit qualifies for throttling and becomes at least 1 after scaling.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

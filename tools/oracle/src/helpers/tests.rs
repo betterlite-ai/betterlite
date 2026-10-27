@@ -135,11 +135,13 @@ fn dispatch_py_lists_exactly_the_registered_operations() {
         });
     let rust: BTreeSet<String> = group_files
         .flat_map(|path| {
+            // a group file quotes nothing but operation names, several to a line
             fs::read_to_string(path)
                 .unwrap()
-                .lines()
-                .filter_map(|line| line.trim().strip_prefix('"')?.split_once("\" => "))
-                .map(|(operation, _)| operation.to_owned())
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_owned)
                 .collect::<Vec<_>>()
         })
         .collect();

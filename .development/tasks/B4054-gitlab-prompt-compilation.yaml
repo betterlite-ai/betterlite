@@ -1,0 +1,121 @@
+id: B4054
+title: GitLab prompt compilation and initialization
+description: >-
+  Build GitLabPromptManager as a compiler for GitLab-hosted prompts, with lazy template
+  loading, role parsing and optional parameter projection. The manager construction takes
+  prompt ID and git ref override from config; it delegates to GitLabTemplateManager for
+  file fetching and rendering. Implement should_run_prompt_management to gate on prompt_id,
+  _compile_prompt_helper and async_compile_prompt_helper to fetch, render and transform
+  templates into PromptManagementClient. Parse rendered templates into messages by case-insensitive
+  role prefixes (System:, User:, Assistant:) and extract five optional parameters
+  (temperature, max_tokens, top_p, frequency_penalty, presence_penalty) from template metadata.
+  Build the _gitlab_prompt_initializer to construct managers from config and register it in
+  prompt_initializer_registry under SupportedPromptIntegrations.GITLAB. Build set_global_gitlab_config
+  for runtime config updates.
+  Preserve the eager constructor's omission of an injected GitLab client (manager construction
+  is lazy), the git_ref precedence (prompt_version override, then extra.git_ref, then stored ref),
+  the outer prompt_id use in both initializer calls and compile output, and the decoded-or-encoded
+  ID lookup in cache before fetching.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-prompts/src/gitlab_prompt_compiler.rs
+    - crates/betterlite-prompts/src/gitlab_prompt_compiler/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L280-L350
+    why: GitLabPromptManager class declaration, __init__, integration_name property, prompt_manager lazy property, and get_prompt_template method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L400-L448
+    why: _parse_prompt_to_messages method with case-insensitive role prefix detection and blank-line handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L481-L560
+    why: should_run_prompt_management, _compile_prompt_helper, and async_compile_prompt_helper methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/__init__.py#L1-L33
+    why: Imports/globals and set_global_gitlab_config function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/__init__.py#L55-L93
+    why: _gitlab_prompt_initializer function, prompt_initializer_registry declaration and exports.
+dod:
+  - text: GitLabPromptManager.__init__ accepts gitlab_config, optional prompt_id, optional ref (git_ref override), and optional gitlab_client; it lazily constructs GitLabTemplateManager only when prompt_manager property is accessed or __init__ sets it immediately if prompt_id is provided.
+    proof: [gitlab-compiler-init-tests]
+  - text: integration_name property returns "gitlab".
+    proof: [gitlab-compiler-init-tests]
+  - text: prompt_manager property lazily constructs GitLabTemplateManager if not already set, passing gitlab_config, prompt_id, ref, and injected client if supplied.
+    proof: [gitlab-compiler-lazy-tests]
+  - text: get_prompt_template(prompt_id, prompt_variables, ref) loads missing prompts, fetches template and metadata from manager, and returns tuple of (rendered_prompt, metadata_dict).
+    proof: [gitlab-compiler-get-tests]
+  - text: should_run_prompt_management returns true when prompt_id is not None, false otherwise.
+    proof: [gitlab-compiler-gate-tests]
+  - text: _compile_prompt_helper raises ValueError if prompt_id is None, decodes or uses the prompt_id directly to check cache, fetches from GitLab if not loaded, parses messages, projects five optional params, and returns PromptManagementClient.
+    proof: [gitlab-compiler-compile-tests]
+  - text: _compile_prompt_helper extracts git_ref from dynamic_callback_params.extra['git_ref'] if present, passes it to _load_prompt_from_gitlab, and uses it in get_prompt_template.
+    proof: [gitlab-compiler-ref-tests]
+  - text: _compile_prompt_helper projects exactly five optional parameters (temperature, max_tokens, top_p, frequency_penalty, presence_penalty) from template metadata, including null values if present.
+    proof: [gitlab-compiler-params-tests]
+  - text: async_compile_prompt_helper accepts the same parameters, raises ValueError if prompt_id is None, and delegates to _compile_prompt_helper.
+    proof: [gitlab-compiler-async-tests]
+  - text: _parse_prompt_to_messages parses the rendered template with case-insensitive role prefixes, accumulates lines under each role, skips blank lines, and returns list of messages with role and content.
+    proof: [gitlab-compiler-parse-tests]
+  - text: set_global_gitlab_config sets a module-level config that can be retrieved at runtime.
+    proof: [gitlab-compiler-global-tests]
+  - text: _gitlab_prompt_initializer accepts PromptLiteLLMParams and PromptSpec, extracts gitlab_config and git_ref (optional), raises ValueError if gitlab_config is missing, and returns a GitLabPromptManager instance.
+    proof: [gitlab-compiler-init-tests]
+  - text: prompt_initializer_registry contains an entry mapping SupportedPromptIntegrations.GITLAB to _gitlab_prompt_initializer.
+    proof: [gitlab-compiler-registry-tests]
+checks:
+  optional: []
+  commands:
+    - id: gitlab-compiler-init-tests
+      why: GitLabPromptManager initialization or integration_name tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::init/)'
+    - id: gitlab-compiler-lazy-tests
+      why: lazy property tests for prompt_manager fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::lazy/)'
+    - id: gitlab-compiler-get-tests
+      why: get_prompt_template tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::get/)'
+    - id: gitlab-compiler-gate-tests
+      why: should_run_prompt_management tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::gate/)'
+    - id: gitlab-compiler-compile-tests
+      why: _compile_prompt_helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::compile/)'
+    - id: gitlab-compiler-ref-tests
+      why: git_ref override and precedence tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::ref/)'
+    - id: gitlab-compiler-params-tests
+      why: optional parameter projection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::params/)'
+    - id: gitlab-compiler-async-tests
+      why: async_compile_prompt_helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::async/)'
+    - id: gitlab-compiler-parse-tests
+      why: _parse_prompt_to_messages tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::parse/)'
+    - id: gitlab-compiler-global-tests
+      why: set_global_gitlab_config tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::global/)'
+    - id: gitlab-compiler-registry-tests
+      why: _gitlab_prompt_initializer or prompt_initializer_registry tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_prompt_compiler::registry/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "GitLabPromptManager.pre_call_hook, post_call_hook, get_available_prompts, reload_prompts: these are defined in the same class but are not part of the compiler contract (B4058 owns the completion hooks)."
+  - "GitLabPromptManager.get_chat_completion_prompt (sync version): owned by B4058 as the completion-hook adapter."
+  - "GitLabPromptManager.async_get_chat_completion_prompt (async version): owned by B4058 as the completion-hook adapter."
+  - "prompt_initializer in litellm/integrations/gitlab/__init__.py (lines 34-52): no caller at the pin; only _gitlab_prompt_initializer is registered and called."
+  - "GitLab file fetching and template rendering; those are owned by B4053 (GitLabTemplateManager and GitLabClient)."
+pitfalls:
+  - GitLabPromptManager.__init__ constructs the template manager immediately if prompt_id is provided (not deferred until property access).
+  - The prompt_manager property constructs the manager lazily only if __init__ did not already do so.
+  - decode_prompt_id is called to normalize the prompt_id before cache lookup; both encoded and decoded forms can exist.
+  - git_ref precedence is prompt_version (from method arg), then dynamic_callback_params.extra.get('git_ref'), then stored _ref_override.
+  - _compile_prompt_helper wraps all exceptions in ValueError with the prompt_id in the message.
+  - The five optional parameters must include null/None values if they are present in metadata; checking `if param in metadata` before copying.
+  - Role prefixes must be case-insensitive; the check uses `.lower()` on the stripped line.
+  - _parse_prompt_to_messages skips blank lines entirely; a line that is empty after stripping does not advance the content.
+  - The injected gitlab_client is optional and passed through to GitLabTemplateManager if supplied; the lazy constructor uses it for HTTP requests.
+  - _gitlab_prompt_initializer must extract both gitlab_config and git_ref from litellm_params; git_ref is optional but gitlab_config is required.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -140,6 +140,6 @@ pitfalls:
   - Search can match an old deleted alias although export metadata selects only the latest deleted record.
   - Only DAILY retains PTU sentinel rows; model, key and user exports can therefore sum to different spend.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

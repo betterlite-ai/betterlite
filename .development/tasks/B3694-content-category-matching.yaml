@@ -1,0 +1,68 @@
+id: B3694
+title: Content category keyword and phrase matching
+description: >-
+  Build content filter detection for keywords and phrase patterns loaded by B3692. Implement three matching strategies: phrase patterns (regex paraphrases like "put my money to make it grow" for financial advice), category keywords (with exceptions and always-block variants checked after exceptions take precedence), and conditional categories (identifier word + block word in the same sentence). Each strategy checks its exceptions first and returns matched text, category name, severity and action.
+
+  Phrase pattern matching scans loaded categories and runs their compiled regex patterns (built in B3693) against text in case-insensitive mode. Category keyword matching handles two priority levels: always-block keywords are checked before regular keywords, both pre-filtered by severity threshold during B3692's loading. Single-word keywords use word boundaries; multi-word phrases use substring matching. Keywords support asterisk wildcards (zero-or-one character wildcard via .? in regex, converted by _keyword_to_regex_pattern from B3693). Conditional matching looks for identifier words and block words in the same sentence, splitting text on common terminators. All three check exceptions from loaded categories first; conditional categories also check their own exceptions.
+
+  When a keyword is found, check category-specific exceptions (substring match in text_lower) and skip if any matches. For conditional matches return (matched_phrase, category, severity, action) as (identifier + block_word phrase, category_name, severity string, ContentFilterAction enum). For keyword matches return (keyword, category, severity, action) in the same shape. Phrase patterns return (pattern_str, category, "high", action). Exceptions take precedence: if any exception phrase is present (case-insensitive substring), return None and skip all checks for that text.
+
+scope:
+  paths:
+    - crates/betterlite/src/guardrails/content_filter_matching.rs
+    - crates/betterlite/src/guardrails/content_filter_matching/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L958-L1044
+    why: "_check_conditional_categories: identifier + block word same-sentence matching with exceptions."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1046-L1093
+    why: "_check_phrase_patterns: regex patterns from category configurations."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1095-L1171
+    why: "_check_category_keywords: always-block and regular keywords with exceptions."
+
+dod:
+  - text: _check_phrase_patterns matches text against compiled regex patterns from every loaded category, returning (pattern_str, category, "high", action) for first match or None; exceptions prevent checking.
+    proof: [behavior-tests]
+  - text: _check_category_keywords checks always-block keywords before regular keywords; both return (keyword, category, severity, action) or None; exceptions prevent checking and are checked first (globally and then per-category).
+    proof: [behavior-tests]
+  - text: _check_conditional_categories finds identifier word and block word in same sentence, returning (identifier + block_word, category, severity, action) or None; exceptions prevent checking; single words use word boundary; multi-word phrases use substring match.
+    proof: [behavior-tests]
+  - text: Keyword matching with asterisk wildcards converts * to .? wildcard via _keyword_to_regex_pattern from B3693.
+    proof: [behavior-tests]
+  - text: Single-word keywords use word boundaries in regex; multi-word keywords use substring regex.
+    proof: [behavior-tests]
+  - text: Text split into sentences on common terminators (., !, ?) for conditional category matching.
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Keyword, phrase, or conditional matching logic fails or does not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^guardrails.*keyword_matching/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Exceptions are matched as case-insensitive substrings in text; exact phrase matching like "put in jail for" is a substring match.
+    why: LiteLLM treats exceptions the same way; this is how the category YAML exceptions are interpreted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1110-L1114
+
+out_of_scope:
+  - B3692 loads categories and keywords; this task only implements matching.
+  - B3693 owns _match_near_keyword, _gap_text_allowed, _merge_spans and _convert_word_number_sequence.
+  - B3693 compiles patterns and owns _keyword_to_regex_pattern; this task only runs them and calls _keyword_to_regex_pattern from B3693.
+  - Pattern matching details beyond running the compiled regex.
+  - B3698 handles detections and logging from any match type.
+
+pitfalls:
+  - Conditional matching finds a single identifier word and a single block word per sentence; both must be present in the same sentence for a match.
+  - Exception phrases like "put in jail for" match as substrings anywhere in lowercased text; capitalization is ignored.
+  - Phrase patterns run in case-insensitive mode by default and return severity "high" hardcoded, never the category severity.
+  - By the time _check_category_keywords runs, keywords have already been filtered by severity threshold during B3692's category loading; the maps contain only entries meeting the threshold.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

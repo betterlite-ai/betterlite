@@ -233,6 +233,6 @@ pitfalls:
   - Successful auto-adds survive a later failed team write, and failed auto-adds do not reject the move.
   - The audit before_value contains a JSON string of JSON, unlike updated_values.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -166,5 +166,5 @@ pitfalls:
 - MCP receives bound reasoning before reasoning_effort mapping and omits four arguments present in file-search dispatch.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,118 @@
+id: B3995
+title: Publish signed and optionally encrypted SQS log messages
+description: >-
+  Implement SQS event ingestion and signed form-encoded SendMessage, with optional
+  AppCrypto encryption and the existing health-check result behavior. Preserve
+  that this is one message per event, not AWS SendMessageBatch.
+
+  Build SQSLogger as a CustomBatchLogger subclass that enqueues StandardLoggingPayload
+  entries and sends each one individually through SigV4-signed HTTP POST. On success
+  and failure events, append payloads to the queue; async_send_batch launches
+  individual send tasks and returns; the queue clearing is owned by B256's flush_queue,
+  which calls async_send_batch and then clears the queue, so arrivals during a flush
+  are queued separately.
+
+  Initialize with resolved SQS connection parameters (queue URL, region, endpoint,
+  credentials) from litellm.aws_sqs_callback_params with environment-variable resolution
+  (os.environ/ prefix) and parameter precedence. Defaults are batch size 512 and
+  flush interval 10 seconds. Load encryption settings (sqs_aws_use_application_level_encryption,
+  sqs_app_encryption_key_b64, sqs_app_encryption_aad) and construct AppCrypto on
+  demand when enabled, raising if a key is required but missing.
+
+  Send each message as a form-encoded POST body (Action=SendMessage&Version=<SQS_API_VERSION>&MessageBody=...)
+  with Content-Type application/x-www-form-urlencoded. Encrypt plaintext payloads
+  when configured: decode the supplied base64 key, encrypt the JSON-stringified payload
+  with optional UTF-8-encoded AAD, and wrap the result in `{"__encrypted__": true, "payload": <encrypted>}`.
+  Sign requests using SigV4 (credentials, "sqs" service, resolved region) and send via
+  httpx. Errors are logged and swallowed, so async_send_message never raises to the caller.
+
+  The async_health_check method sends a single test message and returns healthy/unhealthy
+  status with error detail. Because async_send_message swallows errors, health checks may
+  report healthy even after send failures if test-message construction succeeds.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/sqs_logging.rs
+    - crates/betterlite-logging/src/sqs_logging/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L44-L118
+    why: Own SQSLogger.__init__; preserve CustomBatchLogger and BaseAWSLLM initialization, httpx client setup, parameter passing to _init_sqs_params, flush task creation, and lock initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L120-L201
+    why: Own _init_sqs_params; preserve litellm.aws_sqs_callback_params resolution with os.environ/ prefix handling, parameter precedence, environment-variable coercion, and AppCrypto construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L203-L219
+    why: Own async_log_success_event; preserve payload extraction, base64 stripping when enabled, and queue append.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L221-L237
+    why: Own async_log_failure_event; preserve payload extraction, base64 stripping when enabled, and queue append.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L239-L245
+    why: Own async_send_batch; launch individual send tasks for each queued payload and return; the queue clear belongs to B256's flush_queue.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L247-L309
+    why: Own async_send_message; preserve credential fetching, form-body encoding with URL quoting, optional encryption with __encrypted__ wrapper, SigV4 signing via botocore-style request adapter, httpx POST delivery, and error swallowing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L311-L326
+    why: Own async_health_check; preserve test-message creation, single-message send attempt, and health/unhealthy response enumeration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L74-L80
+    why: DEFAULT_SQS_BATCH_SIZE, DEFAULT_SQS_FLUSH_INTERVAL_SECONDS, SQS_SEND_MESSAGE_ACTION and SQS_API_VERSION are environment-overridable constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54-L89
+    why: CustomBatchLogger.flush_queue calls async_send_batch then clears the queue; queue clearing is B256's responsibility, not async_send_batch.
+
+dod:
+  - text: SQSLogger.__init__ initializes CustomBatchLogger and BaseAWSLLM base classes with httpx client, resolved parameters, and flush task.
+    proof: [sqs-tests]
+  - text: _init_sqs_params resolves litellm.aws_sqs_callback_params with environment-variable prefix handling and parameter precedence from supplied arguments.
+    proof: [sqs-tests]
+  - text: _init_sqs_params constructs AppCrypto when sqs_aws_use_application_level_encryption is true, raising if sqs_app_encryption_key_b64 is missing.
+    proof: [sqs-tests]
+  - text: async_log_success_event and async_log_failure_event extract standard_logging_object, optionally strip base64 inline patterns, and append to the queue.
+    proof: [sqs-tests]
+  - text: async_send_batch launches asyncio tasks for each queued payload via async_send_message and returns without clearing the queue.
+    proof: [sqs-tests]
+  - text: async_send_message encodes the message body as form-urlencoded (Action=SendMessage&Version=...) with URL-quoted MessageBody.
+    proof: [sqs-tests]
+  - text: async_send_message encrypts the JSON payload when sqs_aws_use_application_level_encryption is true, wrapping encrypted bytes in __encrypted__ and payload fields.
+    proof: [sqs-tests]
+  - text: async_send_message decodes the base64 encryption key, encodes optional AAD as UTF-8 before encryption, and respects None AAD.
+    proof: [sqs-tests]
+  - text: async_send_message fetches credentials with all supplied AWS parameter combinations, constructs SigV4-signed request for sqs service, and POSTs via httpx.
+    proof: [sqs-tests]
+  - text: async_send_message catches exceptions from credential fetch, message construction, signing, and HTTP delivery, logging them without raising.
+    proof: [sqs-tests]
+  - text: async_health_check creates a test payload, sends it via async_send_message, and returns healthy status on success or unhealthy with error detail on failure.
+    proof: [sqs-tests]
+  - text: The queue is cleared by CustomBatchLogger.flush_queue (B256) after async_send_batch completes, preserving fire-and-forget semantics where arrivals during a flush do not interrupt the batch.
+    proof: [sqs-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: sqs-tests
+      why: SQS logging tests fail or do not exist.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^sqs_logging::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: async_send_message swallows all exceptions from credential fetch, signing and HTTP delivery, logging them without propagating to the caller.
+    why: Matches LiteLLM behavior where callback failures do not block the request; health checks may report healthy despite prior send errors if test-message construction succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L308-L309
+
+out_of_scope:
+  - litellm.get_secret and get_secret_str for dynamic environment resolution; owned by a lower utility task.
+  - Base64 inline-pattern stripping (_strip_base64_from_messages); owned by a lower shared utility task.
+  - create_dummy_standard_logging_payload for health-check test payloads; owned by a lower payload factory task.
+
+pitfalls:
+  - One message per event; async_send_batch launches individual POST tasks, not AWS SendMessageBatch.
+  - 'Encryption wraps the encrypted bytes in a JSON object with __encrypted__: true and payload fields.'
+  - Form-encoded body uses URL quoting (urllib.parse.quote with safe="") on the JSON message body.
+  - SigV4 signature is computed on the prepared httpx request body before sending.
+  - BaseAWSLLM.get_credentials must be awaited through asyncify since it is a synchronous method.
+  - async_send_message errors are caught and logged at exception level but not re-raised, so callers never see failures.
+  - Queue is cleared by CustomBatchLogger.flush_queue (B256) after async_send_batch returns, not by async_send_batch itself; because async_send_batch does not await the tasks it launches, the clear happens before delivery finishes.
+  - Health check reports unhealthy with error message text, never with a stack trace.
+  - The config key `"sqs_aws_use_application_level_encryption"` is 40 characters, exceeding the 30-character identifier limit; use a shorter Rust field or variant name (e.g. `use_app_encryption`) while keeping the string literal unchanged for config-key and environment lookup.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

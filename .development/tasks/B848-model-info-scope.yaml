@@ -515,6 +515,6 @@ pitfalls:
   - The substring team-id test occurs only during unrestricted expansion; annotation eligibility later uses exact membership.
   - Missing users and failed user reads differ, and only non_admin_all_models maps a failed read to 400.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

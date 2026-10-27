@@ -241,6 +241,6 @@ pitfalls:
   - A new team assignment writes the model before updating grants and does not undo it when grant work fails.
   - _update_existing_team_model_assignment looks only at DB siblings, unlike B1230's broader cleanup path.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,182 @@
+id: B4560
+title: CLI configuration, context and Windows argument quoting
+description: >-
+  Build local CLI configuration, typed command context and cmd.exe-compatible argument quoting
+  for betterlite-management-cli. Config file lives in ~/.litellm/config.json and holds string
+  key-value pairs. Load returns empty dict on missing file; warnings mention the file and exception
+  except when Path.home() raises RuntimeError (returns {} silently). Persist through B192's
+  ensure_private_dir and write_private_json. The set_config, get_config and unset_config commands
+  output exact text: set outputs "Set {key} = {value} in {path}", get outputs the value or
+  "{key} is not set" to stderr with exit code 1 if missing, and lists "key = value" or "(no config set)"
+  for all-keys mode; unset outputs "{key} was not set" or "Removed {key} from {path}". Base_url
+  normalizes by stripping trailing slashes and validates: rejects whitespace/control chars (ord <= 32
+  or ord == 127), requires http/https scheme with netloc, forbids query/fragment/credentials.
+  Hidden_commands splits comma-separated names, rejects spaces and missing entries, returns sorted
+  deduplicated list. Unknown keys raise UsageError with the list of allowed keys.
+
+  CLI context stores resolved base_url and optional api_key on the click context object under
+  key "obj" as a TypedDict with ReadOnly fields. Missing fields default to empty string and None.
+
+  cmd.exe argument quoting protects tokens against two parsers: cmd.exe stops quoted strings on
+  lone `"`, so embedded quotes double; the C runtime's argv split treats backslashes as escaping
+  the immediately following quote, so every backslash run before a quote is doubled. cmd.exe also
+  expands `%VAR%`, so each literal `%` is prefixed with `%%cd:~,` (the zero-length substring of
+  the always-defined `cd` variable).
+
+scope:
+  paths:
+    - tools/management-cli/src/config.rs
+    - tools/management-cli/src/config/**
+    - tools/management-cli/src/cli_context.rs
+    - tools/management-cli/src/cli_context/**
+    - tools/management-cli/src/cmd_quoting.rs
+    - tools/management-cli/src/cmd_quoting/**
+    - tools/management-cli/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L20-L24
+    why: get_config_file_path resolves ~/.litellm/config.json path
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L27-L40
+    why: load_config reads JSON, returns {} on missing file or parse errors, warns on exceptions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L43-L47
+    why: save_config writes private JSON through ensure_private_dir and write_private_json
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L50-L52
+    why: get_config_value retrieves a single config entry
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L55-L62
+    why: parse_hidden_commands and hidden_command_names handle the hidden_commands config value
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L65-L75
+    why: normalize_base_url validates URL format, scheme, netloc and rejects credentials/query/fragment
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L78-L88
+    why: _normalize_hidden_commands validates comma-separated command names
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L101-L117
+    why: set_config command with normalizer dispatch and output text
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L120-L139
+    why: get_config command with per-key and listing modes, exit code 1 on missing key
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L142-L152
+    why: unset_config command with output text
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/_cli_context.py#L1-L19
+    why: CliContextValues TypedDict and cli_context_values helper
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/cmd_quoting.py#L1-L26
+    why: quote_for_cmd and _double_trailing_backslashes for cmd.exe escaping
+dod:
+  - text: >-
+      load_config returns empty dict when the config file is missing or when Path.home()
+      raises RuntimeError; it returns empty dict with a warning when the file is unreadable
+      (OSError) or invalid JSON (ValueError).
+    proof: [config-load]
+  - text: >-
+      get_config_file_path returns the path ~/.litellm/config.json as a string without
+      creating any directories.
+    proof: [config-path]
+  - text: >-
+      save_config calls ensure_private_dir and write_private_json to write the config
+      atomically with private permissions.
+    proof: [config-save]
+  - text: >-
+      normalize_base_url rejects whitespace and control characters (ord <= 32 or ord == 127),
+      requires http:// or https:// scheme with a netloc, and rejects query strings and fragments.
+    proof: [url-validation]
+  - text: >-
+      set_config outputs "Set {key} = {value} in {path}" and exits 0; it rejects unknown
+      keys with a UsageError listing allowed keys.
+    proof: [set-config-output]
+  - text: >-
+      get_config with a key outputs the value or outputs "{key} is not set" to stderr and
+      exits with status 1 if the key is missing; with no key it outputs "(no config set)" or
+      lists "key = value" lines.
+    proof: [get-config-output]
+  - text: >-
+      unset_config outputs "{key} was not set" or "Removed {key} from {path}" depending on
+      whether the key existed.
+    proof: [unset-config-output]
+  - text: >-
+      parse_hidden_commands splits on commas, strips whitespace and returns a frozenset of names.
+    proof: [hidden-commands-parsing]
+  - text: >-
+      cli_context_values returns CliContextValues with base_url and api_key fields from
+      click Context.obj, defaulting to {"base_url": "", "api_key": None}.
+    proof: [cli-context]
+  - text: >-
+      quote_for_cmd doubles trailing backslashes in each segment, doubles embedded quotes
+      between segments, and escapes percent signs with %%cd:~, to prevent cmd.exe variable
+      expansion while preserving the original text for the C runtime argv split.
+    proof: [cmd-quoting]
+  - text: >-
+      _normalize_hidden_commands validates the value as a comma-separated list of single
+      names (no spaces) and returns a sorted, comma-separated string.
+    proof: [hidden-commands-validate]
+checks:
+  optional: []
+  commands:
+    - id: config-load
+      why: load_config does not return empty dict, warn on error, or handle Path.home() RuntimeError
+      run: grep -qF 'Path.home()' tools/management-cli/src/config.rs && grep -qF 'OSError\|ValueError' tools/management-cli/src/config.rs && grep -qF 'RuntimeError' tools/management-cli/src/config.rs
+    - id: config-path
+      why: get_config_file_path does not resolve ~/.litellm/config.json
+      run: grep -qF '.litellm/config.json' tools/management-cli/src/config.rs
+    - id: config-save
+      why: save_config does not use ensure_private_dir and write_private_json
+      run: grep -qF 'ensure_private_dir' tools/management-cli/src/config.rs && grep -qF 'write_private_json' tools/management-cli/src/config.rs
+    - id: url-validation
+      why: normalize_base_url does not validate scheme, netloc, control chars or reject query/fragment
+      run: grep -qF 'http' tools/management-cli/src/config.rs && grep -qF 'netloc' tools/management-cli/src/config.rs && grep -qE 'control|whitespace|32|127' tools/management-cli/src/config.rs
+    - id: set-config-output
+      why: set_config does not output "Set {key} = {value}" or reject unknown keys
+      run: grep -qF 'Set' tools/management-cli/src/config.rs && grep -qF 'Allowed keys' tools/management-cli/src/config.rs
+    - id: get-config-output
+      why: get_config does not output correct text or exit 1 on missing key
+      run: grep -qF 'is not set' tools/management-cli/src/config.rs && grep -qF 'no config set' tools/management-cli/src/config.rs && grep -qF 'exit(1)' tools/management-cli/src/config.rs
+    - id: unset-config-output
+      why: unset_config does not output correct text for set vs unset cases
+      run: grep -qF 'was not set' tools/management-cli/src/config.rs && grep -qF 'Removed' tools/management-cli/src/config.rs
+    - id: hidden-commands-parsing
+      why: parse_hidden_commands does not split, strip and deduplicate command names
+      run: grep -qF 'split' tools/management-cli/src/config.rs && grep -qF 'strip' tools/management-cli/src/config.rs && grep -qF 'frozenset' tools/management-cli/src/config.rs
+    - id: cli-context
+      why: cli_context_values does not extract base_url and api_key from click Context
+      run: grep -qF 'CliContextValues' tools/management-cli/src/cli_context.rs && grep -qF 'base_url' tools/management-cli/src/cli_context.rs && grep -qF 'api_key' tools/management-cli/src/cli_context.rs
+    - id: cmd-quoting
+      why: quote_for_cmd does not double backslashes, escape quotes and guard percent signs
+      run: grep -qF 'trailing' tools/management-cli/src/cmd_quoting.rs && grep -qF '""' tools/management-cli/src/cmd_quoting.rs && grep -qF 'cd:~' tools/management-cli/src/cmd_quoting.rs
+    - id: hidden-commands-validate
+      why: _normalize_hidden_commands does not validate and sort the names
+      run: grep -qF '_normalize_hidden_commands' tools/management-cli/src/config.rs && grep -qF 'sort' tools/management-cli/src/config.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Credential storage, keyring integration and token file paths; B135 owns
+    litellm_core_utils/{cli_keyring,cli_token_utils}.py and must be resolved before
+    CLI token commands can call it.
+  - Management client HTTP calls and provider URLs. The CLI dispatches commands to
+    injected HTTP clients, not direct server route calls.
+  - Click command registration and the full CLI root group. B134 owns the integration
+    and the main entry point.
+  - Banner display and proxy process launching, owned by B121.
+pitfalls:
+  - >-
+    load_config has three paths: (1) missing file returns {} silently, (2) OSError/ValueError
+    returns {} with a warning, and (3) Path.home() RuntimeError returns {} silently without
+    warning, distinct from the warn-on-error case.
+  - >-
+    normalize_base_url checks ord(char) <= 32 for whitespace, which includes tab/newline/null,
+    and ord(char) == 127 for DEL. Any such character is rejected with a UsageError.
+  - >-
+    The config file path ~/.litellm/config.json is created only by save_config when it calls
+    ensure_private_dir; get_config_file_path and load_config never create directories.
+  - >-
+    quote_for_cmd must preserve the order of backslashes: _double_trailing_backslashes
+    doubles only the run at the end, not all backslashes in the segment.
+  - >-
+    parse_hidden_commands returns a frozenset, not a list, to prevent accidental order
+    drift when serialized and deserialized.
+  - >-
+    cli_context_values returns a default TypedDict with empty base_url and None api_key
+    if the context object is missing, never raising an exception.
+  - >-
+    set_config normalizes the value before saving, so the stored value may differ from
+    the input (e.g., base_url is rstrip("/")); get_config and unset_config read the
+    normalized value.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,162 @@
+id: B3661
+title: Guardrail provider options and translation contracts
+description: >-
+  Define Bedrock checks/streaming controls and the remaining provider option records together with the endpoint translation contract. Keep scan fingerprints and per-round rewrite/holdback outputs separate from the mutable request.
+
+  Build Rust serde types in betterlite-config matching the LiteLLM types at the pinned commit:
+  - BedrockChecksConfigModel: contentFilter/promptAttack/sensitiveInformation union with _require_at_least_one_check validator ensuring at least one is set.
+  - BedrockGuardrailConfigModel: guardrailIdentifier, guardrailVersion, AWS credentials, streaming params, contextual grounding, and thresholds.
+  - BedrockGuardrailStreamParams: streaming_buffer_until_moderated, streaming_sampling_rate, streaming_end_of_stream_only and streaming_buffer_release_on_scan with from_extras classmethod (Rust name shortened from BedrockGuardrailStreamingParams to fit the 30-character identifier limit).
+  - LakeraV2GuardrailConfigModel: api_key, api_base, project_id, payload, breakdown, metadata, dev_info, on_flagged and advisory_system_message.
+  - LassoGuardrailConfigModel: lasso_user_id, lasso_conversation_id and mask fields.
+  - DeepKeepGuardrailConfigModel: deepkeep_firewall_id field.
+  - PillarGuardrailConfigModel: on_flagged_action, async_mode, persist_session, include_scanners and include_evidence fields.
+  - NomaGuardrailConfigModel: use_v2, application_id, gateway_name, monitor_mode, block_failures and anonymize_input fields.
+  - ZscalerAIGuardConfigModel: policy_id and send_user_api_key_* fields.
+  - JavelinGuardrailConfigModel: guard_name, api_version, metadata, application and config fields.
+
+  Build the translation contract layer in crates/betterlite-guardrails: define Rust types for the abstract translation interface:
+  - StreamTransformSink dataclass with mutated_text_per_choice and holdback_per_choice dicts.
+  - StreamingScanKey frozen dataclass with texts, tool_calls, stream_ended, tool_calls_in_flight fields and has_nothing_to_scan property.
+  - BaseTranslation trait with abstract methods: process_input_messages, process_output_response, process_output_streaming_response, get_streaming_scan_key, build_block_sse_chunks, build_stream_error_items, get_structured_messages and extract_request_tool_names.
+  - Static/default implementations: transform_user_api_key_dict_to_metadata (prefixes keys with user_api_key_), merge_user_api_key_metadata_into_request (merges into the resolved metadata bucket without overwriting), post_call_hook_response (identity by default).
+  - ClassVar defaults: delivers_ended_stream_rewrites=false, assembles_streamed_response=false.
+
+  All Bedrock literal types (BedrockChecksContentFilterCategory, BedrockChecksPromptAttackCategory, BedrockChecksSensitiveInformationEntity) and item/model structures are owned here along with their nested BedrockChecks* classes. The validator _require_at_least_one_check must fail with the exact LiteLLM error message when no checks are enabled. from_extras classmethod on BedrockGuardrailStreamParams must extract only known fields from an extras dict and construct the model. Defaults match LiteLLM exactly: streaming_buffer_until_moderated defaults true, streaming_sampling_rate defaults 5, on_flagged defaults "block" for Lakera V2, etc. ContentFilterAction and BlockedWord are owned by B3660; do not duplicate them.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_translation.rs
+    - crates/betterlite-guardrails/src/guardrail_translation/**
+    - tools/oracle/cases/helpers/guardrail-provider-options/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*
+    - crates/betterlite-config/src/sections/guardrail_translation.rs
+    - crates/betterlite-config/src/sections/guardrail_translation/**
+    - tools/oracle/helpers/b3661.py
+    - tools/oracle/helpers/b3661/**
+    - tools/oracle/src/helpers/guardrails/b3661.rs
+    - tools/oracle/src/helpers/guardrails/b3661/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L514-L591
+    why: Own Bedrock enums, checks models and _require_at_least_one_check validator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L594-L699
+    why: Own BedrockGuardrailConfigModel and its fields/defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L669-L707
+    why: Own BedrockGuardrailStreamParams and from_extras classmethod (LiteLLM name is BedrockGuardrailStreamingParams, 31 chars; Rust name shortened to BedrockGuardrailStreamParams, 29 chars).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L709-L732
+    why: Own LakeraV2GuardrailConfigModel fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L734-L751
+    why: Own LassoGuardrailConfigModel and DeepKeepGuardrailConfigModel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L754-L833
+    why: Own Pillar, Noma, Zscaler and Javelin guardrail config models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L18-L55
+    why: Own StreamTransformSink and StreamingScanKey dataclasses and has_nothing_to_scan property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L58-L81
+    why: Own BaseTranslation ClassVars, post_call_hook_response and static/default method signatures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L82-L265
+    why: Own transform_user_api_key_dict_to_metadata, merge_user_api_key_metadata_into_request and abstract/default methods.
+
+dod:
+  - text: All Bedrock check category literals and item/model types are defined and match LiteLLM's structure.
+    proof: [bedrock-types-exist]
+  - text: BedrockChecksConfigModel validator _require_at_least_one_check rejects configs with all checks None and raises the exact LiteLLM error message.
+    proof: [bedrock-validator-works]
+  - text: BedrockGuardrailConfigModel, LakeraV2GuardrailConfigModel, LassoGuardrailConfigModel, DeepKeepGuardrailConfigModel, PillarGuardrailConfigModel, NomaGuardrailConfigModel, ZscalerAIGuardConfigModel and JavelinGuardrailConfigModel types exist with all fields matching LiteLLM.
+    proof: [provider-config-types-exist]
+  - text: BedrockGuardrailStreamParams.from_extras extracts only known fields from extras dict and constructs the model correctly.
+    proof: [from-extras-method-works]
+  - text: All provider config types deserialize from JSON with correct defaults (streaming_buffer_until_moderated=true, streaming_sampling_rate=5, on_flagged="block" for Lakera V2, etc).
+    proof: [defaults-correct]
+  - text: StreamTransformSink and StreamingScanKey types exist with correct fields and defaults; StreamingScanKey.has_nothing_to_scan returns correct boolean.
+    proof: [sink-and-key-types-exist]
+  - text: BaseTranslation trait exists with abstract methods (process_input_messages, process_output_response, process_output_streaming_response, get_streaming_scan_key, build_block_sse_chunks, build_stream_error_items, get_structured_messages, extract_request_tool_names).
+    proof: [translation-trait-exists]
+  - text: transform_user_api_key_dict_to_metadata correctly prefixes all keys with user_api_key_ and skips None values and underscore-prefixed keys.
+    proof: [user-metadata-transform-works]
+  - text: merge_user_api_key_metadata_into_request merges user_api_key_* metadata into the resolved bucket without overwriting existing keys.
+    proof: [user-metadata-merge-works]
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case seed replays.
+    proof: [guardrail-provider-oracle, guardrail-provider-python, guardrail-provider-corpus]
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: bedrock-types-exist
+      why: Bedrock check category literals or model types are missing or incorrect
+      run: grep -q "BedrockChecksContentFilterCategory" crates/betterlite-guardrails/src/*.rs && grep -q "BedrockChecksConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "_require_at_least_one_check" crates/betterlite-config/src/sections/*.rs
+    - id: bedrock-validator-works
+      why: The Bedrock validator does not enforce at least one check
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_provider_options::.*bedrock.*validator/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_guardrail_provider_options_corpus)'
+    - id: provider-config-types-exist
+      why: Provider config types are missing or incomplete
+      run: grep -q "BedrockGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "LakeraV2GuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "PillarGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "NomaGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "ZscalerAIGuardConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "JavelinGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs
+    - id: from-extras-method-works
+      why: BedrockGuardrailStreamParams.from_extras is missing or fails to extract fields
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::guardrail_provider_options::.*from_extras/)'
+    - id: defaults-correct
+      why: Provider config defaults do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::guardrail_provider_options::.*defaults/)'
+    - id: sink-and-key-types-exist
+      why: StreamTransformSink, StreamingScanKey or has_nothing_to_scan property is missing
+      run: grep -q "StreamTransformSink" crates/betterlite-guardrails/src/*.rs && grep -q "StreamingScanKey" crates/betterlite-guardrails/src/*.rs && grep -q "has_nothing_to_scan" crates/betterlite-guardrails/src/*.rs
+    - id: translation-trait-exists
+      why: BaseTranslation trait or its required methods are missing
+      run: grep -q "trait BaseTranslation" crates/betterlite-guardrails/src/*.rs && grep -q "process_input_messages" crates/betterlite-guardrails/src/*.rs && grep -q "process_output_response" crates/betterlite-guardrails/src/*.rs && grep -q "get_structured_messages" crates/betterlite-guardrails/src/*.rs
+    - id: user-metadata-transform-works
+      why: transform_user_api_key_dict_to_metadata is missing or does not prefix keys correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::.*user_metadata/)'
+    - id: user-metadata-merge-works
+      why: merge_user_api_key_metadata_into_request is missing or does not merge correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::.*metadata_merge/)'
+    - id: guardrail-provider-oracle
+      why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
+      run: test -f tools/oracle/helpers/b3661.py && test -f tools/oracle/src/helpers/guardrails/b3661.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_provider_options::|replays_the_helper_case_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)"
+    - id: guardrail-provider-python
+      why: The helper adapter is missing or strict Python checking fails
+      run: test -f tools/oracle/helpers/b3661.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: guardrail-provider-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)" && grep -rlq "guardrail_provider_options" tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-provider-options/bedrock-checks-validator.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/bedrock-streaming-from-extras.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/provider-config-defaults.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/stream-sink-and-key.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/user-metadata-transform.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/user-metadata-merge.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/lakera-v2-on-flagged.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/pillar-flags-and-defaults.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/noma-block-failures.yaml
+  - tools/oracle/cases/helpers/guardrail-provider-options/zscaler-user-api-key-fields.yaml
+
+deviations:
+  - what: StreamingScanKey.stream_ended and tool_calls_in_flight fields do not participate in equality comparison, only in observation logic.
+    why: These flags indicate protocol state (whether the stream ended, whether tool calls are in flight) rather than scannable content; they are used by the caller but do not affect whether a scan would be redundant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L39-L55
+
+out_of_scope:
+  - ContentFilterConfigModel and ContentFilterPattern (owned by B3660)
+  - ContentFilterAction and BlockedWord (owned by B3660)
+  - GuardrailConfigModel base class and per-role/per-hook inheritance (owned by B104)
+  - Dynamic provider discovery, factory registry and callback construction (owned by B3680-B3682)
+  - Enterprise-package conditional imports or hide-secrets initialization (out of MIT scope)
+
+pitfalls:
+  - "The validator _require_at_least_one_check must raise ValueError with exactly the message: Bedrock 'checks' must enable at least one of: contentFilter, promptAttack, sensitiveInformation."
+  - "BedrockGuardrailStreamParams.from_extras receives a dict that may have extra keys not in model_fields; extract only known fields before construction."
+  - "Defaults in Bedrock models include gt=0 (chunk_budget_chars) and ge/le bounds on thresholds (0.0 to 1.0); preserve these in serde validation."
+  - "On_flagged field in LakeraV2GuardrailConfigModel accepts: block, monitor or inject_system_message; ensure serde accepts only these values."
+  - "streaming_buffer_until_moderated must default true, not false, to match LiteLLM's buffering-by-default behavior."
+  - "Noma's use_v2 controls routing between legacy and v2 implementations; the flag itself is just stored, not interpreted by this config type."
+  - "LiteLLM names the Bedrock streaming params class BedrockGuardrailStreamingParams (31 chars); shorten to BedrockGuardrailStreamParams (29 chars) to comply with the 30-character identifier limit."
+  - "Bedrock streaming field names all start with streaming_: streaming_sampling_rate (not sampling_rate), streaming_end_of_stream_only (not end_of_stream_only), streaming_buffer_release_on_scan (not buffer_release_on_scan)."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

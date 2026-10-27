@@ -13,8 +13,6 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
-  - crates/betterlite-logging/src/lib.rs
-  - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/dynamic_callbacks.rs
   - crates/betterlite-logging/src/dynamic_callbacks/**
   - tools/oracle/Cargo.toml
@@ -23,7 +21,7 @@ scope:
   - tools/oracle/helpers/dynamic_callbacks.py
   - tools/oracle/helpers/dynamic_callbacks/**
   - tools/oracle/cases/helpers/dynamic-callbacks/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/dynamic_callbacks-*"
   lint_tables: false
 references:
 - url: >-
@@ -82,8 +80,8 @@ checks:
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'dynamic_callbacks' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/dynamic_callbacks-*")" &&
+      grep -lq 'dynamic_callbacks' tools/oracle/fuzz/corpus/helper_case/dynamic_callbacks-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -106,11 +104,12 @@ out_of_scope:
   Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/dynamic_callbacks-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as dynamic_callbacks in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/dynamic_callbacks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/dynamic_callbacks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

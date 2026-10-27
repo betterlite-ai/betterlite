@@ -28,19 +28,6 @@ scope:
   - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_parameters.rs
   - crates/betterlite-core/src/api/responses_parameters/**
-  - crates/betterlite-config/src/loader.rs
-  - crates/betterlite-config/src/loader/**
-  - crates/betterlite-config/src/raw.rs
-  - crates/betterlite-config/src/raw/**
-  - crates/betterlite-config/tests/**
-  - crates/betterlite-config/src/resolve.rs
-  - crates/betterlite-config/src/resolve/**
-  - crates/betterlite-config/src/types.rs
-  - crates/betterlite-config/src/types/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
-  - crates/betterlite-config/src/api/responses_parameters.rs
-  - crates/betterlite-config/src/api/responses_parameters/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-parameters-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/responses_parameters.rs
@@ -49,6 +36,8 @@ scope:
   - tools/oracle/helpers/responses_parameters/**
   - tools/oracle/fuzz/corpus/helper_case/responses_parameters-*
   - tools/oracle/cases/helpers/responses-parameters/**
+  - crates/betterlite-config/src/sections/responses_parameters.rs
+  - crates/betterlite-config/src/sections/responses_parameters/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L34-L36
@@ -123,7 +112,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_parameters::/)'
   - id: config-tests
     why: drop_params is not loaded with the pinned precedence and warning behavior
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_parameters::tests::loads_drop_params($|::)/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::responses_parameters::tests::loads_drop_params($|::)/)'
   - id: parameter-adapter
     why: parameter helper cases lack a checked independent implementation
     run: test -f tools/oracle/helpers/responses_parameters.py && grep -qE '^[[:space:]]+responses_parameters:' tools/oracle/fuzz/corpus/helper_case/responses_parameters-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -147,5 +136,5 @@ pitfalls:
 - Tool headers merge after OAuth extraction, so adding Authorization to a tool does not change the returned OAuth mapping.
 review_level: security
 budget:
-  max_changed_lines: 790
+  max_changed_lines: 1500
   max_new_expects: 1

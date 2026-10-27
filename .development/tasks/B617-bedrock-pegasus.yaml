@@ -274,6 +274,6 @@ pitfalls:
 - A truthy mediaSource of the wrong type shadows media_source before fallback to base64/S3.
 - The response-format normalizer looks for json_schema regardless of the supplied type field.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

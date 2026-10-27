@@ -364,6 +364,6 @@ pitfalls:
 - A recognized MIME overrides the filename extension before the format allowlist runs.
 - The native URL builder does not percent-encode its model ID, unlike several Python Bedrock handlers.
 budget:
-  max_changed_lines: 750
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

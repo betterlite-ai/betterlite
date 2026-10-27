@@ -31,6 +31,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/tool_report.rs
     - crates/betterlite-server/fuzz/corpus/tool_report/**
     - tools/oracle/cases/management/tool-reports/**
+    - tools/oracle/helpers/b1607.py
+    - tools/oracle/helpers/b1607/**
+    - tools/oracle/src/helpers/server/b1607.rs
+    - tools/oracle/src/helpers/server/b1607/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L60-L522
@@ -69,6 +73,6 @@ pitfalls:
   - Axum cannot express a catch-all before /detail or /logs directly; one bounded suffix dispatcher must preserve FastAPI's route precedence.
   - The log total counts index matches, including rows whose underlying SpendLogs record has already disappeared.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

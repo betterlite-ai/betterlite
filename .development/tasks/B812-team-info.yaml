@@ -80,6 +80,10 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-info/**
+    - tools/oracle/helpers/b812.py
+    - tools/oracle/helpers/b812/**
+    - tools/oracle/src/helpers/server/b812.rs
+    - tools/oracle/src/helpers/server/b812/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4715-L5009
@@ -217,6 +221,6 @@ pitfalls:
   - Popping token from a temporary key dictionary does not redact the original returned collection.
   - A failed budget-table read is logged and dropped, whereas a failed member hydration reaches the route's 400 auth_error catch.
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

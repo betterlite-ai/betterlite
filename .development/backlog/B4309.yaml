@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Serve cache health, deletion and Redis administration routes
 status: todo
 depends_on: [B003, B244, B4290, B4297, B4299]
-file: null
+file: tasks/B4309-cache-administration.yaml
 covers:
   - "litellm/proxy/caching_routes.py"
 parent: B125

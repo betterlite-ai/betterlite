@@ -23,7 +23,11 @@ scope:
   paths:
   - Cargo.toml
   - crates/betterlite-mcp/**
-  - tools/oracle/cases/session-tokens/**
+  - tools/oracle/cases/helpers/session-tokens/**
+  - tools/oracle/helpers/mcp_session_token.py
+  - tools/oracle/helpers/mcp_session_token/**
+  - tools/oracle/src/helpers/server/mcp_session_token.rs
+  - tools/oracle/src/helpers/server/mcp_session_token/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_token.py#L1-L100
@@ -101,28 +105,28 @@ pitfalls:
   ``now``. The strict pydantic-equivalent claims model is the sole type gate.
 review_level: security
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 2
 oracle_cases:
-- tools/oracle/cases/session-tokens/symmetric-hs256-access.yaml
-- tools/oracle/cases/session-tokens/symmetric-hs256-refresh.yaml
-- tools/oracle/cases/session-tokens/asymmetric-rs256-access.yaml
-- tools/oracle/cases/session-tokens/asymmetric-rs256-refresh.yaml
-- tools/oracle/cases/session-tokens/rs256-rotation-current.yaml
-- tools/oracle/cases/session-tokens/rs256-rotation-previous.yaml
-- tools/oracle/cases/session-tokens/expired-access-token.yaml
-- tools/oracle/cases/session-tokens/wrong-kind-access.yaml
-- tools/oracle/cases/session-tokens/bad-signature-hs256.yaml
-- tools/oracle/cases/session-tokens/bad-signature-rs256.yaml
-- tools/oracle/cases/session-tokens/wrong-prefix-session.yaml
-- tools/oracle/cases/session-tokens/wrong-issuer.yaml
-- tools/oracle/cases/session-tokens/malformed-jwt-invalid-base64.yaml
-- tools/oracle/cases/session-tokens/malformed-jwt-missing-exp.yaml
-- tools/oracle/cases/session-tokens/mint-size-overflow.yaml
-- tools/oracle/cases/session-tokens/oversized-token.yaml
-- tools/oracle/cases/session-tokens/with-resource-server-id.yaml
-- tools/oracle/cases/session-tokens/with-audience-proxy-api.yaml
-- tools/oracle/cases/session-tokens/with-team-id.yaml
+- tools/oracle/cases/helpers/session-tokens/symmetric-hs256-access.yaml
+- tools/oracle/cases/helpers/session-tokens/symmetric-hs256-refresh.yaml
+- tools/oracle/cases/helpers/session-tokens/asymmetric-rs256-access.yaml
+- tools/oracle/cases/helpers/session-tokens/asymmetric-rs256-refresh.yaml
+- tools/oracle/cases/helpers/session-tokens/rs256-rotation-current.yaml
+- tools/oracle/cases/helpers/session-tokens/rs256-rotation-previous.yaml
+- tools/oracle/cases/helpers/session-tokens/expired-access-token.yaml
+- tools/oracle/cases/helpers/session-tokens/wrong-kind-access.yaml
+- tools/oracle/cases/helpers/session-tokens/bad-signature-hs256.yaml
+- tools/oracle/cases/helpers/session-tokens/bad-signature-rs256.yaml
+- tools/oracle/cases/helpers/session-tokens/wrong-prefix-session.yaml
+- tools/oracle/cases/helpers/session-tokens/wrong-issuer.yaml
+- tools/oracle/cases/helpers/session-tokens/malformed-jwt-invalid-base64.yaml
+- tools/oracle/cases/helpers/session-tokens/malformed-jwt-missing-exp.yaml
+- tools/oracle/cases/helpers/session-tokens/mint-size-overflow.yaml
+- tools/oracle/cases/helpers/session-tokens/oversized-token.yaml
+- tools/oracle/cases/helpers/session-tokens/with-resource-server-id.yaml
+- tools/oracle/cases/helpers/session-tokens/with-audience-proxy-api.yaml
+- tools/oracle/cases/helpers/session-tokens/with-team-id.yaml
 checks:
   optional: []
   commands:

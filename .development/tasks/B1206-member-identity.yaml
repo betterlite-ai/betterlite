@@ -212,6 +212,6 @@ pitfalls:
   - Email-only resolution starts case-insensitively, but roster duplicate detection compares exact strings.
   - A new connection in add_new_member would lose the supplied transaction while the caller holds a roster lock.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

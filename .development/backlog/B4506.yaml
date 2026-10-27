@@ -1,15 +1,15 @@
 id: B4506
 milestone: M8 platform
 title: Lens evidence storage and structured analysis primitives
-status: todo
+status: done
 depends_on: [B4500]
-file: null
+file: tasks/B4506-lens-analysis-primitives.yaml
 covers:
   - "litellm/proxy/lens/analysis.py"
   - "litellm/proxy/lens/trace_store.py"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 225

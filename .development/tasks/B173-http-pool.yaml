@@ -36,6 +36,10 @@ scope:
   - crates/betterlite-openai/**
   - crates/betterlite-server/**
   - crates/betterlite-config/**
+  - tools/oracle/helpers/b173.py
+  - tools/oracle/helpers/b173/**
+  - tools/oracle/src/helpers/oracle/b173.rs
+  - tools/oracle/src/helpers/oracle/b173/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L181-L226
@@ -118,5 +122,5 @@ pitfalls:
   B009 owns explicit redirect replay.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0

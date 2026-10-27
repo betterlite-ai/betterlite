@@ -19,14 +19,15 @@ description: >-
   The factory logs success with the endpoint and export interval in milliseconds when the recorder starts.
   Never gate configured metering on the premium flag after the initial check; an unlicensed deployment gets no recorder, but a licensed one with environment configuration gets metering regardless of the tier decision.
   Add configuration in betterlite-config for the four environment variable names (endpoint, client cert, client key, CA cert) and the export interval (default 60 seconds).
+  Only betterlite-http, the oracle and guardrails may depend on reqwest (deny.toml), so betterlite-billing must not, and opentelemetry-otlp's reqwest client features stay off. Build the blocking OTLP HTTP client in crates/betterlite-http/src/otlp_client.rs (already declared in its lib.rs) from the CA, the client certificate and key, and the outbound proxy policy the way ProxiedClient applies it, and implement opentelemetry_http::HttpClient for it there. betterlite-billing hands that client to the exporter.
 scope:
   paths:
     - Cargo.toml
     - crates/betterlite-billing/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
+    - crates/betterlite-config/src/sections/billing_metrics.rs
+    - crates/betterlite-config/src/sections/billing_metrics/**
+    - crates/betterlite-http/src/otlp_client.rs
+    - crates/betterlite-http/src/otlp_client/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L70-L113
@@ -107,5 +108,5 @@ pitfalls:
   - license_data is Optional[EnterpriseLicenseData], a TypedDict with optional keys; the factory extracts user_id (if present) and passes it as license_id in the config. A None or empty dict results in no license_id attribute on the exported metrics.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1700
   max_new_expects: 0

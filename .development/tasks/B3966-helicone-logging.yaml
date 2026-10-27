@@ -1,0 +1,134 @@
+id: B3966
+title: Helicone provider envelopes and metadata
+description: >-
+  Build Helicone's provider-specific envelopes and header-derived metadata overrides.
+  Initialize the logger with HELICONE_API_KEY from B002 and HELICONE_API_BASE (default
+  `https://api.hconeai.com`). Extract request metadata from proxy headers starting with
+  the literal prefix `helicone_` (underscore, not hyphenated) and merge them into the
+  logging payload. Implement model-name fallback to `gpt-3.5-turbo` when the model is
+  not in the accepted list (gpt, claude, gemini, command variants, vertex_ai). Transform
+  Claude SDK responses to Claude-format payloads with content, stop_reason, usage and
+  tool-call extraction (without transmitting the locally constructed prompt string).
+  Route logged events to the correct Helicone endpoint based on the provider:
+  `/oai/v1/log` for OpenAI models, `/anthropic/v1/log` for Claude, `/custom/v1/log` for
+  Vertex AI and Gemini, with corresponding provider URLs. Represent timestamps as
+  seconds and milliseconds pairs for Helicone's timing envelope. Remove `litellm_parent_otel_span`
+  from metadata after early-return cases to prevent serialization errors. Use B173's HTTP
+  client to POST the formatted payload with Bearer token authentication. Catch any internal
+  failure and log a verbose diagnostic instead of raising or failing the model response.
+scope:
+  paths:
+    - crates/betterlite-logging/src/helicone.rs
+    - crates/betterlite-logging/src/helicone/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L30-L40
+    why: HeliconeLogger initialization with API key and base URL configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L42-L94
+    why: Claude response format transformation and tool-call handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L96-L125
+    why: Header-based metadata extraction with literal `helicone_` prefix matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L127-L210
+    why: log_success payload construction, provider routing, timing representation and HTTP delivery.
+dod:
+  - text: HeliconeLogger initialization validates HELICONE_API_KEY and resolves HELICONE_API_BASE from B002.
+    proof: [init-tests]
+  - text: Model-name fallback selects gpt-3.5-turbo when the model is not in the accepted list and not Vertex AI.
+    proof: [model-fallback-tests]
+  - text: Claude SDK responses are transformed to Claude-format payloads with content, stop_reason, usage and tool-call extraction, without transmitting the locally constructed prompt string.
+    proof: [claude-mapping-tests]
+  - text: Proxy headers with literal `helicone_` prefix are extracted and merged into metadata without mutating the original.
+    proof: [header-metadata-tests]
+  - text: litellm_parent_otel_span is removed from metadata to prevent serialization errors.
+    proof: [metadata-cleanup-tests]
+  - text: Helicone endpoint routing selects the correct URL and provider_url based on model provider (OpenAI, Claude, Vertex, Gemini).
+    proof: [routing-tests]
+  - text: Timestamps are represented as seconds and milliseconds pairs in the timing envelope.
+    proof: [timing-tests]
+  - text: log_success catches any internal failure (header extraction, model selection, URL construction, HTTP POST) and logs a verbose diagnostic without propagating or failing the model response.
+    proof: [helicone-delivery-tests]
+  - text: The formatted payload is POSTed to the Helicone API with Bearer token authentication.
+    proof: [http-delivery-tests]
+checks:
+  optional: []
+  commands:
+    - id: init-tests
+      why: HeliconeLogger initialization or API key/base URL resolution from B002 fails
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::initialization/)'
+    - id: model-fallback-tests
+      why: Model-name fallback does not select gpt-3.5-turbo or handles accepted models incorrectly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::model_fallback/)'
+    - id: claude-mapping-tests
+      why: Claude SDK response transformation or tool-call extraction does not match Anthropic format
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::claude_mapping/)'
+    - id: header-metadata-tests
+      why: Proxy header extraction with helicone_ prefix or metadata merging is incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::header_metadata/)'
+    - id: metadata-cleanup-tests
+      why: litellm_parent_otel_span is not removed or metadata is mutated during cleanup
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::metadata_cleanup/)'
+    - id: routing-tests
+      why: Endpoint routing by provider (OpenAI, Claude, Vertex, Gemini) or provider_url selection is incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::routing/)'
+    - id: timing-tests
+      why: Timestamp representation as seconds and milliseconds or timing envelope construction is incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::timing/)'
+    - id: helicone-delivery-tests
+      why: log_success exception handling does not swallow internal failures or permit model response to succeed
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::exception_handling/)'
+    - id: http-delivery-tests
+      why: HTTP POST delivery, headers, or authentication fails
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^helicone::http_delivery/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      betterlite uses underscores consistently in the `helicone_` prefix for header matching,
+      following the code implementation, while the docstring example uses hyphenated
+      `helicone-property-something`.
+    why: >-
+      The code implementation at line 117 explicitly checks for `startswith("helicone_")`
+      with underscore. Headers are case-insensitive in HTTP, but the implementation uses
+      exact prefix matching on the normalized header key; using the implemented pattern
+      ensures compatibility with actual LiteLLM behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L117
+  - what: >-
+      log_success catches any internal failure (header extraction, model selection, URL
+      construction, HTTP POST, response parsing) and logs a verbose diagnostic instead of
+      raising or failing the model response.
+    why: >-
+      LiteLLM's log_success wraps its entire body in a bare except Exception that only calls
+      print_verbose. A failure inside log_success must not fail the user's request, only
+      report it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L129-L210
+out_of_scope:
+  - >-
+    Callback registry registration; that responsibility belongs to the callback dispatcher.
+  - >-
+    Test fixtures for HTTP mocking are this task's own responsibility and must be injected
+    through dependency injection matching B173's HTTP pool contract, not supplied by B191.
+    B191 explicitly assigns exporter-specific test transports to each exporter task.
+pitfalls:
+  - >-
+    claude_mapping builds a local prompt string from HUMAN_PROMPT and AI_PROMPT markers
+    (lines 45-54) but never places it into the response envelope; this string is discarded
+    and has no effect on token counts or observable behavior.
+  - >-
+    Model detection uses multiple checks: check for accepted models in the name, check for
+    vertex_ai provider, and only then fall back to gpt-3.5-turbo. The Vertex AI check has
+    precedence: a model named 'claude-3' from Vertex routes to /custom/v1/log, not /anthropic/v1/log.
+  - >-
+    The provider_url is set before the routing logic because some early returns do not update it.
+    Ensure the default provider_url (OpenAI) is used unless explicitly changed by the routing logic.
+  - >-
+    Timestamp conversion uses int(timestamp()) for seconds and int((timestamp() - seconds) * 1000)
+    for milliseconds; floating-point precision can round down milliseconds. Preserve the exact
+    calculation from LiteLLM.
+  - Header extraction uses proxy_server_request.headers which may be None; check it before iteration to avoid panics.
+  - >-
+    log_success wraps its entire body in exception handling that catches any internal failure
+    and prints verbose diagnostics; all inner steps (header extraction, model fallback, Claude
+    mapping, URL construction, timestamp math, HTTP POST) are unguarded and any failure is swallowed.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

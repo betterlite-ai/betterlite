@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-basic-null
+call: {anthropic_tool_names: {function: basic, name: null}}
+env: {}
+compare: {ignore: []}

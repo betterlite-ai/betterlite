@@ -1,0 +1,8 @@
+kind: helper
+name: openai-complete-ordered-table
+call:
+  inference_routes:
+    group: openai_routes
+env: {}
+compare:
+  ignore: []

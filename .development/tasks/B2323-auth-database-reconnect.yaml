@@ -57,18 +57,6 @@ scope:
     - crates/betterlite-db/src/auth_reconnect.rs
     - crates/betterlite-db/src/auth_reconnect/**
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-config/src/auth_reconnect.rs
-    - crates/betterlite-config/src/auth_reconnect/**
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/loader.rs
-    - crates/betterlite-config/src/loader/**
-    - crates/betterlite-config/src/raw.rs
-    - crates/betterlite-config/src/raw/**
-    - crates/betterlite-config/tests/**
-    - crates/betterlite-config/src/resolve.rs
-    - crates/betterlite-config/src/resolve/**
-    - crates/betterlite-config/src/types.rs
-    - crates/betterlite-config/src/types/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-reconnect-*
     - tools/oracle/src/helpers/db/auth_reconnect.rs
@@ -78,6 +66,8 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/auth-reconnect/**
     - tools/oracle/fuzz/corpus/helper_case/auth-reconnect-*
+    - crates/betterlite-config/src/sections/auth_reconnect.rs
+    - crates/betterlite-config/src/sections/auth_reconnect/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4334-L4392
@@ -108,7 +98,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^auth_reconnect::tests::/) - test(/replays_the_/)'
     - id: config-tests
       why: A reconnect env default, parser or clamp is missing.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_reconnect::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::auth_reconnect::tests::/) - test(/replays_the_/)'
     - id: config-corpus
       why: New real reconnect env configuration seeds are absent.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-reconnect-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
@@ -133,6 +123,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_reconnect in the db group. Replace the stub Op in tools/oracle/src/helpers/db/auth_reconnect.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_reconnect.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false forced-recreate result can mean another generation already recovered, so it must not increment the failure count.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

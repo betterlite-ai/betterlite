@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Adapt Deep Agents messages, tool permissions and usage accounting
 status: todo
 depends_on: [B1686, B4830]
-file: null
+file: tasks/B4837-deepagents-harness-transforms.yaml
 covers:
   - "litellm/llms/deepagents/{__init__,harness/__init__}.py"
   - "litellm/llms/deepagents/harness/{transformation,sandbox_backend}.py"

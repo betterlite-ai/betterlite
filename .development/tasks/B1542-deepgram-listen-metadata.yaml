@@ -91,5 +91,5 @@ pitfalls:
   - A later zero-duration Metadata frame does not erase an earlier positive duration.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

@@ -3,7 +3,7 @@ runners:
   - id: codex-worker
     vendor: openai
     program: codex
-    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", --cd, "{worktree}", "-"]
+    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, sandbox_workspace_write.exclude_slash_tmp=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --ephemeral, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", --cd, "{worktree}", "-"]
     output: file
   - id: codex-reviewer
     vendor: openai
@@ -76,6 +76,7 @@ roles:
 policy:
   review_by_other_vendor: true
   max_review_rounds: 3
+  max_blocked_reports: 2
   max_hook_blocks: 6
   writable:
     - "{git_common_dir}"

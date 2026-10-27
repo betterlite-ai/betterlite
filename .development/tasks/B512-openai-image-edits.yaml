@@ -88,8 +88,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/image_edits.rs
   - crates/betterlite-openai/src/image_edits/**
   - tools/oracle/Cargo.toml
@@ -246,6 +244,6 @@ pitfalls:
 - The request comment says non-None values only, but arbitrary optional form fields are not globally filtered for
   None.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

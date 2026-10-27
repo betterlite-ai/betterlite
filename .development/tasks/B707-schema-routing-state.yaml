@@ -236,6 +236,6 @@ pitfalls:
   - Memory keys are globally unique even when two rows name different teams or users.
   - AutoRouterSession defaults last_processed_turn nowhere; that -1 field belongs to AdaptiveRouterSession.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

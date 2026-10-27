@@ -39,10 +39,8 @@ description: >-
   plus 66 error-helper lines; budget 350 implementation and 450 tests/config/oracle/fuzz.
 scope:
   paths:
-    - crates/betterlite-logging/src/lib.rs
     - crates/betterlite-logging/src/{collector_producer,spend_error}.rs
     - crates/betterlite-logging/src/{collector_producer,spend_error}/**
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/collector.rs
     - crates/betterlite-config/src/collector/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/collector_settings.rs,corpus/collector_settings/**}
@@ -87,6 +85,6 @@ pitfalls:
   - Falling back after a fully sent line can double-charge even when the peer disappears immediately afterward.
   - Debug logging disables traceback suppression for both console output and stored failure metadata.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

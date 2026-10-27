@@ -1,0 +1,236 @@
+id: B3723
+title: Bedrock guardrail settings and signed transport
+description: >-
+  Build the BedrockGuardrail class initialization, guardrail/checks configuration resolution,
+  credential loading with AWS region discovery, and signed HTTP transport for both ApplyGuardrail
+  and InvokeGuardrailChecks APIs. Keep bearer-token requests from fetching AWS credentials
+  (return None for credentials when bearer token is present), and preserve explicit Authorization
+  header overrides even after SigV4 signing adds its own Authorization header.
+
+  Class initialization reads guardrailIdentifier/guardrailVersion (ApplyGuardrail) or checks
+  (InvokeGuardrailChecks) configuration and validates that only one API path is chosen. Set
+  streaming parameters from extras and establish the httpx async handler for transport. The
+  get_supported_event_hooks method returns a list of the native during-call hook, pre/post/pre-MCP/during-MCP
+  event types that this guardrail listens to. The _normalize_checks helper accepts a pydantic
+  BedrockChecksConfigModel or dict, filters to only the three known check keys (contentFilter,
+  promptAttack, sensitiveInformation), and returns None if no usable check remains.
+
+  _load_credentials reads aws_secret_access_key, aws_access_key_id, aws_session_token, aws_region_name,
+  aws_role_name, aws_session_name, aws_profile_name, aws_web_identity_token, aws_sts_endpoint
+  and aws_external_id from optional_params. When a bearer_token is supplied, return (None, region)
+  without constructing Credentials; when bearer_token is absent, fetch credentials through B594's
+  get_credentials method. Resolve aws_region_name by calling B591's
+  get_aws_region_name_for_non_llm_api_calls (not the provider wrapper; this guardrail reads its own region
+  setting and does not share provider credentials/region logic).
+
+  _prepare_request builds the signed request for POST to a Bedrock guardrail endpoint. Read
+  aws_bedrock_runtime_endpoint from optional_params and call B591's get_runtime_endpoint to form
+  the base URL. When request_path is None (ApplyGuardrail), interpolate guardrailIdentifier and
+  guardrailVersion into the default path /guardrail/{id}/version/{version}/apply; when request_path
+  is supplied (InvokeGuardrailChecks at /guardrail-checks/invoke), use it as-is. Encode the body
+  to JSON bytes, set Content-Type to application/json, and merge any extra_headers.
+
+  When aws_bearer_token (from B591's bedrock_bearer_token helper) is not None, create an unsigned
+  AWSRequest and set Authorization to Bearer {token}. When bearer_token is absent, build an AWSRequest
+  and apply SigV4Auth directly to sign the request, then override the Authorization header with any
+  extra_headers["Authorization"] if present (the explicit override is preserved even after signing).
+  Return the prepared (wire-ready) AWSRequest.
+
+  _sign_and_post submits the signed request via B173's AsyncHTTPHandler.post, passing prepared_request.url,
+  prepared_request.body and prepared_request.headers. Catch HTTPException and re-raise it directly.
+  On other exceptions, check for an httpx.Response; if present, parse it via _parse_bedrock_guardrail_error_response
+  and raise HTTPException with (status_code, message) tuple. Log guardrail_failed_to_respond when
+  log_transport_failure=True (the consolidating ApplyGuardrail retry path suppresses per-attempt logging).
+  On connection/timeout/other errors (no response), log unconditionally and re-raise the original exception.
+
+  _parse_bedrock_guardrail_error_response decodes error bodies from AWS. Try JSON decode and check for
+  {"message": "..."} or {"error": {"message": "..."}} or {"error": "..."}; fall back to response.text if not
+  JSON. Return (status_code, message) for HTTPException construction.
+
+  Constants and defaults:
+  - GUARDRAIL_NAME = "bedrock"
+  - _BEDROCK_DYNAMIC_BODY_DENYLIST = frozenset({"content", "source"}) — fields never replaced by dynamic params
+  - _BEDROCK_TOO_LARGE_ERROR_SUBSTRINGS: Bedrock error message keywords indicating a size failure
+  - _BEDROCK_APPLY_GUARDRAIL_MAX_THROTTLE_RETRIES = 3
+  - _BEDROCK_APPLY_GUARDRAIL_BASE_BACKOFF_SECONDS = 0.5 (retry sleep durations: 0.5, 1, 2 seconds)
+  - _BEDROCK_WHITESPACE: compiled regex to detect whitespace
+  - _NO_TRACING_DETAIL: empty dict {} for no-detail responses
+  - _BEDROCK_INVOKE_GUARDRAIL_CHECKS_PATH = "/guardrail-checks/invoke"
+  - _BEDROCK_CHECKS_MAX_CONTENT_BLOCKS = 10 (per-message limit for InvokeGuardrailChecks)
+  - _BEDROCK_CHECKS_KNOWN_KEYS = frozenset({"contentFilter", "promptAttack", "sensitiveInformation"})
+  - _BEDROCK_CHECKS_PII_LOCATION_KEYS: tuple of field names stripped from sensitiveInformation logs
+  - _CONTENT_TYPE_TO_QUALIFIER: dict mapping OpenAI content types to Bedrock qualifiers
+  - _GROUNDING_SOURCE_TRUSTED_ROLES = frozenset({"system", "developer"})
+
+  Do not build the apply_guardrail, make_bedrock_api_request or any execution hooks in this task;
+  B3724/B3725 own those. Do not implement CustomGuardrail __init__ or update methods; B104 owns
+  the guardrail lifecycle and config contracts. BedrockGuardrailStreamingParams.from_extras is
+  unresolved (U1); accept it as a call from __init__ and build the _set_streaming_params receiver.
+
+scope:
+  paths:
+    - crates/betterlite-bedrock-guardrails/src/**
+    - crates/betterlite-bedrock-guardrails/Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1-148
+    why: "Import statements, constants, and module-level configuration (GUARDRAIL_NAME, error substrings, retry limits, API paths)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L232-330
+    why: "BedrockGuardrail class declaration, __init__ signature, streaming params initialization, update_in_memory_litellm_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L339-375
+    why: "get_supported_event_hooks, _normalize_checks with three known keys, unknown key warning"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L758-861
+    why: "_load_credentials (bearer token path and AWS credential resolution), _prepare_request (URL building, SigV4 signing, Authorization header override)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1740-1815
+    why: "_sign_and_post (POST via httpx handler, HTTPException propagation, error response parsing, logging)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2150-2174
+    why: "_parse_bedrock_guardrail_error_response (JSON decode, fallback to text, AWS error shape extraction)"
+
+dod:
+  - text: BedrockGuardrail class inherits from both CustomGuardrail and BaseAWSLLM, with class-level use_native_during_call_hook = True.
+    proof: [class-declaration]
+  - text: __init__ accepts guardrailIdentifier, guardrailVersion, disable_exception_on_block, checks, three threshold parameters (content_filter/prompt_attack/pii_confidence), chunk_budget_chars, contextual_grounding_from_messages, streaming parameters and kwargs; validates that only one API path (checks or guardrailIdentifier+guardrailVersion) is configured.
+    proof: [init-signature]
+  - text: __init__ calls _set_streaming_params with BedrockGuardrailStreamingParams.from_extras, calls BaseAWSLLM.__init__, and logs initialization with guardrail type and resolved checks.
+    proof: [init-setup]
+  - text: get_supported_event_hooks returns [pre_call, post_call, during_call, pre_mcp_call, during_mcp_call].
+    proof: [event-hooks]
+  - text: _normalize_checks accepts BedrockChecksConfigModel or dict, filters to contentFilter/promptAttack/sensitiveInformation, logs warning on unknown keys, and returns None when no usable check remains.
+    proof: [normalize-checks]
+  - text: _normalize_checks raises ValueError with specific message when all keys are unrecognized or all known-key values are None.
+    proof: [normalize-checks-error]
+  - text: _load_credentials returns (None, aws_region_name) when bearer_token is not None, preventing AWS credential fetching for bearer requests.
+    proof: [bearer-credentials-none]
+  - text: _load_credentials calls B591's get_aws_region_name_for_non_llm_api_calls to resolve aws_region_name from optional_params.
+    proof: [region-resolution]
+  - text: _load_credentials calls B594's get_credentials when bearer_token is None, passing all AWS configuration parameters.
+    proof: [credential-fetch]
+  - text: _prepare_request calls B591's get_runtime_endpoint to form the base Bedrock endpoint URL from aws_bedrock_runtime_endpoint.
+    proof: [endpoint-resolution]
+  - text: _prepare_request interpolates guardrailIdentifier/guardrailVersion into /guardrail/{id}/version/{version}/apply when request_path is None (ApplyGuardrail).
+    proof: [apply-guardrail-path]
+  - text: _prepare_request uses request_path directly when supplied (InvokeGuardrailChecks path).
+    proof: [checks-path]
+  - text: _prepare_request with bearer token creates unsigned AWSRequest and sets Authorization header to Bearer {token}.
+    proof: [bearer-request]
+  - text: _prepare_request without bearer token creates AWSRequest, applies SigV4Auth directly, then overrides Authorization header if extra_headers contains one.
+    proof: [sigv4-override]
+  - text: _sign_and_post calls B173's AsyncHTTPHandler.post with url, body, headers from the prepared request.
+    proof: [post-call]
+  - text: _sign_and_post propagates HTTPException directly; on other exceptions with httpx.Response, parses error via _parse_bedrock_guardrail_error_response and raises HTTPException.
+    proof: [exception-handling]
+  - text: _sign_and_post logs guardrail_failed_to_respond when log_transport_failure=True; connection errors log unconditionally.
+    proof: [transport-logging]
+  - text: >-
+      _parse_bedrock_guardrail_error_response extracts message from JSON shapes with
+      top-level message, nested error.message, or top-level error string;
+      falls back to response.text.
+    proof: [error-parsing]
+  - text: Module-level constants GUARDRAIL_NAME, _BEDROCK_DYNAMIC_BODY_DENYLIST, _BEDROCK_TOO_LARGE_ERROR_SUBSTRINGS, _BEDROCK_APPLY_GUARDRAIL_MAX_THROTTLE_RETRIES, _BEDROCK_APPLY_GUARDRAIL_BASE_BACKOFF_SECONDS, _BEDROCK_INVOKE_GUARDRAIL_CHECKS_PATH, _BEDROCK_CHECKS_KNOWN_KEYS, _CONTENT_TYPE_TO_QUALIFIER, _GROUNDING_SOURCE_TRUSTED_ROLES are defined and match LiteLLM's values.
+    proof: [constants]
+
+checks:
+  optional: []
+  commands:
+    - id: class-declaration
+      why: BedrockGuardrail class not found or missing inheritance
+      run: grep -q "class BedrockGuardrail.*CustomGuardrail.*BaseAWSLLM" crates/betterlite-bedrock-guardrails/src/*.rs && grep -q "use_native_during_call_hook.*true" crates/betterlite-bedrock-guardrails/src/*.rs
+    - id: init-signature
+      why: __init__ method signature is missing or incomplete
+      run: grep -q "fn __init__" crates/betterlite-bedrock-guardrails/src/*.rs && grep -q "guardrailIdentifier\|guardrail_identifier" crates/betterlite-bedrock-guardrails/src/*.rs && grep -q "checks" crates/betterlite-bedrock-guardrails/src/*.rs
+    - id: init-setup
+      why: __init__ initialization logic tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::init/)'
+    - id: event-hooks
+      why: get_supported_event_hooks not found or returns incorrect list
+      run: grep -q "GuardrailEventHooks::pre_call" crates/betterlite-bedrock-guardrails/src/*.rs && grep -q "GuardrailEventHooks::during_call" crates/betterlite-bedrock-guardrails/src/*.rs
+    - id: normalize-checks
+      why: _normalize_checks method tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::normalize_checks/)'
+    - id: normalize-checks-error
+      why: _normalize_checks ValueError path tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::normalize_checks_error/)'
+    - id: bearer-credentials-none
+      why: Bearer token path does not return None credentials
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::bearer_credentials/)'
+    - id: region-resolution
+      why: Region resolution tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::region_resolution/)'
+    - id: credential-fetch
+      why: AWS credential fetching tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::credential_fetch/)'
+    - id: endpoint-resolution
+      why: Endpoint URL resolution tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::endpoint_resolution/)'
+    - id: apply-guardrail-path
+      why: ApplyGuardrail path interpolation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::apply_guardrail_path/)'
+    - id: checks-path
+      why: InvokeGuardrailChecks path tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::checks_path/)'
+    - id: bearer-request
+      why: Bearer token request preparation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::bearer_request/)'
+    - id: sigv4-override
+      why: SigV4 and Authorization header override tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::sigv4_override/)'
+    - id: post-call
+      why: POST call via httpx handler tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::post_call/)'
+    - id: exception-handling
+      why: Exception handling and propagation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::exception_handling/)'
+    - id: transport-logging
+      why: Transport logging tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::transport_logging/)'
+    - id: error-parsing
+      why: Error response parsing tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-bedrock-guardrails --no-tests=fail -E 'test(/^bedrock_transport::error_parsing/)'
+    - id: constants
+      why: Module constants are missing or incorrect
+      run: grep -q "GUARDRAIL_NAME.*bedrock" crates/betterlite-bedrock-guardrails/src/*.rs && grep -q "_BEDROCK_INVOKE_GUARDRAIL_CHECKS_PATH" crates/betterlite-bedrock-guardrails/src/*.rs && grep -q "_BEDROCK_CHECKS_KNOWN_KEYS" crates/betterlite-bedrock-guardrails/src/*.rs
+
+oracle_cases: []
+
+deviations:
+  - what: "Authorization header override happens even after SigV4 signing; LiteLLM preserves this behavior in lines 856-858, allowing explicit auth headers to override signed ones when extra_headers supplies Authorization."
+    why: "The guardrail may need to override AWS credentials with a different token or bearer path; preserving the override ensures custom auth semantics are not lost."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L854-858"
+  - what: "Bearer token requests skip AWS credential resolution entirely, returning (None, region) from _load_credentials to prevent botocore from fetching ephemeral session credentials."
+    why: "When a bearer token is supplied, the request uses AWS's SigV4 bearer flow instead of IAM credentials; fetching credentials in this path would waste resources and risk stale tokens."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L781-782"
+  - what: "Error response parsing handles AWS error shapes with nested 'error' keys and falls back to plain text; response.text is used only when JSON decode fails or the shape is unrecognized."
+    why: "AWS Bedrock returns errors in multiple formats depending on the source (service vs gateway); parsing both nested and flat shapes ensures no error messages are lost."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2159-2174"
+
+out_of_scope:
+  - "CustomGuardrail.__init__, update_in_memory_litellm_params (parent contract) are in B104."
+  - "BedrockGuardrailStreamingParams.from_extras is in B104 (guardrail streaming params framework)."
+  - "make_bedrock_api_request and all ApplyGuardrail/InvokeGuardrailChecks execution is in B3724/B3725."
+  - "Masking, message selection and response building are in B3721."
+  - "Chunk management and content splitting are in B3720."
+  - "Tracing, logging and usage computation are in B3722."
+  - "Native hook dispatch and streaming is in B3726."
+  - "AsyncHTTPHandler.post is in B173."
+  - "BaseAWSLLM and bedrock_bearer_token are in B590."
+  - "get_aws_region_name_for_non_llm_api_calls and get_runtime_endpoint are in B591."
+  - "get_credentials and AwsCredentialResolver are in B594."
+
+pitfalls:
+  - "Bearer token takes precedence over AWS credentials: _load_credentials returns (None, region) when bearer_token is not None, preventing credential resolution entirely."
+  - "Authorization header override happens after SigV4 signing: build the signed request first, then unconditionally replace Authorization if extra_headers supplies one."
+  - "The guardrailIdentifier and guardrailVersion are part of the path only for ApplyGuardrail; InvokeGuardrailChecks uses request_path directly without interpolation."
+  - "_normalize_checks filters to only three known keys: contentFilter, promptAttack, sensitiveInformation; unknown keys log a warning and are dropped (not an error)."
+  - "Retry sleep backoff starts at 0.5 seconds, then 1, then 2; _BEDROCK_APPLY_GUARDRAIL_BASE_BACKOFF_SECONDS is the starting duration, not the final one."
+  - "Error response parsing must handle both JSON and text fallback; a malformed response body still returns a message string, never null."
+  - "_BEDROCK_CHECKS_PII_LOCATION_KEYS contains four field names (beginOffset, endOffset, messageIndex, contentIndex) that are stripped from sensitiveInformation results before logging to prevent PII reconstruction."
+  - "The timeout for HTTP POST is read from self.timeout (inherited from BaseAWSLLM), not hardcoded; ensure BaseAWSLLM sets a default."
+  - "_BEDROCK_TOO_LARGE_ERROR_SUBSTRINGS is a tuple of partial error message keywords that B3724 uses to detect size-related failures; keep all lowercase for case-insensitive matching."
+  - "log_transport_failure=False suppresses guardrail_failed_to_respond logging for one-shot HTTP errors in the ApplyGuardrail retry loop; connection-level errors still log unconditionally."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

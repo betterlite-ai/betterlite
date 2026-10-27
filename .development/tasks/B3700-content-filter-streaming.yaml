@@ -1,0 +1,253 @@
+id: B3700
+title: Content filter streaming holdback and buffer trimming
+description: >-
+  Build per-choice buffered scanning with a 50-character holdback and 512-character
+  default context, widened to accommodate the longest configured keyword. Defer trim
+  decisions when exception phrases straddle the cut boundary, unfinished conditional
+  sentences span the cut, the masked halves differ from the whole (masked match straddles cut),
+  or the prefix has not yet been yielded to the client. Move trimmed detections to committed;
+  merge deduplicated detections at stream end. Preserve final-chunk space handling, detection
+  deduplication and finally-block tracing even when the stream is cancelled or raises.
+
+  B3700 defines CONTENT_FILTER_STREAMING_SCAN_CONTEXT_CHARS (512) and
+  CONTENT_FILTER_STREAMING_HOLDBACK_CHARS (50) locally. The streaming hook accepts
+  decoded chunks; it does not own an SSE decoder or call apply_guardrail. Warning and
+  raw-text fallback behavior matches the nonstreaming filter's exception handling.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_filter_streaming.rs
+    - crates/betterlite-guardrails/src/content_filter_streaming/**
+    - tools/oracle/cases/guardrails/streaming-*.yaml
+    - tools/oracle/helpers/b3700.py
+    - tools/oracle/helpers/b3700/**
+    - tools/oracle/src/helpers/guardrails/b3700.rs
+    - tools/oracle/src/helpers/guardrails/b3700/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L129-L142
+    why: _StreamedChoiceState and _StreamedScanPlan dataclass declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1957-L1978
+    why: "_streamed_scan_plan: builds context_chars (widened by longest keyword), exception_phrases from categories, conditional_words from conditional categories."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1980-L1989
+    why: "_cut_breaks_wider_context: checks exception phrases in buffered_lower absent from tail_lower, and conditional words in the cut sentence."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1991-L2026
+    why: "_trim_streamed_choice_buffer: defer trim if buffer within 2x context, cut breaks context, masked halves != whole, or prefix not yet yielded."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2028-L2030
+    why: "_merge_detections: retain only first occurrence of each detection."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2032-L2153
+    why: "async_post_call_streaming_iterator_hook: process streaming chunks with holdback/trimming, yield safe content, handle final chunks, merge detections, log guardrail information."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L406-L407
+    why: "CONTENT_FILTER_STREAMING_HOLDBACK_CHARS (50) and CONTENT_FILTER_STREAMING_SCAN_CONTEXT_CHARS (512) constants."
+
+dod:
+  - text: >-
+      _StreamedChoiceState is a frozen dataclass holding buffered_text, yielded_masked_text_len,
+      committed_detections, latest_detections, and next_trim_len, all with defaults.
+    proof: [streaming-state-tests]
+
+  - text: >-
+      _StreamedScanPlan is a frozen dataclass holding context_chars, exception_phrases tuple,
+      and conditional_words tuple, all with defaults.
+    proof: [streaming-state-tests]
+
+  - text: >-
+      _streamed_scan_plan returns a plan with context_chars = max(512, longest keyword length),
+      exception_phrases from all loaded categories, and conditional_words from all conditional categories.
+    proof: [streaming-plan-tests]
+
+  - text: >-
+      _cut_breaks_wider_context returns true if any exception phrase appears in buffered_lower
+      but not in tail_lower, or if any conditional word appears in the cut sentence (last
+      sentence of head + first sentence of tail, split by sentence terminators).
+    proof: [streaming-context-tests]
+
+  - text: >-
+      _trim_streamed_choice_buffer returns the deferred state (next_trim_len += context_chars)
+      when buffered_text <= max(2 * context_chars, next_trim_len), deferring trim.
+    proof: [streaming-trim-tests]
+
+  - text: >-
+      _trim_streamed_choice_buffer defers when _cut_breaks_wider_context returns true,
+      checking that exception phrases or conditional sentences do not straddle the cut boundary.
+    proof: [streaming-trim-tests]
+
+  - text: >-
+      _trim_streamed_choice_buffer defers when _filter_single_text raises any exception
+      while scanning head or tail, falling back to retry with larger buffer.
+    proof: [streaming-trim-tests]
+
+  - text: >-
+      _trim_streamed_choice_buffer defers when masked_head + masked_tail != masked_text,
+      indicating a match or phrase straddles the cut boundary.
+    proof: [streaming-trim-tests]
+
+  - text: >-
+      _trim_streamed_choice_buffer defers when len(masked_head) > state.yielded_masked_text_len,
+      meaning the masked prefix has not yet been fully yielded to the client.
+    proof: [streaming-trim-tests]
+
+  - text: >-
+      _trim_streamed_choice_buffer returns a trimmed state with buffered_text = tail,
+      yielded_masked_text_len -= len(masked_head), committed_detections += head_detections,
+      and next_trim_len = 0, when all deferral conditions are false.
+    proof: [streaming-trim-tests]
+
+  - text: >-
+      _merge_detections returns a tuple of detections keeping only the first occurrence
+      of each unique detection, removing duplicates by value not identity.
+    proof: [streaming-merge-tests]
+
+  - text: >-
+      stream_filter_hook accepts user_api_key_dict, response (AsyncGenerator), and request_data,
+      and yields ModelResponseStream items with masked content.
+    proof: [streaming-hook-tests, streaming-hook-oracle]
+
+  - text: >-
+      stream_filter_hook maintains state_by_choice dict mapping choice_index to _StreamedChoiceState,
+      processing each new chunk and final flag per choice index.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook extracts content, choice_index, and finish_reason (is_final) from
+      each choice's delta, handling missing or non-integer indices by defaulting to 0.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook skips choices with no content and no final flag, continuing to
+      next choice without yielding.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook appends a synthetic space to text_to_scan when is_final is true,
+      triggering word-boundary (\b) regex matches, and strips the space from masked_text before yielding.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook calculates safe_to_yield_len = max(yielded_masked_text_len,
+      len(masked_text) - (0 if is_final else 50)), preserving the 50-character holdback for non-final chunks.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook sets choice.delta.content = masked_text[yielded_masked_text_len:safe_to_yield_len],
+      yielding only the safe portion of newly masked text.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook calls _trim_streamed_choice_buffer on non-final chunks, applying
+      the buffer trimming strategy, and does not trim final chunks.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook raises HTTPException immediately on BLOCK detections during
+      _filter_single_text, updating state with latest detections before raising.
+    proof: [streaming-hook-tests, streaming-hook-oracle]
+
+  - text: >-
+      stream_filter_hook catches non-HTTPException exceptions from _filter_single_text,
+      logs the error, falls back to unmasked text_to_scan, and retains previous latest_detections.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook merges committed and latest detections from all choice states,
+      deduplicating them, counting masked entities, and calling _log_guardrail_information.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook sets status = "guardrail_intervened" on HTTPException, "success"
+      on normal completion, and "guardrail_failed_to_respond" on other exceptions.
+    proof: [streaming-hook-tests, streaming-hook-oracle]
+
+  - text: >-
+      stream_filter_hook accumulates scan_seconds from _filter_single_text perf_counter
+      timing, adds trim perf_counter timing, and passes total duration to _log_guardrail_information.
+    proof: [streaming-hook-tests]
+
+  - text: >-
+      stream_filter_hook writes a finally-block to _log_guardrail_information even when
+      the stream is cancelled, raising HTTPException, or encountering other exceptions.
+    proof: [streaming-hook-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: streaming-state-tests
+      why: _StreamedChoiceState or _StreamedScanPlan is not a frozen dataclass with correct fields
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_streaming::state/)'
+
+    - id: streaming-plan-tests
+      why: _streamed_scan_plan does not construct correct plan values or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_streaming::plan/)'
+
+    - id: streaming-context-tests
+      why: _cut_breaks_wider_context does not check exception phrases or conditional words
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_streaming::context/)'
+
+    - id: streaming-trim-tests
+      why: _trim_streamed_choice_buffer does not defer or trim correctly under all conditions
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_streaming::trim/)'
+
+    - id: streaming-merge-tests
+      why: _merge_detections does not deduplicate detections or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_streaming::merge/)'
+
+    - id: streaming-hook-tests
+      why: stream_filter_hook does not process chunks, apply holdback, or log correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_streaming::hook/)'
+
+    - id: streaming-hook-oracle
+      why: stream_filter_hook cases do not match LiteLLM behavior on holdback, trim, or logging
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/streaming-holdback-non-final.yaml
+  - tools/oracle/cases/guardrails/streaming-trim-condition-exception.yaml
+  - tools/oracle/cases/guardrails/streaming-trim-condition-mask-split.yaml
+  - tools/oracle/cases/guardrails/streaming-trim-condition-prefix-yielded.yaml
+  - tools/oracle/cases/guardrails/streaming-final-chunk.yaml
+  - tools/oracle/cases/guardrails/streaming-block-exception.yaml
+  - tools/oracle/cases/guardrails/streaming-filter-error-fallback.yaml
+  - tools/oracle/cases/guardrails/streaming-merged-detections.yaml
+  - tools/oracle/cases/guardrails/streaming-logged-with-cancellation.yaml
+
+deviations: []
+
+out_of_scope:
+  - SSE decoder and streaming framework integration; stream_filter_hook accepts already-decoded ModelResponseStream items.
+  - apply_guardrail (the nonstreaming guardrail constructor) and its request path; stream_filter_hook is the post-call path only.
+  - CustomGuardrail base and logging callback dispatch; owned by B104.
+
+pitfalls:
+  - >-
+      The synthetic space appended to text_to_scan for final chunks must be stripped from
+      masked_text before yielding, else the space appears in the stream output.
+  - >-
+      state.yielded_masked_text_len tracks the masked text length, not the original length;
+      len(masked_head) comparison must use masked_head length, not original head length.
+  - >-
+      _trim_streamed_choice_buffer must collect head_detections via a mutable list passed to
+      _filter_single_text; do not reuse the same list across multiple scans.
+  - >-
+      safe_to_yield_len is max(previous.yielded_masked_text_len, len(masked) - holdback),
+      ensuring it never goes backward even if a new chunk yields less text than before.
+  - >-
+      The next_trim_len deferral mechanism must accumulate (increment by context_chars each defer),
+      not reset to the buffered length; otherwise buffering stalls when content is constant-length.
+  - >-
+      HTTPException raised by _filter_single_text updates state with latest_detections before
+      re-raising, so the finally-block includes those detections in the logged response.
+  - >-
+      Detections from split choices must be merged by value (equality), not by identity,
+      because _filter_single_text constructs new detection objects on each call.
+  - >-
+      choice_index extraction must handle missing index attributes and non-integer values
+      (e.g., string indices); default to 0 rather than raising.
+  - >-
+      Duration passed to _log_guardrail_information is accumulated perf_counter time from
+      both scan and trim operations, not wall-clock time; do not use datetime.now() delta.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

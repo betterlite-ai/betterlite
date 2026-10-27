@@ -210,6 +210,6 @@ pitfalls:
   - Updating an existing organization team includes that team's old allocation in the sum; subtracting it changes LiteLLM's rejection boundary.
   - The organization wildcard all-proxy-models is not recognized by the caller's personal model check.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

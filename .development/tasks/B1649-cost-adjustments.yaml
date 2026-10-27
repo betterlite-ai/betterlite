@@ -36,7 +36,6 @@ scope:
     - crates/betterlite-cost/src/adjustments.rs
     - crates/betterlite-cost/src/adjustments/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/cost_adjustments.rs
     - crates/betterlite-config/src/cost_adjustments/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cost-adjustment-*
@@ -93,6 +92,6 @@ pitfalls:
   - Testing a provider entry by truthiness instead of membership incorrectly exposes the global margin when the provider explicitly supplies null or an empty object.
   - A fixed margin still applies when the base cost is zero, so skipping zero-cost requests before this helper changes billing.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

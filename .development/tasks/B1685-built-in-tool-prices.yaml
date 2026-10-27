@@ -56,7 +56,6 @@ scope:
     - crates/betterlite-models/src/tool_fees.rs
     - crates/betterlite-models/src/tool_fees/**
     - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/tool_prices.rs
     - crates/betterlite-config/src/tool_prices/**
     - crates/betterlite-config/fuzz/Cargo.toml
@@ -125,6 +124,6 @@ pitfalls:
   - A model's file_search_cost_per_1k_calls value is returned directly by the source and must not be divided by 1000 a second time.
   - A provider-specific web-search cost of zero is a complete answer, whereas None requests generic per-call fallback.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

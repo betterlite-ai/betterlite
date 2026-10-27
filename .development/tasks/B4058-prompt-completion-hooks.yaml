@@ -1,0 +1,91 @@
+id: B4058
+title: Prompt compilation orchestration and completion hooks
+description: >-
+  Build the sync and async orchestration for prompt compilation and completion hooks across all prompt backends.
+  Add compile_prompt and async_compile_prompt methods to coordinate template compilation with client message appending
+  and result population. Implement get_chat_completion_prompt and async_get_chat_completion_prompt completion hooks
+  for dotprompt, gitlab, bitbucket and generic backends, each delegating to the orchestration methods.
+
+  The orchestration flow is: check if prompt_id is None (short-circuit in sync path), verify backend eligibility,
+  call the backend's _compile_prompt_helper or async_compile_prompt_helper, append client messages after compiled
+  template messages, and populate completed_messages. In async path, check should_run_prompt_management;
+  in sync path, short-circuit before checking. For gitlab and bitbucket sync completions, forward prompt_spec
+  unchanged but omit the ignore_prompt_manager_model and ignore_prompt_manager_optional_params arguments,
+  so the base method uses its False defaults for those two while resolve_prompt_manager_ignore_flags still runs
+  against the real prompt_spec. Merge template optional params over request params, apply model override, and
+  ensure backend-specific initialization hooks are kept separate from these upper orchestration adapters.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/orchestration.rs
+    - crates/betterlite-prompts/src/orchestration/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L81-L133
+    why: compile_prompt and async_compile_prompt orchestration with error wrapping and message appending.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L166-L257
+    why: get_chat_completion_prompt and async_get_chat_completion_prompt completion hooks with eligibility gates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/dotprompt_manager.py#L186-L253
+    why: DotpromptManager completion hook delegation to PromptManagementBase.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L562-L623
+    why: GitLabPromptManager completion hooks with sync forwarding of real prompt_spec and omitted ignore flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L508-L572
+    why: BitBucketPromptManager completion hooks with similar sync delegation and prompt_spec handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L387-454
+    why: Generic prompt API completion hooks delegating to base orchestration.
+dod:
+  - text: compile_prompt calls the backend's _compile_prompt_helper, appends client messages to compiled template messages, and populates completed_messages in the returned PromptManagementClient.
+    proof: [orchestration-tests]
+  - text: async_compile_prompt calls async_compile_prompt_helper, appends messages and populates completed_messages the same way.
+    proof: [orchestration-tests]
+  - text: get_chat_completion_prompt short-circuits returning (model, messages, params) when prompt_id is None, before checking eligibility.
+    proof: [orchestration-tests]
+  - text: get_chat_completion_prompt checks should_run_prompt_management and returns (model, messages, params) unchanged if false.
+    proof: [orchestration-tests]
+  - text: get_chat_completion_prompt calls compile_prompt, then post_compile_prompt_processing with resolved ignore flags, and returns the processed result.
+    proof: [orchestration-tests]
+  - text: async_get_chat_completion_prompt does not short-circuit on None prompt_id; it checks should_run_prompt_management first, then calls async_compile_prompt.
+    proof: [orchestration-tests]
+  - text: async_get_chat_completion_prompt returns (model, messages, params) when should_run returns false before any async work.
+    proof: [orchestration-tests]
+  - text: GitLabPromptManager get_chat_completion_prompt and async_get_chat_completion_prompt delegate to PromptManagementBase, forwarding prompt_spec but omitting the ignore-flag parameters in sync.
+    proof: [orchestration-tests]
+  - text: BitBucketPromptManager get_chat_completion_prompt and async_get_chat_completion_prompt delegate similarly, forwarding prompt_spec but omitting sync ignore flags.
+    proof: [orchestration-tests]
+  - text: DotpromptManager completion hooks call PromptManagementBase methods with all parameters.
+    proof: [orchestration-tests]
+  - text: GenericPromptManager completion hooks call PromptManagementBase methods with all parameters.
+    proof: [orchestration-tests]
+  - text: Compile errors are caught and wrapped with a message naming the prompt_id.
+    proof: [orchestration-tests]
+  - text: Message appending raises ValueError wrapped with error context if concatenation fails.
+    proof: [orchestration-tests]
+checks:
+  optional: []
+  commands:
+    - id: orchestration-tests
+      why: orchestration and completion hook tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_orchestration::|^completion_hooks::/)'
+oracle_cases: []
+deviations:
+  - what: GitLab and Bitbucket sync completion hooks forward prompt_spec unchanged but omit the ignore_prompt_manager_model and ignore_prompt_manager_optional_params parameters when calling PromptManagementBase.get_chat_completion_prompt. These parameters default to False in the base method, while resolve_prompt_manager_ignore_flags still runs unconditionally with the real prompt_spec.
+    why: LiteLLM's GitLabPromptManager and BitBucketPromptManager sync methods omit the ignore-flag parameters while forwarding the real prompt_spec; the base method still calls resolve_prompt_manager_ignore_flags with the real spec and False defaults.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L576-L587
+  - what: Async get_chat_completion_prompt does not short-circuit on None prompt_id; it checks should_run_prompt_management before any compilation.
+    why: LiteLLM's async method always gates on should_run_prompt_management; only the sync path short-circuits None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L228-L233
+out_of_scope:
+  - Backend implementation details (B4052 dotprompt, B4054 gitlab, B4056 bitbucket, B4057 generic); those own their should_run_prompt_management and _compile_prompt_helper/_async_compile_prompt_helper overrides.
+  - Initialization or registry-entry code; prompt_initializer and registration logic remain in B4050-B4057.
+  - Request-body validation, error conversion beyond wrapping compile errors, or integration with external logging (Langfuse, Arize); those tasks use this orchestration but are not called by it.
+  - The merge_messages helper function (lines 74-79); it is not called at the pinned commit in open-source LiteLLM runtime code.
+pitfalls:
+  - Sync get_chat_completion_prompt short-circuits on None prompt_id before any other checks; this is the only path that does.
+  - Async get_chat_completion_prompt does not short-circuit on None; it checks should_run_prompt_management first and returns if false.
+  - Compile errors are caught at message concatenation (the attempt to append compiled template to client messages), not at compile completion; only that join point is wrapped.
+  - GitLab and Bitbucket sync completions omit forwarding the two ignore-flag parameters to the base method, but the base method still unconditionally calls resolve_prompt_manager_ignore_flags with the real prompt_spec (using OR logic to merge spec and parameter flags).
+  - The PromptManagementClient is a dict-like record (TypedDict); completed_messages is populated in place, not in a new returned value.
+  - Template optional params fully override request params in post_compile_prompt_processing; this is a dict spread, not a merge of individual keys.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

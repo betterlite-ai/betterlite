@@ -125,5 +125,5 @@ pitfalls:
 - client and timeout are accepted but do not override the helper's8-second handshake timeout.
 review_level: security
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0

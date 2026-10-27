@@ -23,7 +23,7 @@ scope:
   - tools/oracle/helpers/anthropic_prompt.py
   - tools/oracle/helpers/anthropic_prompt/**
   - tools/oracle/cases/helpers/anthropic-prompt/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/anthropic_prompt-*"
   lint_tables: false
 references:
 - url: >-
@@ -82,8 +82,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'anthropic_prompt' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_prompt-*")" &&
+      grep -lq 'anthropic_prompt' tools/oracle/fuzz/corpus/helper_case/anthropic_prompt-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -105,6 +105,7 @@ out_of_scope:
   Results/images B222; invokes/documents B223; history B224; user/system projection B225; response tool-call extraction
   B226; Bedrock ID sanitization B228.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/anthropic_prompt-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as anthropic_prompt in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/anthropic_prompt.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_prompt.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Tool-history repair retains the last duplicate within a contiguous result block, whereas Bedrock deduplication
@@ -112,5 +113,5 @@ pitfalls:
 - Never discard a signed thinking block solely because its readable text is empty.
 review_level: standard
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 1

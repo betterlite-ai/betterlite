@@ -151,6 +151,6 @@ pitfalls:
   - Invalid expected leaf indexes are rebuilt even when a differently named valid equivalent exists.
   - Busy replica-identity tables produce warnings inside a successful DO, while other SQL errors roll back that entire DO.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

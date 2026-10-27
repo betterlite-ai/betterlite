@@ -1,0 +1,146 @@
+id: B4577
+title: Temporarily route Claude sessions through the gateway
+description: >-
+  Build the foreground `up` command that temporarily patches ~/.claude/settings.json to route Claude Code sessions
+  through the LiteLLM proxy until stopped. Enforce fresh-login requirements: a stored API key must be recent
+  (checked via B4574's token freshness logic), and if none exists or is stale, invoke `login` interactively.
+  Extract the resolved key via B4585's `resolve_api_key`, verify it works with B4564's `verify_proxy_key`,
+  back up the original settings file (recording whether it existed and saving its JSON content via B4575's BackupRecord),
+  merge the key as a static token with B4562's `merge_claude_settings` and `install_statusline_script`, then hold
+  the process open with signal handlers (SIGINT, SIGTERM) until Ctrl-C. On normal exit or signals, restore the original
+  file exactly once using B4575's `_restore_and_report` and exit. Refuse to run if a backup already exists, indicating
+  a prior `lite up` is still running or crashed. Preserve one-time-restore semantics via a lock so concurrent signals
+  do not race, and error messages must match LiteLLM's when backup JSON is corrupted, settings writes fail or the
+  proxy rejects the key. Build as native Rust under crates/betterlite-cli/src/up.rs, not as a Python module.
+scope:
+  paths:
+  - crates/betterlite-cli/src/up.rs
+  - crates/betterlite-cli/src/up/**
+  - tools/oracle/cases/helpers/up/**
+  - tools/oracle/helpers/b4577.py
+  - tools/oracle/helpers/b4577/**
+  - tools/oracle/src/helpers/cli/b4577.rs
+  - tools/oracle/src/helpers/cli/b4577/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L35-L47
+  why: BackupRecord dataclass that captures file existence and JSON content for restore.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L50-L88
+  why: secure_create, write_backup, read_backup and backup JSON validation with ValidationError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L90-L107
+  why: restore_claude_settings logic for one-time restore with conditional deletion and backup cleanup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L109-L124
+  why: Freshness-check helpers _usable_login, _key_resolved_on_the_way_in, _stored_login_is_pkce.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L127-L143
+  why: ensure_fresh_login orchestration, interactive login invocation and token validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L145-L154
+  why: _restore_and_report that outputs "Restored", "Removed" or "Nothing to restore" based on backup state.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L156-L227
+  why: up command with patching, signal registration, atexit cleanup and _restore_once lock semantics.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L207-L226
+  why: Signal handlers that set stop_event and _restore_once non-blocking lock acquire.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L229-L240
+  why: down command that calls _restore_and_report without long-running process.
+dod:
+- text: >-
+    ensure_fresh_login rejects an API key when the stored login token is missing or stale (checked via B4574's logic),
+    invokes `login` interactively only when stdin is a TTY, and raises an error with the exact command suggestion when
+    a non-TTY caller cannot login.
+  proof:
+  - oracle
+- text: >-
+    The `up` command patches ~/.claude/settings.json with the resolved key as a static token, merges the status line
+    script, and holds open until Ctrl-C is pressed; every signal (SIGINT, SIGTERM) and atexit cleanup restores the
+    original file exactly once.
+  proof:
+  - oracle
+  - up-signal-tests
+- text: >-
+    A backup file that already exists is refused with a message matching LiteLLM's, and a corrupted backup JSON raises
+    UpError with the path and "invalid or unexpected JSON" text.
+  proof:
+  - oracle
+- text: >-
+    The proxy key is verified via B4564's `verify_proxy_key` before settings are patched, and a failed verification
+    raises an error with the exact proxy-check failure message.
+  proof:
+  - oracle
+- text: >-
+    Settings restoration skips the restore if no backup exists, restores the file if backup.existed=true and
+    backup.content is present, removes the file if backup.existed=false, and deletes the backup file in all success cases.
+  proof:
+  - oracle
+  - up-restore-tests
+- text: >-
+    Fresh-login enforcement applies even when an explicit --api-key is supplied, and the stored key is checked via
+    B4574's `get_stored_api_key` with the resolved base URL.
+  proof:
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: up-signal-tests
+    why: the signal handler and atexit cleanup tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/::up_signal_and_cleanup_behavior($|::)/) - test(/replays_the_/)'
+  - id: up-restore-tests
+    why: the restore and backup tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/::up_restore_and_backup_behavior($|::)/) - test(/replays_the_/)'
+  - id: behavior-tests
+    why: the behavior tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/::up_behavior($|::)/) - test(/replays_the_/)'
+oracle_cases:
+- tools/oracle/cases/helpers/up/fresh-login-missing.yaml
+- tools/oracle/cases/helpers/up/fresh-login-stale.yaml
+- tools/oracle/cases/helpers/up/fresh-login-valid.yaml
+- tools/oracle/cases/helpers/up/fresh-login-interactive-success.yaml
+- tools/oracle/cases/helpers/up/fresh-login-interactive-non-tty.yaml
+- tools/oracle/cases/helpers/up/backup-already-exists.yaml
+- tools/oracle/cases/helpers/up/corrupt-backup-json.yaml
+- tools/oracle/cases/helpers/up/proxy-verification-fails.yaml
+- tools/oracle/cases/helpers/up/settings-patch-and-restore.yaml
+- tools/oracle/cases/helpers/up/restore-when-backup-missing.yaml
+- tools/oracle/cases/helpers/up/sigint-restores.yaml
+- tools/oracle/cases/helpers/up/sigterm-restores.yaml
+- tools/oracle/cases/helpers/up/atexit-restores-once.yaml
+- tools/oracle/cases/helpers/up/explicit-api-key-fresh-login-check.yaml
+deviations:
+- what: >-
+    betterlite uses native Rust signal-hook and once_cell for signal handling and one-time cleanup instead of
+    Python's signal.signal and atexit.register. Signal delivery and cleanup timing match LiteLLM's: both signals
+    set a stop event, and the process restores settings once on first exit path and then exits.
+  why: >-
+    Rust does not expose Python's atexit module; signal-hook and once_cell provide safe, idiomatic equivalents
+    with the same observable behavior. File system operations use native Rust crates instead of Python os module.
+  link: https://docs.rs/signal-hook/latest/signal_hook/
+out_of_scope:
+- Dev config overrides to suppress fresh-login enforcement (LiteLLM has none in the code path covered here).
+- Streaming or interactive terminal features beyond TTY detection and error messages.
+- Autoroute process launching (`lite up autoroute`); that is B4584's responsibility.
+pitfalls:
+- >-
+  Signal handlers must not allocate memory or call async code. Use a simple atomic event flag for stop signaling and
+  always acquire the restore lock before attempting I/O; if the lock is already held, return silently so concurrent
+  signals do not race.
+- >-
+  The backup JSON parser must reject invalid UTF-8 and unexpected fields via serde::Deserialize strict validation,
+  not silently default them, so a user who edits the backup cannot corrupt the restore.
+- >-
+  Fresh-login check must call B4574's `get_stored_api_key` with the resolved base URL, not the CLI context's base URL
+  directly, since the two may differ when the user provides an explicit --api-key flag.
+- >-
+  One-time restore is critical: if the restore lock is held across an atexit call, the lock never releases and a second
+  signal will deadlock. Use a non-blocking acquire and return early if the lock is already held.
+- >-
+  The source's `click.ClickException` carries a message meant for users; preserve it exactly in UpError so the CLI
+  layer can render it without extra formatting.
+- >-
+  Test with explicit signal sending (via the signal crate in test helpers) to verify SIGINT/SIGTERM/atexit all invoke
+  cleanup exactly once, with no double-restore or deadlock.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

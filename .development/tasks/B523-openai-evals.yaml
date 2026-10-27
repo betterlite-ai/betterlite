@@ -88,8 +88,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-openai/src/lib.rs
-  - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/evals.rs
   - crates/betterlite-openai/src/evals/**
   - tools/oracle/Cargo.toml
@@ -270,6 +268,6 @@ pitfalls:
 - An empty eval_id chooses the collection path in get_complete_url, but create/list-run always invoke the path-segment
   encoder.
 budget:
-  max_changed_lines: 775
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -321,6 +321,6 @@ pitfalls:
 - Schema normalization is limited to named schema edges; walking every nested dictionary would rewrite fields the
   pin leaves alone.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

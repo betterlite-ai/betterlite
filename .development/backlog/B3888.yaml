@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prometheus query API and spend summaries
 status: todo
 depends_on: [B173, B002]
-file: null
+file: tasks/B3888-prometheus-query-api.yaml
 covers:
   - "litellm/integrations/prometheus_helpers/prometheus_api.py"
 parent: B111

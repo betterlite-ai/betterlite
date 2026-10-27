@@ -214,6 +214,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as anthropic_catalog_lookup in the context group. Replace the stub Op in tools/oracle/src/helpers/context/anthropic_catalog_lookup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_catalog_lookup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The runtime map is exhausted before the bundled map, so a runtime alias can beat a bundled exact key.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

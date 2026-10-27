@@ -23,10 +23,13 @@ macro_rules! helper_group {
     };
 }
 
+mod a2a;
 mod anthropic;
 mod auth;
 mod azure;
 mod bedrock;
+mod cache;
+mod cli;
 mod config;
 mod context;
 mod core_ops;
@@ -35,20 +38,29 @@ mod db;
 mod error;
 mod foundry;
 mod guardrails;
+mod harness;
 mod http;
 mod lens;
 mod logging;
+mod mcp;
 mod models;
 mod openai;
 mod openapi;
 mod oracle;
 mod paths;
+mod policy;
+mod prometheus;
 mod prompts;
 mod provider;
+mod proxy;
+mod rate_limit;
 mod redact;
 mod redis;
+mod reporting;
+mod roi;
 mod router;
 mod sdk;
+mod secret_managers;
 mod secrets;
 mod server;
 mod streaming;
@@ -112,11 +124,14 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 32] = [
+const GROUPS: [Group; 44] = [
+    a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
     azure::GROUP,
     bedrock::GROUP,
+    cache::GROUP,
+    cli::GROUP,
     config::GROUP,
     context::GROUP,
     core_ops::GROUP,
@@ -125,20 +140,29 @@ const GROUPS: [Group; 32] = [
     error::GROUP,
     foundry::GROUP,
     guardrails::GROUP,
+    harness::GROUP,
     http::GROUP,
     lens::GROUP,
     logging::GROUP,
+    mcp::GROUP,
     models::GROUP,
     openai::GROUP,
     openapi::GROUP,
     oracle::GROUP,
     paths::GROUP,
+    policy::GROUP,
+    prometheus::GROUP,
     prompts::GROUP,
     provider::GROUP,
+    proxy::GROUP,
+    rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,
+    reporting::GROUP,
+    roi::GROUP,
     router::GROUP,
     sdk::GROUP,
+    secret_managers::GROUP,
     secrets::GROUP,
     server::GROUP,
     streaming::GROUP,

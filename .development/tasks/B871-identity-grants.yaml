@@ -172,6 +172,6 @@ pitfalls:
   - A malformed alias JSON string and a malformed alias mapping follow different metadata-drop paths.
   - Empty team_id skips membership loading but does not skip the team lookup in resolve.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

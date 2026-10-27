@@ -1,0 +1,110 @@
+id: B3941
+title: New Relic AI event input and content projection
+description: >-
+  Build New Relic trace/model/usage/duration resolution and ordered request/response message
+  projections that NewRelicLogger needs to emit AI summary and message events. Preserve case-insensitive
+  traceparent header lookup with its permissive four-part parsing, fallback IDs, tool-call and
+  multimodal content serialization, and the combined live content-recording/privacy decision.
+  Implement record_content as a property that gates on both NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED
+  environment variable (default true) and turn_off_message_logging parameter, reading env at call time so UI
+  configuration changes take effect without restart. Extract trace_id through W3C traceparent header first (case-insensitive),
+  then StandardLoggingPayload.trace_id, then generated UUID; never emit span IDs from inbound parent trace.
+  Parse boolean environment variables accepting true/false, 1/0, yes/no, on/off (case-insensitive, whitespace-tolerant),
+  falling back with a warning on unrecognized values. Extract completion_id from response.id,
+  then litellm_call_id, then generated UUID. Extract vendor/provider from StandardLoggingPayload.custom_llm_provider
+  (preferred) or litellm_params.custom_llm_provider (fallback to "litellm"). Extract request and response model names
+  preferring StandardLoggingPayload.model, falling back to kwargs.model for request and response_obj.model for response.
+  Extract usage statistics (prompt_tokens, completion_tokens, total_tokens) from StandardLoggingPayload fields (preferred)
+  or response_obj.usage, defaulting to zero. Extract finish_reason from first choice in response, defaulting to "unknown".
+  Convert timestamps to epoch milliseconds through hasattr(timestamp, "timestamp") for datetime or direct float multiplication.
+  Extract duration in milliseconds from StandardLoggingPayload.response_time (converted from seconds),
+  then kwargs.llm_api_duration_ms, then calculate from start_time and end_time. Extract request parameters
+  (temperature, max_tokens) from StandardLoggingPayload.model_parameters (preferred) or kwargs.optional_params,
+  omitting absent parameters. Extract message content handling tool_calls as JSON, multimodal content (lists) as JSON,
+  None/missing as empty string, and non-string as str(). Extract all messages (request from StandardLoggingPayload.messages
+  preferred or kwargs.messages, response from response_obj.choices) with sequential numbers starting at 0,
+  role defaulting to "user"/"assistant", response.model and vendor fields on every message, and optional timestamp
+  (converted to milliseconds). Gate message content on self.record_content AND not should_redact_message_logging(kwargs),
+  so async streaming never bypasses redaction even when content recording is on.
+scope:
+  paths:
+    - crates/betterlite-logging/src/newrelic_extraction.rs
+    - crates/betterlite-logging/src/newrelic_extraction/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L144-L181
+    why: record_content property, _parse_bool_env for boolean environment resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L251-L310
+    why: _get_trace_context with W3C traceparent parsing and fallback ID generation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L312-L328
+    why: _extract_completion_id with response.id, litellm_call_id, UUID fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L330-L364
+    why: "_get_vendor and _get_model_names with StandardLoggingPayload preference."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L366-L465
+    why: >-
+      _extract_usage extracts from StandardLoggingPayload or response.usage (zeroes default);
+      _get_finish_reason from first choice (unknown default); _to_epoch_ms converts
+      datetime or float to milliseconds; _get_duration from StandardLoggingPayload.response_time
+      (seconds to ms), kwargs, or calculated from timestamps; _get_request_params extracts
+      temperature/max_tokens from model_parameters or optional_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L467-L591
+    why: "_extract_message_content and _extract_all_messages with multimodal/tool serialization, sequence numbering and privacy gating."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L41-L325
+    why: should_redact_message_logging function for privacy decision combination.
+  - url: https://w3c.github.io/trace-context/#traceparent-header
+    why: W3C traceparent header format and case-insensitive lookup convention.
+oracle_cases: []
+dod:
+  - text: record_content reads NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED at call time, returning true only when both the env var and turn_off_message_logging agree to record.
+    proof: [newrelic-extraction-tests]
+  - text: _parse_bool_env accepts true/false, 1/0, yes/no, on/off (case-insensitive and whitespace-tolerant), falls back with a warning on unrecognized values.
+    proof: [newrelic-extraction-tests]
+  - text: _get_trace_context extracts trace_id from W3C traceparent header (case-insensitive), then StandardLoggingPayload.trace_id, then generates UUID, never emitting span IDs.
+    proof: [newrelic-extraction-tests]
+  - text: _extract_completion_id extracts from response.id, then litellm_call_id, then generates UUID.
+    proof: [newrelic-extraction-tests]
+  - text: "_get_vendor and _get_model_names prefer StandardLoggingPayload fields, falling back to kwargs and response_obj."
+    proof: [newrelic-extraction-tests]
+  - text: _extract_usage returns dict with prompt_tokens, completion_tokens, total_tokens from StandardLoggingPayload (preferred) or response_obj.usage, defaulting to zero.
+    proof: [newrelic-extraction-tests]
+  - text: _get_finish_reason extracts from first choice in response, defaulting to "unknown".
+    proof: [newrelic-extraction-tests]
+  - text: "_to_epoch_ms converts datetime (via .timestamp()) or float to milliseconds; _get_duration extracts from StandardLoggingPayload.response_time (seconds to ms), kwargs.llm_api_duration_ms, or calculated from start/end time."
+    proof: [newrelic-extraction-tests]
+  - text: _get_request_params extracts temperature and max_tokens from StandardLoggingPayload.model_parameters (preferred) or kwargs.optional_params, omitting absent parameters.
+    proof: [newrelic-extraction-tests]
+  - text: "_extract_message_content handles tool_calls as JSON, multimodal content (lists) as JSON, None/missing as empty string, and non-string as str()."
+    proof: [newrelic-extraction-tests]
+  - text: "_extract_all_messages projects request messages from StandardLoggingPayload.messages (preferred) or kwargs.messages, response messages from response_obj.choices, with sequential numbering, role defaults, response.model and vendor fields on all messages, optional timestamps (in milliseconds), and content gated on self.record_content AND not should_redact_message_logging(kwargs)."
+    proof: [newrelic-extraction-tests]
+  - text: Every mutant in the extraction logic is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: newrelic-extraction-tests
+      why: extraction functions fail, do not exist, or behavior does not match the owned LiteLLM code
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(newrelic_extraction_tests_behavior)'
+deviations:
+  - what: Content is omitted (not replaced by a marker) when recording is off.
+    why: New Relic schema expects absent fields rather than placeholder strings; simplifies event structure.
+    link: null
+  - what: Span IDs are never extracted or emitted from inbound traceparent headers.
+    why: Any recoverable span ID is the caller's parent span, not betterlite's; emitting it would create incorrect parent relationships.
+    link: null
+out_of_scope:
+  - Event assembly and delivery to New Relic (B3942 owns async_log_success_event, async_log_failure_event and the NewRelic agent integration).
+  - Service failure/success event hooks (B3934 for Datadog handles adjacent-service logging; New Relic does not implement service hooks).
+  - Initialization, agent registration and version resolution (B3942 owns __init__, _get_newrelic_params, _get_litellm_version and agent lifecycle).
+  - Summary and message event recording (B3942 owns _record_summary_event and _record_message_events).
+pitfalls:
+  - Traceparent header lookup must be case-insensitive per W3C spec; use a loop or filter over lowercase keys.
+  - Boolean environment variables accept the full set (true/false, 1/0, yes/no, on/off); validate and warn on unrecognized values instead of defaulting silently.
+  - StandardLoggingPayload.messages can be a string (serialized/redacted), not always a list; only use it when isinstance(slo_messages, list).
+  - Message content gating requires BOTH self.record_content AND not should_redact_message_logging(kwargs); async streaming without this gate leaks content even when disabled.
+  - Timestamp fields (startTime, endTime) in StandardLoggingPayload are Decimal seconds; convert to milliseconds as int via _to_epoch_ms.
+  - Tool calls and multimodal content (lists) are serialized to JSON strings; fallback to str() if JSON encoding fails.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

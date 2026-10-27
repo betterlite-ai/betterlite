@@ -80,6 +80,6 @@ pitfalls:
   - The native Vertex helper rejects batch_embedding even though the Gemini helper supports batchEmbedContents.
   - Publisher embeddings keep v1 when a numeric endpoint would use the supplied v1beta1 version.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -279,6 +279,6 @@ pitfalls:
 - Response format is sniffed from the body, so an SSE content-type does not guarantee the SSE parser runs.
 - One empty Mapping in a text result list suppresses a richer structuredContent fallback.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

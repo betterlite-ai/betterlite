@@ -36,6 +36,10 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/tool_policy_request.rs
     - crates/betterlite-server/fuzz/corpus/tool_policy_request/**
     - tools/oracle/cases/management/tool-policy-routes/**
+    - tools/oracle/helpers/b062.py
+    - tools/oracle/helpers/b062/**
+    - tools/oracle/src/helpers/server/b062.rs
+    - tools/oracle/src/helpers/server/b062/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L525-L582
@@ -74,6 +78,6 @@ pitfalls:
   - A scoped output-only update removes an existing block because the branch tests only input_policy == blocked.
   - Policy refresh failure does not undo the database mutation that preceded it.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,114 @@
+id: B3888
+title: Prometheus query API and spend summaries
+description: >-
+  Port litellm/integrations/prometheus_helpers/prometheus_api.py:1-173 to Rust in
+  crates/betterlite-logging to query the configured Prometheus server for fallback
+  summaries and 30-day daily spend summaries. Preserve result order and the selected-instance
+  filter. Quote API-key PromQL string literals before building selectors to prevent injection
+  attacks, then decode bounded typed query responses.
+
+  The module reads PROMETHEUS_URL and PROMETHEUS_SELECTED_INSTANCE from environment variables
+  via B002's get_secret resolution. Four async functions and one check function interact with
+  Prometheus: is_prometheus_connected returns true iff PROMETHEUS_URL is configured;
+  get_metric_from_prometheus queries a single metric name over the last 24 hours;
+  get_fallback_metric_from_prometheus queries both successful and failed fallback metrics
+  and returns a formatted text summary; get_daily_spend_from_prometheus queries per-key or
+  global spend over the last 30 days with daily granularity (86400-second step).
+
+  Preserve the source's first-sample selection (result.values[0]) and its successful-fallback
+  wording even while querying the failed-fallback series (litellm_deployment_failed_fallbacks_total
+  is queried, but the message still reads "successful fallback requests"). Three typed
+  response records (PrometheusRangeSample, PrometheusQueryData, PrometheusQueryResponse) decode
+  matrix-format query responses and handle empty/error cases. The _quote_promql_string_literal
+  function renders API keys and other user values as PromQL double-quoted string literals following
+  Go escape rules, preventing injection through label selectors on metrics like hashed_api_key
+  filters in spend queries.
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_query.rs
+    - crates/betterlite-logging/src/prometheus_query/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L27-L40
+    why: PrometheusRangeSample, PrometheusQueryData, PrometheusQueryResponse typed models for matrix-format responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L47-L62
+    why: get_metric_from_prometheus function querying a single metric over 24 hours.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L65-L97
+    why: get_fallback_metric_from_prometheus querying successful and failed fallback totals with result selection and formatting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L100-L103
+    why: is_prometheus_connected checking whether PROMETHEUS_URL is set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L106-L121
+    why: _quote_promql_string_literal escaping PromQL string literals with Go rules to prevent injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L124-L173
+    why: get_daily_spend_from_prometheus querying per-key and global spend over 30 days with 1-day granularity.
+  - url: https://prometheus.io/docs/prometheus/latest/querying/basics/
+    why: PromQL query API format and escape rules for string literals.
+dod:
+  - text: PrometheusRangeSample, PrometheusQueryData and PrometheusQueryResponse decode Prometheus matrix-format
+      responses with metric labels and timestamp/value pairs, with invalid/missing fields handled per serde defaults.
+    proof: [prometheus-response-records-tests]
+  - text: >-
+      is_prometheus_connected() returns true iff PROMETHEUS_URL is set (non-null).
+    proof: [prometheus-connected-tests]
+  - text: >-
+      get_metric_from_prometheus(metric_name: &str) queries {PROMETHEUS_URL}/api/v1/query with
+      the metric name in a 24-hour range selector, returns the result list, and raises if PROMETHEUS_URL is not set.
+    proof: [get-metric-query-tests]
+  - text: >-
+      get_fallback_metric_from_prometheus() queries both litellm_deployment_successful_fallbacks_total
+      and litellm_deployment_failed_fallbacks_total, selects the first value from each result
+      (result.values[0]), filters by PROMETHEUS_SELECTED_INSTANCE if set, and returns a text summary
+      formatted as "`<value> successful fallback requests` with primary model=`<primary>` -> fallback model=`<fallback>`"
+      for each result, preserving the literal string "successful fallback requests" for both metrics.
+    proof: [fallback-metric-formatting-tests]
+  - text: >-
+      _quote_promql_string_literal(value: &str) renders value as a PromQL double-quoted string literal
+      following Go escape rules: backslashes and quotes are escaped with backslash, control characters
+      use Go escape sequences (\n, \t, etc.) or \uNNNN, and the returned string includes the surrounding quotes.
+    proof: [promql-string-escaping-tests]
+  - text: >-
+      get_daily_spend_from_prometheus(api_key: Option<&str>) queries {PROMETHEUS_URL}/api/v1/query_range
+      over the last 30 days with 1-day granularity (step=86400), querying either
+      "sum(delta(litellm_spend_metric_total[1d]))" for global spend or
+      "sum(delta(litellm_spend_metric_total{hashed_api_key=<quoted_key>}[1d]))" for per-key spend,
+      returns daily spend records with ISO 8601 timestamps and float spend values, and raises if PROMETHEUS_URL is not set.
+    proof: [daily-spend-query-tests]
+checks:
+  optional: []
+  commands:
+    - id: prometheus-response-records-tests
+      why: Response record deserialization does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_query::response_records::/) - test(/replays_the_/)'
+    - id: prometheus-connected-tests
+      why: is_prometheus_connected does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_query::is_connected::/) - test(/replays_the_/)'
+    - id: get-metric-query-tests
+      why: get_metric_from_prometheus does not query correctly or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_query::get_metric::/) - test(/replays_the_/)'
+    - id: fallback-metric-formatting-tests
+      why: get_fallback_metric_from_prometheus does not format results correctly or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_query::fallback_metric::/) - test(/replays_the_/)'
+    - id: promql-string-escaping-tests
+      why: PromQL string literal escaping does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_query::promql_escaping::/) - test(/replays_the_/)'
+    - id: daily-spend-query-tests
+      why: get_daily_spend_from_prometheus does not query correctly or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_query::daily_spend::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: betterlite response records use serde to handle unknown fields from Prometheus, silently ignoring any extra fields in the JSON response.
+    why: The source does not enforce extra='forbid' on its Pydantic models, so unknown fields are silently accepted. Betterlite preserves this behavior through serde's default field handling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L27-L40
+out_of_scope: []
+
+pitfalls:
+  - The failed-fallback metric (litellm_deployment_failed_fallbacks_total) is queried alongside the successful-fallback
+      metric, but the source preserves the literal string "successful fallback requests" in both result summaries.
+  - PromQL string literals follow Go escape rules, not JSON; _quote_promql_string_literal uses Go rules to prevent label-selector injection when api_key or other user values are embedded in queries.
+  - get_fallback_metric_from_prometheus selects the first sample value (result.values[0]) only; if result.values is empty, that sample index is undefined and the implementation must handle empty metric results safely.
+  - PROMETHEUS_SELECTED_INSTANCE filters results by the instance label; when set and the instance label does not match, the result is skipped and no summary is appended for that metric.
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
