@@ -79,44 +79,44 @@ fn convert_params<L>(params: CacheParams, lookup: &L) -> Result<Settings, Config
 where
     L: EnvironmentLookup,
 {
-        let bucket_name = params
-            .bucket_name
-            .ok_or_else(|| ConfigError::MissingEnvironment {
-                variable: "s3_bucket_name".to_owned(),
-                path: "litellm_settings.cache_params.s3_bucket_name".to_owned(),
-            })
-            .and_then(|value| {
-                resolve_string(
-                    value,
-                    "litellm_settings.cache_params.s3_bucket_name",
-                    lookup,
-                )
-            })?;
-        Ok(Settings {
-            bucket_name,
-            region_name: params.region_name,
-            api_version: params.api_version,
-            use_ssl: params.use_ssl,
-            verify: params.verify,
-            endpoint_url: params.endpoint_url,
-            aws_access_key_id: resolve_optional_secret(
-                params.aws_access_key_id,
-                "litellm_settings.cache_params.s3_aws_access_key_id",
-                lookup,
-            )?,
-            aws_secret_access_key: resolve_optional_secret(
-                params.aws_secret_access_key,
-                "litellm_settings.cache_params.s3_aws_secret_access_key",
-                lookup,
-            )?,
-            aws_session_token: resolve_optional_secret(
-                params.aws_session_token,
-                "litellm_settings.cache_params.s3_aws_session_token",
-                lookup,
-            )?,
-            config: params.config,
-            path: params.path,
+    let bucket_name = params
+        .bucket_name
+        .ok_or_else(|| ConfigError::MissingEnvironment {
+            variable: "s3_bucket_name".to_owned(),
+            path: "litellm_settings.cache_params.s3_bucket_name".to_owned(),
         })
+        .and_then(|value| {
+            resolve_string(
+                value,
+                "litellm_settings.cache_params.s3_bucket_name",
+                lookup,
+            )
+        })?;
+    Ok(Settings {
+        bucket_name,
+        region_name: params.region_name,
+        api_version: params.api_version,
+        use_ssl: params.use_ssl,
+        verify: params.verify,
+        endpoint_url: params.endpoint_url,
+        aws_access_key_id: resolve_optional_secret(
+            params.aws_access_key_id,
+            "litellm_settings.cache_params.s3_aws_access_key_id",
+            lookup,
+        )?,
+        aws_secret_access_key: resolve_optional_secret(
+            params.aws_secret_access_key,
+            "litellm_settings.cache_params.s3_aws_secret_access_key",
+            lookup,
+        )?,
+        aws_session_token: resolve_optional_secret(
+            params.aws_session_token,
+            "litellm_settings.cache_params.s3_aws_session_token",
+            lookup,
+        )?,
+        config: params.config,
+        path: params.path,
+    })
 }
 
 fn resolve_optional_secret<L>(
