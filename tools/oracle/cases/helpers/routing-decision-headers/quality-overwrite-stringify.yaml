@@ -1,0 +1,9 @@
+kind: helper
+name: quality-overwrite-stringify
+call:
+  routing_decision_headers:
+    function: quality
+    headers: {x-litellm-quality-router-model: old}
+    request: {metadata: {quality_router_decision: {routed_model: new, complexity_tier: 2}}}
+env: {}
+compare: {ignore: []}

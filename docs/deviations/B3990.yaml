@@ -1,0 +1,11 @@
+task: B3990
+deviations:
+  - what: An S3 queue, upload or retry-age setting above the 64-bit integer range, such as 100000000000000000000, falls back with a warning; LiteLLM accepts any size of integer.
+    why: Queue sizes, upload widths and retry ages are machine integers in betterlite, and no real setting comes near that range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L52-L68
+  - what: A negative DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY falls back to 200 with a warning, and only ASCII digits are read; LiteLLM keeps the negative ceiling and also reads other Unicode digits through int().
+    why: A negative concurrency ceiling has no meaning, and the ceiling is an unsigned count in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L64
+  - what: The batch element's content_type is one of application/json and application/x-ndjson, so loading an element with any other content type fails; LiteLLM's model takes any string.
+    why: Those are the only two content types the S3 logger writes, and the element never comes from user input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/s3_v2.py#L8-L18
