@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-name-collision-suffix
+call: {anthropic_tool_names: {function: map, names: ["foo/bar", "foo_bar", "foo?bar", "foo/bar"]}}
+env: {}
+compare: {ignore: []}

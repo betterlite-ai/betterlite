@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-request-seed
+call: {anthropic_tool_names: {function: request, params: {tools: [{type: custom, name: "bad/name"}], tool_choice: {type: tool, name: "bad/name"}}}}
+env: {}
+compare: {ignore: []}

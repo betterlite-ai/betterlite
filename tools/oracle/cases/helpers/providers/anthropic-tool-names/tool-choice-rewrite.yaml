@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-tool-choice-rewrite
+call: {anthropic_tool_names: {function: request, params: {tools: [{type: custom, name: "bad/name", description: keep}, {type: web_search, name: "bad/name"}, {type: custom, description: nameless}], tool_choice: {type: tool, name: "bad/name", extra: true}}}}
+env: {}
+compare: {ignore: []}

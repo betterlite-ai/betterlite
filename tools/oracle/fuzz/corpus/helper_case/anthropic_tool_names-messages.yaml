@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-messages-seed
+call: {anthropic_tool_names: {function: messages, messages: [{function_call: {name: "bad/name"}}], forward: {"bad/name": bad_name}}}
+env: {}
+compare: {ignore: []}
