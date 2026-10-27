@@ -370,6 +370,13 @@ dependencies = [
 [[package]]
 name = "betterlite-a2a"
 version = "0.1.0"
+dependencies = [
+ "betterlite-core",
+ "rstest",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
 
 [[package]]
 name = "betterlite-anthropic"
@@ -454,6 +461,7 @@ dependencies = [
  "rstest",
  "secrecy",
  "serde",
+ "serde-inline-default",
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
@@ -539,11 +547,15 @@ version = "0.1.0"
 dependencies = [
  "futures-core",
  "futures-util",
+ "hex",
+ "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "similar 3.2.0",
  "thiserror",
  "tokio",
 ]
@@ -591,6 +603,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "chrono",
+ "hex",
  "parquet-format-safe",
  "parquet2",
  "regex",
@@ -598,9 +611,13 @@ dependencies = [
  "rust_decimal",
  "ryu",
  "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
  "strum",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "unicode-properties",
 ]
 
@@ -653,6 +670,13 @@ dependencies = [
 [[package]]
 name = "betterlite-openapi"
 version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-oracle"
@@ -673,9 +697,11 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-openapi",
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-rate-limit",
+ "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
  "chrono",
@@ -800,6 +826,13 @@ dependencies = [
 [[package]]
 name = "betterlite-router"
 version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "unicode-general-category",
+]
 
 [[package]]
 name = "betterlite-routes"
@@ -1032,6 +1065,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
  "tinyvec",
+]
+
+[[package]]
+name = "bstr"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
+dependencies = [
+ "memchr",
+ "serde_core",
 ]
 
 [[package]]
@@ -2340,7 +2383,7 @@ checksum = "b67d3d2e287e4b86c10b3f3b641033d1f89b74bdb39d05f34952e2b9a6fe21cd"
 dependencies = [
  "once_cell",
  "serde",
- "similar",
+ "similar 2.7.0",
  "tempfile",
 ]
 
@@ -3819,6 +3862,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
+name = "similar"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f66ca1f7aca2474dc10c942eb22feffc897735f54cd1db90138c2fddb490987"
+dependencies = [
+ "bstr",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4476,6 +4528,12 @@ name = "unicode-bidi"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+
+[[package]]
+name = "unicode-general-category"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
 
 [[package]]
 name = "unicode-ident"

@@ -1,0 +1,8 @@
+kind: helper
+name: litellm-metadata-null-wins
+call:
+  routing_decision_headers:
+    function: complexity
+    request: {litellm_metadata: null, metadata: {routing_decision: {router_type: complexity, tier: high}}}
+env: {}
+compare: {ignore: []}

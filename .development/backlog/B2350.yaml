@@ -1,14 +1,14 @@
 id: B2350
 milestone: M4 keys, spend and management
 title: Routing decision response headers
-status: todo
+status: done
 depends_on: [B171, B856]
 file: tasks/B2350-routing-decision-headers.yaml
 covers:
   - "litellm/router_utils/add_retry_fallback_headers.py"
 parent: B016
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 221
