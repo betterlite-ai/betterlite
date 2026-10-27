@@ -28,7 +28,3 @@ compare:
   ignore:
     - {pointer: /0/created, why: LiteLLM timestamps stream chunks}
     - {pointer: /1/created, why: LiteLLM timestamps stream chunks}
-    - {pointer: /0/choices/0/delta/tool_calls/0/function/arguments, why: Provider tool arguments are relayed as sent}
-    - {pointer: /0/choices/0/finish_reason, why: Provider null is relayed as sent}
-    - {pointer: /0/model, why: Provider model is relayed as sent}
-    - {pointer: /1/model, why: Provider model is relayed as sent}

@@ -195,3 +195,29 @@ async fn refuses_calls_it_cannot_make(
         .unwrap();
     assert!(error.to_string().contains(message), "{error}");
 }
+
+#[rstest]
+#[case::default(r#"{"messages":[],"stream":true}"#, Some(true))]
+#[case::enabled(
+    r#"{"messages":[],"stream":true,"stream_options":{"include_usage":true}}"#,
+    Some(true)
+)]
+#[case::disabled(
+    r#"{"messages":[],"stream":true,"stream_options":{"include_usage":false}}"#,
+    Some(false)
+)]
+#[case::buffered(r#"{"messages":[]}"#, None)]
+fn stream_options_preserve_caller(#[case] input: &str, #[case] usage: Option<bool>) {
+    let chat = executor("[]", 1);
+    let request = ChatRequest::parse(input.as_bytes()).unwrap();
+    let body = chat.body(&request, "up").unwrap();
+    assert_eq!(
+        body.get("stream"),
+        request.stream.then_some(&Value::Bool(true))
+    );
+    let actual = body
+        .get("stream_options")
+        .and_then(|options| options.get("include_usage"))
+        .and_then(Value::as_bool);
+    assert_eq!(actual, usage);
+}

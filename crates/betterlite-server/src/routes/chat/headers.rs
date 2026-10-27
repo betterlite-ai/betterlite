@@ -53,6 +53,8 @@ pub(super) fn stream_headers(upstream: &StreamResponse, call_id: &str) -> Header
         "content-type",
         HeaderValue::from_static("text/event-stream; charset=utf-8"),
     );
+    headers.insert("cache-control", HeaderValue::from_static("no-cache"));
+    headers.insert("x-accel-buffering", HeaderValue::from_static("no"));
     headers
 }
 

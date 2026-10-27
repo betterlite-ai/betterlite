@@ -1,4 +1,17 @@
+pub mod chunk;
+
 use std::mem;
+use std::num::NonZeroUsize;
+
+use thiserror::Error;
+
+const MAX_BUFFER_BYTES: usize = 0x0010_0000;
+
+#[derive(Debug, Error)]
+pub enum SseError {
+    #[error("the provider SSE event exceeds the byte limit")]
+    TooLarge,
+}
 
 #[derive(Debug, Default)]
 pub struct SseParser {
@@ -6,17 +19,20 @@ pub struct SseParser {
 }
 
 impl SseParser {
-    pub fn push(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
+    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, SseError> {
+        if self.buffer.len().saturating_add(bytes.len()) > MAX_BUFFER_BYTES {
+            return Err(SseError::TooLarge);
+        }
         self.buffer.extend_from_slice(bytes);
         let mut events = Vec::new();
         while let Some(end) = event_end(&self.buffer) {
-            let event = self.buffer.drain(..end).collect::<Vec<_>>();
+            let event = self.buffer.drain(..end.get()).collect::<Vec<_>>();
             let payload = event_payload(&event);
             if !payload.is_empty() {
                 events.push(payload);
             }
         }
-        events
+        Ok(events)
     }
 
     pub fn finish(&mut self) -> Vec<Vec<u8>> {
@@ -30,16 +46,31 @@ impl SseParser {
     }
 }
 
-fn event_end(buffer: &[u8]) -> Option<usize> {
-    let line_end = buffer
-        .windows(2)
-        .position(|window| window == b"\n\n")
-        .and_then(|position| position.checked_add(2));
-    if line_end.is_some() {
-        return line_end;
+fn event_end(buffer: &[u8]) -> Option<NonZeroUsize> {
+    let mut line_start = 0;
+    let mut skip_lf = false;
+    for (position, byte) in buffer.iter().enumerate() {
+        if skip_lf && *byte == b'\n' {
+            line_start = position.checked_add(1)?;
+            skip_lf = false;
+            continue;
+        }
+        skip_lf = *byte == b'\r';
+        if !matches!(*byte, b'\r' | b'\n') {
+            continue;
+        }
+        let end = position.checked_add(1)?;
+        if position == line_start {
+            let length = if skip_lf && buffer.get(end) == Some(&b'\n') {
+                end.checked_add(1)?
+            } else {
+                end
+            };
+            return NonZeroUsize::new(length);
+        }
+        line_start = end;
     }
-    let position = buffer.windows(4).position(|window| window == b"\r\n\r\n")?;
-    position.checked_add(4)
+    None
 }
 
 fn event_payload(event: &[u8]) -> Vec<u8> {

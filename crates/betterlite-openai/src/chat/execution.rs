@@ -102,26 +102,9 @@ impl ChatExecutor {
         if request.stream {
             return Err(ChatError::Streaming);
         }
-        let (model, api_key) = servable(deployment)?;
-        let body = serde_json::to_vec(&self.body(request, model)?)
-            .map_err(|source| ChatError::Encode { source })?;
+        let post = self.post(deployment, request)?;
         let started = Instant::now();
-        let upstream = self
-            .client
-            .post_json(JsonPost {
-                url: deployment.endpoint.clone(),
-                bearer: api_key,
-                headers: deployment
-                    .organization
-                    .iter()
-                    .map(|organization| ("OpenAI-Organization", organization.clone()))
-                    .collect(),
-                body,
-                timeout: deployment.timeout,
-                body_limit: RESPONSE_LIMIT,
-            })
-            .await
-            .map_err(http_failure)?;
+        let upstream = self.client.post_json(post).await.map_err(http_failure)?;
         let upstream_time = started.elapsed();
         if upstream.status >= 400 {
             return Err(ChatError::Provider {
@@ -142,26 +125,40 @@ impl ChatExecutor {
         deployment: &ChatDeployment,
         request: &ChatRequest,
     ) -> Result<StreamResponse, ChatError> {
+        let post = self.post(deployment, request)?;
+        let response = self.client.post_stream(post).await.map_err(http_failure)?;
+        if !response.status().is_success() {
+            let upstream = StreamResponse::from(response)
+                .buffered(RESPONSE_LIMIT)
+                .await
+                .map_err(http_failure)?;
+            return Err(ChatError::Provider {
+                response: Box::new(upstream),
+            });
+        }
+        Ok(StreamResponse::from(response))
+    }
+
+    fn post<'key>(
+        &self,
+        deployment: &'key ChatDeployment,
+        request: &ChatRequest,
+    ) -> Result<JsonPost<'key>, ChatError> {
         let (model, api_key) = servable(deployment)?;
         let body = serde_json::to_vec(&self.body(request, model)?)
             .map_err(|source| ChatError::Encode { source })?;
-        let response = self
-            .client
-            .post_stream(JsonPost {
-                url: deployment.endpoint.clone(),
-                bearer: api_key,
-                headers: deployment
-                    .organization
-                    .iter()
-                    .map(|organization| ("OpenAI-Organization", organization.clone()))
-                    .collect(),
-                body,
-                timeout: deployment.timeout,
-                body_limit: RESPONSE_LIMIT,
-            })
-            .await
-            .map_err(http_failure)?;
-        Ok(StreamResponse::from(response))
+        Ok(JsonPost {
+            url: deployment.endpoint.clone(),
+            bearer: api_key,
+            headers: deployment
+                .organization
+                .iter()
+                .map(|organization| ("OpenAI-Organization", organization.clone()))
+                .collect(),
+            body,
+            timeout: deployment.timeout,
+            body_limit: RESPONSE_LIMIT,
+        })
     }
 
     fn body(&self, request: &ChatRequest, model: &str) -> Result<Map<String, Value>, ChatError> {
