@@ -1,1 +1,220 @@
+use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
+#[expect(
+    clippy::disallowed_types,
+    reason = "session tags and HTTP header values must preserve unvalidated input"
+)]
+use serde_json::Value;
 
+#[expect(
+    clippy::disallowed_types,
+    reason = "session tags and HTTP header values must preserve unvalidated input"
+)]
+type JsonValue = Value;
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AwsInput {
+    pub aws_access_key_id: Option<String>,
+    pub aws_secret_access_key: Option<String>,
+    pub aws_session_token: Option<String>,
+    pub aws_region_name: Option<String>,
+    pub aws_session_name: Option<String>,
+    pub aws_profile_name: Option<String>,
+    pub aws_role_name: Option<String>,
+    pub aws_web_identity_token: Option<String>,
+    pub aws_sts_endpoint: Option<String>,
+    pub aws_external_id: Option<String>,
+    pub aws_role_arn: Option<String>,
+    pub aws_web_identity_token_file: Option<String>,
+    pub aws_bearer_token_bedrock: Option<String>,
+    pub aws_session_tags: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AwsSettings {
+    pub aws_access_key_id: Option<SecretString>,
+    pub aws_secret_access_key: Option<SecretString>,
+    pub aws_session_token: Option<SecretString>,
+    pub aws_region_name: Option<String>,
+    pub aws_session_name: Option<String>,
+    pub aws_profile_name: Option<String>,
+    pub aws_role_name: Option<String>,
+    pub aws_web_identity_token: Option<SecretString>,
+    pub aws_sts_endpoint: Option<String>,
+    pub aws_external_id: Option<SecretString>,
+    pub aws_role_arn: Option<String>,
+    pub aws_web_identity_token_file: Option<String>,
+    pub aws_bearer_token_bedrock: Option<SecretString>,
+    pub aws_session_tags: Option<JsonValue>,
+}
+
+pub trait Environment {
+    fn get(&self, name: &str) -> Option<String>;
+}
+impl Environment for BTreeMap<String, String> {
+    fn get(&self, name: &str) -> Option<String> {
+        self.get(name).cloned()
+    }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the AWS snapshot has one field per LiteLLM input"
+)]
+pub fn snapshot<E>(deployment: &AwsInput, module: &AwsInput, environment: &E) -> AwsSettings
+where
+    E: Environment,
+{
+    let text = |deployment_value: &Option<String>, module_value: &Option<String>, name: &str| {
+        deployment_value
+            .clone()
+            .or_else(|| module_value.clone())
+            .or_else(|| environment.get(name))
+    };
+    let secret = |deployment_value: &Option<String>, module_value: &Option<String>, name: &str| {
+        text(deployment_value, module_value, name).map(SecretString::from)
+    };
+    AwsSettings {
+        aws_access_key_id: secret(
+            &deployment.aws_access_key_id,
+            &module.aws_access_key_id,
+            "AWS_ACCESS_KEY_ID",
+        ),
+        aws_secret_access_key: secret(
+            &deployment.aws_secret_access_key,
+            &module.aws_secret_access_key,
+            "AWS_SECRET_ACCESS_KEY",
+        ),
+        aws_session_token: secret(
+            &deployment.aws_session_token,
+            &module.aws_session_token,
+            "AWS_SESSION_TOKEN",
+        ),
+        aws_region_name: text(
+            &deployment.aws_region_name,
+            &module.aws_region_name,
+            "AWS_REGION_NAME",
+        ),
+        aws_session_name: text(
+            &deployment.aws_session_name,
+            &module.aws_session_name,
+            "AWS_SESSION_NAME",
+        ),
+        aws_profile_name: text(
+            &deployment.aws_profile_name,
+            &module.aws_profile_name,
+            "AWS_PROFILE_NAME",
+        ),
+        aws_role_name: text(
+            &deployment.aws_role_name,
+            &module.aws_role_name,
+            "AWS_ROLE_NAME",
+        ),
+        aws_web_identity_token: secret(
+            &deployment.aws_web_identity_token,
+            &module.aws_web_identity_token,
+            "AWS_WEB_IDENTITY_TOKEN",
+        ),
+        aws_sts_endpoint: text(
+            &deployment.aws_sts_endpoint,
+            &module.aws_sts_endpoint,
+            "AWS_STS_ENDPOINT",
+        ),
+        aws_external_id: secret(
+            &deployment.aws_external_id,
+            &module.aws_external_id,
+            "AWS_EXTERNAL_ID",
+        ),
+        aws_role_arn: text(
+            &deployment.aws_role_arn,
+            &module.aws_role_arn,
+            "AWS_ROLE_ARN",
+        ),
+        aws_web_identity_token_file: text(
+            &deployment.aws_web_identity_token_file,
+            &module.aws_web_identity_token_file,
+            "AWS_WEB_IDENTITY_TOKEN_FILE",
+        ),
+        aws_bearer_token_bedrock: secret(
+            &deployment.aws_bearer_token_bedrock,
+            &module.aws_bearer_token_bedrock,
+            "AWS_BEARER_TOKEN_BEDROCK",
+        ),
+        aws_session_tags: deployment
+            .aws_session_tags
+            .clone()
+            .or_else(|| module.aws_session_tags.clone()),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ErrorResponse {
+    pub status: u16,
+    pub headers: BTreeMap<String, String>,
+    pub request: String,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct BedrockError {
+    pub status: u16,
+    pub message: String,
+    pub headers: Option<BTreeMap<String, String>>,
+    pub response: Option<ErrorResponse>,
+}
+
+#[must_use]
+pub fn synthesize_error_response(
+    status: u16,
+    headers: Option<&BTreeMap<String, JsonValue>>,
+    request: Option<String>,
+) -> Option<ErrorResponse> {
+    let provided_headers = headers.filter(|provided| !provided.is_empty())?;
+    let filtered = provided_headers
+        .iter()
+        .filter_map(|(key, header_value)| match header_value {
+            Value::String(text) => Some((key.clone(), text.clone())),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::Array(_)
+            | Value::Object(_) => None,
+        })
+        .collect();
+    Some(ErrorResponse {
+        status,
+        headers: filtered,
+        request: request.unwrap_or_else(|| "POST https://docs.litellm.ai/docs".to_owned()),
+    })
+}
+
+#[must_use]
+pub fn bedrock_error(
+    status: u16,
+    message: String,
+    headers: Option<BTreeMap<String, JsonValue>>,
+    request: Option<String>,
+) -> BedrockError {
+    let response = synthesize_error_response(status, headers.as_ref(), request);
+    let filtered_headers = headers.map(|values| {
+        values
+            .into_iter()
+            .filter_map(|(key, header_value)| match header_value {
+                Value::String(text) => Some((key, text)),
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => None,
+            })
+            .collect()
+    });
+    BedrockError {
+        status,
+        message,
+        headers: filtered_headers,
+        response,
+    }
+}
+
+#[cfg(test)]
+mod tests;

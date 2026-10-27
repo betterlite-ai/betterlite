@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-settings-deployment
+call:
+  bedrock_settings:
+    deployment:
+      aws_region_name: deployment-region
+      aws_bearer_token_bedrock: ""
+    litellm_settings:
+      aws_region_name: module-region
+    env:
+      AWS_REGION_NAME: environment-region
+env: {}
+compare:
+  ignore: []

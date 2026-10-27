@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-settings-session-tags
+call:
+  bedrock_settings:
+    deployment:
+      aws_session_tags:
+        - Key: 1
+        - Value: false
+    litellm_settings: {}
+    env: {}
+env: {}
+compare:
+  ignore: []

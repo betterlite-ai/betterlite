@@ -1,0 +1,20 @@
+litellm_settings:
+  # AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME
+  # AWS_SESSION_NAME AWS_PROFILE_NAME AWS_ROLE_NAME AWS_WEB_IDENTITY_TOKEN
+  # AWS_STS_ENDPOINT AWS_EXTERNAL_ID AWS_ROLE_ARN AWS_WEB_IDENTITY_TOKEN_FILE AWS_BEARER_TOKEN_BEDROCK
+  aws_access_key_id: access
+  aws_secret_access_key: secret
+  aws_session_token: token
+  aws_region_name: region
+  aws_session_name: session
+  aws_profile_name: profile
+  aws_role_name: role
+  aws_web_identity_token: web
+  aws_sts_endpoint: https://sts.example
+  aws_external_id: external
+  aws_role_arn: arn:aws:iam::1:role/test
+  aws_web_identity_token_file: /var/run/token
+  aws_bearer_token_bedrock: bearer
+  aws_session_tags:
+    - Key: tag
+      Value: value
