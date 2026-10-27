@@ -938,6 +938,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "uuid",
  "which",
 ]
 
