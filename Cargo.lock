@@ -454,6 +454,7 @@ dependencies = [
  "rstest",
  "secrecy",
  "serde",
+ "serde-inline-default",
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
