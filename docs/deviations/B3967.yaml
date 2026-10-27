@@ -1,5 +1,5 @@
 task: B3967
 deviations:
-  - what: Lunary and W&B SDK calls are represented by injected projection/sink contracts rather than executing Python SDKs.
+  - what: Lunary and W&B SDK calls are represented by typed projection records rather than executing Python SDKs.
     why: betterlite has no concrete Python SDK bridge or native execution contract for these external calls.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lunary.py#L154-L179

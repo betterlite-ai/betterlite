@@ -1,157 +1,207 @@
-use serde_json::value::{Map, Value};
-use std::time::Duration;
+use super::wire::{Choice, KnownObject, Object, Request, Response};
+use rust_decimal::{Decimal, RoundingStrategy};
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Result {
-    pub inputs: Map<String, Value>,
-    pub outputs: Map<String, Value>,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TraceResult {
+    pub inputs: BTreeMap<String, String>,
+    pub outputs: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Span {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Span<Fields> {
     pub name: String,
-    pub attributes: Value,
+    pub attributes: Response<Fields>,
     pub start_time_ms: i64,
     pub end_time_ms: i64,
     pub span_kind: String,
-    pub results: Vec<Result>,
+    pub results: Vec<TraceResult>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TraceTree {
-    pub span: Span,
-    pub model_dict: Value,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Model<RequestFields, ResponseFields> {
+    pub request: Request<RequestFields>,
+    pub response: Response<ResponseFields>,
+    #[serde(rename = "_kind")]
+    pub kind: String,
 }
 
-pub struct OpenAIRequestResponseResolver;
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TraceTree<RequestFields, ResponseFields> {
+    pub root_span: Span<ResponseFields>,
+    pub model_dict: Model<RequestFields, ResponseFields>,
+}
 
-impl OpenAIRequestResponseResolver {
-    #[must_use]
-    pub fn resolve(request: &Value, response: &Value, time_elapsed: f64) -> Option<TraceTree> {
-        let object = response.get("object")?.as_str()?;
-        let results = match object {
-            "edit" => Self::edit_results(request, response)?,
-            "text_completion" => Self::completion_results(request, response)?,
-            "chat.completion" => Self::chat_results(request, response)?,
-            _ => return None,
-        };
-        Self::results_to_trace_tree(request, response, results, time_elapsed)
+#[derive(Debug, Error)]
+pub enum ResolveError {
+    #[error("missing {field} in analytics request or response")]
+    Missing { field: &'static str },
+    #[error("analytics timestamp is out of range")]
+    Timestamp,
+    #[error("cannot convert analytics timestamp")]
+    Conversion {
+        #[source]
+        source: rust_decimal::Error,
+    },
+    #[error("cannot format analytics messages")]
+    Format {
+        #[source]
+        source: fmt::Error,
+    },
+}
+
+pub fn resolve<RequestFields, ResponseFields>(
+    request: &Request<RequestFields>,
+    response: &Response<ResponseFields>,
+    elapsed: Decimal,
+) -> Option<TraceTree<RequestFields, ResponseFields>>
+where
+    RequestFields: Clone,
+    ResponseFields: Clone,
+{
+    let object = match &response.object {
+        Object::Known(object) => *object,
+        Object::Unknown(name) => {
+            tracing::debug!(object = name, "Unknown OpenAI response object");
+            return None;
+        }
+    };
+    match project(request, response, elapsed, object) {
+        Ok(trace) => Some(trace),
+        Err(error) => {
+            tracing::warn!(%error, "Failed to resolve request/response");
+            None
+        }
     }
+}
 
-    fn edit_results(request: &Value, response: &Value) -> Option<Vec<Result>> {
-        let instruction = request.get("instruction")?;
-        let input = request.get("input")?;
-        let request_text = format!(
-            "\n\n**Instruction**: {}\n\n**Input**: {}\n",
-            display_value(instruction),
-            display_value(input)
-        );
-        Self::text_results(response, "Edited", &request_text)
-    }
-
-    fn completion_results(request: &Value, response: &Value) -> Option<Vec<Result>> {
-        let prompt = request.get("prompt")?;
-        let request_text = format!("\n\n**Prompt**: {}\n", display_value(prompt));
-        Self::text_results(response, "Completion", &request_text)
-    }
-
-    fn text_results(response: &Value, label: &str, request_text: &str) -> Option<Vec<Result>> {
-        let choices = response.get("choices")?.as_array()?;
-        Some(
-            choices
-                .iter()
-                .filter_map(|choice| {
-                    let text = choice.get("text")?;
-                    Some(result(
-                        request_text.to_owned(),
-                        format!("\n\n**{label}**: {}\n", display_value(text)),
-                    ))
-                })
-                .collect(),
-        )
-    }
-
-    fn chat_results(request: &Value, response: &Value) -> Option<Vec<Result>> {
-        let messages = request.get("messages")?.as_array()?;
-        let request_text = messages
-            .iter()
-            .filter_map(|message| {
-                Some(format!(
-                    "\n\n**{}**: {}\n",
-                    display_value(message.get("role")?),
-                    display_value(message.get("content")?)
-                ))
+fn project<RequestFields, ResponseFields>(
+    request: &Request<RequestFields>,
+    response: &Response<ResponseFields>,
+    elapsed: Decimal,
+    object: KnownObject,
+) -> Result<TraceTree<RequestFields, ResponseFields>, ResolveError>
+where
+    RequestFields: Clone,
+    ResponseFields: Clone,
+{
+    let (request_text, style) = format_request(request, object)?;
+    let results = response
+        .choices
+        .iter()
+        .map(|choice| {
+            let text = format_choice(choice, &style)?;
+            Ok(TraceResult {
+                inputs: BTreeMap::from([("request".to_owned(), request_text.clone())]),
+                outputs: BTreeMap::from([("response".to_owned(), text)]),
             })
-            .collect::<String>();
-        let choices = response.get("choices")?.as_array()?;
-        Some(
-            choices
-                .iter()
-                .filter_map(|choice| {
-                    let message = choice.get("message")?;
-                    Some(result(
-                        request_text.clone(),
-                        format!(
-                            "\n\n**{}**: {}\n",
-                            display_value(message.get("role")?),
-                            display_value(message.get("content")?)
-                        ),
-                    ))
-                })
-                .collect(),
-        )
-    }
-
-    fn results_to_trace_tree(
-        request: &Value,
-        response: &Value,
-        results: Vec<Result>,
-        time_elapsed: f64,
-    ) -> Option<TraceTree> {
-        let created = response.get("created")?.as_f64()?;
-        let start_time_ms = seconds_to_millis(created)?;
-        let elapsed_ms = seconds_to_millis(time_elapsed)?;
-        let end_time_ms = start_time_ms.checked_add(elapsed_ms)?;
-        let model = response
-            .get("model")
-            .and_then(Value::as_str)
-            .unwrap_or("openai");
-        let object = response.get("object")?.as_str()?;
-        let created_text = response.get("created")?.to_string();
-        let span = Span {
-            name: format!("{model}_{object}_{created_text}"),
+        })
+        .collect::<Result<Vec<_>, ResolveError>>()?;
+    let start_time_ms = milliseconds(response.created)?;
+    let end_time_ms = start_time_ms
+        .checked_add(milliseconds(elapsed)?)
+        .ok_or(ResolveError::Timestamp)?;
+    let kind = match object {
+        KnownObject::Edit => "edit",
+        KnownObject::Completion => "text_completion",
+        KnownObject::Chat => "chat.completion",
+    };
+    let model = response.model.as_deref().unwrap_or("openai");
+    Ok(TraceTree {
+        root_span: Span {
+            name: format!("{model}_{kind}_{}", response.created),
             attributes: response.clone(),
             start_time_ms,
             end_time_ms,
             span_kind: "LLM".to_owned(),
             results,
-        };
-        let mut model_dict = Map::new();
-        model_dict.insert("request".to_owned(), request.clone());
-        model_dict.insert("response".to_owned(), response.clone());
-        model_dict.insert("_kind".to_owned(), Value::String("openai".to_owned()));
-        Some(TraceTree {
-            span,
-            model_dict: Value::Object(model_dict),
-        })
+        },
+        model_dict: Model {
+            request: request.clone(),
+            response: response.clone(),
+            kind: "openai".to_owned(),
+        },
+    })
+}
+
+enum ChoiceStyle {
+    Text(&'static str),
+    Message,
+}
+
+fn format_request<Fields>(
+    request: &Request<Fields>,
+    object: KnownObject,
+) -> Result<(String, ChoiceStyle), ResolveError> {
+    match object {
+        KnownObject::Edit => {
+            let instruction = request.instruction.as_ref().ok_or(ResolveError::Missing {
+                field: "instruction",
+            })?;
+            let input = request
+                .input
+                .as_ref()
+                .ok_or(ResolveError::Missing { field: "input" })?;
+            Ok((
+                format!("\n\n**Instruction**: {instruction}\n\n**Input**: {input}\n"),
+                ChoiceStyle::Text("Edited"),
+            ))
+        }
+        KnownObject::Completion => {
+            let prompt = request
+                .prompt
+                .as_ref()
+                .ok_or(ResolveError::Missing { field: "prompt" })?;
+            Ok((
+                format!("\n\n**Prompt**: {prompt}\n"),
+                ChoiceStyle::Text("Completion"),
+            ))
+        }
+        KnownObject::Chat => {
+            let messages = request
+                .messages
+                .as_ref()
+                .ok_or(ResolveError::Missing { field: "messages" })?;
+            let mut text = String::new();
+            for message in messages {
+                fmt::write(
+                    &mut text,
+                    format_args!("\n\n**{}**: {}\n", message.role, message.content),
+                )
+                .map_err(|source| ResolveError::Format { source })?;
+            }
+            Ok((text, ChoiceStyle::Message))
+        }
     }
 }
 
-fn result(request: String, response: String) -> Result {
-    let mut inputs = Map::new();
-    inputs.insert("request".to_owned(), Value::String(request));
-    let mut outputs = Map::new();
-    outputs.insert("response".to_owned(), Value::String(response));
-    Result { inputs, outputs }
+fn format_choice(choice: &Choice, style: &ChoiceStyle) -> Result<String, ResolveError> {
+    let (label, text) = match style {
+        ChoiceStyle::Text(label) => {
+            let text = choice
+                .text
+                .as_deref()
+                .ok_or(ResolveError::Missing { field: "text" })?;
+            (*label, text)
+        }
+        ChoiceStyle::Message => {
+            let message = choice
+                .message
+                .as_ref()
+                .ok_or(ResolveError::Missing { field: "message" })?;
+            (message.role.as_str(), message.content.as_str())
+        }
+    };
+    Ok(format!("\n\n**{label}**: {text}\n"))
 }
 
-fn display_value(value: &Value) -> String {
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned)
-}
-
-fn seconds_to_millis(seconds: f64) -> Option<i64> {
-    let duration = Duration::try_from_secs_f64(seconds).ok()?;
-    i64::try_from(duration.as_millis()).ok()
+fn milliseconds(seconds: Decimal) -> Result<i64, ResolveError> {
+    let scaled = seconds
+        .checked_mul(Decimal::from(1000_u16))
+        .ok_or(ResolveError::Timestamp)?;
+    let rounded = scaled.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+    i64::try_from(rounded).map_err(|source| ResolveError::Conversion { source })
 }
