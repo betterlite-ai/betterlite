@@ -57,10 +57,7 @@ fn hoist(input: &serde_json::Value) -> serde_json::Value {
 }
 
 fn values(input: &serde_json::Value, field: &str) -> Vec<serde_json::Value> {
-    let Some(values) = input
-        .get(field)
-        .and_then(serde_json::Value::as_array)
-    else {
+    let Some(values) = input.get(field).and_then(serde_json::Value::as_array) else {
         return Vec::new();
     };
     values.clone()
