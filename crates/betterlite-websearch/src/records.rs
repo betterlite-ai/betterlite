@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use betterlite_openai::search::records::SearchResponse;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnthropicSearchQuery {
     pub query: String,
@@ -28,18 +30,6 @@ pub struct RichWebSearchInput {
     pub objective: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_queries: Option<Vec<String>>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SearchResponse {
-    pub results: Vec<SearchResult>,
-    #[serde(default)]
-    pub object: String,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub title: String,
-    pub url: String,
-    pub snippet: String,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

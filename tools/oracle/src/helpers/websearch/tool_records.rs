@@ -28,17 +28,17 @@ fn builder(function: &str) -> crate::helpers::HelperResult {
 }
 
 fn anthropic_builder() -> crate::helpers::HelperResult {
-    let tool = betterlite_websearch::tools::anthropic_tool();
+    let tool = betterlite_websearch::tools::get_litellm_web_search_tool();
     serde_json::to_value(tool).map_err(|error| helper_error(error, "Serialization"))
 }
 
 fn openai_builder() -> crate::helpers::HelperResult {
-    let tool = betterlite_websearch::tools::chat_tool();
+    let tool = betterlite_websearch::tools::openai_web_search_tool();
     serde_json::to_value(tool).map_err(|error| helper_error(error, "Serialization"))
 }
 
 fn responses_builder() -> crate::helpers::HelperResult {
-    let tool = betterlite_websearch::tools::responses_tool();
+    let tool = betterlite_websearch::tools::responses_web_search_tool();
     serde_json::to_value(tool).map_err(|error| helper_error(error, "Serialization"))
 }
 
@@ -63,7 +63,7 @@ fn detection(function: &str, tool: &betterlite_websearch::tools::Tool) -> serde_
             betterlite_websearch::tools::is_web_search_tool_responses(tool)
         ),
         "is_web_search_tool_chat_completion" => {
-            serde_json::json!(betterlite_websearch::tools::chat_completion(tool))
+            serde_json::json!(betterlite_websearch::tools::is_chat_web_search_tool(tool))
         }
         _ => serde_json::json!(betterlite_websearch::tools::is_web_search_tool(tool)),
     }

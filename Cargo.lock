@@ -1301,6 +1301,7 @@ version = "0.1.0"
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "betterlite-openai",
  "serde",
  "serde_json",
 ]

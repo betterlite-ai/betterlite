@@ -89,7 +89,7 @@ fn input_schema() -> SearchInputSchema {
     }
 }
 #[must_use]
-pub fn anthropic_tool() -> AnthropicWebSearchTool {
+pub fn get_litellm_web_search_tool() -> AnthropicWebSearchTool {
     let description = DESCRIPTION.to_owned();
     AnthropicWebSearchTool {
         name: LITELLM_WEB_SEARCH_TOOL_NAME.to_owned(),
@@ -98,7 +98,7 @@ pub fn anthropic_tool() -> AnthropicWebSearchTool {
     }
 }
 #[must_use]
-pub fn chat_tool() -> OpenAiFunctionTool {
+pub fn openai_web_search_tool() -> OpenAiFunctionTool {
     let parameters = input_schema();
     OpenAiFunctionTool {
         tool_type: "function".to_owned(),
@@ -110,7 +110,7 @@ pub fn chat_tool() -> OpenAiFunctionTool {
     }
 }
 #[must_use]
-pub fn responses_tool() -> ResponsesFunctionTool {
+pub fn responses_web_search_tool() -> ResponsesFunctionTool {
     let parameters = input_schema();
     ResponsesFunctionTool {
         tool_type: "function".to_owned(),
@@ -119,24 +119,6 @@ pub fn responses_tool() -> ResponsesFunctionTool {
         parameters,
     }
 }
-macro_rules! export_tool_builder {
-    ($name:ident, $implementation:ident, $output:ty) => {
-        pub fn $name() -> $output {
-            $implementation()
-        }
-    };
-}
-export_tool_builder!(
-    get_litellm_web_search_tool,
-    anthropic_tool,
-    AnthropicWebSearchTool
-);
-export_tool_builder!(openai_web_search_tool, chat_tool, OpenAiFunctionTool);
-export_tool_builder!(
-    responses_web_search_tool,
-    responses_tool,
-    ResponsesFunctionTool
-);
 #[must_use]
 pub fn is_web_search_tool_responses(tool: &Tool) -> bool {
     let Some(tool_type) = tool.tool_type.as_deref() else {
@@ -148,7 +130,7 @@ pub fn is_web_search_tool_responses(tool: &Tool) -> bool {
     tool_type == "web_search" || tool_type.starts_with("web_search_")
 }
 #[must_use]
-pub fn chat_completion(tool: &Tool) -> bool {
+pub fn is_chat_web_search_tool(tool: &Tool) -> bool {
     if tool.tool_type.as_deref() == Some("function")
         && tool
             .function
@@ -160,14 +142,6 @@ pub fn chat_completion(tool: &Tool) -> bool {
     }
     tool.name.as_deref() == Some(LITELLM_WEB_SEARCH_TOOL_NAME)
 }
-macro_rules! export_chat_detector {
-    ($name:ident) => {
-        pub fn $name(tool: &Tool) -> bool {
-            chat_completion(tool)
-        }
-    };
-}
-export_chat_detector!(is_chat_web_search_tool);
 #[must_use]
 pub fn is_web_search_tool(tool: &Tool) -> bool {
     if tool.tool_type.as_deref() == Some("function")
