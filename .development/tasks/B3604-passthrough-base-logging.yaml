@@ -1,0 +1,229 @@
+id: B3604
+title: Pass-through base logging contract
+description: >-
+  Build BasePassthroughLoggingHandler abstract class with provider response transformation and cost
+  bookkeeping, a lower logging contract for provider response transforms and complete-stream reconstruction
+  in betterlite-logging. Keep this below provider implementations so their eventual leaves can depend on it
+  without depending on B102.
+
+  Implement llm_provider_name property returning an LlmProviders enum value for each provider.
+  Implement get_provider_config method returning a BaseConfig for model transformation.
+
+  Implement passthrough_chat_handler to transform provider responses to OpenAI format via
+  provider_config.transform_response, then call build_response_logging_payload to generate
+  standard logging and cost details. Return dict with "result" (ModelResponse) and "kwargs"
+  (updated request context).
+
+  Implement _get_user_from_metadata to read user from request_body via get_end_user_id_from_request_body,
+  returning None if no request_body or no extracted user. This method accepts PassthroughStandardLoggingPayload.
+
+  Implement build_response_logging_payload to compute completion_cost from the transformed response,
+  write response_cost to kwargs and model_call_details["response_cost"] (marking this security-sensitive
+  spend tracking), extract user from passthrough_logging_payload if present, build standard logging object
+  via get_standard_logging_object_payload with status="success", and set litellm_call_id on the response.
+  Catch exceptions and log them without raising, returning kwargs for robustness.
+
+  Implement abstract method build_streaming_response for concrete providers to build a complete response
+  object from accumulated chunks and a logging object. Signature: all_chunks: list[str],
+  litellm_logging_obj, model: str; returns ModelResponse | TextCompletionResponse | None.
+
+  Implement handle_collected_chunks to build complete response from chunks via build_streaming_response,
+  log errors if build fails, call build_response_logging_payload with the complete response, and return
+  dict with "result" and "kwargs" or with None result on build failure. This method orchestrates the
+  chunk-to-complete-response path for streamed endpoints.
+scope:
+  paths:
+    - crates/betterlite-logging/src/passthrough_handler.rs
+    - crates/betterlite-logging/src/passthrough_handler/**
+    - tools/oracle/cases/passthrough/**
+  lint_tables: false
+references:
+  - url: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L31-L219
+    why: >-
+      BasePassthroughLoggingHandler class declaration, llm_provider_name and get_provider_config
+      abstract properties, passthrough_chat_handler transformation, _get_user_from_metadata extraction,
+      build_response_logging_payload cost/logging/user payload construction, build_streaming_response
+      abstract method for chunk assembly, handle_collected_chunks orchestration.
+  - url: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/pass_through_endpoints.py#L36-L66
+    why: >-
+      PassthroughStandardLoggingPayload TypedDict with request_body, response_body, url,
+      request_method and cost_per_request fields used in _get_user_from_metadata.
+dod:
+- text: >-
+    llm_provider_name property returns an LlmProviders enum value for the concrete provider.
+  proof:
+  - provider-name-property-cases
+- text: >-
+    get_provider_config method returns BaseConfig for the given model string.
+  proof:
+  - provider-config-method-cases
+- text: >-
+    passthrough_chat_handler transforms httpx_response to OpenAI format via provider_config.transform_response,
+    calls build_response_logging_payload to populate response_cost and standard_logging_object,
+    and returns dict with "result" (ModelResponse) and "kwargs" keys.
+  proof:
+  - chat-handler-transformation-cases
+- text: >-
+    _get_user_from_metadata extracts end_user_id from request_body via get_end_user_id_from_request_body,
+    returning None if request_body is absent or extraction returns None.
+  proof:
+  - get-user-from-metadata-cases
+- text: >-
+    build_response_logging_payload calls completion_cost to compute response_cost from transformed response,
+    writes response_cost to both kwargs["response_cost"] and logging_obj.model_call_details["response_cost"],
+    preserves upstream-reported costs as authoritative when present, and sets litellm_call_id on response.
+  proof:
+  - response-cost-write-cases
+- text: >-
+    build_response_logging_payload extracts user from passthrough_logging_payload if present,
+    then updates kwargs["litellm_params"]["proxy_server_request"]["body"]["user"] on extraction success.
+  proof:
+  - user-extraction-cases
+- text: >-
+    build_response_logging_payload calls get_standard_logging_object_payload with status="success",
+    stores the result in kwargs["standard_logging_object"], and logs the object as JSON at debug level.
+  proof:
+  - standard-logging-object-cases
+- text: >-
+    build_response_logging_payload catches exceptions during payload construction and returns kwargs
+    without raising, with a logged exception trace.
+  proof:
+  - exception-handling-cases
+- text: >-
+    build_streaming_response is an abstract method with signature (all_chunks: list[str],
+    litellm_logging_obj, model: str) returning ModelResponse | TextCompletionResponse | None.
+  proof:
+  - abstract-method-signature-cases
+- text: >-
+    handle_collected_chunks calls build_streaming_response with chunks and model,
+    logs an error and returns None result on build failure, and calls build_response_logging_payload
+    on successful build.
+  proof:
+  - chunk-collection-orchestration-cases
+- text: >-
+    Every response transformation, payload construction and exception trace matches LiteLLM behavior exactly.
+  proof:
+  - constant-and-name-tests
+checks:
+  optional: []
+  commands:
+  - id: provider-name-property-cases
+    why: >-
+      llm_provider_name property tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_provider_name_property($|::)/) - test(/replays_the_/)'
+  - id: provider-config-method-cases
+    why: >-
+      get_provider_config method tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_provider_config_method($|::)/) - test(/replays_the_/)'
+  - id: chat-handler-transformation-cases
+    why: >-
+      passthrough_chat_handler transformation and response shape tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_chat_handler_transformation($|::)/) - test(/replays_the_/)'
+  - id: get-user-from-metadata-cases
+    why: >-
+      _get_user_from_metadata extraction tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_get_user_from_metadata($|::)/) - test(/replays_the_/)'
+  - id: response-cost-write-cases
+    why: >-
+      response_cost computation and write tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_response_cost_write($|::)/) - test(/replays_the_/)'
+  - id: user-extraction-cases
+    why: >-
+      user extraction and litellm_params update tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_user_extraction($|::)/) - test(/replays_the_/)'
+  - id: standard-logging-object-cases
+    why: >-
+      standard_logging_object construction and debug logging tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_standard_logging_object($|::)/) - test(/replays_the_/)'
+  - id: exception-handling-cases
+    why: >-
+      exception handling and kwargs-return-on-error tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_exception_handling($|::)/) - test(/replays_the_/)'
+  - id: abstract-method-signature-cases
+    why: >-
+      build_streaming_response abstract method signature tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_abstract_method_signature($|::)/) - test(/replays_the_/)'
+  - id: chunk-collection-orchestration-cases
+    why: >-
+      handle_collected_chunks orchestration and error-on-build-failure tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_chunk_collection_orchestration($|::)/) - test(/replays_the_/)'
+  - id: constant-and-name-tests
+    why: >-
+      class/property/method names or payload construction details are incorrect
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail
+      -E 'test(/::passthrough_base_handler/)'
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+- >-
+  completion_cost is imported from litellm and owned by B068; this task calls it
+  in build_response_logging_payload to compute response_cost from the transformed response.
+- >-
+  get_standard_logging_object_payload is imported from litellm.litellm_core_utils.litellm_logging
+  and owned by B190; this task calls it in build_response_logging_payload to construct the
+  standard logging object with status="success".
+- >-
+  get_end_user_id_from_request_body is imported from litellm.proxy.auth.auth_utils and owned by B884;
+  this task calls it in _get_user_from_metadata to extract end_user_id from the request body.
+- >-
+  PassthroughStandardLoggingPayload is a TypedDict imported from litellm.types.passthrough_endpoints
+  and owned by B3600; this task accepts it as a parameter in _get_user_from_metadata and accesses
+  its request_body field.
+- >-
+  transform_response is a provider-specific method inherited from BaseConfig; each concrete handler
+  implements it via get_provider_config. This task calls it via the returned config but does not define it.
+
+pitfalls:
+- >-
+  response_cost write to both kwargs["response_cost"] and logging_obj.model_call_details["response_cost"]
+  is required; the pass-through success path reads spend from model_call_details, not kwargs alone,
+  so a single-location write means downstream logging or finops code misses the cost.
+- >-
+  build_response_logging_payload must check passthrough_logging_payload.get("request_body") not
+  passthrough_logging_payload["request_body"] to avoid KeyError when the payload lacks the field.
+- >-
+  Exception handling in build_response_logging_payload must return kwargs (not None or raise) to
+  allow the response to proceed even if standard logging object construction fails; this follows
+  LiteLLM's defensive approach to avoid crashing the proxy on logging errors.
+- >-
+  handle_collected_chunks returns dict with "result": None on build_streaming_response failure,
+  not an exception or empty dict; the caller (pass_through_async_success_handler) checks for None result
+  and decides whether to fall back to StandardPassThroughResponseObject.
+- >-
+  _get_user_from_metadata signature takes PassthroughStandardLoggingPayload (a TypedDict), not
+  a dict or request object, and must access request_body via .get() to handle absent field safely.
+- >-
+  The abstract method build_streaming_response has no default implementation; concrete
+  providers implement this to assemble chunks into their provider-native response format before
+  passthrough_chat_handler transforms it to OpenAI format.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

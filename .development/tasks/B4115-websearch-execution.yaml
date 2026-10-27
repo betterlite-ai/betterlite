@@ -1,0 +1,212 @@
+id: B4115
+title: Execute intercepted searches and standalone search turns
+description: >-
+  Build search execution with configured credentials/options, rich-input capability checks
+  and Perplexity fallback, plus the search-only Messages short circuit. Preserve the native
+  versus text synthetic response shapes and let search failures become typed outcomes at the
+  same boundary as the source.
+
+  Implement crates/betterlite-websearch/src/execution.rs with six entry points on
+  WebSearchExecution:
+
+  - `try_short_circuit_search(model, messages, tools, custom_llm_provider, kwargs)`
+    detects web-search-only Messages requests, executes the search directly, and returns
+    a synthetic Anthropic response with server_tool_use + web_search_tool_result + text
+    content blocks for native clients (via is_anthropic_native_web_search_tool), or just
+    text block for non-native callers. Returns None to continue normal routing if not a
+    short-circuit candidate. Reuses B4111's is_web_search_tool and B219's get_last_user_message.
+    Does not call _execute_search directly; delegates to _short_circuit_search_outcome.
+
+  - `_short_circuit_search_outcome(query, kwargs)` executes the search through _execute_search
+    and converts both successful results and exceptions to SearchOutcome (SearchSucceeded or
+    SearchFailed). Catches every exception from _execute_search, including authorization
+    failures, and passes the exception type to WebSearchTransformation.search_outcome
+    for error classification.
+
+  - `_rich_search_input(tool_input)` extracts optional objective and up-to-five search_queries
+    from a tool input dict, returning RichWebSearchInput or None. Reuses B4111's RichWebSearchInput
+    typedef.
+
+  - `_provider_supports_rich_search(search_provider)` checks whether the provider's BaseSearchConfig
+    accepts objective + multi-query input via ProviderConfigManager.get_provider_search_config().
+    Returns false if search_provider is missing or config is None.
+
+  - `_execute_search(query, kwargs, rich)` executes a single search via litellm.asearch with
+    configured credentials/options. Calls B4114's _select_search_tool_from_router, _authorize_search_tool,
+    _selected_search_tool_name, _get_user_api_key_auth_from_kwargs, _get_parent_request_correlation,
+    _build_search_request_metadata. Reads litellm_params from search_tool config, extracts
+    search_provider and passes remaining values to litellm.asearch. Forwards rich input only
+    to providers whose config.supports_rich_search_input() is true. Builds metadata for spend
+    tracking against the originating key/team. Falls back to perplexity if no search_provider
+    is configured. Returns (formatted_text, SearchResponse | None) so callers preserve both
+    the text for follow-up LLM calls and the structured SearchResponse for building native
+    web_search_tool_result blocks. Calls B4113's WebSearchTransformation.format_search_response
+    to format results as text. Raises exceptions on provider/authorization/network failures;
+    _short_circuit_search_outcome catches and converts to SearchFailed.
+
+  - `_create_empty_search_result()` returns ("No search query provided", None) for tool calls
+    without queries.
+
+  Preserve native versus text response shapes: when a native Anthropic tool is present,
+  emit both web_search_tool_result blocks (one server_tool_use, one web_search_tool_result
+  with success or error variant, one text block); when only text is expected, emit single
+  text block. Each web_search_tool_result block is built by B4113's build_web_search_outcome_block,
+  which returns either build_web_search_tool_result_block (with results list) or
+  build_web_search_tool_result_error_block (with error_code: too_many_requests |
+  invalid_tool_input | unavailable) based on the SearchOutcome variant.
+
+  Configuration keys: search_tool_name, search_provider, objective (under litellm_params of each
+  configured search tool). Environment variable fallback: none (search_provider defaults to
+  perplexity). Pinned defaults: enabled_providers=['bedrock'] when absent, empty list when
+  present.
+
+  Write oracle cases under tools/oracle/cases/chat/ covering:
+  - Successful short-circuit search with native tool → three content blocks
+  - Successful short-circuit search without native tool → text block only
+  - Short-circuit on provider not in enabled list → returns None
+  - Short-circuit when provider handles_web_search_natively → returns None
+  - Tools present but not all are web search → returns None
+  - No query in last user message → returns None
+  - Provider search config supports rich input → queries passed as list
+  - Provider search config does not support rich input → query passed as string
+  - Rate limit error in _execute_search → web_search_tool_result error block
+  - Invalid tool input error → web_search_tool_result error block
+  - Other exception → web_search_tool_result error block (unavailable)
+  - Rich search input validation (up to 5 queries, non-empty strings)
+  - Perplexity fallback when no router or no search tools
+
+scope:
+  paths:
+    - crates/betterlite-websearch/src/execution.rs
+    - crates/betterlite-websearch/src/execution/**
+    - tools/oracle/cases/chat/**
+    - tools/oracle/helpers/b4115.py
+    - tools/oracle/helpers/b4115/**
+    - tools/oracle/src/helpers/websearch/b4115.rs
+    - tools/oracle/src/helpers/websearch/b4115/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L291-L418
+    why: try_short_circuit_search and its three-block native response shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1470-L1479
+    why: _short_circuit_search_outcome and exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1481-L1507
+    why: _rich_search_input extraction and validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1509-L1521
+    why: _provider_supports_rich_search capability check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1523-L1624
+    why: _execute_search with credential forwarding, authorization, and metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1964-L1968
+    why: _create_empty_search_result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/websearch_interception.py#L1-94
+    why: SearchOutcome, RichWebSearchInput and typed result records.
+
+dod:
+  - text: >-
+      try_short_circuit_search returns a synthetic Anthropic response with server_tool_use,
+      web_search_tool_result, and text blocks when native_tool is present; returns response
+      with text block only when native_tool is None; returns None on non-short-circuit paths.
+      web_search_tool_result blocks carry success variant (with results list) or error variant
+      (with error_code: too_many_requests, invalid_tool_input, or unavailable).
+    proof:
+      - oracle
+  - text: >-
+      _short_circuit_search_outcome catches every exception from _execute_search, converts both
+      search results and exceptions to SearchOutcome (SearchSucceeded or SearchFailed), and
+      passes the exception to search_error_code for error classification.
+    proof:
+      - oracle
+  - text: >-
+      _rich_search_input extracts objective and up-to-five search_queries from tool input,
+      returning RichWebSearchInput {objective?, search_queries?} or None.
+    proof:
+      - websearch-execution-tests
+  - text: >-
+      _provider_supports_rich_search returns true only when search_provider config exists
+      and its supports_rich_search_input() is true.
+    proof:
+      - websearch-execution-tests
+  - text: >-
+      _execute_search calls _authorize_search_tool before litellm.asearch. Authorization exceptions
+      are caught by _short_circuit_search_outcome and converted to SearchFailed.
+    proof:
+      - oracle
+  - text: >-
+      _execute_search reads search_provider and configured_search_kwargs from search_tool's
+      litellm_params, forwards search_provider and configured_search_kwargs to litellm.asearch
+      along with rich input (queries as list if provider supports it, query string otherwise).
+    proof:
+      - oracle
+  - text: >-
+      _execute_search returns (formatted_text, SearchResponse | None) with text formatted by
+      WebSearchTransformation.format_search_response and SearchResponse preserved for native
+      blocks.
+    proof:
+      - websearch-execution-tests
+  - text: >-
+      Every listed oracle case exercises the production operation and asserts exact response
+      shape, content blocks, error codes and status; only /error/message may be ignored for
+      betterlite wording.
+    proof:
+      - oracle
+
+checks:
+  optional: []
+  commands:
+    - id: websearch-execution-tests
+      why: the task-specific behavior test is absent or fails
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_execution(::|$)/) - test(/replays_the_.*_corpus/)'
+
+oracle_cases:
+  - tools/oracle/cases/chat/websearch-short-circuit-native.yaml
+  - tools/oracle/cases/chat/websearch-short-circuit-text-only.yaml
+  - tools/oracle/cases/chat/websearch-provider-not-enabled.yaml
+  - tools/oracle/cases/chat/websearch-native-handled-by-provider.yaml
+  - tools/oracle/cases/chat/websearch-mixed-tools.yaml
+  - tools/oracle/cases/chat/websearch-no-query.yaml
+  - tools/oracle/cases/chat/websearch-rich-input-supported.yaml
+  - tools/oracle/cases/chat/websearch-rich-input-not-supported.yaml
+  - tools/oracle/cases/chat/websearch-rate-limit-error.yaml
+  - tools/oracle/cases/chat/websearch-invalid-input-error.yaml
+  - tools/oracle/cases/chat/websearch-unavailable-error.yaml
+  - tools/oracle/cases/chat/websearch-perplexity-fallback.yaml
+
+deviations:
+  - what: >-
+      betterlite calls B4114's authorization functions directly (not through a search-execution
+      wrapper), preserving the exact Python structure where _authorize_search_tool checks key first,
+      then team.
+    why: Faithful port of LiteLLM behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1626-L1668
+
+out_of_scope:
+  - Search tool configuration and callback initialization (B4116).
+  - Search loop eligibility checks and agentic reruns (B4117).
+  - Search result messages and native citation blocks (B4113).
+  - Search tool selection authorization (B4114).
+  - Streaming search calls (pre-converted to non-streaming by earlier hooks).
+  - litellm.asearch provider implementation and search response parsing.
+  - Spend logging and metadata attribution (handled by litellm.asearch and B247).
+
+pitfalls:
+  - try_short_circuit_search checks ProviderConfigManager.get_provider_anthropic_messages_config
+    to avoid short-circuiting providers that handle web search natively (bedrock, vertex_ai,
+    azure_ai, anthropic); github_copilot has a config but returns handles_web_search_natively()
+    false, so short-circuit runs for it.
+  - _short_circuit_search_outcome catches every exception from _execute_search, including
+    authorization failures raised by _authorize_search_tool, and converts all exceptions to
+    SearchFailed via WebSearchTransformation.search_outcome, passing the exception type for
+    error_code classification.
+  - Rich search input is passed to litellm.asearch only when _provider_supports_rich_search
+    returns true; all other providers receive query as a string, not a list.
+  - web_search_tool_result blocks come from WebSearchTransformation.build_web_search_outcome_block,
+    which returns either success (with results list) or error (with error_code) variant based on
+    SearchOutcome type.
+  - _execute_search forwards search credentials only when configured (search_tool.litellm_params).
+    When no search tool is configured, it falls back to perplexity without explicit credentials.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

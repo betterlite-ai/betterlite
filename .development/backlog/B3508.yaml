@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Enforce managed-agent credentials and serve collection routes
 status: todo
 depends_on: [B3504, B014, B052, B1100]
-file: null
+file: tasks/B3508-agent-collection-routes.yaml
 covers:
   - "litellm/proxy/google_endpoints/agents_endpoints.py"
 parent: B098

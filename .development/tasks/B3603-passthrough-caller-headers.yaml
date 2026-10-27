@@ -1,0 +1,290 @@
+id: B3603
+title: Pass-through caller credential filtering
+description: >-
+  Implement credential filtering for pass-through endpoints, separating authenticated
+  LiteLLM credentials from provider credentials when forwarding caller headers.
+  Build `get_litellm_virtual_key` to extract and format the API key from request
+  headers, prioritizing `x-litellm-api-key` over Authorization. Implement `_normalize_credential_value`
+  to strip authentication scheme prefixes (Bearer, Basic, AWS4-HMAC-SHA256) from header values,
+  reusing B756's `_get_bearer_token` helper so header comparison strips exactly the schemes
+  that `user_api_key_auth` accepts. Build JWT validation through `_is_authenticated_caller_jwt`,
+  comparing unverified claims (excluding B760's internal claims) with stored claims. Build
+  `_is_authenticated_caller_secret` to determine if a header value is the master key, the JWT
+  that authenticated the request, or the stored API key, with fallback to always-false in no-auth
+  dev mode without custom auth. Implement `_operator_configured_caller_key_header_names` to read
+  custom header names from `general_settings.litellm_key_header_name` and pass-through endpoint
+  configurations. Build `_caller_headers_without_litellm_secrets` to filter incoming headers,
+  dropping those in `never_forwarded` plus the mapped-route key and operator-configured keys,
+  and excluding any value that is an authenticated secret. Build provider-specific filtering
+  functions with distinct credentialless branches: `_forwarded_headers_for_credentialless_vertex_passthrough`
+  that requires either authorization or x-goog-api-key in the forwarded headers (raising 401
+  if missing), `_upstream_headers_for_anthropic_route` that requires either authorization or
+  x-api-key when no proxy credential is configured, and `_upstream_headers_for_bedrock_agent_runtime_route`
+  that drops headers matching signed headers returned by the signing process. Define header-filtering
+  sets as module-level Final frozensets: `_VERTEX_UPSTREAM_CREDENTIAL_HEADERS`, `_HEADERS_NEVER_FORWARDED_TO_VERTEX`,
+  `_CREDENTIALLESS_VERTEX_MISSING_CREDENTIAL_DETAIL`, `_ANTHROPIC_UPSTREAM_CREDENTIAL_HEADERS`,
+  `_HEADERS_NEVER_FORWARDED_TO_ANTHROPIC`, `_CREDENTIALLESS_ANTHROPIC_MISSING_CREDENTIAL_DETAIL`,
+  `_HEADERS_NEVER_FORWARDED_TO_BEDROCK`, and `_MAPPED_ROUTE_CALLER_KEY_HEADER`. The Vertex
+  and Anthropic branches drop all LiteLLM credential headers except the ones the upstream
+  provider uses, and Bedrock drops all credential headers. Preserve distinct 401 error messages
+  for missing Vertex and Anthropic credentials.
+scope:
+  paths:
+  - crates/betterlite-auth/src/passthrough.rs
+  - crates/betterlite-auth/src/passthrough/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/passthrough.rs
+  - crates/betterlite-server/src/passthrough/**
+  - tools/oracle/cases/passthrough/**
+  - tools/oracle/helpers/b3603.py
+  - tools/oracle/helpers/b3603/**
+  - tools/oracle/src/helpers/auth/b3603.rs
+  - tools/oracle/src/helpers/auth/b3603/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/common_utils.py#L6-L18
+  why: >-
+    get_litellm_virtual_key implementation; extracts x-litellm-api-key header
+    or Authorization header and formats with Bearer scheme.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2460-L2471
+  why: >-
+    _normalize_credential_value implementation; strips Bearer/Basic/AWS4-HMAC-SHA256
+    prefixes using _get_bearer_token, falls back to original value.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2474-L2493
+  why: >-
+    Header filtering sets: VERTEX_UPSTREAM_CREDENTIAL_HEADERS, HEADERS_NEVER_FORWARDED_TO_VERTEX,
+    ANTHROPIC_UPSTREAM_CREDENTIAL_HEADERS, HEADERS_NEVER_FORWARDED_TO_ANTHROPIC,
+    HEADERS_NEVER_FORWARDED_TO_BEDROCK, and their constants.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2496-L2516
+  why: >-
+    _operator_configured_caller_key_header_names implementation; reads litellm_key_header_name
+    from general_settings and pass_through_endpoints configuration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2519-L2528
+  why: >-
+    _is_authenticated_caller_jwt implementation; compares unverified claims
+    excluding internal claims (B760), returns false if claims cannot be parsed.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2531-L2550
+  why: >-
+    _is_authenticated_caller_secret implementation; compares against master key,
+    JWT claims, and stored API key using constant-time comparison; returns false
+    in no-auth dev mode without custom auth.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2553-L2566
+  why: >-
+    _caller_headers_without_litellm_secrets implementation; filters out headers
+    by name and by authenticated-secret detection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2569-L2578
+  why: >-
+    _forwarded_headers_for_credentialless_vertex_passthrough implementation;
+    filters for credentialless Vertex branch, raises 401 if no upstream credential.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2451-L2457
+  why: >-
+    _CREDENTIALLESS_VERTEX_MISSING_CREDENTIAL_DETAIL error message for 401
+    when Vertex has no configured credential and no upstream credential in request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2581-L2589
+  why: >-
+    _upstream_headers_for_anthropic_route implementation; applies proxy-provided
+    credentials if available, raises 401 if missing and no upstream credential provided.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2592-L2600
+  why: >-
+    _upstream_headers_for_bedrock_agent_runtime_route implementation; drops
+    headers that match signed headers from AWS signing process.
+dod:
+- text: >-
+    get_litellm_virtual_key returns the x-litellm-api-key header with Bearer
+    prefix if present, else the Authorization header, else empty string.
+  proof: [virtual-key-cases]
+- text: >-
+    _normalize_credential_value strips Bearer/Basic/AWS4-HMAC-SHA256 prefixes
+    using _get_bearer_token, returns original value as fallback.
+  proof: [normalize-cases]
+- text: >-
+    _operator_configured_caller_key_header_names returns custom key header names
+    from general_settings and pass-through endpoint configurations.
+  proof: [operator-config-cases]
+- text: >-
+    _is_authenticated_caller_jwt compares unverified JWT claims (excluding internal
+    claims) with stored claims, returns false if claims cannot be parsed.
+  proof: [jwt-auth-cases]
+- text: >-
+    _is_authenticated_caller_secret detects master key, JWT, or stored API key
+    with constant-time comparison, returns false in no-auth dev mode without auth.
+  proof: [secret-auth-cases]
+- text: >-
+    _caller_headers_without_litellm_secrets filters by header name and by
+    authenticated-secret detection, returns immutable mapping.
+  proof: [filter-secrets-cases]
+- text: >-
+    _forwarded_headers_for_credentialless_vertex_passthrough requires authorization
+    or x-goog-api-key in caller headers, raises 401 with standard message if missing.
+  proof: [vertex-credentialless-cases]
+- text: >-
+    _upstream_headers_for_anthropic_route requires authorization or x-api-key
+    when no proxy credential is configured, raises 401 with standard message if missing.
+  proof: [anthropic-credentialless-cases]
+- text: >-
+    _upstream_headers_for_bedrock_agent_runtime_route drops headers whose names
+    match those in the signed_headers dict, preserves all other caller headers.
+  proof: [bedrock-signed-cases]
+- text: >-
+    Module-level constants match LiteLLM exactly: all header sets, error detail
+    messages, and the mapped-route header name.
+  proof: [constants-cases]
+checks:
+  optional: []
+  commands:
+  - id: virtual-key-cases
+    why: >-
+      get_litellm_virtual_key tests fail, do not exist, or do not cover both
+      x-litellm-api-key and Authorization header cases
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::virtual_key($|::)/)'
+  - id: normalize-cases
+    why: >-
+      _normalize_credential_value tests fail, do not exist, or do not strip
+      Bearer/Basic/AWS4-HMAC-SHA256 prefixes correctly
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::normalize($|::)/)'
+  - id: operator-config-cases
+    why: >-
+      _operator_configured_caller_key_header_names tests fail, do not exist,
+      or do not read custom headers from config
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::operator_config($|::)/)'
+  - id: jwt-auth-cases
+    why: >-
+      _is_authenticated_caller_jwt tests fail, do not exist, or do not compare
+      unverified claims correctly
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::jwt_auth($|::)/)'
+  - id: secret-auth-cases
+    why: >-
+      _is_authenticated_caller_secret tests fail, do not exist, or do not detect
+      master key, JWT, and stored API key correctly
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::secret_auth($|::)/)'
+  - id: filter-secrets-cases
+    why: >-
+      _caller_headers_without_litellm_secrets tests fail, do not exist, or do
+      not filter by name and authenticated-secret detection correctly
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::filter_secrets($|::)/)'
+  - id: vertex-credentialless-cases
+    why: >-
+      _forwarded_headers_for_credentialless_vertex_passthrough tests fail, do
+      not exist, or do not require authorization/x-goog-api-key and raise 401
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::vertex_credentialless($|::)/)'
+  - id: anthropic-credentialless-cases
+    why: >-
+      _upstream_headers_for_anthropic_route tests fail, do not exist, or do not
+      require upstream credential when proxy credential missing
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::anthropic_credentialless($|::)/)'
+  - id: bedrock-signed-cases
+    why: >-
+      _upstream_headers_for_bedrock_agent_runtime_route tests fail, do not exist,
+      or do not drop headers matching signed-headers dict keys
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::bedrock_signed($|::)/)'
+  - id: constants-cases
+    why: >-
+      module-level constants are missing, incomplete, or have wrong header names
+      and error messages
+    run: >-
+      cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
+      -E 'test(/^passthrough_caller_headers::constants($|::)/)'
+oracle_cases:
+- tools/oracle/cases/passthrough/caller-headers-virtual-key.yaml
+- tools/oracle/cases/passthrough/caller-headers-normalize-bearer.yaml
+- tools/oracle/cases/passthrough/caller-headers-normalize-basic.yaml
+- tools/oracle/cases/passthrough/caller-headers-normalize-aws.yaml
+- tools/oracle/cases/passthrough/caller-headers-filter-litellm.yaml
+- tools/oracle/cases/passthrough/caller-headers-vertex-with-credential.yaml
+- tools/oracle/cases/passthrough/caller-headers-vertex-missing-credential.yaml
+- tools/oracle/cases/passthrough/caller-headers-anthropic-proxy-credential.yaml
+- tools/oracle/cases/passthrough/caller-headers-anthropic-missing-credential.yaml
+- tools/oracle/cases/passthrough/caller-headers-bedrock-signed-headers.yaml
+deviations:
+- what: >-
+    When neither a proxy-provided Anthropic credential nor a caller-provided
+    Anthropic credential (x-api-key or Authorization) is present,
+    _upstream_headers_for_anthropic_route raises HTTPException with status 401
+    and a descriptive message naming the expected header or environment variable.
+  why: >-
+    LiteLLM raises an HTTPException in this case to prevent forwarding requests
+    with no authentication credential to Anthropic. betterlite preserves this
+    behavior exactly.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2581-L2589
+- what: >-
+    When neither a proxy-provided Vertex credential nor a caller-provided Vertex
+    credential (authorization or x-goog-api-key) is present,
+    _forwarded_headers_for_credentialless_vertex_passthrough raises HTTPException
+    with status 401 and a descriptive message.
+  why: >-
+    LiteLLM requires explicit Vertex credentials on the credentialless branch.
+    betterlite preserves this behavior to prevent unauthenticated provider calls.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2569-L2578
+- what: >-
+    Custom caller-key header names are read from both general_settings.litellm_key_header_name
+    (single override) and individual pass-through endpoint configurations (per-endpoint list).
+    Both are included in the set of headers to filter out.
+  why: >-
+    LiteLLM allows operators to configure custom authentication headers at the
+    global and per-endpoint level. betterlite supports both to preserve configuration flexibility.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2499-L2516
+out_of_scope:
+- >-
+  The UserAPIKeyAuth._safe_hash_litellm_api_key method is owned by B770; this task
+  calls it for constant-time comparison of stored keys, relying on its implementation.
+- >-
+  The JWTHandler.get_unverified_claims method and LITELLM_INTERNAL_CLAIMS constant
+  are owned by B760; this task uses them for JWT validation without implementing them.
+- >-
+  The _get_bearer_token and is_no_auth_dev_mode functions are owned by B756;
+  this task calls them for credential normalization and no-auth mode detection.
+- >-
+  The _safe_get_request_headers function is owned by B1100; this task calls it
+  to read incoming headers with safe fallback.
+- >-
+  The SpecialHeaders.litellm_credential_header_names method is owned by a D-gap
+  task; this task uses its return value for header filtering sets.
+pitfalls:
+- >-
+  Constant-time comparison must use hmac.compare_digest or equivalent, not ==,
+  when comparing sensitive values like keys and JWT tokens to prevent timing attacks.
+- >-
+  Header names are case-insensitive; all header-name lookups and filtering must
+  use .lower() on both the incoming header names and the filter sets.
+- >-
+  The _normalize_credential_value function must not strip the scheme if _get_bearer_token
+  returns empty string; the fallback to the original value is intentional to preserve
+  bare tokens and Google credentials that carry no scheme prefix.
+- >-
+  The _is_authenticated_caller_jwt function must use get_unverified_claims from B760
+  to extract claims without validation, matching the JWT that was stored during authentication.
+- >-
+  The Bedrock signed-headers filtering must exclude header names that match
+  signed_headers dict keys exactly; all other caller headers pass through unchanged.
+- >-
+  The _operator_configured_caller_key_header_names function must preserve deduplication
+  order and return a tuple, not a list, to match LiteLLM's contract.
+- >-
+  The 401 error messages for missing Vertex and Anthropic credentials must match
+  LiteLLM exactly, including capitalization and grammar, since clients may parse them.
+- >-
+  The no-auth dev mode fallback in _is_authenticated_caller_secret must check
+  both master_key and user_custom_auth; only when both indicate no auth is enabled
+  should the function return false for all values.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

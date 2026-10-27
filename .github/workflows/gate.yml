@@ -148,6 +148,7 @@ jobs:
         if: steps.find.outputs.task == '' && github.event_name != 'pull_request'
         env:
           GATE_BASE: ${{ steps.find.outputs.base }}
+          GATE_ALL_TESTS: ${{ github.event_name == 'push' && 'true' || '' }}
         run: cargo gate run B000 --only fmt --only clippy --only tests --only doctests --only deny --only shear --only hooks --only similarity --only file-size --only workflows
 
       - name: Keep the gate logs of a failed run

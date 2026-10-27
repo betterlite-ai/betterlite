@@ -1,0 +1,18 @@
+kind: helper
+name: regressions
+call:
+  codex_history_tools:
+    operation: normalize
+    input:
+      - type: agent_message
+        content:
+          - text: []
+            encrypted_content: fallback
+      - type: local_shell_call
+        call_id: c
+        action:
+          hé: é😀
+    tools: []
+compare:
+  ignore: []
+env: {}
