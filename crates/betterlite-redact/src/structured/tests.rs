@@ -97,3 +97,14 @@ fn excluded_keys_are_honored_by_mask_dict() {
     let output = masker.mask_dict(input.as_object().expect("object"), 0, 10, &excluded);
     assert_eq!(output["api_key"], "secret-value");
 }
+
+#[rstest]
+#[case::mapping(r#"{"nested":{"api_key":"secret"}}"#)]
+#[case::sequence(r#"{"nested":[{"api_key":"secret"}]}"#)]
+fn mask_dict_fails_closed_at_depth(#[case] source: &str) {
+    let input = parse(source);
+    let masker = SensitiveDataMasker::new();
+    let output = masker.mask_dict(input.as_object().unwrap(), 0, 1, &[]);
+    assert_eq!(output, parse(r#"{"nested":"REDACTED"}"#));
+    assert_eq!(input, parse(source));
+}

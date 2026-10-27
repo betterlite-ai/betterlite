@@ -131,7 +131,7 @@ impl SensitiveDataMasker {
         excluded_keys: &[String],
     ) -> Value {
         if depth >= max_depth {
-            return Value::Object(data.clone());
+            return Value::String(REDACTED.to_owned());
         }
         let mut masked = Map::new();
         for (key, value) in data {
@@ -160,7 +160,7 @@ impl SensitiveDataMasker {
     ) -> Value {
         match value {
             Value::Object(object) => self.mask_dict(object, depth, max_depth, excluded_keys),
-            Value::Array(values) if depth >= max_depth => Value::Array(values.clone()),
+            Value::Array(_) if depth >= max_depth => Value::String(REDACTED.to_owned()),
             Value::Array(values) => Value::Array(
                 values
                     .iter()
