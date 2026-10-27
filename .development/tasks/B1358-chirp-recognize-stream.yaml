@@ -26,7 +26,6 @@ scope:
   paths:
     - Cargo.toml
     - Cargo.lock
-    - deny.toml
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/{lib,error,chirp_stream}.rs
     - crates/betterlite-vertex/src/chirp_stream.rs

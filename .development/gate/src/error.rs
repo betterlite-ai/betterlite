@@ -1,3 +1,4 @@
+use std::error;
 use std::io;
 use std::path::PathBuf;
 use std::string::FromUtf8Error;
@@ -51,4 +52,11 @@ pub(crate) enum GateError {
     },
     #[error("cannot dispatch {task}: {reason}")]
     Dispatch { task: String, reason: String },
+    #[error("{program} failed: {stderr}")]
+    Failed { program: String, stderr: String },
+    #[error("cannot read {what}: {source}")]
+    Affected {
+        what: String,
+        source: Box<dyn error::Error + Send + Sync>,
+    },
 }

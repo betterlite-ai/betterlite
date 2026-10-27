@@ -36,7 +36,6 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - deny.toml
     - crates/betterlite-roi/src/estimator.rs
     - crates/betterlite-roi/src/estimator/**
     - crates/betterlite-server/src/roi_estimator.rs

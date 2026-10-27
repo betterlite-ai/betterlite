@@ -5,7 +5,7 @@ description: >-
   configuration options into command-line arguments, turn requests into process invocations,
   and Codex's JSONL event stream into harness events.
 
-  CodexHarnessConfig implements BaseCLIHarnessConfig (from B4830) with Codex-specific logic.
+  CodexHarnessConfig implements BaseCLIHarnessConfig (from B4830) with Codex-specific logic. Codex needs the sandbox inside both turn methods, so add an S: Sandbox bound to transform_session_setup and transform_turn_request in transformation.rs, and give the Sandbox trait in sandbox.rs an is_container method that defaults to false (LiteLLM reads getattr(ctx.sandbox, "is_container", False)). The helper cases run through oracle operation b4835, registered with a stub in the harness helper group.
   Every model call uses a custom provider (litellm, wire_api=responses) pointing at the session
   endpoint; the bearer token travels only in the LITELLM_HARNESS_TOKEN env var, never in argv.
   CODEX_HOME is the private session directory so the user's own Codex config and auth are never
@@ -68,6 +68,13 @@ scope:
     - crates/betterlite-harness/src/providers/codex.rs
     - crates/betterlite-harness/src/providers/codex/**
     - tools/oracle/cases/codex/**
+    - crates/betterlite-harness/src/sandbox.rs
+    - crates/betterlite-harness/src/transformation.rs
+    - tools/oracle/helpers/b4835.py
+    - tools/oracle/helpers/b4835/**
+    - tools/oracle/src/helpers/harness/b4835.rs
+    - tools/oracle/src/helpers/harness/b4835/**
+    - crates/betterlite-harness/src/transformation/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py
@@ -137,12 +144,11 @@ checks:
   commands:
     - id: codex-transforms-tests
       why: the Codex transformation tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^codex_transformation::/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::codex::/)'
     - id: codex-fixtures-pinned
       why: a JSONL fixture is missing or differs from LiteLLM's file at the pinned commit
-      run: >-
-        test -d tools/oracle/cases/codex/fixtures && test "$(ls tools/oracle/cases/codex/fixtures | wc -l)" -ge 5
-        && cd tools/oracle/cases/codex/fixtures && sha256sum --check --quiet <<'SUMS'
+      run: |
+        test -d tools/oracle/cases/codex/fixtures && test "$(ls tools/oracle/cases/codex/fixtures | wc -l)" -ge 5 && cd tools/oracle/cases/codex/fixtures && sha256sum --check --quiet <<'SUMS'
         623f7112e229278c42e37481d5f2fd22d32c59a3168becf68e4df3bb0e916ad7  turn1_bash.jsonl
         e22cda5f68af32811e9405f4d14414a9192191e04c116f8a5aa12c169eea15e6  turn2_resume_apply_patch.jsonl
         9bdd4f87ba2088c31a8acce9643d554f63bd2c87586320abdc5fc50f583f5315  reasoning.jsonl

@@ -1,0 +1,258 @@
+id: B3669
+title: Chat guardrail streaming and lossless tool merging
+description: >-
+  Implement streaming guardrail processing for chat completions with block-only
+  and incremental transform paths, handling text accumulation per choice with
+  holdback preservation. Supply lossless tool merging for Responses namespace
+  and custom-tool rewrites with indexed duplicate-name handling. Provide raw
+  Anthropic SSE conversion used by the shared stream dispatcher.
+
+  Block-only streaming: accumulate text deltas per choice, run guardrail on
+  accumulated text (leaving responses_so_far untouched for raw accumulation),
+  detect stream termination by finish_reason, and emit block frames when
+  guardrail blocks. For ended streams, rebuild per-choice responses using
+  stream_chunk_builder with text and tool-call rewrites, preserving stream
+  order and detecting undeliverable tool rewrites.
+
+  Incremental transform: run guardrail over accumulated text every round on
+  the transform path (never mutating responses_so_far), report guardrailed
+  text plus requested holdback per choice on a StreamTransformSink out-parameter,
+  and handle stream_holdback_chars coercion. Provide get_streaming_scan_key
+  to support shared scan key generation from streamed responses with tool-call
+  fingerprints and stream-ended state.
+
+  Tool merging: implement lossless merge of Responses namespace tools and
+  custom tools by preserving original namespace structure while rebuilding
+  member descriptions, handling indexed duplicate names (same key with ordinal),
+  and reconstructing namespace members from flattened guardrail outputs. Supply
+  merge_guardrailed_tools entry point that takes original tools, flattened
+  groupings, and guardrailed tools, and returns the merged result ready for
+  the wire.
+
+  Anthropic SSE: provide SSE parsing and ModelResponse reconstruction, stream
+  type detection using event types, raw stream joining with UTF-8 handling,
+  message-start extraction for model and id restoration, and error-frame
+  generation for post-header failures. Supply is_anthropic_sse_stream to
+  distinguish Anthropic SSE from other raw streams (like Google's
+  streamGenerateContent). Support both restore_identity off (default, keep
+  wire shape) and on (stamp message id and model) for assembled responses.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/streaming.rs
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/streaming/**
+    - crates/betterlite-server/src/guardrails/responses_guardrail_translation/tool_merge.rs
+    - crates/betterlite-server/src/guardrails/responses_guardrail_translation/tool_merge/**
+    - crates/betterlite-server/src/guardrails/anthropic_sse.rs
+    - crates/betterlite-server/src/guardrails/anthropic_sse/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L490-L640
+    why: process_output_streaming_response dispatcher and _process_streaming_block_only block-only path with accumulated text and guardrail application.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L758-L838
+    why: _process_streaming_transform incremental path with StreamTransformSink reporting and get_streaming_scan_key for shared dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/tool_merge.py#L23-L185
+    why: Lossless tool merging with namespace preservation, indexed duplicate handling and custom tool support, from _as_tool through merge_guardrailed_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L31-L32
+    why: is_raw_sse_stream detects unparsed bytes in chunk sequences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L148-L166
+    why: is_sse_error_stream detects error-only Anthropic event and chat-completion error frames.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L169-L180
+    why: anthropic_sse_chunks_from_response converts assembled response to SSE chunks via adapter and fake iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/custom_tools.py#L169-L176
+    why: custom_tool_grammar_suffix extracts format definition for description suffix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L113-L114
+    why: NAMESPACE_DESCRIPTION_SEPARATOR and NAMESPACE_MEMBER_TYPES_WITH_CHAT_TOOLS constants.
+
+dod:
+  - text: >-
+      process_output_streaming_response routes to _process_streaming_block_only or
+      _process_streaming_transform based on stream_transform_sink presence, accumulating
+      text deltas per choice and managing responses_so_far mutability.
+    proof: [streaming-dispatch-cases]
+  - text: >-
+      _process_streaming_block_only detects stream termination by finish_reason, accumulates
+      text per choice, applies guardrail via apply_guardrail, and for ended streams
+      rebuilds per-choice responses with text and tool-call rewrites via stream_chunk_builder.
+    proof: [block-only-cases]
+  - text: >-
+      _process_streaming_transform runs guardrail over accumulated text per choice without
+      mutating responses_so_far, reports guardrailed text and stream_holdback_chars per
+      choice on StreamTransformSink, and handles absent texts gracefully.
+    proof: [transform-cases]
+  - text: >-
+      get_streaming_scan_key returns StreamingScanKey with accumulated texts, tool-call
+      fingerprints (when stream ended), stream_ended flag, and tool_calls_in_flight boolean.
+    proof: [scan-key-cases]
+  - text: >-
+      _as_tool validates a tool object (BaseModel or dict) against the Pydantic adapter
+      and returns it or None, with invalid tools logged as dropped.
+    proof: [tool-validation-cases]
+  - text: >-
+      _indexed_keys returns (key_string, ordinal) tuples for tools with indexed duplicate
+      handling, where key is "type:name" for chat tools or "type:server_label/name" for others.
+    proof: [indexed-key-cases]
+  - text: >-
+      merge_guardrailed_tools accepts original_tools, flattened_groups, and guardrailed_tools,
+      reconstructs namespace members from flattened outputs, and returns merged result with
+      appended new tools not owned by original namespaces.
+    proof: [merge-tools-cases]
+  - text: >-
+      _rebuilt_namespace preserves namespace structure while rebuilding member descriptions
+      by stripping namespace prefix and custom-tool grammar suffix from guardrailed members.
+    proof: [rebuild-namespace-cases]
+  - text: >-
+      is_anthropic_sse_stream detects Anthropic SSE by checking event types in raw frames,
+      returning true only for frames containing Anthropic message types (not Google streams).
+    proof: [anthropic-detect-cases]
+  - text: >-
+      assemble_anthropic_sse_stream joins raw SSE bytes with UTF-8 decoding, parses events,
+      extracts message_start, assembles via the PassthroughLoggingHandler, and optionally
+      restores model and id from message_start when restore_identity is true.
+    proof: [anthropic-assemble-cases]
+  - text: >-
+      anthropic_sse_error_frames generates Anthropic error event frames for post-header
+      failures with guardrail_error type and supplied message text.
+    proof: [anthropic-error-cases]
+  - text: >-
+      model_response_text extracts assistant text from assembled responses for guardrail
+      rewrite detection.
+    proof: [model-text-cases]
+  - text: >-
+      is_raw_sse_stream detects unparsed bytes in chunk sequences to distinguish raw SSE
+      frames from assembled ModelResponseStream objects.
+    proof: [sse-raw-detect-cases]
+  - text: >-
+      is_sse_error_stream returns true only for sequences of pure error frames (all chunks
+      are bytes/str, all events are type "error" or carry error mapping), failing closed
+      on mixed streams containing real response content.
+    proof: [sse-error-detect-cases]
+  - text: >-
+      anthropic_sse_chunks_from_response converts assembled ModelResponse to Anthropic wire
+      format via LiteLLMAnthropicMessagesAdapter, then iterates FakeAnthropicMessagesStreamIterator
+      to produce SSE chunk bytes.
+    proof: [sse-chunk-generation-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: streaming-dispatch-cases
+      why: process_output_streaming_response dispatch logic tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::(process_output_streaming|dispatch)/)'
+    - id: block-only-cases
+      why: _process_streaming_block_only block-only path tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::block_only/)'
+    - id: transform-cases
+      why: _process_streaming_transform incremental path tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::streaming_transform/)'
+    - id: scan-key-cases
+      why: get_streaming_scan_key tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::streaming_scan_key/)'
+    - id: tool-validation-cases
+      why: tool validation and merging tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::(as_tool|validation)/)'
+    - id: indexed-key-cases
+      why: indexed key and duplicate name handling tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::(indexed_key|duplicate)/)'
+    - id: merge-tools-cases
+      why: merge_guardrailed_tools tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::merge_tools/)'
+    - id: rebuild-namespace-cases
+      why: namespace member rebuilding tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::rebuild_namespace/)'
+    - id: anthropic-detect-cases
+      why: is_anthropic_sse_stream type detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::is_anthropic_sse_stream/)'
+    - id: anthropic-assemble-cases
+      why: assemble_anthropic_sse_stream assembly tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::assemble_anthropic_sse_stream/)'
+    - id: anthropic-error-cases
+      why: anthropic_sse_error_frames error generation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::error_frames/)'
+    - id: model-text-cases
+      why: model_response_text extraction tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::model_response_text/)'
+    - id: sse-raw-detect-cases
+      why: is_raw_sse_stream raw frame detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::is_raw_sse_stream/)'
+    - id: sse-error-detect-cases
+      why: is_sse_error_stream error frame detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::is_sse_error_stream/)'
+    - id: sse-chunk-generation-cases
+      why: anthropic_sse_chunks_from_response chunk generation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::anthropic_sse_chunks_from_response/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Streaming text accumulation never mutates the caller's responses list on the transform path, whereas LiteLLM's implementation reuses the same responses object.
+    why: betterlite separates raw accumulation (for stream replay) from transform state, so the transform sink receives computed values independently.
+  - what: Holdback coercion handles stream_holdback_chars as-is and does not validate against text length or enforce holdback positions, unlike some guardrail implementations.
+    why: Stream position tracking is delegated to the client that consumes the sink; betterlite reports holdback without assuming client buffering strategy.
+  - what: Tool merging does not dynamically import or resolve function schemas; original tool objects are preserved structurally and guardrailed members are validated only against Pydantic BaseModel.
+    why: Schema resolution is delegated to the guardrail and the client; merging only reconstructs structure without introspection.
+
+out_of_scope:
+  - "coerce_stream_holdback_value (B3663): supplied for stream_holdback_chars value conversion."
+  - "_combine_streaming_texts (B3667): supplied for text accumulation per (choice_idx, content_idx)."
+  - "_accumulate_string_content_by_choice_index (B3667): supplied for choice-keyed text accumulation."
+  - "_streamed_tool_call_fingerprints (B3667): supplied for tool-call fingerprint generation."
+  - "_first_choice_has_finished (B3667): supplied for stream termination detection."
+  - "_has_text_content (B3667): supplied for content presence check."
+  - "_string_choice_contents (B3668): supplied for ended-stream text extraction."
+  - "_write_ended_stream_text_rewrites (B3668): supplied for text rewrite application to streams."
+  - "_function_tool_call_shapes (B3668): supplied for tool-call shape detection."
+  - "_function_tool_call_fragments (B3668): supplied for undeliverable rewrite detection."
+  - "_write_ended_stream_tool_call_rewrites (B3668): supplied for tool-call rewrite emission."
+  - "_process_ended_stream (B3668): supplied for ended-stream processing."
+  - "_rebuild_ended_stream_per_choice (B3668): supplied for per-choice response reconstruction."
+  - "_apply_guardrail_responses_to_output_streaming (B3668): supplied for streaming response rewriting."
+  - "apply_guardrail (B3664): supplied for guardrail execution."
+  - "merge_user_api_key_metadata_into_request (B3661): supplied for metadata injection."
+  - "GenericGuardrailAPIInputs (B3662): supplied for guardrail input typing."
+  - "custom_tool_grammar_suffix (B907): supplied for custom-tool grammar marker stripping."
+  - "transform_chat_completion_tool_params_to_responses_api_tools (B913): supplied for chat-to-Responses tool conversion."
+  - "translate_openai_response_to_anthropic (B966): supplied for response format translation."
+  - "AnthropicPassthroughLoggingHandler SSE assembly (B180+): supplied for raw SSE-to-ModelResponse assembly."
+
+pitfalls:
+  - >-
+    _process_streaming_transform returns None; it never returns responses_so_far. The
+    dispatcher process_output_streaming_response is what returns the accumulator after
+    calling _process_streaming_transform. The transform path writes results out of band
+    through the sink out-parameter only.
+  - >-
+    stream_transform_sink is mutable and its fields (mutated_text_per_choice,
+    holdback_per_choice) are dicts keyed by choice index; empty dicts are valid
+    and signal no text/holdback for that choice.
+  - >-
+    get_streaming_scan_key examines all chunks in responses_so_far, not just
+    ModelResponseStream items; filtering to chunks is necessary for consistent state.
+  - >-
+    _indexed_keys requires stable ordering of tools by key; tuple(map(...)) preserves
+    input order so enumerate(indices) in the merge logic maps back correctly.
+  - >-
+    _rebuilt_member compares flattened_function fields, not top-level function key;
+    the function object is nested under tool.get("function") for chat tools only.
+  - >-
+    merge_guardrailed_tools uses frozenset(flattened_keys) to track ownership; tools
+    with keys not in that set are appended as new, not merged into namespaces.
+  - >-
+    is_anthropic_sse_stream requires actual event type presence in parsed events; checking
+    only frozenset membership is insufficient to distinguish from other SSE protocols.
+  - >-
+    assemble_anthropic_sse_stream depends on AnthropicPassthroughLoggingHandler which
+    is a private import; if that handler changes, raw SSE reassembly may break.
+  - >-
+    model_response_text joins only text content (strings), skipping image and tool-call
+    blocks; an all-image response returns empty string.
+  - >-
+    anthropic_sse_error_frames embeds the message in a JSON string field; message must
+    be sanitized by the caller to avoid injection.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

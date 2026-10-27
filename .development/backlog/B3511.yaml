@@ -3,7 +3,7 @@ milestone: M5 api families
 title: SystemOne conversion and decision provider contract
 status: todo
 depends_on: [B3510, B002, B2202]
-file: null
+file: tasks/B3511-systemone-conversion.yaml
 covers:
   - "litellm/llms/base_llm/decisions/**"
   - "litellm/llms/typesafe/**"

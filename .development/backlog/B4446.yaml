@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Scope health visibility and authorize model connection tests
 status: todo
 depends_on: [B052, B322, B401, B747, B759, B832, B844, B847, B884, B4441]
-file: null
+file: tasks/B4446-health-access-and-connections.yaml
 covers:
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
 parent: B130

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Chat guardrail streaming and lossless tool merging
 status: todo
 depends_on: [B3661, B3663, B3664, B3667, B3668, B907, B913, B966]
-file: null
+file: tasks/B3669-chat-guardrail-streaming.yaml
 covers:
   - "litellm/llms/openai/chat/guardrail_translation/handler.py"
   - "litellm/llms/openai/responses/guardrail_translation/tool_merge.py"

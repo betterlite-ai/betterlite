@@ -1,0 +1,195 @@
+id: B3771
+title: Generic guardrail evaluation and Gray Swan verdict enforcement
+description: >-
+  Implement service invocation and response handling for generic guardrail API and Gray Swan,
+  including metadata extraction, request orchestration, verdict enforcement (BLOCKED vs pass-through),
+  and error policies (fail_open, fail_closed). Generic guardrail's apply_guardrail method extracts user
+  API key metadata from multiple request context locations (litellm_metadata preferred over metadata),
+  calls the external guardrail service with unified request format, and handles the response. A BLOCKED
+  verdict raises invalid_request_error; other verdicts return modified or original inputs. Metadata extraction
+  tries litellm_metadata.user_api_key_* and metadata.user_api_key_*, merging both and preferring litellm_metadata
+  when both exist. When user_api_key_token is present, it aliases to user_api_key_hash even if metadata.user_api_key_hash
+  was also present, overriding the earlier copy.
+
+  Error handling routes connection failures, timeouts and 5xx responses based on unreachable_fallback policy
+  (fail_closed raises 400, fail_open logs critical and returns original inputs). The fail_on_error flag allows
+  silencing all errors including unreachable ones (5xx, timeout, connection), overriding unreachable_fallback
+  for monitoring scenarios. Response construction reconciles echoed rows: when the server returns rows unchanged,
+  betterlite returns the original objects; when modified, it returns the guardrail's version.
+
+  Gray Swan's apply_guardrail extracts texts and post-call response tool_calls, builds conversation context
+  by reconstructing request history for post-call scanning, and prepares payload with messages, tools, and
+  dynamic parameters (categories, policy_id, reasoning_mode). It calls /cygnal/monitor and processes response.
+  Violation score >= threshold flags content. The on_flagged_action is BLOCK (raise 400), MONITOR (passthrough),
+  or PASSTHROUGH (replace on post-call, raise exception on pre-call). Threshold and reasoning_mode read from
+  environment variables (GRAYSWAN_VIOLATION_THRESHOLD default 0.5, GRAYSWAN_REASONING_MODE) or config.
+  Failures follow fail_open policy: log and return inputs if true, raise GraySwanGuardrailAPIError if false.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/generic_guardrail_api.rs
+    - crates/betterlite-guardrails/src/generic_guardrail_api/**
+    - crates/betterlite-guardrails/src/grayswan.rs
+    - crates/betterlite-guardrails/src/grayswan/**
+    - tools/oracle/helpers/b3771.py
+    - tools/oracle/helpers/b3771/**
+    - tools/oracle/src/helpers/guardrails/b3771.rs
+    - tools/oracle/src/helpers/guardrails/b3771/**
+    - "tools/oracle/cases/guardrails/grayswan/**"
+    - "tools/oracle/cases/guardrails/generic_guardrail_api/**"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L261-L304
+    why: User API key metadata extraction from litellm_metadata and metadata with field merging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L393-L524
+    why: The complete apply_guardrail method with request construction, API invocation and response handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L306-L391
+    why: Error handling, fail_open_passthrough, return inputs construction and error routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L118-L182
+    why: Gray Swan __init__ with api_key, api_base, on_flagged_action, violation_threshold, reasoning_mode and fail_open defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L215-L336
+    why: The complete apply_guardrail method with context extraction, payload preparation, API invocation and response processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L489-L576
+    why: Response processing with violation_score comparison and block/monitor/passthrough verdict enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L613-L712
+    why: Post-call context reconstruction, payload building with dynamic parameters and inbound header extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L714-L830
+    why: Violation message formatting, threshold and reasoning mode resolution with environment variable fallback.
+dod:
+  - text: >-
+      Generic guardrail apply_guardrail extracts user API key metadata from litellm_metadata.user_api_key_*
+      and metadata.user_api_key_* fields, merging both locations and preferring litellm_metadata when both exist.
+    proof: [generic-metadata]
+  - text: >-
+      Generic guardrail user_api_key_token field aliases to user_api_key_hash even when metadata.user_api_key_hash
+      is also present, overriding the prior copy from the field merge loop.
+    proof: [generic-metadata, metadata-token-alias]
+  - text: >-
+      Generic guardrail calls POST to api_base with GenericGuardrailAPIRequest payload,
+      returning BLOCKED verdict as 400 invalid_request_error, other verdicts as modified or original inputs.
+    proof: [oracle]
+  - text: >-
+      Generic guardrail handles connection failure, timeout, 5xx response and decode error according
+      to unreachable_fallback: fail_closed raises 400, fail_open logs and returns original inputs.
+    proof: [generic-error]
+  - text: >-
+      Generic guardrail fail_on_error flag allows silent passthrough of all errors including unreachable ones
+      (5xx status, timeout, connection failures), overriding unreachable_fallback policy.
+    proof: [generic-error, fail-on-error-all]
+  - text: >-
+      Gray Swan apply_guardrail extracts texts and post-call tool_calls, reconstructs conversation context from request history.
+    proof: [grayswan-context]
+  - text: >-
+      Gray Swan prepares payload with messages, tools, and dynamic parameters (categories, policy_id, reasoning_mode)
+      from both config and request metadata, calls /cygnal/monitor.
+    proof: [grayswan-payload]
+  - text: >-
+      Gray Swan violation_score >= violation_threshold flags content; BLOCK raises 400, MONITOR logs and returns inputs,
+      PASSTHROUGH replaces on post-call or raises exception on pre-call.
+    proof: [grayswan-verdict]
+  - text: >-
+      Gray Swan fail_open true logs error and returns inputs unchanged; fail_open false raises GraySwanGuardrailAPIError.
+    proof: [grayswan-error]
+  - text: >-
+      Gray Swan violation_threshold defaults to 0.5, read from GRAYSWAN_VIOLATION_THRESHOLD env var if set.
+      Reasoning_mode read from GRAYSWAN_REASONING_MODE env var, must be in {off, hybrid, thinking}.
+    proof: [config]
+  - text: >-
+      Generic guardrail configuration loads api_key (required, GENERIC_GUARDRAIL_API_KEY env), api_base
+      (optional, GENERIC_GUARDRAIL_API_BASE env, appends /beta/litellm_basic_guardrail_api if needed).
+    proof: [config]
+  - text: >-
+      Gray Swan configuration loads api_key (required, GRAYSWAN_API_KEY env), api_base (optional,
+      GRAYSWAN_API_BASE env, default https://api.grayswan.ai), and all settable parameters.
+    proof: [config]
+checks:
+  optional: [mutants]
+  commands:
+    - id: generic-metadata
+      why: user API key metadata extraction fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*metadata/)'
+    - id: metadata-token-alias
+      why: user_api_key_token aliasing to user_api_key_hash fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*token.*alias/)'
+    - id: generic-error
+      why: error handling or fail_open/fail_closed policy fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*error/)'
+    - id: fail-on-error-all
+      why: fail_on_error silencing unreachable errors or overriding unreachable_fallback fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^generic_guardrail.*fail.*error.*(unreachable|override)/)'
+    - id: grayswan-context
+      why: post-call context extraction fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan.*context/)'
+    - id: grayswan-payload
+      why: payload preparation or dynamic parameter merging fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan.*payload/)'
+    - id: grayswan-verdict
+      why: verdict enforcement (block/monitor/passthrough) or violation message formatting fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan.*(verdict|block|monitor|passthrough)/)'
+    - id: grayswan-error
+      why: fail_open policy or GraySwanGuardrailAPIError fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan.*error/)'
+    - id: config
+      why: Generic guardrail or Gray Swan configuration does not load from environment or files
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^(generic_guardrail|grayswan).*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/generic_guardrail_api/call-with-texts.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/call-with-images.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/call-with-tools.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/call-with-structured-messages.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/blocked-verdict.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/metadata-extraction-litellm.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/metadata-extraction-metadata.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/metadata-merge-precedence.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/metadata-token-aliases-hash.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/error-connection-failure.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/error-timeout.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/error-5xx-fail-open.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/error-5xx-fail-closed.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/error-fail-on-error-false.yaml
+  - tools/oracle/cases/guardrails/generic_guardrail_api/error-fail-on-error-override-unreachable.yaml
+  - tools/oracle/cases/guardrails/grayswan/pre-call-texts.yaml
+  - tools/oracle/cases/guardrails/grayswan/post-call-texts-context.yaml
+  - tools/oracle/cases/guardrails/grayswan/post-call-tool-calls.yaml
+  - tools/oracle/cases/guardrails/grayswan/violation-below-threshold.yaml
+  - tools/oracle/cases/guardrails/grayswan/violation-at-threshold.yaml
+  - tools/oracle/cases/guardrails/grayswan/violation-block-action.yaml
+  - tools/oracle/cases/guardrails/grayswan/violation-monitor-action.yaml
+  - tools/oracle/cases/guardrails/grayswan/violation-passthrough-pre-call.yaml
+  - tools/oracle/cases/guardrails/grayswan/violation-passthrough-post-call.yaml
+  - tools/oracle/cases/guardrails/grayswan/payload-categories.yaml
+  - tools/oracle/cases/guardrails/grayswan/payload-policy-id.yaml
+  - tools/oracle/cases/guardrails/grayswan/payload-reasoning-mode.yaml
+  - tools/oracle/cases/guardrails/grayswan/error-connection-failure.yaml
+  - tools/oracle/cases/guardrails/grayswan/error-timeout.yaml
+  - tools/oracle/cases/guardrails/grayswan/error-fail-open-true.yaml
+  - tools/oracle/cases/guardrails/grayswan/error-fail-open-false.yaml
+deviations:
+  - what: >-
+      Generic guardrail error messages in outage scenarios use betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L390-L392
+  - what: >-
+      Gray Swan violation message formatting is betterlite's own template, not LiteLLM's exact wording.
+    why: Error messages are betterlite's own per rule errors-match-litellm; status code 400 matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L738-L756
+out_of_scope:
+  - 'Header allowlisting, sanitization and extraction; belong to B3770.'
+  - 'Type definitions and contracts for GenericGuardrailAPI request/response; belong to B3770.'
+  - 'Guardrail framework lifecycle, decorator wrappers and hook registration; belong to B107.'
+  - 'Gray Swan HTTP client initialization and post-call context handler setup; belong to B3772.'
+  - 'The utility functions effective_scan_only_tool_results_for_guardrail, effective_skip_system_message_for_guardrail,
+    effective_skip_tool_message_for_guardrail and scoped_structured_message_indices from litellm/llms/base_llm/guardrail_translation/utils.py;
+    they belong to B3663.'
+  - 'The function get_call_types_for_route from litellm/litellm_core_utils/api_route_to_call_types; it belongs to B207.'
+  - Other guardrail providers (Alice, Conduct, Cisco, etc.); each has its own task.
+pitfalls:
+  - Generic guardrail metadata extraction prefers litellm_metadata over metadata when both exist; both carry user_api_key_* fields that must be merged, then user_api_key_token unconditionally aliases to user_api_key_hash.
+  - The fail-on-error flag silences all errors including unreachable ones (5xx, timeout, connection), overriding unreachable_fallback; set fail_on_error=False to enforce fail_closed for unreachable errors.
+  - Gray Swan post-call context reconstruction only runs on response input_type; it loads call_type and resolves structured messages per call type.
+  - Gray Swan PASSTHROUGH on pre-call raises ModifyResponseException to short-circuit the LLM call, unlike post-call which modifies inputs.
+  - Gray Swan dynamic parameters (categories, policy_id, reasoning_mode) come from request metadata and override config values.
+  - Both api_key parameters must never appear in logs or Debug output; mark as SecretString.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

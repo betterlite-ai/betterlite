@@ -107,7 +107,6 @@ scope:
   - crates/betterlite-openai/src/workload_identity.rs
   - crates/betterlite-openai/src/workload_identity/**
   - Cargo.toml
-  - deny.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/openai/workload_identity.rs
   - tools/oracle/src/helpers/openai/workload_identity/**

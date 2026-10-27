@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP legacy OAuth cache and persisted configuration backfills
 status: todo
 depends_on: [B4654, B4656, B4661, B726, B733, B878, B1600]
-file: null
+file: tasks/B4662-mcp-oauth-cache-backfills.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/{oauth2_token_cache,oauth2_flow_backfill,oauth_issuer_stamp_backfill}.py"
 parent: B137

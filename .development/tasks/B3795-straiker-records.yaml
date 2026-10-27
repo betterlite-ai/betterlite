@@ -29,7 +29,7 @@ scope:
     - crates/betterlite-guardrails/src/straiker_webhook.rs
     - crates/betterlite-guardrails/src/straiker_webhook/**
     - tools/oracle/cases/helpers/straiker-webhook-records/**
-    - tools/oracle/fuzz/corpus/helper_case/**
+    - "tools/oracle/fuzz/corpus/helper_case/b3795-*"
     - tools/oracle/helpers/b3795.py
     - tools/oracle/helpers/b3795/**
     - tools/oracle/src/helpers/guardrails/b3795.rs
@@ -80,8 +80,8 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'straiker_webhook_records' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b3795-*")"
+      && grep -lq 'straiker_webhook_records' tools/oracle/fuzz/corpus/helper_case/b3795-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -105,6 +105,7 @@ oracle_cases:
 deviations: []
 out_of_scope: []
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b3795-<case>.yaml. The rest of that folder belongs to other tasks.'
 - Provider resolution falls back safely when get_llm_provider raises BadRequestError; returning None instead of
   panicking.
 - Opaque metadata filtering must preserve the configured default_metadata values even when request metadata is

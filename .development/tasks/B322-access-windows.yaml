@@ -44,7 +44,6 @@ scope:
   - tools/oracle/cases/routing/access-windows/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/access-windows-*
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/access_windows.rs
