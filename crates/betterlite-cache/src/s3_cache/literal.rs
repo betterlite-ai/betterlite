@@ -1,8 +1,21 @@
-use std::iter::Peekable;
+use std::iter::{Peekable, from_fn, once};
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::{Chars, Utf8Error, from_utf8};
 
 use serde_json::{Map, Number, Value};
+
+const SIMPLE_ESCAPES: [(char, char); 10] = [
+    ('a', '\u{07}'),
+    ('b', '\u{08}'),
+    ('f', '\u{0c}'),
+    ('n', '\n'),
+    ('r', '\r'),
+    ('t', '\t'),
+    ('v', '\u{0b}'),
+    ('\\', '\\'),
+    ('\'', '\''),
+    ('"', '"'),
+];
 
 pub(crate) fn parse(bytes: &[u8]) -> Result<Value, LiteralError> {
     let text = from_utf8(bytes).map_err(LiteralError::Utf8)?;
@@ -90,20 +103,16 @@ impl Parser<'_> {
 
     fn escape(&mut self, value: &mut String) -> Result<(), LiteralError> {
         let escaped = self.chars.next().ok_or(LiteralError::Unexpected)?;
+        if let Some(&(_, decoded)) = SIMPLE_ESCAPES.iter().find(|(name, _)| *name == escaped) {
+            value.push(decoded);
+            return Ok(());
+        }
         let decoded = match escaped {
-            'a' => '\u{07}',
-            'b' => '\u{08}',
-            'f' => '\u{0c}',
-            'n' => '\n',
-            'r' => '\r',
-            't' => '\t',
-            'v' => '\u{0b}',
-            '\\' | '\'' | '"' => escaped,
             'x' => self.hex_escape(2)?,
             'u' => self.hex_escape(4)?,
             'U' => self.hex_escape(8)?,
-            'N' => self.named_escape()?,
             '0'..='7' => self.octal_escape(escaped)?,
+            'N' => return Err(LiteralError::Escape),
             '\n' => return Ok(()),
             '\r' => {
                 self.chars.next_if_eq(&'\n');
@@ -128,34 +137,11 @@ impl Parser<'_> {
     }
 
     fn octal_escape(&mut self, first: char) -> Result<char, LiteralError> {
-        let mut digits = first.to_string();
-        for _ in 0_u8..2 {
-            if let Some(digit @ '0'..='7') = self.chars.peek().copied() {
-                digits.push(digit);
-                self.chars.next();
-            } else {
-                break;
-            }
-        }
+        let digits: String = once(first)
+            .chain(from_fn(|| self.chars.next_if(|digit| digit.is_digit(8))).take(2))
+            .collect();
         let code = u32::from_str_radix(&digits, 8).map_err(LiteralError::Integer)?;
         char::from_u32(code).ok_or(LiteralError::Escape)
-    }
-
-    fn named_escape(&mut self) -> Result<char, LiteralError> {
-        if self.chars.next_if_eq(&'{').is_none() {
-            return Err(LiteralError::Escape);
-        }
-        let mut name = String::new();
-        for character in self.chars.by_ref() {
-            if character == '}' {
-                return unicode_names2::character(&name).ok_or(LiteralError::Escape);
-            }
-            if name.len() >= 128 {
-                return Err(LiteralError::Escape);
-            }
-            name.push(character);
-        }
-        Err(LiteralError::Unexpected)
     }
 
     fn token(&mut self, first: char, allowed: fn(char) -> bool) -> String {

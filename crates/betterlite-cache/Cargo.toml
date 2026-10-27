@@ -15,7 +15,6 @@ serde_json = "1.0.154"
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-unicode_names2 = "4.0.0"
 
 [dev-dependencies]
 aws-smithy-http-client = { version = "1.5.1", default-features = false, features = ["rustls-aws-lc"] }

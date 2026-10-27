@@ -203,10 +203,6 @@ async fn storage_errors_are_misses(#[case] status: &str, #[case] code: &str) {
     r"{'key': '\x41\u00e9\U0001f600\0\101\777\q\a'}",
     "{\"key\":\"A\u{e9}\u{1f600}\\u0000A\u{1ff}\\\\q\\u0007\"}"
 )]
-#[case::names(
-    r"{'key': '\N{LATIN SMALL LETTER E WITH ACUTE}\N{SNOWMAN}'}",
-    r#"{"key":"\u00e9\u2603"}"#
-)]
 #[case::unicode("{'key': '\u{e9}'}", r#"{"key":"\u00e9"}"#)]
 #[case::quotes(r#"{'key': "isn't JSON"}"#, r#"{"key":"isn't JSON"}"#)]
 fn python_literals_use_ast_fallback(#[case] input: &str, #[case] expected: &str) {
@@ -220,8 +216,7 @@ fn python_literals_use_ast_fallback(#[case] input: &str, #[case] expected: &str)
 #[case::hex(r"{'key': '\x4'}")]
 #[case::unicode(r"{'key': '\u123z'}")]
 #[case::out_of_range(r"{'key': '\U00110000'}")]
-#[case::unknown_name(r"{'key': '\N{NO SUCH CHARACTER}'}")]
-#[case::missing_name_brace(r"{'key': '\Nwrong'}")]
+#[case::named(r"{'key': '\N{SNOWMAN}'}")]
 #[case::surrogate(r"{'key': '\ud800'}")]
 #[case::large_integer("{'key': 9223372036854775808}")]
 #[case::nan(r#"{"key":NaN}"#)]
