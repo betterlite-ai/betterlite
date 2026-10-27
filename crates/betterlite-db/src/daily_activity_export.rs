@@ -1,10 +1,10 @@
-use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_contracts::{
     DailyActivityScope, ExportCursor, ExportType, SqlParameter, SqlQuery,
 };
 use crate::daily_activity_sql::filters::build_where_clause;
-use crate::daily_activity_sql::metrics::KEY_SPEND_SELECT;
+use crate::daily_activity_sql::metrics::{KEY_SPEND_SELECT, ptu_flat_cost_select};
 use crate::daily_activity_sql::{DailyActivitySqlError, PTU_SENTINEL_API_KEY};
+use chrono::{DateTime, Utc};
 mod grouping;
 use grouping::{Grouping, cursor_clause as export_cursor_clause, export_grouping};
 
@@ -27,13 +27,17 @@ pub const fn bounded_limit(limit: i64) -> Result<(), DailyActivityExportError> {
     Ok(())
 }
 
-pub fn build_key_search_sql(
+pub fn build_key_search_sql<Clock>(
     scope: &DailyActivityScope,
     search: &str,
     limit: i64,
-) -> Result<SqlQuery, DailyActivityExportError> {
+    clock: &Clock,
+) -> Result<SqlQuery, DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+{
     let (where_sql, params, [search_index, sentinel_index, limit_index]) =
-        ranked_indexes(scope, limit)?;
+        ranked_indexes(scope, limit, clock)?;
     let escaped = search
         .replace('\\', "\\\\")
         .replace('%', "\\%")
@@ -43,18 +47,24 @@ pub fn build_key_search_sql(
         "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
     );
     let normalized_predicate = predicate.replace("\\\\", "\\");
-    let sql = render_key_query(table, &where_sql, &normalized_predicate, limit_index);
+    let sql = format!(
+        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {normalized_predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
+    );
     Ok(finish_ranked(sql, params, format!("%{escaped}%"), limit))
 }
 
-pub fn build_model_top_keys_sql(
+pub fn build_model_top_keys_sql<Clock>(
     scope: &DailyActivityScope,
     model_group: &str,
     by_model_group: bool,
     limit: i64,
-) -> Result<SqlQuery, DailyActivityExportError> {
+    clock: &Clock,
+) -> Result<SqlQuery, DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+{
     let (where_sql, params, [model_index, sentinel_index, limit_index]) =
-        ranked_indexes(scope, limit)?;
+        ranked_indexes(scope, limit, clock)?;
     let model_sql = if by_model_group {
         format!("COALESCE(NULLIF(model_group, ''), model) = ${model_index}")
     } else {
@@ -62,23 +72,22 @@ pub fn build_model_top_keys_sql(
     };
     let table = scope.as_ref().table.metadata().relation;
     let predicate = format!("AND {model_sql} AND api_key <> ${sentinel_index}");
-    let sql = render_key_query(table, &where_sql, &predicate, limit_index);
-    Ok(finish_ranked(sql, params, model_group.to_owned(), limit))
-}
-
-fn render_key_query(table: &str, where_sql: &str, predicate: &str, limit_index: usize) -> String {
     let sql = format!(
         "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
     );
-    sql
+    Ok(finish_ranked(sql, params, model_group.to_owned(), limit))
 }
 
-fn ranked_indexes(
+fn ranked_indexes<Clock>(
     scope: &DailyActivityScope,
     limit: i64,
-) -> Result<(String, Vec<SqlParameter>, [usize; 3]), DailyActivityExportError> {
+    clock: &Clock,
+) -> Result<(String, Vec<SqlParameter>, [usize; 3]), DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+{
     bounded_limit(limit)?;
-    let SqlQuery { sql, params } = build_where_clause(scope, 1, &|| chrono::Utc::now())?;
+    let SqlQuery { sql, params } = build_where_clause(scope, 1, clock)?;
     let first = params
         .len()
         .checked_add(1)
@@ -106,15 +115,19 @@ fn finish_ranked(
     SqlQuery { sql, params }
 }
 
-pub fn build_cache_leakage_keys_sql(
+pub fn build_cache_leakage_keys_sql<Clock>(
     scope: &DailyActivityScope,
     limit: i64,
-) -> Result<SqlQuery, DailyActivityExportError> {
+    clock: &Clock,
+) -> Result<SqlQuery, DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+{
     bounded_limit(limit)?;
     let SqlQuery {
         sql: where_sql,
         mut params,
-    } = build_where_clause(scope, 1, &|| chrono::Utc::now())?;
+    } = build_where_clause(scope, 1, clock)?;
     let sentinel_index = params
         .len()
         .checked_add(1)
@@ -133,17 +146,21 @@ pub fn build_cache_leakage_keys_sql(
     Ok(SqlQuery { sql, params })
 }
 
-pub fn build_export_sql(
+pub fn build_export_sql<Clock>(
     scope: &DailyActivityScope,
     export_type: ExportType,
     after: Option<&ExportCursor>,
     batch_size: i64,
-) -> Result<SqlQuery, DailyActivityExportError> {
+    clock: &Clock,
+) -> Result<SqlQuery, DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+{
     bounded_limit(batch_size)?;
     let SqlQuery {
         sql: where_sql,
         mut params,
-    } = build_where_clause(scope, 1, &|| chrono::Utc::now())?;
+    } = build_where_clause(scope, 1, clock)?;
     let grouping = export_grouping(export_type, scope.as_ref().table);
     let indexes = export_bind_indexes(params.len(), export_type, after.is_some())?;
     let plan = ExportPlan {
@@ -234,14 +251,7 @@ fn render_export_sql(plan: &ExportPlan<'_>) -> String {
     } else {
         format!(", {}", grouping.key)
     };
-    let flat_cost = match scope.as_ref().table {
-        DailyActivityTable::Team => "SUM(scoped.ptu_flat_cost)::float",
-        DailyActivityTable::User
-        | DailyActivityTable::Tag
-        | DailyActivityTable::Organization
-        | DailyActivityTable::Customer
-        | DailyActivityTable::Agent => "0::float",
-    };
+    let flat_cost = ptu_flat_cost_select(scope.as_ref().table, false);
     let cursor_sql = export_cursor_clause(scope, cursor_indexes, &grouping.key);
     format!(
         "WITH scoped AS ( SELECT * FROM \"{table}\" WHERE {where_sql}{sentinel_sql} ) SELECT scoped.date, COALESCE(scoped.\"{entity}\", '') AS entity_id, {} AS entity_alias, {} AS api_key, {}, {}, {}, {} AS model, COALESCE(SUM(scoped.spend), 0)::float AS spend, {flat_cost} AS flat_cost, COALESCE(SUM(scoped.prompt_tokens), 0)::bigint AS prompt_tokens, COALESCE(SUM(scoped.completion_tokens), 0)::bigint AS completion_tokens, COALESCE(SUM(scoped.api_requests), 0)::bigint AS api_requests, COALESCE(SUM(scoped.successful_requests), 0)::bigint AS successful_requests, COALESCE(SUM(scoped.failed_requests), 0)::bigint AS failed_requests, COALESCE(SUM(scoped.cache_read_input_tokens), 0)::bigint AS cache_read_input_tokens, COALESCE(SUM(scoped.cache_creation_input_tokens), 0)::bigint AS cache_creation_input_tokens FROM scoped{} WHERE TRUE{} GROUP BY scoped.date, COALESCE(scoped.\"{entity}\", ''){group_suffix} ORDER BY scoped.date, COALESCE(scoped.\"{entity}\", ''){group_suffix} LIMIT ${limit_index}",

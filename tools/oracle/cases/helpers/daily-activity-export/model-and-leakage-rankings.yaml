@@ -4,14 +4,30 @@ call:
   daily_activity_export:
     cases:
       model:
+        utc_now: '2026-08-06T00:30:00Z'
         scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
         function: model
         model_group: g
         by_model_group: true
         limit: 2
       leakage:
+        utc_now: '2026-08-06T00:30:00Z'
         scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
         function: leakage
         limit: 2
+      exact_model:
+        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+        utc_now: '2026-08-06T00:30:00Z'
+        function: model
+        model_group: g
+        by_model_group: false
+        limit: 101
+      rejected_limit:
+        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+        utc_now: '2026-08-06T00:30:00Z'
+        function: model
+        model_group: g
+        by_model_group: true
+        limit: 0
 env: {}
 compare: {ignore: []}

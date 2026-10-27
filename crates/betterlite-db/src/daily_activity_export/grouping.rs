@@ -17,52 +17,16 @@ pub(super) fn export_grouping(export_type: ExportType, table: DailyActivityTable
     group_fields(export_type, alias, entity_join)
 }
 
+#[rustfmt::skip]
 fn group_fields(export_type: ExportType, alias: &str, entity_join: &str) -> Grouping {
     let metadata = METADATA_JOINS;
     let metadata_join = format!("{metadata}{entity_join}");
     match export_type {
-        ExportType::Daily => simple_grouping("''", "NULL::text", entity_join, alias),
-        ExportType::DailyWithKeys => build([
-            "scoped.api_key",
-            "NULLIF(scoped.api_key, '')",
-            "MAX(COALESCE(vt.key_alias, dvt.key_alias)) AS key_alias",
-            "MAX(COALESCE(vt.user_id, dvt.user_id)) AS user_id",
-            "MAX(u.user_email) AS user_email",
-            "NULL::text",
-            &metadata_join,
-            alias,
-        ]),
-        ExportType::DailyWithModels => simple_grouping(
-            "COALESCE(scoped.model, '')",
-            "NULLIF(COALESCE(scoped.model, ''), '')",
-            entity_join,
-            alias,
-        ),
-        ExportType::DailyWithUsers => build([
-            "COALESCE(vt.user_id, dvt.user_id, '')",
-            "NULL::text",
-            "NULL::text AS key_alias",
-            "MAX(COALESCE(vt.user_id, dvt.user_id)) AS user_id",
-            "MAX(u.user_email) AS user_email",
-            "NULL::text",
-            &metadata_join,
-            alias,
-        ]),
+        ExportType::Daily => build(["''", "NULL::text", "NULL::text AS key_alias", "NULL::text AS user_id", "NULL::text AS user_email", "NULL::text", entity_join, alias]),
+        ExportType::DailyWithKeys => build(["scoped.api_key", "NULLIF(scoped.api_key, '')", "MAX(COALESCE(vt.key_alias, dvt.key_alias)) AS key_alias", "MAX(COALESCE(vt.user_id, dvt.user_id)) AS user_id", "MAX(u.user_email) AS user_email", "NULL::text", &metadata_join, alias]),
+        ExportType::DailyWithModels => build(["COALESCE(scoped.model, '')", "NULLIF(COALESCE(scoped.model, ''), '')", "NULL::text AS key_alias", "NULL::text AS user_id", "NULL::text AS user_email", "NULL::text", entity_join, alias]),
+        ExportType::DailyWithUsers => build(["COALESCE(vt.user_id, dvt.user_id, '')", "NULL::text", "NULL::text AS key_alias", "MAX(COALESCE(vt.user_id, dvt.user_id)) AS user_id", "MAX(u.user_email) AS user_email", "NULL::text", &metadata_join, alias]),
     }
-}
-
-fn simple_grouping(key: &str, model: &str, entity_join: &str, alias: &str) -> Grouping {
-    let fields = [
-        key,
-        "NULL::text",
-        "NULL::text AS key_alias",
-        "NULL::text AS user_id",
-        "NULL::text AS user_email",
-        model,
-        entity_join,
-        alias,
-    ];
-    build(fields)
 }
 
 const fn table_parts(table: DailyActivityTable) -> (&'static str, &'static str) {

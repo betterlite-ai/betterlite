@@ -7,6 +7,7 @@ use betterlite_db::daily_activity_export::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use chrono::{DateTime, Utc};
 
 pub(crate) struct Op;
 #[derive(Deserialize)]
@@ -16,6 +17,7 @@ pub(crate) struct Input {
 #[derive(Deserialize)]
 struct Case {
     scope: DailyActivityScope,
+    utc_now: DateTime<Utc>,
     #[serde(flatten)]
     action: Action,
 }
@@ -83,18 +85,19 @@ impl crate::helpers::Helper for Op {
 }
 
 fn evaluate(case: &Case) -> Result<SqlQuery, DailyActivityExportError> {
+    let clock = || case.utc_now;
     match &case.action {
-        Action::Search { search, limit } => build_key_search_sql(&case.scope, search, *limit),
+        Action::Search { search, limit } => build_key_search_sql(&case.scope, search, *limit, &clock),
         Action::Model {
             model_group,
             by_model_group,
             limit,
-        } => build_model_top_keys_sql(&case.scope, model_group, *by_model_group, *limit),
-        Action::Leakage { limit } => build_cache_leakage_keys_sql(&case.scope, *limit),
+        } => build_model_top_keys_sql(&case.scope, model_group, *by_model_group, *limit, &clock),
+        Action::Leakage { limit } => build_cache_leakage_keys_sql(&case.scope, *limit, &clock),
         Action::Export {
             export_type,
             after,
             batch_size,
-        } => build_export_sql(&case.scope, *export_type, after.as_ref(), *batch_size),
+        } => build_export_sql(&case.scope, *export_type, after.as_ref(), *batch_size, &clock),
     }
 }
