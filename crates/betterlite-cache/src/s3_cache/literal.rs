@@ -63,83 +63,124 @@ struct Parser<'input> {
     chars: Chars<'input>,
 }
 
-impl Parser<'_> {
-    fn value(&mut self) -> Result<Value, LiteralError> {
-        self.space();
-        match self.chars.next().ok_or(LiteralError::UnexpectedEnd)? {
-            '{' => self.mapping(),
-            '[' => self.sequence(']'),
-            '(' => self.sequence(')'),
-            quote @ ('\'' | '"') => self.string(quote),
-            character if character.is_ascii_digit() || character == '-' => self.number(character),
-            character if character.is_ascii_alphabetic() => self.word(character),
-            _ => Err(LiteralError::Unexpected),
-        }
-    }
-
-    fn mapping(&mut self) -> Result<Value, LiteralError> {
+macro_rules! parse_collection {
+    ($parser:expr, $closing:expr, $collection:expr) => {{
         let mut object = Map::new();
-        loop {
-            self.space();
-            if self.consume('}') {
-                return Ok(Value::Object(object));
-            }
-            let key = self.value()?.as_str().ok_or(LiteralError::Key)?.to_owned();
-            self.space();
-            self.consume(':')
-                .then_some(())
-                .ok_or(LiteralError::Unexpected)?;
-            object.insert(key, self.value()?);
-            self.space();
-            if !self.consume(',') {
-                self.consume('}')
-                    .then_some(())
-                    .ok_or(LiteralError::Unexpected)?;
-                return Ok(Value::Object(object));
-            }
-        }
-    }
-
-    fn sequence(&mut self, closing: char) -> Result<Value, LiteralError> {
         let mut values = Vec::new();
+        let mut elements = 0_usize;
         loop {
-            self.space();
-            if self.consume(closing) {
-                return Ok(Value::Array(values));
+            $parser.space();
+            if $parser.consume($closing) {
+                break match $collection {
+                    Collection::Mapping => Ok(Value::Object(object)),
+                    Collection::Sequence => Ok(Value::Array(values)),
+                };
             }
-            values.push(self.value()?);
-            self.space();
-            if !self.consume(',') {
-                self.consume(closing)
+            if matches!($collection, Collection::Mapping) {
+                let key = $parser
+                    .value()?
+                    .as_str()
+                    .ok_or(LiteralError::Key)?
+                    .to_owned();
+                $parser.space();
+                $parser
+                    .consume(':')
                     .then_some(())
                     .ok_or(LiteralError::Unexpected)?;
-                return Ok(Value::Array(values));
+                object.insert(key, $parser.value()?);
+            } else {
+                values.push($parser.value()?);
+            }
+            elements = elements
+                .checked_add(1)
+                .ok_or(LiteralError::CollectionLimit)?;
+            if elements > 100_000 {
+                break Err(LiteralError::CollectionLimit);
+            }
+            $parser.space();
+            if !$parser.consume(',') {
+                $parser
+                    .consume($closing)
+                    .then_some(())
+                    .ok_or(LiteralError::Unexpected)?;
+                break match $collection {
+                    Collection::Mapping => Ok(Value::Object(object)),
+                    Collection::Sequence => Ok(Value::Array(values)),
+                };
             }
         }
-    }
+    }};
+}
 
-    fn string(&mut self, quote: char) -> Result<Value, LiteralError> {
+macro_rules! parse_string {
+    ($parser:expr, $quote:expr) => {{
         let mut value = String::new();
-        while let Some(next_character) = self.chars.next() {
+        while let Some(next_character) = $parser.chars.next() {
             match next_character {
-                closing if closing == quote => return Ok(Value::String(value)),
-                '\\' => value.push(self.chars.next().ok_or(LiteralError::UnexpectedEnd)?),
+                closing if closing == $quote => return Ok(Value::String(value)),
+                '\\' => match $parser.chars.next().ok_or(LiteralError::UnexpectedEnd)? {
+                    'n' => value.push('\n'),
+                    'r' => value.push('\r'),
+                    't' => value.push('\t'),
+                    'b' => value.push('\u{08}'),
+                    'f' => value.push('\u{0c}'),
+                    'v' => value.push('\u{0b}'),
+                    escaped => value.push(escaped),
+                },
                 other => value.push(other),
             }
         }
         Err(LiteralError::UnexpectedEnd)
+    }};
+}
+
+impl Parser<'_> {
+    fn value(&mut self) -> Result<Value, LiteralError> {
+        self.space();
+        match self.chars.next().ok_or(LiteralError::UnexpectedEnd)? {
+            '{' => parse_collection!(self, '}', Collection::Mapping),
+            '[' => parse_collection!(self, ']', Collection::Sequence),
+            '(' => parse_collection!(self, ')', Collection::Sequence),
+            quote @ ('\'' | '"') => parse_string!(self, quote),
+            character
+                if character.is_ascii_digit()
+                    || character == '-'
+                    || character.is_ascii_alphabetic() =>
+            {
+                self.token_value(character)
+            }
+            _ => Err(LiteralError::Unexpected),
+        }
     }
 
-    fn number(&mut self, first: char) -> Result<Value, LiteralError> {
-        let mut text = first.to_string();
+    fn token(&mut self, first: char, allowed: fn(char) -> bool) -> String {
+        let mut token = first.to_string();
         while let Some(character) = self.chars.clone().next() {
-            if character.is_ascii_digit() || matches!(character, '.' | 'e' | 'E' | '+' | '-') {
-                text.push(character);
+            if allowed(character) {
+                token.push(character);
                 self.chars.next();
             } else {
                 break;
             }
         }
+        token
+    }
+
+    fn token_value(&mut self, first: char) -> Result<Value, LiteralError> {
+        if first.is_ascii_alphabetic() {
+            return match self
+                .token(first, |value| value.is_ascii_alphabetic())
+                .as_str()
+            {
+                "None" => Ok(Value::Null),
+                "True" => Ok(Value::Bool(true)),
+                "False" => Ok(Value::Bool(false)),
+                _ => Err(LiteralError::Word),
+            };
+        }
+        let text = self.token(first, |value| {
+            value.is_ascii_digit() || matches!(value, '.' | 'e' | 'E' | '+' | '-')
+        });
         if !text.contains(['.', 'e', 'E']) {
             return text
                 .parse::<i64>()
@@ -155,24 +196,6 @@ impl Parser<'_> {
         Number::from_f64(number)
             .map(Value::Number)
             .ok_or(LiteralError::Number)
-    }
-
-    fn word(&mut self, first: char) -> Result<Value, LiteralError> {
-        let mut word = first.to_string();
-        while let Some(character) = self.chars.clone().next() {
-            if character.is_ascii_alphabetic() {
-                word.push(character);
-                self.chars.next();
-            } else {
-                break;
-            }
-        }
-        match word.as_str() {
-            "None" => Ok(Value::Null),
-            "True" => Ok(Value::Bool(true)),
-            "False" => Ok(Value::Bool(false)),
-            _ => Err(LiteralError::Word),
-        }
     }
 
     fn space(&mut self) {
@@ -196,6 +219,12 @@ impl Parser<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Collection {
+    Mapping,
+    Sequence,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum LiteralError {
     #[error("cache literal is not UTF-8")]
@@ -215,6 +244,8 @@ pub enum LiteralError {
     Word,
     #[error("cache literal has an invalid number")]
     Number,
+    #[error("cache literal collection is too large")]
+    CollectionLimit,
     #[error("cache literal has an invalid integer")]
     Integer {
         #[source]

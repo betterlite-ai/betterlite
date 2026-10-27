@@ -15,7 +15,8 @@ pub mod body;
 mod client;
 #[expect(
     clippy::disallowed_types,
-    reason = "the entry module contains only an opaque JSON payload newtype and its derives"
+    clippy::cognitive_complexity,
+    reason = "the entry module contains an opaque JSON payload and its bounded literal decoder"
 )]
 pub mod entry;
 mod read;

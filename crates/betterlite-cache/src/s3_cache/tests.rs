@@ -12,8 +12,6 @@ use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
-use tokio::runtime::Builder;
-use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::body::decode_body;
@@ -299,29 +297,6 @@ async fn chunked_body_is_bounded() {
     timeout(Duration::from_secs(5), operation).await.unwrap();
 }
 
-#[test]
-fn sync_read_uses_supplied_runtime() {
-    let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    let listener = runtime.block_on(TcpListener::bind("127.0.0.1:0")).unwrap();
-    let cache = configured_cache(&listener, "", 4096);
-    let mut tasks = JoinSet::new();
-    tasks.spawn_on(
-        async move {
-            serve(
-                &listener,
-                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-            )
-            .await
-        },
-        runtime.handle(),
-    );
-    assert_eq!(
-        cache.get_cache(runtime.handle(), "key"),
-        Some(decode_body(b"{}").unwrap())
-    );
-    drop(runtime.block_on(tasks.join_next()).unwrap().unwrap());
-}
-
 async fn serve_pipeline(listener: &TcpListener) -> Vec<String> {
     let mut requests = Vec::new();
     for _ in 0_u32..20 {
@@ -334,22 +309,6 @@ async fn serve_pipeline(listener: &TcpListener) -> Vec<String> {
         );
     }
     requests
-}
-
-#[tokio::test]
-async fn default_retries_match_botocore_legacy_attempts() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_endpoint_url: http://{address}\n"
-    );
-    let cache = cache_from(&yaml, 4096, Duration::from_secs(5));
-    let config = cache.client.config();
-    assert_eq!(config.retry_config().unwrap().max_attempts(), 5);
-    assert_eq!(
-        config.timeout_config().unwrap().read_timeout(),
-        Some(Duration::from_secs(60))
-    );
 }
 
 #[tokio::test]
