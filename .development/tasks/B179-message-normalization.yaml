@@ -25,7 +25,7 @@ scope:
   - tools/oracle/helpers/message_normalization.py
   - tools/oracle/helpers/message_normalization/**
   - tools/oracle/cases/helpers/messages/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/message_normalization-*"
   lint_tables: false
 references:
 - url: >-
@@ -83,8 +83,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'message_normalization' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/message_normalization-*")" &&
+      grep -lq 'message_normalization' tools/oracle/fuzz/corpus/helper_case/message_normalization-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -104,6 +104,7 @@ out_of_scope:
   Tool arguments and schemas B216/B217/B178; file/MIME/ID functions B183; common_utils.py function ownership is
   split at the exact referenced ranges, not omitted.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/message_normalization-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as message_normalization in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/message_normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/message_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A mid-conversation system message cannot simply be moved ahead of every earlier message.
 - Do not erase encrypted reasoning signatures when extracting readable reasoning.

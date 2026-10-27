@@ -876,6 +876,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-deepagents-harness"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-harness",
+ "brace-expansion",
+ "futures-util",
+ "glob",
+ "regex",
+ "rstest",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "typed-path",
+ "uuid",
+]
+
+[[package]]
 name = "betterlite-error"
 version = "0.1.0"
 
@@ -1427,6 +1445,12 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "brace-expansion"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0466e75f55342d0801e7f097cb4b37e6154f54e97e5deea03a63110b98bfa6e"
 
 [[package]]
 name = "bs58"
@@ -5173,6 +5197,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typenum"
