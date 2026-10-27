@@ -1,0 +1,5 @@
+kind: helper
+name: search-outcome-failed
+call: {websearch_tool_records: {function: search_outcome_failed, error_code: unavailable, message: "provider down"}}
+env: {}
+compare: {ignore: []}
