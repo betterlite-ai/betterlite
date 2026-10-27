@@ -24,7 +24,7 @@ impl State {
             return Err(HarnessError::from(SandboxError::Closed));
         }
         let joined = Path::new(root).join(path);
-        let resolved = real_path(&joined, 0).map_err(|source| HarnessError::Sandbox { source })?;
+        let resolved = real_path(&joined).map_err(|source| HarnessError::Sandbox { source })?;
         if !resolved.starts_with(root)
             && !self
                 .tempdirs

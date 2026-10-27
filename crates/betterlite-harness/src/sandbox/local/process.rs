@@ -5,6 +5,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use bstr::ByteSlice as _;
 use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process, kill_process_group};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -14,7 +15,6 @@ use tokio::time::{sleep, timeout};
 use tokio_process::{Child, ChildStderr, ChildStdin, ChildStdout};
 
 use super::error::SandboxError;
-use super::files::decode_utf8;
 use crate::errors::{CappedOperation, HarnessError};
 use crate::sandbox::{CompletedRun, Process, SandboxCommand};
 
@@ -171,8 +171,8 @@ pub(super) async fn collect(
         )?;
         let exit_code = process.wait().await?;
         Ok(CompletedRun {
-            stdout: decode_utf8(&stdout),
-            stderr: decode_utf8(&stderr),
+            stdout: stdout.to_str_lossy().into_owned(),
+            stderr: stderr.to_str_lossy().into_owned(),
             exit_code,
         })
     };

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use thiserror::Error;
-use tokio::task::{JoinError, JoinSet};
+use tokio::task::JoinError;
 
 use crate::errors::HarnessError;
 
@@ -13,8 +13,8 @@ pub enum SandboxError {
     Closed,
     #[error("sandbox state poisoned")]
     Poisoned,
-    #[error("sandbox path does not exist or is not a directory: {}", .0.display())]
-    Root(PathBuf),
+    #[error("sandbox path does not exist or is not a directory: {}: {source}", path.display())]
+    Root { path: PathBuf, source: io::Error },
     #[error("path escapes the sandbox: {}", .0.display())]
     Escape(PathBuf),
     #[error("path is not UTF-8: {}", .0.display())]
@@ -40,19 +40,5 @@ impl From<SandboxError> for HarnessError {
         Self::Sandbox {
             source: io::Error::other(source),
         }
-    }
-}
-
-pub(super) async fn blocking<Job, Output>(job: Job) -> Result<Output, HarnessError>
-where
-    Job: FnOnce() -> Result<Output, HarnessError> + Send + 'static,
-    Output: Send + 'static,
-{
-    let mut tasks = JoinSet::new();
-    tasks.spawn_blocking(job);
-    match tasks.join_next().await {
-        Some(Ok(result)) => result,
-        Some(Err(source)) => Err(HarnessError::from(SandboxError::Worker { source })),
-        None => Err(HarnessError::from(SandboxError::NoResult)),
     }
 }

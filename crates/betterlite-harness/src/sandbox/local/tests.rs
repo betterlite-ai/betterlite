@@ -11,7 +11,6 @@ use secrecy::SecretString;
 
 use super::LocalSandbox;
 use super::environment::{filtered_environ, is_secret_env_name};
-use super::files::decode_utf8;
 use crate::sandbox::{Process as _, Sandbox as _, SandboxCommand};
 use secrecy::ExposeSecret;
 
@@ -97,9 +96,20 @@ fn filters_claudecode_prefix() {
     assert!(is_secret_env_name("CLAUDECODE_SESSION"));
 }
 
-#[test]
-fn replaces_truncated_utf8_once() {
-    assert_eq!(decode_utf8(b"ok\xe2\x82"), "ok\u{fffd}");
+#[tokio::test]
+async fn replaces_truncated_utf8_once() {
+    let root = tempdir();
+    let sandbox =
+        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let output = sandbox
+        .run(
+            &command(&["/bin/sh", "-c", r"printf '\342\202'"]),
+            Duration::from_secs(2),
+            100,
+        )
+        .await
+        .unwrap();
+    assert_eq!(output.stdout, "\u{fffd}");
 }
 
 #[tokio::test]
@@ -227,6 +237,40 @@ async fn close_kills_and_is_idempotent() {
     sandbox.read("file", 10).await.unwrap_err();
     sandbox.write("file", b"data").await.unwrap_err();
     sandbox.tempdir().await.unwrap_err();
+}
+
+#[tokio::test]
+async fn close_kills_term_ignoring_children_concurrently() {
+    use tokio::io::AsyncReadExt as _;
+
+    let root = tempdir();
+    let sandbox =
+        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let mut first = sandbox
+        .exec(&command(&[
+            "/bin/sh",
+            "-c",
+            "trap '' TERM; printf ready; exec /bin/sleep 30",
+        ]))
+        .await
+        .unwrap();
+    let mut second = sandbox
+        .exec(&command(&[
+            "/bin/sh",
+            "-c",
+            "trap '' TERM; printf ready; exec /bin/sleep 30",
+        ]))
+        .await
+        .unwrap();
+    let mut first_ready = [0_u8; 5];
+    first.stdout().read_exact(&mut first_ready).await.unwrap();
+    let mut second_ready = [0_u8; 5];
+    second.stdout().read_exact(&mut second_ready).await.unwrap();
+    let started = Instant::now();
+    sandbox.close().await.unwrap();
+    assert!(started.elapsed() < Duration::from_secs(8));
+    assert_eq!(first.wait().await.unwrap(), -9_i32);
+    assert_eq!(second.wait().await.unwrap(), -9_i32);
 }
 
 #[tokio::test]

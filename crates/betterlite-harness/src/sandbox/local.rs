@@ -4,6 +4,7 @@ mod files;
 pub mod process;
 mod state;
 mod tests;
+mod worker;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -12,14 +13,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures_util::future::join_all;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::errors::HarnessError;
 use crate::sandbox::{CompletedRun, Sandbox, SandboxCommand};
 use crate::snapshots::snapshot_local;
 use environment::filtered_environ;
-use error::{SandboxError, blocking};
-use files::{find_binary, path_string, read_file, write_file};
+use error::SandboxError;
+use files::{path_string, read_file, write_file};
 use process::SubprocessHandle;
 use state::State;
 
@@ -36,12 +38,15 @@ impl LocalSandbox {
         environment: &BTreeMap<String, SecretString>,
         temp_root: PathBuf,
     ) -> Result<Self, HarnessError> {
-        let resolved = fs::canonicalize(path).map_err(|source| SandboxError::Start {
-            name: path.display().to_string(),
+        let resolved = fs::canonicalize(path).map_err(|source| SandboxError::Root {
+            path: path.to_path_buf(),
             source,
         })?;
         if !resolved.is_dir() {
-            return Err(HarnessError::from(SandboxError::Root(resolved)));
+            return Err(HarnessError::from(SandboxError::Root {
+                path: resolved,
+                source: io::Error::from(io::ErrorKind::NotADirectory),
+            }));
         }
         Ok(Self {
             workdir: path_string(&resolved)?,
@@ -78,7 +83,7 @@ impl LocalSandbox {
     {
         let state = Arc::clone(&self.state);
         let root = self.workdir.clone();
-        blocking(move || {
+        worker::blocking(move || {
             let mut locked = state.lock().map_err(|_poisoned| SandboxError::Poisoned)?;
             let result = job(&mut locked, &root);
             drop(locked);
@@ -151,13 +156,14 @@ impl Sandbox for LocalSandbox {
         let environment = self.child_env(&BTreeMap::new());
         let name = binary.to_owned();
         let root = PathBuf::from(&self.workdir);
-        blocking(move || {
+        worker::blocking(move || {
             let path = environment
                 .get("PATH")
                 .map_or("/bin:/usr/bin", ExposeSecret::expose_secret);
-            find_binary(&name, path, &root)
-                .map(|found| path_string(&found))
-                .transpose()
+            match which::which_in(&name, Some(path), &root) {
+                Ok(found) => path_string(&found).map(Some),
+                Err(_not_found) => Ok(None),
+            }
         })
         .await
     }
@@ -179,10 +185,8 @@ impl Sandbox for LocalSandbox {
 
     async fn close(&self) -> Result<(), HarnessError> {
         let cleanup = self.access(|state, _root| Ok(state.take())).await?;
-        for child in &cleanup.processes {
-            drop(child.kill().await);
-        }
-        blocking(move || {
+        join_all(cleanup.processes.iter().map(|child| child.kill())).await;
+        worker::blocking(move || {
             drop(cleanup);
             Ok(())
         })
