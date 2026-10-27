@@ -113,9 +113,9 @@ fn python_text(value: &JsonValue) -> String {
 
 #[must_use]
 pub fn source_for(store: &SettingsStore, key: &str, default: &JsonValue) -> FieldSource {
-    let source = super::source_for(store, key, default);
-    if source == FieldSource::Unset && *default == JsonValue::Null {
-        FieldSource::Unset
+    let source = store.resolution(key).source();
+    if source == FieldSource::Unset && *default != JsonValue::Null {
+        FieldSource::Default
     } else {
         source
     }

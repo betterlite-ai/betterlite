@@ -1,13 +1,19 @@
 use super::settings_rules::JsonValue;
+use std::num::FpCategory;
 
 mod tests;
 
 #[must_use]
 pub fn coerce_bool(value: JsonValue) -> JsonValue {
-    let normalized = super::coerce_bool(value);
-    if normalized.is_null() {
-        JsonValue::Null
-    } else {
-        normalized
+    match value {
+        JsonValue::Null | JsonValue::Bool(_) => value,
+        JsonValue::String(text) => JsonValue::Bool(text.to_lowercase() == "true"),
+        JsonValue::Number(number) => JsonValue::Bool(
+            number
+                .as_f64()
+                .is_some_and(|float| float.classify() != FpCategory::Zero),
+        ),
+        JsonValue::Array(items) => JsonValue::Bool(!items.is_empty()),
+        JsonValue::Object(entries) => JsonValue::Bool(!entries.is_empty()),
     }
 }

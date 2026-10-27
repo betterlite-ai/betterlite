@@ -63,10 +63,12 @@ impl Section {
     // pass_through_endpoints is a list of resources the proxy merges from both sources, so the file never owns it
     #[must_use]
     pub fn is_resource_list(self, key: &str) -> bool {
-        if self == Self::GeneralSettings {
-            key == "pass_through_endpoints"
-        } else {
-            false
+        match self {
+            Self::GeneralSettings => key == "pass_through_endpoints",
+            Self::RouterSettings
+            | Self::LitellmSettings
+            | Self::EnvironmentVariables
+            | Self::UiSettings => false,
         }
     }
 }
