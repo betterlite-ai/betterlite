@@ -1,10 +1,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 pub const REVERSE_MAP_KEY: &str = "_anthropic_tool_name_map";
 const MAX_TOOL_NAME_LENGTH: usize = 128;
 
 pub type ToolName = String;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum AdditionalJson {
+    Null,
+    Bool(bool),
+    Number(Number),
+    Text(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
+
+pub type AdditionalFields = BTreeMap<String, AdditionalJson>;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub struct ToolNameMaps {
@@ -20,6 +34,8 @@ pub struct ToolRecord {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(flatten)]
+    pub additional_fields: AdditionalFields,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -28,8 +44,8 @@ pub struct ToolChoiceRecord {
     pub choice_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extra: Option<bool>,
+    #[serde(flatten)]
+    pub additional_fields: AdditionalFields,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -64,6 +80,8 @@ pub struct ToolCallRecord {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub function: Option<FunctionRecord>,
+    #[serde(flatten)]
+    pub additional_fields: AdditionalFields,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -80,6 +98,8 @@ pub struct ContentBlock {
     pub block_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(flatten)]
+    pub additional_fields: AdditionalFields,
 }
 
 #[must_use]

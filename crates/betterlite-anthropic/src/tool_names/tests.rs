@@ -2,13 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use rstest::rstest;
-
 use super::{
     FunctionRecord, MessageRecord, RequestParams, ToolCallRecord, ToolChoiceRecord, ToolRecord,
     basic_sanitize_tool_name, build_tool_name_maps, rewrite_tool_names_in_messages,
     sanitize_tool_names_in_request,
 };
+use rstest::rstest;
 
 #[rstest]
 #[case::invalid_tool_name_characters(
@@ -100,6 +99,7 @@ fn tool_choice_rewrite_copies_only_custom_tools() {
                 tool_type: Some(String::from("custom")),
                 name: Some(String::from("bad/name")),
                 description: Some(String::from("keep")),
+                ..ToolRecord::default()
             },
             ToolRecord {
                 tool_type: Some(String::from("web_search")),
@@ -111,7 +111,7 @@ fn tool_choice_rewrite_copies_only_custom_tools() {
         tool_choice: Some(ToolChoiceRecord {
             choice_type: Some(String::from("tool")),
             name: Some(String::from("bad/name")),
-            extra: Some(true),
+            ..ToolChoiceRecord::default()
         }),
     };
     let maps = sanitize_tool_names_in_request(&mut params);
@@ -127,6 +127,50 @@ fn tool_choice_rewrite_copies_only_custom_tools() {
     assert_eq!(
         params.tool_choice.as_ref().unwrap().name.as_deref(),
         Some("bad_name")
+    );
+}
+
+#[test]
+fn request_and_messages_preserve_unmodeled_fields() {
+    let mut params = serde_json::from_str::<RequestParams>(
+        r#"{"tools":[{"type":"custom","name":"bad/name","description":"keep","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral"}}],"tool_choice":{"type":"tool","name":"bad/name","extra":true}}"#,
+    )
+    .unwrap();
+    sanitize_tool_names_in_request(&mut params);
+    let tool = &params.tools.as_ref().unwrap()[0];
+    assert_eq!(
+        serde_json::to_string(&tool.additional_fields["input_schema"]).unwrap(),
+        r#"{"type":"object"}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&tool.additional_fields["cache_control"]).unwrap(),
+        r#"{"type":"ephemeral"}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&params.tool_choice.as_ref().unwrap().additional_fields["extra"])
+            .unwrap(),
+        "true"
+    );
+
+    let parsed = serde_json::from_str::<Vec<MessageRecord>>(
+        r#"[{"tool_calls":[{"id":"call-1","type":"function","function":{"name":"bad/name","arguments":"{}"}}],"content":[{"type":"text","text":"sibling"}]}]"#,
+    )
+    .unwrap();
+    let rewritten = rewrite_tool_names_in_messages(
+        &parsed,
+        &BTreeMap::from([(String::from("bad/name"), String::from("bad_name"))]),
+    );
+    let tool_call = &rewritten[0].tool_calls.as_ref().unwrap()[0];
+    assert_eq!(
+        serde_json::to_string(&tool_call.additional_fields["type"]).unwrap(),
+        r#""function""#
+    );
+    assert_eq!(
+        serde_json::to_string(
+            &rewritten[0].content.as_ref().unwrap()[0].additional_fields["text"],
+        )
+        .unwrap(),
+        r#""sibling""#
     );
 }
 
