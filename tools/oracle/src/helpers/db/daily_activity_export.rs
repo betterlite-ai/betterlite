@@ -5,9 +5,9 @@ use betterlite_db::daily_activity_export::{
     DailyActivityExportError, build_cache_leakage_keys_sql, build_export_sql, build_key_search_sql,
     build_model_top_keys_sql,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use chrono::{DateTime, Utc};
 
 pub(crate) struct Op;
 #[derive(Deserialize)]
@@ -87,7 +87,9 @@ impl crate::helpers::Helper for Op {
 fn evaluate(case: &Case) -> Result<SqlQuery, DailyActivityExportError> {
     let clock = || case.utc_now;
     match &case.action {
-        Action::Search { search, limit } => build_key_search_sql(&case.scope, search, *limit, &clock),
+        Action::Search { search, limit } => {
+            build_key_search_sql(&case.scope, search, *limit, &clock)
+        }
         Action::Model {
             model_group,
             by_model_group,
@@ -98,6 +100,12 @@ fn evaluate(case: &Case) -> Result<SqlQuery, DailyActivityExportError> {
             export_type,
             after,
             batch_size,
-        } => build_export_sql(&case.scope, *export_type, after.as_ref(), *batch_size, &clock),
+        } => build_export_sql(
+            &case.scope,
+            *export_type,
+            after.as_ref(),
+            *batch_size,
+            &clock,
+        ),
     }
 }

@@ -24,7 +24,7 @@ fn group_fields(export_type: ExportType, alias: &str, entity_join: &str) -> Grou
     match export_type {
         ExportType::Daily => build(["''", "NULL::text", "NULL::text AS key_alias", "NULL::text AS user_id", "NULL::text AS user_email", "NULL::text", entity_join, alias]),
         ExportType::DailyWithKeys => build(["scoped.api_key", "NULLIF(scoped.api_key, '')", "MAX(COALESCE(vt.key_alias, dvt.key_alias)) AS key_alias", "MAX(COALESCE(vt.user_id, dvt.user_id)) AS user_id", "MAX(u.user_email) AS user_email", "NULL::text", &metadata_join, alias]),
-        ExportType::DailyWithModels => build(["COALESCE(scoped.model, '')", "NULLIF(COALESCE(scoped.model, ''), '')", "NULL::text AS key_alias", "NULL::text AS user_id", "NULL::text AS user_email", "NULL::text", entity_join, alias]),
+        ExportType::DailyWithModels => build(["COALESCE(scoped.model, '')", "NULLIF(COALESCE(scoped.model, ''), '')", "NULL::text AS key_alias", "NULL::text AS user_id", "NULL::text AS user_email", "NULLIF(COALESCE(scoped.model, ''), '')", entity_join, alias]),
         ExportType::DailyWithUsers => build(["COALESCE(vt.user_id, dvt.user_id, '')", "NULL::text", "NULL::text AS key_alias", "MAX(COALESCE(vt.user_id, dvt.user_id)) AS user_id", "MAX(u.user_email) AS user_email", "NULL::text", &metadata_join, alias]),
     }
 }
