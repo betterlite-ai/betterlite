@@ -332,4 +332,14 @@ async fn stream_finishes_once(#[case] input: &str) {
     )
     .await;
     assert_eq!(answered.body, b"data: [DONE]\n\n");
+    assert_eq!(
+        header(&answered.headers, "content-type"),
+        Some("text/event-stream; charset=utf-8")
+    );
+    assert_eq!(header(&answered.headers, "cache-control"), Some("no-cache"));
+    assert_eq!(header(&answered.headers, "x-accel-buffering"), Some("no"));
+    assert_eq!(
+        header(&answered.headers, "x-litellm-call-id"),
+        Some("stream-done")
+    );
 }
