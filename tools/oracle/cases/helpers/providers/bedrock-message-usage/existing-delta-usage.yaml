@@ -3,12 +3,14 @@ name: bedrock-message-usage-existing-delta-usage
 call:
   bedrock_message_usage:
     events:
+      - type: message_start
+        message: {usage: {cache_read_input_tokens: 9, output_tokens: 9}}
       - type: message_delta
         usage: {keep: 1}
       - type: message_delta
-        usage: {cache_read_input_tokens: 2}
+        usage: {output_tokens: 2}
       - type: message_stop
-        usage: {cache_creation_input_tokens: 3, input_tokens: 4}
+        usage: {cache_creation_input_tokens: null, input_tokens: 4.5, output_tokens: 8, cache_creation: {x: 1}}
       - type: message_delta
         usage: {input_tokens: 7}
       - type: message_stop
@@ -28,6 +30,9 @@ call:
       - type: message_delta
       - type: message_stop
         usage: {input_tokens: "7"}
+      - type: message_delta
+      - type: message_stop
+        usage: {input_tokens: 100.0}
 env: {}
 compare:
   ignore: []

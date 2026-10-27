@@ -6,11 +6,17 @@ call:
       - type: message_stop
         usage: {input_tokens: 99}
       - type: message_delta
-        usage: {}
+        usage: 0
       - type: message_stop
         usage: {}
       - type: other
         value: 1
+      - 1
+      - type: message_delta
+        usage: {output_tokens: 3}
+      - type: message_stop
+        usage: {input_tokens: 4}
+      - type: content_block_stop
 env: {}
 compare:
   ignore: []

@@ -9,6 +9,9 @@ call:
         usage: {cache_creation: null}
       - type: message_stop
         usage: {cache_creation: {ignored: 1}}
+        amazon-bedrock-invocationMetrics: {cacheWriteInputTokenCount: 2}
+      - type: message_delta
+      - type: message_stop
 env: {}
 compare:
   ignore: []

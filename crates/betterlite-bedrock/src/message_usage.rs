@@ -1,160 +1,210 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "Bedrock message events are provider records whose arbitrary fields must be preserved"
-)]
-
-use serde_json::Value;
-
-type Object = serde_json::Map<String, Value>;
-
-const CACHE_FIELDS: [&str; 2] = ["cache_creation_input_tokens", "cache_read_input_tokens"];
-
-pub fn promote_message_usage(events: Vec<Value>) -> Vec<Value> {
-    let decoded = events.into_iter().map(promote_metrics).collect::<Vec<_>>();
-    promote_stream(decoded)
-}
-
-fn promote_metrics(mut event: Value) -> Value {
-    let Some(object) = event.as_object_mut() else {
-        return event;
-    };
-    let metrics = object.remove("amazon-bedrock-invocationMetrics");
-    let Some(Value::Object(metrics_object)) = metrics else {
-        return event;
-    };
-    if metrics_object.is_empty() {
-        return event;
-    }
-    let mut usage = Object::new();
-    for (metric, field) in [
-        ("inputTokenCount", "input_tokens"),
-        ("outputTokenCount", "output_tokens"),
-        ("cacheReadInputTokenCount", "cache_read_input_tokens"),
-        ("cacheWriteInputTokenCount", "cache_creation_input_tokens"),
-    ] {
-        if let Some(value) = metrics_object.get(metric) {
-            usage.insert(field.to_owned(), value.clone());
-        }
-    }
-    if let Some(Value::Object(existing)) = object.remove("usage") {
-        usage.extend(existing);
-    }
-    object.insert("usage".to_owned(), Value::Object(usage));
-    event
-}
-
-fn promote_stream(events: Vec<Value>) -> Vec<Value> {
-    let mut output = Vec::with_capacity(events.len());
-    let mut pending: Option<Object> = None;
-    let mut start_usage: Option<Object> = None;
-    for event in events {
-        let Value::Object(object) = event else {
-            flush(&mut pending, &mut output, start_usage.as_ref(), false);
-            output.push(event);
-            continue;
-        };
-        match object.get("type").and_then(Value::as_str) {
-            Some("message_start") => {
-                if let Some(usage) = object
-                    .get("message")
-                    .and_then(Value::as_object)
-                    .and_then(|message| message.get("usage"))
-                    .and_then(Value::as_object)
-                {
-                    start_usage = Some(usage.clone());
-                }
-                flush(&mut pending, &mut output, start_usage.as_ref(), false);
-                output.push(Value::Object(object));
-            }
-            Some("message_delta") => pending = Some(object),
-            Some("message_stop") if pending.is_some() => {
-                output.extend(promote_stop(object, pending.take(), start_usage.as_ref()));
-            }
-            _ => {
-                flush(&mut pending, &mut output, start_usage.as_ref(), false);
-                output.push(Value::Object(object));
-            }
-        }
-    }
-    flush(&mut pending, &mut output, start_usage.as_ref(), true);
-    output
-}
-
-fn promote_stop(object: Object, pending: Option<Object>, start: Option<&Object>) -> Vec<Value> {
-    let mut delta = pending.unwrap_or_default();
-    let stop = object.get("usage").and_then(Value::as_object);
-    let mut delta_usage = delta
-        .get("usage")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    copy_stop_usage(&mut delta_usage, stop);
-    merge_start(&mut delta_usage, start);
-    if !delta_usage.is_empty() {
-        delta.insert("usage".to_owned(), Value::Object(delta_usage));
-    }
-    vec![Value::Object(delta), Value::Object(object)]
-}
-
-fn copy_stop_usage(delta: &mut Object, stop_usage: Option<&Object>) {
-    let Some(stop) = stop_usage else { return };
-    for field in CACHE_FIELDS {
-        if let Some(value) = stop.get(field) {
-            delta.insert(field.to_owned(), value.clone());
-        }
-    }
-    if let Some(value) = stop.get("input_tokens")
-        && !value.is_null()
-    {
-        let input = if value.is_boolean() || value.is_i64() || value.is_u64() {
-            value.clone()
-        } else {
-            Value::from(0_u64)
-        };
-        delta.insert("input_tokens".to_owned(), input);
-    }
-}
-
-fn flush(
-    pending: &mut Option<Object>,
-    output: &mut Vec<Value>,
-    start: Option<&Object>,
-    merge: bool,
-) {
-    if let Some(mut delta) = pending.take() {
-        if merge {
-            let mut usage = delta
-                .get("usage")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
-            merge_start(&mut usage, start);
-            if !usage.is_empty() {
-                delta.insert("usage".to_owned(), Value::Object(usage));
-            }
-        }
-        output.push(Value::Object(delta));
-    }
-}
-
-fn merge_start(delta: &mut Object, start_usage: Option<&Object>) {
-    let Some(start_values) = start_usage else {
-        return;
-    };
-    for field in CACHE_FIELDS {
-        if !delta.contains_key(field)
-            && let Some(value) = start_values.get(field)
-            && !value.is_null()
-        {
-            delta.insert(field.to_owned(), value.clone());
-        }
-    }
-    if !delta.contains_key("cache_creation")
-        && let Some(value) = start_values.get("cache_creation")
-        && !value.is_null()
-    {
-        delta.insert("cache_creation".to_owned(), value.clone());
-    }
-}
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use serde_json::value::{RawValue, to_raw_value};
 
 mod tests;
+
+const METRICS_FIELD: &str = "amazon-bedrock-invocationMetrics";
+const METRIC_FIELDS: [(&str, &str); 4] = [
+    ("inputTokenCount", "input_tokens"),
+    ("outputTokenCount", "output_tokens"),
+    ("cacheReadInputTokenCount", "cache_read_input_tokens"),
+    ("cacheWriteInputTokenCount", "cache_creation_input_tokens"),
+];
+const STOP_CACHE_FIELDS: [&str; 2] = ["cache_creation_input_tokens", "cache_read_input_tokens"];
+const START_CACHE_FIELDS: [&str; 3] = [
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "cache_creation",
+];
+
+// a provider record keeps its key order and every value's source text, so untouched fields pass through as sent
+pub type Fields = IndexMap<String, Box<RawValue>>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged, try_from = "Box<RawValue>")]
+pub enum StreamItem {
+    Event(Fields),
+    Chunk(Box<RawValue>),
+}
+
+impl TryFrom<Box<RawValue>> for StreamItem {
+    type Error = serde_json::Error;
+
+    fn try_from(raw: Box<RawValue>) -> Result<Self, serde_json::Error> {
+        Ok(object(&raw)?.map_or(Self::Chunk(raw), Self::Event))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum MessageUsageError {
+    #[error("a Bedrock message event field cannot be read or written: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Default)]
+pub struct MessageUsageState {
+    pending: Option<Fields>,
+    start_usage: Option<Fields>,
+}
+
+pub fn promote_message_usage(items: Vec<StreamItem>) -> Result<Vec<StreamItem>, MessageUsageError> {
+    let mut state = MessageUsageState::default();
+    let mut output = Vec::with_capacity(items.len());
+    for item in items {
+        let decoded = match item {
+            StreamItem::Event(fields) => StreamItem::Event(promote_invocation_metrics(fields)?),
+            StreamItem::Chunk(raw) => StreamItem::Chunk(raw),
+        };
+        state.push(decoded, &mut output)?;
+    }
+    state.finish(&mut output)?;
+    Ok(output)
+}
+
+pub fn promote_invocation_metrics(mut event: Fields) -> Result<Fields, MessageUsageError> {
+    let Some(raw_metrics) = event.shift_remove(METRICS_FIELD) else {
+        return Ok(event);
+    };
+    if !truthy(&raw_metrics) {
+        return Ok(event);
+    }
+    let metrics = object(&raw_metrics)?.unwrap_or_default();
+    let mut usage: Fields = METRIC_FIELDS
+        .iter()
+        .filter_map(|(metric, field)| {
+            metrics
+                .get(*metric)
+                .map(|value| ((*field).to_owned(), value.clone()))
+        })
+        .collect();
+    usage.extend(dict(&event, "usage")?);
+    event.insert("usage".to_owned(), to_raw_value(&usage)?);
+    Ok(event)
+}
+
+impl MessageUsageState {
+    pub fn push(
+        &mut self,
+        item: StreamItem,
+        output: &mut Vec<StreamItem>,
+    ) -> Result<(), MessageUsageError> {
+        let StreamItem::Event(event) = item else {
+            self.flush(output);
+            output.push(item);
+            return Ok(());
+        };
+        match event_type(&event)?.as_deref() {
+            Some("message_start") => {
+                if let Some(usage) = field_object(&dict(&event, "message")?, "usage")? {
+                    self.start_usage = Some(usage);
+                }
+                self.flush(output);
+            }
+            Some("message_delta") => {
+                self.pending = Some(event);
+                return Ok(());
+            }
+            Some("message_stop") if self.pending.is_some() => {
+                let stop_usage = dict(&event, "usage")?;
+                self.promote_stop(&stop_usage, output)?;
+            }
+            _ => self.flush(output),
+        }
+        output.push(StreamItem::Event(event));
+        Ok(())
+    }
+
+    pub fn finish(mut self, output: &mut Vec<StreamItem>) -> Result<(), MessageUsageError> {
+        self.promote_stop(&Fields::new(), output)
+    }
+
+    fn promote_stop(
+        &mut self,
+        stop_usage: &Fields,
+        output: &mut Vec<StreamItem>,
+    ) -> Result<(), MessageUsageError> {
+        let Some(mut delta) = self.pending.take() else {
+            return Ok(());
+        };
+        let mut usage = dict(&delta, "usage")?;
+        for field in STOP_CACHE_FIELDS {
+            if let Some(value) = stop_usage.get(field) {
+                usage.insert(field.to_owned(), value.clone());
+            }
+        }
+        if let Some(input) = stop_usage.get("input_tokens")
+            && input.get() != "null"
+        {
+            let tokens = if python_int(input.get()) {
+                input.clone()
+            } else {
+                to_raw_value(&0_u8)?
+            };
+            usage.insert("input_tokens".to_owned(), tokens);
+        }
+        for field in START_CACHE_FIELDS {
+            if let Some(value) = self.start_usage.as_ref().and_then(|start| start.get(field))
+                && !usage.contains_key(field)
+                && value.get() != "null"
+            {
+                usage.insert(field.to_owned(), value.clone());
+            }
+        }
+        if !usage.is_empty() {
+            delta.insert("usage".to_owned(), to_raw_value(&usage)?);
+        }
+        output.push(StreamItem::Event(delta));
+        Ok(())
+    }
+
+    fn flush(&mut self, output: &mut Vec<StreamItem>) {
+        output.extend(self.pending.take().map(StreamItem::Event));
+    }
+}
+
+fn object(raw: &RawValue) -> Result<Option<Fields>, serde_json::Error> {
+    if raw.get().starts_with('{') {
+        serde_json::from_str(raw.get()).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn field_object(record: &Fields, key: &str) -> Result<Option<Fields>, serde_json::Error> {
+    Ok(record
+        .get(key)
+        .map(|value| object(value))
+        .transpose()?
+        .flatten())
+}
+
+// LiteLLM reads `value or {}` and then dict methods, so anything but an object counts as empty here
+fn dict(record: &Fields, key: &str) -> Result<Fields, serde_json::Error> {
+    Ok(field_object(record, key)?.unwrap_or_default())
+}
+
+fn event_type(event: &Fields) -> Result<Option<String>, serde_json::Error> {
+    match event.get("type") {
+        Some(raw) if raw.get().starts_with('"') => serde_json::from_str(raw.get()).map(Some),
+        Some(_) | None => Ok(None),
+    }
+}
+
+fn truthy(raw: &RawValue) -> bool {
+    let text = raw.get();
+    match text.as_bytes().first() {
+        Some(b'[' | b'{') => text
+            .get(1..)
+            .is_some_and(|rest| rest.trim_start().len() > 1),
+        Some(b'-' | b'0'..=b'9') => text.parse::<f64>().is_ok_and(|number| number != 0.0_f64),
+        Some(_) | None => !matches!(text, "null" | "false" | "\"\""),
+    }
+}
+
+// Python's isinstance(value, int) holds for booleans and for JSON numbers without a fraction or exponent
+fn python_int(text: &str) -> bool {
+    matches!(text, "true" | "false")
+        || (matches!(text.as_bytes().first(), Some(b'-' | b'0'..=b'9'))
+            && !text.contains(['.', 'e', 'E']))
+}

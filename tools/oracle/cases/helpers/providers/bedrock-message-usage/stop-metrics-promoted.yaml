@@ -4,10 +4,24 @@ call:
   bedrock_message_usage:
     events:
       - type: message_delta
-        usage: {keep: 1}
-        amazon-bedrock-invocationMetrics: {inputTokenCount: 2}
+        usage: {output_tokens: null}
+        amazon-bedrock-invocationMetrics: {inputTokenCount: 2, outputTokenCount: 3, cacheReadInputTokenCount: "4", cacheWriteInputTokenCount: 5, firstByteLatency: 6}
+        region: us-east-1
       - type: message_stop
-        usage: {input_tokens: 2}
+        usage: 7
+        amazon-bedrock-invocationMetrics: {inputTokenCount: 8}
+      - type: ping
+        amazon-bedrock-invocationMetrics: {}
+      - type: ping
+        amazon-bedrock-invocationMetrics: [1]
+        usage: {keep: 1}
+      - type: ping
+        amazon-bedrock-invocationMetrics: "x"
+      - {type: ping, amazon-bedrock-invocationMetrics: null}
+      - {type: ping, amazon-bedrock-invocationMetrics: 0.0}
+      - {type: ping, amazon-bedrock-invocationMetrics: ""}
+      - {type: ping, amazon-bedrock-invocationMetrics: []}
+      - {type: ping, amazon-bedrock-invocationMetrics: false, usage: 1}
 env: {}
 compare:
   ignore: []

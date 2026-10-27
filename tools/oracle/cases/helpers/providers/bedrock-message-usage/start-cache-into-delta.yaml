@@ -4,10 +4,20 @@ call:
   bedrock_message_usage:
     events:
       - type: message_start
-        message:
-          usage: {cache_creation_input_tokens: 3, cache_read_input_tokens: 4, cache_creation: {ephemeral_5m_input_tokens: 5}}
+        message: {usage: {}}
       - type: message_delta
         usage: {}
+      - type: message_stop
+      - type: message_start
+        message: {usage: {cache_creation_input_tokens: null, cache_read_input_tokens: 0}}
+      - type: message_delta
+        usage: {}
+      - type: message_stop
+      - type: message_start
+        message:
+          usage: {cache_creation_input_tokens: 3, cache_read_input_tokens: "4", cache_creation: {ephemeral_5m_input_tokens: 5}, input_tokens: 6, output_tokens: 7}
+      - type: message_delta
+        usage: {output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: null}
 env: {}
 compare:
   ignore: []
