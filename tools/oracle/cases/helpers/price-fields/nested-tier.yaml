@@ -1,0 +1,8 @@
+kind: helper
+name: nested-tier
+call:
+  price_fields:
+    input_cost_per_token: 0.1
+    provider_specific_entry: {us: 0.000000000000000001}
+compare: {ignore: []}
+env: {}

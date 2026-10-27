@@ -1,0 +1,7 @@
+kind: helper
+name: absent-optional
+call:
+  price_fields:
+    input_cost_per_token: 0.1
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,7 @@
+kind: helper
+name: exponent
+call:
+  price_fields:
+    output_cost_per_token: 1.2e-7
+compare: {ignore: []}
+env: {}

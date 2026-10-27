@@ -1,0 +1,11 @@
+kind: helper
+name: nested-and-sample-prices
+call:
+  price_fields:
+    sample_spec:
+      computer_use_input_cost_per_1k_tokens: 0.00001
+      file_search_cost_per_1k_calls: 0.003
+    metadata:
+      original_pricing_per_hour: 1.25
+compare: {ignore: []}
+env: {}

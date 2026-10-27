@@ -1,0 +1,8 @@
+kind: helper
+name: off-peak
+call:
+  price_fields:
+    input_cost_per_token: 0.1
+    guardrail_cost_per_unit: {image: 0.00001}
+compare: {ignore: []}
+env: {}

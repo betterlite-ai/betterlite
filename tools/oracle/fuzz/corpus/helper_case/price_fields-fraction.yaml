@@ -1,0 +1,6 @@
+kind: helper
+name: price-fields-fraction
+call:
+  price_fields: {input_cost_per_token: 0.000000123456789}
+compare: {ignore: []}
+env: {}

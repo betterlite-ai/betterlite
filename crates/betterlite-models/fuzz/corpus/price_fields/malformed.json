@@ -1,0 +1,1 @@
+[7,"text",null,{"pattern":"(","model_info":{}},{"pattern":"a","model_info":[]},{"pattern":"b","model_info":{"litellm_provider":1}},{"pattern":"c","model_info":{},"fill_missing_for_providers":[2]},{"pattern":"(a|a)+\\1$","model_info":{"mode":"chat"}}]
