@@ -22,7 +22,6 @@ fn helper_seeds_select_bedrock_settings() {
     assert!(seeds.iter().all(|source| {
         parse_helper_case(source).is_ok()
             && serde_saphyr::from_str::<HelperCase>(source)
-                .map(|case| case.call.operation == "bedrock_settings")
-                .unwrap_or(false)
+                .is_ok_and(|case| case.call.operation == "bedrock_settings")
     }));
 }

@@ -58,10 +58,6 @@ impl Environment for BTreeMap<String, String> {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "AWS settings contain one field per supported input"
-)]
 pub fn snapshot<E>(deployment: &AwsInput, module: &AwsInput, environment: &E) -> AwsSettings
 where
     E: Environment,
@@ -75,76 +71,35 @@ where
     let secret = |deployment_value: &Option<String>, module_value: &Option<String>, name: &str| {
         text(deployment_value, module_value, name).map(SecretString::from)
     };
+    let tags = deployment.aws_session_tags.clone();
+    macro_rules! select {
+        ($kind:ident, $field:ident, $name:literal) => {
+            $kind(&deployment.$field, &module.$field, $name)
+        };
+    }
     AwsSettings {
-        aws_access_key_id: secret(
-            &deployment.aws_access_key_id,
-            &module.aws_access_key_id,
-            "AWS_ACCESS_KEY_ID",
+        aws_access_key_id: select!(secret, aws_access_key_id, "AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key: select!(secret, aws_secret_access_key, "AWS_SECRET_ACCESS_KEY"),
+        aws_session_token: select!(secret, aws_session_token, "AWS_SESSION_TOKEN"),
+        aws_region_name: select!(text, aws_region_name, "AWS_REGION_NAME"),
+        aws_session_name: select!(text, aws_session_name, "AWS_SESSION_NAME"),
+        aws_profile_name: select!(text, aws_profile_name, "AWS_PROFILE_NAME"),
+        aws_role_name: select!(text, aws_role_name, "AWS_ROLE_NAME"),
+        aws_web_identity_token: select!(secret, aws_web_identity_token, "AWS_WEB_IDENTITY_TOKEN"),
+        aws_sts_endpoint: select!(text, aws_sts_endpoint, "AWS_STS_ENDPOINT"),
+        aws_external_id: select!(secret, aws_external_id, "AWS_EXTERNAL_ID"),
+        aws_role_arn: select!(text, aws_role_arn, "AWS_ROLE_ARN"),
+        aws_web_identity_token_file: select!(
+            text,
+            aws_web_identity_token_file,
+            "AWS_WEB_IDENTITY_TOKEN_FILE"
         ),
-        aws_secret_access_key: secret(
-            &deployment.aws_secret_access_key,
-            &module.aws_secret_access_key,
-            "AWS_SECRET_ACCESS_KEY",
+        aws_bearer_token_bedrock: select!(
+            secret,
+            aws_bearer_token_bedrock,
+            "AWS_BEARER_TOKEN_BEDROCK"
         ),
-        aws_session_token: secret(
-            &deployment.aws_session_token,
-            &module.aws_session_token,
-            "AWS_SESSION_TOKEN",
-        ),
-        aws_region_name: text(
-            &deployment.aws_region_name,
-            &module.aws_region_name,
-            "AWS_REGION_NAME",
-        ),
-        aws_session_name: text(
-            &deployment.aws_session_name,
-            &module.aws_session_name,
-            "AWS_SESSION_NAME",
-        ),
-        aws_profile_name: text(
-            &deployment.aws_profile_name,
-            &module.aws_profile_name,
-            "AWS_PROFILE_NAME",
-        ),
-        aws_role_name: text(
-            &deployment.aws_role_name,
-            &module.aws_role_name,
-            "AWS_ROLE_NAME",
-        ),
-        aws_web_identity_token: secret(
-            &deployment.aws_web_identity_token,
-            &module.aws_web_identity_token,
-            "AWS_WEB_IDENTITY_TOKEN",
-        ),
-        aws_sts_endpoint: text(
-            &deployment.aws_sts_endpoint,
-            &module.aws_sts_endpoint,
-            "AWS_STS_ENDPOINT",
-        ),
-        aws_external_id: secret(
-            &deployment.aws_external_id,
-            &module.aws_external_id,
-            "AWS_EXTERNAL_ID",
-        ),
-        aws_role_arn: text(
-            &deployment.aws_role_arn,
-            &module.aws_role_arn,
-            "AWS_ROLE_ARN",
-        ),
-        aws_web_identity_token_file: text(
-            &deployment.aws_web_identity_token_file,
-            &module.aws_web_identity_token_file,
-            "AWS_WEB_IDENTITY_TOKEN_FILE",
-        ),
-        aws_bearer_token_bedrock: secret(
-            &deployment.aws_bearer_token_bedrock,
-            &module.aws_bearer_token_bedrock,
-            "AWS_BEARER_TOKEN_BEDROCK",
-        ),
-        aws_session_tags: deployment
-            .aws_session_tags
-            .clone()
-            .or_else(|| module.aws_session_tags.clone()),
+        aws_session_tags: tags.or_else(|| module.aws_session_tags.clone()),
     }
 }
 

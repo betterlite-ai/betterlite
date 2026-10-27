@@ -46,22 +46,35 @@ pub struct Raw {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[expect(clippy::struct_field_names, reason = "AWS configuration names are the public contract")]
 struct RawModule {
-    aws_access_key_id: Option<String>,
-    aws_secret_access_key: Option<String>,
-    aws_session_token: Option<String>,
-    aws_region_name: Option<String>,
-    aws_session_name: Option<String>,
-    aws_profile_name: Option<String>,
-    aws_role_name: Option<String>,
-    aws_web_identity_token: Option<String>,
-    aws_sts_endpoint: Option<String>,
-    aws_external_id: Option<String>,
-    aws_role_arn: Option<String>,
-    aws_web_identity_token_file: Option<String>,
-    aws_bearer_token_bedrock: Option<String>,
-    aws_session_tags: Option<RawValue>,
+    #[serde(rename = "aws_access_key_id")]
+    access_key_id: Option<String>,
+    #[serde(rename = "aws_secret_access_key")]
+    secret_access_key: Option<String>,
+    #[serde(rename = "aws_session_token")]
+    session_token: Option<String>,
+    #[serde(rename = "aws_region_name")]
+    region_name: Option<String>,
+    #[serde(rename = "aws_session_name")]
+    session_name: Option<String>,
+    #[serde(rename = "aws_profile_name")]
+    profile_name: Option<String>,
+    #[serde(rename = "aws_role_name")]
+    role_name: Option<String>,
+    #[serde(rename = "aws_web_identity_token")]
+    web_identity_token: Option<String>,
+    #[serde(rename = "aws_sts_endpoint")]
+    sts_endpoint: Option<String>,
+    #[serde(rename = "aws_external_id")]
+    external_id: Option<String>,
+    #[serde(rename = "aws_role_arn")]
+    role_arn: Option<String>,
+    #[serde(rename = "aws_web_identity_token_file")]
+    web_identity_token_file: Option<String>,
+    #[serde(rename = "aws_bearer_token_bedrock")]
+    bearer_token_bedrock: Option<String>,
+    #[serde(rename = "aws_session_tags")]
+    session_tags: Option<RawValue>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -139,9 +152,9 @@ impl Section for Raw {
     }
 }
 
-macro_rules! resolve {
-    (secret, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $name:literal) => {
-        $raw.$field
+macro_rules! resolve_value {
+    (secret, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $input:ident, $name:literal) => {
+        $raw.$input
             .or_else(|| {
                 $fallback
                     .and_then(|settings| settings.$field.as_ref())
@@ -152,8 +165,8 @@ macro_rules! resolve {
             .transpose()
             .map(Option::flatten)?
     };
-    (text, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $name:literal) => {
-        $raw.$field
+    (text, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $input:ident, $name:literal) => {
+        $raw.$input
             .or_else(|| {
                 $fallback
                     .and_then(|settings| settings.$field.as_ref())
@@ -165,7 +178,6 @@ macro_rules! resolve {
     };
 }
 
-#[expect(clippy::too_many_lines, reason = "AWS settings contain one field per supported input")]
 fn resolve_settings<L>(
     raw: RawModule,
     fallback: Option<&AwsSettings>,
@@ -174,99 +186,27 @@ fn resolve_settings<L>(
 where
     L: EnvironmentLookup,
 {
-    raw.aws_session_tags.as_ref().map(RawValue::preserve);
+    macro_rules! resolve {
+        ($kind:ident, $field:ident, $input:ident, $name:literal) => {
+            resolve_value!($kind, raw, fallback, lookup, $field, $input, $name)
+        };
+    }
+    raw.session_tags.as_ref().map(RawValue::preserve);
     Ok(AwsSettings {
-        aws_access_key_id: resolve!(
-            secret,
-            raw,
-            fallback,
-            lookup,
-            aws_access_key_id,
-            "AWS_ACCESS_KEY_ID"
-        ),
-        aws_secret_access_key: resolve!(
-            secret,
-            raw,
-            fallback,
-            lookup,
-            aws_secret_access_key,
-            "AWS_SECRET_ACCESS_KEY"
-        ),
-        aws_session_token: resolve!(
-            secret,
-            raw,
-            fallback,
-            lookup,
-            aws_session_token,
-            "AWS_SESSION_TOKEN"
-        ),
-        aws_region_name: resolve!(
-            text,
-            raw,
-            fallback,
-            lookup,
-            aws_region_name,
-            "AWS_REGION_NAME"
-        ),
-        aws_session_name: resolve!(
-            text,
-            raw,
-            fallback,
-            lookup,
-            aws_session_name,
-            "AWS_SESSION_NAME"
-        ),
-        aws_profile_name: resolve!(
-            text,
-            raw,
-            fallback,
-            lookup,
-            aws_profile_name,
-            "AWS_PROFILE_NAME"
-        ),
-        aws_role_name: resolve!(text, raw, fallback, lookup, aws_role_name, "AWS_ROLE_NAME"),
-        aws_web_identity_token: resolve!(
-            secret,
-            raw,
-            fallback,
-            lookup,
-            aws_web_identity_token,
-            "AWS_WEB_IDENTITY_TOKEN"
-        ),
-        aws_sts_endpoint: resolve!(
-            text,
-            raw,
-            fallback,
-            lookup,
-            aws_sts_endpoint,
-            "AWS_STS_ENDPOINT"
-        ),
-        aws_external_id: resolve!(
-            secret,
-            raw,
-            fallback,
-            lookup,
-            aws_external_id,
-            "AWS_EXTERNAL_ID"
-        ),
-        aws_role_arn: resolve!(text, raw, fallback, lookup, aws_role_arn, "AWS_ROLE_ARN"),
-        aws_web_identity_token_file: resolve!(
-            text,
-            raw,
-            fallback,
-            lookup,
-            aws_web_identity_token_file,
-            "AWS_WEB_IDENTITY_TOKEN_FILE"
-        ),
-        aws_bearer_token_bedrock: resolve!(
-            secret,
-            raw,
-            fallback,
-            lookup,
-            aws_bearer_token_bedrock,
-            "AWS_BEARER_TOKEN_BEDROCK"
-        ),
-        aws_session_tags: raw.aws_session_tags.or_else(|| {
+        aws_access_key_id: resolve!(secret, aws_access_key_id, access_key_id, "AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key: resolve!(secret, aws_secret_access_key, secret_access_key, "AWS_SECRET_ACCESS_KEY"),
+        aws_session_token: resolve!(secret, aws_session_token, session_token, "AWS_SESSION_TOKEN"),
+        aws_region_name: resolve!(text, aws_region_name, region_name, "AWS_REGION_NAME"),
+        aws_session_name: resolve!(text, aws_session_name, session_name, "AWS_SESSION_NAME"),
+        aws_profile_name: resolve!(text, aws_profile_name, profile_name, "AWS_PROFILE_NAME"),
+        aws_role_name: resolve!(text, aws_role_name, role_name, "AWS_ROLE_NAME"),
+        aws_web_identity_token: resolve!(secret, aws_web_identity_token, web_identity_token, "AWS_WEB_IDENTITY_TOKEN"),
+        aws_sts_endpoint: resolve!(text, aws_sts_endpoint, sts_endpoint, "AWS_STS_ENDPOINT"),
+        aws_external_id: resolve!(secret, aws_external_id, external_id, "AWS_EXTERNAL_ID"),
+        aws_role_arn: resolve!(text, aws_role_arn, role_arn, "AWS_ROLE_ARN"),
+        aws_web_identity_token_file: resolve!(text, aws_web_identity_token_file, web_identity_token_file, "AWS_WEB_IDENTITY_TOKEN_FILE"),
+        aws_bearer_token_bedrock: resolve!(secret, aws_bearer_token_bedrock, bearer_token_bedrock, "AWS_BEARER_TOKEN_BEDROCK"),
+        aws_session_tags: raw.session_tags.or_else(|| {
             let settings = fallback?;
             settings.aws_session_tags.clone()
         }),
