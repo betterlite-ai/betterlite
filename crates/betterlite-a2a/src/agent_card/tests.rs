@@ -58,6 +58,18 @@ fn resolves_invalid_or_absent_versions_to_default() {
 }
 
 #[test]
+fn resolves_canonical_typed_versions() {
+    assert_eq!(
+        resolve_served_version(Some(&card(r#"{"protocolVersion":"0.3"}"#))),
+        ProtocolVersion::V0_3
+    );
+    assert_eq!(
+        resolve_served_version(Some(&card(r#"{"protocolVersion":"1.0"}"#))),
+        ProtocolVersion::V1_0
+    );
+}
+
+#[test]
 fn merge_preserves_explicit_nulls_in_cards_and_nested_records() {
     let result = merged(
         r#"{"name":null,"documentationUrl":null,"skills":[{"id":null,"name":"n"}],"provider":{"organization":null}}"#,
