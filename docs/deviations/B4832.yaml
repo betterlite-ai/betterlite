@@ -1,5 +1,11 @@
 task: B4832
 deviations:
-  - what: Subprocess signaling uses the platform kill utility with Tokio process groups instead of direct Python os.killpg/os.setsid.
-    why: The repository forbids unsafe code and has no signal crate; Tokio process groups plus the system signal utility preserve observable TERM/grace/KILL behavior.
+  - what: The base environment and temporary directory root are supplied to the constructor instead of read from process globals.
+    why: Repository rules require injected configuration; explicit environment overrides still win after credential filtering.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/local.py#L41-L277
+  - what: Subprocesses use an isolated process group instead of creating a new session, and sandbox drop kills owned groups immediately.
+    why: Tokio exposes safe process group setup; its session setup requires unsafe code forbidden by repository rules. Explicit close retains the five-second TERM grace period.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/local.py#L41-L277
+  - what: run requires a timeout and output limit, and read requires a byte limit.
+    why: The existing Rust Sandbox trait requires bounded operations; callers can use exec and wait for commands without a timeout.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/local.py#L41-L277
