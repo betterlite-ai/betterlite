@@ -240,5 +240,5 @@ pitfalls:
 - A new message_start without dictionary usage leaves the prior usage snapshot in place.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 1
+  max_new_expects: 0
 review_level: standard
