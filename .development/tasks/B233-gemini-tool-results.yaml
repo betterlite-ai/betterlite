@@ -20,7 +20,7 @@ scope:
   - tools/oracle/helpers/gemini_tool_results.py
   - tools/oracle/helpers/gemini_tool_results/**
   - tools/oracle/cases/helpers/gemini-tool-results/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/gemini_tool_results-*"
   - crates/betterlite-prompts/fuzz/**
   lint_tables: false
 references:
@@ -62,8 +62,8 @@ checks:
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'gemini_tool_results' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/gemini_tool_results-*")" &&
+      grep -lq 'gemini_tool_results' tools/oracle/fuzz/corpus/helper_case/gemini_tool_results-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: gemini-tool-results-corpus
@@ -84,6 +84,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B182 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/gemini_tool_results-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as gemini_tool_results in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/gemini_tool_results.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/gemini_tool_results.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned

@@ -65,6 +65,9 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: a raised budget or widened scope ships in the task's own pull request (Max). A task branch may change its own task file and nothing else under .development/; the architect makes that commit, and the dispatcher sends back any worker run that touched .development/.
 - 2026-10-25: Codex runs again ahead of its reset, so the worker ladder starts with the Codex rungs again and a reviewer from the other vendor reviews each run.
 - 2026-10-25: the first worker rung (gpt-reserve, 3 attempts) runs at medium reasoning effort for speed (Max); the escalation rungs and every reviewer stay at high.
+- 2026-10-27: cargo deny checks only the targets betterlite ships (x86_64 and aarch64 for linux-gnu, linux-musl and apple-darwin); a new target goes into deny.toml before a build for it ships.
+- 2026-10-27: fuzz targets and corpora are always in scope, so any task may add a target and its seeds.
+- 2026-10-27: the gate's tests check runs only the packages a change can affect (changed files, Cargo.lock and their dependents, from guppy's determinator); a push to main runs the whole suite, so a break that only shows through shared dependency features surfaces on main's run.
 
 ## Writing a task
 

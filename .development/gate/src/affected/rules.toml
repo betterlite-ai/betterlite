@@ -1,0 +1,21 @@
+[[path-rule]]
+globs = [
+  ".development/**",
+  "docs/**",
+  ".github/**",
+  ".ast-grep/**",
+  ".claude/**",
+  ".codex/**",
+  "AGENTS.md",
+  "THIRD_PARTY_NOTICES.md",
+  "deny.toml",
+  "typos.toml",
+  "sgconfig.yml",
+  ".pre-commit-config.yaml",
+  "tools/management-cli/**",
+]
+mark-changed = []
+
+[[path-rule]]
+globs = ["rust-toolchain.toml"]
+mark-changed = "all"
