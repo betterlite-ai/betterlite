@@ -2,8 +2,8 @@ id: B3807
 milestone: M6 guardrails
 title: Presidio streamed masking and unmasking
 status: todo
-depends_on: [B3805, B3806, B2227]
-file: null
+depends_on: [B3805, B3806, B2227, B3669, B005]
+file: tasks/B3807-presidio-streams.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
 parent: B108

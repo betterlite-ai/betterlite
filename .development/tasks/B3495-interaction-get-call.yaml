@@ -1,0 +1,96 @@
+id: B3495
+title: Retrieve interactions through the public call pipeline
+description: >-
+  Add the public interaction retrieval API with sync and async retrieval functions. Implement get and aget
+  functions that accept an interaction_id, wrap B3492's native HTTP GET operations, apply default Gemini
+  provider when none is specified, record per-call logging metadata, and propagate context in the async path.
+
+  The get and aget functions take an interaction_id string, optional provider override, logging object, and
+  litellm_params, and return the populated InteractionsAPIResponse from the interaction provider. When
+  custom_llm_provider is absent or empty, default to "gemini"; when get_provider_interactions_api_config
+  returns None for the provider, raise ValueError with the provider name. The logging object is updated
+  via update_from_kwargs with the interaction_id in optional_params and litellm_call_id in litellm_params;
+  the actual no-log eligibility check happens in B247's logging pipeline via should_run_callback, not in
+  this task. The async variant aget propagates context across the executor boundary using the same pattern
+  as B3499's create, so that per-request tracing spans and request IDs follow the async call. The sync variant
+  get handles both sync and async callers via a _is_async flag in kwargs (set by aget before delegating).
+  All exceptions are caught and re-raised via litellm.exception_type, which converts the ValueError to the
+  appropriate exception class.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/interactions/get.rs
+  - crates/betterlite-core/src/api/interactions/get/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L359-L399
+  why: The async aget function with default provider, logging setup and context propagation via executor.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L402-L453
+  why: The sync get function wrapping native HTTP retrieval, defaulting to gemini, and raising ValueError when
+    config is None (converted by litellm.exception_type).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py
+  why: Provider config selection and get_provider_interactions_api_config utility for selecting the provider contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L959-L1001
+  why: update_from_kwargs merges metadata and calls update_environment_variables; the no_log check is in should_run_callback at L2281-L2290.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L195-L351
+  why: The sync/async create pattern (B3499) showing context propagation in aget and delegation pattern from aget
+    to get via executor; B3495 reuses this pattern for interaction retrieval.
+dod:
+- text: The get function accepts interaction_id, optional provider override, logging object and litellm_params, defaults
+    to "gemini" when provider is absent, and returns InteractionsAPIResponse from B3492's native GET.
+  proof:
+  - interaction-get-tests
+- text: The aget function wraps get via a thread executor with context propagation, matching B3499's async pattern.
+  proof:
+  - interaction-get-tests
+- text: >-
+    Per-call logging is set up via update_from_kwargs before calling HTTP, with interaction_id in optional_params
+    and litellm_call_id in litellm_params. The no-log eligibility check happens later in B247's logging pipeline.
+  proof:
+  - interaction-get-tests
+- text: >-
+    When get_provider_interactions_api_config returns None for the provider, get raises ValueError with the provider
+    name; this is caught and converted by litellm.exception_type.
+  proof:
+  - interaction-get-tests
+checks:
+  optional: []
+  commands:
+  - id: interaction-get-tests
+    why: The get or aget functions do not default to gemini, do not set up logging correctly, do not handle unsupported
+      providers, or do not propagate context in the async path
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::get::/) and not
+      test(/replays/)'
+oracle_cases: []
+deviations:
+- what: Unsupported-provider errors are raised as ValueError when get_provider_interactions_api_config returns None;
+    litellm.exception_type then converts this ValueError to the appropriate exception class.
+  why: >-
+    LiteLLM raises ValueError with the message 'Interactions API not supported for: {provider}' at line 425-426 and
+    lets its own exception_type handler convert it. The error class derives from the generic ValueError conversion,
+    not from a config method call.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L425-L426
+out_of_scope:
+- Provider selection beyond defaulting to "gemini" when absent. B3490 owns get_provider_interactions_api_config.
+- HTTP client initialization or pooling. B3492 owns the HTTP GET operation and client resolution.
+- Request/response transformation. B1369 (Vertex) and B1370 (Studio) own provider-specific transforms via the contract.
+- Background polling orchestration. B3496 owns scheduling and settlement logic.
+- Route handlers for /v1beta/interactions/{id}. B3507 owns the proxy endpoint.
+- Streaming responses. B3491 owns the streaming iterator.
+pitfalls:
+- The default provider is "gemini", not an empty string or None. When custom_llm_provider is absent or None, replace
+  it with the literal "gemini" before calling get_provider_interactions_api_config.
+- >-
+    When get_provider_interactions_api_config returns None, raise ValueError with the message
+    'Interactions API not supported for: {provider}'. Do not call a get_error_class method on the config;
+    litellm.exception_type will convert the ValueError to the appropriate exception class.
+- The logging object's update_from_kwargs method merges metadata and calls update_environment_variables; it does not
+  check the no_log flag. The no_log check happens later in B247's should_run_callback when callbacks fire.
+- The async aget delegates to get via a thread executor with context propagation using asyncio.get_event_loop().run_in_executor
+  and contextvars.copy_context(), preserving request spans and call IDs.
+- The _is_async flag is set by aget before delegating to get, signaling that get is being called from an async context;
+  get checks this flag to determine whether to return a coroutine or a direct response.
+- The interaction_id is logged as part of optional_params in update_from_kwargs, not as a separate structured field.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

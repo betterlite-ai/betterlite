@@ -1,0 +1,104 @@
+id: B3422
+title: Eval retrieval and update operations
+description: >-
+  Build eval retrieval and update orchestration in `betterlite-core::api::eval_get_update`. Implement `get_eval`, `aget_eval`, `update_eval`, and `aupdate_eval` with native sync/async semantics, preserving the exact internal-metadata exclusion set and the subsequent `extra_body` overwrite behavior.
+
+  In `get_eval`: accept `eval_id` (required), `extra_headers`, `extra_query` (accepted but not forwarded), `timeout`, and `custom_llm_provider`. Select provider as in B3421: `custom_llm_provider` becomes `"openai"` if `None`. Validate environment, transform the request (no body reading), call the logging updater with `eval_id` as an optional param, dispatch to the transport handler with resolved timeout.
+
+  In `update_eval`: accept `eval_id` (required), `name` (optional), `metadata` (optional, filtered to exclude internal keys), `extra_headers`, `extra_query` (accepted but not forwarded), `extra_body`, `timeout`, and `custom_llm_provider`. Build `UpdateEvalRequest` with only name and filtered metadata, apply `extra_body` overwrites afterward (including `extra_body.metadata` which can bypass earlier filtering), validate environment, transform, log with the full request body as optional params, dispatch with resolved timeout.
+
+  The internal metadata exclusion set includes: headers, requester_metadata, user_api_key_hash, user_api_key_alias, user_api_key_spend, user_api_key_max_budget, user_api_key_team_id, user_api_key_user_id, user_api_key_org_id, user_api_key_team_alias, user_api_key_end_user_id, user_api_key_user_email, user_api_key_request_route, user_api_key_budget_reset_at, user_api_key_auth_metadata, user_api_key, user_api_end_user_max_budget, user_api_key_auth, litellm_api_version, global_max_parallel_requests, user_api_key_team_max_budget, user_api_key_team_spend, user_api_key_model_max_budget, user_api_key_user_spend, user_api_key_user_max_budget, user_api_key_metadata, endpoint, litellm_parent_otel_span, requester_ip_address, user_agent. Only include filtered metadata if the result is non-empty; omit the metadata key entirely if all keys were filtered out. After filtering, apply `extra_body` which can add back metadata or override any field.
+
+  Async wrappers `aget_eval` and `aupdate_eval` run their sync counterparts in a thread pool via `loop.run_in_executor`, copy context with `contextvars.copy_context`, and await the result. If the result is a coroutine, await it; otherwise return it. Both async and sync versions share module-level `DEFAULT_OPENAI_API_BASE` and `BaseLLMHTTPHandler()` from B3421's scope.
+
+  Unsupported providers are rejected with `ValueError`. Exception mapping uses `litellm.exception_type` dispatch: OpenAI errors through B185, other or unmapped errors through B186. Store `local_vars = locals()` before the try block.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_get_update.rs
+    - crates/betterlite-core/src/api/eval_get_update/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L415-469
+    why: "aget_eval: async wrapper calling get_eval via executor and contextvars"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L472-562
+    why: "get_eval: build request, validate, transform, log, dispatch; error handling"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L565-628
+    why: "aupdate_eval: async wrapper for update_eval"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L631-782
+    why: "update_eval: metadata filtering, request building, transform, log, dispatch"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L686-728
+    why: "Internal metadata keys exclusion set and filtering logic; extra_body overwrite behavior"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-577
+    why: "request_timeout: default timeout constant"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-519
+    why: "GenericLiteLLMParams: wrapper over kwargs"
+
+dod:
+  - text: "get_eval constructs a request from eval_id, validates environment, transforms through provider, and returns an Eval contract validated through B3420's model."
+    proof: [eval-get-update-tests]
+  - text: "aget_eval runs get_eval in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-get-update-tests]
+  - text: "update_eval constructs UpdateEvalRequest with optional name and filtered metadata, applies extra_body overwrites afterward, transforms through provider, and returns Eval."
+    proof: [eval-get-update-tests]
+  - text: "aupdate_eval runs update_eval in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-get-update-tests]
+  - text: "Metadata filtering removes all internal LiteLLM keys; only user-supplied keys are included in the request, and only if non-empty."
+    proof: [eval-get-update-tests]
+  - text: "extra_body applied after filtering can restore or add back metadata, overriding the filtered result."
+    proof: [eval-get-update-tests]
+  - text: "get_eval accepts extra_query but does not forward it to the provider."
+    proof: [eval-get-update-tests]
+  - text: "update_eval accepts extra_query but does not forward it to the provider."
+    proof: [eval-get-update-tests]
+  - text: "Both get and update operations validate environment through provider config and pass resolved headers to transform."
+    proof: [eval-get-update-tests]
+  - text: "Both operations call the logging updater before dispatch, passing eval_id (get) or request body (update) as optional params."
+    proof: [eval-get-update-tests]
+  - text: "custom_llm_provider=None selects openai; missing provider config raises ValueError before transport."
+    proof: [eval-get-update-tests]
+  - text: "Timeout resolves to supplied timeout or request_timeout constant."
+    proof: [eval-get-update-tests]
+  - text: "Exception mapping uses litellm.exception_type; exceptions include local_vars capturing all parameters at entry."
+    proof: [eval-get-update-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: eval-get-update-tests
+      why: "retrieval and update operation tests fail, do not exist, or cannot reach B3420 contracts and B523 provider transforms"
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_get_update::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Async wrappers call sync counterparts via thread pool and contextvars copy, matching the @client decorator pattern in LiteLLM."
+    why: "Getting and updating evals uses the same executor-based async pattern as other operation families; betterlite's observability layer handles logging and context propagation instead of the @client decorator."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L415-469
+  - what: "Metadata filtering preserves the exact internal keys list from LiteLLM and applies extra_body overwrites afterward, allowing extra_body.metadata to bypass filtering."
+    why: "This security-sensitive behavior matches LiteLLM exactly and must be tested explicitly; the filtering is not a 'fix' but the intended wire behavior."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L686-728
+
+out_of_scope:
+  - Provider factory (ProviderConfigManager.get_provider_evals_api_config).
+  - HTTP handler implementation and transport dispatch.
+  - Request/response transformation for OpenAI (B523).
+  - Logging infrastructure and observability (B247).
+  - Exception type mapping (B185, B186).
+  - Async runtime and request tracing.
+
+pitfalls:
+  - "metadata filtering must preserve the exact 20+ internal keys from LiteLLM; a missing key in the exclusion set creates a security gap. Do not 'fix' or reorganize the list."
+  - "Filtered metadata must be included in the update request only if non-empty; an empty filtered_metadata dict should not add a metadata key to the request."
+  - "extra_body is applied after filtering and can restore metadata or override any field, including name and eval_id from the path."
+  - "get_eval accepts extra_query but does not forward it; update_eval accepts extra_query but does not forward it. This is intentional; do not add query param forwarding."
+  - "extra_query is a parameter name but the code path does not use it; accepting it preserves the API surface but forwarding it would be incorrect per the LiteLLM behavior."
+  - "Async wrappers must handle both direct returns and coroutines; contextvars.copy_context and loop.run_in_executor preserve request context across the thread boundary."
+  - "In get_eval and update_eval, store local_vars = locals() before the try block so that all function parameters (eval_id, name, metadata, extra_headers, extra_query, extra_body, timeout, custom_llm_provider) and their defaults are captured for error reporting."
+  - "Both functions reuse module-level DEFAULT_OPENAI_API_BASE and BaseLLMHTTPHandler() from B3421's scope."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

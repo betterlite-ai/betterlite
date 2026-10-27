@@ -1,0 +1,175 @@
+id: B4501
+title: Persist Lens jobs and worker credentials
+description: >-
+  Build crates/betterlite-db module lens_repository with writer-pinned Lens
+  repositories over the existing Postgres schema, preserving eight optimistic-update
+  attempts with version-based concurrency control and a CTE that archives displaced
+  jobs only after a successful version check. Implement typed row adapters for all
+  Lens, Job and Worker decoding from jsonb columns, and repository methods for querying
+  and mutating records with respect to versioning. Preserve 50-job history pages in
+  the jobs query (combined from both LiteLLM_LensRun and LiteLLM_Lens.jobs array),
+  changed_only behavior where update returns None when no mutation occurs, revocation-aware
+  billing-key updates that skip revoked workers, and distinct worker heartbeat writes
+  that update last_seen atomically. The Database protocol abstracts raw query/execute
+  against the writer session; WriterDatabase wraps the PrismaWrapper writer with
+  typed result validation. Direct dependencies: B4500 for Lens, Job and Worker record
+  encoding/decoding; B714 for WriterSession raw query/execute interface replacing
+  LiteLLM's writer_wrapper; B709 for schema definitions of LiteLLM_Lens, LiteLLM_LensRun
+  and LiteLLM_LensWorker tables. Use Decimal for monetary amounts in Worker records
+  consistently with B4500.
+scope:
+  paths:
+    - crates/betterlite-db/src/lens_repository.rs
+    - crates/betterlite-db/src/lens_repository/**
+    - tools/oracle/cases/helpers/lens-repository/**
+    - tools/oracle/helpers/b4501.py
+    - tools/oracle/helpers/b4501/**
+    - tools/oracle/src/helpers/db/b4501.rs
+    - tools/oracle/src/helpers/db/b4501/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L1-L176
+    why: Complete repository implementation with Database protocol, LensRepository CRUD methods, WriterDatabase wrapper and optimistic-update CTE with archival.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L11-L13
+    why: Database protocol definition with query_raw and execute_raw methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L57-L88
+    why: Optimistic-update CTE with version check, archival of displaced jobs and returned count validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L90-L102
+    why: 50-job history pages combining LiteLLM_LensRun and LiteLLM_Lens.jobs array with ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L142-L152
+    why: Revocation-aware billing-key update that skips revoked workers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L160-L165
+    why: Worker heartbeat update with last_seen timestamp.
+dod:
+  - text: Database protocol defines query_raw and execute_raw methods, and WriterDatabase implements the protocol with type validation on results.
+    proof: [database-protocol-tests]
+  - text: LensRepository constructs with a Database implementation and stores it as a Final/immutable field.
+    proof: [repository-construction-tests]
+  - text: lenses() returns all Lens records from LiteLLM_Lens ordered by id, and get(lens_id) returns a single Lens or None.
+    proof: [lens-query-tests]
+  - text: create(lens) inserts a new Lens with version 0 into LiteLLM_Lens and returns the unchanged lens.
+    proof: [lens-create-tests]
+  - text: update(lens_id, transform, attempts=8, changed_only=False) performs up to eight optimistic-update attempts, calling _try_update each time.
+    proof: [optimistic-update-tests]
+  - text: "_try_update fetches the current lens, applies the transform, checks version equality with a CTE, archives displaced jobs only on successful update, and returns (completed, updated) tuple where completed indicates success."
+    proof: [version-race-tests]
+  - text: "update(lens_id, ...) returns None immediately without attempting the CTE when the lens_id does not exist in the database."
+    proof: [update-lens-missing-tests]
+  - text: "The update CTE (WITH previous, updated, archived) succeeds only when version matches; it archives jobs from previous that don't exist in the new jobs list to LiteLLM_LensRun with ON CONFLICT DO NOTHING."
+    proof: [archive-displaced-jobs-tests]
+  - text: "changed_only=True returns (True, None) when transform produces unchanged lens; changed_only=False returns (True, previous) when unchanged."
+    proof: [changed-only-tests]
+  - text: jobs(lens_id, offset=0) returns up to 50 Job records from both LiteLLM_LensRun and Lens.jobs array, combined and ordered by created_at DESC then id DESC.
+    proof: [history-pages-tests]
+  - text: job(lens_id, job_id) returns a single Job from either LiteLLM_LensRun or Lens.jobs array, or None if not found.
+    proof: [single-job-query-tests]
+  - text: workers() returns all Worker records from LiteLLM_LensWorker, and worker(token_hash) returns a single Worker by token_hash or None.
+    proof: [worker-query-tests]
+  - text: "save_worker(worker, token_hash=None) inserts a new worker with token_hash if provided, or updates an existing worker by id; both operations persist the Worker jsonb in LiteLLM_LensWorker.data."
+    proof: [worker-save-tests]
+  - text: "set_worker_billing(worker_id, key_id) updates analysis_key_id atomically for workers where revoked=false, returning the updated Worker or None if worker is revoked or missing."
+    proof: [revocation-aware-update-tests]
+  - text: revoke_worker(worker_id) sets the revoked flag to true in the worker's data jsonb.
+    proof: [worker-revocation-tests]
+  - text: heartbeat(worker_id, now) updates the last_seen timestamp in the worker's data jsonb.
+    proof: [worker-heartbeat-tests]
+checks:
+  optional: []
+  commands:
+    - id: database-protocol-tests
+      why: Database protocol or WriterDatabase wrapper is missing or does not validate result types.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::database::/)'
+    - id: repository-construction-tests
+      why: LensRepository construction or initialization is missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::construction::/)'
+    - id: lens-query-tests
+      why: Lens query methods (lenses, get) do not return all or single records correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::lens_queries::/)'
+    - id: lens-create-tests
+      why: Lens creation does not insert records or version 0 correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::lens_create::/)'
+    - id: optimistic-update-tests
+      why: Optimistic-update retry loop does not perform eight attempts or fails on exhaustion.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::optimistic_update::/)'
+    - id: version-race-tests
+      why: Version-based concurrency control or CTE validation does not detect conflicts.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::version_race::/)'
+    - id: update-lens-missing-tests
+      why: update() does not return None immediately when the lens_id does not exist, or attempts the CTE unnecessarily.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::update_lens_missing::/)'
+    - id: archive-displaced-jobs-tests
+      why: Displaced job archival to LiteLLM_LensRun does not preserve removed jobs or conflict handling.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::archive_displaced_jobs::/)'
+    - id: changed-only-tests
+      why: "changed_only parameter does not return None or previous correctly when lens is unchanged."
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::changed_only::/)'
+    - id: history-pages-tests
+      why: Job history query does not return 50 records, combine both tables, or order correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::history_pages::/)'
+    - id: single-job-query-tests
+      why: Single job query does not return from both tables or returns duplicates.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::single_job::/)'
+    - id: worker-query-tests
+      why: Worker query methods (workers, worker) do not return all or single records.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::worker_queries::/)'
+    - id: worker-save-tests
+      why: Worker save does not insert with token_hash or update by id correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::worker_save::/)'
+    - id: revocation-aware-update-tests
+      why: Billing-key update does not skip revoked workers or return None for revoked records.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::revocation_aware::/)'
+    - id: worker-revocation-tests
+      why: Worker revocation does not set the revoked flag atomically.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::worker_revocation::/)'
+    - id: worker-heartbeat-tests
+      why: Worker heartbeat update does not set last_seen timestamp correctly.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^lens_repository::worker_heartbeat::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/lens-repository/optimistic-update-success.yaml
+  - tools/oracle/cases/helpers/lens-repository/optimistic-update-conflict-retry.yaml
+  - tools/oracle/cases/helpers/lens-repository/optimistic-update-exhausted.yaml
+  - tools/oracle/cases/helpers/lens-repository/update-lens-not-found.yaml
+  - tools/oracle/cases/helpers/lens-repository/archive-displaced-on-update.yaml
+  - tools/oracle/cases/helpers/lens-repository/changed-only-true.yaml
+  - tools/oracle/cases/helpers/lens-repository/changed-only-false.yaml
+  - tools/oracle/cases/helpers/lens-repository/history-pages-combine-tables.yaml
+  - tools/oracle/cases/helpers/lens-repository/history-pages-offset.yaml
+  - tools/oracle/cases/helpers/lens-repository/job-from-archived.yaml
+  - tools/oracle/cases/helpers/lens-repository/job-from-active.yaml
+  - tools/oracle/cases/helpers/lens-repository/worker-save-insert.yaml
+  - tools/oracle/cases/helpers/lens-repository/worker-save-update.yaml
+  - tools/oracle/cases/helpers/lens-repository/set-worker-billing-success.yaml
+  - tools/oracle/cases/helpers/lens-repository/set-worker-billing-revoked.yaml
+  - tools/oracle/cases/helpers/lens-repository/revoke-worker.yaml
+  - tools/oracle/cases/helpers/lens-repository/heartbeat-updates-timestamp.yaml
+deviations:
+  - what: Row validation uses serde JSON decoding instead of Pydantic TypeAdapter.model_validate_python; behavior is equivalent.
+    why: Rust uses serde instead of Pydantic; result validation is type-safe and occurs at the same boundary as LiteLLM's validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L20
+  - what: WriterDatabase holds a WriterSession reference instead of PrismaWrapper; WriterSession is the betterlite equivalent providing raw query/execute.
+    why: B714 provides WriterSession as the native interface for writer-pinned queries; PrismaWrapper is LiteLLM's ORM layer which betterlite replaces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L168-L176
+  - what: Monetary amounts in Worker records use rust_decimal::Decimal instead of Python float.
+    why: Budgets and costs must remain precise across persistence and calculations; Decimal avoids float accumulation errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L45
+out_of_scope:
+  - B4500 owns Lens, Job and Worker record types and their validation; this task uses them for jsonb row construction.
+  - B4502 owns source storage integration; this task owns only Lens/Job/Worker persistence.
+  - B4503/B4504/B4505 own HTTP routes that call these repository methods; they do not modify the repository interface.
+  - B709 owns the schema migrations and table definitions for LiteLLM_Lens, LiteLLM_LensRun and LiteLLM_LensWorker.
+  - B714 owns WriterSession and writer-pinning semantics; this task uses it as an injected dependency.
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b4501 in the db group. Replace the stub Op in tools/oracle/src/helpers/db/b4501.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b4501.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task's to edit."
+  - "When update() is called with a lens_id that does not exist, _try_update returns (True, None) immediately without executing the CTE; this is a normal outcome, not an error."
+  - "Optimistic-update attempts default to 8 and must retry the entire fetch-transform-CTE sequence, not just the CTE. Exhaustion returns None, not an error."
+  - "The CTE succeeds only when the version matches the one fetched at the start of the attempt. A concurrent update increments the version, causing the next attempt to re-fetch a stale lens and retry the transform."
+  - "Archived jobs are inserted into LiteLLM_LensRun with ON CONFLICT (id) DO NOTHING, so re-running the same mutation in recovery does not duplicate archived rows."
+  - "changed_only=True means: if transform(previous) == previous, return (True, None). If false, still update but return (True, None). changed_only=False means: always return the old value if unchanged, or the new value if changed."
+  - "Worker revocation checks COALESCE((data->>'revoked')::boolean, false)=false, so missing revoked field or revoked=false both allow the update; only explicit revoked=true blocks it."
+  - "Job history combines LiteLLM_LensRun.data and Lens.jobs array elements, so jobs() returns both archived and active jobs in one sorted stream, limited to 50 total with offset support for pagination."
+  - "Result count validation in _try_update checks rows[0].data == 1, where the CTE returns to_jsonb(count(*)) from the updated table; if version mismatch caused zero updates, count is 0 and the attempt fails."
+  - "Row validation occurs in every query/execute call; a decoding error on a stored record indicates database corruption, not a transient failure."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

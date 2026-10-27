@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Guardrail usage windows and dashboard aggregation
 status: todo
 depends_on: [B726]
-file: null
+file: tasks/B3689-guardrail-usage-projections.yaml
 covers:
   - "litellm/proxy/guardrails/usage_endpoints.py"
 parent: B104

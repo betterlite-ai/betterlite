@@ -1,0 +1,138 @@
+id: B3491
+title: Decode native interaction streams and log terminal results
+description: >-
+  Build streaming iterators in crates/betterlite-core::api::interactions for both sync
+  and async paths, consuming native SSE response bodies. Decode event lines into JSON,
+  pass non-malformed objects through transform_streaming_response, and signal EOF on
+  DONE. Store the last completion event (detected by legacy status="completed" or new
+  event_type="interaction.completed") and dispatch it through success handlers on
+  completion. Preserve response-header metadata extraction and the different success
+  dispatch paths for each iterator.
+
+  The constructors accept an httpx response, model name, BaseInteractionsAPIConfig,
+  a logging object, and optional litellm_metadata (dict with "model_info" key) and
+  custom_llm_provider (str). Extract api_base via get_api_base, model_id from metadata,
+  and additional_headers via process_response_headers for the _hidden_params dict.
+  Ignore malformed JSON lines and non-object parsed values. The completed_response is
+  stored after every completion event, so the last event wins if multiple completion
+  markers appear.
+
+  AsyncInteractionStreamIterator implements async iteration (calls response.aiter_lines());
+  SyncInteractionsAPIStreamingIterator implements sync iteration (calls response.iter_lines()).
+  Both extend BaseInteractionsAPIStreamingIterator. Async dispatches success handlers via
+  asyncio.create_task with prefer_async_handlers=True; sync uses run_async_function for the
+  async handler and executor.submit for the sync handler.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/interactions.rs
+    - crates/betterlite-core/src/api/interactions/**
+    - crates/betterlite-core/tests/fixtures/interactions/**
+    - crates/betterlite-core/Cargo.toml
+    - tools/oracle/helpers/b3491.py
+    - tools/oracle/helpers/b3491/**
+    - tools/oracle/src/helpers/core_ops/b3491.rs
+    - tools/oracle/src/helpers/core_ops/b3491/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L29-L68
+    why: BaseInteractionsAPIStreamingIterator.__init__ constructor accepting response, model, config, logging_obj, and optional litellm_metadata/custom_llm_provider; _hidden_params built from get_api_base result, model_info dict, and process_response_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L69-L114
+    why: _process_chunk parsing SSE lines via CustomStreamWrapper._strip_sse_data_from_chunk, detecting DONE, JSON decode with silent failures, transform_streaming_response contract, completion detection via legacy status or event_type, storing completed_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L115-L117
+    why: Base _handle_logging_completed_response stub.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L119-L184
+    why: AsyncInteractionStreamIterator constructor and async iteration protocol (__aiter__, __anext__) with response.aiter_lines(), async _handle_logging_completed_response dispatching via asyncio.create_task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L186-L256
+    why: SyncInteractionsAPIStreamingIterator constructor and sync iteration protocol (__iter__, __next__) with response.iter_lines(), sync _handle_logging_completed_response dispatching via run_async_function and executor.submit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1085-L1100
+    why: InteractionsAPIStreamingResponse class definition with status and event_type fields for completion detection.
+dod:
+  - text: AsyncInteractionStreamIterator accepts response, model, config, logging_obj, litellm_metadata and custom_llm_provider; calls response.aiter_lines() during construction.
+    proof: [iterator-construction-test]
+  - text: SyncInteractionsAPIStreamingIterator accepts response, model, config, logging_obj, litellm_metadata and custom_llm_provider; calls response.iter_lines() during construction.
+    proof: [iterator-construction-test]
+  - text: Both iterator constructors extract api_base via get_api_base from model and logging_obj.model_call_details litellm_params.
+    proof: [iterator-construction-test]
+  - text: Both iterator constructors extract model_id from litellm_metadata["model_info"]["id"] when metadata is present.
+    proof: [iterator-construction-test]
+  - text: Both iterator constructors call process_response_headers on response.headers for _hidden_params["additional_headers"].
+    proof: [iterator-construction-test]
+  - text: _process_chunk calls CustomStreamWrapper._strip_sse_data_from_chunk and returns None for empty/None result.
+    proof: [chunk-processing-test]
+  - text: _process_chunk detects DONE marker (STREAM_SSE_DONE_STRING) and sets self.finished=True.
+    proof: [chunk-processing-test]
+  - text: _process_chunk parses stripped chunk as JSON and returns None on decode error (logged to verbose_logger).
+    proof: [chunk-processing-test]
+  - text: _process_chunk passes non-None parsed dicts to transform_streaming_response and returns None for non-dict values.
+    proof: [chunk-processing-test]
+  - text: _process_chunk detects completion via legacy status="completed" or new event_type="interaction.completed" on transformed response.
+    proof: [chunk-processing-test]
+  - text: Async iteration protocol (__aiter__, __anext__) calls response.aiter_lines().__anext__() and loops until result from _process_chunk is non-None or finished=True.
+    proof: [async-iteration-test]
+  - text: Sync iteration protocol (__iter__, __next__) calls response.iter_lines().__next__() and loops until result from _process_chunk is non-None or finished=True.
+    proof: [sync-iteration-test]
+  - text: AsyncInteractionStreamIterator._handle_logging_completed_response uses asyncio.create_task to dispatch_success_handlers with prefer_async_handlers=True.
+    proof: [async-iteration-test]
+  - text: SyncInteractionsAPIStreamingIterator._handle_logging_completed_response uses run_async_function for async_success_handler and executor.submit for success_handler.
+    proof: [sync-iteration-test]
+  - text: Both iterators handle HTTPError during iteration by setting finished=True and raising the error.
+    proof: [error-handling-test]
+  - text: Completion event is stored and last event wins when multiple completions appear in one stream.
+    proof: [multiple-completions-test]
+checks:
+  optional: []
+  commands:
+    - id: iterator-construction-test
+      why: iterator constructors do not accept required parameters or do not initialize api_base/model_id/headers
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^interactions_streaming::(async_iterator|sync_iterator)_construction/)'
+    - id: chunk-processing-test
+      why: chunk processing fails, does not parse SSE lines or JSON, or fails to detect completion
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^interactions_streaming::chunk_processing/)'
+    - id: async-iteration-test
+      why: async iteration does not consume aiter_lines or dispatch success handlers correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^interactions_streaming::async_iteration/)'
+    - id: sync-iteration-test
+      why: sync iteration does not consume iter_lines or dispatch both sync and async success handlers
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^interactions_streaming::sync_iteration/)'
+    - id: error-handling-test
+      why: iterators do not handle HTTP errors or DONE marker correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^interactions_streaming::error_handling/)'
+    - id: multiple-completions-test
+      why: multiple completion events do not result in last event being stored
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^interactions_streaming::multiple_completions/)'
+oracle_cases:
+  - tools/oracle/cases/interactions/stream/valid-event-stream.yaml
+  - tools/oracle/cases/interactions/stream/blank-lines-ignored.yaml
+  - tools/oracle/cases/interactions/stream/sse-strip-then-parse.yaml
+  - tools/oracle/cases/interactions/stream/json-decode-error.yaml
+  - tools/oracle/cases/interactions/stream/non-dict-event.yaml
+  - tools/oracle/cases/interactions/stream/done-marker-exits.yaml
+  - tools/oracle/cases/interactions/stream/legacy-status-done.yaml
+  - tools/oracle/cases/interactions/stream/event-type-2026-05-20.yaml
+  - tools/oracle/cases/interactions/stream/last-completion-wins.yaml
+  - tools/oracle/cases/interactions/stream/async-task-dispatch.yaml
+  - tools/oracle/cases/interactions/stream/sync-executor-dispatch.yaml
+deviations:
+  - what: "Async success dispatch uses asyncio.create_task with prefer_async_handlers=True instead of awaiting inline"
+    why: "Streaming iteration does not block on completion logging; betterlite preserves the async-only fire-and-forget behavior"
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L175-L183
+  - what: "Sync success dispatch uses both executor.submit and run_async_function for the two handler types"
+    why: "betterlite preserves the dual-path logging from LiteLLM: sync handlers on executor, async via run_async_function bridge"
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L242-L256
+out_of_scope:
+  - "Transform stream response (B3490 owns transform_streaming_response and the event dict structure)."
+  - "SSE line stripping and buffering (B005 owns CustomStreamWrapper._strip_sse_data_from_chunk and incremental network read handling)."
+  - "Response header metadata processing (B206 owns process_response_headers and header extraction)."
+  - "Success handler dispatch mechanics (B250 owns dispatch_success_handlers, async_success_handler, success_handler and their registration)."
+  - "API base resolution for non-interaction calls (get_api_base is shared; this task uses it but a named owner elsewhere defines its contract)."
+pitfalls:
+  - "The completed_response is stored after every completion event, so the last event wins if multiple completion markers appear in one stream; earlier completed_response values are overwritten."
+  - "Malformed JSON in an event line is logged to verbose_logger but does not raise an error; iteration continues to the next line."
+  - "Empty chunks and blank SSE lines (where _strip_sse_data_from_chunk returns None) do not create events; only non-empty data: prefixes and valid JSON create entries."
+  - "Both legacy status=\"completed\" and new event_type=\"interaction.completed\" signal completion; the legacy check is scheduled for removal June 8, 2026."
+  - "Async handlers are dispatched as fire-and-forget tasks; the iterator does not wait for logging to finish and returns immediately once the DONE marker is read."
+  - "HTTPError during iteration stops the stream and re-raises; the iterator's finished flag is set but no completion logging occurs for errors."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

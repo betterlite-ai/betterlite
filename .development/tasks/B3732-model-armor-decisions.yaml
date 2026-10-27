@@ -1,0 +1,129 @@
+id: B3732
+title: Model Armor configuration and verdict projection
+description: >-
+  Build Model Armor construction, sanitized error/log projections and filter-result decisions for blocking or de-identification. Preserve the default us-central1 location, recursive sensitive-content redaction and the source's distinct inspect/deidentify matching rules.
+
+  Implement the core Model Armor guardrail type in betterlite-guardrails (or the designated guardrail crate) with Rust serde types matching LiteLLM's wire format. Build:
+
+  - ModelArmorGuardrail: class constructor accepting template_id, project_id, location (default us-central1), credentials, api_endpoint, sanitize_error_detail and async_handler. Initialize as a CustomGuardrail subclass with VertexBase for credential resolution.
+  - ModelArmorAPIError: exception type with sanitized detail field, raised on non-2xx responses.
+  - ModelArmorGuardrailConfigModel: configuration record with template_id, project_id, location, credentials, api_endpoint, fail_on_error and sanitize_error_detail fields; ui_friendly_name returns "Google Cloud Model Armor".
+  - _redact_scanned_content: recursive redaction of text/sanitizedText/findings/maliciousUriMatchedItems keys up to DEFAULT_MAX_RECURSE_DEPTH.
+  - _extract_content_from_response: extract text from ModelResponse objects; return empty string for non-text types (TTS, images).
+  - _build_api_error_detail: format API error messages with optional sanitization of raw response text.
+  - _build_block_error_detail: format blocking decision details with optional armor_response inclusion.
+  - _build_logging_response: redact sensitive scan data for logging.
+  - _raise_if_fail_closed: raise ModelArmorAPIError when fail_on_error is true.
+  - _should_block_content: check if armor response indicates content should be blocked based on filter result matches (RAI, PI/Jailbreak, Malicious URI, CSAM, Virus, SDP inspect/deidentify); allow_sanitization parameter gates deidentify blocking.
+  - _get_sanitized_content: extract sanitized text from deidentifyResult when match is found, or from inspectResult fallback; return None if matching but no sanitized output.
+  - _filter_result_items: flatten armor response filterResults from dict or list into list of filter entries.
+  - _has_deidentify_match: check if any SDP deidentify filter matched.
+  - _append_armor_response: accumulate scan responses (return single on first, list on subsequent) to preserve both file and text scan results.
+  - update_litellm_params: preserve sanitize_error_detail on config updates.
+
+  get_supported_event_hooks returns [pre_call, during_call, post_call, pre_mcp_call, during_mcp_call, logging_only]. get_config_model returns ModelArmorGuardrailConfigModel. No helper here calls file scanners, native hooks or stream executors.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/model_armor/decisions.rs
+    - crates/betterlite-guardrails/src/model_armor/decisions/**
+    - crates/betterlite-guardrails/src/model_armor/config.rs
+    - crates/betterlite-guardrails/src/model_armor/config/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1-L187
+    why: "Imports, constants, _StreamSurface enum, ModelArmorAPIError, _redact_scanned_content, class declarations and __init__"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L202-L242
+    why: "_extract_content_from_response, _build_api_error_detail, _build_block_error_detail, _build_logging_response, _raise_if_fail_closed, update_litellm_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L381-L456
+    why: "_should_block_content, _get_sanitized_content, _filter_result_items, _has_deidentify_match with filter result inspection logic"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L491-L504
+    why: "_append_armor_response accumulation logic"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1293-L1302
+    why: "get_config_model static method returning ModelArmorGuardrailConfigModel"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/model_armor.py#L1-L32
+    why: "ModelArmorGuardrailConfigModel with all configuration fields and ui_friendly_name implementation"
+
+dod:
+  - text: ModelArmorGuardrail constructor exists and accepts template_id, project_id, location (default us-central1), credentials, api_endpoint, sanitize_error_detail and async_handler parameters.
+    proof: [behavior-tests]
+  - text: ModelArmorAPIError is defined with a detail field and inherits from Exception.
+    proof: [behavior-tests]
+  - text: ModelArmorGuardrailConfigModel has all configuration fields and ui_friendly_name returns "Google Cloud Model Armor".
+    proof: [behavior-tests]
+  - text: _redact_scanned_content recursively redacts text/sanitizedText/findings/maliciousUriMatchedItems keys up to DEFAULT_MAX_RECURSE_DEPTH with behavior tested for nested and empty dicts.
+    proof: [behavior-tests]
+  - text: _extract_content_from_response extracts text from ModelResponse and returns empty string for non-text types.
+    proof: [behavior-tests]
+  - text: _build_api_error_detail formats error messages with optional sanitization based on sanitize_error_detail flag.
+    proof: [behavior-tests]
+  - text: _build_block_error_detail includes optional armor_response based on sanitize_error_detail flag.
+    proof: [behavior-tests]
+  - text: _build_logging_response calls _redact_scanned_content on armor response when sanitize_error_detail is true.
+    proof: [behavior-tests]
+  - text: _raise_if_fail_closed raises ModelArmorAPIError only when fail_on_error is true.
+    proof: [behavior-tests]
+  - text: _should_block_content checks RAI, PI/Jailbreak, Malicious URI, CSAM, Virus, and SDP (inspect/deidentify) filter matches, with deidentify blocking gated by allow_sanitization.
+    proof: [behavior-tests]
+  - text: _get_sanitized_content returns sanitized text from deidentifyResult when match found, falls back to inspectResult, returns None if matching without sanitized output.
+    proof: [behavior-tests]
+  - text: _filter_result_items flattens filterResults from both dict and list shapes into a unified list.
+    proof: [behavior-tests]
+  - text: _has_deidentify_match checks for deidentifyResult MATCH_FOUND across filters.
+    proof: [behavior-tests]
+  - text: _append_armor_response returns single response on first call, list on subsequent calls to accumulate file and text scans.
+    proof: [behavior-tests]
+  - text: update_litellm_params preserves sanitize_error_detail state.
+    proof: [behavior-tests]
+  - text: get_supported_event_hooks returns [pre_call, during_call, post_call, pre_mcp_call, during_mcp_call, logging_only].
+    proof: [behavior-tests]
+  - text: get_config_model returns ModelArmorGuardrailConfigModel type.
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Model Armor decision behavior tests are missing or incomplete
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::decisions::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Model Armor's _redact_scanned_content uses DEFAULT_MAX_RECURSE_DEPTH constant for limiting recursion. betterlite uses the same constant and recursion depth limits."
+    why: "The recursion limit prevents stack overflow on deeply nested JSON responses; matching LiteLLM's constant ensures consistent behavior on malformed or adversarial responses."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L105-L116"
+  - what: "The sanitize_error_detail flag controls both error detail visibility and logging redaction. When true (default), Model Armor API errors and scanned content are sanitized; when false, full responses are included."
+    why: "This matches LiteLLM's behavior of conditional sanitization based on deployment security posture. The default true protects production deployments."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L149-L177"
+  - what: "_should_block_content treats deidentifyResult MATCH_FOUND as blockable only when allow_sanitization is false. When masking is enabled (allow_sanitization=true), deidentify matches do not automatically block and allow sanitization to proceed."
+    why: "This preserves LiteLLM's distinction between blocking on inspect results (always) and deidentify results (only when masking is disabled). The logic ensures masked responses are preferred over blocking when available."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L381-L405"
+  - what: "_filter_result_items handles both dict and list shapes for filterResults. When filterResults is a dict (most templates), values are extracted; when a list, it is returned directly."
+    why: "Model Armor's API returns filterResults in different shapes depending on template type. This normalization allows uniform processing."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L437-L448"
+
+out_of_scope:
+  - "CustomGuardrail.__init__ and parent update methods (belongs to B104)"
+  - "File scanning and document classification (belongs to B3733)"
+  - "Native hook implementations (async_pre_call_hook, async_post_call_success_hook) (belongs to B3734)"
+  - "Buffered streaming and response assembly (belongs to B3735)"
+  - "File request construction and byte encoding (belongs to B3733)"
+  - "Vertex AI credential resolution (_ensure_access_token_async is from B1303)"
+
+pitfalls:
+  - "The _redact_scanned_content function only redacts specific keys (text, sanitizedText, findings, maliciousUriMatchedItems); other keys pass through unchanged. Ensure the key set matches _SCANNED_CONTENT_KEYS exactly."
+  - "The location parameter defaults to 'us-central1', not None. If location is not explicitly provided, this default must be applied during construction."
+  - "The _should_block_content function's allow_sanitization parameter is a separate boolean gate for deidentify results. It is set based on mask_response_content or mask_request_content at the call site, not computed here."
+  - "The _filter_result_items function normalizes both dict and list shapes to a single list. An empty filterResults dict returns an empty list, not a dict."
+  - "The _has_deidentify_match function checks only sdpFilterResult.deidentifyResult.matchState == 'MATCH_FOUND', not other filter types. It is used separately from _should_block_content to determine if sanitization is required."
+  - "The _append_armor_response function returns a list only after the second call. The first response object is returned as-is, and only on a second response is a list created. This is important for logging accumulation."
+  - "Configuration fields like template_id, project_id and location must be set and validated by the caller before use. This task does not validate template_id format or project_id existence."
+  - "The get_supported_event_hooks method lists all events the guardrail can be triggered on, but the actual event subscriptions are set in the constructor's event_hook parameter. Do not confuse these."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

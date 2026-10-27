@@ -1,0 +1,159 @@
+id: B4710
+title: MCP stored server encoding and secret fields
+description: >-
+  Build MCP server database encoding and credential/global-environment encryption in betterlite-db.
+  LiteLLM's db.py module handles encrypted storage of MCP server configurations, particularly
+  credentials and environment variables. This task ports the core encoding logic: preparing server
+  data for storage, encrypting/decrypting credentials, handling global vs. per-user environment
+  variables, and managing the different behaviors when decryption fails.
+
+  Credentials (OAuth client IDs/secrets, API keys, auth values) are encrypted at rest with the
+  global salt key. Global environment variables (scope != "user") are also encrypted, while
+  per-user placeholders (scope == "user") are stored as-is. Failed decryption of global env vars
+  logs a warning and clears the value so ciphertext is never sent upstream. Credentials tolerate
+  silent failures and forward the original value.
+
+  The `_prepare_mcp_server_data` function normalizes request payloads for create and partial update:
+  exclude_unset preserves field presence during updates, explicit null clears stored values, and
+  legacy token-exchange columns lift values from the credentials blob and strip them on write,
+  ensuring the read-time fallback only serves pre-current-code rows. Blank values become None for
+  sparse storage.
+
+  When clients rotate the OAuth client (client_id/client_secret change), stale minted tokens
+  (access_token, refresh_token, expires_in) are dropped so an old app's credentials never ride
+  forward. Client-forwarded auth types (true_passthrough and oauth_delegate) share one stored
+  credential shape, while cross-class changes (e.g., oauth2 row becoming a BYOK row) discard
+  the old credentials entirely.
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/mcp_server_encoding.rs
+    - crates/betterlite-db/src/mcp_server_encoding/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-server-encoding/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-server-encoding-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L107-L110
+    why: The _blank_to_none helper and its use in request normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L91-L136
+    why: Scoped fields and client-forwarded auth types; token-exchange columns and minted token credential fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L163-L201
+    why: Credential class collapsing, stale minted-token dropping, global env scope detection, and encryption of global values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L204-L269
+    why: Decryption of global env vars with failed-decryption logging, and Prisma returned-row envelope handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L320-L476
+    why: The complete _prepare_mcp_server_data function, credential serialization, and secret map handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L426-L476
+    why: Credential field encryption and credentials-blob-to-dict parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L709-L731
+    why: Decrypt_credentials function and secret field list.
+dod:
+  - text: >-
+      The blank_to_none helper converts whitespace-only and empty strings to None,
+      with a case for non-string inputs.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      credential_auth_class collapses true_passthrough and oauth_delegate to
+      "client_forwarded", else returns auth_type unchanged.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      drop_stale_minted_tokens drops access_token, refresh_token, expires_in when
+      client_id or client_secret changes, preserving unchanged fields.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      is_global_env_var_scope returns true for scope values other than "user"
+      (including None and missing scope), false only for explicit "user".
+    proof: [mcp-encoding-tests]
+  - text: >-
+      encrypt_global_env_var_values encrypts scope=global env var values in place;
+      per-user placeholders are left as-is.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      decrypt_global_env_var_values decrypts scope=global values in place, logs
+      a warning and clears undecryptable values, accepts both MCPEnvVar models
+      and plain dicts.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      decrypt_returned_row_env_vars parses JSON strings back to lists and calls
+      decrypt_global_env_var_values, handles non-list and non-dict payloads
+      gracefully.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      prepare_mcp_server_data with exclude_unset=true only includes
+      caller-provided fields, special-cases alias and allowed_tools, handles JSON
+      map field nulls, lifts token-exchange columns, encrypts credentials and
+      env_vars, encrypts static_headers secret map, always writes is_byok=false
+      on create.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      prepare_mcp_server_data with exclude_unset=false excludes None values, sets
+      alias and is_byok if missing, serializes all JSON fields the same way.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      encrypt_credentials encrypts nine secret fields (auth_value, client_id,
+      client_secret, client_private_key, aws_access_key_id,
+      aws_secret_access_key, aws_session_token), leaves non-secret fields
+      unchanged.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      credentials_blob_to_dict parses JSON strings or converts dicts to mutable
+      dicts, handles parse errors gracefully.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      decrypt_credentials decrypts the same nine secret fields using the global
+      salt key, returns the mutated dict.
+    proof: [mcp-encoding-tests]
+  - text: >-
+      Every default, env var, config key, error, and warn-and-drop path a user
+      can observe is in a named case with literal input and outcome.
+    proof: [mcp-encoding-tests]
+  - text: Every mutant in the encoding functions is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: mcp-encoding-tests
+      why: >-
+        Partial-update filtering, token-exchange lifting, env-var encryption,
+        or credential class/rotation logic is missing or fails on edge cases.
+      run: >-
+        cargo nextest run --locked -p betterlite-db --no-tests=fail
+        -E 'test(/^mcp_server_encoding::/)'
+    - id: encoding-oracle
+      why: >-
+        Cross-language encryption/decryption interoperability between Python
+        LiteLLM behavior and Rust implementation is missing.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-server-encoding
+        -k 'b4710'
+
+oracle_cases: []
+
+deviations:
+  - what: Failed decryption of global env vars logs a warning and clears the value (sets to empty string).
+    why: LiteLLM drops undecryptable global values to prevent sending ciphertext upstream; betterlite matches this behavior to avoid credential leaks.
+  - what: Failed decryption of credentials returns the original encrypted value unchanged via return_original_value=true.
+    why: LiteLLM's credentials fallback preserves the value, allowing callers to handle or retry; betterlite preserves this for forward compatibility.
+  - what: _blank_to_none returns None for None input, not an error.
+    why: Request payloads may include explicit None/null values; the normalizer must accept them to preserve client intent.
+out_of_scope:
+  - _mcp_server_table_actions (table-accessor factory belongs with B4711 table access and lock handling).
+  - _verification_token_table_actions (no caller at the pin in production code).
+  - _team_table_actions (no caller at the pin in production code).
+  - _readable_mcp_servers (row decoding and secret-map error handling belong with B4711 server reads).
+  - _db_find_user_env_var_rows (DB find helper belongs with B4711 table access).
+  - NewMCPServerRequest and UpdateMCPServerRequest types are defined elsewhere (Q1).
+  - MCPCredentials type is defined elsewhere (Q1).
+pitfalls:
+  - Global env var encryption uses the key "mcp_global_env_var"; credentials use field names as keys. Mixing them produces silent decode failures.
+  - exclude_unset=true requires the original request's fields_set() to avoid overwriting stored values with defaults. Callers must pass fields_set or let the function read it from the request.
+  - The alias field assignment by validate_and_normalize_mcp_server_payload marks alias as set even when the caller omitted it; the normalizer must drop it again if the original request did not include it.
+  - Token-exchange columns in the Prisma schema are plaintext (identifiers/URLs, not secrets); values lift without encryption and must not be re-encrypted on rotation.
+  - Client rotation (client_id/client_secret change) only clears minted tokens, not the new client fields themselves; a caller that provides partial credentials (e.g., only client_id) must build the merge before calling encrypt_credentials.
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

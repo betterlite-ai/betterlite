@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Sandbox tool registry and public lifecycle dispatch
 status: todo
 depends_on: [B3516, B3518, B002, B014, B247]
-file: null
+file: tasks/B3519-sandbox-dispatch.yaml
 covers:
   - "litellm/sandbox/**"
   - "litellm/utils.py"

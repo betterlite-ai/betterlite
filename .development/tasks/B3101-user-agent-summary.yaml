@@ -1,0 +1,134 @@
+id: B3101
+title: Report monthly active users, tag totals and per-user analytics
+description: >-
+  Implement three additional user-agent analytics endpoints in betterlite-server::user_agent_analytics
+  to complement B3100's distinct, DAU and WAU metrics.
+
+  Implement get_monthly_active_users (GET `/tag/mau`): calculate active users per tag for the last
+  MAX_MONTHS=7 months (210 days), where months are 30-day periods. End boundary is UTC today + 1 day
+  at 0:00 UTC. Accept optional tag_filter (substring ILIKE match, legacy) and tag_filters (exact
+  match list, takes precedence). Query joins LiteLLM_DailyTagSpend with LiteLLM_VerificationToken
+  on api_key=token, groups by tag and month_offset, counts distinct user_id. Generate descriptive
+  month labels with ordinal numbers and month abbreviations (e.g., "Month 1 (Jan)"). Include
+  period_start and period_end dates in response. Order by month_offset descending (most recent
+  first) then active_users descending.
+
+  Implement get_tag_summary (GET `/tag/summary`): aggregate metrics by tag across a provided date
+  range (both start_date and end_date required as YYYY-MM-DD strings). Support same tag filtering
+  as MAU. Query joins LiteLLM_DailyTagSpend with LiteLLM_VerificationToken on api_key=token using
+  LEFT JOIN (retain records even when user_id is null), sums api_requests, successful_requests,
+  failed_requests, and spend, and totals (prompt_tokens + completion_tokens). Coalesce all null
+  aggregates to 0 or 0.0 in response. Order results by total_requests descending.
+
+  Implement get_per_user_analytics (GET `/tag/user-agent/per-user-analytics`): return paginated
+  per-user metrics for the last 30 days ending UTC tomorrow. Support optional tag_filter and
+  tag_filters with same semantics as other endpoints. Accept page (default 1, ge 1) and page_size
+  (default 50, ge 1 le 1000) query parameters. Return immediately with zero results and zero
+  pages if no api_keys match the date and tag filters, without querying users or building metrics.
+  Fetch tag records matching filters, extract unique api_keys, join with VerificationToken to map
+  api_keys to user_ids, fetch UserRepository for emails, aggregate metrics by user_id. Each user's
+  user_agent field stores the first observed tag (not replaced by later tags with different values);
+  null values are preserved and counts/totals accumulate across all records for that user. Sort
+  results by successful_requests descending before pagination. Return total_count, page, page_size
+  and total_pages (ceil division: (total_count + page_size - 1) / page_size).
+
+  All endpoints require user API key authentication (B052). When prisma_client is unavailable, return
+  HTTP 500. Build SQL queries with parameter injection; accept date validation errors from strptime
+  with HTTP 400 "Invalid date format. Use YYYY-MM-DD: {e}".
+
+scope:
+  paths:
+    - crates/betterlite-server/src/user_agent_analytics.rs
+    - crates/betterlite-server/src/user_agent_analytics/**
+    - tools/oracle/cases/analytics/user-agent-mau*.yaml
+    - tools/oracle/cases/analytics/user-agent-summary*.yaml
+    - tools/oracle/cases/analytics/user-agent-per-user*.yaml
+    - tools/oracle/helpers/b3101.py
+    - tools/oracle/helpers/b3101/**
+    - tools/oracle/src/helpers/server/b3101.rs
+    - tools/oracle/src/helpers/server/b3101/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L426-L544
+    why: get_monthly_active_users endpoint, 30-day month bucketing with FLOOR division, month labels with ordinal and abbreviation format, period_start/period_end calculation, SQL query structure matching DAU/WAU.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L547-L649
+    why: get_tag_summary endpoint, date range query parameters, LEFT JOIN with VerificationToken for user_id retention, sum aggregations on api_requests/successful_requests/failed_requests/tokens/spend, tag filtering logic, ordering by total_requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L652-L801
+    why: get_per_user_analytics endpoint, 30-day window calculation, optional tag filtering, early return for empty key set before querying users, api_key to user_id lookup, email retrieval, metrics aggregation by user, first-observed user_agent attribution, success-count sorting, post-aggregation pagination with total_pages calculation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L114-L139
+    why: Row types _TagSummaryRow for parsing SQL results, TypeAdapter for validation, null coalescing in response construction.
+dod:
+  - text: "get_monthly_active_users returns active users per tag for last 7 months (210 days), groups by 30-day period, generates month labels with ordinal and abbreviation (e.g., \"Month 1 (Nov)\"), includes period_start and period_end dates, ordered with most recent month first."
+    proof: [oracle, behavior-tests]
+  - text: "get_monthly_active_users calculates month_offset using FLOOR((end_date - tag_date) / 30) and supports both exact-match tag_filters (takes precedence) and substring tag_filter legacy mode."
+    proof: [oracle, behavior-tests]
+  - text: "get_tag_summary accepts start_date and end_date as required YYYY-MM-DD parameters, validates with strptime and returns HTTP 400 on invalid format, aggregates across all matching records in date range."
+    proof: [oracle, behavior-tests]
+  - text: "get_tag_summary uses LEFT JOIN with VerificationToken to retain api_keys without matching user_id, sums api_requests/successful_requests/failed_requests, totals (prompt_tokens + completion_tokens) as total_tokens, sums spend."
+    proof: [oracle, behavior-tests]
+  - text: "get_tag_summary coalesces null aggregates to 0 (int) or 0.0 (float) in response, ordered by total_requests descending."
+    proof: [oracle, behavior-tests]
+  - text: "get_per_user_analytics returns immediately with zero results, zero total_count, and zero total_pages when no api_keys match the date and tag filters, without querying user or repository tables."
+    proof: [oracle, behavior-tests]
+  - text: "get_per_user_analytics fetches DailyTagSpend records for last 30 days ending UTC tomorrow, extracts unique api_keys, joins with VerificationToken to map to user_ids, fetches UserRepository for emails."
+    proof: [behavior-tests]
+  - text: "get_per_user_analytics aggregates metrics by user_id: user_agent stores the first observed tag (unchanged if already set), counts and totals accumulate across all records for that user."
+    proof: [behavior-tests]
+  - text: "get_per_user_analytics accepts page (default 1, ge 1) and page_size (default 50, ge 1 le 1000), returns paginated results sorted by successful_requests descending, with total_pages = ceil((total_count + page_size - 1) / page_size)."
+    proof: [oracle, behavior-tests]
+  - text: "Tag filtering respects exact-list precedence (tag_filters with exact match before tag_filter substring search) and empty filter lists mean no filtering across all three endpoints."
+    proof: [oracle, behavior-tests]
+  - text: "GET /tag/mau returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable."
+    proof: [oracle]
+  - text: "GET /tag/summary returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable."
+    proof: [oracle]
+  - text: "GET /tag/user-agent/per-user-analytics returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable."
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Response types, tag/date filtering, pagination logic, or null coalescing is broken
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_agent_analytics::(monthly_|summary_|per_user_)/)'
+oracle_cases:
+  - tools/oracle/cases/analytics/user-agent-mau.yaml
+  - tools/oracle/cases/analytics/user-agent-summary.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user.yaml
+  - tools/oracle/cases/analytics/user-agent-mau-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-summary-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-summary-invalid-dates.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user-empty-keyset.yaml
+  - tools/oracle/cases/analytics/user-agent-mau-prisma-unavailable.yaml
+  - tools/oracle/cases/analytics/user-agent-summary-prisma-unavailable.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user-prisma-unavailable.yaml
+deviations:
+  - what: SQL parameter injection uses Rust's native parameterized query API instead of string formatting for MAU query. Tag filter parameters are built dynamically with count-based indices.
+    why: Prevents SQL injection and matches betterlite's database abstraction patterns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L496-L523
+  - what: Month labels use Rust chrono date formatting instead of PostgreSQL TO_CHAR. Output matches LiteLLM's format (e.g., "Month 1 (Jan)") exactly.
+    why: Simplifies query building and aligns with Rust type safety.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L512-L514
+  - what: Per-user pagination uses Rust in-memory sorting and slicing (sort by successful_requests then slice for page) instead of SQL OFFSET/LIMIT.
+    why: Total distinct users per 30-day window is typically small enough for in-memory sorting; simplifies implementation and avoids SQL complexity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L775-L787
+  - what: Null numeric coalescing (int and float) is performed in Rust response construction using .unwrap_or() and float fallback to 0.0, not SQL COALESCE.
+    why: Consistent type handling across the API and failure-safe if a SQL type doesn't match expectations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L625-L636
+out_of_scope:
+  - "_TableOps protocol and _typed_table overloads (lines 142-155) are type-checking-only definitions with no runtime implementation; they provide type hints that return the repository's existing .table property unchanged. B3100 does not build them either."
+  - get_distinct_user_agent_tags, get_daily_active_users, get_weekly_active_users (owned by B3100).
+  - Tag ownership scoping or authorization checks beyond user_api_key_auth (B052).
+  - Caching of results or precomputed aggregations.
+  - Database schema or table definitions (uses existing LiteLLM tables).
+pitfalls:
+  - "MAU uses 30-day month buckets via FLOOR((end_date - date) / 30): month_offset 0 is the most recent 30-day period, month_offset 1 is 30–60 days ago; query end_dt is UTC today at 0:00 + 1 day, making dates < end_date + 1 day inclusive of the end_date calendar day. Summary accepts arbitrary date ranges (start_date and end_date) with no +1 day adjustment; per-user uses a fixed 30-day window ending UTC today + 1 day, the same as MAU."
+  - "MAU month labels show 'Month N (Mon)' where N = MAX_MONTHS - month_offset (N ranges 1–7) and Mon is the abbreviation of (end_date - (month_offset * 30) - 29 days). Period_start and period_end are the first and last days of each 30-day bucket, inclusive."
+  - "Summary date validation uses strptime and raises ValueError before the database query; the error is caught and HTTP 400 'Invalid date format. Use YYYY-MM-DD: {e}' is returned. Null numeric aggregates coalesce to 0 or 0.0 in response construction, not in SQL."
+  - "Per-user analytics returns immediately with zero results and total_pages=0 if no api_keys are found in the date range, skipping user and email table queries. Per-user user_agent stores the first observed tag and does not change if later records have different tags; null user_id in VerificationToken is skipped during user_id -> email mapping."
+  - "Per-user pagination defaults to page=1 and page_size=50, with maximum page_size 1000. Total_pages is calculated as ceil division: (total_count + page_size - 1) / page_size. Results are sorted by successful_requests descending before pagination."
+  - "Tag filtering across all three endpoints respects exact-list precedence (tag_filters with equality before tag_filter with ILIKE), and empty tag_filters lists mean no filtering (query all tags), not exclude everything."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

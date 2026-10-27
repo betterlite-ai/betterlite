@@ -1,0 +1,150 @@
+id: B3484
+title: Translate GenAI input to chat messages and options
+description: >-
+  Build the input adapter in crates/betterlite-core::api, translating native Google GenAI
+  generate_content request contents, system instructions, function declarations and generation
+  options into chat completion messages and parameters. Preserve schema alias precedence,
+  provider capability checks, first-system-part selection, inline_data spelling for base64
+  images, unknown-mode default to auto, dropped topK, and caller-independent schema cleanup.
+
+  The adapter receives Google GenAI request parameters (model, contents, systemInstruction,
+  tools, toolConfig, generationConfig with temperature/maxOutputTokens/topP/topK/stopSequences,
+  plus custom parameters). It constructs an OpenAI-format completion request with messages,
+  temperature, max_tokens, top_p, stop, tools, tool_choice, and response_format (when
+  supported). Schema fields propertyOrdering and property_ordering are always removed from
+  JSON schemas as Gemini-only extensions. Tools transformation preserves the first-system-part
+  selection: if systemInstruction exists and has parts with text, the first such text becomes
+  the OpenAI system message, and all messages after include the system message index. Response
+  format checks model capability and drops it if the provider does not support response_format.
+  Unknown tool_config modes default to auto, and topK in generationConfig is never forwarded.
+
+  Owned implementation:
+  - Request-side constants and private records (TypedDict definitions for GenAI structures,
+    empty-mapping constant, response mime type keys, schema keys, tool parameter keys,
+    Gemini-only schema keys, validators for configs and JSON objects, string mappings).
+  - Helper functions for validation: first present in config keys, validated pydantic adapter
+    wrapping, response format translation with schema normalization, provider response_format
+    support check.
+  - Adapter constructor and main entry point translate_generate_content_to_completion, which
+    orchestrates the entire input transformation.
+  - Generic parameter forwarding from litellm_params to the completion request.
+  - Tool transformation: Google GenAI tools to OpenAI format, including function name,
+    description and JSON schema parameters, then schema normalization.
+  - Tool config transformation: Google GenAI functionCallingConfig modes (AUTO/ANY/NONE) to
+    OpenAI tool_choice values (auto/required/none).
+  - Contents to messages transformation: Google GenAI contents list to OpenAI messages list,
+    handling user messages with text/inline_data parts and functionResponse parts,
+    model (assistant) messages with text and functionCall parts, system instruction extraction,
+    role mapping, and part assembly into multimodal or string-only formats.
+
+  Reuse existing validation: B200 provides normalize_json_schema_types and normalize_tool_schema
+  for schema cleanup and tool normalization; B175 provides get_supported_openai_params for the
+  provider capability check; B174 provides get_llm_provider for model and provider resolution;
+  B219 provides filter_value_from_dict for removing Gemini-only keys from schemas.
+
+  JSON/schema byte decoding must use bounded existing parsers and receive replay cases where
+  this slice adds accepted shapes (e.g., malformed inline_data, malformed tool arguments).
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/genai_chat_input.rs
+    - crates/betterlite-core/src/api/genai_chat_input/tests.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/genai_chat_input.rs
+    - crates/betterlite-core/fuzz/corpus/genai_chat_input/**
+    - Cargo.toml
+    - crates/betterlite-core/src/api/genai_chat_input/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L63-L145
+    why: Request-side private records, constants, and helper functions for validation and schema translation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L295-L419
+    why: Adapter __init__, translate_generate_content_to_completion entry point, and litellm params forwarding
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L430-L585
+    why: Tool transformation and contents to messages transformation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/google_genai/adapters.py#L10-L22
+    why: GenerateContentCompletionKwargs wire type for adapter output
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py
+    why: get_llm_provider to resolve model and custom_llm_provider to provider name
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_supported_openai_params.py
+    why: get_supported_openai_params to check if model/provider supports response_format
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py
+    why: normalize_json_schema_types and normalize_tool_schema for schema cleanup
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py
+    why: filter_value_from_dict to remove Gemini-only schema keys
+dod:
+  - text: "Contents without a role default to user role; contents with role user translate parts as text/inline_data/functionResponse; contents with role model translate parts as text/functionCall."
+    proof: [chat-input-tests]
+  - text: "Contents with a role value other than user or model are silently dropped, producing no message and no log line."
+    proof: [chat-input-tests]
+  - text: "systemInstruction with parts and text in the first part becomes the OpenAI system message; systemInstruction without parts or with no text in the first part is dropped."
+    proof: [chat-input-tests]
+  - text: "inline_data parts with mime_type and data become OpenAI image_url content with data:<mime_type>;base64,<data> URL format."
+    proof: [chat-input-tests]
+  - text: "functionResponse parts with name and response become tool messages with role=tool, tool_call_id=call_<name>, content=json.dumps(response)."
+    proof: [chat-input-tests]
+  - text: "functionCall parts with name and args become OpenAI assistant tool calls with id=call_<name>, type=function, and function.arguments=json.dumps(args)."
+    proof: [chat-input-tests]
+  - text: "User messages with only one text part format as ChatCompletionUserMessage with string content; multipart user messages and messages with tool calls format as content arrays."
+    proof: [chat-input-tests]
+  - text: "Assistant messages with tool calls include both content and tool_calls; tool_calls are assembled from functionCall parts."
+    proof: [chat-input-tests]
+  - text: "tools list with functionDeclarations items becomes OpenAI format with type=function and function dict containing name, description, and parameters (from either parametersJsonSchema or parameters fields)."
+    proof: [chat-input-tests]
+  - text: "Tool parameter schemas are validated as JSON objects; schemas that fail validation or are not object type are dropped from that tool definition."
+    proof: [chat-input-tests]
+  - text: "response_format schema is validated as a JSON object and returns type=json_schema structure with name=response, or is dropped entirely if validation fails or type is not object."
+    proof: [chat-input-tests]
+  - text: "response_format is only added to the completion request if the provider supports response_format; unsupported providers drop it silently."
+    proof: [chat-input-tests]
+  - text: "toolConfig with functionCallingConfig mode AUTO maps to auto, ANY to required, NONE to none; unknown modes default to auto."
+    proof: [chat-input-tests]
+  - text: "generationConfig temperature/maxOutputTokens/topP/stopSequences map to OpenAI temperature/max_tokens/top_p/stop; topK is not forwarded."
+    proof: [chat-input-tests]
+  - text: "Generic litellm_params from GenericLiteLLMParams including api_base, api_key, api_version and other allowed fields are forwarded to the completion request dict."
+    proof: [chat-input-tests]
+  - text: "Malformed inline_data (missing mime_type or data) and malformed tool arguments (non-JSON or missing name/args) are fuzzed and do not panic."
+    proof: [chat-input-fuzz-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: chat-input-tests
+      why: the adapter input tests fail, do not exist, or core chat types are missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_chat_input::)'
+    - id: chat-input-fuzz-corpus
+      why: the input adapter fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/genai_chat_input.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_genai_chat_input_corpus)'
+oracle_cases: []
+deviations:
+  - what: Content with a role value other than user or model is silently dropped, producing no message and no log line.
+    why: The handler processes contents sequentially by role; non-matching roles are simply not transformed and produce no output. LiteLLM silently skips them the same way without logging.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L485-L584"
+  - what: Invalid JSON schemas (non-dict, non-object type, or validation errors) in response_format cause response_format to be dropped entirely from the request with no log line.
+    why: Schema validation is caller-independent; an invalid schema cannot be repaired and omitting it avoids forcing the completion caller to handle the failure. LiteLLM's _validated() returns None and _translate_response_format returns None without logging.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L118-L136"
+  - what: topK from generationConfig is silently dropped without forwarding to OpenAI.
+    why: OpenAI chat completions API has no topK parameter; LiteLLM also does not forward this field.
+  - what: Unknown tool_config functionCallingConfig modes default to auto instead of raising an error.
+    why: Graceful fallback matches LiteLLM's mode_mapping behavior, allowing forward compatibility with new modes.
+out_of_scope:
+  - "GoogleGenAIStreamWrapper and its __init__ method (lines 148-161): streaming wrapper state initialization owned by B3485."
+  - "async_google_genai_sse_wrapper and google_genai_sse_wrapper methods (lines 251-287): streaming output iterator owned by B3485."
+  - "translate_completion_output_params_streaming method (lines 421-428): returns streaming iterator, owned by B3485."
+  - "All response transformation and mapping functions (lines 587-842, _transform_openai_message_to_google_genai_parts, _transform_openai_delta_to_google_genai_parts_with_accumulation, _map_finish_reason, _map_usage, translate_completion_to_generate_content, translate_streaming_completion_to_generate_content): response-side transformations owned by B3485."
+  - "HTTP request execution and completion endpoint call (B3486 calls the completion handler). This task only prepares parameters."
+  - "Provider-specific authentication or endpoint selection (handled by B3483 setup)."
+  - "Fallback or retry logic (handled elsewhere in the completion pipeline)."
+pitfalls:
+  - "Content with non-user/model role is silently dropped with no message and no log line; the role filtering does not warn or report the skip."
+  - "Schema validation failure in _translate_response_format returns None without logging; the response_format field is dropped entirely from the request."
+  - "inline_data mime_type and data are both optional in TypedDict definitions; missing fields produce incomplete data URL objects or empty strings."
+  - "Tool parameter schema can be in either parametersJsonSchema or parameters keys; check parametersJsonSchema first, then fall back to parameters."
+  - "Response format is added to the completion request only when _deployment_supports_response_format returns true; unsupported models drop it silently."
+  - "System instruction without parts or without text in the first part produces no system message, not an empty one."
+  - "Tool declarations without a name in functionDeclarations still create an OpenAI tool function entry; an empty or missing name is preserved."
+  - "Generic litellm_params forwarding includes api_key, api_base, and api_version (secrets); these are moved directly into the completion request dict."
+  - "topK parameter in generationConfig is read but never forwarded; checking for its presence does not prevent silent dropping."
+  - "Unknown tool_config functionCallingConfig modes default to auto; the mode_mapping dict does not raise an error for unrecognized strings."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

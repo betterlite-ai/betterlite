@@ -1,0 +1,113 @@
+id: B3652
+title: Azure Speech passthrough duration and cost
+description: >-
+  Implement Azure Speech passthrough logging handler that classifies requests by route,
+  derives the billed audio duration, and emits standardized cost payloads. Handlers work
+  on three Azure Speech routes: short audio (immediate processing), fast transcription
+  (synchronous), and batch transcription (asynchronous).
+
+  Build three route classifiers that inspect the URL path to distinguish between
+  short-audio, fast-transcription and batch paths using prefix matching and path-suffix
+  tests. Extract model names from the route classification so cost lookups work correctly
+  (azure_speech/short-audio, azure_speech/fast-transcription, azure_speech/batch-transcription).
+
+  Derive billed duration by route: short audio uses the maximum of uploaded audio duration
+  (calculated from the raw request body bytes) and the recognized audio duration (decoded
+  from response Offset and Duration in 100-nanosecond ticks); fast transcription uses the
+  durationMilliseconds field from the response body; batch routes report zero duration and
+  zero cost. When response parsing fails, fall back to zero duration and zero cost.
+
+  Calculate cost using the transcription_cost function with AZURE_SPEECH_PRICING_MODEL
+  ("azure/speech/azure-stt") and the derived duration in seconds. When cost lookup fails,
+  log a warning and return zero cost so the spend record is not dropped. Update the
+  response cost on the logging object and include it in the returned kwargs. Preserve
+  the source's warn-and-return fallback pattern, so billing survives transient pricing
+  failures.
+
+  Implement azure_speech_handler as the main entry point, taking httpx response,
+  response body, logging object, URL route and timing metadata. Build StandardPassThroughResponseObject,
+  update model_call_details with the derived model name and response cost, and return
+  a payload with the standard logging object attached. On any unhandled exception, return
+  a fallback payload that preserves the response and original kwargs without costing.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/passthrough_logging/azure_speech.rs
+    - crates/betterlite-core/src/api/passthrough_logging/azure_speech/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L1-172
+    why: All owned functions for route classification, duration extraction and cost calculation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: AZURE_SPEECH_* constants for route paths, model names and conversion factors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py
+    why: transcription_cost function signature and behavior used by B1676.
+dod:
+  - text: Route classifiers recognize short-audio, fast-transcription and batch paths by prefix and suffix matching.
+    proof: [azure-speech-tests]
+  - text: Model names are derived correctly from route classification, using provider prefix azure_speech/.
+    proof: [azure-speech-tests]
+  - text: Short audio duration is the maximum of uploaded duration (from request body) and recognized duration (from response Offset+Duration in ticks).
+    proof: [azure-speech-tests]
+  - text: Fast transcription duration is extracted from durationMilliseconds field and converted to seconds.
+    proof: [azure-speech-tests]
+  - text: Batch routes return zero duration and zero cost without calculating.
+    proof: [azure-speech-tests]
+  - text: Cost is calculated using transcription_cost with AZURE_SPEECH_PRICING_MODEL and derived duration in seconds.
+    proof: [azure-speech-tests]
+  - text: Cost lookup failure logs a warning and returns zero cost so the spend row is not dropped.
+    proof: [azure-speech-tests]
+  - text: The handler updates response_cost in model_call_details and includes it in returned kwargs.
+    proof: [azure-speech-tests]
+  - text: azure_speech_handler catches all exceptions, logs them and returns a fallback payload.
+    proof: [azure-speech-tests]
+checks:
+  optional: []
+  commands:
+    - id: azure-speech-tests
+      why: route classification, duration extraction or cost calculation tests fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_logging::azure_speech::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Audio duration extraction for short audio uses the maximum of uploaded duration
+      (measured from raw request body bytes via calculate_request_duration) and
+      recognized duration (offset plus duration from response in 100-nanosecond ticks).
+    why: LiteLLM uses the same max() approach to handle partial uploads and recognition results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L68-L95
+  - what: >-
+      Pricing failures (missing model entry, malformed cost data) log a warning
+      and return zero cost instead of raising an error, preserving the spend record.
+    why: LiteLLM follows the same warn-and-return pattern to ensure billing is not lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L106-L119
+  - what: >-
+      Route precedence uses rfind to detect short-audio path before batch path, since
+      both may appear in the same URL and short-audio must win.
+    why: Azure URLs can contain both path segments; rfind ensures exact semantics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L33-L39
+out_of_scope:
+  - "Azure Speech route registration and HTTP method dispatch: B102 owns the route handlers and request routing for speech-to-text endpoints."
+  - "Spend payload assembly and ledger writes: B190 provides the logging object structure and persistence for cost records."
+  - "Authentication, security headers and upstream request validation: handled by the speech provider's credential and error-handling layer."
+  - Audio format detection and validation.
+pitfalls:
+  - >-
+    Route precedence matters: short-audio path prefix must be checked after batch path prefix,
+    using rfind() to find the rightmost occurrence of each. If both paths appear in a URL,
+    short-audio should win because rfind checks which one appears later in the string.
+  - >-
+    Audio duration conversion uses different units per route: Offset/Duration in response
+    are in 100-nanosecond ticks (divide by 10,000,000 for seconds);
+    durationMilliseconds (divide by 1,000); request body is in bytes, converted via calculate_request_duration.
+  - >-
+    Response body may be None, a sequence (array) instead of a mapping, or a mapping with missing fields.
+    Always check isinstance before accessing dictionary fields; return 0.0 on type mismatch.
+  - >-
+    Cost lookup must use AZURE_SPEECH_PRICING_MODEL ("azure/speech/azure-stt"), not the derived model name.
+    The pricing model is fixed; the model name derived from the route is only used in logging.
+  - >-
+    Exception handling must never raise; catch all exceptions in the main handler, log them,
+    and return a fallback payload that preserves the response and original kwargs.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

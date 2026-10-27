@@ -3,7 +3,7 @@ milestone: M5 api families
 title: AssemblyAI transcript polling and spend logging
 status: todo
 depends_on: [B173, B190, B2225]
-file: null
+file: tasks/B3647-assemblyai-relay-logging.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py"
   - "litellm/types/passthrough_endpoints/assembly_ai.py"
