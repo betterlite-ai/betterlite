@@ -30,7 +30,7 @@ fn parse(source: &str) -> Value {
 )]
 #[case::scalar_conversion(
     parse(r#"{"token":null,"auth":true,"password":false,"plain":null,"items":[null,true],"key":[null,false,17,"secret"]}"#),
-    parse(r#"{"token":"","auth":"****","password":"Fals*","plain":"None","items":["None",true],"key":["None",false,17,"secr**"]}"#)
+    parse(r#"{"token":"","auth":"****","password":"\u0046\u0061\u006c\u0073*","plain":"None","items":["None",true],"key":["None",false,17,"secr**"]}"#)
 )]
 #[case::nested_sequence(
     parse(r#"{"headers":[{"authorization":"Bearer abcdefghijk"}, "plain"]}"#),
