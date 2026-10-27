@@ -1,0 +1,136 @@
+id: B3876
+title: Prometheus bounded series and counter emission
+description: >-
+  Build the series tracker with per-metric TTL and cardinality limiting that stores
+  labelsets in LRU order, evicting only after recording the sample. Implement counter
+  emission that calls the tracker after incrementing, and end-user metric cardinality
+  capping that reads config keys and decides whether to track. Preserve failed-removal
+  behavior, strict TTL expiry, nonpositive max_series meaning unlimited, and lazy
+  cleanup only when TTL is enabled and the cleanup interval expires.
+
+  The BoundedPrometheusSeriesTracker class stores series in OrderedDict keyed by
+  label tuples, tracking the last-seen monotonic time. The track_series() method
+  records the sample, expires TTL-stale series by calling metric.remove(), and evicts
+  the oldest series when cardinality exceeds max_series, stopping silently if removal
+  fails. The remove_series() method accepts a single labelset and returns true when
+  the child is gone (removed or already absent). The _remove_metric_child static
+  method calls metric.remove() and returns true on success or KeyError, and false
+  on unexpected AttributeError/ValueError so the tracker retries later. An RLock
+  guards all mutations.
+
+  The _inc_labeled_counter method in PrometheusLogger calls prometheus_label_factory
+  to build labels, increments the counter with those labels, and then calls
+  _track_end_user_metric_series(). The _track_end_user_metric_series() method checks
+  for the end_user label and a non-None end_user value, reads three config keys
+  (prometheus_end_user_metrics_max_series_per_metric, prometheus_end_user_metrics_ttl_seconds,
+  prometheus_end_user_metrics_cleanup_interval_seconds) with defaults 10000, 3600 and 60
+  respectively, and delegates to tracker.track_series() only when at least one limit is
+  configured.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_helpers/bounded_series_tracker.rs
+    - crates/betterlite-logging/src/prometheus/bounded_series.rs
+    - crates/betterlite-config/src/sections/prometheus_bounded_series.rs
+    - crates/betterlite-config/src/sections/prometheus_bounded_series/**
+    - tools/oracle/helpers/b3876.py
+    - tools/oracle/helpers/b3876/**
+    - tools/oracle/src/helpers/logging/b3876.rs
+    - tools/oracle/src/helpers/logging/b3876/**
+    - crates/betterlite-logging/src/prometheus_helpers/bounded_series_tracker/**
+    - crates/betterlite-logging/src/prometheus/bounded_series/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/bounded_prometheus_series_tracker.py#L1-L116
+    why: BoundedPrometheusSeriesTracker.__init__, track_series, remove_series, _should_run_ttl_cleanup, _remove_metric_series, _remove_metric_child methods and _RemovableMetric protocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1295-L1343
+    why: _track_end_user_metric_series and _inc_labeled_counter methods as part of PrometheusLogger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L15-L30
+    why: PrometheusLogger class declaration and _bounded_prometheus_series_tracker initialization.
+
+dod:
+  - text: BoundedPrometheusSeriesTracker stores series in OrderedDict keyed by label tuples, tracking monotonic timestamps, with an RLock protecting mutations.
+    proof: [bounded-series-tracker-tests]
+  - text: track_series records the current sample in its child before evicting stale or excess series, and returns early if no limits are configured.
+    proof: [bounded-series-tracker-tests]
+  - text: TTL cleanup runs only when the cleanup_interval has expired or cleanup_interval <= 0, and only when ttl_seconds is not None.
+    proof: [bounded-series-tracker-tests]
+  - text: Series older than ttl_seconds are identified by their last-seen monotonic time and removed in one pass.
+    proof: [bounded-series-tracker-tests]
+  - text: Cardinality eviction removes the oldest series (first in OrderedDict) when len(series) > max_series, and stops silently if removal fails.
+    proof: [bounded-series-tracker-tests]
+  - text: remove_series() calls _remove_metric_child and returns true when the child is gone (removed or already absent), false when removal raised an error.
+    proof: [bounded-series-tracker-tests]
+  - text: _remove_metric_child catches KeyError and returns true, catches AttributeError and ValueError and returns false, propagates other exceptions.
+    proof: [bounded-series-tracker-tests]
+  - text: Nonpositive max_series is treated as unlimited, so max_series <= 0 does not evict any series.
+    proof: [bounded-series-tracker-tests]
+  - text: _inc_labeled_counter builds labels with prometheus_label_factory, increments the counter, and calls _track_end_user_metric_series afterwards.
+    proof: [counter-emission-tests]
+  - text: _track_end_user_metric_series checks for end_user in the metric's label list and a non-None end_user value, then reads config keys and calls tracker.track_series.
+    proof: [counter-emission-tests]
+  - text: _track_end_user_metric_series returns early if end_user is None, the metric does not include the end_user label, or all three config limits are None.
+    proof: [counter-emission-tests]
+  - text: The three config keys default to 10000, 3600, and 60 seconds respectively, and all defaults are honored when keys are absent.
+    proof: [config-defaults-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: bounded-series-tracker-tests
+      why: series tracker tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_helpers::bounded_series_tracker::/)'
+    - id: counter-emission-tests
+      why: counter emission tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::/) - test(/^prometheus::.*corpus/)'
+    - id: config-defaults-tests
+      why: config defaults are not applied or differ from LiteLLM
+      run: grep -qE 'prometheus_end_user_metrics_max_series_per_metric.*=.*10000' crates/betterlite-config/src/sections/prometheus_bounded_series.rs && grep -qE 'prometheus_end_user_metrics_ttl_seconds.*=.*3600' crates/betterlite-config/src/sections/prometheus_bounded_series.rs && grep -qE 'prometheus_end_user_metrics_cleanup_interval_seconds.*=.*60' crates/betterlite-config/src/sections/prometheus_bounded_series.rs
+
+oracle_cases:
+  - tools/oracle/cases/prometheus/bounded-series-max-cardinality.yaml
+  - tools/oracle/cases/prometheus/bounded-series-ttl-expiry.yaml
+  - tools/oracle/cases/prometheus/bounded-series-no-limits.yaml
+  - tools/oracle/cases/prometheus/counter-emission-with-tracking.yaml
+  - tools/oracle/cases/prometheus/counter-emission-no-end-user.yaml
+  - tools/oracle/cases/prometheus/series-removal-failure.yaml
+
+deviations:
+  - what: >-
+      When metric.remove() raises an exception other than KeyError, the series is not
+      removed from the tracker's state, and the next eviction attempt retries it.
+      This preserves the prometheus-client behavior.
+    why: >-
+      Failed removals must not silently drop tracking state, since the series likely
+      still exists and will accumulate stale data until the next cleanup opportunity.
+  - what: >-
+      Cleanup interval of 0 or negative is treated as "always run", triggering a cleanup
+      check on every track_series call.
+    why: >-
+      The source treats nonpositive cleanup_interval as "no interval"; betterlite
+      inverts this to mean "check every time", matching the intent.
+
+out_of_scope:
+  - Prometheus client library integration; this task only calls the remove() protocol method.
+  - Dispatcher callbacks that call _track_end_user_metric_series; B111 provides those.
+  - Configuration validation beyond checking that the keys exist in the config section.
+  - Config loading and parsing; B002 supplies the loader framework for this section.
+
+pitfalls:
+  - The sample is recorded in prometheus-client's internal child map before track_series
+    is called. If the child is evicted before the next scrape, accumulated deltas since
+    the last scrape are lost. This is inherent to any cardinality cap and is not a bug.
+  - _remove_metric_child is a static method because it is called from both track_series
+    (during eviction) and remove_series (direct removal). Keep the shared signature.
+  - RLock is reentrant so _remove_metric_series can call _remove_metric_child within
+    the lock without deadlock. Do not switch to a non-reentrant lock.
+  - OrderedDict.move_to_end() is used to update the timestamp but also move the key to
+    the end, making the first iteration cheap and deterministic for FIFO eviction.
+  - time.monotonic() returns seconds as a float. The comparison `now - last_seen > ttl_seconds`
+    preserves fractional-second precision. Do not convert to integers.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,155 @@
+id: B4446
+title: Scope health visibility and authorize model connection tests
+description: >-
+  Build health access filtering and credential-safe connection-test preparation in betterlite-server,
+  registering POST /health/test_connection. Keep final model-call authorization after health override
+  preparation so health_check_params cannot retarget an already authorized probe.
+
+  Proxy-admin and view-only roles both see routing fields (api_base, api_version, aws_bedrock_runtime_endpoint),
+  returned in admin-only response payloads. Ordinary callers cannot probe another team's deployment, including
+  callers with no team; scoped admin keys still obey their model grants. Cached filtering drops endpoints
+  without model_id, shallow-copies rows for filtering, and recalculates counts.
+
+  Connection tests require a DB and reject nested request os.environ/ references with HTTP 400.
+  Prefer supplied deployment ID, then proxy model name, then provider model string for lookup. Router lookup
+  failure logs and falls back to request parameters only. A different named litellm_credential_name, or any
+  disallowed client connection field, strips the configuration's credential and destination fields before
+  parameter overlay. Loaded model_info wins over supplied model_info. Preserve HTTP 200 with status error for
+  a returned probe error, HTTP exceptions for validation/authorization failures.
+
+  Build the production betterlite-server module in health_access_and_connections, with route registration and
+  domain helpers. Reuse the typed dependencies listed in the backlog. Bounded request body decoder and access
+  filtering use shared types; connection-test schema needs a fuzzed typed boundary.
+
+  Production ownership, including fields and protocol contracts as native types: litellm/proxy/health_endpoints/_health_endpoints.py:
+  _reject_os_environ_references (L87-L117; 22 source lines), _request_inherits_config_credentials (L129-L149; 11 source
+  lines), _config_base_for_health_check (L152-L173; 8 source lines), _is_proxy_admin (L921-L933; 6 source lines),
+  _strip_admin_only_fields_from_health_result (L936-L950; 8 source lines), _health_accessible_model_names
+  (L953-L968; 15 source lines), _caller_may_probe_deployment (L971-L988; 17 source lines), _resolve_targeted_model_ids
+  (L991-L1014; 12 source lines), _filter_health_check_results_by_model_ids (L1017-L1039; 11 source lines),
+  test_model_connection (L2016-L2234; 132 source lines).
+
+  Owns _CONFIG_CONNECTION_FIELDS at (L120-L126) and _PROXY_ADMIN_ROLES at (L909-L918), 13 counted lines.
+  **Count: 255 = 242 function + 13 declaration lines.**
+
+  Direct dependencies:
+
+  - B052: user_api_key_auth on the POST /health/test_connection route.
+  - B322: Router._deployment_usable_by_team for team ownership checking in _caller_may_probe_deployment.
+  - B401: Deployment.__init__ for native deployment construction in the route.
+  - B747: _resolve_key_models_for_auth_check for model-list filtering.
+  - B759: get_key_models for scoped model resolution.
+  - B832: ModelManagementAuthChecks.can_user_make_model_call for final model-call authorization.
+  - B844: Router.get_deployment, get_model_list, get_model_names, should_include_deployment for catalog lookup.
+  - B847: Router.get_model_access_groups for model access group resolution.
+  - B884: _BANNED_REQUEST_BODY_PARAMS table, a direct data dependency for client credential fields.
+  - B4441: deployments_targeted_by_name, _update_litellm_params_for_health_check, run_with_timeout,
+    _clean_endpoint_data, and the admin-only display-field set (ADMIN_ONLY_HEALTH_DISPLAY_PARAMS).
+
+  Preserve proxy-admin role check for both full and view-only admins; non-admin callers see health status
+  without provider routing detail. Connection tests with no router fallback to request parameters, logging
+  misses without erroring. Decoded request body limits respect proxy-configured bounds. Credentials remain
+  secret types and never leak to logs. Decode bounded request bytes with a fuzzed typed schema; preserve
+  HTTP 200 with status error for probe errors and HTTP exceptions for validation/authorization.
+
+  The direct ahealth_check invocation and credential-field catalog ownership gaps are noted; B884 existing
+  rejection of request URLs overrides LiteLLM's opt-in URL behavior—do not permit outbound URLs through
+  this route.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/health_access_and_connections.rs
+    - crates/betterlite-server/src/health_access_and_connections/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/fixtures/mod.rs
+    - tools/oracle/src/lib.rs
+    - tools/oracle/src/http.rs
+    - tools/oracle/src/http/**
+    - tools/oracle/src/process.rs
+    - tools/oracle/src/process/**
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/**
+    - tools/oracle/cases/server/health-access/**
+    - tools/oracle/fuzz/corpus/http_case/health-access-*
+    - tools/oracle/helpers/b4446.py
+    - tools/oracle/helpers/b4446/**
+    - tools/oracle/src/helpers/server/b4446.rs
+    - tools/oracle/src/helpers/server/b4446/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L87-L117
+    why: Own _reject_os_environ_references; preserve nested traversal, cycle detection and environment variable rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L129-L149
+    why: Own _request_inherits_config_credentials; preserve credential inheritance logic and credential-name matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L152-L173
+    why: Own _config_base_for_health_check; preserve field stripping and credential restoration behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L909-L950
+    why: Own _PROXY_ADMIN_ROLES, _is_proxy_admin and _strip_admin_only_fields_from_health_result; preserve role enum values and view-only admin inclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L953-L1039
+    why: Own all visibility and filtering helpers; preserve caller-scope filtering, model-list narrowing, ID resolution, and row-copy behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L120-L126
+    why: Own _CONFIG_CONNECTION_FIELDS; preserve credentials and destination fields to be stripped on mismatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2016-L2234
+    why: Own test_model_connection POST /health/test_connection route; preserve parameter resolution order, credential inheritance, model-call authorization ordering, and error handling.
+dod:
+  - text: >-
+      Access filtering preserves admin/non-admin visibility, team scoping, and caller-specific model grants without
+      mutating shared cached results.
+    proof: [health-access-tests, oracle, health-access-corpus]
+  - text: >-
+      Connection tests validate os.environ/ rejection, resolve deployment by ID/name/model-string in order,
+      strip mismatched credentials, inherit config parameters, authorize final model calls, and return HTTP 200/error
+      for probe errors and HTTP exceptions for validation failures.
+    proof: [health-access-tests, oracle, health-access-corpus]
+  - text: >-
+      Request body and response filtering protect credentials and admin-only fields across all routes.
+    proof: [health-access-tests, health-access-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: health-access-tests
+      why: Health access filtering or connection test behavior is incorrect or incomplete.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_access_and_connections::tests::/)'
+    - id: health-access-corpus
+      why: The HTTP-case decoder does not replay the new health-access fixture requests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/health-access-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/server/health-access/admin-and-view-only-see-routing-fields.yaml
+  - tools/oracle/cases/server/health-access/non-admin-hides-routing-fields.yaml
+  - tools/oracle/cases/server/health-access/team-isolation-blocks-probe.yaml
+  - tools/oracle/cases/server/health-access/scoped-grant-limits-team-access.yaml
+  - tools/oracle/cases/server/health-access/deployment-id-lookup-preferred.yaml
+  - tools/oracle/cases/server/health-access/fallback-to-model-name-then-provider-string.yaml
+  - tools/oracle/cases/server/health-access/os-environ-reference-rejected-400.yaml
+  - tools/oracle/cases/server/health-access/mismatched-credential-name-strips-config-fields.yaml
+  - tools/oracle/cases/server/health-access/connection-test-200-with-error-status.yaml
+  - tools/oracle/cases/server/health-access/model-call-auth-rejects-unprivileged.yaml
+deviations: []
+out_of_scope:
+  - >-
+    litellm/proxy/health_endpoints/_health_endpoints.py: Other tasks own remaining health endpoint functions. B4441 owns
+    deployment targeting and param resolution (deployments_targeted_by_name, _update_litellm_params_for_health_check).
+    B4443 owns perform_health_check and health-cycle execution. B4445 owns database persistence. B130 (the umbrella) owns
+    the main /health and /health/latest routes. The direct ahealth_check invocation (L2212) and credential-field catalog
+    (_ADMIN_CONFIG_FIELDS_TO_CLEAR_ON_BASE_OVERRIDE, clientside_credential_keys) ownership is noted in questions.
+pitfalls:
+  - >-
+    Connection test authorization happens after parameter merging and health-check override preparation, so an overridden
+    model_info or litellm_params must still pass the final model-call authorization check; do not short-circuit auth
+    based on earlier parameter resolution.
+  - >-
+    The os.environ/ prefix check must traverse nested dicts and lists to reject environment references anywhere in the
+    request, not just at the top level.
+  - >-
+    Cached background health results are copied before filtering so that filtering operations cannot mutate the shared
+    cache; copies must be shallow, but endpoint-list modifications must not propagate back.
+  - >-
+    Credential stripping happens when a request names a different litellm_credential_name or supplies any disallowed
+    client connection field; preserve the distinction between no credential name (blank) and a different one (mismatch).
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

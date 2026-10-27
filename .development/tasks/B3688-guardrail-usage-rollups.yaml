@@ -1,0 +1,155 @@
+id: B3688
+title: Guardrail compliance redaction and retryable usage rollups
+description: >-
+  Implement compliance redaction for matched spans and derive guardrail usage and index
+  rows from committed spend payloads. Track daily metrics (requests evaluated, passed/blocked/flagged
+  counts) by guardrail and date, upsert usage units (cost and untracked units) keyed by
+  guardrail/date/team/api_key/unit_name, and insert spend-log index rows for guardrail
+  invocations. Preserve bounded pending queues (at most 10,000 rows) for retryable connection
+  failures, distinguish zero-cost units from unpriced units, and handle index uniqueness
+  conflicts without aborting the entire batch.
+
+  Build the redaction utility and the guardrail-aware usage-log processor in betterlite-db
+  as standalone modules. The first walks nested dicts/lists to replace "match" and "regex"
+  field values with "[REDACTED]" for safe compliance logging. The second aggregates daily
+  metrics and usage units from spend-log payloads with guardrail metadata, merges them with
+  pending rows queued from prior retries, retries failed upserts with exponential backoff
+  (up to 3 attempts), and requeus only connection-safe failures for the next flush window.
+  Both modules use lowercase domain names (compliance_redaction, guardrail_usage_rollups),
+  never task id B3688 or task names.
+
+scope:
+  paths:
+    - crates/betterlite-db/src/compliance_redaction.rs
+    - crates/betterlite-db/src/compliance_redaction/**
+    - crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - crates/betterlite-db/src/guardrail_usage_rollups/**
+    - crates/betterlite-db/src/guardrail_usage_rollups/tests.rs
+    - crates/betterlite-db/src/guardrail_usage_rollups/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L715-L751
+    why: "redact_nested_match_and_regex_keys: deep copy and iterative redaction of match/regex fields in nested dicts/lists"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L1-L93
+    why: "PendingRollups struct, usage-unit and metrics key types, aggregation constants and retry primitives"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L95-L207
+    why: "Merge and sum operations on metrics/unit rows, cap logic, retry loop with exponential backoff and guardrail_status_to_action"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L209-L336
+    why: "Date/time parsing, guardrail-info extraction from payload metadata, usage-unit iteration/summing per metrics key and upsert row builders"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L338-L440
+    why: "process_spend_logs_guardrail_usage orchestration, index-row deduplication by (request_id, guardrail_id), metrics/unit upserts and retry merge"
+
+dod:
+  - text: "redact_nested_match_and_regex_keys function exists and recursively redacts all instances of configured string keys in nested dicts/lists without raising on cyclic structures or missing fields."
+    proof: [redaction-function-exists]
+  - text: "Function returns the same payload if input is None or a non-nested type, and handles copy and traversal failures gracefully by returning the original payload unchanged."
+    proof: [redaction-error-handling]
+  - text: "Compliance redaction types (RedactionError, redaction field/parameter types) are defined and serializable/loggable."
+    proof: [redaction-types-exist]
+  - text: "Guardrail usage rollups module defines compound key types for metrics and usage units matching LiteLLM's field names (guardrail_id, date, team_id, api_key, usage_unit, cost, untracked_units)."
+    proof: [rollups-key-types-exist]
+  - text: "PendingRollups struct holds metrics and units mappings with async-safe access (Mutex/Arc for thread-safe shared state, no RefCell)."
+    proof: [pending-rollups-thread-safe]
+  - text: "guardrail_status_to_action maps status strings to 'passed', 'blocked', 'flagged', or 'not_run' with LiteLLM's exact logic."
+    proof: [status-to-action-logic]
+  - text: "Date parsing from payload.startTime extracts UTC YYYY-MM-DD format, handling datetime/ISO string/None gracefully."
+    proof: [date-parsing-correct]
+  - text: "Guardrail info extraction from payload.metadata/standard_logging_guardrail_information reads nested JSON and lists safely."
+    proof: [metadata-extraction-correct]
+  - text: "Usage-unit iteration from guardrail_information entries yields (key, increment) tuples with units, cost (or zero), and untracked_units aggregated per key."
+    proof: [usage-unit-iteration-correct]
+  - text: "Metrics aggregation counts requests_evaluated, passed_count, blocked_count, flagged_count per (guardrail_id, date) with action-based routing (not_run entries excluded)."
+    proof: [metrics-aggregation-correct]
+  - text: "Index rows are keyed by (request_id, guardrail_id) with guardrail_name→id resolution; later entries override earlier ones only if policy_id is newly present."
+    proof: [index-dedup-logic]
+  - text: "Pending retry merges follow LiteLLM's accumulation: sum usage units, sum metric counters, cap at 10,000 rows per type with a non-fatal warning on drop."
+    proof: [pending-merge-logic]
+  - text: "Upsert retry loop attempts 3 times with exponential backoff (2^n seconds), retries only connection-safe errors, and requeus failed rows to pending state."
+    proof: [retry-backoff-behavior]
+  - text: "Index create_many uses skip_duplicates=true and catches exceptions non-fatally; metrics and units upsert failures queue for next flush."
+    proof: [index-and-upsert-handling]
+
+checks:
+  optional: []
+  commands:
+    - id: redaction-function-exists
+      why: "redact_nested_match_and_regex_keys is missing or incomplete"
+      run: grep -q "fn redact_nested_match_and_regex_keys" crates/betterlite-db/src/compliance_redaction.rs
+    - id: redaction-error-handling
+      why: "Redaction error handling (None, non-nested, copy failure) is missing"
+      run: grep -q "payload is None" crates/betterlite-db/src/compliance_redaction.rs && grep -q "Exception" crates/betterlite-db/src/compliance_redaction.rs
+    - id: redaction-types-exist
+      why: "Redaction types are missing"
+      run: grep -q "RedactionError\|struct.*Redaction" crates/betterlite-db/src/compliance_redaction.rs
+    - id: rollups-key-types-exist
+      why: "Compound key types for metrics and usage units are missing"
+      run: grep -q "UsageUnitKey\|MetricsKey" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: pending-rollups-thread-safe
+      why: "PendingRollups is not thread-safe or uses RefCell"
+      run: grep -q "Arc\|Mutex" crates/betterlite-db/src/guardrail_usage_rollups.rs && ! grep -q "RefCell" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: status-to-action-logic
+      why: "guardrail_status_to_action logic is incorrect"
+      run: grep -q "passed\|blocked\|flagged\|not_run" crates/betterlite-db/src/guardrail_usage_rollups.rs && grep -q "intervened\|block" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: date-parsing-correct
+      why: "Date parsing from startTime is missing or incorrect"
+      run: grep -q "startTime\|YYYY-MM-DD\|%Y-%m-%d" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: metadata-extraction-correct
+      why: "Metadata extraction from payload is missing"
+      run: grep -q "guardrail_information\|standard_logging_guardrail_information" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: usage-unit-iteration-correct
+      why: "Usage-unit iteration and cost calculation is missing"
+      run: grep -q "usage_unit\|billed_guardrail_cost" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: metrics-aggregation-correct
+      why: "Metrics aggregation (requests_evaluated, counts) is missing"
+      run: grep -q "requests_evaluated\|passed_count\|blocked_count\|flagged_count" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: index-dedup-logic
+      why: "Index row deduplication by (request_id, guardrail_id) is missing"
+      run: grep -q "request_id.*guardrail_id\|policy_id" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: pending-merge-logic
+      why: "Pending merge with capping logic is missing"
+      run: grep -q "_capped\|10_000\|_merged" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: retry-backoff-behavior
+      why: "Retry loop with exponential backoff and connection-safe filtering is missing"
+      run: grep -q "retries_left\|2 \\*\\*\|DB_RETRY_SAFE" crates/betterlite-db/src/guardrail_usage_rollups.rs
+    - id: index-and-upsert-handling
+      why: "Index create_many and upsert retry handling is missing"
+      run: grep -q "skip_duplicates\|create_many\|upsert" crates/betterlite-db/src/guardrail_usage_rollups.rs
+
+oracle_cases: []
+
+deviations:
+  - what: "LiteLLM's redaction iteratively visits all nodes in a shared traversal stack, guarding against cycles with a seen set; betterlite replicates this exact logic to match the behavior on payloads with shared or cyclic references."
+    why: "Compliance redaction must not lose data due to cycle handling differences; matching LiteLLM's traversal preserves the same payloads across implementations."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L728-L751"
+  - what: "Cost for a usage unit is looked up from billed_guardrail_cost_by_unit(entry), which returns None if no cost is available; untracked_units is then set to the full unit count. Betterlite distinguishes zero cost (known price is zero) from None (unknown price)."
+    why: "Dashboard reports require tracking which units are priced, which are unpriced, and which have zero cost; this distinction affects aggregation and billing visibility."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L261-L266"
+  - what: "Retry attempts use asyncio.sleep(2 ** n), where n is the backoff exponent calculated from retries_left; after 3 attempts, the row is moved to pending for the next flush with a non-fatal warning."
+    why: "Transient connection failures are expected in database operations; graceful retry with queuing ensures no spend logs are lost, while non-fatal warnings keep the gateway responsive."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L158-L192"
+
+out_of_scope:
+  - "DailyGuardrailMetricsRepository, DailyGuardrailUsageUnitsRepository and SpendLogGuardrailIndexRepository table operations (belong to B726)"
+  - "billed_guardrail_cost_by_unit cost lookup (belongs to B1667)"
+  - "spend_log_write_batches batching logic (belongs to B1706)"
+  - "spend-log write orchestration and transaction management (belongs to B1706)"
+  - "guardrail_information schema and logging mutation (belong to B3664)"
+  - "Prometheus or observability metrics exports (belong to logging/observability tasks)"
+
+pitfalls:
+  - "LiteLLM's redaction uses copy.deepcopy, which preserves object identity for shared references; cycles are detected by object id, not value. Rust's clone semantics are different; ensure the implementation prevents infinite loops during traversal."
+  - "The payload.startTime field is a datetime object in LiteLLM's in-memory spend log; when persisted to JSON it becomes an ISO string. Date parsing must handle both formats and return None on invalid input, not panic."
+  - "guardrail_information is nested under payload.metadata, which may be a JSON string (not yet parsed). The extraction function must JSON-decode it first if it's a string, returning empty list on any parse error."
+  - "Metrics are aggregated across all entries in guardrail_information with the same (guardrail_id, date) key. A single payload can contribute multiple entries, each with a status; the action counter must increment exactly once per non-skipped entry."
+  - "Usage units come from entry.guardrail_usage, which is a dict[str, int]. Only positive integers count; entries with zero or negative units are silently skipped, and non-int values do not cause errors."
+  - "The index key (request_id, guardrail_id) can appear multiple times in a single payload if multiple guardrails ran. Later entries override earlier ones, but only if the later entry has a non-None policy_id; this preserves the first policy_id found."
+  - "Pending queues are rebuilt from scratch on each flush; old pending rows are merged with fresh rows using summing logic, then the entire merged set is flushed with retries. Requeueing only failed rows (not the whole flush) prevents reprocessing."
+  - "Retry logic checks isinstance(error, DB_RETRY_SAFE_ERROR_TYPES), which is a tuple of specific exception types. Non-safe errors are logged but not retried; the count of safe vs. non-safe errors must be tracked for debugging."
+  - "The cap of 10,000 rows happens per type (metrics and units separately), not combined. If either exceeds the limit, the oldest rows are dropped with a warning; newer rows are preserved."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

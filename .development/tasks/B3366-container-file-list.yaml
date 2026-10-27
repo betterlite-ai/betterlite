@@ -1,0 +1,123 @@
+id: B3366
+title: Explicit container file listing
+description: >-
+  Build the explicit list_container_files and alist_container_files operations in betterlite-core,
+  including the file-list HTTP handlers container_file_list_handler and async_container_file_list_handler.
+  The async operation wraps the sync variant through asyncio while preserving the call context.
+  The sync function accepts a container ID, optional pagination parameters (after, limit, order),
+  optional headers and query additions, timeout and provider override. It decodes any managed
+  container ID to recover the original ID and provider metadata, retrieves the provider config
+  using that provider, validates the provider environment to fetch auth headers, builds the
+  complete API base URL from the provider config, transforms the request using the provider's
+  file-list transformation to build the final URL and query parameters, logs the request through
+  the logging object with the transformed data, sends an HTTP GET with the client's deadline
+  (not a per-call timeout), checks for and raises on HTTP errors or JSON error responses, and
+  transforms the response through the provider to validate and return a typed ContainerFileListResponse.
+  Both handlers support sync and async execution through the same facade: the sync variant delegates
+  to the async coroutine when _is_async=True, while the async handler awaits the operation.
+  HTTP client selection reuses the caller's when compatible or constructs a new one with ssl_verify
+  settings. Mock responses are parsed first and short-circuit provider selection. Response ID
+  re-encoding is not applied to file lists. The implementation reuses B3361's managed ID decoder
+  and provider config manager, B3363's error status checking, B522/B547 provider transformations,
+  B173's HTTP client pool, B249's logging hooks, B2402's transport error handler, B247's logging
+  state update, and B185's exception dispatching.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-core/src/api/container_file_list.rs
+    - crates/betterlite-core/src/api/container_file_list/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L920-L986
+    why: Async wrapper alist_container_files that wraps sync operation through asyncio.get_event_loop and contextvars.copy_context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L991-L1006
+    why: First overload of list_container_files returning a Coroutine when alist_container_files=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1009-L1024
+    why: Second overload of list_container_files returning typed response when alist_container_files=False or omitted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1029-L1129
+    why: Implementation of list_container_files including mock short-circuit, managed ID decoding, provider config lookup, logging update, call-type setting, and delegation to HTTP handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9477-L9569
+    why: Sync container_file_list_handler that delegates to async when _is_async=True, validates environment, gets URL, transforms request, logs, sends GET, checks errors and transforms response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9571-L9650
+    why: Async async_container_file_list_handler with identical request/logging/GET flow for async HTTP client and response transformation.
+
+dod:
+  - text: list_container_files accepts container_id, pagination (after, limit, order), headers, query, timeout, api_key, api_base, api_version, provider override and async control.
+    proof: [file-list-tests]
+  - text: alist_container_files wraps the sync operation through asyncio with context preservation.
+    proof: [file-list-tests]
+  - text: Mock responses are parsed and short-circuit provider selection and HTTP calls.
+    proof: [file-list-tests]
+  - text: Managed container IDs are decoded to recover original ID and provider; provider selection respects explicit override.
+    proof: [file-list-tests]
+  - text: Provider config is fetched using the resolved provider; missing config raises a clear error.
+    proof: [file-list-tests]
+  - text: Request headers are fetched from provider config validate_environment with api_key from params, then overlaid with extra_headers.
+    proof: [file-list-tests]
+  - text: API base URL comes from provider config get_complete_url with api_base and params.
+    proof: [file-list-tests]
+  - text: Provider transformation function (transform_container_file_list_request) builds final URL and query params from container ID, api_base, and pagination.
+    proof: [file-list-tests]
+  - text: Call type is set to list_container_files before logging.
+    proof: [file-list-tests]
+  - text: Request is logged via logging_obj.pre_call with the final URL, headers, and query params before HTTP send.
+    proof: [file-list-tests]
+  - text: HTTP client is reused if it is the right type (sync for sync, async for async) and new clients include ssl_verify from params.
+    proof: [file-list-tests]
+  - text: GET request is sent with params as query string; no timeout argument is passed to httpx, preserving the client's deadline.
+    proof: [file-list-tests]
+  - text: Non-2xx status codes and JSON error responses raise through raise_for_error_status and _handle_error.
+    proof: [file-list-tests]
+  - text: Response is transformed through provider's transform_container_file_list_response and validated as ContainerFileListResponse.
+    proof: [file-list-tests]
+  - text: Sync handlers dispatch to async handlers when _is_async is true.
+    proof: [file-list-tests]
+  - text: All exceptions from provider selection, request transformation and HTTP layers are caught and re-raised through exception_type dispatch.
+    proof: [file-list-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: file-list-tests
+      why: File list handlers fail, do not exist, or mock/async/provider selection/transformation/GET behavior differs from the source
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_list::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The handlers do not pass timeout to httpx GET calls; the selected client's deadline is preserved instead.
+    why: LiteLLM's source accepts timeout but does not forward it to GET, so passing it would promise behavior the source does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9552-L9556
+  - what: When query_params is empty after transformations, None is passed to httpx instead of an empty dict.
+    why: An empty dict passed as params to httpx strips the URL's query string; None preserves any query string already in api_base.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9555
+
+out_of_scope:
+  - B3360 owns ContainerFileListResponse and option parameter contracts; this task uses them without modification.
+  - B3361 owns decode_managed_container_id_for_request and ProviderConfigManager.get_provider_container_config; this task calls them to resolve provider and ID.
+  - B3363 owns raise_for_error_status; this task calls it to check HTTP errors.
+  - B522 owns OpenAI provider transformations (validate_environment, get_complete_url, transform_container_file_list_request/response); this task calls them.
+  - B547 owns Azure provider overrides; inherited or overridden methods are used as configured.
+  - B173 owns HTTPHandler and AsyncHTTPHandler and HTTP client pooling; client selection delegates to type checking against provided clients.
+  - B249 owns Logging.pre_call; this task calls it with the transformed request data.
+  - B2402 owns BaseLLMHTTPHandler._handle_error; this task catches transport exceptions and delegates to it.
+  - B247 owns Logging.update_from_kwargs and call-type state; this task calls update_from_kwargs before delegating to handlers.
+  - B185 owns exception_type dispatch; this task calls it to convert all exceptions.
+
+pitfalls:
+  - Mock response parsing happens before provider selection, so mock short-circuits the entire flow without needing a valid provider.
+  - Container ID decoding happens early and uses the decoded original ID for HTTP requests, not the input managed ID.
+  - Provider config returns None when unsupported; callers must check and raise explicitly before using it.
+  - Headers must be overlaid with extra_headers after validate_environment returns, not before, to preserve provider auth additions.
+  - The transform_container_file_list_request function may mutate headers in place and returns (url, params) tuples where params may be empty.
+  - When params is empty after transformation, pass None to httpx to preserve api_base's query string, not an empty dict.
+  - The sync variant returns a Union that resolves to Coroutine when _is_async=True; callers must await in async contexts.
+  - All exceptions at the top level are converted through exception_type dispatch and re-raised, not swallowed or logged separately.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

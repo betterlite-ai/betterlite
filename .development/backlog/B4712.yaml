@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP persistent writes, drafts and server deletion
 status: todo
 depends_on: [B4710, B4711, B726, B858, B1600, B192]
-file: null
+file: tasks/B4712-mcp-server-writes.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/db.py"
 parent: B139

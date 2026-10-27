@@ -1,0 +1,153 @@
+id: B4727
+title: MCP REST tool listing and pinnable catalog fetching
+description: >-
+  Build GET `/mcp-rest/tools/list` REST endpoint and the shared upstream catalog fetch used by
+  management pinning. The endpoint lists tools from accessible MCP servers with per-key team and
+  allowlist filtering, supports admin-only unfiltered catalog viewing, and handles partial failures
+  when upstream requests reach some servers but not others.
+
+  `_create_tool_response_objects` enriches tool responses with server_id and alias so REST clients
+  can map internal server_name to user-facing alias without needing access to the mcp_routes-gated
+  server listing.
+
+  `_list_server_tools` fetches the raw tool list from a single upstream server without applying
+  filters; `_get_tools_for_single_server` wraps it with optional allowed_tools/disallowed_tools
+  filtering and per-key tool permissions. The admin-only configuration view skips both; every
+  runtime path applies both gates so callable tools stay filtered.
+
+  `fetch_pinnable_tool_catalog` prepares a server's tool catalog for admin pinning by removing
+  existing pins and overrides before fetching, scanning the live description view, and returning
+  only tools that survive the scan. Pinned tools record original upstream descriptions/schemas.
+
+  `_list_tools_for_single_server` handles single-server requests: resolves server_id from UUID/name/
+  alias within allowed_server_ids, checks IP filtering when appropriate (distinct missing-server,
+  denied-server and IP-filtered errors), fetches tools, and returns an error dict on exception.
+
+  The main `list_tool_rest_api` endpoint accepts server_id, mcp_server_name or toolset_name filters.
+  When no filter is specified it returns an aggregate listing from all allowed servers, reporting
+  `partial_failure` only when errors occur and no tools survive; per-server outcomes track results
+  for visibility. Single-server requests relay the truthful HTTP status (502/504 upstream faults
+  must not masquerade as 200 with an error dict). The endpoint rejects virtual-tool clients in
+  non-search contexts, supports admin-only include_disabled_tools to bypass filters, and resolves
+  effective auth when a toolset name is given.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/mcp_rest_tools.rs
+    - crates/betterlite-server/src/api/mcp_rest_tools/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-rest-tools/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-rest-tools-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L558-L578
+    why: _create_tool_response_objects enriches tool responses with server metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L698-L788
+    why: Complete ownership of server tool fetching, response filtering and pinnable-catalog preparation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L815-L906
+    why: Complete ownership of single-server resolution, IP filtering and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L912-L1157
+    why: _resolve_acting_auth for toolset resolution, _as_query_str for parameter coercion, and list_tool_rest_api endpoint with aggregate listing logic and error shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1105-L1128
+    why: Sequential server queries, per-server outcome tracking, and partial_failure semantics.
+
+dod:
+  - text: >-
+      _create_tool_response_objects creates a list of tool response objects enriched with
+      server_id and alias from the MCPServer record.
+    proof: [tool-listing-tests]
+  - text: >-
+      _list_server_tools fetches raw tools from a single upstream server without applying
+      allowed_tools/disallowed_tools filter or per-key tool permissions.
+    proof: [tool-listing-tests]
+  - text: >-
+      _get_tools_for_single_server optionally applies allowed_tools/disallowed_tools and
+      per-key tool permissions; admin-only apply_tool_filters=false skips both gates.
+    proof: [tool-listing-tests]
+  - text: >-
+      fetch_pinnable_tool_catalog removes existing pins and overrides, fetches upstream
+      tools, scans the served description view, and returns only surviving tools with original
+      upstream descriptions and schemas.
+    proof: [tool-listing-tests, tool-listing-oracle]
+  - text: >-
+      _list_tools_for_single_server resolves server_id from UUID/name/alias within allowed
+      set, reports distinct missing-server/denied/IP-filtered errors, and returns error dict
+      on upstream exception.
+    proof: [tool-listing-tests]
+  - text: >-
+      Single-server requests relay truthful HTTP status (502/504 for upstream faults, 403 for
+      access/IP denied); a missing server in the allowed set returns the 200 error-dict shape
+      matching LiteLLM. Multi-server aggregate uses legacy error-dict shape.
+    proof: [tool-listing-tests, tool-listing-oracle]
+  - text: >-
+      Partial aggregates only report partial_failure when errors occur and no tools survive;
+      per-server outcomes preserve individual server results.
+    proof: [tool-listing-tests, tool-listing-oracle]
+  - text: >-
+      GET /mcp-rest/tools/list accepts server_id, mcp_server_name, toolset_name and admin-only
+      include_disabled_tools filters; rejects virtual-tool clients, resolves effective auth on
+      toolset.
+    proof: [tool-listing-tests, tool-listing-oracle]
+  - text: >-
+      OAuth credential prefetch only occurs when at least one allowed server uses OAuth2 v1
+      resolution.
+    proof: [tool-listing-tests]
+  - text: >-
+      Every default, header, config key, error status/type/message and HTTP status code a
+      user can observe is in a named case with literal input and outcome.
+    proof: [tool-listing-tests, tool-listing-oracle]
+  - text: Every mutant in tool listing/filtering logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: tool-listing-tests
+      why: >-
+        Tool response enrichment, allowed_tools/per-key filtering, single-server resolution,
+        IP filtering, error handling, partial failure detection or aggregate response shape
+        is missing or fails on edge cases.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^api::mcp_rest_tools::/)'
+    - id: tool-listing-oracle
+      why: >-
+        Tool listing responses, HTTP statuses, error shapes or per-server outcome tracking
+        deviate from LiteLLM behavior.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-rest-tools
+
+oracle_cases: []
+
+deviations:
+  - what: Single-server 502/504 upstream faults relay their truthful HTTP status instead of wrapped in error dict.
+    why: Single-server requests require truthful status so clients can retry or handle upstream outages; only the multi-server aggregate uses legacy error-dict compatibility.
+  - what: IP filtering reports 403 with "ip_filtering" error tag and server IP restriction message.
+    why: Clients need distinct IP filtering errors to offer guidance about available_on_public_internet configuration.
+
+out_of_scope:
+  - Manager _get_tools_from_server, ID/name lookup and server resolution functions (part of Q2 manager leaves).
+  - filter_server_ids_by_ip_with_info, filter_tools_by_allowed_tools, filter_tools_by_key_team_permissions (Q2 manager).
+  - scan_tool_descriptions, apply_description_overrides, get_server_prefix (Q4 catalog/OpenAPI leaves).
+  - classify_list_exception, list_fault_http_status, outcome_wire_value, _aggregate_server_key (Q4 catalog/OpenAPI).
+  - MCPUpstreamAuthError.to_http_exception, get_request_base_url (Q4 catalog/OpenAPI).
+  - reject_disallowed_mcp_client, get_virtual_tool_definitions, build_effective_auth_contexts (Q6 shared proxy/auth).
+  - MCPRequestHandler header extraction methods (part of B4726).
+  - Authentication, authorization and role checks (Q6 shared proxy/auth).
+
+pitfalls:
+  - Admin-only include_disabled_tools must check user_api_key_has_admin_view to prevent non-admins from bypassing filters.
+  - Single-server requests (server_id set) must relay the truthful HTTP exception status; the multi-server aggregate uses error-dict compatibility only when server_id is None.
+  - Partial failure reports partial_failure only when errors occur AND no tools survive; a successful fetch from one server with failures on others keeps error=None.
+  - OAuth credential prefetch checks _v1_resolved_oauth2_server_ids to avoid unnecessary DB round-trips on requests without OAuth2 MCP servers.
+  - IP filtering must check before allowed-server resolution and report with the distinct "ip_filtering" error tag.
+  - The pinning fetch must remove existing pins and overrides before fetching the upstream catalog so the scan operates on the live description view.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

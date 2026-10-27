@@ -1,0 +1,116 @@
+id: B4052
+title: Dotprompt compilation and initialization
+description: >-
+  Build lazy dotprompt manager construction, prompt eligibility checking, rendering-to-message conversion and compiled metadata extraction.
+  Add DotpromptManager to crates/betterlite-prompts, implementing the PromptManagementClient contract from B4050.
+  DotpromptManager.__init__ accepts optional prompt_directory, prompt_data JSON string or dict, and prompt_id, with prompt_directory defaulting to the global setting from betterlite-config.
+  should_run_prompt_management returns true if the prompt_id exists in the prompt manager, catching lookup errors and returning false on any exception.
+  _compile_prompt_helper and async_compile_prompt_helper load the versioned template, render it with variables, convert rendered text to chat messages using role-prefix parsing (System:, User:, Assistant:), extract template model and optional parameters, and return a PromptManagementClient structure.
+  _convert_to_messages splits rendered content by lines, detects capitalized role prefixes at line start, collects content until the next role marker, and converts to a message dict {role, content}.
+  _extract_optional_params copies the template's optional_params dict.
+  prompt_initializer takes PromptLiteLLMParams and PromptSpec, rejects prompt_directory parameter (must use global), parses dotprompt_content from database if present, and constructs DotpromptManager with the nested prompt_id taking precedence over the stripped registry base.
+  Export prompt_initializer and register it in the SupportedPromptIntegrations registry.
+  Preserve lazy PromptManager construction, capitalized role detection only, eligibility-swallows-lookup-errors behavior, JSON string prompt_data decoding, and model stripping when template has no model.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/dotprompt_compilation.rs
+    - crates/betterlite-prompts/src/dotprompt_compilation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/dotprompt_manager.py#L1-L184
+    why: DotpromptManager class, __init__, integration_name property, prompt_manager lazy property, should_run_prompt_management, _compile_prompt_helper, async_compile_prompt_helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/dotprompt_manager.py#L255-L333
+    why: _convert_to_messages, _create_message, _extract_optional_params methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/__init__.py#L1-L29
+    why: imports, globals and set_global_prompt_directory function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/__init__.py#L44-L94
+    why: prompt_initializer function and SupportedPromptIntegrations registry registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L14-L19
+    why: PromptManagementClient TypedDict structure.
+dod:
+  - text: DotpromptManager.__init__ accepts optional prompt_directory, prompt_data (string or dict), and prompt_id; prompt_directory defaults to global setting when not provided.
+    proof: [dotprompt-compilation-init-tests]
+  - text: "JSON string prompt_data is decoded via serde_json::from_str; invalid JSON propagates as a serde_json::Error without wrapping."
+    proof: [dotprompt-compilation-init-tests]
+  - text: integration_name property returns the string "dotprompt".
+    proof: [dotprompt-compilation-init-tests]
+  - text: prompt_manager property lazy-loads PromptManager on first access, raising ValueError with exact message if neither prompt_directory nor prompt_data is set.
+    proof: [dotprompt-compilation-init-tests]
+  - text: should_run_prompt_management returns true if prompt_id is Some and PromptManager.get_prompt succeeds, returns false if prompt_id is None or if any exception occurs during lookup.
+    proof: [dotprompt-compilation-eligibility-tests]
+  - text: "_compile_prompt_helper raises ValueError with exact message 'prompt_id is required for dotprompt manager' when prompt_id is None."
+    proof: [dotprompt-compilation-compile-tests]
+  - text: _compile_prompt_helper retrieves the template with optional version, renders it with variables, converts to messages, extracts model and params, returns PromptManagementClient with completed_messages as None.
+    proof: [dotprompt-compilation-compile-tests]
+  - text: "Template-not-found, render and convert errors in _compile_prompt_helper are wrapped with exact message: \"Error compiling prompt '{prompt_id}': {e}\"."
+    proof: [dotprompt-compilation-compile-tests]
+  - text: "async_compile_prompt_helper delegates to _compile_prompt_helper, raising ValueError if prompt_id is None with exact message: 'prompt_id is required for dotprompt manager'."
+    proof: [dotprompt-compilation-compile-tests]
+  - text: "_convert_to_messages detects only capitalized System:, User: and Assistant: prefixes at line start, collects content until the next role, returns list of {role, content} messages."
+    proof: [dotprompt-compilation-messages-tests]
+  - text: If no role prefixes are found, the entire content is treated as a user message.
+    proof: [dotprompt-compilation-messages-tests]
+  - text: Empty messages or empty-content lines at the end are not added to the result.
+    proof: [dotprompt-compilation-messages-tests]
+  - text: "_extract_optional_params returns a copy of the template's optional_params field, or an empty dict if optional_params is None."
+    proof: [dotprompt-compilation-params-tests]
+  - text: set_global_prompt_directory sets the global prompt directory in the config.
+    proof: [dotprompt-compilation-init-tests]
+  - text: prompt_initializer rejects prompt_directory parameter with exact error message 'Cannot set prompt_directory when working with prompt_initializer. Needs to be a specific dotprompt file'.
+    proof: [dotprompt-compilation-init-tests]
+  - text: prompt_initializer uses dotprompt_content from database (via B4051's parse helper) when present and prompt_data and prompt_file are both absent.
+    proof: [dotprompt-compilation-init-tests]
+  - text: prompt_initializer uses nested prompt_id from params if present, else strips version from prompt_spec.prompt_id, else uses prompt_spec.prompt_id directly.
+    proof: [dotprompt-compilation-init-tests]
+  - text: prompt_initializer_registry maps SupportedPromptIntegrations::DotPrompt to the prompt_initializer function.
+    proof: [dotprompt-compilation-registry-tests]
+  - text: Every mutant in the compilation, message conversion and initializer logic is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: dotprompt-compilation-init-tests
+      why: DotpromptManager.__init__, property and set_global_prompt_directory tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_compilation::(init|global)/)'
+    - id: dotprompt-compilation-eligibility-tests
+      why: should_run_prompt_management tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_compilation::eligibility/)'
+    - id: dotprompt-compilation-compile-tests
+      why: _compile_prompt_helper and async_compile_prompt_helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_compilation::compile/)'
+    - id: dotprompt-compilation-messages-tests
+      why: _convert_to_messages tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_compilation::messages/)'
+    - id: dotprompt-compilation-params-tests
+      why: _extract_optional_params tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_compilation::params/)'
+    - id: dotprompt-compilation-registry-tests
+      why: prompt_initializer_registry tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_compilation::registry/)'
+oracle_cases: []
+deviations:
+  - what: Eligibility errors during should_run_prompt_management swallow exceptions and return false instead of propagating them.
+    why: LiteLLM behavior at the pinned commit; a missing prompt that causes a lookup error is treated as ineligible for compilation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/dotprompt_manager.py#L99-L103
+  - what: Model stripping removes the "dotprompt/" prefix when template.model is None, leaving only the base model name.
+    why: LiteLLM behavior at the pinned commit; the model projection uses integration_name to strip the prefix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L135-L139
+out_of_scope:
+  - "DotpromptManager.set_prompt_directory: no caller at the pin"
+  - "DotpromptManager.reload_prompts: no caller at the pin"
+  - "DotpromptManager.add_prompt_from_json: no caller at the pin"
+  - "DotpromptManager.load_prompts_from_json: no caller at the pin"
+  - "DotpromptManager.get_prompts_as_json: no caller at the pin"
+  - "DotpromptManager.convert_prompt_file_to_json: no caller at the pin; the converter at B117 calls PromptManager.prompt_file_to_json directly"
+  - "get_chat_completion_prompt and async_get_chat_completion_prompt: these call the base class implementation from B4050 and are tested through the completion hook dispatch in B4058"
+pitfalls:
+  - "DotpromptManager.prompt_manager is lazy and must check for None after construction; accessing it without checking raises ValueError with the exact message from B4051."
+  - "Role-prefix detection is case-sensitive; only capitalized System:, User: and Assistant: split messages, not \"system:\", \"user:\" or mixed case."
+  - "Empty lines after role markers are preserved in the message content; a message that is only whitespace is still added if current_content is non-empty."
+  - "PromptManagementClient.completed_messages is set to None by _compile_prompt_helper and is populated by the B4058 orchestration layer, not here."
+  - "JSON string decoding in __init__ must use serde_json::from_str; invalid JSON propagates unwrapped as a serde_json::Error, matching LiteLLM's json.loads behavior with no try/except. Only _compile_prompt_helper wraps exceptions with the \"Error compiling prompt '{prompt_id}': {e}\" literal."
+  - "The nested prompt_id from params takes precedence over the stripped registry ID; test that prompt_id=\"x.v1\" with prompt_spec.prompt_id=\"y.v2\" uses \"x.v1\" from params."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

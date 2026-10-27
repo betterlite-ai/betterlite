@@ -1,0 +1,144 @@
+id: B4085
+title: Gate shadow spending and run every comparison arm
+description: >-
+  Build the detached evaluation pipeline in betterlite-server: require a database, check the
+  key and team evaluation budgets through advisory lookups, then execute every arm sequentially
+  with an independent attempt outcome. Gate once per sampled request, not between arms; a
+  budget crossed during the loop may overshoot by the remaining arms. When the database is
+  unavailable, record one withheld funnel increment and skip all arms without provider spend.
+  Known-cost recording and failure diagnostics persist after shadow or judge failure, so one
+  arm's fault never silences its sibling arm.
+
+  _key_or_team_is_over_budget reads the shadowed caller's identity from metadata, performs
+  advisory budget checks against the same auth operations the request path uses (never blocking
+  real traffic, only racing requests in flight), and returns False on any read failure. The key
+  lookup is required; team lookup happens only when the key holds a team assignment.
+
+  _run_shadow_eval gates once per sampled request by checking the database, budget and team/key
+  state, then invokes _run_shadow_arm for each router in the job's comparison arms. The prisma
+  gate sits above dispatch so no provider spend happens without a place to record the outcome,
+  and budget reads live here rather than at the success-hook entry. Withheld requests count one
+  request-level funnel increment before any arm runs.
+
+  _run_shadow_arm runs one arm's three-stage pipeline: call the shadow router with the control
+  request messages, run a blind pairwise judge on the real and shadow responses, then record
+  one attempt row capturing this arm's outcome. Every stage exit records the arm's outcome, so
+  success records real_cost/real_classifier_cost/real_cache_hit from the control request and
+  shadow_cost/shadow_classifier_cost from the shadow, with judge_cost on judge completion;
+  shadow failure records only real costs and the shadow cost if the shadow call billed;
+  pipeline errors record real costs alone, never provider spend.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/shadow_evaluation.rs
+    - crates/betterlite-server/src/shadow_evaluation/**
+    - tools/oracle/cases/helpers/shadow-evaluation/**
+    - tools/oracle/helpers/b4085.py
+    - tools/oracle/helpers/b4085/**
+    - tools/oracle/src/helpers/server/b4085.rs
+    - tools/oracle/src/helpers/server/b4085/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L623-L660
+    why: "_key_or_team_is_over_budget: advisory lookup of key and team budgets, fail-open on read errors."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1042-L1100
+    why: "_run_shadow_eval: gates once per request, iterates arms, prisma gate before dispatch."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1102-L1216
+    why: "_run_shadow_arm: pipeline stages with error isolation and outcome recording at every exit."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1-L50
+    why: "Budget check imports and call patterns from the auth path."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2797-L2875
+    why: "get_current_spend and spend counter operations (unresolved, question 4)."
+
+dod:
+  - text: _key_or_team_is_over_budget returns false when metadata lacks UserAPIKeyAuth or is not a valid dict.
+    proof: [advisory-budget-tests]
+  - text: _key_or_team_is_over_budget calls _virtual_key_max_budget_check with the key and logs/returns false on BudgetExceededError.
+    proof: [advisory-budget-tests]
+  - text: _key_or_team_is_over_budget calls get_team_object with check_cache_only=True and _team_max_budget_check when the key holds a team_id.
+    proof: [advisory-budget-tests]
+  - text: _key_or_team_is_over_budget returns false and logs at debug level when any auth read fails (ImportError, lookup, check exception).
+    proof: [advisory-budget-tests]
+  - text: _run_shadow_eval returns immediately if prisma_provider() is None, recording one withheld funnel event and making no provider calls.
+    proof: [pipeline-tests]
+  - text: _run_shadow_eval gates on over-budget status and reads the evaluation budget spend, recording withheld for budget gatekeeping failures (read error, exhausted).
+    proof: [pipeline-tests]
+  - text: _run_shadow_eval iterates every arm in job.arm_router_names sequentially and awaits _run_shadow_arm for each.
+    proof: [pipeline-tests]
+  - text: _run_shadow_arm calls _call_router_shadow and records a pipeline-error attempt if the call raises (not a _CallFailure).
+    proof: [arm-tests]
+  - text: _run_shadow_arm records a shadow-failure attempt when _call_router_shadow returns a _CallFailure, including shadow_cost.
+    proof: [arm-tests]
+  - text: _run_shadow_arm calls _call_judge only when the shadow call succeeds (returns _ShadowResponse, not _CallFailure).
+    proof: [arm-tests]
+  - text: _run_shadow_arm records a judge-failure attempt when _call_judge returns a _CallFailure, including shadow_cost and judge_cost.
+    proof: [arm-tests]
+  - text: _run_shadow_arm records a success attempt with the judge verdict when both shadow and judge calls succeed.
+    proof: [arm-tests]
+  - text: _run_shadow_arm records an outcome row at every exit (pipeline error, shadow error, judge error, success) so one arm fault never silences a sibling.
+    proof: [arm-tests]
+  - text: _run_shadow_arm passes the control request metadata and shadow_params to _call_router_shadow; the team_id comes from parent_metadata.
+    proof: [arm-tests]
+  - text: _run_shadow_arm passes messages, tool definitions from shadow_params, and real/shadow text to _call_judge via job.judge_model and parent_metadata.
+    proof: [arm-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: advisory-budget-tests
+      why: budget lookup and advisory gate tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_evaluation::advisory_budget::/)'
+    - id: pipeline-tests
+      why: _run_shadow_eval and gating tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_evaluation::pipeline::/)'
+    - id: arm-tests
+      why: _run_shadow_arm stage tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_evaluation::arm::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/shadow-evaluation/key-not-over-budget.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/key-over-budget.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/team-over-budget.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/budget-read-fails.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/no-database-withheld.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/evaluation-budget-exhausted.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/shadow-call-success.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/shadow-call-fails.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/judge-call-succeeds.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/judge-call-fails.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/pipeline-error-isolation.yaml
+  - tools/oracle/cases/helpers/shadow-evaluation/arm-sequence.yaml
+
+deviations:
+  - what: Advisory budget checks read from async auth operations injected through betterlite-auth, not from global proxy imports.
+    why: betterlite isolates shared state into auth and DB crates; the advisory gate accepts the same read errors and fail-open behavior as the source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L631-L660
+  - what: Withheld funnel events are recorded via the injected _record_funnel callback instead of a shared funnel object.
+    why: betterlite-server owns the pipeline orchestration; funnel persistence is delegated to B4083.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1068-L1084
+
+out_of_scope:
+  - "Active job loading and metadata: owned by B4083."
+  - "Shadow call execution: owned by B4084."
+  - "Judge call execution: owned by B4084."
+  - "Attempt record insertion: owned by B4083."
+  - "Funnel event recording: owned by B4083."
+  - "get_current_spend and increment_spend_counter: unresolved, question 4 in the outline."
+  - "User/team lookup and auth identity validation: owned by B732, B737 respectively; this task only passes injected references to advisory checks."
+
+pitfalls:
+  - "Budget checks are advisory: a read error must return false and log at debug, never raise; real traffic already passed auth, so the race gate only closes a slot."
+  - "No provider spend happens until prisma_provider() returns non-None; withheld funnel events are request-level, not per-arm."
+  - "The evaluation budget is read once before the loop; a budget crossed mid-loop lets the remaining arms overshoot by one sample, the same as in-flight samples when the cap is crossed."
+  - "Every exit from _run_shadow_arm records an attempt row, including exceptions that did not bill a provider; the outcome field distinguishes success/error/shadow-failure/judge-failure."
+  - "_run_shadow_arm receives the control request's real_text/real_model/real_cost and shadow_params; shadow text and costs are read from call outcomes, not from request metadata."
+  - "When _call_router_shadow raises an exception (not returning _CallFailure), record pipeline-error with no shadow cost; when it returns _CallFailure, record shadow_cost from the failure outcome."
+  - "Team lookup runs only when the key holds a team_id; team_id is None or a string, never a missing key; both key and team read failures are logged and considered advisory."
+  - "The judge call is skipped entirely if the shadow call failed; success outcome includes verdict.preference and verdict.confidence from the judge's _JudgeVerdict record."
+  - "Judge-only failures (verdict is _CallFailure) still record the shadow_cost; this is the case where spending billed but the judgment failed."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

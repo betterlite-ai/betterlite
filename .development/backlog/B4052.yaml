@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Dotprompt compilation and initialization
 status: todo
 depends_on: [B4050, B4051]
-file: null
+file: tasks/B4052-dotprompt-compilation.yaml
 covers:
   - "litellm/integrations/dotprompt/{dotprompt_manager,__init__}.py"
 parent: B117

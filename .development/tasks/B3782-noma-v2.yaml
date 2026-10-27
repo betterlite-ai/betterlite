@@ -1,0 +1,154 @@
+id: B3782
+title: Noma v2 unified scanning
+description: >-
+  Implement Noma v2 unified guardrail scanning that sends typed requests to the Noma `/litellm/guardrail` endpoint
+  and applies returned actions (allow, block, intervene) to request and response content. Preserve the SaaS-host-only
+  API-key requirement where noma.security hostname forces an API key, fallback from per-request application_id to
+  configured application_id to user_api_key_alias for Noma dashboard traceability, and monitor_mode that returns
+  allow-all decisions without consulting the API. Handle invalid-action errors gracefully by treating non-BLOCKED
+  responses as allow in monitor mode and raising in strict mode. Serialize payload content with safe_dumps fallback
+  on Pydantic model serialization failure, and always sanitize the payload to exclude duplicate fields (messages, input)
+  and logging noise that the endpoint doesn't process. Support scanning across request hook (pre_call), response hook
+  (post_call), and MCP call hooks (pre_mcp_call, during_mcp_call). Read configuration from environment (NOMA_API_KEY,
+  NOMA_API_BASE defaulting to https://api.noma.security/, NOMA_APPLICATION_ID, NOMA_GATEWAY_NAME, NOMA_MONITOR_MODE
+  default "false", NOMA_BLOCK_FAILURES default "true") with constructor parameters overriding environment values.
+  Register the guardrail with betterlite's callback system so it observes every request with metadata about the scan
+  (provider, status, request_id, user, spend tracking) and logs response verdicts even when monitor_mode suppresses blocking.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/noma_v2.rs
+    - crates/betterlite-guardrails/src/noma_v2
+    - crates/betterlite-guardrails/src/noma_v2/tests.rs
+    - crates/betterlite-guardrails/src/noma_v2/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma_v2.py#L1-L355
+    why: The complete NomaV2Guardrail class and its __init__, config methods, payload building, serialization, HTTP calls, action application and apply_guardrail orchestration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/__init__.py#L38-L55
+    why: The initialize_guardrail_v2 function that wires NomaV2Guardrail into the callback manager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/noma.py#L29-L58
+    why: NomaV2GuardrailConfigModel with fields api_key, api_base, application_id, gateway_name, monitor_mode, block_failures, and ui_friendly_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L55-L72
+    why: NomaBlockedMessage exception class used to signal guardrail blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py
+    why: safe_dumps function for payload serialization with fallback handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py
+    why: safe_json_loads function that returns default on parse failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: CustomGuardrail base class and log_guardrail_information decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3300-L3302
+    why: GuardrailStatus enum literal values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+    why: GenericGuardrailAPIInputs TypedDict structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1305
+    why: GuardrailEventHooks enum.
+dod:
+  - text: Noma v2 reads api_key, api_base, application_id, gateway_name, monitor_mode and block_failures from environment variables with constructor overrides, defaulting api_base to https://api.noma.security/ and treating "false"/"true" strings as booleans for monitor_mode and block_failures.
+    proof: [noma-v2-config]
+  - text: Requests to noma.security hostname require an api_key; requests to other hostnames do not, and are always allowed regardless of api_key presence.
+    proof: [noma-v2-config, noma-v2-authorization]
+  - text: Noma v2 sends payload with inputs (texts, images, tools, tool_calls), request_data (excluding messages/input), application_id (if set), gateway_name (if set), input_type (request or response), and monitor_mode flag to POST /litellm/guardrail.
+    proof: [noma-v2-payload]
+  - text: apply_guardrail falls back from per-request dynamic_params.application_id to configured application_id to user_api_key_alias from metadata, and uses dynamic_params from get_guardrail_dynamic_request_body_params.
+    proof: [noma-v2-config-resolution]
+  - text: Payload serialization uses json.dumps with a _default handler that calls model_dump() on Pydantic models and falls back to str, then parses with safe_json_loads; if the result is not a dict or is empty when payload is not empty, a warning is logged and empty dict returned.
+    proof: [noma-v2-serialization]
+  - text: HTTP Authorization header is "Bearer <api_key>" when api_key is set, omitted when api_key is empty.
+    proof: [noma-v2-authorization]
+  - text: Noma response action is parsed as an enum variant from the "action" string field; if action is BLOCKED, NomaBlockedMessage is raised; if action is GUARDRAIL_INTERVENED, fields texts, images, tools, tool_calls from response overwrite those in inputs if they are lists; if action is NONE or monitor_mode is true, inputs are returned unchanged.
+    proof: [noma-v2-actions]
+  - text: In monitor_mode, the guardrail always resolves action to NONE, so responses are not applied and blocks are not raised, but observability still logs the scan result.
+    proof: [noma-v2-monitor]
+  - text: Generic exceptions during apply_guardrail set guardrail_status to "guardrail_failed_to_respond" and guardrail_json_response to the error string; if block_failures is true, the error is re-raised; if block_failures is false, inputs are returned unchanged.
+    proof: [noma-v2-error-handling]
+
+  - text: NomaBlockedMessage exceptions (when action=BLOCKED) set guardrail_status to "guardrail_intervened" and are always re-raised regardless of the block_failures setting.
+    proof: [noma-v2-error-handling-blocked]
+  - text: apply_guardrail calls add_standard_logging_guardrail_information_to_request_data with provider "noma_v2", guardrail_status (success, guardrail_intervened, or guardrail_failed_to_respond), and response from the API or the exception.
+    proof: [noma-v2-observability]
+  - text: initialize_guardrail_v2 creates a NomaV2Guardrail instance from litellm_params fields (api_key, api_base, application_id, gateway_name, monitor_mode, block_failures, timeout, event_hook, default_on, guardrail_name) and registers it with logging_callback_manager.add_litellm_callback.
+    proof: [noma-v2-initialization]
+  - text: Supported event hooks are pre_call, during_call, post_call, pre_mcp_call, during_mcp_call.
+    proof: [noma-v2-hooks]
+  - text: The Noma v2 config model UI-friendly name is "Noma Security v2".
+    proof: [noma-v2-config-model]
+  - text: Every non-empty string field (api_key, application_id, gateway_name) is validated to not be empty after stripping whitespace; whitespace-only strings are treated as None.
+    proof: [noma-v2-validation]
+checks:
+  optional: []
+  commands:
+    - id: noma-v2-config
+      why: Noma v2 does not read and apply configuration from environment and constructor correctly
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::config_from_environment)' &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::config_constructor_overrides_environment)'
+    - id: noma-v2-authorization
+      why: Noma v2 authorization header or API key requirement is incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*authorization)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*requires_api_key)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*custom_hostname_no_api_key)'
+    - id: noma-v2-payload
+      why: Noma v2 does not build the correct payload structure
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*payload)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*excludes_messages)'
+    - id: noma-v2-config-resolution
+      why: Noma v2 does not resolve application_id correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*application_id.*fallback)'
+    - id: noma-v2-serialization
+      why: Noma v2 payload serialization or safe_json_loads fallback is incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*serialization)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*sanitize)'
+    - id: noma-v2-actions
+      why: Noma v2 does not apply actions (BLOCKED, GUARDRAIL_INTERVENED, NONE) correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*action)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*blocked)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*intervened)'
+    - id: noma-v2-monitor
+      why: Noma v2 monitor mode does not suppress blocking and action application
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*monitor)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*monitor_mode_allows_all)'
+    - id: noma-v2-error-handling
+      why: Noma v2 does not handle generic API errors correctly with block_failures flag
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*error_handling($|::)/)' &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*block_failures_true)' &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*block_failures_false)'
+
+    - id: noma-v2-error-handling-blocked
+      why: NomaBlockedMessage handling sets wrong guardrail_status or respects block_failures incorrectly
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*error_handling_blocked($|::)/)'
+    - id: noma-v2-observability
+      why: Noma v2 does not add observability metadata correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*observability)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*logging)'
+    - id: noma-v2-initialization
+      why: Noma v2 initialization function does not register the guardrail correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::initialize.*)'
+    - id: noma-v2-hooks
+      why: Noma v2 does not report supported event hooks correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*hooks)'
+    - id: noma-v2-config-model
+      why: Noma v2 config model or ui_friendly_name is incorrect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*config_model)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*ui_friendly_name)'
+    - id: noma-v2-validation
+      why: Noma v2 does not validate non-empty string fields correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*validation)'
+oracle_cases: []
+deviations:
+  - what: Payload serialization falls back to safe_json_loads with default={}, matching LiteLLM's safe_dumps behavior rather than attempting multiple serialization strategies.
+    why: Safe JSON handling is delegated to betterlite-logging crate, which provides consistent error-safe serialization.
+  - what: Monitor mode is never automatically detected from environment; it must be explicitly set via configuration or NOMA_MONITOR_MODE="true" env var, exactly matching LiteLLM.
+    why: Explicit configuration is clearer than environment variable precedence.
+  - what: Invalid action values in response trigger an error rather than defaulting to NONE; monitor_mode prevents the error from blocking.
+    why: Failing on invalid server responses helps detect API contract violations early.
+out_of_scope:
+  - The CustomGuardrail base class and its log_guardrail_information decorator (B189).
+  - NomaBlockedMessage exception class definition (B3780).
+  - Configuration loading from config.yaml and environment resolution (B002).
+  - Noma v2 legacy lifecycle and streaming hooks (B3781).
+  - HTTP client pooling and connection handling (B173).
+  - GenericGuardrailAPIInputs type definition and GuardrailStatus enum (B3770).
+pitfalls:
+  - "NOMA_API_BASE.rstrip('/') removes the trailing slash; the endpoint is always /litellm/guardrail appended to the base, so verify the final URL is correct."
+  - "The _default handler in payload serialization calls model_dump() on any object with that method; Pydantic v1 and v2 have different signatures, so use getattr and catch exceptions."
+  - "monitor_mode='false' (string) is not the same as monitor_mode=False (bool); parse strings explicitly with .lower() == 'true'."
+  - "The payload excludes 'messages' and 'input' keys to avoid duplication with the 'inputs' field; every key in _KEYS_DUPLICATING_SCAN_INPUTS must be filtered out."
+  - "application_id resolution order matters: dynamic_params > configured > user_api_key_alias from metadata; skip a level only if the current one is None or empty."
+  - "guardrail_status values are 'success', 'guardrail_intervened', or 'guardrail_failed_to_respond'; every code path must set one."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

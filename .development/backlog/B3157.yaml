@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Run and cancel coordinated ROI analyses
 status: todo
 depends_on: [B3150, B3152, B3153, B3154, B3155, B3156, B725]
-file: null
+file: tasks/B3157-roi-sync-runner.yaml
 covers:
   - "litellm/proxy/roi_calculator/sync.py"
 parent: B076

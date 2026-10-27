@@ -1,0 +1,146 @@
+id: B3053
+title: Dynamic priority token accounting and headers
+description: >-
+  Build post-success token accounting for priority-based rate limiting within the shared v3 limiter.
+  Add dynamic priority headers to successful responses when rate-limit tracking is active, then
+  increment model-wide and priority-specific token counters using the shared rate-limit key format
+  and TTL preservation.
+
+  Ownership includes:
+
+  - Response headers: async_post_call_success_hook calls the v3 limiter's post-call hook to add
+    standard rate-limit headers. When the response has hidden params (indicating active tracking),
+    it adds x-litellm-priority header with value from B3051's priority resolver (team metadata first,
+    then key metadata fallback) or "default" if absent. The priority header is skipped and a debug
+    message is logged if the string is not Latin-1 encodable. Also adds x-litellm-rate-limiter-version="v3"
+    when response has hidden params. Both headers are conditional on response_has_hidden_params(response).
+    Preserves response structure and exception handling.
+
+  - Success-event token accounting: async_log_success_event extracts model_group and priority from
+    standard_logging_object metadata, resolves token counts by rate_limit_type (output/input/total),
+    and creates pipeline operations for two descriptor types: model_saturation_check (model-wide tokens)
+    and priority_model (priority-specific tokens with pool key). Calls async_increment_tokens_with_ttl_preservation
+    with the pipeline and optional parent OTel span.
+
+  - Priority resolution: Uses key metadata priority from standard_logging_object stored during pre-call,
+    checking user_api_key_auth_metadata.priority (not team priority, preserving the pre/post asymmetry).
+    Priority values not in SAFE_PRIORITIES {low, medium, high, default} are redacted in debug logs.
+
+  - Latin-1 encoding check: _is_latin1_encodable returns true only when all characters have ord() < 256,
+    skipping header insertion for non-encodable priority strings.
+
+  - Descriptor key construction: Uses v3_limiter.create_rate_limit_keys with model_saturation_check
+    and priority_model descriptor types and the resolved model/priority scopes, returning keys suitable
+    for token increment operations.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/dynamic_callbacks.rs
+    - crates/betterlite-rate-limit/src/dynamic_callbacks/tests.rs
+    - tools/oracle/cases/dynamic_callbacks/**
+    - tools/oracle/helpers/b3053.py
+    - tools/oracle/helpers/b3053/**
+    - tools/oracle/src/helpers/rate_limit/b3053.rs
+    - tools/oracle/src/helpers/rate_limit/b3053/**
+    - crates/betterlite-rate-limit/src/dynamic_callbacks/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L659-L687
+    why: async_post_call_success_hook implementation; calls v3 limiter's post-call hook, adds conditional headers when response has hidden params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L688-L803
+    why: async_log_success_event implementation; token counter updates, pool key determination, priority redaction and pipeline increment operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L141-L163
+    why: _get_priority_from_user_api_key_dict method (owned by B3051); resolves priority from team then key metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L62-L63
+    why: _is_latin1_encodable helper; checks all characters have ord() < 256 for header encoding safety.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L760-L782
+    why: Priority pool key determination; explicit priority name or default_pool based on priority_reservation lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L791-L799
+    why: Redaction logic; safe priorities (low, medium, high, default) logged as-is, unknown priorities logged as REDACTED.
+
+dod:
+  - text: >-
+      async_post_call_success_hook calls v3_limiter.async_post_call_success_hook(data, user_api_key_dict, response)
+      to add standard rate-limit headers. When response has hidden params, adds x-litellm-priority header with value
+      from B3051's priority resolver (team metadata first, then key metadata fallback) or "default" if absent.
+      Skips the header and logs debug message if priority is not Latin-1 encodable. When response has hidden params,
+      also adds x-litellm-rate-limiter-version="v3". Both headers are only added when response_has_hidden_params(response)
+      is true. Returns response unchanged on exception.
+    proof: [post-call-hook-tests]
+  - text: >-
+      async_log_success_event extracts model_group, reads key_priority from standard_logging_metadata.user_api_key_auth_metadata,
+      resolves total tokens by rate_limit_type, and creates pipeline operations for model_saturation_check and priority_model
+      counters with correct keys, values, and TTL. Calls async_increment_tokens_with_ttl_preservation with collected operations
+      and parent OTel span. Returns response unchanged on exception.
+    proof: [log-success-tests]
+  - text: >-
+      Oracle cases cover response with hidden params (both headers added), response without hidden params (no headers),
+      Latin-1 encodable and non-encodable priority strings, token increment by rate_limit_type (output/input/total),
+      priority pool key selection (explicit vs. default), model saturation counter creation, priority redaction in logs,
+      and exception handling for both hooks.
+    proof: [dynamic-callbacks-oracle]
+
+pitfalls:
+  - "async_post_call_success_hook must call v3_limiter's post-call hook first to add standard headers; skipping that loses the rate-limit headers from B3046."
+  - "Both x-litellm-priority and x-litellm-rate-limiter-version headers are only added when response_has_hidden_params(response) returns true; responses without hidden params must have no dynamic priority headers."
+  - "x-litellm-priority header value must pass _is_latin1_encodable check; non-Latin-1 characters (ord() >= 256) skip header insertion and a debug message is logged."
+  - "async_log_success_event reads priority from standard_logging_metadata.user_api_key_auth_metadata, not team metadata; this preserves the pre/post asymmetry where admission checks team priority but success logging uses key priority."
+  - "Total token selection depends on rate_limit_type value (output/input/total); if response_obj is not ModelResponse or has no Usage, total_tokens remains 0 and the function returns early without creating pipeline operations."
+  - "Priority pool key uses {model_group}:default_pool for missing/unknown priorities, not {model_group}:None or empty string; must check both that priority is non-None and present in litellm.priority_reservation."
+  - "Pipeline operations use v3_limiter.window_size as TTL, matching the rate-limit window; mismatched TTL causes early expiry or out-of-sync counts with the window."
+  - "Logged priority is redacted only from the log message, not from the actual rate-limit counter keys; SAFE_PRIORITIES {low, medium, high, default} prevents accidental exposure of unknown custom priority strings in logs."
+  - "Both hooks catch all exceptions and return response unchanged; exceptions must not interrupt the completion flow or propagate to callers."
+
+out_of_scope:
+  - Standard rate-limit header generation and v3 limiter post-call hook implementation are owned by B3046.
+  - Token extraction and rate-limit-type filtering belong to B3044.
+  - Token increment with TTL preservation and Redis pipeline implementation are owned by B3037.
+  - Priority resolution logic (team then key metadata fallback) is owned by B3051.
+  - Model_group extraction and standard_logging_object construction belong to external logging infrastructure (outline question 4).
+  - Parent OTel span extraction (outline question 4).
+  - response_has_hidden_params and ensure_response_additional_headers utilities (outline question 5, owned by B016).
+  - LiteLLM priority_reservation config loading is owned by B002.
+  - CustomLogger base class and logging dispatcher.
+
+deviations:
+  - what: "Both x-litellm-priority and x-litellm-rate-limiter-version headers are only added when response_has_hidden_params(response) is true, not unconditionally."
+    why: "The source code guards both header assignments with the same response_has_hidden_params(response) check (line 670). When the response has no hidden params, neither header is added. This preserves LiteLLM's conditional behavior and avoids exposing rate-limit information in responses that are not participating in rate-limit tracking."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L670-L680"
+  - what: "Success-event logging reads key metadata priority (user_api_key_auth_metadata), not team priority as admission does."
+    why: "LiteLLM stores both priority sources during pre-call: team priority drives admission (B3052), but key priority
+      drives post-success accounting for auditing and tracking per-key token usage. This asymmetry is intentional to preserve
+      key-level rate-limit accountability."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L719-L722"
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+checks:
+  optional: []
+  commands:
+    - id: post-call-hook-tests
+      why: async_post_call_success_hook does not delegate to v3 limiter, or fails to add headers conditionally based on response_has_hidden_params
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_callbacks::post_call(::|$)/)'
+    - id: log-success-tests
+      why: async_log_success_event does not extract model_group/priority, fails to resolve tokens by rate_limit_type, or does not increment counters
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_callbacks::log_success(::|$)/)'
+    - id: dynamic-callbacks-oracle
+      why: Oracle cases do not exist or fail against the mock provider
+      run: test -f tools/oracle/cases/dynamic_callbacks/hidden-params-both-headers.yaml && test -f tools/oracle/cases/dynamic_callbacks/no-hidden-params-no-headers.yaml && test -f tools/oracle/cases/dynamic_callbacks/priority-latin1-encodable.yaml && test -f tools/oracle/cases/dynamic_callbacks/priority-non-latin1-skip.yaml && test -f tools/oracle/cases/dynamic_callbacks/token-increment-output.yaml && test -f tools/oracle/cases/dynamic_callbacks/priority-pool-explicit.yaml && test -f tools/oracle/cases/dynamic_callbacks/priority-pool-default.yaml && test -f tools/oracle/cases/dynamic_callbacks/model-saturation-counter.yaml && test -f tools/oracle/cases/dynamic_callbacks/priority-logging-redaction.yaml && test -f tools/oracle/cases/dynamic_callbacks/exception-handling.yaml && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/dynamic_callbacks
+
+oracle_cases:
+  - tools/oracle/cases/dynamic_callbacks/hidden-params-both-headers.yaml
+  - tools/oracle/cases/dynamic_callbacks/no-hidden-params-no-headers.yaml
+  - tools/oracle/cases/dynamic_callbacks/priority-latin1-encodable.yaml
+  - tools/oracle/cases/dynamic_callbacks/priority-non-latin1-skip.yaml
+  - tools/oracle/cases/dynamic_callbacks/token-increment-output.yaml
+  - tools/oracle/cases/dynamic_callbacks/token-increment-input.yaml
+  - tools/oracle/cases/dynamic_callbacks/token-increment-total.yaml
+  - tools/oracle/cases/dynamic_callbacks/priority-pool-explicit.yaml
+  - tools/oracle/cases/dynamic_callbacks/priority-pool-default.yaml
+  - tools/oracle/cases/dynamic_callbacks/model-saturation-counter.yaml
+  - tools/oracle/cases/dynamic_callbacks/priority-logging-redaction.yaml
+  - tools/oracle/cases/dynamic_callbacks/exception-handling.yaml

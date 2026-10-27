@@ -1,0 +1,132 @@
+id: B3508
+title: Enforce managed-agent credentials and serve collection routes
+description: >-
+  Build the caller-supplied-key guard and JSON query-template merge, then register POST/GET `/v1beta/agents`.
+  Implement _is_proxy_admin to check if a user is a proxy admin by role. Implement _enforce_caller_supplied_provider_key
+  to require non-admin callers to provide an api_key via body or litellm_params_template; proxy admins may use the
+  env fallback GOOGLE_API_KEY or GEMINI_API_KEY. On violation, raise HTTPException with 401 Unauthorized.
+  Implement _merge_query_params_into_data to read a JSON litellm_params_template query parameter and merge it into
+  the data dict without overwriting existing keys; malformed JSON becomes empty dict. Implement _proxy_server_imports
+  to return a dict of imported proxy_server globals. Register POST /v1beta/agents that reads the request body,
+  extracts litellm_params_template from body, merges it into data preserving precedence (body > template),
+  sets custom_llm_provider to gemini as default, calls _enforce_caller_supplied_provider_key, then routes through
+  base_process_llm_request with route_type acreate_agent to B3504's acreate. Register GET /v1beta/agents that
+  initializes data with custom_llm_provider gemini, calls _merge_query_params_into_data to handle query-param
+  credentials, calls _enforce_caller_supplied_provider_key, then routes through base_process_llm_request with route_type
+  alist_agents to B3504's alist. Both routes return ORJSONResponse. Preserve the security guard's 401 occurrence
+  before base_process_llm_request's exception catch. Implement all six functions in betterlite-server's agents
+  collection-routes module, with Rust/Python oracle adapters.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/agents/collection_routes.rs
+    - crates/betterlite-server/src/api/agents/collection_routes/**
+    - tools/oracle/cases/agents/collection-routes/**
+    - tools/oracle/helpers/b3508.py
+    - tools/oracle/helpers/b3508/**
+    - tools/oracle/src/helpers/server/b3508.rs
+    - tools/oracle/src/helpers/server/b3508/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L34-L38
+  why: _is_proxy_admin function checking user role against LitellmUserRoles.PROXY_ADMIN.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L41-L70
+  why: _enforce_caller_supplied_provider_key security guard that requires non-admin callers to supply api_key; allows admin fallback to GOOGLE_API_KEY/GEMINI_API_KEY env vars.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L73-L109
+  why: _merge_query_params_into_data function that JSON-decodes litellm_params_template query param and merges into data without overwriting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L112-L139
+  why: _proxy_server_imports returning dict of proxy_server module globals.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L142-L211
+  why: create_gemini_agent POST /v1beta/agents route with body extraction, litellm_params_template merge, provider default, security check and delegation to base_process_llm_request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L214-L268
+  why: list_gemini_agents GET /v1beta/agents route with query param merge, provider default, security check and delegation to base_process_llm_request.
+dod:
+- text: >-
+    Proxy admin detection matches LiteLLM: _is_proxy_admin returns true when user_role equals or matches
+    LitellmUserRoles.PROXY_ADMIN.
+  proof:
+    - behavior-tests
+- text: >-
+    Non-admin callers without an api_key raise HTTPException with status 401 and include the credential requirement
+    message. Proxy admins and callers with api_key in data pass through.
+  proof:
+    - security-tests
+- text: >-
+    Query parameter litellm_params_template is JSON-decoded; malformed JSON becomes empty dict. Decoded values
+    are merged into data without overwriting existing keys.
+  proof:
+    - behavior-tests
+- text: >-
+    POST /v1beta/agents extracts litellm_params_template from body, merges it while preserving body precedence,
+    sets custom_llm_provider to gemini as default, enforces caller-supplied key, and calls base_process_llm_request
+    with route_type acreate_agent.
+  proof:
+    - oracle-routes
+- text: >-
+    GET /v1beta/agents initializes data with custom_llm_provider gemini, merges query-param litellm_params_template,
+    enforces caller-supplied key, and calls base_process_llm_request with route_type alist_agents.
+  proof:
+    - oracle-routes
+- text: >-
+    Both routes return ORJSONResponse. The security guard's 401 occurs before base_process_llm_request's exception
+    catch, so the 401 is not wrapped in generic exception handling.
+  proof:
+    - oracle-routes
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: proxy admin detection, query merge or guard behavior tests are absent, incomplete or fail
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_collection_routes(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: security-tests
+    why: 401 enforcement or credential validation tests are absent or fail
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_collection_routes::.*security(::|$)/)'
+  - id: oracle-routes
+    why: POST/GET /v1beta/agents routes fail oracle comparison or are absent
+    run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/agents/collection-routes
+oracle_cases:
+- tools/oracle/cases/agents/collection-routes/create-basic.yaml
+- tools/oracle/cases/agents/collection-routes/create-with-litellm-params-template.yaml
+- tools/oracle/cases/agents/collection-routes/create-non-admin-no-api-key-401.yaml
+- tools/oracle/cases/agents/collection-routes/create-admin-no-api-key-allowed.yaml
+- tools/oracle/cases/agents/collection-routes/create-malformed-template-becomes-empty.yaml
+- tools/oracle/cases/agents/collection-routes/list-basic.yaml
+- tools/oracle/cases/agents/collection-routes/list-with-query-param-template.yaml
+- tools/oracle/cases/agents/collection-routes/list-non-admin-no-api-key-401.yaml
+- tools/oracle/cases/agents/collection-routes/list-admin-no-api-key-allowed.yaml
+deviations:
+- what: Query-parameter litellm_params_template on GET /v1beta/agents is read and JSON-decoded; if malformed, it becomes empty dict rather than propagating a JSON error.
+  why: This matches LiteLLM's agents_endpoints.py _merge_query_params_into_data at lines 99-107, which catches json.JSONDecodeError and ValueError, setting template to empty dict.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L99-L107
+- what: Non-dict litellm_params_template (after JSON decode) is treated as no template; only dict templates are merged.
+  why: LiteLLM's _merge_query_params_into_data checks isinstance(template, dict) at line 105 before merging.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L105
+out_of_scope:
+- B3504 owns acreate and alist entry points that these routes delegate to.
+- B014 owns base_process_llm_request and _handle_llm_api_exception methods; this task only calls them.
+- B052 owns user_api_key_auth dependency and UserAPIKeyAuth type.
+- B1100 owns _read_request_body and _safe_get_request_query_params.
+- FastAPI/Starlette Request, Response and HTTPException types; this task uses them as they are provided.
+- The proxy's installed route registration and dispatcher lifecycle; this task only defines two route handlers.
+pitfalls:
+- >-
+  _enforce_caller_supplied_provider_key checks data.get("api_key") for truthiness, not data.get("api_key") is not None.
+  A data dict with api_key=None or api_key="" (empty string) fails the check and raises 401, even though the key
+  is present. This is intentional: only a non-empty api_key satisfies the guard.
+- >-
+  POST /v1beta/agents merges litellm_params_template from the body *before* calling _enforce_caller_supplied_provider_key,
+  so a template containing api_key satisfies the guard. GET /v1beta/agents does the same order: merge query params first,
+  then check. Body/query precedence is preserved because setdefault is used; existing keys are not overwritten.
+- >-
+  Both routes set custom_llm_provider to gemini as the default *before* the merge, so _merge_query_params_into_data
+  cannot override it. The fixed provider in the route handler takes precedence over the template.
+- >-
+  The security guard runs after the merge and before base_process_llm_request. If _enforce_caller_supplied_provider_key
+  raises HTTPException(401), that exception propagates directly to the HTTP response without being caught by the
+  surrounding try/except block that wraps base_process_llm_request's exceptions.
+- >-
+  _proxy_server_imports is called once per request; it reimports the same module globals each time. No caching or
+  lazy loading is applied; each request pays the import cost.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

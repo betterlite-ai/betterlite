@@ -1,0 +1,98 @@
+id: B3364
+title: Container create and list HTTP execution
+description: >-
+  Implement the concrete collection HTTP steps in betterlite-core over existing provider
+  transforms, preserving logging before send and transport-error conversion before response
+  transformation. The create handler accepts a container name, create request params, provider
+  config, litellm_params, logging object, optional headers, timeout (default 600), async flag
+  and optional HTTP client. It validates environment to get headers with auth, overlays extra
+  headers after validation, fetches api_base from provider config with the params dict, transforms
+  the request to JSON, logs the pre-call state, POSTs with the timeout argument, catches transport
+  exceptions and delegates to _handle_error, validates response status with raise_for_error_status,
+  and transforms the response to ContainerObject. The list handler follows the same outline for
+  GET: validates environment, overlays extra headers, gets api_base, transforms request (returning
+  url and params), logs, GETs without timeout argument using the selected client's deadline (and
+  passes params or None to preserve any query string already in api_base, e.g. Azure api-version),
+  catches transport errors, validates status and transforms response to ContainerListResponse.
+  Both handlers support sync execution with delegation to async when _is_async=True; the async
+  implementations are separate coroutines. Client selection defaults to a new httpx instance by
+  type checking when not supplied. Clients must be pooled instances supplied from B173; the
+  handler selects between them by sync/async type. Header overlays use the map after provider
+  validation, including any in-place auth mutation.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_collection_http.rs
+    - crates/betterlite-core/src/api/container_collection_http/tests.rs
+    - tools/oracle/cases/containers/create-and-list-http/**
+    - tools/oracle/helpers/b3364.py
+    - tools/oracle/helpers/b3364/**
+    - tools/oracle/src/helpers/core_ops/b3364.rs
+    - tools/oracle/src/helpers/core_ops/b3364/**
+    - crates/betterlite-core/src/api/container_collection_http/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8801-8888
+    why: Sync container create handler; client selection, environment validation, header overlays, api_base fetching, request transformation, logging, POST with timeout, error handling and response transformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8890-8966
+    why: Async container create handler; identical flow with await and async client dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8968-9058
+    why: Sync container list handler; environment validation, header overlays, request transformation to url and params, logging, GET without timeout, error handling and response transformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9060-9137
+    why: Async container list handler; identical pattern with await and async client.
+dod:
+  - text: Container create handler accepts name, create params, provider config, litellm_params, logging, optional headers, timeout (default 600), async flag and client; validates environment, overlays headers, gets api_base, transforms request, logs, POSTs with timeout, catches transport errors and transforms response.
+    proof: [container-create-tests, container-collection-http-corpus]
+  - text: Container list handler accepts provider config, litellm_params, logging, optional after/limit/order/headers/query, timeout (default 600), async flag and client; validates, overlays, transforms to url/params, logs, GETs without timeout, catches errors and transforms response.
+    proof: [container-list-tests, container-collection-http-corpus]
+  - text: Both handlers support sync execution delegating to async when _is_async=True, and async coroutine execution with matching signatures.
+    proof: [container-create-tests, container-list-tests, container-collection-http-corpus]
+  - text: Client selection defaults to new httpx instance by type checking; header overlays apply after provider validation including auth mutations.
+    proof: [container-create-tests, container-list-tests]
+  - text: Transport errors convert through _handle_error before raising; response errors raise through raise_for_error_status before transformation.
+    proof: [container-collection-http-corpus]
+  - text: Create handler passes timeout explicitly to POST; list handler omits timeout and uses selected client's deadline.
+    proof: [container-create-tests, container-list-tests, container-collection-http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: container-create-tests
+      why: Create handlers fail, do not exist, or client selection and timeout behavior differ from the source
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_collection_http::create/)'
+    - id: container-list-tests
+      why: List handlers fail, do not exist, or pagination and GET timeout behavior differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_collection_http::list/)'
+    - id: container-collection-http-corpus
+      why: HTTP cases fail, do not replay corpus, or request/response transformation differs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/containers/create-and-list-http/)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/containers/create-and-list-http/
+oracle_cases:
+  - tools/oracle/cases/containers/create-and-list-http/create-successful.yaml
+  - tools/oracle/cases/containers/create-and-list-http/create-transport-error.yaml
+  - tools/oracle/cases/containers/create-and-list-http/create-provider-error.yaml
+  - tools/oracle/cases/containers/create-and-list-http/list-successful.yaml
+  - tools/oracle/cases/containers/create-and-list-http/list-transport-error.yaml
+  - tools/oracle/cases/containers/create-and-list-http/list-provider-error.yaml
+deviations:
+  - what: Create handler passes timeout explicitly to the httpx POST call, while list handler omits timeout and uses the selected client's existing deadline instead.
+    why: The LiteLLM source explicitly passes timeout to create POST but omits it for list GET, retaining the selected client's own deadline behavior for the list operation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8874-8875
+  - what: List handler passes params or None to httpx GET; an empty dict becomes None to preserve any query string already in api_base (e.g. Azure api-version).
+    why: An empty dict passed as params to httpx strips the URL's own query string, breaking Azure container list URLs with api-version; None leaves them intact and matches the source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9044
+out_of_scope:
+  - B3360 owns the typed container operation contracts, create/list optional params and response types; no contract definitions are built here.
+  - B3363 owns the generic container file handler and raise_for_error_status; this task reuses those without modification.
+  - B522 owns provider transformations (validate_environment, get_complete_url, transform_container_create_request, transform_container_create_response, transform_container_list_request, transform_container_list_response); this task calls them without reimplementation.
+  - B547 owns Azure-specific provider overrides; inherited methods are used as configured.
+  - B173 owns HTTP client pooling and async selection; this task uses its provided clients.
+  - B249 owns logging facade and pre_call method; this task calls it with the transformed request data.
+  - B2402 owns _handle_error conversion; this task delegates transport errors to it before raising.
+pitfalls:
+  - Create handler passes timeout explicitly to POST; list handler omits timeout for GET, retaining the client's deadline; a future caller must not assume per-call timeout control on list operations.
+  - Extra headers overlay the map after provider validation, overriding headers set by validate_environment including auth mutations; order matters.
+  - Empty params dict must become None before GET call to preserve any query string already in api_base; passing an empty dict strips the URL's query string and breaks Azure container listing.
+  - Both handlers catch all exceptions from the HTTP layer and convert them through _handle_error; non-HTTP errors surface as transformed LiteLLM exceptions.
+  - The sync variant returns a Union that resolves to a Coroutine when _is_async=True; callers must await the result in async contexts.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

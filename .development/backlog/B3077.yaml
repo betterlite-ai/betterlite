@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Expose Vantage settings management routes
 status: todo
 depends_on: [B052, B189, B244, B725, B3067, B3075, B3079]
-file: null
+file: tasks/B3077-vantage-settings-routes.yaml
 covers:
   - "litellm/proxy/spend_tracking/vantage_endpoints.py"
 parent: B073

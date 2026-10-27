@@ -1,0 +1,97 @@
+id: B3365
+title: Container retrieve and delete HTTP execution
+description: >-
+  Implement the container resource HTTP handlers in betterlite-core for retrieve and delete
+  operations using decoded container IDs. Preserve logging before send, transport-error
+  conversion before response transformation, and client deadline behavior. The retrieve
+  handler accepts a container ID, optional headers and query additions, validates the
+  provider environment, transforms the request through the provider config, logs the
+  pre-call state, sends a GET without timeout argument (using the selected client's
+  deadline), and transforms the response. The delete handler follows the same pattern
+  with a DELETE request instead. Both handlers support sync and async execution through
+  the same facade: the sync variant delegates to a separate async coroutine when
+  _is_async=True, while the async implementation awaits. Clients default to a new httpx
+  instance (sync or async per variant) when not supplied, selected by type checking.
+  Both handlers catch transport exceptions and delegate error conversion to the shared
+  _handle_error before raising. Response errors raise through raise_for_error_status
+  before transformation.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_resource_http.rs
+    - crates/betterlite-core/src/api/container_resource_http/tests.rs
+    - tools/oracle/helpers/b3365.py
+    - tools/oracle/helpers/b3365/**
+    - tools/oracle/src/helpers/core_ops/b3365.rs
+    - tools/oracle/src/helpers/core_ops/b3365/**
+    - crates/betterlite-core/src/api/container_resource_http/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9139-L9227
+    why: Sync and async retrieve handlers, container ID handling, environment validation, logging, error handling and response transformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9229-L9306
+    why: Async retrieve handler concurrent pattern and GET timeout behavior (omitted).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9308-L9396
+    why: Sync delete handler with DELETE request construction and response transformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9398-L9475
+    why: Async delete handler pattern and response transformation.
+
+dod:
+  - text: Container retrieve handler accepts container ID, optional headers and query parameters, provider config and logging; validates environment, transforms request, logs pre-call state, GETs without timeout argument, catches transport errors and transforms response.
+    proof: [container-retrieve-tests, container-resource-http-corpus]
+  - text: Container delete handler accepts container ID, transforms request with provider config, logs request state, DELETEs without timeout argument, and transforms response to DeleteContainerResult.
+    proof: [container-delete-tests, container-resource-http-corpus]
+  - text: Both handlers support sync execution delegating to async when _is_async=True, and async coroutine execution with matching signatures.
+    proof: [container-retrieve-tests, container-delete-tests, container-resource-http-corpus]
+  - text: Client selection defaults to new httpx instance by type checking; header overlays apply after provider validation including auth mutations.
+    proof: [container-retrieve-tests, container-delete-tests]
+  - text: Transport errors convert through _handle_error before raising; response errors raise through raise_for_error_status before transformation.
+    proof: [container-resource-http-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: container-retrieve-tests
+      why: Retrieve handler fails, does not exist, or client selection and GET timeout behavior differ from the source
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_resource_http::retrieve/)'
+    - id: container-delete-tests
+      why: Delete handler fails, does not exist, or DELETE request and response transformation behavior differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_resource_http::delete/)'
+    - id: container-resource-http-corpus
+      why: HTTP cases fail, do not replay corpus, or request/response transformation differs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/containers/retrieve-and-delete-http/)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/containers/retrieve-and-delete-http/
+
+oracle_cases:
+  - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-successful.yaml
+  - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-transport-error.yaml
+  - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-provider-error.yaml
+  - tools/oracle/cases/containers/retrieve-and-delete-http/delete-successful.yaml
+  - tools/oracle/cases/containers/retrieve-and-delete-http/delete-transport-error.yaml
+  - tools/oracle/cases/containers/retrieve-and-delete-http/delete-provider-error.yaml
+
+deviations:
+  - what: Retrieve and delete handlers omit the timeout argument to the HTTP client, using the client's existing deadline instead.
+    why: The LiteLLM source explicitly omits timeout for retrieve and delete operations, retaining the selected client's own deadline behavior, consistent with the list handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9210-L9214
+
+out_of_scope:
+  - B3360 owns the typed container operation contracts and response types; no contract definitions are built here.
+  - B3363 owns the generic container file handler and raise_for_error_status; this task reuses those without modification.
+  - B522 owns provider transformations (validate_environment, get_complete_url, transform_container_retrieve_request, transform_container_delete_request, etc.); this task calls them without reimplementation.
+  - B547 owns Azure-specific provider overrides; inherited methods are used as configured.
+  - B173 owns HTTP client pooling and async selection; this task uses its provided clients.
+  - B249 owns logging facade and pre_call method; this task calls it with the transformed request data.
+  - B2402 owns _handle_error conversion; this task delegates transport errors to it before raising.
+
+pitfalls:
+  - "Both handlers omit timeout entirely when calling GET or DELETE, retaining the client's deadline; a future caller must not assume per-call timeout control here."
+  - "Extra query parameters override those returned by transform_container_retrieve_request and transform_container_delete_request; caller overlays take precedence."
+  - Both handlers catch all exceptions from the HTTP layer and convert them through _handle_error; non-HTTP errors surface as transformed LiteLLM exceptions.
+  - "The sync variant returns a Union that resolves to a Coroutine when _is_async=True; callers must await the result in async contexts."
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

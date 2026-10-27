@@ -1,0 +1,199 @@
+id: B3616
+title: Pass-through configured route registration
+description: >-
+  Implement pass-through endpoint registration from configuration and database sources,
+  resolving header variable references and initializing both exact and subpath routes.
+
+  The configuration sources are merged from two places: endpoints defined in the typed config.yaml
+  (loaded by B002) and endpoints persisted in the database. When a pass-through endpoint from either
+  source lacks an `id` field, generate one as a UUID. For each endpoint, resolve any headers
+  that contain `os.environ/NAME` references to actual environment variable values using the
+  config's secret resolution. Do not alter defaults: where the raw LiteLLM dict omits `auth`,
+  keep it absent (falsy) rather than applying the typed config model's different default.
+
+  Register each endpoint exactly once per configuration load, using the SafeRouteAdder from B3614
+  to avoid FastAPI panics on duplicate routes. Register the exact path with every configured HTTP
+  method, or all five methods (GET, POST, PUT, DELETE, PATCH) if none are specified. If the
+  endpoint specifies `include_subpath: true`, also register a wildcard subpath route and add both
+  the exact and wildcard paths to LiteLLMRoutes.openai_routes when auth is required, so the auth
+  system sees them as protected routes.
+
+  When routes are reloaded, stale registry entries from earlier loads must be removed (by exact
+  route key, not endpoint ID) while preserving their path entries in openai_routes if those paths
+  are still owned by a live endpoint registered in the same cycle.
+
+  After every endpoint registration attempt, track its route key in a visited set. Remove all
+  registered routes whose keys are not in the visited set, cleaning up entries from the prior
+  configuration snapshot without leaving orphaned routes in the registry. Do not call the route
+  factory or the HTTP client here; B3615 owns the route creation and attach of the handler.
+
+  Call the initialization function from the proxy startup and reload paths. Its signature takes
+  a list of endpoints from the database and/or config, plus an optional config file path to
+  thread through to B3615 for S3/GCS config handlers. Leave the config_file_path as None when
+  called from the database-overlay or runtime API path, so the gate in get_instance_fn fires
+  correctly and disallows remote S3/GCS handlers at runtime.
+
+  The registry itself is a module-global dict keyed by route keys ({id}:{type}:{path}:{methods})
+  with values holding endpoint metadata and passthrough params (target, headers, methods, etc.).
+  This is the same registry that B3614 queries for collision detection and lookup. Preserve the
+  order of endpoints as they appear in the combined list, since LiteLLM's first-match logic
+  relies on it.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough/route_registration.rs
+    - crates/betterlite-server/src/passthrough/route_registration/tests.rs
+    - crates/betterlite-server/src/passthrough/route_registration/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L154-L198
+    why: set_env_variables_in_header resolves os.environ/ references in custom headers, including special case for LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY base64 encoding
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2956-L3121
+    why: add_exact_path_route and add_subpath_route register routes with SafeRouteAdder and update the global registry
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3240-L3411
+    why: _get_combined_pass_through_endpoints, _register_pass_through_endpoint, initialize_pass_through_endpoints orchestrate the flow
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2505-L2533
+    why: PassThroughGenericEndpoint with auth default set to True, the exact typed-config default this task must not apply to raw dicts
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2878-L2952
+    why: SafeRouteAdder and route registry lookup (B3614's responsibility, not this task)
+
+dod:
+  - text: Environment variables in custom headers with os.environ/NAME syntax are resolved to their values at registration time through the config loader.
+    proof: [header-env-resolution]
+
+  - text: Custom headers named LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are base64 encoded and combined into a single Authorization header with Basic scheme, not passed as plain os.environ/ substitutions.
+    proof: [langfuse-auth-header-encoding]
+
+  - text: Exact path routes are registered with SafeRouteAdder for every configured HTTP method, or all five (GET, POST, PUT, DELETE, PATCH) if none are specified.
+    proof: [exact-route-registration]
+
+  - text: Subpath routes are registered when include_subpath is true, creating a wildcard route under the same endpoint.
+    proof: [subpath-route-registration]
+
+  - text: Routes requiring auth are added to LiteLLMRoutes.openai_routes so the auth system protects them.
+    proof: [auth-route-visibility]
+
+  - text: Endpoints without an id field receive a generated UUID at registration time.
+    proof: [endpoint-id-generation]
+
+  - text: Config and database endpoints are merged in the order supplied, and routes are registered in that order.
+    proof: [route-order-preservation]
+
+  - text: Missing path field in an endpoint raises ValueError with message "Path is required for pass-through endpoint" and stops registration of that endpoint.
+    proof: [missing-path-error]
+
+  - text: Missing target field causes registration to return early without creating a route, even if auth gating or openai_routes was already applied to the path in the same call.
+    proof: [missing-target-silent-return]
+
+  - text: Stale routes from prior configuration loads (by exact route key) are removed after initialization, but path entries in openai_routes are preserved if still owned by a live endpoint.
+    proof: [stale-route-removal]
+
+  - text: The missing auth default (false when absent) is preserved from the raw dict, not replaced by the typed config model's default.
+    proof: [raw-dict-auth-default]
+
+  - text: The config_file_path parameter is threaded through to create_pass_through_route for S3/GCS handler support on file loads, and set to None on database/runtime paths.
+    proof: [config-file-path-threading]
+
+checks:
+  optional: []
+  commands:
+    - id: header-env-resolution
+      why: environment variable substitution in headers is missing or broken
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::resolve_os_environ_in_headers)'
+
+    - id: langfuse-auth-header-encoding
+      why: LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY headers are not base64 encoded into Authorization headers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::langfuse_)'
+
+    - id: exact-route-registration
+      why: exact path routes are not registered correctly or method defaults are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::exact_route_)'
+
+    - id: subpath-route-registration
+      why: subpath/wildcard routes are missing or not created correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::subpath_route_)'
+
+    - id: auth-route-visibility
+      why: routes requiring authentication are not added to the auth system's visible routes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::auth_)'
+
+    - id: endpoint-id-generation
+      why: endpoints without id fields do not receive generated UUIDs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::id_generation)'
+
+    - id: route-order-preservation
+      why: routes are not registered in the order they appear in the merged endpoint list
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::order_)'
+
+    - id: missing-path-error
+      why: missing path field does not raise ValueError or error message is incorrect
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::missing_path)'
+
+    - id: missing-target-silent-return
+      why: missing target field does not return early or leaves orphaned entries in openai_routes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::missing_target)'
+
+    - id: stale-route-removal
+      why: stale routes from prior loads are not cleaned up or path entries are incorrectly removed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::stale_removal)'
+
+    - id: raw-dict-auth-default
+      why: missing auth field is not preserved as false, or typed defaults are incorrectly applied
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::auth_default)'
+
+    - id: config-file-path-threading
+      why: config_file_path is not threaded through correctly or is set when it should be None
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::config_file_path)'
+
+oracle_cases: []
+
+deviations:
+  - what: Missing auth field in raw endpoint dicts defaults to false (unauthenticated), not to the typed config model's default of true.
+    why: betterlite preserves the raw configuration behavior where an absent auth field means the endpoint is open; requiring explicit opt-in to auth matches the source and avoids silent changes in behavior.
+  - what: Custom headers named LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY receive special treatment as base64-encoded Basic Authorization headers.
+    why: Langfuse's integration requires a specific authorization header format distinct from other os.environ/ header substitutions.
+
+out_of_scope:
+  - Route factory creation and endpoint handler attachment (B3615).
+  - Lower route lookup, collision detection and registry queries (B3614).
+  - Config and database persistence of pass-through endpoints; this task only reads them.
+  - HTTP method normalization beyond passing configured methods to SafeRouteAdder.
+  - Guardrail processing beyond passing guardrails dict to the route factory.
+  - Cost per request validation; the endpoint dict value is passed through as-is.
+
+pitfalls:
+  - >-
+    When merging config and database endpoints, preserve their order: the first-match lookup
+    in B3614 depends on registration order.
+  - >-
+    Route keys in the visited set must exactly match the format {id}:{type}:{path}:{methods},
+    where methods are sorted and joined with commas.
+  - >-
+    When an endpoint specifies auth=true, add both the exact path and the wildcard path to
+    openai_routes, but only if include_subpath=true for the wildcard.
+  - >-
+    Do not normalize the auth field value; auth="true" (string) and auth=true (bool) both trigger
+    dependency injection, but both must be converted to a boolean before comparing.
+  - >-
+    The include_subpath field uses strict identity check (is True), not truthy comparison, so a string "true"
+    from a database-stored dict will not enable the subpath route. This differs from auth normalization
+    and means db-sourced dicts must have include_subpath as a boolean, not a string.
+  - >-
+    LiteLLM's LiteLLMRoutes.openai_routes is a global list that is appended to, not cleared;
+    check for path membership before adding to avoid duplicates across reload cycles.
+  - >-
+    The registry dict key must be stable across reloads for the same endpoint_id and path,
+    so stale-route removal by key can find and drop entries from old loads.
+  - >-
+    config_file_path must stay None when called from database/runtime APIs (not file load),
+    so the remote handler gate in the route factory does not accidentally allow S3/GCS handlers at runtime.
+  - >-
+    Missing target field causes early return before any route is registered, but any auth gating
+    and openai_routes path entries added before the target check are left behind. Callers must
+    ensure target is present before calling or be prepared to handle orphaned auth entries.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

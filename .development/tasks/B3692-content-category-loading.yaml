@@ -1,0 +1,101 @@
+id: B3692
+title: Content category loading and inherited severity policy
+description: >-
+  Build category decoding, file resolution, conditional inheritance and severity selection over B3691's data roots.
+  CategoryConfig holds a single loaded category: its name, description, default action, keywords with severity levels, exceptions, identifier words (for conditional matching), always-block keywords, inherited category names, additional block words, and phrase patterns. The constructor lowercases exceptions, identifier words and block words, compiles phrase patterns to regex, and logs warnings for invalid patterns.
+  _load_categories iterates over a list of ContentFilterCategoryConfig records, skips disabled categories, resolves the category file path (custom or default), and loads the category file to build CategoryConfig objects. It validates category_name against the regex `^[a-zA-Z0-9_\-]+$` (preventing path traversal) and warns-and-skips if category_name is missing, not a string, or invalid. It adds keywords to the category_keywords map if their severity meets the configured threshold, adds always_block_keywords to a separate always_block_category_keywords map, and invokes _load_conditional_category for categories with identifier words and either inherited categories or additional block words.
+  _load_conditional_category assembles block_words from inherited categories (extracted from their keywords that meet the threshold) plus additional_block_words, then stores the conditional category as identifier_words plus block_words plus action plus severity (always high).
+  _load_category_file dispatches to _load_category_file_json for .json files or _read_category_yaml for YAML. It returns a CategoryConfig. YAML files default default_action to "BLOCK" when omitted. It returns a CategoryConfig.
+  _read_category_yaml loads and returns the YAML dict as a CategoryFileData TypedDict.
+  _load_category_file_json loads the harm_toxic_abuse-style JSON format (list of {id, match (pipe-separated phrases), tags, severity (1-4)}), deduplicates phrases, maps severity 4,3 to high, 2 to medium, 1 to low, and builds keywords from pipe-separated match phrases. Missing or non-integer severity defaults to 2 (medium).
+  _should_apply_severity returns true if the given severity (low, medium, high) meets or exceeds the threshold.
+  _category_config_view extracts the enabled, action, category_file and category keys from a ContentFilterCategoryConfig dict.
+  _resolve_category_file_path returns a file path jailed to DATA_ROOTS unless LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true. For relative paths it tries suffixes under each root (bundled first) until a file exists. For absolute paths or existing files, it jails them unless allowed. If nothing matches and external paths are disallowed, it raises ValueError for paths that escape the roots.
+  _assert_within_data_roots raises ValueError if a path is not inside any of the named roots.
+  Dependencies on B3690: construct CategoryFileData and consume ContentFilterCategoryConfig/conditional records. Dependencies on B3691: _load_categories and _load_conditional_category call find_category_file. Dependencies on B002: extend the config loader to support LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS. Unresolved: path_utils.is_within and path_utils.try_safe_join.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/content_category.rs
+    - crates/betterlite-config/src/sections/content_category/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L191
+    why: CategoryFileData TypedDict and CategoryConfig.__init__ declaration and constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L366-L449
+    why: _category_config_view, _assert_within_data_roots and _resolve_category_file_path with path jailing and external-paths bypass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L451-L559
+    why: _load_categories with severity threshold filtering and dispatch to _load_conditional_category.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L561-L642
+    why: _load_conditional_category with inherited block words from category files and inheritance resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L644-L730
+    why: _load_category_file, _read_category_yaml, _load_category_file_json and _should_apply_severity with JSON format and deduplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/path_utils.py#L56-L70
+    why: join_within and safe_join functions (unresolved ownership).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/content_filter_data/__init__.py#L23-L39
+    why: DATA_ROOTS, DATA_DIR, CATEGORIES_DIR constants and find_category_file function from B3691.
+dod:
+  - text: CategoryConfig constructor loads from a CategoryFileData TypedDict, lowercases exceptions and word lists, and compiles phrase patterns to regex with warning-and-skip on invalid patterns.
+    proof: [category-config-tests]
+  - text: _load_categories validates category_name against regex `^[a-zA-Z0-9_\-]+$` and warns-and-skips when category_name is missing, not a string, or fails validation. It iterates categories, skips disabled ones, resolves file paths correctly, and loads each category file. Keywords and always_block_keywords are added to their respective maps only if their severity meets the threshold.
+    proof: [category-load-tests]
+  - text: _load_conditional_category extracts block_words from inherited categories (keywords that meet the severity threshold) plus additional_block_words, then stores the prepared conditional category record.
+    proof: [conditional-load-tests]
+  - text: _load_category_file dispatches to _load_category_file_json for .json files and _read_category_yaml for YAML files. YAML files default default_action to "BLOCK" when the YAML omits it.
+    proof: [category-file-tests]
+  - text: _load_category_file_json deduplicates phrases, maps severity 4-3 to high, 2 to medium, 1 to low, defaults missing or non-integer severity to 2 (medium), and builds keywords from pipe-separated match phrases.
+    proof: [category-file-tests]
+  - text: _should_apply_severity correctly compares severity levels against a threshold (low, medium, high).
+    proof: [severity-tests]
+  - text: _resolve_category_file_path jails paths to DATA_ROOTS unless LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true. For relative paths it tries suffixes under each root. For absolute/existing paths it checks the jail. On failure it raises ValueError.
+    proof: [path-resolution-tests]
+  - text: _assert_within_data_roots raises ValueError if a path escapes every named root.
+    proof: [path-assertion-tests]
+  - text: Warning-and-skip behavior is preserved when loading fails; partial updates before later errors are written.
+    proof: [partial-update-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: category-config-tests
+      why: CategoryConfig constructor, phrase pattern compilation, or lowercasing fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::category_config/)'
+    - id: category-load-tests
+      why: _load_categories, severity filtering, or keyword map construction fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::load_categories/)'
+    - id: conditional-load-tests
+      why: _load_conditional_category, inheritance resolution, or block word assembly fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::conditional/)'
+    - id: category-file-tests
+      why: _load_category_file, _read_category_yaml, or _load_category_file_json fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::file/)'
+    - id: severity-tests
+      why: _should_apply_severity severity comparison is incorrect
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::severity/)'
+    - id: path-resolution-tests
+      why: _resolve_category_file_path path jailing, relative resolution, or LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS handling fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::path_resolution/)'
+    - id: path-assertion-tests
+      why: _assert_within_data_roots boundary check fails
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::path_assertion/)'
+    - id: partial-update-tests
+      why: Partial updates and warning-and-skip behavior are not preserved
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::content_category::partial_updates/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Final constructor calls to build ContentFilterGuardrail or other guardrails. This task only builds the loaded CategoryConfig records.
+  - Request routing or guardrail invocation. This task loads configurations, not routes requests.
+  - Pattern matching and keyword detection. B3693, B3694 and B3695 handle the evaluation side.
+pitfalls:
+  - "Category name validation: _load_categories must reject category names that are missing, not a string, or fail the regex `^[a-zA-Z0-9_\\-]+$` (prevents path traversal like \"../../etc/passwd\"). Warn and skip on all three cases, do not fail the entire load."
+  - "JSON phrase deduplication: keep track of seen phrases to avoid inserting the same phrase twice. A set of lowercase phrases prevents duplicates across items."
+  - "Inherited category resolution: find_category_file must be called with the inherited category name (with extensions removed), and severity filtering must apply to inherited keywords the same way it applies to local keywords."
+  - "Path jailing with try_safe_join: the function returns None if a path escapes the root. When no file exists under any root, raise ValueError to reject attempted path traversal, never silently fall back to an unsafe path."
+  - "LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true bypasses all jailing. In untrusted environments this is a security issue; preserve the warning log."
+  - "Phrase pattern compilation: catch re.error and log a warning, then skip the invalid pattern and continue loading the category."
+  - "Severity order: low=0, medium=1, high=2. A threshold of \"medium\" means severity must be >= 1, so \"low\" items do not pass."
+  - "JSON severity defaults: when a JSON item's severity is missing or not an integer, default to 2 (medium). YAML files default default_action to \"BLOCK\" when the key is omitted."
+  - "CategoryConfig constructor must lowercase exceptions, identifier_words and additional_block_words. Lowercasing happens in __init__, not in _load_category_file."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1
