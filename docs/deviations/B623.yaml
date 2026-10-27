@@ -1,0 +1,5 @@
+task: B623
+deviations:
+  - what: A truthy non-object value where LiteLLM calls dict methods (invocation metrics that are true, a nonzero number or a string naming a metric key; a message or usage that is a non-empty list, string or nonzero number) counts as an empty object instead of raising TypeError or AttributeError, and a usage list of key/value pairs is not turned into an object.
+    why: Bedrock always sends these fields as objects, and failing a whole stream over a malformed usage field would be worse than reading it as empty.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L898-L913
