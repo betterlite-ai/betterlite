@@ -1,0 +1,176 @@
+id: B3245
+title: Policy validation and concrete attachment scopes
+description: >-
+  Build validation types and the `PolicyValidator` to check policy configuration
+  correctness, guardrail registry membership, team/key existence, model resolution,
+  and inheritance chain validity. Validate policies at configuration time, catching
+  invalid guardrails, undefined parents, circular inheritance and depth limits,
+  missing scope entities, and pipeline step guardrail references.
+
+  Preserve warning-and-assume-valid on database and router lookup failures when no
+  storage is available, empty-registry guardrail validation bypass (no checks when
+  the registry is empty), and the absence of scope validation in validate_policies
+  itself (only find_invalid_scope_entries validates concrete scope entries).
+
+  Validation type records include error enum variants (INVALID_GUARDRAIL, INVALID_TEAM,
+  INVALID_KEY, INVALID_MODEL, INVALID_INHERITANCE, CIRCULAR_INHERITANCE, INVALID_SCOPE,
+  INVALID_SYNTAX), error records with policy name, error type, message, field and
+  value, request/response envelopes and response records with valid boolean and error/warning
+  lists. Wildcard pattern detection uses trailing-star matching; patterns like "team-*"
+  are never validated by existence since they may match future entities.
+scope:
+  paths:
+    - crates/betterlite-policy/src/validation.rs
+    - crates/betterlite-policy/src/validation/**
+    - tools/oracle/cases/policy-validation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/validation_types.py#L14-L78
+    why: "Complete coverage of validation enums, error records, request/response types."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L38-L51
+    why: "PolicyValidator initialization with optional Prisma client and router."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L66-L82
+    why: "get_available_guardrails reads IN_MEMORY_GUARDRAIL_HANDLER; warns on registry failure and returns empty set."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L84-L104
+    why: "check_team_alias_exists queries database or assumes valid; warns on error."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L106-L126
+    why: "check_key_alias_exists queries database or assumes valid; warns on error."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L128-L155
+    why: "check_model_exists checks router model_names and pattern_router, or assumes valid; warns on error."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L157-L174
+    why: "_scope_error builds error messages for invalid team/key/model with wildcard suggestion."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L176-L220
+    why: "find_invalid_scope_entries validates concrete scope entries, skipping wildcard patterns."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L222-L294
+    why: "_validate_inheritance_chain detects circular inheritance, missing parents and max depth."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L296-L360
+    why: "validate_policies checks guardrails and inheritance; no scope validation in this method."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L362-L403
+    why: "_validate_pipeline checks guardrail membership and registry existence in pipeline steps."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L405-L452
+    why: "validate_policy_config parses raw config and calls validate_policies; handles parse errors."
+dod:
+  - text: "PolicyValidationErrorType enum has INVALID_GUARDRAIL, INVALID_TEAM, INVALID_KEY, INVALID_MODEL, INVALID_INHERITANCE, CIRCULAR_INHERITANCE, INVALID_SCOPE and INVALID_SYNTAX variants."
+    proof: [error-types]
+  - text: "PolicyValidationError record holds policy_name, error_type, message, field and value, all with exact LiteLLM field names and semantics."
+    proof: [error-records]
+  - text: "PolicyValidationResponse holds valid boolean and errors/warnings lists; valid is true iff errors list is empty."
+    proof: [response-records]
+  - text: "PolicyValidator::new takes optional database and router dependencies; both are None-safe with graceful degradation."
+    proof: [validator-init]
+  - text: "get_available_guardrails calls IN_MEMORY_GUARDRAIL_HANDLER.list_in_memory_guardrails and returns a set of guardrail names, or empty set on error with warning logged."
+    proof: [guardrail-lookup]
+  - text: "check_team_alias_exists returns true when the prisma client is None or the team alias exists; warns and returns true on database error."
+    proof: [team-alias-checks]
+  - text: "check_key_alias_exists returns true when the prisma client is None or the key alias exists; warns and returns true on database error."
+    proof: [key-alias-checks]
+  - text: "check_model_exists returns true when the router is None, the model is in router.model_names, or matches via pattern_router.get_deployments_by_pattern; warns and returns true on router error."
+    proof: [model-checks]
+  - text: "find_invalid_scope_entries returns errors only for concrete (non-wildcard) entries that do not exist; patterns with trailing star are skipped and never validated."
+    proof: [scope-validation]
+  - text: "find_invalid_scope_entries uses RouteChecks._is_wildcard_pattern to detect patterns; only trailing-star patterns match the detection rule."
+    proof: [scope-pattern-detection]
+  - text: "_validate_inheritance_chain detects circular inheritance, missing parent policies, and depth exceeding 100; parent_not_found is a blocking error."
+    proof: [inheritance-validation]
+  - text: "validate_policies calls get_available_guardrails once and checks every add/remove guardrail; errors on invalid guardrails in add list only when registry is non-empty."
+    proof: [policy-guardrail-validation]
+  - text: "Invalid guardrails in guardrails.remove produce warnings (non-blocking), not errors, when the registry is non-empty; empty registry skips the check for remove as well."
+    proof: [policy-guardrail-warning]
+  - text: "validate_policies calls _validate_pipeline and _validate_inheritance_chain; it does not call find_invalid_scope_entries."
+    proof: [policy-validation-structure]
+  - text: "_validate_pipeline checks that every guardrail in pipeline.steps is in the policy's guardrails.add list and exists in the registry (when registry is non-empty)."
+    proof: [pipeline-validation]
+  - text: "validate_policy_config parses each policy using PolicyRegistry._parse_policy; returns early with parse errors if any policy fails to parse."
+    proof: [config-parsing]
+  - text: "validate_policy_config returns PolicyValidationResponse with valid=false and only errors when parse errors exist; parse errors do not trigger validate_policies."
+    proof: [config-parse-error-handling]
+checks:
+  optional: []
+  commands:
+    - id: error-types
+      why: PolicyValidationErrorType enum does not exist or is missing variants
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(error_types|validation_error_type)/)'
+    - id: error-records
+      why: PolicyValidationError record tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(error_record|validation_error_response)/)'
+    - id: response-records
+      why: PolicyValidationResponse record tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::response_records/)'
+    - id: validator-init
+      why: PolicyValidator initialization tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::validator_init/)'
+    - id: guardrail-lookup
+      why: get_available_guardrails tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(guardrail_lookup|guardrail_registry|empty_registry)/)'
+    - id: team-alias-checks
+      why: check_team_alias_exists tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::team_alias/)'
+    - id: key-alias-checks
+      why: check_key_alias_exists tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::key_alias/)'
+    - id: model-checks
+      why: check_model_exists tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::model_exists/)'
+    - id: scope-validation
+      why: find_invalid_scope_entries tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::scope_validation/)'
+    - id: scope-pattern-detection
+      why: wildcard pattern detection tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(pattern|wildcard)/)'
+    - id: inheritance-validation
+      why: inheritance chain validation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::inheritance/)'
+    - id: policy-guardrail-validation
+      why: policy guardrail validation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::policy_guardrails/)'
+    - id: policy-guardrail-warning
+      why: guardrail remove-list warning tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(guardrail_remove|guardrail_warning)/)'
+    - id: policy-validation-structure
+      why: validate_policies does not follow expected structure or tests are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::validate_policies/)'
+    - id: pipeline-validation
+      why: pipeline step validation tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::pipeline/)'
+    - id: config-parsing
+      why: config parsing tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::config_parse/)'
+    - id: config-parse-error-handling
+      why: config parse error handling tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::parse_error/)'
+oracle_cases: []
+deviations:
+  - what: "Registry lookup failures (missing guardrail handler, unexpected exception) return an empty set and log a warning instead of surfacing an error."
+    why: "LiteLLM calls get_available_guardrails and silently continues on failure; betterlite preserves the graceful degradation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L73-L82
+  - what: "Database and router lookup failures (Prisma unavailable, router unavailable, query exceptions) return true (assume valid) and log a warning."
+    why: "LiteLLM degrades gracefully when the database or router is not available; validation assumes entities exist rather than blocking configuration."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L94-L155
+  - what: "find_invalid_scope_entries is not called within validate_policies; callers must call it explicitly to validate scope."
+    why: "LiteLLM's validate_policies does not validate scope entries; scope validation is a separate operation available to callers that need it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L296-L360
+  - what: "Wildcard pattern detection uses trailing-star matching (RouteChecks._is_wildcard_pattern); patterns like 'team-*' or 'model-*' are treated as patterns and never validated."
+    why: "LiteLLM and betterlite-auth both treat only trailing-star patterns as valid wildcards; regex patterns are not supported in scope validation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L176-L220
+out_of_scope:
+  - "PolicyValidator.is_wildcard_pattern (policy_validator.py L53-L64): no caller at the pin; active scope validation calls RouteChecks._is_wildcard_pattern instead."
+  - "GuardrailRegistry.list_in_memory_guardrails (unresolved): B104 has no concrete task file to determine its owner."
+  - "PolicyValidateRequest (validation_types.py L69-L78): request envelope for /policy/validate route owned by B3250; route parsing is proven by B3250's oracle cases."
+  - "PolicyRegistry._parse_policy: owned by B3241 since B3245 calls it from validate_policy_config."
+  - "RouteChecks._is_wildcard_pattern: owned by B882 since B3245 calls it for pattern detection."
+  - "VerificationTokenRepository and TeamRepository database operations: owned by B722 and B724 respectively; B3245 uses their table.find_first methods."
+  - "PatternMatchRouter.get_deployments_by_pattern: owned by B367 since B3245 calls it for model validation."
+pitfalls:
+  - "validate_db parameter in validate_policies and validate_policy_config is accepted but never read; the Rust port keeps the parameter inert rather than inventing gating logic."
+  - "Empty guardrail registry returns empty set from get_available_guardrails; validate_policies then skips guardrail validation (no errors when registry is empty)."
+  - "Database and router lookup failures return true, not false, so missing dependencies do not block policy validation."
+  - "find_invalid_scope_entries is not called by validate_policies; callers must invoke it separately to validate concrete scope entries."
+  - "Inheritance validation uses set() to detect cycles; the parent must be added to visited before recursing to catch parent-child cycles."
+  - "Maximum inheritance depth is exactly 100; depth=0 triggers the depth-exceeded error, so max_depth starts at 100 for a policy with no parents."
+  - "Wildcard detection uses only trailing '*'; patterns like 'team-prod' or 'model_gpt4*' without trailing star are treated as concrete and validated by existence."
+  - "Pipeline step validation checks two invariants: step.guardrail must be in policy.guardrails.add AND in the registry; both failures are errors."
+  - "validate_policy_config returns early with parse errors and does not call validate_policies when any policy fails to parse."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

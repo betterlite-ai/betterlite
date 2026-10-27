@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP stored server encoding and secret fields
 status: todo
 depends_on: [B1600, B192, B858]
-file: null
+file: tasks/B4710-mcp-stored-server-encoding.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/db.py"
 parent: B139

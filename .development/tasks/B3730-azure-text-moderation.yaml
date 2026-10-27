@@ -1,0 +1,185 @@
+id: B3730
+title: Azure text moderation thresholds and hooks
+description: >-
+  Build text moderation chunk submission and category/global/default severity evaluation,
+  plus native request, response and per-chunk stream hooks. Keep the pinned truthiness
+  behavior for an explicit zero threshold and the distinction between absent and empty
+  category maps.
+
+  Implement three hooks: pre_call scans prompts from chat or Responses API inputs,
+  post_call_success scans response content extracted from ModelResponse choices,
+  and post_call_streaming scans each chunk during streaming. Chunk submission
+  iterates text chunks through async_make_request (already split by base.split_text_by_words
+  at 10,000-character boundaries), checks severity thresholds, and raises HTTPException
+  to block on violation.
+
+  Severity evaluation checks thresholds in order: category-specific thresholds if
+  severity_threshold_by_category is set, global severity_threshold if set, or
+  default_severity_threshold (2) if neither is set. The truthiness check `if
+  severity_threshold is None` correctly distinguishes absent threshold (None) from
+  an explicit zero threshold (0); keep this distinction to respect zero as a valid
+  input. Category maps can be absent (None) or empty ({}); honor both cases.
+
+  Stream violations emit `data: {"error": <exception detail>}\n\n` rather than
+  raising from the per-chunk hook, allowing caller-managed streaming to emit or
+  suppress the error frame.
+
+  Direct dependency: B3728 for AzureGuardrailBase.__init__, _post_to_content_safety,
+  split_text_by_words, get_user_prompt_from_request and shared AzureContentSafetyConfigModel.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/azure_text_moderation.rs
+    - crates/betterlite-guardrails/src/azure_text_moderation/**
+    - tools/oracle/cases/guardrails/azure/text-moderation/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L44-L103
+    why: >-
+      get_supported_event_hooks returning [pre_call, post_call], __init__ storing severity
+      thresholds and optional params, get_config_model returning the config model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L105-L150
+    why: >-
+      async_make_request splitting text at 10,000-character boundaries, iterating chunks,
+      calling _post_to_content_safety and checking severity threshold on each chunk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L152-L164
+    why: >-
+      apply_guardrail iterating texts from GenericGuardrailAPIInputs and calling
+      async_make_request for each text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L165-L215
+    why: >-
+      check_severity_threshold evaluating category-specific thresholds, global threshold
+      and default threshold with correct truthiness distinction for explicit zero.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L217-L246
+    why: >-
+      async_pre_call_hook extracting user prompt from request, handling missing messages,
+      and calling async_make_request to scan before LLM submission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L248-L266
+    why: >-
+      async_post_call_success_hook iterating ModelResponse.choices, extracting content
+      via _message_content_to_text and calling async_make_request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L268-L290
+    why: >-
+      async_post_call_streaming_hook checking per-chunk response, catching HTTPException
+      and emitting error frame as `data: {"error": ...}\n\n`.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_text_moderation.py#L1-L83
+    why: >-
+      All request/response TypedDict records with Azure's field names (categoriesAnalysis,
+      blocklistsMatch), optional-parameter records, category names and config model with
+      ui_friendly_name.
+
+dod:
+  - text: >-
+      get_supported_event_hooks returns exactly [pre_call, post_call], __init__
+      stores severity_threshold (None or int), severity_threshold_by_category (None or dict),
+      and optional_params_request_body with categories, blocklistNames, haltOnBlocklistHit
+      and outputType fields.
+    proof: [text-mod-lifecycle, text-mod-init-cases]
+  - text: >-
+      async_make_request iterates text chunks from split_text_by_words, submits each
+      to _post_to_content_safety, checks severity threshold on every chunk (not just the last),
+      and raises HTTPException on violation to block the request.
+    proof: [text-mod-submission-cases]
+  - text: >-
+      check_severity_threshold evaluates thresholds in order: category-specific if
+      severity_threshold_by_category is not None, global if severity_threshold is not None,
+      or default (2) if both are None. Zero threshold is a valid explicit input (0 != None).
+    proof: [text-mod-threshold-cases]
+  - text: >-
+      async_pre_call_hook extracts user prompt from chat or Responses API request,
+      returns data unchanged if no messages exist, and calls async_make_request to scan text.
+    proof: [text-mod-pre-call-cases]
+  - text: >-
+      async_post_call_success_hook iterates ModelResponse.choices, extracts content
+      via _message_content_to_text (handles strings and lists of content blocks),
+      and calls async_make_request for each non-empty text.
+    proof: [text-mod-post-call-cases]
+  - text: >-
+      async_post_call_streaming_hook calls async_make_request on each chunk, catches
+      HTTPException, and returns error frame as `data: {"error": <json>}\n\n` instead
+      of raising to allow streaming continuation.
+    proof: [text-mod-streaming-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: text-mod-lifecycle
+      why: >-
+        get_supported_event_hooks does not return [pre_call, post_call] or the lifecycle
+        is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_lifecycle::/)' && grep -q "fn get_supported_event_hooks" crates/betterlite-guardrails/src/azure_text_moderation.rs && grep -A 5 "get_supported_event_hooks" crates/betterlite-guardrails/src/azure_text_moderation.rs | grep -q "pre_call.*post_call"
+    - id: text-mod-init-cases
+      why: __init__ does not store severity thresholds and optional params correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_initialization::/)'
+    - id: text-mod-submission-cases
+      why: async_make_request does not iterate chunks or check severity on each chunk
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_submission::/)'
+    - id: text-mod-threshold-cases
+      why: >-
+        check_severity_threshold does not implement correct evaluation order or truthiness
+        distinction
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_thresholds::/)'
+    - id: text-mod-pre-call-cases
+      why: async_pre_call_hook does not extract prompt or scan correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_pre_call::/)'
+    - id: text-mod-post-call-cases
+      why: async_post_call_success_hook does not extract response content or scan correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_post_call::/)'
+    - id: text-mod-streaming-cases
+      why: async_post_call_streaming_hook does not emit error frame or returns wrong format
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_streaming::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Default severity threshold is 2 (LiteLLM modern framework default), distinct from
+      legacy Azure SDK hook default of 4.
+    why: >-
+      B3728 owns the legacy hook with its own default of 4. B3730 uses the modern
+      framework default of 2 to match the LiteLLM pinned behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L46
+
+out_of_scope:
+  - >-
+    Guardrail framework contract (CustomGuardrail.__init__, decorator dispatch, logging):
+    owned by B104 (framework).
+  - >-
+    Base Azure transport (__init__ via super, _post_to_content_safety, split_text_by_words,
+    get_user_prompt_from_request, AzureContentSafetyConfigModel): owned by B3728 (base).
+  - >-
+    Text content type checking (is_text_content_call_type) and message text iteration
+    (iter_message_text): owned by U1.
+  - "Standard guardrail logging (log_guardrail_information): owned by U1/U3."
+  - "Response/choice wire format constructors (Choices, ModelResponse): sourced from litellm imports."
+
+pitfalls:
+  - >-
+    The truthiness check `if severity_threshold is None` vs `if severity_threshold is not None`
+    correctly distinguishes an absent threshold (None) from an explicit zero threshold (0).
+    Respect zero as a valid input that blocks all content.
+  - >-
+    severity_threshold_by_category can be None (not set) or {} (set to empty dict). Check
+    `if self.severity_threshold_by_category:` to skip it when None or empty; only iterate
+    categories if the dict is non-empty.
+  - >-
+    check_severity_threshold evaluates thresholds in strict order: category-specific first
+    (if set), then global (if set), then default. Early raise stops the check.
+  - >-
+    async_make_request must check severity on every chunk, not just the last one, to catch
+    violations that appear only in earlier chunks.
+  - >-
+    The streaming hook catches HTTPException and returns a JSON error frame; it does not
+    re-raise or let other exceptions escape the function.
+  - >-
+    _message_content_to_text extracts strings from content blocks in a list; empty blocks,
+    missing text fields and non-dict items are skipped.
+  - >-
+    async_post_call_success_hook iterates only ModelResponse instances (not all LLMResponseTypes);
+    skip other response types without error.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,29 @@
+kind: helper
+name: path-parameters-handling
+call:
+  openapi_schema_transforms:
+    function: add_request_schema
+    schema_name: EmbeddingRequest
+    paths: ["/engines/{model}/embeddings", /embeddings, /v1/embeddings, /odd, /absent]
+    schema:
+      type: object
+      required: [model, input]
+      properties:
+        model: {type: string}
+        input: {anyOf: [{type: string}, {items: {"$ref": "#/$defs/Token"}, type: array}]}
+      "$defs":
+        Token: {type: integer}
+    openapi:
+      paths:
+        /engines/{model}/embeddings:
+          post:
+            parameters:
+              - {name: model, in: path, required: true}
+              - {name: user, in: query}
+              - bare
+        /embeddings: {post: {parameters: {name: model, in: path}}}
+        /v1/embeddings: {get: {summary: list}}
+        /odd: {post: []}
+env: {}
+compare:
+  ignore: []

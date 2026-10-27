@@ -1,0 +1,93 @@
+id: B4300
+title: Normalize cache requests and retrieve embedding hits
+description: >-
+  Build per-request cache state, positional-argument projection and supported-call/store eligibility.
+  Retrieve per-input embedding hits, reject stale-format entries and retain the request's preset key
+  without keeping a logging-object reference cycle. The CachingHandler holds request kwargs with
+  logging objects removed, stores preset cache keys for stream-path re-use, and projects positional
+  arguments into kwarg form matching the original function signature. Cache eligibility filters by
+  supported call type (completion, embedding, text_completion, transcription, rerank) and cache
+  modes (no-cache, no-store controls). For embeddings, retrieve cache hits per input, filter by
+  format version (embedding_cache_format_version=2), and return which inputs still need fresh
+  lookups. The handler composes memory-store initialization, preset-key tracking and dual-cache
+  construction when Redis is available, preserving the handler's lifetime across streaming and
+  sync/async dispatch boundaries. No reference cycle to logging objects or stored results.
+scope:
+  paths:
+    - crates/betterlite-cache/src/handler.rs
+    - crates/betterlite-cache/src/handler/**
+    - tools/oracle/helpers/b4300.py
+    - tools/oracle/helpers/b4300/**
+    - tools/oracle/src/helpers/cache/b4300.rs
+    - tools/oracle/src/helpers/cache/b4300/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L71-L81
+  why: CachingHandlerResponse declaration and fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L87-L100
+  why: _drop_logging_obj_from_kwargs prevents reference cycles to logging objects.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L169-L171
+  why: _request_cache_key reads caller-supplied cache_key parameter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L174-L183
+  why: _CachedEmbeddingRecord validation and format-version check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L186-L202
+  why: _current_format_embedding_entry rejects stale format versions and converts to CachedEmbedding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L206-L226
+  why: LLMCachingHandler.__init__ stores request state, detects Redis tier and builds DualCache.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L454-L463
+  why: handle_kwargs_input_list_or_str projects embedding input field to list form.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L757-L832
+  why: _retrieve_from_cache normalizes request kwargs, handles embedding per-input cache hits and stream-path fallbacks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1125-L1134
+  why: _should_store_result_in_cache filters by call type and no-store cache control.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1156-L1174
+  why: _is_call_type_supported_by_cache matches call type name against cache.supported_call_types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1289-L1307
+  why: convert_args_to_kwargs projects positional arguments to kwargs by function signature inspection.
+dod:
+- text: The CachingHandler stores request_kwargs without litellm_logging_obj and detects logging cycles.
+  proof:
+  - handler-reference-cycle
+- text: Per-embedding cache hits are retrieved by input string, format-version 2 entries are validated and returned, older formats are rejected.
+  proof:
+  - cache-retrieval-behaviors
+- text: Supported call types include acompletion, aembedding, atext_completion, atranscription, arerank and aresponses (with responses alias); unsupported call types return false.
+  proof:
+  - cache-retrieval-behaviors
+- text: Preset cache keys are read from request kwargs and computed when absent; storage on handler enables stream-path reuse.
+  proof:
+  - cache-retrieval-behaviors
+- text: Request metadata removal (when metadata=null) and stream cache_key pre-computation are normalized before retrieval.
+  proof:
+  - cache-retrieval-behaviors
+checks:
+  optional: []
+  commands:
+  - id: handler-reference-cycle
+    why: Logging-object cycle prevention or handler construction is missing or broken
+    run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/::handler_reference_cycle(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: cache-retrieval-behaviors
+    why: Request normalization, embedding retrieval, call-type filtering or format validation fails
+    run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/::cache_retrieval_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+- tools/oracle/cases/caching/embedding-format-validation.yaml
+- tools/oracle/cases/caching/call-type-eligibility.yaml
+- tools/oracle/cases/caching/preset-cache-key.yaml
+deviations: []
+out_of_scope:
+- LiteLLM's `litellm.get_llm_provider` and model/provider resolution; consumed from B174's owned implementation.
+- Streaming response conversion and playback; owned by B4302.
+- Cache hit logging and callback dispatch; owned by B4301.
+- Dynamic cache object construction (memory vs Redis tier selection); owned by B4293.
+- Cached embedding response assembly and token merge logic; owned by B4303.
+- Request payload assembly and structured response objects; consumed from B004/B005/B189.
+- OTel span parent lookup helper; assigned to B110 by existing inventory.
+pitfalls:
+- Preset cache key computation uses the request's `cache_key` parameter if present, falling back to computing from request kwargs. The preset key is not the embedding-specific per-input key; the two are distinct and must not be confused in cache stamping or retrieval.
+- Embedding format validation rejects any cached entry whose format_version does not match EMBEDDING_CACHE_FORMAT_VERSION exactly; partial-version upgrades are not attempted, preserving freshness.
+- Calling `_drop_logging_obj_from_kwargs` copies the kwargs dict when litellm_logging_obj is present, so callers must preserve the returned dict through request lifetime to avoid re-parsing or re-computation.
+- The sync/async cache read path in _retrieve_from_cache checks `cache._supports_async()` to choose between async_get_cache and get_cache, not the context of the handler; fallback to sync read is transparent to the caller.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

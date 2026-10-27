@@ -1,4 +1,7 @@
+pub mod agent;
+pub mod agent_identity;
 pub mod agent_policy;
+pub mod agent_store;
 pub mod auth_admission;
 pub mod auth_backend_dispatch;
 pub mod auth_cache;
@@ -72,6 +75,7 @@ pub mod oauth_tokens;
 pub mod oidc_token_exchange;
 pub mod organization_route_policy;
 pub mod pass_through_registry;
+pub mod provider_resolution;
 pub mod rejection_provider;
 pub mod request_ban_catalog;
 pub mod request_body_safety;

@@ -1,0 +1,142 @@
+id: B3546
+title: Auto-router compression policy and guardrail execution
+description: >-
+  Build the auto-router compression policy resolver, which decouples compression
+  decisions between routing and model hops through a marker deployment. Resolve the
+  marker's routing and model compression choices from its litellm_params, suppress
+  other compression guardrails in trusted request context, and execute the routing
+  guardrail over the live request messages.
+
+  Implement in betterlite-router (Rust wrapper) with Python oracle adapters. The
+  auto router instructs the proxy which guardrail (if any) compresses for its
+  routing decision and model-side deployment; both hops must be consistent to avoid
+  double-counting saved tokens or restoring content dropped by another guardrail.
+
+  Policy resolution: read auto_router_routing_compression and auto_router_model_compression
+  from the marker's litellm_params in the resolved deployment. Normalize empty strings
+  and the sentinel "none" (case/whitespace insensitive) to None; all other non-empty
+  strings are guardrail names. Both unset keys mean no routing compression; a configured
+  value of "none" disables that hop. Tag-matched deployments (request tags that match
+  deployment tags) win over untagged markers; the first policy found stops the search.
+
+  Pre-call arming: when arm_pre_call runs, resolve the policy for the model alias
+  against the router's candidate deployments, set the suppressed guardrails in request
+  context (not replayable metadata), and arm the model-side guardrail if any by appending
+  it to metadata["guardrails"]. An armed guardrail is executed even if not default_on.
+  Suppress every other active compression guardrail so routing compression cannot restore
+  text removed by Headroom/Typesafe/Compresr.
+
+  Routing-message compression: when messages_for_routing runs, apply the routing
+  guardrail (if named in the policy) over the live request messages, never a
+  pre-guardrail snapshot, so the routing sees what masking guardrails stripped.
+  Call the initialized guardrail through the read-through lookup and invoke its
+  apply_guardrail method with structured_messages and a throwaway stats sink
+  (routing never double-counts into compression savings).
+
+  is_same property: true when both routing and model are equal (including both None),
+  false otherwise. Model-hop compression armed property: true only when the model-side
+  guardrail was actually found and added to metadata["guardrails"] during arming.
+
+  Own provider/sentinel/context declarations at auto_router_compression.py:24-31,41-43,
+  and the policy fields at 51-56. Counted span 24-258: 178 lines.
+
+scope:
+  paths:
+    - crates/betterlite-router/src/auto_router_compression.rs
+    - crates/betterlite-router/src/auto_router_compression/**
+    - tools/oracle/cases/auto_router_compression/**
+    - tools/oracle/helpers/b3546.py
+    - tools/oracle/helpers/b3546/**
+    - tools/oracle/src/helpers/router/b3546.rs
+    - tools/oracle/src/helpers/router/b3546/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L24-L31
+    why: Provider names, sentinel marker, and context variable declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L41-L49
+    why: Model-hop armed context variable and accessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L51-L66
+    why: Policy fields, normalization of compression choices, and is_same property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L69-L77
+    why: Policy extraction from litellm_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L80-L110
+    why: Policy resolution from deployments with tag-matched and untagged marker prioritization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L113-L138
+    why: Compression guardrail class registry lookup, instance validation, and active guardrail enumeration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L141-L197
+    why: Pre-call arming with suppression context, guardrail name validation, and metadata["guardrails"] injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L200-L258
+    why: Routing-message compression execution through the read-through lookup and guardrail apply_guardrail.
+dod:
+  - text: Policy normalization returns None for empty strings, missing keys, and the "none" sentinel (case/whitespace insensitive), and a guardrail name for all other non-empty strings.
+    proof: [policy-normalization-tests]
+  - text: is_same property returns true when routing and model are equal (including both None), false otherwise.
+    proof: [is-same-tests]
+  - text: Policy resolution uses tag-matched deployments first, then untagged markers, in resolved order; the first policy found stops the search.
+    proof: [policy-resolution-tests]
+  - text: Compression guardrail class detection identifies instances of registry-provided classes by provider name (headroom, compresr, typesafe).
+    proof: [guardrail-detection-tests]
+  - text: Pre-call arming sets suppressed guardrails in context (not metadata), arms the model-side guardrail by appending to metadata["guardrails"], and warns when the named guardrail is not active.
+    proof: [pre-call-arming-tests]
+  - text: Routing-message compression applies the routing guardrail over live messages and returns the guardrail's structured_messages output or the input unchanged if guardrail is not found or is not a compression type.
+    proof: [routing-compression-tests]
+  - text: Every mutant in the auto-router compression policy functions is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: policy-normalization-tests
+      why: Policy normalization from raw litellm_params values must handle empty, None, and sentinel values correctly
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression_policy::test_normalization/)'
+    - id: is-same-tests
+      why: is_same property must return true when routing and model match (including both None)
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression_policy::test_is_same/)'
+    - id: policy-resolution-tests
+      why: Policy resolution must prioritize tag-matched deployments over untagged and stop at the first policy found
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression_policy::test_policy_for_model/)'
+    - id: guardrail-detection-tests
+      why: Guardrail type detection must identify compression guardrail instances by provider name from the registry
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::test_guardrail_detection/)'
+    - id: pre-call-arming-tests
+      why: Pre-call arming must set suppressed guardrails in context, arm the model guardrail via metadata, and warn on missing active guardrails
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::test_arm_pre_call/)'
+    - id: routing-compression-tests
+      why: Routing-message compression must apply the routing guardrail over live messages and fallback to uncompressed messages on error
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::test_messages_for_routing/)'
+oracle_cases:
+  - tools/oracle/cases/auto_router_compression/policy_normalization.yaml
+  - tools/oracle/cases/auto_router_compression/policy_resolution.yaml
+  - tools/oracle/cases/auto_router_compression/guardrail_arming.yaml
+  - tools/oracle/cases/auto_router_compression/routing_compression.yaml
+deviations:
+  - what: Suppressed compression guardrails are stored in a ContextVar, not in request metadata.
+    why: Suppression state is internal request routing state, not metadata a caller can read or replay to disable guardrails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L27-L31
+  - what: The armed model-hop flag uses a ContextVar because only the proxy path arms guardrails; the SDK path never compresses at model hop.
+    why: Arming is pre-call proxy state; the SDK does not invoke arm_pre_call, so routing compression is never applied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L39-L43
+  - what: Routing message compression reads the live request messages, never a pre-guardrail copy.
+    why: Routing on a pre-masking snapshot would leak what other guardrails stripped; routing must see the same text that reaches the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L207-L220
+  - what: The throwaway stats sink in routing guardrail execution prevents double-counting token savings.
+    why: apply_guardrail writes compression metrics to request_data; routing must not contribute to extract_compression_saved_tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L245-L258
+out_of_scope:
+  - B3682/B3683 own guardrail_class_registry (guardrail_registry.py) and the active guardrail enumeration contract from LoggingCallbackManager.
+  - B3664/B3665/B3666 own CustomGuardrail class definition and apply_guardrail method.
+  - B124 owns get_initialized_guardrail_with_read_through (registry_read_through.py) used to fetch the routing guardrail by name.
+  - B189 owns LoggingCallbackManager.get_custom_loggers_for_type callback enumeration.
+  - B302 owns deployment_catalog and Router.deployments_for_request.
+  - B321 owns tag_routing and _get_tags_from_request_kwargs.
+  - B206 owns call_helpers and get_or_create_metadata_bucket for metadata mutation.
+  - The UNTRUSTED_REQUEST_HEADER_CONTROL_FIELDS and header-filtering constants used by other tasks are out of scope.
+pitfalls:
+  - ContextVars are request-scoped and must be reset at the start of arm_pre_call, not at the end, so nested calls start fresh.
+  - Tag matching returns tag-matched deployments first, then untagged markers; the order of markers within each group is deployment resolution order, not marker registration order.
+  - A guardrail named in the policy might not be registered or active; arm_pre_call warns but does not fail.
+  - Routing-guardrail apply_guardrail receives a fresh copy of messages as structured_messages, not the live list, so mutations do not affect the original.
+  - The suppressed_guardrails accessor name is 19 characters (suppressed_guardrails), not the LiteLLM function name (suppressed_compression_guardrails at 33 characters), to stay under the 30-character identifier limit.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

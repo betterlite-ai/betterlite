@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Langfuse content and trace steering projections
 status: todo
 depends_on: [B002, B254]
-file: null
+file: tasks/B3905-langfuse-projections.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse.py"
 parent: B112

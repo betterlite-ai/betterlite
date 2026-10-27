@@ -1,0 +1,156 @@
+id: B3909
+title: Langfuse OpenTelemetry content attributes
+description: >-
+  Implement Langfuse-specific OpenTelemetry span attribute setting in betterlite-logging, extending the base
+  OTEL integration with Langfuse observability metadata. Port set_langfuse_otel_attributes and related helpers
+  from langfuse_otel.py, plus the get_output_content_by_type dispatcher and LangfuseLLMObsOTELAttributes from
+  langfuse_otel_attributes.py, building on B3905's content and metadata projections. Compose observation input
+  attributes from messages and optional_params (functions, tools), and observation output attributes by dispatching
+  on response type (chat choice message, text completion text, Responses API output, image data, transcription text,
+  rerank results, speech-output, embedding-output or JSON serialization for dicts/lists/Pydantic models). Extract
+  Langfuse metadata from litellm_params.metadata, enriching it with header-derived metadata via add_metadata_from_header.
+  Set trace/generation metadata from resolved IDs (litellm_call_id, response_id), merge collected metadata into
+  OTEL attributes using safe_set_attribute, and flatten complex values (lists, dicts) to JSON strings for
+  OTEL compatibility. Direct dependencies: B3905 for add_metadata_from_header; B002 for config lookups and
+  environment variable access (LANGFUSE_TRACING_ENVIRONMENT); B192 for safe_dumps and safe_json_loads. Export the
+  get_output_content_by_type dispatcher function, the LangfuseLLMObsOTELAttributes record type with set_messages
+  and set_response_output_messages methods, and the set_langfuse_otel_attributes function. Every case listed under DoD
+  exercises the content-type dispatch, metadata extraction and OTEL attribute setting on one response type.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/langfuse_otel_attributes.rs
+    - crates/betterlite-logging/src/langfuse_otel_attributes/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel_attributes.py#L32-L79
+    why: get_output_content_by_type response type dispatch for all response types (embedding, speech, binary, Pydantic, dict, list, empty).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel_attributes.py#L82-L105
+    why: LangfuseLLMObsOTELAttributes set_messages and set_response_output_messages method signatures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L42-L56
+    why: set_langfuse_otel_attributes entrypoint, attribute setting order (set_attributes, then observation.type, then set_langfuse_attributes), and attribute keys ("langfuse.observation.type", langfuse.observation.input, langfuse.observation.output).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L57-L83
+    why: _extract_langfuse_metadata from litellm_params.metadata and header enrichment via add_metadata_from_header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L86-L127
+    why: set_metadata_attributes mapping (generation_name, generation_id, parent_observation_id, mask_input, mask_output, trace_user_id, session_id, tags, trace_name, trace_id, trace_metadata, trace_release, existing_trace_id, update_trace_keys, debug_langfuse), version fallback (trace_version or version), and JSON serialization for list/dict values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L129-L220
+    why: _set_observation_output extraction and transformation of choice.message (role, content, tool_calls), output items (reasoning, message, function_call), with tool_call and function_call argument parsing.
+
+dod:
+  - text: >-
+      get_output_content_by_type dispatches correctly on response type. Embedding responses
+      (call_type=="embedding" or isinstance EmbeddingResponse) return "embedding-output"; HttpxBinaryResponseContent
+      returns "speech-output"; Pydantic BaseModel returns model_dump_json(); dict or list return json.dumps();
+      None or empty cases return empty string.
+    proof: [output-dispatch-tests]
+  - text: >-
+      set_messages constructs the input prompt with messages and optional functions/tools when present,
+      serializes to JSON, and sets langfuse.observation.input attribute.
+    proof: [set-messages-tests]
+  - text: >-
+      set_response_output_messages calls get_output_content_by_type on response_obj and sets
+      langfuse.observation.output attribute with the result.
+    proof: [set-output-tests]
+  - text: >-
+      _extract_langfuse_metadata reads litellm_params.metadata dict, enriches with add_metadata_from_header
+      on success (header extraction via LangFuseLogger helper), and returns modified metadata dict or empty
+      dict on exception (fallback silently if import fails).
+    proof: [metadata-extraction-tests]
+  - text: >-
+      _set_metadata_attributes maps 15 metadata keys (generation_name, generation_id, parent_observation_id,
+      mask_input, mask_output, trace_user_id, session_id, tags, trace_name, trace_id, trace_metadata, trace_release,
+      existing_trace_id, update_trace_keys, debug_langfuse) to LangfuseSpanAttributes enum values, handles version
+      fallback (trace_version or version), JSON-serializes list/dict values, and sets each via safe_set_attribute.
+    proof: [metadata-mapping-tests]
+  - text: >-
+      _set_observation_output extracts tool_calls from choices[0].message, transforms each with id/name/call_id/arguments
+      as function_call type, or extracts role/content when no tool_calls, with argument JSON parsing and fallback to empty object.
+    proof: [observation-output-tests]
+  - text: >-
+      _set_observation_output also extracts output items by type (reasoning returns summary items as reasoning_summary role,
+      message returns role/content, function_call returns id/name/call_id/arguments), with argument safe_json_loads for function_call.
+    proof: [observation-output-items-tests]
+  - text: >-
+      set_langfuse_otel_attributes calls set_attributes from LangfuseLLMObsOTELAttributes first, then sets
+      "langfuse.observation.type" to "generation", then set_langfuse_attributes in sequence.
+    proof: [attribute-setting-order-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: output-dispatch-tests
+      why: output content type dispatch tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::(embedding|speech|pydantic|dict|list|empty)_output/)'
+    - id: set-messages-tests
+      why: set_messages tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::set_messages/)'
+    - id: set-output-tests
+      why: set_response_output_messages tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::set_output/)'
+    - id: metadata-extraction-tests
+      why: metadata extraction tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::(extract_metadata|metadata_enrichment|metadata_exception)/)'
+    - id: metadata-mapping-tests
+      why: metadata mapping tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::(generation_name|generation_id|parent_observation|mask|trace_user|session_id|tags|trace_name|trace_id|trace_metadata|trace_release|existing_trace|update_keys|debug|version)/)'
+    - id: observation-output-tests
+      why: observation output tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::observation_output_(tool_calls|message|arguments)/)'
+    - id: observation-output-items-tests
+      why: observation output items tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::observation_items_(reasoning|message|function)/)'
+    - id: attribute-setting-order-tests
+      why: attribute setting order and composition tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_otel_attributes::set_langfuse_otel_attributes/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Unresolved dependencies (add_metadata_from_header from B3905, safe_set_attribute implementation,
+      safe_json_dumps from B192) are injected or called directly. add_metadata_from_header may fail to import
+      or execute, and in that case metadata enrichment is skipped silently.
+    why: >-
+      These functions are owned by B3905 and B192, which provide the metadata projection and JSON serialization
+      layers. B3909 calls them; when unavailable, header enrichment fails gracefully and the base metadata dict
+      remains unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L72-L81
+
+out_of_scope:
+  - OpenTelemetry logger initialization and lifecycle, owned by B3903.
+  - Langfuse tracing setup and export channel, owned by B3903 and B3901.
+  - Trace and observation ID resolution primitives, owned by B3901.
+  - Content and metadata projections (extraction, transformation, session detection), owned by B3905.
+  - Generation assembly and span finalization, owned by B3906.
+  - Langfuse OTEL configuration, authorization headers and config building, owned by B3910.
+  - Dynamic OTEL header/config construction for team-scoped logging, owned by B3910.
+
+pitfalls:
+  - 'LangfuseLLMObsOTELAttributes inherits from BaseLLMObsOTELAttributes; set_messages and set_response_output_messages
+    override abstract methods with @staticmethod and @override decorators, matching the base class protocol.'
+  - 'get_output_content_by_type returns empty string ("") for None input, not None itself; the serial form of None
+    does not appear in OTEL attribute values.'
+  - 'Embedding responses match both call_type=="embedding" and isinstance(response_obj, EmbeddingResponse); either
+    condition suffices to return "embedding-output".'
+  - 'Response output Pydantic model serialization uses model_dump_json(), not json.dumps(model.model_dump()), to
+    preserve the model''s JSON encoding scheme.'
+  - 'Tool call arguments are parsed from the function''s arguments field with json.loads on string, or used as-is
+    if already a dict; JSONDecodeError falls back to empty object {}.'
+  - 'Output items (reasoning, message, function_call) are extracted as a list and only set the attribute if the
+    list is non-empty; empty list triggers no attribute write.'
+  - 'Metadata version field checks trace_version first, then version; only one is used, not both as separate
+    fields.'
+  - 'Complex metadata values (lists, dicts) are JSON-serialized before setting as OTEL attributes; the entire
+    value is JSON-stringified, not field-by-field.'
+  - 'Trace ID hex normalization (remove dashes: trace_id.replace("-", "")) applies only to trace_id, not to
+    other ID fields like parent_observation_id or generation_id.'
+  - 'safe_set_attribute is a utility that safely handles OTEL span attribute setting; exceptions in setting an
+    individual attribute do not stop the process, and subsequent attributes are still set.'
+  - 'The fallback for add_metadata_from_header import failure uses a bare except clause, catching all exceptions
+    and silently continuing; header enrichment simply does not happen in that case.'
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

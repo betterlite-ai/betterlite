@@ -1,0 +1,131 @@
+id: B3160
+title: Append workflow events and conversation messages
+description: >-
+  Build POST/GET `/v1/workflows/runs/{run_id}/events` and POST/GET `/v1/workflows/runs/{run_id}/messages`
+  in betterlite-server::workflow_events, using the existing typed table repositories. Implement
+  four routes with optimistic sequence-number concurrency, atomic event+status transactions,
+  and ascending sequence-ordered reads. Enforce run ownership via _require_run on both
+  event and message routes, but preserve the GET/POST asymmetry: GET routes pass
+  _read_scope_caller output to _require_run, which returns None for admin-view callers,
+  causing ownership checks to be skipped; POST routes pass the raw auth dict, so ownership
+  is enforced uniformly.
+
+  On append_workflow_event, generate the next sequence number, attempt insertion up to five times
+  on unique-constraint collisions (incrementing the sequence number each retry), and execute event
+  creation and any status update in a single transaction. The event_type may map to a new run
+  status via the _EVENT_STATUS_MAP constant (step.started→running, step.failed→failed, hook.waiting→paused,
+  hook.received→running). After five failed attempts, return 409 with "Concurrent write conflict — please retry".
+  Store event_data containing run_id, event_type, step_name, sequence_number and an optional JSON-encoded
+  data field; event insertion and status update share one transaction.
+
+  On list_workflow_events, fetch events filtered by run_id, ordered ascending by sequence_number,
+  with a default limit of 100 and maximum 500. Return {events, count}.
+
+  On append_workflow_message, follow the same retry pattern as events but independently insert
+  messages with sequence numbers. Store role, content, run_id, sequence_number and optional session_id.
+
+  On list_workflow_messages, fetch messages filtered by run_id, ordered ascending by sequence_number,
+  with a default limit of 100 and maximum 500. Return {messages, count}.
+
+  All four routes authenticate via the existing user_api_key_auth dependency and return 500
+  with CommonProxyErrors.db_not_connected_error detail when the database is absent.
+  Sequence collision, transaction, and HTTP error details are carried in cases below.
+scope:
+  paths:
+    - crates/betterlite-server/src/workflow_events.rs
+    - crates/betterlite-server/src/workflow_events/**
+    - tools/oracle/cases/management/workflows/**
+    - tools/oracle/helpers/b3160.py
+    - tools/oracle/helpers/b3160/**
+    - tools/oracle/src/helpers/server/b3160.rs
+    - tools/oracle/src/helpers/server/b3160/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L353-L530
+    why: Four workflow event/message routes with retry logic, transactions, and sequence ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L44-L71
+    why: _MAX_SEQUENCE_RETRIES constant (5) and _EVENT_STATUS_MAP transition table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L94-L104
+    why: WorkflowEventCreateRequest and WorkflowMessageCreateRequest models.
+dod:
+  - text: >-
+      POST /v1/workflows/runs/{run_id}/events appends an event with optimistic concurrency,
+      retries up to five times on sequence-number collision, and executes event creation and
+      status update in a single transaction; the fifth failed attempt raises 409.
+    proof: [workflow-events-tests, oracle]
+  - text: >-
+      GET /v1/workflows/runs/{run_id}/events returns events ordered ascending by sequence_number
+      with configurable limit (default 100, max 500). GET routes skip ownership checks for
+      admin-view callers but enforce them for non-admin keys.
+    proof: [workflow-events-tests, oracle]
+  - text: >-
+      POST /v1/workflows/runs/{run_id}/messages appends a message with independent optimistic
+      concurrency retries, storing full content and optional session_id; the fifth failed
+      attempt raises 409.
+    proof: [workflow-events-tests, oracle]
+  - text: >-
+      GET /v1/workflows/runs/{run_id}/messages returns messages ordered ascending by sequence_number
+      with configurable limit (default 100, max 500). GET routes skip ownership checks for
+      admin-view callers but enforce them for non-admin keys.
+    proof: [workflow-events-tests, oracle]
+  - text: >-
+      All four routes return 500 with CommonProxyErrors.db_not_connected_error detail when
+      the database is absent.
+    proof: [workflow-events-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: workflow-events-tests
+      why: Event/message append, list and transaction/collision logic fail or ownership is not enforced.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^workflow_events::/)'
+oracle_cases:
+  - tools/oracle/cases/management/workflows/append-event-stores-status-update.yaml
+  - tools/oracle/cases/management/workflows/append-event-collision-retry.yaml
+  - tools/oracle/cases/management/workflows/append-event-409-exhaustion.yaml
+  - tools/oracle/cases/management/workflows/list-events-ascending-sequence.yaml
+  - tools/oracle/cases/management/workflows/list-events-respects-limit.yaml
+  - tools/oracle/cases/management/workflows/append-message-stores-content.yaml
+  - tools/oracle/cases/management/workflows/append-message-collision-retry.yaml
+  - tools/oracle/cases/management/workflows/append-message-409-exhaustion.yaml
+  - tools/oracle/cases/management/workflows/list-messages-ascending-sequence.yaml
+  - tools/oracle/cases/management/workflows/list-messages-respects-limit.yaml
+  - tools/oracle/cases/management/workflows/events-db-absent.yaml
+  - tools/oracle/cases/management/workflows/messages-db-absent.yaml
+  - tools/oracle/cases/management/workflows/list-events-admin-view-skips-ownership.yaml
+  - tools/oracle/cases/management/workflows/post-events-enforces-ownership.yaml
+deviations: []
+out_of_scope:
+  - B003 owns user_api_key_auth integration, the HTTP error boundary and route registration with the axum application.
+  - B700 owns the typed create/update/find-many operations and DbSession transaction/unique-violation handling.
+  - B726 owns WorkflowEventRepository and WorkflowMessageRepository table handle construction via auxiliary_repository.
+  - B732 owns user_api_key_has_admin_view authentication check and the middleware hook that provides the authenticated principal.
+  - B3159 owns _require_run, _get_next_sequence_number, _read_scope_caller, _json, _is_admin, _caller_key, _EVENT_STATUS_MAP and the request/response models.
+  - The database schema (WorkflowEvent, WorkflowMessage tables) is preregistered in schema.prisma at B000.
+pitfalls:
+  - >-
+    GET routes call _read_scope_caller, which returns None for admin-view callers,
+    causing _require_run to skip ownership enforcement; POST routes pass the raw auth
+    dict, so ownership is enforced uniformly on all POST writes. This asymmetry allows
+    admin and view-only callers to list or read another key's events and messages, but
+    prevents them from modifying (appending to) another key's runs.
+  - >-
+    The fifth failed attempt raises 409 directly inside the retry loop — no sixth call
+    is made. The loop iterates from 0 to 4 (five total), and when attempt 4 fails with
+    a unique-constraint violation, 409 is raised immediately, not after a sixth retry.
+  - >-
+    Event insertion and status update must execute in a single transaction; if either
+    fails, both are rolled back and the retry increments the sequence number.
+  - >-
+    Message insertion does not update run status and does not use a transaction; each
+    message append is independent and uses the same retry pattern as events.
+  - >-
+    Sequence numbers are requested fresh on each retry attempt; reusing a cached value
+    would collide again.
+  - >-
+    Event data may contain any JSON-serializable object, which must be passed through
+    _json before storage. Message content is already a string and is stored directly,
+    not JSON-encoded.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

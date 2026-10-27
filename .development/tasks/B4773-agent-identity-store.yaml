@@ -1,0 +1,168 @@
+id: B4773
+title: Authoritative agent identity and verified human storage
+description: >-
+  Implement AgentIdentityStore to retrieve and maintain agent identities, verified human subjects, and authentication state from the database with optional caching. Preserve cache invalidation on identity changes, find-unique cardinality, exception-to-failure mapping (policy_unavailable versus missing), retirement and binding status checks, and the classification-and-store flow for interactive human enrollment.
+
+  AgentIdentityStore holds five typed repositories (agents, identities, humans, retired, retired_agents) and an optional shared cache. Methods provide read-only access to agent state including identity and permissions (agent), check whether an unbound client identity is retired (unbound_client), resolve an application client to its bound agent_id with caching (bound_agent_id, private), classify JWT claims and retrieve the effective agent context including optional human subject verification (resolve_verified_claims), look up a verified human subject by issuer/tenant/oid (subject), check if an agent_id belongs to a retired agent (retired_agent), record an authentication event with binding revision check (record_authentication), and enroll an interactive human by issuing a VerifiedSubject (enroll_interactive_human).
+
+  Resolve_managed_agent wraps the store to raise on identity failures, returning ManagedAgentContext or None for unbound claims.
+
+  Cache key format for agent_id lookup: "agent_identity:{json.dumps((tenant_id, client_id))}", using the shared get_management_object_ttl for cache duration. Cache stores the resolved agent_id as a string, returning None on cache miss or type mismatch (cached non-string is treated as miss).
+
+  Identity binding lookup: find_unique on identities table using provider="microsoft_entra", tenant_id, client_id as composite key. On exception, raise code=policy_unavailable. Missing binding goes to unbound_client check; retiring a binding does not delete, it marks in a separate table.
+
+  Human subject lookup: find_unique on verified subjects using issuer, tenant_id, oid. Missing subject returns None (unverified). Exception becomes policy_unavailable.
+
+  Authentication record: If context.binding_revision is None, raise failure "Agent authentication requires a binding revision". Otherwise, update_many on identities with where clause requiring agent_id, binding_revision and active=true, plus the nested agent filter requiring agent.enabled=True and agent.identity_managed=True. Set last_authenticated_at to utc now. If count != 1 (missing, inactive, agent disabled/not identity-managed or changed during update), raise failure "Agent identity changed during authentication; retry".
+
+  Human enrollment: upsert on humans using issuer, tenant_id, oid. Create data carries issuer, tenant_id, oid, user_id, and verified_via="sso_interactive"; update is the empty dict. Post-upsert, check that kind="human", user_id matches, verified_via="sso_interactive"; if not, raise "Microsoft subject is already bound to another local identity". This read-after-write validates isolation from concurrent enrollment.
+
+  Retired agent check: find_unique on retired_agents with original_agent_id; returns bool or policy_unavailable, never missing.
+
+  Keep each method under 40 lines. Async throughout. Classification happens via B4772 classify_agent_subject; this store never classifies, only retrieves. Exceptions during DB operations become policy_unavailable unless already a typed failure (missing returns None, not an error).
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/agent_store.rs
+    - crates/betterlite-auth/src/agent_store/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L38-116
+    why: AgentIdentityStore class definition, agent/unbound_client/_bound_agent_id methods with caching and exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L117-168
+    why: resolve_verified_claims method, JWT claim extraction, agent state validation, human subject verification flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L170-181
+    why: subject method, verified human lookup with exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L183-190
+    why: retired_agent method, agent history check returning bool or failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L192-210
+    why: record_authentication method, update_many with count validation and failure on revision mismatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L212-236
+    why: enroll_interactive_human method, upsert with post-upsert validation and isolation check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L239-252
+    why: resolve_managed_agent wrapper function, exception raising on identity failure.
+
+dod:
+  - text: AgentIdentityStore holds typed repositories for agents, identities, verified subjects, retired identities and retired agents, plus optional cache, initialized from client via from_client or constructor.
+    proof: [initialization-tests]
+  - text: agent method finds agent by agent_id with identity and object_permission includes, returns AgentResponse or policy_unavailable on exception, None if missing.
+    proof: [agent-tests]
+  - text: unbound_client checks retired identities table for composite key (provider, tenant_id, client_id), returns failure if found, None otherwise, skipping check if retired repo is None.
+    proof: [unbound-tests]
+  - text: bound_agent_id caches agent_id lookups by (tenant_id, client_id) with json key format and get_management_object_ttl duration, returning cached string or None on type mismatch.
+    proof: [cache-tests]
+  - text: bound_agent_id queries identities table with composite key (provider="microsoft_entra", tenant_id, client_id), returns agent_id, policy_unavailable on exception or unbound_client result.
+    proof: [binding-tests]
+  - text: resolve_verified_claims extracts iss, tid, azp from claims, returns None if any non-string, calls bound_agent_id and validates agent state (enabled, identity_managed, identity.active).
+    proof: [resolve-tests]
+  - text: resolve_verified_claims calls classify_agent_subject and handles application subjects, enrolling human subjects via subject lookup and sso_interactive validation.
+    proof: [resolve-tests]
+  - text: subject method looks up verified humans by composite key (issuer, tenant_id, oid), returns the row or policy_unavailable on exception, None if missing.
+    proof: [subject-tests]
+  - text: retired_agent returns bool or policy_unavailable, checking original_agent_id in retired_agents table, raising failure if repo is None.
+    proof: [retired-tests]
+  - text: record_authentication raises failure "Agent authentication requires a binding revision" when context.binding_revision is None.
+    proof: [auth-record-tests, auth-record-none-revision]
+  - text: record_authentication updates identities with where clause requiring agent_id, binding_revision and active=true, plus nested agent filter requiring agent.enabled=True and agent.identity_managed=True, setting last_authenticated_at. Returns failure if count != 1.
+    proof: [auth-record-tests, auth-record-agent-filter]
+  - text: record_authentication with disabled or non-identity-managed agent returns failure "Agent identity changed during authentication; retry" due to zero matches from the agent filter.
+    proof: [auth-record-tests, auth-record-disabled-agent]
+  - text: enroll_interactive_human upserts verified subject with issuer, tenant_id, oid, where create data contains issuer, tenant_id, oid, user_id, and verified_via="sso_interactive", and update is the empty dict.
+    proof: [enrollment-tests, enrollment-create-data]
+  - text: enroll_interactive_human validates post-upsert record that kind="human", user_id matches, verified_via="sso_interactive", raising failure if not.
+    proof: [enrollment-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: initialization-tests
+      why: AgentIdentityStore initialization from client or constructor missing or incorrect
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*init/)'
+    - id: agent-tests
+      why: agent method missing or does not retrieve agent state with identity and permissions
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::agent/)'
+    - id: unbound-tests
+      why: unbound_client check missing or does not properly validate retired identities
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::unbound/)'
+    - id: cache-tests
+      why: agent_id caching missing, cache key format incorrect, or cache duration wrong
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*cache/)'
+    - id: binding-tests
+      why: agent_id binding lookup missing or does not use correct composite key
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*binding/)'
+    - id: resolve-tests
+      why: resolve_verified_claims missing or does not correctly extract, validate and classify claims
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::resolve/)'
+    - id: subject-tests
+      why: verified subject lookup missing or does not use correct composite key
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::subject/)'
+    - id: retired-tests
+      why: retired_agent check missing or does not return bool or policy_unavailable
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::retired/)'
+    - id: auth-record-tests
+      why: record_authentication missing or does not validate count == 1
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*auth/)'
+    - id: auth-record-none-revision
+      why: record_authentication does not raise failure when binding_revision is None
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*none_revision/)'
+    - id: auth-record-agent-filter
+      why: record_authentication does not include agent.enabled and agent.identity_managed checks in where clause
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*agent_filter/)'
+    - id: auth-record-disabled-agent
+      why: record_authentication does not return failure when agent is disabled or identity_managed=false
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*disabled_agent/)'
+    - id: enrollment-tests
+      why: enroll_interactive_human missing or post-upsert validation incorrect
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::enroll/)'
+    - id: enrollment-create-data
+      why: enroll_interactive_human does not populate create data with issuer, tenant_id, oid, user_id, verified_via
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_store::.*create_data/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Cache key format uses json.dumps of (tenant_id, client_id) tuple to create a single string key, matching LiteLLM's Python JSON serialization.
+    why: Rust lacks Python's json.dumps directly; the implementation uses serde_json::to_string to produce identical keys, ensuring cache hit on every call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L94
+  - what: record_authentication has an early return guard that raises "Agent authentication requires a binding revision" when context.binding_revision is None, before any database operation.
+    why: The binding_revision None check is a distinct guard from the where-clause validation; LiteLLM raises this as a separate early failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L194-195
+  - what: Agent authentication record's where clause includes a nested agent filter requiring agent.enabled=True and agent.identity_managed=True, in addition to binding_revision and active=true on the identity.
+    why: LiteLLM's update_many filters on the agent's enabled and identity_managed status to ensure only valid agent identities are authenticated; this nested condition is part of the complete where clause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L196-200
+  - what: Agent authentication record requires count == 1 from update_many; if count is 0 or > 1, the method raises "Agent identity changed during authentication; retry" without logging the count.
+    why: Binding revision and agent state checks happen at the database layer; a race or disabled agent is detectable only by count, and raising the same message as LiteLLM preserves user-facing behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L205-207
+  - what: Verified human enrollment populates create data with issuer, tenant_id, oid, user_id, and verified_via="sso_interactive", while update is an empty dict (upsert modifies only on create, not update).
+    why: LiteLLM's upsert carries enrollment fields in create; the empty update dict ensures that retries do not modify existing records, preserving the original enrollment time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L221-228
+  - what: Verified human enrollment reads back the upserted record to validate kind, user_id and verified_via match; LiteLLM relies on Prisma upsert semantics for this.
+    why: betterlite uses Prisma-style upsert through the repository, and the read-after-write validation is required to catch concurrent binding to a different user.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L229-231
+
+out_of_scope:
+  - Binding updates and writes; B4772 (managed_identity.py) owns managed_write_fields and _identity_write that prepare updates for this store.
+  - Policy validation and admission; B4772 owns classify_agent_subject, which this store calls but does not implement.
+  - Agent registry and model resolution; B4776 owns agent registry reconciliation.
+  - Database connection and transaction management; B700 (base_client.py) provides the client and repository abstractions.
+  - Cache implementation; B733 (user_api_key_cache.py) provides UserApiKeyCache and get_management_object_ttl.
+
+pitfalls:
+  - "Cache key must serialize (tenant_id, client_id) tuple using json.dumps to match LiteLLM; a plain string concatenation breaks cache hits."
+  - "Unbound_client returns failure only if retired repo exists and the identity is found; missing retired repo means the check is skipped."
+  - "Agent state validation checks identity_managed, enabled, and identity.active; if identity is None, the agent is unbound (not necessarily an error)."
+  - "resolve_verified_claims returns None if iss, tid, azp are not all present as strings, allowing JWT-free requests to pass through."
+  - "classify_agent_subject is called from resolve_verified_claims; this store retrieves the result and does not perform classification itself."
+  - "record_authentication raises 'Agent authentication requires a binding revision' when context.binding_revision is None, before querying the database; this is a distinct guard from the where-clause check."
+  - "record_authentication where clause includes nested agent filter (agent.enabled=True, agent.identity_managed=True) in addition to identity conditions; a disabled or non-identity-managed agent causes count=0."
+  - "Authentication record update uses update_many, not update; the where clause acts as a final binding revision check (count must be 1)."
+  - "enroll_interactive_human create data must contain issuer, tenant_id, oid, user_id, and verified_via='sso_interactive'; the update dict is empty so upserts do not modify existing records."
+  - "Human subject enrollment validates the post-upsert record to detect concurrent binding to a different user; the check is not optional."
+  - "Retired agent check returns a bool, not an Option; the repo must exist and raise on error, not return None."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

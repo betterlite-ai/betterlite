@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Authenticate GCS storage requests and isolate bucket credentials
 status: todo
 depends_on: [B3996, B002, B256, B173, B1302, B1303, B1304, B2208]
-file: null
+file: tasks/B3997-gcs-storage-client.yaml
 covers:
   - "litellm/integrations/gcs_bucket/gcs_bucket_base.py"
   - "litellm/types/integrations/gcs_bucket.py"

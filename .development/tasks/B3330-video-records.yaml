@@ -1,0 +1,151 @@
+id: B3330
+title: Video records and proxy input helpers
+description: >-
+  Build video request projection types and proxy input helpers. Implement VideoObject with fields id (str), object (Literal["video"]),
+  status (str), created_at (int | None), completed_at (int | None), expires_at (int | None), error (dict | None), progress (int | None),
+  remixed_from_video_id (str | None), seconds (str | None), size (str | None), model (str | None), usage (dict | None), _hidden_params (dict);
+  the type includes __contains__, get, __getitem__ and json convenience methods matching Python dict access. Implement VideoCreateOptionalRequestParams
+  as a TypedDict with fields input_reference, image, parameters, model, resolution (ReadOnly), seconds, size, characters, user, extra_headers, extra_body.
+  Implement CharacterObject with fields id (str), object (Literal["character"]), created_at (int), name (str), _hidden_params (dict), and the same
+  dict-like methods. Implement DecodedVideoId as a TypedDict with custom_llm_provider, model_id, video_id.
+
+  Build four proxy helpers in the same module. extract_model_from_target_model_names accepts a string (comma-separated list) or a list and returns
+  the first non-empty element: for string input, splits on comma, strips whitespace, filters empty entries, returns first or None; for list input,
+  returns target_model_names[0] unfiltered (list ["", "foo"] returns "" not "foo"); returns None for non-string/non-list inputs or empty results.
+  video_reference_to_id accepts any value and returns a string: if dict, extract the "id" key; if string, try JSON-decoding as dict and extract "id",
+  falling back to the string itself; otherwise return empty string. Preserve the JSON decode exception fallback without logging.
+  get_custom_provider_from_data searches the request data dict for custom_llm_provider, then searches extra_body (after JSON-decoding if string),
+  returning the first truthy value or None. encode_character_id_in_response calls B672's encode_character_id_with_provider on the response's id field
+  when present, handling both dict and object response types. All four match LiteLLM's behavior exactly on the inputs described; no silent drops or type
+  coercions beyond what LiteLLM performs.
+
+  Add a cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/video_reference_to_id.rs that calls video_reference_to_id and get_custom_provider_from_data
+  with arbitrary bytes. Seed the corpus with the cases from the oracle. Add a test replays_the_video_reference_to_id_corpus that replays every file in the
+  corpus without panicking. Add oracle helper cases that exercise the two JSON-parsing helpers independently with valid, malformed and boundary inputs.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_records.rs
+    - crates/betterlite-core/src/api/video_records/**
+    - crates/betterlite-core/fuzz/fuzz_targets/video_reference_to_id.rs
+    - crates/betterlite-core/fuzz/corpus/video_reference_to_id/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/core/video-records/**
+    - tools/oracle/fuzz/corpus/helper_case/video_reference_to_id*
+    - tools/oracle/helpers/b3330.py
+    - tools/oracle/helpers/b3330/**
+    - tools/oracle/src/helpers/core_ops/b3330.rs
+    - tools/oracle/src/helpers/core_ops/b3330/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L9-L44
+    why: VideoObject declaration with __contains__, get, __getitem__ and json methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L69-L86
+    why: VideoCreateOptionalRequestParams TypedDict with all accepted optional fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L99-L104
+    why: DecodedVideoId structure holding custom_llm_provider, model_id and video_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L107-L129
+    why: CharacterObject with __contains__, get, __getitem__ and json methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L8-L13
+    why: extract_model_from_target_model_names splits comma-separated strings and returns first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L16-L25
+    why: video_reference_to_id decodes dict or JSON string, falls back to original on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L28-L47
+    why: get_custom_provider_from_data searches direct field then extra_body with JSON fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L50-L66
+    why: encode_character_id_in_response wraps id field using B672's encoder with provider and model_id.
+dod:
+  - text: VideoObject has fields id, object, status, created_at, completed_at, expires_at, error, progress, remixed_from_video_id, seconds, size, model, usage, _hidden_params with correct types and optionality.
+    proof: [video-object-fields]
+  - text: VideoObject implements __contains__, get, __getitem__, json convenience methods matching Python dict access.
+    proof: [video-object-methods]
+  - text: VideoCreateOptionalRequestParams contains all required TypedDict fields with correct types and ReadOnly markers.
+    proof: [optional-params-compile]
+  - text: CharacterObject has fields id, object, created_at, name, _hidden_params with dict-like access methods.
+    proof: [character-object-fields]
+  - text: DecodedVideoId is a typed dict with custom_llm_provider, model_id, video_id fields.
+    proof: [decoded-video-id-compile]
+  - text: "extract_model_from_target_model_names: string input splits on comma, filters empty (stripped), returns first; list input returns index 0 unfiltered; None/other type input returns None; empty input returns None."
+    proof: [extract-model-cases]
+  - text: video_reference_to_id handles dict with id key, parses JSON strings to extract id, returns plain string unchanged, returns empty string for non-dict/non-string inputs, with no exception logging.
+    proof: [video-reference-cases]
+  - text: get_custom_provider_from_data reads custom_llm_provider from data, or from parsed extra_body JSON if extra_body is string, or None if neither.
+    proof: [custom-provider-cases]
+  - text: encode_character_id_in_response wraps response id (dict or object) using B672's encode_character_id_with_provider with provider and model.
+    proof: [encode-character-cases]
+  - text: video_reference_to_id and get_custom_provider_from_data have a cargo-fuzz target at crates/betterlite-core/fuzz/fuzz_targets/video_reference_to_id.rs.
+    proof: [video-fuzz-corpus]
+  - text: replays_the_video_reference_to_id_corpus replays every corpus file without panicking.
+    proof: [video-fuzz-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: video-object-fields
+      why: VideoObject field set is wrong or incomplete, missing seconds or having duration
+      run: grep -E '^\s+seconds:' crates/betterlite-core/src/api/video_records.rs && grep -E '^\s+model:' crates/betterlite-core/src/api/video_records.rs && grep -E '^\s+usage:' crates/betterlite-core/src/api/video_records.rs && grep -E '^\s+remixed_from_video_id:' crates/betterlite-core/src/api/video_records.rs && ! grep -E '^\s+duration:' crates/betterlite-core/src/api/video_records.rs
+    - id: video-object-methods
+      why: VideoObject dict-like methods do not exist or do not match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_records::(contains|get|getitem|json)/)'
+    - id: optional-params-compile
+      why: VideoCreateOptionalRequestParams does not compile or fields are wrong
+      run: cargo build --locked -p betterlite-core
+    - id: character-object-fields
+      why: CharacterObject field set is wrong or methods are missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_records::character_/)'
+    - id: decoded-video-id-compile
+      why: DecodedVideoId does not compile or has wrong fields
+      run: cargo build --locked -p betterlite-core
+    - id: extract-model-cases
+      why: "extract_model_from_target_model_names behavior for strings, lists, None, empty and list-with-empty-first is wrong"
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_records::extract_model_/)'
+    - id: video-reference-cases
+      why: video_reference_to_id does not handle dict, JSON string, plain string, non-dict/non-string inputs, or malformed JSON correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_records::video_reference_/)'
+    - id: custom-provider-cases
+      why: get_custom_provider_from_data does not read from data, extra_body dict, or parsed extra_body JSON correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_records::custom_provider_/)'
+    - id: encode-character-cases
+      why: encode_character_id_in_response does not encode character IDs for dict or object response types
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_records::encode_character_/)'
+    - id: video-fuzz-corpus
+      why: video reference fuzz target or corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/video_reference_to_id.rs && test -n "$(find crates/betterlite-core/fuzz/corpus/video_reference_to_id -type f 2>/dev/null)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_video_reference_to_id_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/core/video-records/extract-model-simple.yaml
+  - tools/oracle/cases/helpers/core/video-records/extract-model-comma-separated.yaml
+  - tools/oracle/cases/helpers/core/video-records/extract-model-list-with-empty-first.yaml
+  - tools/oracle/cases/helpers/core/video-records/extract-model-none.yaml
+  - tools/oracle/cases/helpers/core/video-records/video-reference-dict.yaml
+  - tools/oracle/cases/helpers/core/video-records/video-reference-json-string.yaml
+  - tools/oracle/cases/helpers/core/video-records/video-reference-plain-string.yaml
+  - tools/oracle/cases/helpers/core/video-records/video-reference-malformed-json.yaml
+  - tools/oracle/cases/helpers/core/video-records/provider-from-data-direct.yaml
+  - tools/oracle/cases/helpers/core/video-records/provider-from-data-extra-body-dict.yaml
+  - tools/oracle/cases/helpers/core/video-records/provider-from-data-extra-body-json-string.yaml
+  - tools/oracle/cases/helpers/core/video-records/provider-from-data-malformed-json.yaml
+  - tools/oracle/cases/helpers/core/video-records/provider-from-data-none.yaml
+deviations:
+  - what: extract_model_from_target_model_names applies empty-string filtering only to comma-separated string input, not to list input; list input returns target_model_names[0] unfiltered.
+    why: This replicates LiteLLM's asymmetric behavior where string input is split and filtered but list input is accessed directly by index, so ["", "foo"] returns "" not "foo".
+out_of_scope:
+  - "litellm/types/videos/main.py:47-67 (VideoResponse): no caller at the pin. Test code constructs it once; actual generation returns VideoObject and list returns a provider page."
+  - "litellm/types/videos/main.py:89-97 (VideoCreateRequestParams): no caller at the pin in production code."
+  - "litellm/types/videos/main.py:132-137 (VideoEditRequestParams): no caller at the pin in production code."
+  - "litellm/types/videos/main.py:139-145 (VideoExtensionRequestParams): no caller at the pin in production code."
+  - The video operation contract and provider selection, owned by B3331 and B3332.
+  - HTTP transport and route registration, owned by B3333–B3337 and B3343–B3345.
+  - OpenAI video transformations and validation, owned by B525 and B526.
+  - Character and video ID encoding implementation, owned by B672.
+  - Response transformations beyond encoding character IDs.
+pitfalls:
+  - "VideoObject fields id, object, status are required; created_at, completed_at, expires_at, error, progress, remixed_from_video_id, seconds, size, model, usage are optional (None defaults). _hidden_params defaults to empty dict."
+  - "extract_model_from_target_model_names has asymmetric behavior: string input filters empty after strip(), list input returns index 0 unfiltered; a list like ['', 'foo'] returns '' not 'foo'."
+  - "video_reference_to_id uses JSON parsing and silently falls back on parse error; do not log the error or re-raise it."
+  - "get_custom_provider_from_data accepts extra_body as a string and decodes it; catch all exceptions during decode and treat them as None."
+  - "encode_character_id_in_response handles both dict and object responses; check type and use dict.get/setitem or getattr/setattr accordingly."
+  - "VideoCreateOptionalRequestParams uses TypedDict with total=False; do not create a Rust struct for it—it is used only as a reference type in signatures."
+  - "DecodedVideoId may have None values for custom_llm_provider and model_id; use Option types and preserve None through JSON serialization."
+  - "The dictionary-style access methods (__contains__, get, __getitem__) on VideoObject and CharacterObject map to field access; implement as methods that read fields directly."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

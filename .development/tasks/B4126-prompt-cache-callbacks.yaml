@@ -1,0 +1,115 @@
+id: B4126
+title: Adapt the cache hook to prompt management callbacks
+description: >-
+  Build a thin adapter between the cache control placement service and the prompt-management
+  callback interface. This task implements the glue layer that exposes cache control as a
+  PromptManagementClient, conditionally registering the callback only when cache injection
+  points are configured. The adapter never fetches remote prompts and returns false for
+  automatic prompt management discovery; all message transformation is delegated to the
+  cache placement task (B4124).
+
+  Build in `betterlite-prompts::anthropic_cache_callbacks` and `betterlite-prompts::anthropic_cache_callbacks/**`.
+  Preserve the conditional callback construction based on nonempty `cache_control_injection_points`,
+  the false auto-discovery gate, empty compile-time result, and sync/async parity (async delegates
+  to sync since no I/O occurs). The integration name is always "anthropic_cache_control_hook".
+  The custom logger factory conditionally constructs a logger from the caller-provided init function
+  only when cache control is requested; when absent, return None to signal no callback is needed.
+
+scope:
+  paths:
+    - crates/betterlite-prompts/src/anthropic_cache_callbacks.rs
+    - crates/betterlite-prompts/src/anthropic_cache_callbacks/**
+    - tools/oracle/cases/helpers/anthropic-cache-callbacks/**
+    - tools/oracle/fuzz/corpus/helper_case/anthropic-cache-callbacks-*
+    - tools/oracle/helpers/b4126.py
+    - tools/oracle/helpers/b4126/**
+    - tools/oracle/src/helpers/prompts/b4126.rs
+    - tools/oracle/src/helpers/prompts/b4126/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1010-L1013
+    why: Own integration_name property; return the constant string "anthropic_cache_control_hook".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1015-L1022
+    why: Own should_run_prompt_management; always return false, never dispatch to a remote prompt manager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1024-L1040
+    why: Own _compile_prompt_helper; return an empty PromptManagementClient (no remote fetch, no transformation).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1042-L1059
+    why: Own async_compile_prompt_helper; async version delegates to sync since no I/O is needed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1061-L1090
+    why: Own async_get_chat_completion_prompt; async version delegates to B4124's get_chat_completion_prompt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1092-L1096
+    why: Own should_use_anthropic_cache_control_hook; return true only when cache_control_injection_points key is present and nonempty.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L1098-L1112
+    why: Own get_custom_logger_for_anthropic_cache_control_hook; factory that conditionally creates a logger via the injected init function when cache control is enabled.
+dod:
+  - text: >-
+      integration_name returns "anthropic_cache_control_hook" consistently.
+    proof: [behavior-tests]
+  - text: >-
+      should_run_prompt_management always returns false, independent of all inputs.
+    proof: [behavior-tests]
+  - text: >-
+      _compile_prompt_helper returns an empty PromptManagementClient with all fields set to safe defaults
+      (empty template, no model, no optional params, no messages).
+    proof: [behavior-tests]
+  - text: >-
+      async_compile_prompt_helper returns the same result as _compile_prompt_helper with identical inputs.
+    proof: [behavior-tests]
+  - text: >-
+      should_use_anthropic_cache_control_hook returns true only when non_default_params contains
+      "cache_control_injection_points" with a nonempty value, false otherwise.
+    proof: [behavior-tests]
+  - text: >-
+      get_custom_logger_for_anthropic_cache_control_hook returns Some(logger) when cache control is enabled
+      (after calling should_use_anthropic_cache_control_hook check), using the injected logger factory.
+      Returns None when cache control is not enabled.
+    proof: [behavior-tests]
+  - text: >-
+      async_get_chat_completion_prompt delegates to B4124's get_chat_completion_prompt, passing all parameters
+      and returning its result unchanged.
+    proof: [behavior-tests]
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case seed replays.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Adapter functions must return correct constants, delegate appropriately, and gate on cache control presence.
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^anthropic_cache_callbacks::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4126.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/anthropic-cache-callbacks-*)" && grep -rlq "anthropic_cache_callbacks" tools/oracle/fuzz/corpus/helper_case/anthropic-cache-callbacks-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/integration-name.yaml
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/prompt-management-gate.yaml
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/compile-result-empty.yaml
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/async-parity.yaml
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/cache-control-check.yaml
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/logger-factory.yaml
+  - tools/oracle/cases/helpers/anthropic-cache-callbacks/delegation-to-placement.yaml
+deviations: []
+out_of_scope:
+  - 'B4050 owns PromptManagementClient type and its contract (prompt_id, prompt_template, prompt_template_model, prompt_template_optional_params, completed_messages fields); this task constructs instances of the type.'
+  - 'StandardCallbackDynamicParams is owned elsewhere in the callback/logging domain.'
+  - 'CustomLogger type and _init_custom_logger_compatible_class factory function (imported from litellm.litellm_core_utils.litellm_logging) are owned elsewhere in the logging domain.'
+  - Callback registration and dispatch from the prompt-management base; B4126 implements only the adapter interface.
+pitfalls:
+  - 'The custom logger factory must be conditional: call should_use_anthropic_cache_control_hook before attempting
+    to call _init_custom_logger_compatible_class. If cache_control_injection_points is absent or empty, return None
+    immediately without calling the init function.'
+  - 'async_get_chat_completion_prompt takes more parameters than _compile_prompt_helper (including litellm_logging_obj)
+    but must pass them all to the sync version from B4124. Check parameter names match exactly: ignore_prompt_manager_model
+    and ignore_prompt_manager_optional_params have specific defaults (False) in the source.'
+  - 'should_use_anthropic_cache_control_hook must check truthiness of the injection-points list or dict, not just presence
+    of the key. LiteLLM uses .get(..., None), so an explicit None or empty list becomes false.'
+  - 'The oracle helper for this task is pre-registered as b4126 in the prompts group. Replace the
+    stub Op in tools/oracle/src/helpers/prompts/b4126.rs with an impl Helper, and write run in
+    tools/oracle/helpers/b4126.py. The registry files (helpers/mod.rs, the group files, dispatch.py)
+    are not this task''s to edit.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,145 @@
+id: B4027
+title: Slow response and hanging request alerts
+description: >-
+  Build slow-response formatting and a small hanging-request index driven by an owned timer.
+  Create AlertingHangingRequestCheck to manage in-flight request tracking with cached timestamps
+  and metadata. Implement request addition to a TTL-based cache with TTL = threshold * 1.5 + 60 seconds.
+  Implement the hanging request check loop that runs every threshold/2 seconds, iterating over oldest
+  20 cached requests to detect hangs beyond the alerting threshold. Track alerted status to send
+  one alert per hanging request. Implement slow-response callback helpers: extract timing as seconds,
+  model, api_base and first-100-character message projection. Format deployment latencies from
+  metadata into an alert attachment. Preserve privacy substitution for message logging and redaction
+  settings. Build response_taking_too_long_callback to validate alerting is enabled, compute
+  time_difference/model/api_base/messages and send the slow-response alert only when time_difference
+  exceeds alerting_threshold. Implement response_taking_too_long to check alerting is enabled,
+  check if llm_requests_hanging is in alert_types, and add the request to the hanging check on entry.
+  Keep the threshold-comparison logic for alerting and cache cleanup on request completion via non-null
+  completion-status lookup. Build all callback registrations and task startup coordination through B191.
+  Implement async context throughout with proper context manager integration for the background hang-check loop.
+scope:
+  paths:
+    - crates/betterlite-logging/src/hanging_requests.rs
+    - crates/betterlite-logging/src/hanging_requests/
+    - crates/betterlite-logging/src/latency_alerts.rs
+    - crates/betterlite-logging/src/latency_alerts/
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L35-L48
+    why: AlertingHangingRequestCheck initialization with cache TTL calculation and InMemoryCache setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L50-L83
+    why: Request addition to hanging cache with metadata extraction and TTL-based storage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L85-L142
+    why: Hanging request detection loop with oldest-key iteration, alerted flag tracking, and completion-status checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L144-L155
+    why: Background task loop running hang checks every threshold/2 seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L157-L182
+    why: Hanging request alert message formatting and send_alert dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L206-L229
+    why: Slow response callback helper extracting timing, model, api_base and first-100-character messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L231-L261
+    why: Deployment latency formatting for alert context, handling metadata latency maps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L263-L307
+    why: Slow response callback with threshold check, metadata extraction and alert dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L481-L491
+    why: Wrapper method checking alert configuration and delegating to hanging request detector.
+dod:
+  - text: AlertingHangingRequestCheck initializes with cache TTL = int(alerting_threshold * 1.5 + 60) and InMemoryCache with that TTL.
+    proof: [hanging-request-init-tests]
+  - text: HangingRequestData records store request_id, model, api_base, key_alias, team_alias, created_at timestamp and alerted flag.
+    proof: [hanging-request-init-tests]
+  - text: Requests are added to hanging cache with get_litellm_metadata_from_kwargs extraction and api_base lookup.
+    proof: [hanging-request-add-tests]
+  - text: Hanging request check iterates oldest 20 cached requests and detects those exceeding alerting_threshold seconds.
+    proof: [hanging-request-detect-tests]
+  - text: Hanging requests are alerted once per hang and marked with alerted flag for subsequent checks.
+    proof: [hanging-request-detect-tests]
+  - text: Request completion is detected by non-null completion-status cache value and removes the request from hanging cache.
+    proof: [hanging-request-detect-tests]
+  - text: Background check loop runs every alerting_threshold / 2 seconds and continues until shutdown.
+    proof: [hanging-request-loop-tests]
+  - text: Hanging request alert includes request model, api_base, key_alias and team_alias in formatted message.
+    proof: [hanging-request-send-tests]
+  - text: Slow response callback helper extracts time_difference in seconds, model, api_base and first-100-character messages.
+    proof: [latency-helper-tests]
+  - text: Message logging respects turn_off_message_logging and redact_messages_in_exceptions settings.
+    proof: [latency-helper-tests]
+  - text: Deployment latencies are formatted from _latency_per_deployment metadata with api_base as key.
+    proof: [latency-deployment-tests]
+  - text: Slow response alert is sent only when time_difference > alerting_threshold.
+    proof: [latency-callback-tests]
+  - text: Slow response alert includes key name and team from metadata via _add_key_name_and_team_to_alert when available.
+    proof: [latency-callback-tests]
+  - text: response_taking_too_long wrapper checks alerting is enabled and llm_requests_hanging is in alert_types before delegating.
+    proof: [latency-wrapper-tests]
+  - text: Background hang check and alert loop are registered and owned through B191 task admission.
+    proof: [hanging-request-loop-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hanging-request-init-tests
+      why: AlertingHangingRequestCheck initialization and HangingRequestData record tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^hanging_requests::.*init/)'
+    - id: hanging-request-add-tests
+      why: Request addition and metadata extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^hanging_requests::.*add/)'
+    - id: hanging-request-detect-tests
+      why: Hanging request detection and alerted flag tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^hanging_requests::.*detect/)'
+    - id: hanging-request-loop-tests
+      why: Background loop and shutdown drain tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^hanging_requests::.*loop/)'
+    - id: hanging-request-send-tests
+      why: Hanging request alert formatting and send_alert tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^hanging_requests::.*send/)'
+    - id: latency-helper-tests
+      why: Slow response helper extraction and message projection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^latency_alerts::.*helper/)'
+    - id: latency-deployment-tests
+      why: Deployment latency formatting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^latency_alerts::.*deployment/)'
+    - id: latency-callback-tests
+      why: Slow response callback and threshold check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^latency_alerts::.*callback/)'
+    - id: latency-wrapper-tests
+      why: response_taking_too_long wrapper and alert type check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^latency_alerts::.*wrapper/)'
+oracle_cases: []
+deviations:
+  - what: Oldest-key iteration from hanging cache uses InMemoryCache.async_get_oldest_n_keys (MAX_OLDEST_HANGING_REQUESTS_TO_CHECK = 20) to detect stale hanging requests.
+    why: B4027 iterates the oldest 20 cached request entries to detect those exceeding the alerting threshold; this operation is owned by B2226's cache implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L99-L101
+  - what: Request completion status is checked via proxy_logging_obj.internal_usage_cache lookup of "request_status:<request_id>" key (a DualCache instance), with completion-status removal regardless of message content.
+    why: B4027 queries a shared completion-status cache (not the hanging cache) to determine if a request has completed; this DualCache operation is owned by B4293.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L114-L126
+  - what: API-base formatting uses litellm.get_api_base(model, optional_params) to resolve provider-specific API endpoints for hanging and slow request alerts.
+    why: B4027 includes api_base in hanging and slow response alerts; the get_api_base implementation is owned by B004.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L65-L68
+  - what: Slow response alert includes key name and team information via _add_key_name_and_team_to_alert(request_info, metadata); this function is owned by B236.
+    why: B4027 formats key and team context into slow alerts when available; the implementation is owned by B236.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L292
+out_of_scope:
+  - Alert type enum and HangingRequestData record definition are owned by B4020.
+  - Alert destination selection, Slack/Teams/webhook dispatch and send_alert entry point are owned by B4024.
+  - InMemoryCache implementation and synchronous cache operations (_remove_key) are owned by B2226.
+  - DualCache completion-status reads are owned by B4293.
+  - Background task coordination, task admission and shutdown drain are owned by B191.
+  - Async HTTP handler and webhook transport are owned by B173.
+  - AsyncHTTPHandler itself is owned by B173; this task uses its provided async HTTP client.
+  - get_api_base implementation and provider-specific endpoint resolution are owned by B004.
+  - _add_key_name_and_team_to_alert implementation for context enrichment is owned by B236.
+pitfalls:
+  - "AlertingHangingRequestCheck TTL is int(threshold * 1.5 + 60) in seconds, not milliseconds; ensure unit consistency."
+  - "Cache oldest-key iteration returns at most 20 request IDs; the check must handle cases where fewer than 20 are cached."
+  - "Hanging request alerted flag must be preserved across check iterations after sending one alert; toggling it prevents duplicate alerts."
+  - "Request completion is detected by non-null completion-status value in internal_usage_cache, not by absence in hanging_request_cache."
+  - "Message projection uses first 100 characters of messages or input field (fallback if messages absent); truncation must happen before redaction checks."
+  - "Slow response callback filters messages before building request_info string to respect turn_off_message_logging and redact_messages_in_exceptions."
+  - "Deployment latencies format as sorted (api_base, latency) pairs in backtick code blocks; empty latency maps return None without sending that context."
+  - "Background check loop calls sleep(alerting_threshold / 2) between iterations; ensure the duration is a float for division."
+  - "Hanging request alerts include model, api_base, key_alias and team_alias from HangingRequestData; missing values remain as empty strings in the formatted message."
+  - "response_taking_too_long_callback calls send_alert only when time_difference > alerting_threshold; alerts at the threshold boundary are not sent."
+  - "The hanging check does not call response_taking_too_long_callback; the detector depends on the lower sender (B4024), not the other way around."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

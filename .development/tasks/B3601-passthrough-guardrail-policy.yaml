@@ -1,0 +1,159 @@
+id: B3601
+title: Pass-through guardrail policy and JSONPath extraction
+description: >-
+  Implement the supported JSONPath subset and passthrough guardrail normalization,
+  settings selection and inheritance in the common guardrail module. Preserve
+  explicit opt-in, field selection and inherited-name deduplication; the unused
+  alternate execution framework is excluded.
+
+  Build JsonPathExtractor in crates/betterlite-guardrails/src/passthrough_policy.rs
+  with methods extract_fields(data: &serde_json::Value, expressions: &[String]) -> String
+  and evaluate(data: &serde_json::Value, expression: &str) -> Option<String | Vec<String>>.
+  Support simple expressions like "query", nested keys like "foo.bar",
+  array wildcards like "documents[*].text" returning all matching values concatenated
+  with newlines. Return None on missing keys or type mismatches; log debug messages
+  on evaluation failure. Preserve the optional/nullable semantics: empty strings and
+  empty lists both return empty results, not None.
+
+  Build PassthroughGuardrailsConfig and PassthroughGuardrailSettings typed records
+  from the wire format. PassthroughGuardrailsConfig normalizes list (simple guardrail
+  names) or dict (with request_fields/response_fields targeting) formats. Implement
+  normalize_config(input) returning the dict form; get_settings(config, name) returning
+  the settings for one guardrail; collect_guardrails(key_metadata, config) that merges
+  passthrough-specific guardrails with inherited org/team/key-level guardrails using
+  B1108's _add_guardrails_from_key_or_team_metadata call. Deduplicate guardrail names
+  by insertion order (passthrough first, then inherited), keeping only the first occurrence
+  of each name.
+
+  Implement all functions as free functions in passthrough_policy module. Collect
+  guardrails returns HashMap<String, bool> with each guardrail name mapped to true when
+  enabled, or None when guardrails are not configured or the config is empty. Normalize
+  config accepts both list and dict; on type error, log debug and return None. Field
+  extraction applies JSONPath expressions in order, skipping any that fail to evaluate.
+
+  Implement Rust/Python oracle adapters and all behavior tests under passthrough_policy::tests.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/passthrough_policy.rs
+    - crates/betterlite-guardrails/src/passthrough_policy/**
+    - tools/oracle/cases/passthrough_guardrails/**
+    - tools/oracle/helpers/b3601.py
+    - tools/oracle/helpers/b3601/**
+    - tools/oracle/src/helpers/guardrails/b3601.rs
+    - tools/oracle/src/helpers/guardrails/b3601/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/jsonpath_extractor.py#L15-L92
+    why: >-
+      JsonPathExtractor.extract_fields (lines 18-39) takes expressions and data,
+      returns concatenated string of extracted values; JsonPathExtractor.evaluate
+      (lines 41-92) supports simple keys, nested keys, and array wildcards with
+      recursive remaining-path evaluation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L42-L69
+    why: >-
+      PassthroughGuardrailHandler.normalize_config accepts list or dict,
+      returns dict form or None; handles list-to-dict conversion and type validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L96-L113
+    why: >-
+      PassthroughGuardrailHandler.get_settings gets settings for a specific guardrail
+      from normalized config, returns PassThroughGuardrailSettings or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L204-L274
+    why: >-
+      PassthroughGuardrailHandler.collect_guardrails merges passthrough-specific
+      guardrails with org/team/key level guardrails using B1108's helper, preserves
+      order and deduplicates by keeping first occurrence.
+
+dod:
+  - text: >-
+      JSONPath extract_fields and evaluate implementations match LiteLLM on simple keys,
+      nested keys, array wildcards and recursive remaining-path evaluation across all
+      path forms.
+    proof:
+      - oracle
+  - text: >-
+      normalize_config accepts both list and dict input formats, returns dict form
+      or None; list ["g1", "g2"] becomes {"g1": None, "g2": None}.
+    proof:
+      - behavior-tests
+  - text: >-
+      get_settings returns the PassThroughGuardrailSettings for a guardrail name
+      from normalized config, or None if the guardrail is not found.
+    proof:
+      - behavior-tests
+  - text: >-
+      collect_guardrails merges passthrough-specific guardrails first, then inherited
+      org/team/key-level guardrails from B1108's metadata helper, deduplicates by
+      keeping first occurrence and returns HashMap<String, bool> or None.
+    proof:
+      - oracle
+  - text: >-
+      Field extraction concatenates matched values with newlines, skips failed
+      expressions and logs debug messages on evaluation errors.
+    proof:
+      - behavior-tests
+  - text: >-
+      Array wildcard expressions like "documents[*].text" recursively evaluate the
+      remaining path for each item and flatten results.
+    proof:
+      - oracle
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: JSONPath evaluation, config normalization or guardrail collection is incomplete or fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^passthrough_policy(::|$)/) - test(/replays_the_.*_corpus/)'
+
+oracle_cases:
+  - tools/oracle/cases/passthrough_guardrails/jsonpath-simple-key.yaml
+  - tools/oracle/cases/passthrough_guardrails/jsonpath-nested-key.yaml
+  - tools/oracle/cases/passthrough_guardrails/jsonpath-array-wildcard.yaml
+  - tools/oracle/cases/passthrough_guardrails/jsonpath-missing-key.yaml
+  - tools/oracle/cases/passthrough_guardrails/jsonpath-type-mismatch.yaml
+  - tools/oracle/cases/passthrough_guardrails/normalize-config-list-input.yaml
+  - tools/oracle/cases/passthrough_guardrails/normalize-config-dict-input.yaml
+  - tools/oracle/cases/passthrough_guardrails/normalize-config-none-input.yaml
+  - tools/oracle/cases/passthrough_guardrails/get-settings-found.yaml
+  - tools/oracle/cases/passthrough_guardrails/get-settings-not-found.yaml
+  - tools/oracle/cases/passthrough_guardrails/collect-guardrails-passthrough-only.yaml
+  - tools/oracle/cases/passthrough_guardrails/collect-guardrails-with-inheritance.yaml
+  - tools/oracle/cases/passthrough_guardrails/collect-guardrails-deduplication.yaml
+  - tools/oracle/cases/passthrough_guardrails/collect-guardrails-empty-config.yaml
+  - tools/oracle/cases/passthrough_guardrails/extract-fields-multiple-expressions.yaml
+
+deviations: []
+
+out_of_scope:
+  - B1108 owns _add_guardrails_from_key_or_team_metadata for metadata-based guardrail inheritance.
+  - is_enabled, get_guardrail_names, prepare_input, prepare_output, execute and get_field_targeted_text (passthrough_guardrails.py lines 71-202, 276-315) have no caller at the pin in the live graph and are not built.
+  - Passthrough context storage (passthrough_context module) is out of scope; B3601 passes guardrails through parameters.
+
+pitfalls:
+  - >-
+    Array wildcard expressions use [*] notation and must recursively evaluate
+    the remaining path for each item in the array. A missing array or non-array
+    item returns None.
+  - >-
+    Configuration accepts both list format like ["g1", "g2"] and dict format
+    like {"g1": {"request_fields": [...]}}; both must be accepted and normalized
+    to dict form.
+  - >-
+    Deduplication preserves insertion order, with passthrough-specific guardrails
+    added first and inherited guardrails added only if not already present by name.
+  - >-
+    Field extraction concatenates values with newlines; empty results are empty
+    strings, not None.
+  - >-
+    Failed JSONPath evaluations log debug messages but do not stop extraction;
+    subsequent expressions continue to evaluate.
+  - >-
+    Inherited guardrails come from B1108's metadata helper; passthrough config and
+    inherited guardrails are merged, not replaced.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

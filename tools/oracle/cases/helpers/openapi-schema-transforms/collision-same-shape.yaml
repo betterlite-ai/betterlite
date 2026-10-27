@@ -1,0 +1,19 @@
+kind: helper
+name: collision-same-shape
+call:
+  openapi_schema_transforms:
+    function: add_schema_to_components
+    schema_name: Request
+    openapi:
+      components:
+        schemas:
+          Block: {type: object, properties: {value: {type: string}}, required: [value]}
+    schema:
+      type: object
+      properties:
+        block: {"$ref": "#/$defs/Block"}
+      "$defs":
+        Block: {title: Block, properties: {value: {type: integer}}, required: [value, 7]}
+env: {}
+compare:
+  ignore: []
