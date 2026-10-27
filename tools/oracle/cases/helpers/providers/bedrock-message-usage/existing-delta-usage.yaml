@@ -16,6 +16,18 @@ call:
       - type: message_delta
       - type: message_stop
         usage: {input_tokens: null}
+      - type: message_delta
+      - type: message_stop
+        usage: {input_tokens: true}
+      - type: message_delta
+      - type: message_stop
+        usage: {input_tokens: -1}
+      - type: message_delta
+      - type: message_stop
+        usage: {input_tokens: 18446744073709551615}
+      - type: message_delta
+      - type: message_stop
+        usage: {input_tokens: "7"}
 env: {}
 compare:
   ignore: []

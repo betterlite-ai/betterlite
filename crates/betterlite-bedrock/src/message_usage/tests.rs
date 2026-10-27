@@ -18,6 +18,10 @@ use super::promote_message_usage;
     r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":null}}]"#,
     r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":null}}]"#
 )]
+#[case::boolean_stop_input(r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":true}}]"#, r#"[{"type":"message_delta","usage":{"input_tokens":true}},{"type":"message_stop","usage":{"input_tokens":true}}]"#)]
+#[case::negative_stop_input(r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":-1}}]"#, r#"[{"type":"message_delta","usage":{"input_tokens":-1}},{"type":"message_stop","usage":{"input_tokens":-1}}]"#)]
+#[case::large_stop_input(r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":18446744073709551615}}]"#, r#"[{"type":"message_delta","usage":{"input_tokens":18446744073709551615}},{"type":"message_stop","usage":{"input_tokens":18446744073709551615}}]"#)]
+#[case::string_stop_input(r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":"7"}}]"#, r#"[{"type":"message_delta","usage":{"input_tokens":0}},{"type":"message_stop","usage":{"input_tokens":"7"}}]"#)]
 fn message_usage_cases(#[case] input: &str, #[case] expected: &str) {
     let events: Vec<Value> = serde_json::from_str(input).unwrap();
     let wanted: Vec<Value> = serde_json::from_str(expected).unwrap();
