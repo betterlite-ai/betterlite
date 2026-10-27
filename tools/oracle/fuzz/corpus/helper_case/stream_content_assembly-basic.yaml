@@ -1,0 +1,5 @@
+kind: helper
+name: stream-content-assembly-basic
+call: {stream_content_assembly: {function: content_and_reasoning, chunks: []}}
+env: {}
+compare: {ignore: []}

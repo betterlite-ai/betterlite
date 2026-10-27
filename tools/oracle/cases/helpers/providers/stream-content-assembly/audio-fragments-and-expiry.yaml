@@ -1,0 +1,13 @@
+kind: helper
+name: audio-fragments-and-expiry
+call:
+  stream_content_assembly:
+    function: audio_fragments_and_expiry
+    now: 100
+    chunks:
+      - choices:
+          - delta: {audio: {data: YQ==, transcript: a, expires_at: 0, id: one}}
+      - choices:
+          - delta: {audio: {data: Yg==, transcript: b, expires_at: -2, id: ''}}
+env: {}
+compare: {ignore: []}

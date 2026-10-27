@@ -1,0 +1,9 @@
+kind: helper
+name: audio-base64-decoder
+call:
+  stream_content_assembly:
+    function: audio_base64_decoder
+    fragment: YQ==
+    max_decoded_bytes: 1
+env: {}
+compare: {ignore: []}

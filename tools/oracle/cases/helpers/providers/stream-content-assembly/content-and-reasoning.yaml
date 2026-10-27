@@ -1,0 +1,10 @@
+kind: helper
+name: content-and-reasoning
+call:
+  stream_content_assembly:
+    function: content_and_reasoning
+    chunks:
+      - choices: [{delta: {content: a, reasoning_content: r}}]
+      - choices: [{delta: {content: b, reasoning_content: s}}]
+env: {}
+compare: {ignore: []}

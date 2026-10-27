@@ -1,0 +1,16 @@
+kind: helper
+name: thinking-signature-boundaries
+call:
+  stream_content_assembly:
+    function: thinking_signature_boundaries
+    chunks:
+      - choices:
+          - delta:
+              thinking_blocks:
+                - {type: thinking, thinking: a}
+                - {thinking: b, signature: s}
+                - {thinking: tail}
+                - {type: redacted_thinking, data: secret}
+                - {type: thinking, signature: empty}
+env: {}
+compare: {ignore: []}
