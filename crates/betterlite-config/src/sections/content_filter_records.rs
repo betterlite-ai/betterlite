@@ -215,16 +215,12 @@ pub struct BlockCodeExecGuardrailConfig {
 
 impl Default for BlockCodeExecGuardrailConfig {
     fn default() -> Self {
-        let mut config = Self {
+        Self {
             blocked_languages: None,
             action: BlockCodeAction::Block,
             confidence_threshold: Self::CONFIDENCE_THRESHOLD,
             detect_execution_intent: Self::DETECT_EXECUTION_INTENT,
-        };
-        if config.confidence_threshold.is_sign_negative() {
-            config.confidence_threshold = 0.0_f64;
         }
-        config
     }
 }
 
