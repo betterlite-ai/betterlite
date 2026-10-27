@@ -246,7 +246,12 @@ fn all_four_export_groupings(#[case] kind: ExportType, #[case] suffix: &str, #[c
     "MAX(tt.team_alias)",
     "SUM(scoped.ptu_flat_cost)::float"
 )]
-#[case::team_org_alias_joins("litellm_dailyorganizationspend", "organization_id", concat!("MAX(o", "t.organization_alias)"), "0::float")]
+#[case::team_org_alias_joins(
+    "litellm_dailyorganizationspend",
+    "organization_id",
+    "MAX(ot.organization_alias)",
+    "0::float"
+)]
 #[case::nonteam_flat_cost_zero("litellm_dailyuserspend", "user_id", "NULL::text", "0::float")]
 fn export_alias_and_flat_cost(
     #[case] table: &str,
