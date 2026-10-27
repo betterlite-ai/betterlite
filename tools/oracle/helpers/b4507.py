@@ -70,7 +70,7 @@ async def examine(data: Input) -> Json:
         [json.loads(item.model_dump_json()) for item in coverage],
         reads,
         models,
-        maximum,
+        maximum <= data.claim.job.settings.concurrency,
     ]
     return cast("Json", result)
 

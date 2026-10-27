@@ -11,7 +11,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::{Barrier, Notify};
 use tokio::time::timeout;
 
 #[tokio::test]
@@ -73,17 +73,21 @@ async fn progress_empty_sample_reports_once() {
 }
 
 fn gated_reader(started: Arc<AtomicUsize>, release: Arc<Notify>) -> ReadContent {
-    let read: ReadContent = Arc::new(move |_, _, _| {
+    let barrier = Arc::new(Barrier::new(2));
+    Arc::new(move |_, _, _| {
         let index = started.fetch_add(1, Ordering::SeqCst);
         let wait = Arc::clone(&release);
+        let ready = Arc::clone(&barrier);
         Box::pin(async move {
+            if index < 2 {
+                ready.wait().await;
+            }
             if index == 1 {
                 wait.notified().await;
             }
             Ok(page())
         })
-    });
-    read
+    })
 }
 
 fn reporter(
@@ -91,15 +95,13 @@ fn reporter(
     started: Arc<AtomicUsize>,
     release: Arc<Notify>,
 ) -> ReportProgress {
-    let reported = coverage;
-    let progress: ReportProgress = Arc::new(move |stage, current| {
+    Arc::new(move |stage, current| {
         assert_eq!(stage, "Reading executions");
         if current.screened == 1 {
             assert_eq!(started.load(Ordering::SeqCst), 2);
             release.notify_one();
         }
-        reported.lock().unwrap().push(current);
+        coverage.lock().unwrap().push(current);
         Box::pin(async { Ok(()) })
-    });
-    progress
+    })
 }

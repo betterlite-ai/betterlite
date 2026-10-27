@@ -52,6 +52,7 @@ where
 }
 
 async fn run(input: Input) -> HelperResult {
+    let concurrency = usize::try_from(input.claim.job.settings.concurrency).map_err(failure)?;
     let progress_log = Arc::new(Mutex::new(Vec::<Coverage>::new()));
     let counters = Arc::new(Counters::default());
     let progress_copy = Arc::clone(&progress_log);
@@ -73,7 +74,7 @@ async fn run(input: Input) -> HelperResult {
         coverage,
         counters.reads.load(Ordering::SeqCst),
         counters.models.load(Ordering::SeqCst),
-        counters.maximum.load(Ordering::SeqCst),
+        counters.maximum.load(Ordering::SeqCst) <= concurrency,
     ))
     .map_err(failure)
 }
