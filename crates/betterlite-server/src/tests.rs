@@ -1,8 +1,62 @@
 #![cfg(test)]
 use crate::auth::parse_key_header;
+use crate::server::chat_setup::chat_executor;
+use crate::server::run;
+use betterlite_config::loader::ConfigLoader;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use std::collections::BTreeMap;
+use std::time::Duration;
 use std::{fs, path::Path};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{sleep, timeout};
+#[tokio::test]
+async fn run_serves_requests_with_the_chat_executor_it_was_given() {
+    let port = TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let environment = BTreeMap::new();
+    let loader = ConfigLoader {
+        lookup: environment.clone(),
+    };
+    let config = loader
+        .load("model_list:\n  - {model_name: g, litellm_params: {model: azure/m}}\n")
+        .unwrap();
+    let chat = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
+    let (served, response) = tokio::join!(
+        timeout(Duration::from_secs(3), run(config, chat, "127.0.0.1", port)),
+        timeout(Duration::from_secs(3), post_chat_once_listening(port))
+    );
+    assert!(
+        served.is_err(),
+        "run stopped while it should serve: {served:?}"
+    );
+    let answer = response.unwrap();
+    assert!(answer.starts_with("HTTP/1.1 501"), "{answer}");
+}
+async fn post_chat_once_listening(port: u16) -> String {
+    let mut connected = TcpStream::connect(("127.0.0.1", port)).await;
+    while connected.is_err() {
+        sleep(Duration::from_millis(10)).await;
+        connected = TcpStream::connect(("127.0.0.1", port)).await;
+    }
+    let mut stream = connected.unwrap();
+    let body = r#"{"model":"g","messages":[]}"#;
+    let request = format!(
+        "POST /chat/completions HTTP/1.1\r\nhost: x\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    response
+}
 #[rstest]
 #[case::repeated_bearer("Bearer test-Bearer master", "test-master")]
 #[case::repeated_basic("Basic test-Basic master", "test-master")]

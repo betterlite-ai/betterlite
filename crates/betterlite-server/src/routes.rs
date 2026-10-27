@@ -1,3 +1,5 @@
+pub(crate) mod chat;
+
 use crate::auth::authenticate;
 use crate::error_body::request_timeout_error;
 use crate::model_list::model_routes;
@@ -21,12 +23,18 @@ pub(crate) fn router(
     master_key: Option<SecretString>,
     shutting_down: Arc<AtomicBool>,
     model_list: &[ModelDeployment],
+    chat: Router,
 ) -> Router {
     let timeout_layers = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
             request_timeout_error()
         }))
         .layer(TimeoutLayer::new(Duration::from_secs(30)));
+    // the deployment timeout bounds a chat call, and LiteLLM's default is 6000 seconds
+    let guarded_chat = chat.layer(middleware::from_fn_with_state(
+        master_key.clone(),
+        authenticate,
+    ));
     Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
@@ -43,6 +51,7 @@ pub(crate) fn router(
         })
         .layer(middleware::from_fn_with_state(master_key, authenticate))
         .layer(timeout_layers)
+        .merge(guarded_chat)
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {
