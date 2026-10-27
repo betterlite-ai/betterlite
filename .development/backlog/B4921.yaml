@@ -2,7 +2,7 @@ id: B4921
 milestone: M10 admin ui
 title: Playground attachment type, size and image count validation
 status: todo
-depends_on: []
+depends_on: [B144]
 file: tasks/B4921-playground-upload-validation.yaml
 covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/uploadValidation.ts"
