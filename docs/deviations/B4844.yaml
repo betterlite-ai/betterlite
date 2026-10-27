@@ -1,0 +1,14 @@
+task: B4844
+deviations:
+  - what: The harness does not read LITELLM_PROXY_API_BASE, LITELLM_PROXY_API_KEY, or litellm.use_litellm_proxy itself; betterlite-config must build ProxySettings from those inputs before calling the harness.
+    why: inject-dependencies forbids environment reads outside the configuration crate, so the configuration boundary is an explicit owner rather than an implicit harness dependency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L95-L117
+  - what: Output validation uses generic serde deserialization instead of Pydantic model_validate_json.
+    why: betterlite is Rust and has no Pydantic runtime; the generic contract preserves typed validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L247-L255
+  - what: Sessions take no custom tools, so SessionConfig has no tools field and the custom tools capability check is not built.
+    why: LiteLLM's tools are in-process Python callables, and B4830's SessionContext has no tools field because Rust has no tool-function representation yet; a field that context_for could not pass on would drop tools silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L164-L165
+  - what: install=True and an unsupported permission mode return ValidationError::InstallUnsupported and ValidationError::PermissionUnsupported instead of HarnessError::CapabilityUnsupported.
+    why: The shared Capability enum from B4830 has no member for install or for a permission mode, so the shared CapabilityUnsupported variant cannot name them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L131-L160

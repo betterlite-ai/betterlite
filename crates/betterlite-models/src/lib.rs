@@ -47,6 +47,8 @@ pub(crate) mod passthrough;
 pub(crate) mod passthrough_policies;
 pub mod price_lookup;
 pub mod projections;
+pub mod prompt_contracts;
+pub mod prompt_spec;
 pub mod protocol_cost;
 pub mod provider_defaults_a;
 pub mod provider_defaults_b;
