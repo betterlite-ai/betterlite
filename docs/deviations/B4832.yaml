@@ -1,0 +1,5 @@
+task: B4832
+deviations:
+  - what: Subprocess signaling uses the platform kill utility with Tokio process groups instead of direct Python os.killpg/os.setsid.
+    why: The repository forbids unsafe code and has no signal crate; Tokio process groups plus the system signal utility preserve observable TERM/grace/KILL behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/local.py#L41-L277
