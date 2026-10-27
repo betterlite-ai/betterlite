@@ -1,5 +1,2 @@
 task: B4507
-deviations:
-  - what: examine_executions uses a tokio LocalSet with bounded spawn_local tasks because TraceStore owns rusqlite::Connection, which is not Send/Sync.
-    why: The existing B4506 TraceStore cannot cross JoinSet worker threads safely; LocalSet preserves bounded concurrent extraction without changing the out-of-scope storage crate.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L838-L855
+deviations: []
