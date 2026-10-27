@@ -4,7 +4,7 @@ call:
   openapi_schema_transforms:
     function: inline_request_body
     schema: null
-    example: {value: fallback}
+    example: {model: jev, state: "Customer wrote: I was charged twice."}
 env: {}
 compare:
   ignore: []

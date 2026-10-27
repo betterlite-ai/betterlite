@@ -1,0 +1,18 @@
+kind: helper
+name: missing-reference
+call:
+  openapi_schema_transforms:
+    function: inline_request_body
+    example: {model: jev}
+    schema:
+      type: object
+      properties:
+        model: {type: string}
+        state: {"$ref": "#/$defs/State"}
+      "$defs":
+        Other: {type: string}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

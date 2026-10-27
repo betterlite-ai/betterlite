@@ -3,12 +3,20 @@ name: messages-example
 call:
   openapi_schema_transforms:
     function: add_request_body_to_paths
+    schema_ref: "#/components/schemas/ProxyChatCompletionRequest"
+    paths: [/v1/chat/completions, /chat/completions]
     openapi:
-      components: {schemas: {Request: {type: object, properties: {messages: {type: array}}}}}
-      paths: {/chat: {post: {parameters: [{in: query, name: q}, {in: path, name: model}]}}}
-    paths: [/chat]
-    schema_ref: '#/components/schemas/Request'
-    field_name: messages
+      components:
+        schemas:
+          ProxyChatCompletionRequest:
+            required: [model, messages]
+            properties:
+              model: {type: string, "$defs": {Unused: {}}}
+              messages: {type: array, example: old, items: {"$ref": "#/$defs/Message"}}
+              stream: true
+      paths:
+        /v1/chat/completions: {post: {requestBody: {"$ref": "#/components/requestBodies/Old"}}}
+        /chat/completions: {post: {summary: chat}}
 env: {}
 compare:
   ignore: []

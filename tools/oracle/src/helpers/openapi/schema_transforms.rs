@@ -1,85 +1,84 @@
+use betterlite_openapi::inline_expansion::inline_request_body;
+use betterlite_openapi::schema_transforms::tree::JsonObject;
+use betterlite_openapi::schema_transforms::{
+    add_request_body_to_paths, add_request_schema, add_schema_to_components,
+};
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    AddSchemaToComponents {
+        openapi: JsonObject,
+        schema_name: String,
+        schema: JsonObject,
+    },
+    AddRequestBodyToPaths {
+        openapi: JsonObject,
+        paths: Vec<String>,
+        schema_ref: String,
+    },
+    AddRequestSchema {
+        openapi: JsonObject,
+        schema_name: String,
+        schema: Option<JsonObject>,
+        paths: Vec<String>,
+    },
+    InlineRequestBody {
+        schema: Option<JsonObject>,
+        example: JsonObject,
+    },
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let mut document = input
-            .get("openapi")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({}));
-        let function = input
-            .get("function")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| error("function is required"))?;
-        let result = match function {
-            "add_schema_to_components" => {
-                let name = input
-                    .get("schema_name")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| error("schema_name is required"))?;
-                let schema = input
-                    .get("schema")
-                    .cloned()
-                    .ok_or_else(|| error("schema is required"))?;
-                betterlite_openapi::schema_transforms::add_schema_to_components(
-                    &mut document,
-                    name,
-                    schema,
-                )
-                .map(|()| document)
+    fn run(input: &Input) -> crate::helpers::HelperResult {
+        let output = match input.clone() {
+            Input::AddSchemaToComponents {
+                mut openapi,
+                schema_name,
+                schema,
+            } => {
+                add_schema_to_components(&mut openapi, &schema_name, &schema);
+                Ok(openapi)
             }
-            "add_request_body_to_paths" => {
-                let paths = input
-                    .get("paths")
-                    .and_then(serde_json::Value::as_array)
-                    .ok_or_else(|| error("paths is required"))?
-                    .iter()
-                    .filter_map(serde_json::Value::as_str)
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>();
-                let reference = input
-                    .get("schema_ref")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| error("schema_ref is required"))?;
-                betterlite_openapi::schema_transforms::add_request_body_to_paths(
-                    &mut document, &paths, reference,
-                )
-                .map(|()| document)
+            Input::AddRequestBodyToPaths {
+                mut openapi,
+                paths,
+                schema_ref,
+            } => {
+                let path_names = paths.iter().map(String::as_str).collect::<Vec<_>>();
+                add_request_body_to_paths(&mut openapi, &path_names, &schema_ref);
+                Ok(openapi)
             }
-            "inline_request_body" => betterlite_openapi::inline_expansion::inline_request_body(
-                input.get("schema").cloned(),
-                input
-                    .get("example")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
-            ),
-            _ => Err(
-                betterlite_openapi::schema_transforms::SchemaError::InvalidComponent(
-                    function.to_owned(),
-                ),
-            ),
+            Input::AddRequestSchema {
+                mut openapi,
+                schema_name,
+                schema,
+                paths,
+            } => {
+                let path_names = paths.iter().map(String::as_str).collect::<Vec<_>>();
+                add_request_schema(&mut openapi, &schema_name, schema.as_ref(), &path_names);
+                Ok(openapi)
+            }
+            Input::InlineRequestBody { schema, example } => {
+                inline_request_body(schema.as_ref(), &example)
+            }
         };
-        result.map_err(|source| {
-            Box::new(crate::helpers::HelperError {
-                class: "SchemaError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: source.to_string(),
-            })
-        })
+        let value = output.map_err(|error| failure("KeyError", &error))?;
+        serde_json::to_value(value).map_err(|error| failure("SerializationError", &error))
     }
 }
 
-fn error(message: &str) -> Box<crate::helpers::HelperError> {
+fn failure(class: &str, error: &dyn std::error::Error) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
-        class: "InvalidInput".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.to_owned(),
+        message: error.to_string(),
     })
 }
