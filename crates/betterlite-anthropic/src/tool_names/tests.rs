@@ -122,6 +122,10 @@ fn tool_choice_rewrite_copies_only_custom_tools() {
     };
     let maps = sanitize_tool_names_in_request(&mut params);
     assert_eq!(maps.forward["bad/name"], "bad_name");
+    assert_rewritten_request(&params);
+}
+
+fn assert_rewritten_request(params: &RequestParams) {
     assert_eq!(
         params.tools.as_ref().unwrap()[0].name.as_deref(),
         Some("bad_name")
