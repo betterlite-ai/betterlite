@@ -16,7 +16,8 @@ pub(super) fn path_string(path: &Path) -> Result<String, HarnessError> {
 }
 
 pub(super) fn real_path(path: &Path) -> io::Result<PathBuf> {
-    soft_canonicalize(path)
+    let resolved = soft_canonicalize(path)?;
+    Ok(resolved)
 }
 
 pub(super) fn read_file(path: &Path, max: usize) -> Result<Vec<u8>, HarnessError> {

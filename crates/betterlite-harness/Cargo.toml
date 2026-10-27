@@ -18,8 +18,8 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 sha2.workspace = true
 similar = "3.2.0"
-tempfile = "3.27.0"
 soft-canonicalize = "0.5.6"
+tempfile = "3.27.0"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 which = "8.0.6"
