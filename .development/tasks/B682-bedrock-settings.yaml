@@ -88,7 +88,6 @@ scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-bedrock/src/bedrock_settings.rs
   - crates/betterlite-bedrock/src/bedrock_settings/**
   - tools/oracle/Cargo.toml

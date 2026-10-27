@@ -76,7 +76,6 @@ scope:
     - crates/betterlite-db/src/database_tls/**
     - crates/betterlite-db/Cargo.toml
     - Cargo.toml
-    - deny.toml
     - tools/oracle/src/helpers/db/database_tls.rs
     - tools/oracle/src/helpers/db/database_tls/**
     - tools/oracle/helpers/database_tls.py

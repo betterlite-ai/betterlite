@@ -24,7 +24,7 @@ scope:
   - tools/oracle/helpers/token_formatting.py
   - tools/oracle/helpers/token_formatting/**
   - tools/oracle/cases/helpers/token-formatting/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/token_formatting-*"
   - crates/betterlite-tokenizer/fuzz/**
   - crates/betterlite-tokenizer/src/selection.rs
   - crates/betterlite-tokenizer/src/selection/**
@@ -71,8 +71,8 @@ checks:
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'token_formatting' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/token_formatting-*")" &&
+      grep -lq 'token_formatting' tools/oracle/fuzz/corpus/helper_case/token_formatting-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: token-tool-format-corpus
@@ -96,6 +96,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B196 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/token_formatting-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as token_formatting in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/token_formatting.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/token_formatting.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
