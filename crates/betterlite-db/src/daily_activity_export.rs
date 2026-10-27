@@ -18,7 +18,6 @@ pub enum DailyActivityExportError {
     Sql(#[from] DailyActivitySqlError),
 }
 
-#[cfg(test)]
 mod tests;
 
 pub const fn bounded_limit(limit: i64) -> Result<(), DailyActivityExportError> {
@@ -33,35 +32,18 @@ pub fn build_key_search_sql(
     search: &str,
     limit: i64,
 ) -> Result<SqlQuery, DailyActivityExportError> {
-    bounded_limit(limit)?;
-    let SqlQuery {
-        sql: where_sql,
-        mut params,
-    } = build_where_clause(scope, 1, &|| chrono::Utc::now())?;
-    let search_index = params
-        .len()
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    let sentinel_index = search_index
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    let limit_index = sentinel_index
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
+    let (where_sql, params, [search_index, sentinel_index, limit_index]) =
+        ranked_indexes(scope, limit)?;
     let escaped = search
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
     let table = scope.as_ref().table.metadata().relation;
-    let sql = format!(
-        "SELECT api_key,{KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} AND api_key <> ${sentinel_index} AND (api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN (SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\')) GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
+    let predicate = format!(
+        "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
     );
-    params.extend([
-        SqlParameter::Text(format!("%{escaped}%")),
-        SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()),
-        SqlParameter::Integer(limit),
-    ]);
-    Ok(SqlQuery { sql, params })
+    let sql = render_key_query(table, &where_sql, &predicate, limit_index);
+    Ok(finish_ranked(sql, params, format!("%{escaped}%"), limit))
 }
 
 pub fn build_model_top_keys_sql(
@@ -70,36 +52,57 @@ pub fn build_model_top_keys_sql(
     by_model_group: bool,
     limit: i64,
 ) -> Result<SqlQuery, DailyActivityExportError> {
-    bounded_limit(limit)?;
-    let SqlQuery {
-        sql: where_sql,
-        mut params,
-    } = build_where_clause(scope, 1, &|| chrono::Utc::now())?;
-    let model_index = params
-        .len()
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    let sentinel_index = model_index
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    let limit_index = sentinel_index
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
+    let (where_sql, params, [model_index, sentinel_index, limit_index]) =
+        ranked_indexes(scope, limit)?;
     let model_sql = if by_model_group {
         format!("COALESCE(NULLIF(model_group, ''), model) = ${model_index}")
     } else {
         format!("model = ${model_index}")
     };
     let table = scope.as_ref().table.metadata().relation;
+    let predicate = format!("AND {model_sql} AND api_key <> ${sentinel_index}");
+    let sql = render_key_query(table, &where_sql, &predicate, limit_index);
+    Ok(finish_ranked(sql, params, model_group.to_owned(), limit))
+}
+
+fn render_key_query(table: &str, where_sql: &str, predicate: &str, limit_index: usize) -> String {
     let sql = format!(
-        "SELECT api_key,{KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} AND {model_sql} AND api_key <> ${sentinel_index} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
+        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
     );
+    sql
+}
+
+fn ranked_indexes(
+    scope: &DailyActivityScope,
+    limit: i64,
+) -> Result<(String, Vec<SqlParameter>, [usize; 3]), DailyActivityExportError> {
+    bounded_limit(limit)?;
+    let SqlQuery { sql, params } = build_where_clause(scope, 1, &|| chrono::Utc::now())?;
+    let first = params
+        .len()
+        .checked_add(1)
+        .ok_or(DailyActivityExportError::BindOverflow)?;
+    let second = first
+        .checked_add(1)
+        .ok_or(DailyActivityExportError::BindOverflow)?;
+    let third = second
+        .checked_add(1)
+        .ok_or(DailyActivityExportError::BindOverflow)?;
+    Ok((sql, params, [first, second, third]))
+}
+
+fn finish_ranked(
+    sql: String,
+    mut params: Vec<SqlParameter>,
+    extra: String,
+    limit: i64,
+) -> SqlQuery {
     params.extend([
-        SqlParameter::Text(model_group.to_owned()),
+        SqlParameter::Text(extra),
         SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()),
         SqlParameter::Integer(limit),
     ]);
-    Ok(SqlQuery { sql, params })
+    SqlQuery { sql, params }
 }
 
 pub fn build_cache_leakage_keys_sql(
@@ -120,7 +123,7 @@ pub fn build_cache_leakage_keys_sql(
         .ok_or(DailyActivityExportError::BindOverflow)?;
     let table = scope.as_ref().table.metadata().relation;
     let sql = format!(
-        "SELECT api_key,{KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} AND api_key <> ${sentinel_index} GROUP BY api_key HAVING SUM(prompt_tokens) - SUM(cache_read_input_tokens) > 0 ORDER BY SUM(prompt_tokens) - SUM(cache_read_input_tokens) DESC, api_key LIMIT ${limit_index}"
+        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} AND api_key <> ${sentinel_index} GROUP BY api_key HAVING SUM(prompt_tokens) - SUM(cache_read_input_tokens) > 0 ORDER BY SUM(prompt_tokens) - SUM(cache_read_input_tokens) DESC, api_key LIMIT ${limit_index}"
     );
     params.extend([
         SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()),
@@ -240,7 +243,7 @@ fn render_export_sql(plan: &ExportPlan<'_>) -> String {
     };
     let cursor_sql = export_cursor_clause(scope, cursor_indexes, &grouping.key);
     format!(
-        "WITH scoped AS ( SELECT * FROM \"{table}\" WHERE {where_sql}{sentinel_sql} ) SELECT scoped.date, COALESCE(scoped.\"{entity}\", '') AS entity_id, {} AS entity_alias, {}, {}, {}, {}, {} AS model, COALESCE(SUM(scoped.spend), 0)::float AS spend, {flat_cost} AS flat_cost, COALESCE(SUM(scoped.prompt_tokens), 0)::bigint AS prompt_tokens, COALESCE(SUM(scoped.completion_tokens), 0)::bigint AS completion_tokens, COALESCE(SUM(scoped.api_requests), 0)::bigint AS api_requests, COALESCE(SUM(scoped.successful_requests), 0)::bigint AS successful_requests, COALESCE(SUM(scoped.failed_requests), 0)::bigint AS failed_requests, COALESCE(SUM(scoped.cache_read_input_tokens), 0)::bigint AS cache_read_input_tokens, COALESCE(SUM(scoped.cache_creation_input_tokens), 0)::bigint AS cache_creation_input_tokens FROM scoped{} WHERE TRUE{} GROUP BY scoped.date, COALESCE(scoped.\"{entity}\", ''){group_suffix} ORDER BY scoped.date, COALESCE(scoped.\"{entity}\", ''){group_suffix} LIMIT ${limit_index}",
+        "WITH scoped AS ( SELECT * FROM \"{table}\" WHERE {where_sql}{sentinel_sql} ) SELECT scoped.date, COALESCE(scoped.\"{entity}\", '') AS entity_id, {} AS entity_alias, {} AS api_key, {}, {}, {}, {} AS model, COALESCE(SUM(scoped.spend), 0)::float AS spend, {flat_cost} AS flat_cost, COALESCE(SUM(scoped.prompt_tokens), 0)::bigint AS prompt_tokens, COALESCE(SUM(scoped.completion_tokens), 0)::bigint AS completion_tokens, COALESCE(SUM(scoped.api_requests), 0)::bigint AS api_requests, COALESCE(SUM(scoped.successful_requests), 0)::bigint AS successful_requests, COALESCE(SUM(scoped.failed_requests), 0)::bigint AS failed_requests, COALESCE(SUM(scoped.cache_read_input_tokens), 0)::bigint AS cache_read_input_tokens, COALESCE(SUM(scoped.cache_creation_input_tokens), 0)::bigint AS cache_creation_input_tokens FROM scoped{} WHERE TRUE{} GROUP BY scoped.date, COALESCE(scoped.\"{entity}\", ''){group_suffix} ORDER BY scoped.date, COALESCE(scoped.\"{entity}\", ''){group_suffix} LIMIT ${limit_index}",
         grouping.alias,
         grouping.output,
         grouping.key_alias,

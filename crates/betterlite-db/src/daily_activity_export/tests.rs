@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::{bounded_limit, build_export_sql, build_key_search_sql};
 use crate::daily_activity_contracts::{DailyActivityScope, ExportCursor, ExportType, SqlParameter};
 
