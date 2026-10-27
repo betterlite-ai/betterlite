@@ -64,6 +64,7 @@ use super::errors::{backend, is_unique_violation};
 use super::repository::Repository;
 use super::rows::{FindMany, Key, KeyAction, KeyColumn, Query, RowCodec, Table};
 use rstest::rstest;
+use std::convert::Infallible;
 use std::future::{Future as _, pending, poll_fn};
 use std::pin::Pin;
 use std::time::Duration;
@@ -646,7 +647,7 @@ async fn cancel_write(store: &PostgresStore) {
 
 #[test]
 fn find_many_defaults_are_unset() {
-    let options: FindMany<'_, (), ()> = FindMany::default();
+    let options: FindMany<'_, Infallible, Infallible> = FindMany::default();
     assert_eq!(
         (options.filter, options.order, options.skip, options.take),
         (None, None, None, None)

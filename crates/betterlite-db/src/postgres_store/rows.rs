@@ -30,12 +30,22 @@ pub enum KeyAction {
     Delete,
 }
 
-#[derive(Default)]
 pub struct FindMany<'query, F, O> {
     pub filter: Option<&'query [F]>,
     pub order: Option<&'query [O]>,
     pub skip: Option<i64>,
     pub take: Option<i64>,
+}
+
+impl<F, O> Default for FindMany<'_, F, O> {
+    fn default() -> Self {
+        Self {
+            filter: None,
+            order: None,
+            skip: None,
+            take: None,
+        }
+    }
 }
 
 pub trait Table: RowCodec {
