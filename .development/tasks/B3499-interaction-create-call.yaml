@@ -1,0 +1,115 @@
+id: B3499
+title: Create native or Responses-backed interactions
+description: >-
+  Implement sync and async interaction creation with model/agent resolution,
+  native/bridge selection and async background-poll scheduling.
+  Build the public create() and acreate() entry points that accept all OpenAPI
+  parameters (model, agent, input, tools, system_instruction, generation_config,
+  stream, store, background, environment, response_modalities, response_format,
+  response_mime_type, previous_interaction_id, extra_headers, extra_body, timeout,
+  custom_llm_provider and **kwargs).
+  Apply routing logic: if agent is provided and model equals agent, clear model;
+  if agent and no model, default custom_llm_provider to 'gemini'; if model,
+  resolve provider via B174's get_llm_provider; otherwise default to 'gemini'.
+  Call B3490's get_provider_interactions_api_config to select provider
+  (GoogleAIStudioInteractionsConfig, VertexAIInteractionsConfig, or None);
+  extract optional parameters using B3490's get_requested_interactions_api_optional_params.
+  If provider is 'litellm_responses' or the config is None, call B3498's
+  interactions_api_handler with the request prepared for the Responses bridge.
+  Otherwise, call B3493's create_interaction with the native provider config.
+  In the async path only, schedule background polling via B3481's
+  maybe_schedule_background_interaction_cost_polling if the create succeeds.
+  The sync path does not poll, matching LiteLLM's design.
+  Preserve the custom_llm_provider default, error wrapping via B185/B186's
+  exception_type, and context propagation via B198.
+  Update logging metadata via B247's update_from_kwargs for native calls only.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/interactions/create.rs
+    - crates/betterlite-core/src/api/interactions/create/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L70-L192
+    why: acreate async entry point with model resolution, context propagation and background polling
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L195-L351
+    why: create sync entry point with provider selection, bridge detection, native and Responses dispatch
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L274-L289
+    why: Model/agent correction logic (model == agent clears model, agent without model defaults to Gemini)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L291-L298
+    why: Provider selection via get_provider_interactions_api_config and optional-parameter extraction
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L300-L317
+    why: Bridge detection (litellm_responses or None config) and dispatch to interactions_api_handler
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L319-L343
+    why: Native path logging, create_interaction call and response return
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L178-L184
+    why: Background polling scheduling in async path only after successful create
+
+dod:
+  - text: "create() accepts all OpenAPI parameters and **kwargs, resolves model/agent to a provider, selects native or Responses dispatch, and returns the operation result (response or iterator) or raises an exception."
+    proof: [create-call-tests]
+  - text: "acreate() accepts the same parameters, delegates to create() in a thread pool, schedules background polling on success, and propagates context via contextvars.copy_context()."
+    proof: [create-call-tests]
+  - text: "Model/agent resolution applies the correction (if agent and model == agent, clear model), defaults to 'gemini' when agent is set without model, and resolves via B174's get_llm_provider when model is provided."
+    proof: [create-call-tests]
+  - text: "Provider selection returns None for unsupported providers; if None or custom_llm_provider == 'litellm_responses', the bridge path (B3498) is taken; otherwise the native path (B3493) is taken."
+    proof: [create-call-tests]
+  - text: "Optional-parameter extraction filters to the OpenAPI spec fields (tools, system_instruction, generation_config, stream, store, background, environment, response_modalities, response_format, response_mime_type, previous_interaction_id, agent_config) using B3490's utility."
+    proof: [create-call-tests]
+  - text: "Native calls update logging metadata via B247's update_from_kwargs with model, optional_params and custom_llm_provider before calling B3493's create_interaction."
+    proof: [create-call-tests]
+  - text: "Bridge calls invoke B3498's interactions_api_handler with model, input, optional_params, custom_llm_provider, _is_async and stream flags."
+    proof: [create-call-tests]
+  - text: "Background polling is scheduled in acreate() only (not in sync create()) via B3481's maybe_schedule_background_interaction_cost_polling with response, create_kwargs and custom_llm_provider."
+    proof: [create-call-tests]
+  - text: "Exceptions are wrapped via B185/B186's exception_type with model, custom_llm_provider, original_exception, completion_kwargs and extra_kwargs, preserving the original exception chain."
+    proof: [create-call-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: create-call-tests
+      why: create() or acreate() missing, incorrect model/agent resolution, wrong dispatch path, missing polling, or exception handling broken
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::create::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Background polling is not scheduled in the synchronous create() path; only acreate() schedules polling after success."
+    why: "LiteLLM preserves this design: sync calls return immediately without spawning background tasks, keeping the sync contract simple and deterministic."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L195-L341"
+  - what: "The @client decorator in LiteLLM (a lifecycle hook for installing telemetry and client patterns) is applied to both functions; betterlite applies the same decorator where it exists in the server crate."
+    why: "The decorator setup and lifecycle are owned by the server task that installs it; this task uses it where available in its crates."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L70"
+  - what: "Context propagation in acreate() is done via contextvars.copy_context() before running create in an executor; betterlite propagates B198's context directly since Rust async does not require this pattern."
+    why: "Rust async/await and contextvars (tokio::task::spawn, tracing::Instrument) handle context propagation differently than Python's asyncio; betterlite preserves the effect (context available to the spawned task) without the Python mechanics."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L169-L171"
+  - what: "Provider selection and optional-parameter extraction are pure functions called by create(), not methods on a global object; they take provider and kwargs as arguments."
+    why: "Rust functions receive their inputs explicitly, avoiding globals; dependencies are passed through function arguments."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L291-L298"
+
+out_of_scope:
+  - "Model/agent resolution via B174's get_llm_provider; this task calls it."
+  - "Provider config selection via B3490; this task calls it."
+  - "Optional-parameter extraction via B3490; this task calls it."
+  - "Native interaction creation via B3493; this task calls it."
+  - "Responses bridge dispatch via B3498; this task calls it."
+  - "Background polling scheduling via B3481's crates/betterlite-interactions module; this task calls it."
+  - "Exception type selection via B185/B186; this task calls it."
+  - "Context propagation setup via B198; this task calls it."
+  - "Logging metadata update via B247; this task calls it."
+
+pitfalls:
+  - "The model/agent correction must clear model when both are set and model equals agent (string comparison); this preserves the routing logic where a caller mistakenly duplicates the agent name as the model."
+  - "Provider selection returns None for empty string, None input, or unsupported provider names; None triggers the Responses bridge, not a fallback to 'gemini'. The Gemini default is applied only when the input provider is not set or when agent is provided without model."
+  - "Optional-parameter extraction preserves explicit false and empty values; a caller passing background=false wants immediate polling, while omitting background uses the provider default. The extraction does not insert defaults."
+  - "Background polling is scheduled only in acreate(), not in create(). The sync path returns immediately; callers that want async behavior must call acreate()."
+  - "Native calls update logging before calling create_interaction; bridge calls do not update logging here (B3498 may handle its own logging)."
+  - "Exception wrapping must preserve the original exception via the 'source' field and include all local_vars (completion_kwargs) for debugging; custom_llm_provider is determined by resolution logic, not taken from input."
+  - "The @client decorator (if present) marks the function as a client entry point for telemetry and lifecycle tracking; this is applied by the server layer, not by this task's functions."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,164 @@
+id: B4298
+title: Store versioned embedding entries with per-item usage
+description: >-
+  Build embedding format-version 2 cache records with per-item token usage distribution. Convert
+  embedding responses (dict, Pydantic model, or object) into typed CachedEmbedding with format_version=2.
+  Divide per-item prompt token counts across response items using integer division with remainder
+  assigned to earliest indices, so summing all per-item values reconstructs the original total.
+  Single-item responses use full counts directly. Divide per-item prompt token details dict across
+  items, distributing integer fields with divmod and float fields with simple division. Prepare
+  embedding response for cache write, computing preset cache key and extracting per-item token
+  usage from the response. Perform bulk cache writes for embeddings by checking should_use_cache,
+  verifying input count matches response count (skip write if mismatched), setting TTL from self.ttl,
+  processing each input, then delegating to native batch storage (if configured), dynamic cache
+  object (if injected), or default cache backend. When input/output counts differ, skip write and
+  log debug message without error. Extract request/response pairs through _native_request for native
+  batch storage. Preserve dynamic cache injection and log any failure through _log_add_cache_failure,
+  continuing without blocking (best-effort semantics).
+scope:
+  paths:
+    - crates/betterlite-cache/src/embedding.rs
+    - crates/betterlite-cache/src/embedding/**
+    - tools/oracle/cases/embedding/**
+    - tools/oracle/helpers/b4298.py
+    - tools/oracle/helpers/b4298/**
+    - tools/oracle/src/helpers/cache/b4298.rs
+    - tools/oracle/src/helpers/cache/b4298/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L769-L798
+    why: "_convert_to_cached_embedding translates any embedding response format into CachedEmbedding TypedDict with format_version."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L800-L841
+    why: "_get_per_item_prompt_tokens_details distributes token details across items with remainder to earliest."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L843-L864
+    why: "_get_per_item_prompt_tokens divides total tokens across items with quotient and remainder logic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L866-L900
+    why: "add_embedding_response_to_cache handles one embedding entry, derives cache_key, and wraps result."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L902-L954
+    why: "async_add_cache_pipeline validates input/output count match, distributes tokens, and bulk-writes."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L152
+    why: "CachedEmbedding TypedDict and EMBEDDING_CACHE_FORMAT_VERSION constant owned by B4290."
+dod:
+  - text: "_convert_to_cached_embedding handles dict, Pydantic model, and object responses and returns CachedEmbedding with format_version."
+    proof: [embedding-cache-behavior]
+
+  - text: "Per-item token detail distribution returns None when usage or prompt_tokens_details is absent, distributes details evenly across items with remainder to earliest indices, and returns None for empty details."
+    proof: [embedding-cache-behavior]
+
+  - text: "_get_per_item_prompt_tokens returns None when usage or prompt_tokens is absent, returns full total for single-item responses, and distributes evenly across multi-item responses with remainder to earliest."
+    proof: [embedding-cache-behavior]
+
+  - text: "Single embedding cache entry extracts per-item tokens and details, converts to CachedEmbedding, calls _add_cache_logic, and returns cache_key, cached_data, and kwargs."
+    proof: [embedding-cache-behavior]
+
+  - text: "async_add_cache_pipeline returns early if should_use_cache is false, returns without writing if input count differs from response count, sets TTL from self.ttl."
+    proof: [embedding-cache-behavior]
+
+  - text: "async_add_cache_pipeline delegates to native backend when _native_cache is set, uses dynamic_cache_object when injected, falls back to self.cache.async_set_cache_pipeline."
+    proof: [embedding-cache-behavior]
+
+  - text: "Mismatched input/output counts are logged with verbose output; write is skipped entirely without error."
+    proof: [embedding-cache-behavior]
+
+  - text: "All exceptions in async_add_cache_pipeline are caught and logged through _log_add_cache_failure; request is not blocked."
+    proof: [embedding-cache-behavior]
+
+  - text: "Native batch storage is only attempted when _native_cache is set and requests are successfully created; native failures are caught and logged."
+    proof: [embedding-cache-behavior]
+
+checks:
+  optional: []
+  commands:
+    - id: embedding-cache-behavior
+      why: embedding cache write behavior is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^embedding_cache::/)'
+
+oracle_cases:
+  - tools/oracle/cases/embedding/convert-embedding-dict-response.yaml
+  - tools/oracle/cases/embedding/convert-embedding-pydantic-response.yaml
+  - tools/oracle/cases/embedding/convert-embedding-object-response.yaml
+  - tools/oracle/cases/embedding/per-item-tokens-single-item-response.yaml
+  - tools/oracle/cases/embedding/per-item-tokens-multi-item-even-division.yaml
+  - tools/oracle/cases/embedding/per-item-tokens-multi-item-with-remainder.yaml
+  - tools/oracle/cases/embedding/per-item-details-single-item-response.yaml
+  - tools/oracle/cases/embedding/per-item-details-multi-item-distribution.yaml
+  - tools/oracle/cases/embedding/per-item-details-absent-usage.yaml
+  - tools/oracle/cases/embedding/add-embedding-single-response.yaml
+  - tools/oracle/cases/embedding/pipeline-mismatched-input-output-count.yaml
+  - tools/oracle/cases/embedding/pipeline-matched-input-output-count.yaml
+  - tools/oracle/cases/embedding/pipeline-with-dynamic-cache-object.yaml
+  - tools/oracle/cases/embedding/pipeline-with-ttl-from-cache.yaml
+  - tools/oracle/cases/embedding/pipeline-native-batch-storage.yaml
+  - tools/oracle/cases/embedding/pipeline-catch-and-log-exception.yaml
+
+deviations:
+  - what: >-
+      Native ResponseCacheRuntime integration for batch storage is not implemented. The embedding
+      cache pipeline attempts _native_cache.async_store_batch only when _native_cache is configured
+      and native requests are successfully created; in betterlite, _native_cache is never set per
+      B4299, so this code path has no runtime execution.
+    why: >-
+      The rust_bridge package is outside the repository inventory per repository policy. Native
+      ResponseCacheRuntime and native async_store_batch dispatch are not built. The pipeline
+      falls back to dynamic cache object or self.cache for all storage operations in betterlite
+      deployments.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L938-L948
+
+  - what: >-
+      When input count does not match response count, the write is skipped with verbose logging
+      rather than attempting a partial write.
+    why: >-
+      Partial writes would lose track of which inputs were cached and which were not, making
+      retrieval unreliable. Skipping the entire write preserves correctness and allows the
+      calling code to handle the mismatch if needed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L912-L919
+
+  - what: >-
+      Cache write exceptions are caught and logged through _log_add_cache_failure; the request
+      continues without blocking on cache errors (best-effort semantics).
+    why: >-
+      LiteLLM treats cache as best-effort; a storage failure should not fail the user's request.
+      All errors are logged for observability, but execution continues.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L953-L954
+
+out_of_scope:
+  - B4290 owns CachedEmbedding TypedDict and EMBEDDING_CACHE_FORMAT_VERSION; embedding writes reference them.
+
+  - B4296 owns should_use_cache and get_cache_key; embedding writes call them.
+
+  - B4297 owns _add_cache_logic, _native_request, _log_add_cache_failure and cache envelope semantics; embedding writes call them.
+
+  - Verbose logging infrastructure (verbose_logger.debug) is plain logging, not an owned function; the mismatch warning uses it directly.
+
+  - The rust_bridge package is excluded by the repository inventory; native ResponseCacheRuntime
+    and native async_store_batch are not built per repository policy.
+
+  - Cache configuration and initialization (_native_cache setting) are owned by B4299.
+
+  - Embedding retrieval and merge (cache hits, partial embeddings) are owned by B4303.
+
+pitfalls:
+  - >-
+    The _get_per_item_prompt_tokens_details distributes token details by field: integer fields use quotient/remainder,
+    floats divide evenly, other fields pass through unchanged. The remainder always goes to the earliest items (idx_in_result_data < remainder).
+
+  - >-
+    For multi-item responses, divmod(total, num_items) gives quotient and remainder; an item at index idx gets quotient + 1
+    only if idx < remainder. A single-item response (num_items == 1) returns the full total without distribution.
+
+  - >-
+    The async_add_cache_pipeline function checks input count once at the start: isinstance(kwargs["input"], list) versus str.
+    If mismatched, it returns early without attempting any writes. This is an all-or-nothing approach, not partial caching.
+
+  - >-
+    Native batch storage is only attempted if _native_cache is not None. When it is set, requests are extracted through
+    _native_request; any request that returns None is filtered out, and both request and response tuples must be non-empty.
+
+  - >-
+    The cache_list is built by iterating over inputs (either a list or wrapped as a list for the str case). Each entry
+    is (cache_key, cached_data), and cached_data is the envelope-wrapped result from _add_cache_logic.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

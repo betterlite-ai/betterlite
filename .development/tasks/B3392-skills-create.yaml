@@ -1,0 +1,247 @@
+id: B3392
+title: Skill creation and requester metadata precedence
+description: >-
+  Build skill creation in betterlite-core::api::skills, implementing both sync (create_skill)
+  and async (acreate_skill) entry points that share implementation via sync-to-async bridging.
+  Reuse B3390's validate_environment, transform_create_skill_request, get_complete_url, and
+  wire-format contracts (CreateSkillRequest, Skill). Use B3391's _get_litellm_skills_handler
+  and _get_user_api_key_auth_from_kwargs helpers. Use B567's AnthropicModelInfo.get_api_base
+  for credential resolution and B247's Logging.update_from_kwargs for pre-call logging.
+  Route provider-specific calls through B185/B186's exception_type mapping and use B198's
+  request_timeout constant (default 6000 seconds) when timeout is None or 0.
+
+  _get_skill_request_metadata extracts requester metadata for database creation with hosted
+  precedence: checks extra_body.metadata (any dict, including empty) first, then
+  kwargs.metadata.requester_metadata, returning None if neither exists. When
+  custom_llm_provider="litellm_proxy", route to the hosted handler with description and
+  instructions from top-level kwargs (preferred, REST form convention) or extra_body, while
+  display_title and files use original function arguments. Otherwise select the external
+  provider config, validate environment, merge extra_body into CreateSkillRequest, transform
+  request, construct URL, and dispatch via HTTP handler. extra_query is accepted but not
+  forwarded, matching LiteLLM behavior.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/skills/create.rs
+    - crates/betterlite-core/src/api/skills/create/**
+  lint_tables: false
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L46-L56"
+    why: "_get_skill_request_metadata extracts requester metadata with extra_body.metadata
+      (preferred, any dict) over kwargs.metadata.requester_metadata."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L71-L131"
+    why: "acreate_skill async entry point with context-preserving executor bridge and
+      exception mapping through custom_llm_provider."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L134-L261"
+    why: "create_skill sync entry point with hosted/external routing, metadata precedence,
+      and HTTP dispatch with multipart support."
+
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577"
+    why: "REQUEST_TIMEOUT is 6000 seconds by default, used when timeout is None or 0 (truthiness
+      test)."
+
+dod:
+  - text: >-
+      _get_skill_request_metadata extracts requester metadata with hosted precedence: returns
+      extra_body["metadata"] if it is a dict (including empty dict), then kwargs["metadata"]["requester_metadata"]
+      if it is a dict, then None.
+    proof: [metadata-extraction]
+
+  - text: >-
+      create_skill defaults custom_llm_provider to "anthropic", routes to hosted handler when
+      provider is "litellm_proxy", otherwise selects external provider config and dispatches
+      via HTTP handler.
+    proof: [create-skill-routing]
+
+  - text: >-
+      create_skill accepts files, display_title, extra_headers, extra_query, extra_body, timeout,
+      and custom_llm_provider; assembles CreateSkillRequest with display_title and files,
+      then overlays extra_body contents.
+    proof: [request-assembly]
+
+  - text: >-
+      For hosted creation, description and instructions are extracted from top-level kwargs
+      (preferred, from REST form endpoints) or extra_body (SDK convention), but display_title
+      and files use original function arguments.
+    proof: [hosted-metadata-override]
+
+  - text: >-
+      create_skill calls B3390's validate_environment and transform_create_skill_request to
+      produce request body and headers from GenericLiteLLMParams and the assembled CreateSkillRequest.
+    proof: [request-transformation]
+
+  - text: >-
+      create_skill constructs URLs using B3390's get_complete_url, which uses B567's
+      AnthropicModelInfo.get_api_base for Anthropic credentials and respects the /v1 already
+      in the fallback base.
+    proof: [url-construction]
+
+  - text: >-
+      create_skill logs pre-call metrics via B247's Logging.update_from_kwargs with the
+      request body as optional_params.
+    proof: [pre-call-logging]
+
+  - text: >-
+      timeout=None or timeout=0 falls back to B198's request_timeout constant (6000 seconds);
+      explicit timeout values are preserved.
+    proof: [timeout-default]
+
+  - text: >-
+      Both sync create_skill and async acreate_skill handle exceptions through B185/B186's
+      exception_type, mapping provider errors to LiteLLM-compatible exceptions.
+    proof: [exception-mapping]
+
+  - text: >-
+      async acreate_skill copies context variables with contextvars.copy_context, runs the sync
+      function in an executor, and awaits any returned coroutine from the sync path.
+    proof: [async-context-preservation]
+
+  - text: >-
+      extra_query parameter is accepted in function signature but not forwarded to provider
+      requests or transformations, matching LiteLLM behavior for create operations.
+    proof: [extra-query-acceptance]
+
+  - text: >-
+      create_skill raises ValueError with message 'CREATE skill is not supported for
+      {custom_llm_provider}' when B157's ProviderConfigManager.get_provider_skills_api_config
+      returns None for the provider.
+    proof: [unsupported-provider-error]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: metadata-extraction
+      why: _get_skill_request_metadata does not check extra_body.metadata first or does not
+        return correct precedence values.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(metadata_extraction|requester_metadata)/)'
+
+    - id: create-skill-routing
+      why: create_skill does not route to hosted or external providers correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::create_skill_(routing|hosted|external)/)'
+
+    - id: request-assembly
+      why: create_skill does not assemble CreateSkillRequest correctly or does not overlay
+        extra_body properly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::create_skill_(request_assembly|request_build)/)'
+
+    - id: hosted-metadata-override
+      why: Hosted creation does not prefer top-level kwargs for description/instructions or
+        does not use original arguments for display_title and files.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(hosted_metadata|description_instructions|display_title_files)/)'
+
+    - id: request-transformation
+      why: Request transformation via B3390 does not apply validate_environment and
+        transform_create_skill_request correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(create_skill_request|create_skill_transformation)/)'
+
+    - id: url-construction
+      why: URL construction does not use B3390's get_complete_url or B567's get_api_base,
+        or does not handle the /v1 fallback base correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(create_skill_url|url_construction|fallback_base)/)'
+
+    - id: pre-call-logging
+      why: Pre-call logging via B247 is missing or does not capture the request body in
+        optional_params.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(create_skill_logging|pre_call_logging|logging)/)'
+
+    - id: timeout-default
+      why: timeout=None or 0 does not fall back to request_timeout constant, or explicit
+        timeouts are not preserved.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(timeout_default|timeout)/)'
+
+    - id: exception-mapping
+      why: Exceptions are not mapped through B185/B186's exception_type or custom_llm_provider
+        is not used for exception selection.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(exception_mapping|exception_type)/)'
+
+    - id: async-context-preservation
+      why: async functions do not copy context, run sync code in executor, or do not await
+        returned coroutines correctly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(async_context|acreate_skill)/)'
+
+    - id: extra-query-acceptance
+      why: extra_query is not accepted in function signature or is incorrectly forwarded
+        to provider requests.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::extra_query/)'
+
+    - id: unsupported-provider-error
+      why: create_skill does not raise ValueError with the correct message when
+        ProviderConfigManager.get_provider_skills_api_config returns None.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::(unsupported_provider|create_skill_error)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: extra_query parameter is accepted in create_skill and acreate_skill function
+      signatures but is not forwarded to the /v1/skills POST endpoint or provider transformations.
+    why: The create endpoint assembles a request from display_title, files, extra_body,
+      and description/instructions parameters; external query parameters have no use in
+      the URL construction and are not passed through to the HTTP handler.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L139-L147"
+
+  - what: The fallback Anthropic API base "https://api.anthropic.com/v1" already contains
+      /v1, so URL construction via get_complete_url with endpoint="skills" produces
+      "https://api.anthropic.com/v1/skills" without duplication.
+    why: The endpoint-relative build in get_complete_url assumes the fallback base
+      already ends with /v1 and appends the endpoint path directly. Respecting the
+      literal base ensures correct URL assembly for the /v1/skills create endpoint.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L224-L225"
+
+  - what: For hosted creation, description and instructions prefer top-level kwargs (from
+      REST form endpoints) over extra_body values, but display_title and files always use
+      the original function arguments.
+    why: REST API conventions pass form data as top-level kwargs while SDK callers may use
+      extra_body for provider-specific customization. Separating metadata (description,
+      instructions) from display metadata (title, files) ensures hosted storage gets correct
+      user input.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L185-L200"
+
+out_of_scope:
+  - >-
+    HTTP handler dispatch: create_skill_handler and async_create_skill_handler (with
+    multipart file[] handling) are unresolved; these handlers own the actual HTTP calls
+    and response decoding.
+
+  - >-
+    Provider config selection: ProviderConfigManager.get_provider_skills_api_config
+    (litellm/utils.py:9245-9260) is owned by B157; it is a dependency only.
+
+  - >-
+    Hosted handler construction and transformations: LiteLLMSkillsTransformationHandler
+    create_skill_handler is unresolved.
+
+  - >-
+    The @client lifecycle decorator (litellm/utils.py:1674-2315) is owned by B157; it is a dependency only.
+
+pitfalls:
+  - extra_body.metadata is checked before kwargs.metadata.requester_metadata. Code that
+    reverses the order will accept different metadata than LiteLLM for hosted storage.
+
+  - extra_body.metadata can be an empty dict {}, which is still preferred over
+    kwargs.metadata.requester_metadata; code that treats empty dict as falsy will diverge.
+
+  - For hosted creation, description and instructions extract from top-level kwargs (REST
+    form convention) if present, else from extra_body. Code that always uses top-level or
+    always uses extra_body will diverge from LiteLLM's dual-input handling.
+
+  - display_title and files use original function arguments, not the overlaid provider-request
+    fields from extra_body. Code that uses transformed request fields for hosted creation
+    will send wrong data to the database.
+
+  - The DEFAULT_ANTHROPIC_API_BASE fallback "https://api.anthropic.com/v1" already contains /v1.
+    For create_skill, this produces "https://api.anthropic.com/v1/skills"; code that appends /v1
+    again or strips it before concatenation will diverge from the correct endpoint path.
+
+  - timeout=None and timeout=0 both trigger the REQUEST_TIMEOUT fallback via truthiness test.
+    Code that treats None and 0 differently will diverge from LiteLLM.
+
+  - The hosted handler is lazily imported only when custom_llm_provider="litellm_proxy". Code
+    that tries to import or initialize it earlier will create unnecessary module dependencies.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

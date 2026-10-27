@@ -1,0 +1,79 @@
+id: B4302
+title: Reconstruct cached responses and stream replay
+description: >-
+  Convert cache hits into typed responses for chat, text, embedding, transcription, rerank, Responses and Anthropic Messages.
+  Stream replay wraps the cached dict in a CustomStreamWrapper that delegates to convert_to_streaming_response[_async] for the underlying generator.
+  Preserve cache-hit metadata on the response and defer success callbacks when streaming wraps the hit.
+  Keep the Responses chat-shaped-cache bridge (decide between ChatCompletion and other response formats based on cache shape)
+  and the converted-stream recursion guard (CustomStreamWrapper must not rewrap an already-wrapped stream).
+scope:
+  paths:
+    - crates/betterlite-cache/src/replay.rs
+    - crates/betterlite-cache/src/replay/tests.rs
+    - crates/betterlite-cache/src/replay/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L103-L110
+    why: _is_chat_completion_cached_dict checks the cached dict shape for chat completion markers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L113-L116
+    why: _stream_replay_requested checks both stream=true and converted_stream_requested flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L119-L137
+    why: _should_defer_streaming_cache_hit_callbacks checks if the result is already wrapped in a stream container.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L834-L1001
+    why: _convert_cached_result_to_model_response routes to type-specific converters and sets cache_hit flag in hidden_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1003-L1030
+    why: _convert_cached_stream_response wraps the cached dict in CustomStreamWrapper with convert_to_streaming_response[_async].
+dod:
+  - text: Chat, text, embedding, transcription and rerank cached results convert to the correct response type matching their call type.
+    proof: [replay-conversion]
+  - text: Stream-replay requests wrap cached dicts in CustomStreamWrapper that delegates chunking to convert_to_streaming_response[_async] (owned by B004/B005), with no independent chunk-size logic in this module.
+    proof: [replay-streaming]
+  - text: cache_hit metadata is set on every converted response.
+    proof: [replay-metadata]
+  - text: Success callbacks are not run at cache-hit time when the result is a stream (CustomStreamWrapper, Responses iterator or Anthropic Messages iterator).
+    proof: [replay-deferral]
+  - text: The Responses chat-shaped-cache bridge routes to ChatCompletion or other converters based on _is_chat_completion_cached_dict.
+    proof: [replay-responses-bridge]
+checks:
+  optional: []
+  commands:
+    - id: replay-conversion
+      why: cached results do not convert to the correct response type
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::(conversion|embedded|text|transcription|rerank)/)' --no-tests=fail
+    - id: replay-streaming
+      why: cached results do not stream correctly or the wrapper does not delegate to the external converter without rewrapping
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::streaming)' --no-tests=fail
+    - id: replay-metadata
+      why: cache_hit is not set on converted responses
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::metadata)' --no-tests=fail
+    - id: replay-deferral
+      why: callbacks are not deferred or wrapped status is not recognized
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::deferral)' --no-tests=fail
+    - id: replay-responses-bridge
+      why: Responses chat-shaped cache detection or routing fails
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::responses_bridge)' --no-tests=fail
+oracle_cases: []
+deviations:
+  - what: Cached Anthropic Messages and Responses API results are wrapped in streaming iterators owned by B980 and B927; their concrete implementations and parent-stream detection are external dependencies.
+    why: B980 and B927 are separate planning entries that own those iterator types and their cache-aware behavior; this task invokes them as contracts.
+  - what: convert_to_model_response_object and convert_to_streaming_response[_async] are called without reimplementation; their exact behavior and non-chat branches are owned by B004 and B005.
+    why: Those are separate planning entries that define response format conversions.
+out_of_scope:
+  - Anthropic Messages cached iterator (owned by B980)
+  - Responses API cached iterator (owned by B927)
+  - CustomStreamWrapper (owned by B005)
+  - convert_to_model_response_object (owned by B004)
+  - convert_to_streaming_response and convert_to_streaming_response_async (owned by B004 or B005)
+  - converted_stream_requested helper (owned by B189, called to detect converted stream requests)
+  - update_response_metadata (owned by B004, called to set response timing)
+  - ResponsesAPIResponse type (owned by B927)
+pitfalls:
+  - "_should_defer_streaming_cache_hit_callbacks checks isinstance against three specific stream container types (CustomStreamWrapper, BaseResponsesAPIStreamingIterator, CachedAnthropicMessagesStreamIterator); adding new stream types requires updating this predicate."
+  - "_is_chat_completion_cached_dict heuristics rely on specific field names (id startswith \"chatcmpl\", object startswith \"chat.completion\", presence of \"choices\"); a cached dict missing all three is treated as non-chat and routed to Responses non-chat handling."
+  - "_convert_cached_result_to_model_response branches by call_type enums (CallTypes.completion, acompletion, text_completion, etc.) and each call type may have both sync and async variants; streaming replay bridges the Responses \"responses\"/\"aresponses\" types to ChatCompletion stream logic."
+  - "Cached transcription responses always set hidden_params[\"model\"] = \"whisper-1\" regardless of the model originally requested."
+  - "Recursion guard: _convert_cached_stream_response wraps in CustomStreamWrapper, so calling _convert_cached_result_to_model_response a second time on the wrapped result must not rewrap it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

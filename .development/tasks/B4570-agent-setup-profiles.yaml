@@ -1,0 +1,127 @@
+id: B4570
+title: Saved agent setup profiles and scoped locks
+description: >-
+  Build saved setup records bound to the resolved agent settings path, with gateway/key/model validation
+  and sorted per-target locks. Preserve saved keys across disconnects and explicit forgetting without merging
+  these profiles into undo receipts.
+
+  SavedSetup is a frozen Pydantic model holding version, target (Claude or Codex), settings_path, base_url,
+  api_key (a raw virtual key written to disk), and optional model. The model field is required for Codex
+  (validated to not be None on load) but optional for Claude. Validators check gateway normalization,
+  and key/model control characters: valid_key rejects characters with ord(char) <= 32 or ord(char) == 127
+  (spaces and tabs invalid), while valid_model rejects ord(char) < 32 or ord(char) == 127 (spaces valid).
+
+  settings_path_for returns the resolved settings file for a target (claude_settings_path or codex_config_path
+  from their respective tasks). receipt_path_for returns the receipt file (configure_state_path or
+  codex_configure_state_path). setup_profile_path derives the profile filename from the receipt path,
+  naming it <receipt_stem>_profile.json in the same directory.
+
+  read_saved_setup loads a SavedSetup from disk and validates it matches the current target and settings_path,
+  rejecting models that changed or Codex that lost its model. save_setup stages the profile as
+  private JSON, validates the directory, and commits it with B192's staging/commit helpers. forget_saved_setup
+  removes the profile without error if missing.
+
+  setup_locks acquires per-target file locks in sorted order (claude before codex, by hashed settings path)
+  in ~/.litellm/setup-locks/<digest>.lock with 10-second timeout and 0o600 permissions, so concurrent
+  configure commands wait for each other rather than race.
+scope:
+  paths:
+    - tools/management-cli/src/agent_setup_profiles.rs
+    - tools/management-cli/src/agent_setup_profiles/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L30-63
+    why: SavedSetup model and validators for base_url, api_key and model thresholds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L65-76
+    why: settings_path_for, receipt_path_for and setup_profile_path functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L78-103
+    why: read_saved_setup with validation of target, settings_path and Codex model presence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L105-122
+    why: _lock_path and setup_locks with per-target locking and FileLock mode 0o600.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L124-151
+    why: save_setup with B192 staging/commit helpers, directory creation and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L153-159
+    why: forget_saved_setup with missing-file tolerance.
+dod:
+  - text: >-
+      SavedSetup model is frozen, rejects extra fields, validates base_url through normalize_base_url,
+      validates api_key (non-empty, no chars with ord <= 32 or == 127), and validates model (when set,
+      no chars with ord < 32 or == 127).
+    proof: [savedsetup-validators]
+  - text: >-
+      A literal test case in tests.rs validates the ord threshold difference: a model value containing
+      space ' ' (ord 32) parses as valid SavedSetup, while an api_key value containing space ' ' (ord 32)
+      is rejected with ValidationError, demonstrating that valid_key rejects ord <= 32 while valid_model
+      allows ord >= 32.
+    proof: [space-character-threshold]
+  - text: >-
+      read_saved_setup loads a SavedSetup from disk, validates that target and resolved settings_path
+      match, rejects Codex profiles where model is None, and reports clear errors naming the path and
+      suggesting `lite unconfigure --forget` on validation failure.
+    proof: [savedsetup-read]
+  - text: >-
+      settings_path_for resolves paths from claude_settings_path and codex_config_path based on target.
+      receipt_path_for routes to configure_state_path or codex_configure_state_path. setup_profile_path
+      derives the profile filename from the receipt path with stem _profile.json.
+    proof: [path-derivation]
+  - text: >-
+      setup_locks acquires per-target locks in ~/.litellm/setup-locks/<sha256_digest>.lock in sorted order
+      (claude before codex by hashed path), with 10-second timeout, mode 0o600, and ensures parent directory exists.
+    proof: [lock-ordering]
+  - text: >-
+      save_setup uses B192's ensure_private_dir, stage_private_json, commit_staged_json and discard_staged_json,
+      always discarding staged JSON even on error, and reports clear errors naming the target and settings path.
+    proof: [save-staging]
+  - text: >-
+      forget_saved_setup removes the profile path with missing-file tolerance and reports errors on actual I/O failures.
+    proof: [forget-behavior]
+  - text: >-
+      SavedSetup, Target enum/constants and all path functions can be imported and used by B4571 and B4572.
+    proof: [export-contracts]
+checks:
+  optional: []
+  commands:
+    - id: savedsetup-validators
+      why: SavedSetup model, frozen config or validators for base_url, api_key or model are missing or incorrect
+      run: grep -q "SavedSetup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "normalized_gateway\|normalize_base_url" tools/management-cli/src/agent_setup_profiles.rs && grep -q "valid_key" tools/management-cli/src/agent_setup_profiles.rs && grep -q "valid_model" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "ord.*<=.*32|ord.*==.*127" tools/management-cli/src/agent_setup_profiles.rs
+    - id: space-character-threshold
+      why: no test validates that api_key rejects space (ord 32) while model accepts it, showing the ord threshold difference
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup_profiles.*space_character)' 2>&1 | grep -q "space\|ord.*32"
+    - id: savedsetup-read
+      why: read_saved_setup does not load, validate target/settings_path match, reject Codex without model, or report clear errors
+      run: grep -q "read_saved_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "model_validate_json\|ValidationError" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "target.*!=|settings_path.*!=|codex.*model.*None" tools/management-cli/src/agent_setup_profiles.rs && grep -q "lite unconfigure.*--forget" tools/management-cli/src/agent_setup_profiles.rs
+    - id: path-derivation
+      why: settings_path_for, receipt_path_for or setup_profile_path are missing or do not call the correct underlying functions
+      run: grep -q "settings_path_for" tools/management-cli/src/agent_setup_profiles.rs && grep -q "claude_settings_path\|codex_config_path" tools/management-cli/src/agent_setup_profiles.rs && grep -q "receipt_path_for" tools/management-cli/src/agent_setup_profiles.rs && grep -q "configure_state_path\|codex_configure_state_path" tools/management-cli/src/agent_setup_profiles.rs && grep -q "setup_profile_path" tools/management-cli/src/agent_setup_profiles.rs && grep -q "_profile.json" tools/management-cli/src/agent_setup_profiles.rs
+    - id: lock-ordering
+      why: setup_locks does not acquire per-target locks in sorted order, with 10-second timeout, or 0o600 permissions
+      run: grep -q "setup_locks\|FileLock" tools/management-cli/src/agent_setup_profiles.rs && grep -q "_lock_path\|sha256\|digest" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "\.litellm.*setup-locks|setup-locks.*lock" tools/management-cli/src/agent_setup_profiles.rs && grep -q "timeout.*10\|10.*timeout" tools/management-cli/src/agent_setup_profiles.rs && grep -q "0o600" tools/management-cli/src/agent_setup_profiles.rs && grep -q "sorted\|sort" tools/management-cli/src/agent_setup_profiles.rs
+    - id: save-staging
+      why: save_setup does not use B192 staging helpers or does not discard staged JSON
+      run: grep -q "save_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "stage_private_json\|commit_staged_json\|discard_staged_json\|ensure_private_dir" tools/management-cli/src/agent_setup_profiles.rs && grep -q "finally\|defer\|Drop" tools/management-cli/src/agent_setup_profiles.rs
+    - id: forget-behavior
+      why: forget_saved_setup does not handle missing files or does not report I/O errors
+      run: grep -q "forget_saved_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "unlink\|remove\|delete" tools/management-cli/src/agent_setup_profiles.rs && grep -q "missing_ok\|FileNotFoundError\|ENOENT" tools/management-cli/src/agent_setup_profiles.rs
+    - id: export-contracts
+      why: SavedSetup, Target, or path functions are not exported for later tasks
+      run: grep -qE "^pub|export" tools/management-cli/src/agent_setup_profiles.rs && grep -q "SavedSetup\|Target" tools/management-cli/src/agent_setup_profiles.rs
+oracle_cases: []
+deviations:
+  - what: betterlite uses FileLock with mode=0o600 for setup locks, same as LiteLLM's explicit mode at configure_profiles.py line 116.
+    why: Both implementations need to protect concurrent access to setup operations with private-mode file locks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L116
+out_of_scope:
+  - claude_settings_path, codex_config_path, configure_state_path, codex_configure_state_path. B4562, B4564, B4569 own those primitives; B4570 calls them to derive setup profile paths.
+  - normalize_base_url. B4560 owns this; B4570 calls it in the base_url validator.
+  - ensure_private_dir, stage_private_json, commit_staged_json, discard_staged_json. B192 owns these; B4570 calls them.
+pitfalls:
+  - SavedSetup.api_key holds a raw virtual key that will be written to disk; validate and mark it as secret with proper file modes (handled by B192 staging).
+  - The model field is optional for Claude but required for Codex. read_saved_setup validates this; a saved Codex profile without model is rejected as invalid.
+  - valid_key threshold is ord(char) <= 32 (spaces invalid), but valid_model threshold is ord(char) < 32 (spaces valid). A model name can contain spaces; an api_key cannot.
+  - setup_locks acquires locks in sorted order to prevent deadlock across multiple targets. Always use frozenset to deduplicate targets and then sort the lock paths.
+  - The settings_path is resolved to its absolute path before hashing for the lock file; two symlinked or relative paths pointing to the same file get the same lock.
+  - setup_locks returns a context manager that holds all locks until exit; early return or exception releases them all at once.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

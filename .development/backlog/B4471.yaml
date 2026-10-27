@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Gateway and backend application route filtering
 status: todo
 depends_on: [B4470, B003, B710, B711, B712]
-file: null
+file: tasks/B4471-component-applications.yaml
 covers:
   - "gateway/main.py"
   - "backend/main.py"

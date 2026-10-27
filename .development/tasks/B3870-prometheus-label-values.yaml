@@ -1,0 +1,154 @@
+id: B3870
+title: Prometheus label values and metric vocabulary
+description: >-
+  Port litellm/types/integrations/prometheus.py:1-338, 1026-1137, 1146-1162 to Rust in
+  crates/betterlite-prometheus to define the metric names, label name and value sanitization,
+  and the request label value record.
+
+  Label names must comply with Prometheus regex ^[a-zA-Z_][a-zA-Z0-9_]*$. The
+  _sanitize_prometheus_label_name function converts invalid characters to underscores
+  and ensures the first character is a letter or underscore. Label values are strings;
+  they support escaped backslashes and quotes, strip CRLF, convert \n to space, and handle
+  newlines (U+2028, U+2029). The _sanitize_prometheus_label_value function builds the escaped
+  output with a single translate pass plus one escape pass, avoiding chained allocations.
+
+  Build the vocabulary of metric names and label domains. UserAPIKeyLabelNames lists 33 label
+  domains (end_user, user, user_email, model, api_key_alias, team, route, etc.).
+  DEFINED_PROMETHEUS_METRICS names the 83 metric types recognized by the exporter. Validation
+  errors report invalid metric or label names with the metric name and the invalid labels.
+  The mapping of each metric to its ordered label list is built separately in B3871 and B3872.
+
+  The caller-identity mode (prometheus_deployment_and_latency_caller_identity, set to api_key_alias,
+  user_email or both, default api_key_alias) selects which caller label appears on 9 latency and
+  deployment metrics: when it is user_email, api_key_alias is replaced; when both, both are emitted.
+  The mode is read and validated on every label-resolution call, not cached at startup.
+
+  The UserAPIKeyLabelValues dataclass carries one value per domain (all optional, defaults to None).
+  Its model_dump() matches the former Pydantic model_dump() shape for backwards compatibility
+  with tests. Construct it with unknown keys ignored, and api_key_hash aliased to hashed_api_key
+  for test compatibility. The NoOpMetric class has labels(), inc(), set() and observe() methods
+  that do nothing, supporting metric collections where some metrics are disabled.
+
+scope:
+  paths:
+    - crates/betterlite-prometheus/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L11-L71
+    why: _sanitize_prometheus_label_name and _sanitize_prometheus_label_value functions with translate table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L73-L127
+    why: MetricValidationError, LabelValidationError and ValidationResults classes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L129-L189
+    why: Label and latency bucket constants and INPUT_SEQUENCE_LENGTH_BUCKETS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L192-L338
+    why: UserAPIKeyLabelNames enum, DEFINED_PROMETHEUS_METRICS catalog, caller-identity constants and validation functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L340-L408
+    why: validate_prometheus_deployment_and_latency_caller_identity, validate_caller_identity_settings, _resolve_deployment_and_latency_caller_identity_labels functions for caller-identity mode resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1026-L1127
+    why: _USER_API_KEY_LABEL_VALUE_INIT_ALIASES and UserAPIKeyLabelValues dataclass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1146-L1162
+    why: NoOpMetric class implementation.
+  - url: https://prometheus.io/docs/concepts/data_model/
+    why: Prometheus label name and value format, escaping and exposition format spec.
+
+dod:
+  - text: Label names are sanitized to match ^[a-zA-Z_][a-zA-Z0-9_]*$, replacing invalid characters with underscores and prepending _ if the first character is a digit.
+    proof: [label-name-sanitization-tests]
+  - text: Label values are escaped with backslashes and quotes, CRLF/newlines stripped, and \n converted to space, using a single str.translate pass plus one escape pass.
+    proof: [label-value-sanitization-tests]
+  - text: All 83 metric names are defined in DEFINED_PROMETHEUS_METRICS with correct string values.
+    proof: [metric-vocabulary-tests]
+  - text: UserAPIKeyLabelNames enum has all 33 label name variants with correct string values.
+    proof: [label-names-tests]
+  - text: >-
+      MetricValidationError.message returns "Invalid metric name: " plus the metric name given.
+    proof: [validation-error-tests]
+  - text: LabelValidationError.message returns a base message, plus caller-identity context when the metric
+      is in PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS and an invalid label is in (api_key_alias, user_email).
+    proof: [validation-error-tests]
+  - text: ValidationResults.has_errors returns true iff metric_errors or label_errors is nonempty,
+      and all_error_messages chains both lists with each error's message property.
+    proof: [validation-error-tests]
+  - text: >-
+      get_input_sequence_length_bucket handles boundary values correctly; 999 tokens maps to the "0-1k" bucket,
+      1000 tokens maps to the "1k-4k" bucket, 4000 tokens maps to the "4k-16k" bucket; non-int/negative/bool inputs
+      return "unknown".
+    proof: [input-sequence-length-bucket-tests]
+  - text: Caller-identity mode is validated and applied correctly on every label-resolution call; when the mode is user_email,
+      api_key_alias is replaced; when both, both labels are emitted on the 9 supported metrics.
+    proof: [caller-identity-tests]
+  - text: Conflicting include_labels in a raw prometheus_metrics_config (metric name + list of label strings) are detected when the mode
+      is user_email and a metric requests api_key_alias on a metric that supports caller identity.
+    proof: [caller-identity-tests]
+  - text: UserAPIKeyLabelValues accepts unknown keys, aliases api_key_hash to hashed_api_key, and model_dump matches Pydantic output shape.
+    proof: [label-values-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: label-name-sanitization-tests
+      why: Label name sanitization does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^label_name_sanitization::/) - test(/replays_the_/)'
+    - id: label-value-sanitization-tests
+      why: Label value sanitization does not work or tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^label_value_sanitization::/) - test(/replays_the_/)'
+    - id: label-names-tests
+      why: UserAPIKeyLabelNames enum is incomplete or tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^label_names::/) - test(/replays_the_/)'
+    - id: metric-vocabulary-tests
+      why: DEFINED_PROMETHEUS_METRICS vocabulary is incomplete or tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^metric_vocabulary::/) - test(/replays_the_/)'
+    - id: label-values-tests
+      why: UserAPIKeyLabelValues construction or model_dump is incomplete or tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^label_values::/) - test(/replays_the_/)'
+    - id: caller-identity-tests
+      why: Caller-identity mode validation or metric resolution is incomplete or tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^caller_identity::/) - test(/replays_the_/)'
+    - id: validation-error-tests
+      why: MetricValidationError, LabelValidationError or ValidationResults tests are missing
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^validation_errors::/) - test(/replays_the_/)'
+    - id: input-sequence-length-bucket-tests
+      why: get_input_sequence_length_bucket boundary tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^input_sequence_length_bucket::/) - test(/replays_the_/)'
+    - id: compile
+      why: The crate does not compile
+      run: cargo build --locked -p betterlite-prometheus
+
+oracle_cases: []
+
+deviations:
+  - what: litellm_in_flight_requests appears in DEFINED_PROMETHEUS_METRICS but has no entry in PrometheusMetricLabels;
+      betterlite includes it in the metric vocabulary but does not emit this metric.
+    why: LiteLLM defines the metric in its enum but provides no label schema for it; attempting to emit it would
+      raise AttributeError at runtime. Betterlite documents the metric name without implementing emission code that would fail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L302
+  - what: Betterlite validates the caller-identity mode on every label-resolution call, reading it from config or thread-local state, not caching it at startup.
+    why: LiteLLM reads and validates the mode on every call in _resolve_deployment_and_latency_caller_identity_labels;
+      betterlite does the same to support dynamic config changes without restarting label logic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L389-L408
+  - what: The custom_prometheus_metadata_labels and custom_prometheus_tags are Vecs passed to get_labels at call time, not module attributes.
+    why: Betterlite has no module-level mutable state; callers pass these at metric time, making the function pure and testable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L956-L1024
+
+out_of_scope:
+  - PrometheusMetricsConfig and PrometheusSettings config parsing; that is in the config loader (B002 and others).
+  - The caller-identity mode set in config loading; that is in B002 (config parsing).
+  - Emitting metrics or calling label methods on actual Prometheus objects; that is in B3874 and its consumers.
+
+pitfalls:
+  - get_input_sequence_length_bucket raises no exception; non-integer/negative/bool inputs silently return "unknown".
+  - LabelValidationError.message reads the caller-identity setting at format time, so the message includes the
+      current mode even if it changed since validation. Pass the mode as a constructor argument instead of reading it at runtime.
+  - litellm_in_flight_requests is in DEFINED_PROMETHEUS_METRICS but has no labels and no metric object in PrometheusMetricLabels;
+      calling get_labels on it would raise AttributeError in Python.
+  - Label values with embedded quotes or backslashes must be escaped in order (backslash first), or the escaper will double-escape.
+  - The 9 metrics that support caller-identity (litellm_deployment_total_requests, litellm_llm_api_latency_metric, etc.) are a fixed set; adding a new metric to the list requires changes in multiple places.
+  - The INPUT_SEQUENCE_LENGTH_BUCKETS and BATCH_DURATION_BUCKETS are upper bounds; a value less than a bound falls into that bucket, so the ranges are (0, 1k], (1k, 4k], etc.
+  - Caller-identity mode applies only to 9 metrics; on other metrics, api_key_alias and user_email are separate labels, both present at the same time.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

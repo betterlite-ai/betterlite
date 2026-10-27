@@ -1,0 +1,213 @@
+id: B3515
+title: Decisions and SystemOne public call entrypoints
+description: >-
+  Implement the native Decisions and SystemOne entrypoint operations sharing
+  preparation and sending stages. These are the public async and sync APIs
+  that field HTTP requests after routing and validation.
+
+  Decisions module provides `adecisions()` and `decisions()` as public
+  entrypoints that accept OpenAI-style input/questions, detect the deprecated
+  state parameter with a warning, build request fields and dispatch through
+  the shared prepare/send pipeline.
+
+  SystemOne module provides `asystemone()` and `systemone()` as public
+  entrypoints that accept SystemOne-style state/questions, reject the invalid
+  input parameter, build request fields and dispatch through the shared pipeline.
+
+  Both modules are pure operation wrappers with no route registration; routes
+  live in B099 and call these functions via the @client decorator through
+  B014's existing call-lifecycle executor.
+
+  Functions to port:
+
+  Decisions module:
+  - _request_fields: multiplex OpenAI vs. SystemOne request formats, emit
+    deprecation warning for state parameter
+  - _prepare_decisions_call: forward common parameters and filter state from
+    kwargs before calling B3513's prepare_call
+  - adecisions: @client-decorated async function that prepares and sends,
+    returning OpenAI or SystemOne response
+  - decisions: @client-decorated sync wrapper that calls _systemone_response
+    on the result
+
+  SystemOne module:
+  - _prepare_systemone_call: validate that input parameter is not present,
+    build request fields and call prepare_call
+  - _systemone_response: assert response type safety and return it
+  - asystemone: @client-decorated async function that prepares and sends
+  - systemone: @client-decorated sync wrapper calling _systemone_response
+
+  Preserve the `decisions(state=...)` deprecation warning with stacklevel=5,
+  the rejection of `systemone(input=...)`, and the native lifecycle integration
+  that lets sync callers run async sends without nesting a fresh runtime.
+
+  Module exports in decisions/__init__.py and systemone/__init__.py list only
+  the four public functions adecisions, decisions, asystemone, systemone.
+  Router registration at litellm/router.py:2089-2097 is pure Python and not
+  ported; native lifecycle dispatch happens via B014.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/decisions.rs
+    - crates/betterlite-core/src/decisions/**
+    - crates/betterlite-core/src/systemone.rs
+    - crates/betterlite-core/src/systemone/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L29-L46
+    why: _request_fields logic for format detection and state deprecation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L49-L72
+    why: _prepare_decisions_call parameter forwarding and state filtering
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L75-L100
+    why: adecisions async entrypoint and signature
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L103-L128
+    why: decisions sync entrypoint and signature
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L19-L43
+    why: _prepare_systemone_call logic and input rejection
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L46-L48
+    why: _systemone_response assertion and return
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L51-L76
+    why: asystemone async entrypoint and signature
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L79-L104
+    why: systemone sync entrypoint and signature
+
+dod:
+  - text: >-
+      Decisions module exports four public functions: adecisions, decisions,
+      OpenAI decision response type, and SystemOne response type; no helper
+      exports.
+    proof: [decisions-exports]
+  - text: >-
+      SystemOne module exports four public functions: asystemone, systemone,
+      and the SystemOne response type; no helper exports.
+    proof: [systemone-exports]
+  - text: >-
+      Request field selection detects the deprecated state parameter in kwargs,
+      emits a UserWarning with stacklevel=5, and returns SystemOne request fields.
+    proof: [request-fields-tests]
+  - text: >-
+      Request field selection without state returns OpenAI decision request
+      fields, using Pydantic validation for questions parameter.
+    proof: [request-fields-tests]
+  - text: >-
+      Decisions call preparation filters the state parameter from kwargs before
+      forwarding to B3513's prepare_call.
+    proof: [prepare-tests]
+  - text: >-
+      SystemOne call preparation rejects the input parameter with a validation
+      error if present.
+    proof: [systemone-prepare-tests]
+  - text: >-
+      The adecisions async entrypoint calls _prepare_decisions_call,
+      then asend from B3514, returning the formatted response.
+    proof: [async-tests]
+  - text: >-
+      The asystemone async entrypoint calls _prepare_systemone_call,
+      then asend from B3514, and applies _systemone_response.
+    proof: [async-tests]
+  - text: >-
+      The decisions sync entrypoint calls _prepare_decisions_call,
+      then send from B3514, returning the formatted response.
+    proof: [sync-tests]
+  - text: >-
+      The systemone sync entrypoint calls _prepare_systemone_call,
+      then send from B3514, and applies _systemone_response.
+    proof: [sync-tests]
+  - text: >-
+      All four entrypoints are decorated with @client and accept the documented
+      parameters: model, optional input/state/questions, optional safety_identifier,
+      optional credentials and timeout, optional custom_llm_provider,
+      optional extra_headers, and **kwargs for litellm params.
+    proof: [signature-tests]
+  - text: >-
+      The _systemone_response helper validates the response is a DecisionsResponse
+      and returns it, providing type safety for the sync wrapper.
+    proof: [systemone-prepare-tests]
+  - text: Every mutant in the entrypoint functions is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: decisions-exports
+      why: the decisions module must export adecisions and decisions functions
+      run: grep -qE 'pub (fn|use) adecisions\b' crates/betterlite-core/src/decisions.rs && grep -qE 'pub (fn|use) decisions\b' crates/betterlite-core/src/decisions.rs
+    - id: systemone-exports
+      why: the systemone module must export asystemone and systemone functions
+      run: grep -qE 'pub (fn|use) asystemone\b' crates/betterlite-core/src/systemone.rs && grep -qE 'pub (fn|use) systemone\b' crates/betterlite-core/src/systemone.rs
+    - id: request-fields-tests
+      why: request field detection and state deprecation tests must pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::request_fields::/)'
+    - id: prepare-tests
+      why: decisions call preparation tests must pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::prepare::/)'
+    - id: systemone-prepare-tests
+      why: systemone call preparation and response validation tests must pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^systemone_entrypoint::/)'
+    - id: async-tests
+      why: async entrypoint tests must pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::async/ | /^systemone_entrypoint::async/)'
+    - id: sync-tests
+      why: sync entrypoint tests must pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::sync/ | /^systemone_entrypoint::sync/)'
+    - id: signature-tests
+      why: entrypoint function signatures and decorator application must match spec
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::signature/ | /^systemone_entrypoint::signature/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      The state parameter deprecation warning uses stacklevel=5, positioning
+      the warning at the caller's call site in the same way LiteLLM does.
+    why: >-
+      Users need to see the warning in their own code, not in betterlite
+      internals, to migrate to systemone() before state is removed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L38-L42
+  - what: >-
+      The decisions sync entrypoint returns the response directly without
+      wrapping or adapting it, so OpenAI responses and SystemOne responses
+      retain their own structure.
+    why: >-
+      LiteLLM's decisions() function returns the send() result directly;
+      type unions preserve format distinction and caller inspection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L103-L128
+  - what: >-
+      The systemone sync entrypoint runs an async send in a sync context
+      using B014's call-lifecycle executor bound by the @client decorator,
+      not by spawning a new runtime or blocking an existing one.
+    why: >-
+      B014's @client decorator provides the native call-lifecycle integration
+      that LiteLLM uses; workers must not duplicate that binding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py
+
+out_of_scope:
+  - Route registration and HTTP parameter extraction, owned by B099.
+  - Request field type construction, owned by B3513.
+  - Call preparation and response formatting, owned by B3513 and B3514.
+  - Request/response validation, owned by B3510.
+  - Native call-lifecycle executor and @client binding, owned by B014.
+  - Pre-request safety-identifier policy, owned by B3513.
+  - Provider credential resolution and request signing, owned by B3514.
+
+pitfalls:
+  - State parameter filtering must remove state from kwargs before forwarding
+    to prepare_call, or the prepared call will reject it as an unknown parameter.
+  - The input parameter validation in systemone must check the kwargs dict
+    passed by the caller, not the named parameter that gets None by default;
+    test both empty and explicit input=value cases.
+  - Stacklevel=5 for the state deprecation warning counts from warnings.warn()
+    through the entrypoint, the internal wrappers, and back to user code; verify
+    the warning points to the right frame in a test that captures it.
+  - The decisions sync entrypoint returns a union type; the response must not
+    be unwrapped or narrowed, since callers inspect the variant directly to
+    distinguish OpenAI from SystemOne responses.
+  - The systemone _response helper asserts the type; test both valid DecisionsResponse
+    and any narrower type that should fail the assertion, so the check catches
+    type mismatches that would otherwise slip through.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

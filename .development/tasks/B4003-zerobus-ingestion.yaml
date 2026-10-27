@@ -1,0 +1,127 @@
+id: B4003
+title: Shape Zerobus rows and authenticate table ingestion
+description: >-
+  Implement the fixed trace-row projection from StandardLoggingPayload to Delta table rows and the table-scoped Zerobus OAuth/ingest client.
+  The client mints and caches an OAuth token for each table, using 60-second leeway to refresh before expiry, and publishes row batches with retryable and permanent failure classification.
+  The row projection maps StandardLoggingPayload fields to Delta TRACE_TABLE_COLUMNS with fixed scalar types and VARIANT-encoded nested objects.
+
+  Implement ZerobusIngestClient with zero-cost async token locking and status-code-based retryability: token requests with 401 are permanent, ingest requests with 401 discard the cached token and are retryable, and ingest requests with 408/429/500/502/503/504 retry; other errors are permanent unless transport failures occur.
+  Preserve timeout behavior by letting asyncio.Lock, httpx timeouts and litellm.Timeout propagate; no artificial retries, only status classification.
+  Map nonpositive timestamps to null and positive seconds to epoch microseconds; reject booleans as numbers but accept them as the stream and cache_hit fields.
+  Encode nested fields (messages, response, metadata, etc.) as JSON strings via safe_dumps for VARIANT columns; monetary scalars (response_cost, saved_cache_cost) use Decimal internally.
+  Authorization details grant catalog/schema use plus table SELECT/MODIFY per Databricks documentation.
+  Owned types: ZerobusInitParams, ZerobusConnection, ZerobusAccessToken, ZerobusIngestFailure and RETRYABLE_INGEST_STATUS_CODES constant.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/src/zerobus/client.rs
+    - crates/betterlite-logging/src/zerobus/row.rs
+    - crates/betterlite-logging/fuzz/Cargo.toml
+    - crates/betterlite-logging/fuzz/fuzz_targets/zerobus_token_response.rs
+    - crates/betterlite-logging/fuzz/corpus/zerobus_token_response/**
+    - crates/betterlite-logging/src/zerobus/client/**
+    - crates/betterlite-logging/src/zerobus/row/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/client.py#L42-L82
+    why: zerobus_resource, authorization_details, insert_url, token_url and _basic_auth functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/client.py#L85-L90
+    why: _status_failure and RETRYABLE_INGEST_STATUS_CODES constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/client.py#L93-L161
+    why: ZerobusIngestClient initialization, insert, access_token and token minting with caching and leeway.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/row.py#L69-L156
+    why: Row projection functions (_text, _flag, _number, _count, _timestamp_micros, _json, _metadata) and trace_row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/zerobus.py#L1-L54
+    why: ZerobusInitParams with defaults, ZerobusConnection, ZerobusAccessToken, ZerobusIngestFailure and constants.
+dod:
+  - text: ZerobusInitParams defaults are batch_size 100 and flush_interval 10, both validating > 0 via Pydantic Field(gt=0).
+    proof: [zerobus-init-params]
+  - text: Token scope is "all-apis", resource names the workspace, and authorization details grant catalog/schema use plus table SELECT/MODIFY.
+    proof: [zerobus-auth-details]
+  - text: insert_url strips trailing slashes from server_endpoint and appends "/zerobus/v1/tables/{table_name}/insert".
+    proof: [zerobus-url-construction]
+  - text: token_url strips trailing slashes from workspace_url and appends "/oidc/v1/token".
+    proof: [zerobus-url-construction]
+  - text: "_basic_auth encodes \"client_id:client_secret\" as base64 and prepends \"Basic \"; both endpoints use it in Authorization headers."
+    proof: [zerobus-auth-construction]
+  - text: Token is cached with 60-second leeway; at expiry minus leeway, a new token is minted; 401 on token request is permanent; malformed token JSON is permanent.
+    proof: [zerobus-token-cache]
+  - text: Insert 401 discards the cached token and is retryable; ingest 408/429/500/502/503/504 are retryable; other HTTP statuses and transport errors have correct retryability.
+    proof: [zerobus-ingest-status]
+  - text: Positive epoch-second timestamps map to epoch microseconds; nonpositive and missing timestamps map to null.
+    proof: [zerobus-timestamps]
+  - text: Booleans are rejected as numeric or floating values but accepted as stream and cache_hit; missing fields map to null.
+    proof: [zerobus-type-rejection]
+  - text: Nested fields (messages, response, metadata, error_information, cost_breakdown, etc.) are JSON-encoded strings via safe_dumps; null nested fields map to null strings.
+    proof: [zerobus-json-encoding]
+  - text: Monetary fields response_cost and saved_cache_cost use Decimal internally and are preserved through projection.
+    proof: [zerobus-monetary-types]
+  - text: Metadata is extracted from the payload's top-level metadata field (defaulting to empty if not a Mapping) and its nested keys are projected to scalar columns.
+    proof: [zerobus-metadata-extraction]
+  - text: Every fuzzed token-response JSON input either decodes to ZerobusAccessToken or returns a permanent failure.
+    proof: [zerobus-token-fuzz-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: zerobus-init-params
+      why: ZerobusInitParams defaults or Pydantic validation gt=0 are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_init_params::/)' -- --include-ignored
+    - id: zerobus-url-construction
+      why: insert_url, token_url or trailing-slash stripping is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_url_construction::/)' -- --include-ignored
+    - id: zerobus-auth-construction
+      why: _basic_auth encoding or Authorization header is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_auth_construction::/)' -- --include-ignored
+    - id: zerobus-auth-details
+      why: Authorization details formatting does not match Databricks requirements
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_auth_details::/)' -- --include-ignored
+    - id: zerobus-token-cache
+      why: Token caching logic, leeway calculation or malformed JSON handling is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::token::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-ingest-status
+      why: Status code classification or retryability logic is incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::ingest_status::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-timestamps
+      why: Timestamp conversion or null mapping fails
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::timestamps::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-type-rejection
+      why: Boolean rejection as numbers or null mapping for missing fields is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::type_rejection::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-json-encoding
+      why: JSON encoding of nested fields or null handling for VARIANT columns is incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::json_encoding::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-monetary-types
+      why: Monetary fields are not using Decimal or are lost in projection
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::monetary::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-metadata-extraction
+      why: Metadata extraction or nested key projection is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::metadata::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20
+    - id: zerobus-token-fuzz-corpus
+      why: Token response fuzzing or corpus replay fails
+      run: test -f crates/betterlite-logging/fuzz/fuzz_targets/zerobus_token_response.rs && test "$(ls crates/betterlite-logging/fuzz/corpus/zerobus_token_response 2>/dev/null | wc -l)" -ge 1 && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_zerobus_token_response_corpus)'
+oracle_cases: []
+deviations:
+  - what: Authorization details use the Databricks format documented at the OAuth token endpoint; scope is hardcoded to "all-apis".
+    why: LiteLLM uses this exact format and scope; betterlite preserves it to maintain compatibility with Databricks OAuth.
+    link: https://docs.databricks.com/en/api/workspace/managedcredentials/create
+  - what: Monetary fields (response_cost, saved_cache_cost) are stored as Decimal internally; Zerobus receives them as DOUBLE via JSON encoding.
+    why: Repository money-is-decimal rule requires Decimal for all financial values; JSON serialization converts to float on the wire, matching LiteLLM's behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/row.py#L79-L83
+out_of_scope:
+  - "ZerobusConnection construction from ZerobusInitParams and environment variables: B4004 owns the logger that builds it, including workspace_id extraction from server_endpoint.hostname."
+  - "The TRACE_TABLE_COLUMNS constant and create_table_sql function: no production caller at the pinned commit outside tests; no DDL rendering is built."
+  - "LiteLLM's StandardLoggingPayload structure: owned by B190 and not redefined here."
+  - "Transport-level client pooling and httpx timeout configuration: supplied by B173."
+pitfalls:
+  - Token request 401 is permanent; ingest request 401 discards the token but is retryable. Do not confuse these two cases.
+  - Timestamps are epoch seconds in StandardLoggingPayload but Delta expects epoch microseconds. Nonpositive values must map to null, not zero or negative microseconds.
+  - Booleans in numeric fields must be rejected to match delta type expectations; _number checks isinstance(value, bool) first and returns None.
+  - Metadata is a nested Mapping inside the payload; missing metadata defaults to empty, not null.
+  - The asyncio.Lock in ZerobusIngestClient must be async-aware and never block. In Rust, use tokio::sync::Mutex or tokio::sync::RwLock as appropriate.
+  - Authorization details is a JSON-encoded array of three privilege objects; formatting must be exact or the token endpoint rejects the request.
+  - Trailing-slash stripping on workspace_url and server_endpoint uses rstrip('/'), not split('/').
+  - Base64 encoding for Basic auth must use the correct format "client_id:client_secret" with a colon separator.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

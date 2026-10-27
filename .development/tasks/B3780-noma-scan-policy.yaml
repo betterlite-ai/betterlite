@@ -1,0 +1,94 @@
+id: B3780
+title: Noma legacy scan policy and mutations
+description: >-
+  Build the legacy prompt/response scan service for Noma, including verdict precedence, sensitive-data-only
+  anonymization and in-place message replacement. The guardrail integrates with Noma's AI-DR API at
+  POST /ai-dr/v2/prompt/scan to check content, apply decisions and optionally anonymize results.
+
+  Extract text from user messages and LLM responses using the Responses API transformation from B917, call the Noma API,
+  and return the response. The POST request includes Authorization and X-Noma-Request-ID HTTP headers; x-noma-context
+  is a field in the JSON body with applicationId, ipAddress, userId, sessionId and requestId built from request metadata,
+  user auth and defaults.
+
+  aggregatedScanResult in the response is true for unsafe (block), false for safe. When aggregatedScanResult=true and only
+  sensitiveData detectors have result=true, allow anonymization if enabled; otherwise block. When aggregatedScanResult=false,
+  apply anonymization if an anonymizedContent version exists and anonymization is enabled.
+
+  Implement verdict precedence: sensitiveData failures allow anonymization; all other detectors enforce blocks. In monitor_mode,
+  log verdicts without blocking or modifying content. Otherwise apply the verdict: block with status 400 and error details, or
+  return anonymized content if available. On API failure, block if block_failures is set; otherwise allow and log.
+
+  Include NomaGuardrailConfigModel and NomaV2GuardrailConfigModel type definitions with api_key, api_base, application_id,
+  use_v2 and monitor_mode fields, matching LiteLLM's config models (api_base defaults to https://api.noma.security/).
+  Both models provide ui_friendly_name() methods returning "Noma Security" and "Noma Security v2".
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/noma_scan_policy.rs
+    - crates/betterlite-guardrails/src/noma_scan_policy/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L65-L72
+    why: NomaBlockedMessage exception for blocking responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L166-L314
+    why: _process_user_message_check and _process_llm_response_check for scanning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L316-L503
+    why: _determine_guardrail_status, verdict precedence and anonymization logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L528-L548
+    why: _handle_verdict_background background processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L695-L788
+    why: Scan helper methods _check_user_message, _check_llm_response, _call_noma_api, _check_verdict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/noma.py#L6-L27
+    why: NomaGuardrailConfigModel with api_key, api_base, application_id, use_v2.
+dod:
+  - text: NomaBlockedMessage exception wraps classification response as HTTP 400 with error and details.
+    proof: [noma-scan-policy-tests]
+  - text: _process_user_message_check converts chat messages to Responses API format via B917, applies verdict, anonymizes if only PII detected, and logs guardrail events.
+    proof: [noma-scan-policy-tests]
+  - text: _process_llm_response_check extracts content from ModelResponse, applies the same verdict/anonymization logic, and logs events.
+    proof: [noma-scan-policy-tests]
+  - text: _determine_guardrail_status maps aggregatedScanResult true/false to guardrail_intervened/success, with invalid/missing as guardrail_failed_to_respond.
+    proof: [noma-scan-policy-tests]
+  - text: _should_only_sensitive_data_failed returns true only when sensitiveData/dataDetector keys have result=true and no other detectors trigger.
+    proof: [noma-scan-policy-tests]
+  - text: _extract_anonymized_content retrieves anonymizedContent.anonymized from scanResult items matching the message role.
+    proof: [noma-scan-policy-tests]
+  - text: _should_anonymize decides anonymization based on aggregatedScanResult and whether only PII detectors triggered, respecting anonymize_input and monitor_mode flags.
+    proof: [noma-scan-policy-tests]
+  - text: _replace_user_message_content mutates the last user message in request messages in place, and _replace_llm_response_content mutates all choice messages in the response.
+    proof: [noma-scan-policy-tests]
+  - text: _call_noma_api builds Authorization Bearer header, X-Noma-Request-ID, x-noma-context with applicationId/userId/sessionId from request/auth, and posts to /ai-dr/v2/prompt/scan.
+    proof: [noma-scan-policy-tests]
+  - text: _check_verdict raises NomaBlockedMessage when aggregatedScanResult is true and not in monitor mode, logs warnings/debug in both modes.
+    proof: [noma-scan-policy-tests]
+  - text: _handle_verdict_background logs block/allow verdicts asynchronously in monitor mode without blocking the request.
+    proof: [noma-scan-policy-tests]
+  - text: NomaGuardrailConfigModel and NomaV2GuardrailConfigModel are present with ui_friendly_name returning "Noma Security" and "Noma Security v2" respectively.
+    proof: [noma-scan-policy-tests]
+checks:
+  optional: []
+  commands:
+    - id: noma-scan-policy-tests
+      why: the noma scan policy tests fail, do not exist, or expected behavior is not met
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_scan_policy::/)'
+oracle_cases: []
+deviations:
+  - what: The legacy Noma guardrail logs a one-time deprecation warning per process, not per instantiation, using a module-level flag.
+    why: LiteLLM uses a global _LEGACY_NOMA_DEPRECATION_WARNED flag to warn only once despite multiple instances.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L56
+  - what: When aggregatedScanResult is missing or invalid, the guardrail status is treated as a failed response (allow/warn).
+    why: LiteLLM returns guardrail_failed_to_respond if aggregatedScanResult is not a boolean, treating missing data as a technical failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L345-L346
+out_of_scope:
+  - The Noma v2 implementation (noma_v2.py) and its unified scanning routes. B3782 owns noma_v2.
+  - Legacy lifecycle hooks (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook) and streaming iteration. B3781 owns those transformations.
+  - Guardrail registry initialization in noma/__init__.py (initialize_guardrail, guardrail_initializer_registry, guardrail_class_registry). B3781 owns that file.
+  - CustomGuardrail base class behavior and framework dispatch. This task calls inherited methods.
+pitfalls:
+  - "aggregatedScanResult=true means unsafe (block), false means safe (allow). This boolean sense is opposite from many typical success flags; every verdict check must verify the correct sense."
+  - "sensitiveData is the only detector key that allows anonymization when aggregatedScanResult=true; other detector results always block."
+  - "x-noma-context is a field in the JSON POST body at keys applicationId, ipAddress, userId, sessionId, requestId. The only HTTP headers are Authorization and X-Noma-Request-ID, not x-noma-context."
+  - "When anonymizedContent exists and anonymization is enabled, use that content in place of the original message or response."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

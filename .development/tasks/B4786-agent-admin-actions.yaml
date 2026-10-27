@@ -1,0 +1,258 @@
+id: B4786
+title: Trigger agent kill switches and manage public discovery
+description: >-
+  Register POST `/v1/agents/{agent_id}/kill_switch`, `/v1/agents/{agent_id}/make_public`
+  and `/v1/agents/make_public`. Preserve authoritative DB webhook selection for kill
+  switches, 502 failure results on unsuccessful webhook calls, audit-after-attempt ordering,
+  and the different memory/config write order of single-agent append and bulk replacement
+  for public discovery.
+
+  The kill_switch route fires the agent's configured kill switch webhook via fire_kill_switch,
+  writing an audit log entry after the attempt completes, and returns 200 with the result
+  when the webhook answered 2xx, or 502 with the same body when it answered non-2xx.
+  Resolution prioritizes the DB row when present; config.yaml agents fall back to the
+  in-memory registry. The route calls _check_agent_management_permission for admin access.
+
+  The make_agent_public route adds a single agent's ID to the public_agent_groups list after
+  checking the agent exists and is not already listed. It updates litellm_settings.public_agent_groups
+  in the config and writes litellm.public_agent_groups in memory. The route checks user_api_key_dict.user_role
+  == LitellmUserRoles.PROXY_ADMIN inline with the detail "Only proxy admins can update public model groups.
+  Your role={user_api_key_dict.user_role}".
+
+  The bulk make_agents_public route validates all supplied agent IDs exist before any write,
+  then replaces the entire public_agent_groups list with the supplied IDs, updating both config
+  and memory in that order. The route performs the same inline PROXY_ADMIN role check with
+  the same error detail. Both public-discovery routes raise 500 CommonProxyErrors.db_not_connected_error
+  when prisma_client is None before proceeding with any agent lookups or writes.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/agent_endpoints/mod.rs
+    - crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - crates/betterlite-server/src/agent_endpoints/admin_actions/**
+    - crates/betterlite-server/src/agent_endpoints/admin_actions/tests.rs
+    - tools/oracle/cases/management/agent-admin-actions/**
+    - tools/oracle/helpers/b4786.py
+    - tools/oracle/helpers/b4786/**
+    - tools/oracle/src/helpers/server/b4786.rs
+    - tools/oracle/src/helpers/server/b4786/**
+    - crates/betterlite-server/src/agent_endpoints/mod/**
+    - crates/betterlite-server/src/agent_endpoints/admin_actions/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1058-L1106
+    why: trigger_agent_kill_switch route handler, kill switch firing, and audit logging with _check_agent_management_permission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1109-L1123
+    why: _resolve_agent_kill_switch DB-first resolution and fallback to in-memory registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1126-L1226
+    why: make_agent_public single-agent append to public_agent_groups with existence check and inline PROXY_ADMIN role check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1176-L1182
+    why: make_agent_public inline PROXY_ADMIN role check with "Only proxy admins can update public model groups" detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1164-L1165
+    why: make_agent_public raises 500 CommonProxyErrors.db_not_connected_error when prisma_client is None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1229-L1330
+    why: make_agents_public bulk replace of public_agent_groups after existence validation with same inline role check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1284-L1290
+    why: make_agents_public inline PROXY_ADMIN role check with same detail message as make_agent_public.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1270-L1271
+    why: make_agents_public raises 500 CommonProxyErrors.db_not_connected_error when prisma_client is None.
+
+dod:
+  - text: >-
+      trigger_agent_kill_switch route registers at POST /v1/agents/{agent_id}/kill_switch with user_api_key_auth.
+    proof: [http-kill-switch-route]
+  - text: >-
+      trigger_agent_kill_switch checks agent management permission using _check_agent_management_permission
+      and rejects non-admins with 403.
+    proof: [http-kill-switch-admin-check]
+  - text: >-
+      trigger_agent_kill_switch resolves agent kill switch from DB row first, falling back to in-memory
+      registry, and rejects missing agents with 404.
+    proof: [http-kill-switch-missing-agent]
+  - text: >-
+      trigger_agent_kill_switch rejects agents with no configured kill_switch with 400.
+    proof: [http-kill-switch-no-config]
+  - text: >-
+      trigger_agent_kill_switch fires the kill switch via fire_kill_switch, writes an audit log entry
+      via the supplied writer, and returns 200 with result on 2xx webhook response.
+    proof: [http-kill-switch-success]
+  - text: >-
+      trigger_agent_kill_switch returns 502 with the failed result body when the webhook answers non-2xx.
+    proof: [http-kill-switch-failure]
+  - text: >-
+      make_agent_public route registers at POST /v1/agents/{agent_id}/make_public with user_api_key_auth.
+    proof: [http-make-public-single-route]
+  - text: >-
+      make_agent_public checks user_role == PROXY_ADMIN and rejects non-admins with 403 detail
+      "Only proxy admins can update public model groups. Your role=...".
+    proof: [http-make-public-single-admin-check]
+  - text: >-
+      make_agent_public rejects missing agents with 404 after checking registry then DB.
+    proof: [http-make-public-single-missing-agent]
+  - text: >-
+      make_agent_public rejects agents already in public_agent_groups with 400.
+    proof: [http-make-public-single-duplicate]
+  - text: >-
+      make_agent_public appends agent ID to public_agent_groups, updates config then memory, and returns 200.
+    proof: [http-make-public-single-success]
+  - text: >-
+      make_agent_public raises 500 CommonProxyErrors.db_not_connected_error when prisma_client is None.
+    proof: [http-make-public-single-db-missing]
+  - text: >-
+      make_agents_public route registers at POST /v1/agents/make_public with user_api_key_auth.
+    proof: [http-make-public-bulk-route]
+  - text: >-
+      make_agents_public checks user_role == PROXY_ADMIN and rejects non-admins with 403 detail
+      "Only proxy admins can update public model groups. Your role=...".
+    proof: [http-make-public-bulk-admin-check]
+  - text: >-
+      make_agents_public validates all supplied agent IDs exist (checking registry then DB) before
+      any write, rejecting on first missing agent with 404.
+    proof: [http-make-public-bulk-validate-all]
+  - text: >-
+      make_agents_public replaces the entire public_agent_groups list, updates config then memory, and returns 200.
+    proof: [http-make-public-bulk-success]
+  - text: >-
+      make_agents_public raises 500 CommonProxyErrors.db_not_connected_error when prisma_client is None.
+    proof: [http-make-public-bulk-db-missing]
+  - text: >-
+      Every HTTP status code, error type, param, code and detail message a user can observe in the three
+      routes is covered by a named oracle case with literal input and outcome.
+    proof: [oracle-management-routes]
+  - text: Every mutant in public discovery list management is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: http-kill-switch-route
+      why: The kill_switch route is not registered or missing the decorator and auth dependency.
+      run: grep -qE '@router.post.*kill_switch|fn trigger_agent_kill_switch' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - id: http-kill-switch-admin-check
+      why: The kill_switch route does not use _check_agent_management_permission or its admin check is missing.
+      run: grep -qE '_check_agent_management_permission|check_feature_access_for_user' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - id: http-kill-switch-missing-agent
+      why: The kill_switch route does not reject missing agents with 404.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*404/)'
+    - id: http-kill-switch-no-config
+      why: The kill_switch route does not reject agents without kill_switch config with 400.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*no.*config/)'
+    - id: http-kill-switch-success
+      why: The kill_switch route does not fire the kill switch and return 200 on success.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*success/)'
+    - id: http-kill-switch-failure
+      why: The kill_switch route does not return 502 on webhook failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*failure.*502/)'
+    - id: http-make-public-single-route
+      why: The make_agent_public route is not registered or missing the decorator.
+      run: grep -qE '@router.post.*make_public.*{agent_id}|fn make_agent_public' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - id: http-make-public-single-admin-check
+      why: The make_agent_public route does not check PROXY_ADMIN role or uses wrong error detail.
+      run: grep -qE 'PROXY_ADMIN|Only proxy admins can update public model groups' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - id: http-make-public-single-missing-agent
+      why: The make_agent_public route does not reject missing agents with 404.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*404/)'
+    - id: http-make-public-single-duplicate
+      why: The make_agent_public route does not reject already-public agents with 400.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*duplicate|already/)'
+    - id: http-make-public-single-success
+      why: The make_agent_public route does not append and return 200 on success.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*success/)'
+    - id: http-make-public-single-db-missing
+      why: The make_agent_public route does not raise 500 db_not_connected when prisma_client is None.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*(db.*missing|not.*connected)/)'
+    - id: http-make-public-bulk-route
+      why: The make_agents_public route is not registered or missing the decorator.
+      run: grep -qE '@router.post.*make_public[^/]*$|fn make_agents_public' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - id: http-make-public-bulk-admin-check
+      why: The make_agents_public route does not check PROXY_ADMIN role or uses wrong error detail.
+      run: grep -qE 'PROXY_ADMIN|Only proxy admins can update public model groups' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
+    - id: http-make-public-bulk-validate-all
+      why: The make_agents_public route does not validate all agents before any write.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*bulk.*validate/)'
+    - id: http-make-public-bulk-success
+      why: The make_agents_public route does not replace and return 200 on success.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*bulk.*success/)'
+    - id: http-make-public-bulk-db-missing
+      why: The make_agents_public route does not raise 500 db_not_connected when prisma_client is None.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*bulk.*(db.*missing|not.*connected)/)'
+    - id: oracle-management-routes
+      why: >-
+        Kill-switch triggering, public agent management, error status codes, error shapes or permission
+        behaviors deviate from LiteLLM behavior in the booted proxy.
+      run: >-
+        cargo run --locked -p betterlite-oracle --
+        tools/oracle/cases/management/agent-admin-actions
+
+oracle_cases:
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-resolve-db.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-resolve-registry.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-missing-agent.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-no-config.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-success.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-webhook-failure-502.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-admin-check.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-missing-agent.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-duplicate.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-success.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-db-missing.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-admin-check.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-validate-all.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-success.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-db-missing.yaml
+
+deviations:
+  - what: The kill_switch route uses the shared _check_agent_management_permission predicate from B4775,
+      while make_agent_public and make_agents_public each perform their own inline user_role == PROXY_ADMIN
+      check with the detail "Only proxy admins can update public model groups. Your role={user_api_key_dict.user_role}".
+    why: LiteLLM implements the permission checks this way at the pinned commit. The kill_switch route
+      shares a common admin predicate, while the public-discovery routes use a domain-specific inline check
+      with different error detail text. This is preserved for compatibility with the observed behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1087
+  - what: Both make_agent_public and make_agents_public raise HTTPException 500 with CommonProxyErrors.db_not_connected_error
+      detail when prisma_client is None, as a user-visible error on the routes.
+    why: LiteLLM checks DB availability at the route entry and returns 500 with that exact detail
+      before proceeding with any agent lookup or list modification. betterlite preserves this
+      contract as user-visible behavior included in route-level oracle cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1164-L1165
+  - what: Kill-switch webhook 502 failures relay the truthful webhook result body instead of wrapped in a 200 error dict.
+    why: Clients must distinguish successful webhook delivery (200) from failed webhook (502), so the HTTP status carries the truth.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1104-L1106
+
+out_of_scope:
+  - Kill-switch webhook credential restoration, delivery and audit logging; B4774 owns fire_kill_switch,
+    build_kill_switch_audit_log and the audit writer factories.
+  - Agent registry lookups, stable ID mapping and public-group state access; B4776 owns agents_table,
+    get_agent_by_id, ids_for_agent and public_agent_groups tracking.
+  - Config persistence and reading (ProxyConfig.get_config/save_config); G5 owns the configuration storage interface.
+  - DB-availability handling for other routes beyond these three; G5 or a dedicated DB-health task owns
+    the broader availability check infrastructure.
+  - Agent identity validation and policy checks; B4772 owns managed-agent predicates.
+  - Middleware-stage route auth installation and feature access checks; B732 owns route setup and B864
+    owns check_feature_access_for_user.
+
+pitfalls:
+  - Only trigger_agent_kill_switch uses the _check_agent_management_permission predicate from B4775.
+    make_agent_public and make_agents_public each implement their own inline PROXY_ADMIN role check
+    with the literal error detail "Only proxy admins can update public model groups. Your role={user_api_key_dict.user_role}".
+    Do not unify these three routes onto one permission check; the public-discovery routes have different
+    error messages and different permission text that must be preserved.
+  - The database row always takes precedence over the in-memory registry when resolving a kill-switch
+    webhook, so a trigger never fires a webhook that another replica has since disabled or changed.
+    Only config.yaml agents without a row fall back to the registry.
+  - make_agent_public appends a single agent to the existing list and checks for duplicates using
+    all agent IDs; make_agents_public replaces the entire list, making them different operations with
+    different semantics. Do not unify them.
+  - The kill-switch webhook result carries whatever the webhook returned (headers, body, status code)
+    back to the caller on 502; do not lose details or transform it further.
+  - Public agent groups are stored as a list of agent IDs in config.litellm_settings.public_agent_groups
+    and loaded into memory as litellm.public_agent_groups; both must stay in sync.
+  - Both make_agent_public and make_agents_public raise 500 CommonProxyErrors.db_not_connected_error
+    when prisma_client is None, before attempting any agent lookups or writes.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: A2A error classification and client reconstruction
 status: todo
 depends_on: [B173, B4800]
-file: null
+file: tasks/B4813-a2a-connection-recovery.yaml
 covers:
   - "litellm/a2a_protocol/exception_mapping_utils.py"
 parent: B142

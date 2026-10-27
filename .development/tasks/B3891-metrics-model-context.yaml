@@ -1,0 +1,74 @@
+id: B3891
+title: Model recognition and callback model group projections
+description: >-
+  Port litellm/router.py:1549-1566, 1598-1611 and litellm/proxy/common_utils/callback_utils.py:419-426
+  to Rust in crates/betterlite-router to expose model recognition predicates and callback metadata
+  model-group selection. These functions project model names/IDs onto the router's static catalog
+  and resolve metadata group labels without calling the router constructor or executing the full
+  routing pipeline.
+
+  Router.get_routing_group returns the callable routing group for a model name, None if it names a
+  direct deployment, alias or unrecognized model, and None when a same-named concrete deployment
+  shadows a group. Router.is_recognized_model returns true when a model names a deployment model_name,
+  model_id, model_group_alias, or callable routing group, used by proxy request gates as the shared
+  predicate for unrecognized-model errors so a new virtual-model kind cannot be forgotten at multiple
+  gates.
+
+  get_model_group_from_litellm_kwargs extracts model_group from the request metadata, walking
+  get_metadata_variable_name_from_kwargs to read either the end-user field or the api_key_alias
+  field (default api_key_alias), then returning the metadata.model_group value or None. This
+  projection feeds into proxy metrics callbacks that label deployment outcomes with the requested
+  group name.
+
+scope:
+  paths:
+    - crates/betterlite-router/src/model_recognition.rs
+    - crates/betterlite-router/src/model_recognition/**
+    - crates/betterlite-router/Cargo.toml
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1549-L1566
+    why: Own Router.get_routing_group; preserve the None behavior when deployments shadow groups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1598-L1611
+    why: Own Router.is_recognized_model; preserve the exact precedence over deployments, ids, aliases and groups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L419-L426
+    why: Own get_model_group_from_litellm_kwargs; preserve the metadata field selection.
+
+dod:
+  - text: Router.get_routing_group(model_name) returns Some(RoutingGroup) when the model names an uncalled group that is not shadowed by a deployment or alias, else None.
+    proof: [model-recognition-tests]
+  - text: Router.is_recognized_model(model) returns true iff the model names a deployment model_name, model_id, model_group_alias, or get_routing_group returns Some.
+    proof: [model-recognition-tests]
+  - text: get_model_group_from_litellm_kwargs(kwargs) extracts and returns metadata.model_group when present, None otherwise, walking the metadata field selector through get_metadata_variable_name_from_kwargs.
+    proof: [model-recognition-tests]
+  - text: Model recognition is read-only and does not mutate router state or call B016.
+    proof: [model-recognition-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: model-recognition-tests
+      why: Model recognition behavior tests are absent or fail
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^model_recognition::tests::/)' - test(/replays_the_/)
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Router construction, initialization or state mutation; these functions read static snapshots only.
+  - Fallback handling or routing strategy dispatch; those are owned by their respective tasks.
+  - Callback orchestration and hook registration; that is B111's responsibility.
+
+pitfalls:
+  - "get_routing_group returns None when the model names a concrete deployment (model_name_to_deployment_indices) or alias (model_group_alias), even if a group exists."
+  - "is_recognized_model returns true for any recognized model kind; proxy gates use this predicate to fail early on unrecognized names before fallback/permission checks."
+  - "get_model_group_from_litellm_kwargs walks the metadata field name selector; the default is api_key_alias, not a literal field name."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
