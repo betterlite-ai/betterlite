@@ -1,0 +1,239 @@
+id: B3051
+title: Dynamic priority allocation and saturation policy
+description: >-
+  Build priority normalization, shared default pools, saturation reads and descriptor generation
+  for saturation-aware dynamic rate limiting. Implement priority weight calculation with LITELLM_LICENSE
+  compatibility fallback, model saturation queries against the v3 limiter's Redis counters, and
+  priority-based rate-limit descriptors that enforce strict limits only when saturated.
+
+  Ownership includes:
+
+  - Configuration helpers: _get_priority_settings returns the PriorityReservationSettings instance
+    (never None); _is_latin1_encodable checks if a string value fits in HTTP headers (all chars < 256).
+
+  - Settings and thresholds: Default priority weight is 0.25, saturation threshold is 0.50,
+    saturation-cache TTL is 60 seconds. The README's stale 0.5/0.8/tracking_multiplier description
+    is reconciled: actual defaults are 0.25/0.50/60. Betterlite skips LITELLM_LICENSE gate entirely
+    (no-paid-tier decision).
+
+  - Priority resolution: priority_from_key_dict (30 chars max) checks team metadata first, then
+    falls back to key metadata, returning the priority string or None if absent.
+
+  - Priority weight computation: _get_priority_weight resolves the float weight for a given priority
+    by delegating to convert_priority_to_percent (B3030), with fallback to default_priority.
+
+  - Weight normalization: _normalize_priority_weights (26 chars) handles over-allocation by computing
+    all priority percentages, dividing each by the total if it exceeds 1.0, and logging the mapping.
+
+  - Priority allocation: _get_priority_allocation (24 chars) returns (priority_weight, priority_key)
+    tuple: for explicit priorities, a unique pool key (e.g., "model:priority_name"); for default
+    priority, a shared pool key (e.g., "model:default_pool").
+
+  - Saturation detection: _check_model_saturation (22 chars) queries v3 limiter's cache keys for
+    both RPM and TPM counters (using create_rate_limit_keys from B3031), reads their current
+    values without incrementing, computes saturation ratios, and returns the max (0.0–1.0+);
+    on error, fails open with 0.0 saturation.
+
+  - Saturation cache helper: saturation_value_from_cache (30 chars max) reads the counter from
+    DualCache with configurable TTL from saturation_check_cache_ttl.
+
+  - Saturation cache TTL: _get_saturation_check_cache_ttl returns the TTL from settings (60 seconds).
+
+  - Descriptor builders: priority_based_descriptors (30 chars max) applies normalized weights to model
+    capacity, generating model-specific RPM/TPM limits; model_tracking_descriptor (30 chars max)
+    builds a tracking-only descriptor with the same RPM/TPM for saturation queries.
+
+  - Handler class _PROXY_DynamicRateLimitHandlerV3 with __init__ taking internal_usage_cache and
+    time_provider, and update_variables(llm_router) method.
+
+  Direct dependencies: B002 loads litellm_settings.priority_reservation and priority_reservation_settings;
+  B732 supplies UserAPIKeyAuth and authenticated context; B846 supplies Router.get_model_group_info;
+  B3030 supplies convert_priority_to_percent; B3031 supplies create_rate_limit_keys and typed
+  descriptor records. Saturation cache async writes await a concrete external owner.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/dynamic_priority.rs
+    - crates/betterlite-rate-limit/src/dynamic_priority/**
+    - tools/oracle/cases/dynamic_priority/**
+    - crates/betterlite-config/src/sections/dynamic_rate_limit_policy.rs
+    - crates/betterlite-config/src/sections/dynamic_rate_limit_policy/**
+    - tools/oracle/helpers/b3051.py
+    - tools/oracle/helpers/b3051/**
+    - tools/oracle/src/helpers/rate_limit/b3051.rs
+    - tools/oracle/src/helpers/rate_limit/b3051/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L46-L63
+    why: _get_priority_settings and _is_latin1_encodable helpers with type narrowing and encoding check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L97-L124
+    why: _get_saturation_check_cache_ttl reads TTL from settings; saturation_value_from_cache delegates
+       to DualCache with configurable local TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L126-L164
+    why: _get_priority_weight resolves weight with license error logging; priority_from_key_dict checks
+       team then key metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L165-L230
+    why: _normalize_priority_weights handles over-allocation; _get_priority_allocation returns weight
+       and pool key tuple (explicit vs. default pool).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L231-L296
+    why: _check_model_saturation queries Redis counters via v3 limiter's key format, reads RPM/TPM
+       saturation, returns max ratio, fails open on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L297-L380
+    why: priority_based_descriptors normalizes weights and builds model-specific rate_limit objects;
+       model_tracking_descriptor creates tracking-only descriptor with multiplied limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L66-L96
+    why: _PROXY_DynamicRateLimitHandlerV3.__init__ and update_variables with v3_limiter construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4517-L4531
+    why: PriorityReservationSettings default values (default_priority=0.25, saturation_threshold=0.50,
+       saturation_check_cache_ttl=60 seconds).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md
+    why: Documentation reconciliation; README states 0.5/0.80/tracking_multiplier (stale), code uses
+       0.25/0.50/60 seconds TTL.
+
+dod:
+  - text: _get_priority_settings returns the shared PriorityReservationSettings instance (never None),
+      with lazy-loaded fallback for type narrowing.
+    proof: [priority-settings-tests]
+  - text: _is_latin1_encodable returns true only when all characters in the string have ord() < 256.
+    proof: [encoding-tests]
+  - text: priority_from_key_dict (30 chars max) checks user_api_key_dict.team_metadata.get("priority")
+      first, then falls back to user_api_key_dict.metadata.get("priority"), returning the value
+      or None if both are absent.
+    proof: [priority-resolution-tests]
+  - text: >-
+      _get_priority_weight with priority=None and priority_reservation present returns default_priority;
+      with priority="key_a" in reservation returns convert_priority_to_percent(reservation["key_a"], model_info);
+      with priority="unknown" returns default_priority.
+    proof: [priority-weight-tests]
+  - text: >-
+      _normalize_priority_weights computes {key: convert_priority_to_percent(v, model_info)} for all
+      keys in priority_reservation; if sum > 1.0, returns {key: value/total} normalized; else returns
+      un-normalized weights.
+    proof: [normalization-tests]
+  - text: >-
+      _get_priority_allocation with explicit priority returns (weight_from_normalized, "model:priority_name");
+      with default/missing priority returns (default_priority, "model:default_pool").
+    proof: [allocation-tests]
+  - text: >-
+      _check_model_saturation queries v3_limiter.create_rate_limit_keys("model_saturation_check", model, "requests")
+      and "tokens" types, reads current counter values via saturation_value_from_cache, computes
+      current/capacity ratios, returns max(rpm_saturation, tpm_saturation, 0.0); on any exception
+      returns 0.0.
+    proof: [saturation-tests]
+  - text: >-
+      saturation_value_from_cache (30 chars max) calls internal_usage_cache.async_get_cache with key,
+      TTL from _get_saturation_check_cache_ttl, local_only=false, returning string value or None.
+    proof: [cache-read-tests]
+  - text: >-
+      _get_saturation_check_cache_ttl returns _get_priority_settings().saturation_check_cache_ttl
+      (60 seconds by default).
+    proof: [ttl-tests]
+  - text: >-
+      priority_based_descriptors (30 chars max) returns list of RateLimitDescriptor with key="priority_model",
+      value=priority_key, rate_limit={requests_per_unit, tokens_per_unit, window_size} computed
+      from normalized_weights applied to model_info limits; empty list if priority_reservation absent.
+    proof: [descriptor-tests]
+  - text: >-
+      model_tracking_descriptor (30 chars max) returns RateLimitDescriptor with key="model_saturation_check",
+      value=model, rate_limit={requests_per_unit: (rpm * multiplier or None), tokens_per_unit: (tpm * multiplier
+      or None), window_size} using passed high_limit_multiplier (default 1).
+    proof: [descriptor-tests]
+  - text: _PROXY_DynamicRateLimitHandlerV3.__init__ receives internal_usage_cache (DualCache) and optional
+      time_provider callable, constructs InternalUsageCache wrapper, constructs _PROXY_MaxParallelRequestsHandler_v3
+      with both parameters.
+    proof: [handler-init-tests]
+  - text: _PROXY_DynamicRateLimitHandlerV3.update_variables(llm_router) stores the Router instance for
+      get_model_group_info calls.
+    proof: [handler-init-tests]
+  - text: Every default, env var, config key and limit a user can observe is in a named case with literal
+      input and outcome.
+    proof: [cases-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: priority-settings-tests
+      why: _get_priority_settings must return non-None PriorityReservationSettings with correct defaults
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::settings(::|$)/)'
+    - id: encoding-tests
+      why: _is_latin1_encodable must correctly identify encodable characters
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::encoding(::|$)/)'
+    - id: priority-resolution-tests
+      why: priority_from_key_dict must resolve from team then key metadata
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::resolution(::|$)/)'
+    - id: priority-weight-tests
+      why: Priority weight calculation must handle present/absent/unknown priorities and fallback to default
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::weight(::|$)/)'
+    - id: normalization-tests
+      why: Weight normalization must scale down priorities when sum exceeds 1.0
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::normalization(::|$)/)'
+    - id: allocation-tests
+      why: Allocation must return correct pool key and weight for explicit vs. default priorities
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::allocation(::|$)/)'
+    - id: saturation-tests
+      why: Saturation check must query Redis counters and compute max ratio correctly
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::saturation(::|$)/)'
+    - id: cache-read-tests
+      why: saturation_value_from_cache must read from DualCache with correct TTL
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::cache(::|$)/)'
+    - id: ttl-tests
+      why: TTL getter must return configurable saturation_check_cache_ttl value
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::ttl(::|$)/)'
+    - id: descriptor-tests
+      why: Descriptor builders must apply weights correctly and include all required fields
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::descriptors(::|$)/)'
+    - id: handler-init-tests
+      why: Handler initialization must construct v3 limiter and store router correctly
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::handler(::|$)/)'
+    - id: cases-tests
+      why: Oracle cases verify priority allocation, saturation detection and descriptor generation
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/dynamic_priority -k 'b3051'
+
+oracle_cases:
+  - tools/oracle/cases/dynamic_priority/priority-not-set.yaml
+  - tools/oracle/cases/dynamic_priority/priority-explicit.yaml
+  - tools/oracle/cases/dynamic_priority/priority-default-pool.yaml
+  - tools/oracle/cases/dynamic_priority/saturation-none.yaml
+  - tools/oracle/cases/dynamic_priority/saturation-rpm-only.yaml
+  - tools/oracle/cases/dynamic_priority/saturation-tpm-higher.yaml
+  - tools/oracle/cases/dynamic_priority/weights-normalized.yaml
+  - tools/oracle/cases/dynamic_priority/latin1-encoding.yaml
+
+deviations:
+  - what: "When LITELLM_LICENSE is unset, betterlite always applies convert_priority_to_percent and computes
+      the configured priority weight; it does not gate priority allocation behind the license check."
+    why: "Betterlite follows the no-paid-tier decision: priority allocation is enabled by default without
+      requiring enterprise licensing. LiteLLM at the pinned commit (lines 131-138) only logs an error and
+      uses default_priority when the license is absent; it only applies convert_priority_to_percent in the
+      else branch when the license is present. Betterlite removes that conditional gate entirely, making
+      priority-based descriptors available regardless of license status. This is an intentional policy
+      divergence that extends priority functionality to MIT users."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L131-L138"
+
+out_of_scope:
+  - Rate-limit checking, descriptor enforcement, and counter updates belong to B3052 (dynamic admission).
+  - Success logging and header generation belong to B3053 (dynamic callbacks).
+  - Token increment operations and post-call accounting belong to B3037/B3046 (token adjustments/callbacks).
+  - Saturation cache writes and Redis batch registration await external owner (question 1 in outline).
+  - resolve_model_group_alias delegation is B302; this task uses the injected get_model_group_info call.
+  - CustomLogger base class and logging infrastructure are pre-existing proxy utilities.
+
+pitfalls:
+  - priority_from_key_dict must check team_metadata first; team priority always overrides key priority,
+      even if both are present.
+  - saturation_value_from_cache is asynchronous; callers must await it; the returned value is a string
+      (from Redis) or None, requiring int() or float() conversion before ratio computation.
+  - _check_model_saturation returns 0.0 (not None or False) on any exception; callers should treat this
+      as "assume not saturated" for fail-open behavior.
+  - _normalize_priority_weights returns the un-normalized dict if sum <= 1.0, avoiding unnecessary copies;
+      callers must check return value, not assume normalization happened.
+  - model_tracking_descriptor uses high_limit_multiplier=1 by default (tracking only, same as enforcement
+      limits); callers may override with >1 for loose tracking-only behavior.
+  - LITELLM_LICENSE check is removed from betterlite's _get_priority_weight; equality fixtures must not
+      expect the error log when license is absent, unlike unlicensed LiteLLM.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

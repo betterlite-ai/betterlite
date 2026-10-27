@@ -95,7 +95,6 @@ scope:
     - crates/betterlite-auth/src/trusted_network/**
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
-    - deny.toml
     - tools/oracle/src/helpers/auth/trusted_network.rs
     - tools/oracle/src/helpers/auth/trusted_network/**
     - tools/oracle/helpers/trusted_network.py

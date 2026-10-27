@@ -44,7 +44,6 @@ scope:
   paths:
     - Cargo.toml
     - Cargo.lock
-    - deny.toml
     - crates/betterlite-secrets/**
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/stored_cipher.rs

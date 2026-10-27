@@ -1,0 +1,156 @@
+id: B3093
+title: Project grouping sets and entity rollups into daily analytics
+description: >-
+  Implement the unpaginated aggregate response service in `betterlite-server::daily_activity::rollups`.
+  This service processes rollup rows emitted by the GROUPING SETS query, dispatching pre-aggregated metrics
+  into response buckets by their rollup level (identified by the group_level bitmask). Build response objects
+  from SQL aggregates without per-row summing, fold entity rollups from separate queries into existing date
+  breakdowns, and preserve the exact grouping semantics from LiteLLM.
+
+  Implement `aggregate_grouping_rows_sync` to dispatch each rollup row into its matching breakdown
+  bucket, using nested helper functions to write metrics into the correct target (grand total, date metrics,
+  or per-dimension breakdown). Implement `aggregate_grouping_rows` as an async wrapper that fetches
+  metadata and offloads the per-row loop to a worker thread. Implement `_fold_entity_rollups_sync` to write
+  entity breakdown rows computed from a separate aggregated query onto the already-built per-date results,
+  handling the entity_id or "Unassigned" default and the api_key_rolled flag.
+
+  Export `get_daily_activity_aggregated` as the public entry point that calls the repository's aggregated
+  method, chains the two aggregation functions, and returns the response with metadata and single page (1 of 1).
+  Preserve grouping bitmask constants that identify which columns are rolled up, PTU sentinel row suppression
+  from provider breakdowns and api_key breakdowns, provider flat-cost zeroing at the provider level only,
+  entity key count tracking, and the fixed metadata page size (no pagination on aggregates).
+
+  The concrete DailyActivityRepository is supplied by the caller; this service does not construct one.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity/rollups.rs
+    - crates/betterlite-server/src/daily_activity/rollups/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L694-L707
+    why: >-
+      Grouping bitmask constants: _GROUP_GRAND_TOTAL (127), _GROUP_DATE (63), _GROUP_DATE_API_KEY (31),
+      _GROUP_DATE_MODEL (47), _GROUP_DATE_MODEL_API_KEY (15), _GROUP_DATE_MODEL_GROUP (55),
+      _GROUP_DATE_MODEL_GROUP_API_KEY (23), _GROUP_DATE_PROVIDER (59), _GROUP_DATE_PROVIDER_API_KEY (27),
+      _GROUP_DATE_MCP (61), _GROUP_DATE_MCP_API_KEY (29), _GROUP_DATE_ENDPOINT (62), _GROUP_DATE_ENDPOINT_API_KEY (30).
+      Line 696 (_API_KEY_ROLLED_UP_BIT) has no caller at the pin and is out of scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L739-L862
+    why: >-
+      aggregate_grouping_rows_sync dispatches each rollup row by group_level, with nested
+      ensure_date, assign_metric_with_metadata and assign_api_key_breakdown helpers. PTU sentinel rows
+      (api_key == PTU_SENTINEL_API_KEY) skip provider and api_key breakdowns but contribute to date/parent metrics.
+      Provider-level metrics zero flat_cost from PTU sentinels. Row.group_level identifies the rollup level;
+      metrics are assigned directly without per-row summing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L865-L883
+    why: >-
+      aggregate_grouping_rows async wrapper fetches api_key_metadata, dispatches to aggregate_grouping_rows_sync
+      on a worker thread, and returns the aggregated spend data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L973-L1004
+    why: >-
+      _fold_entity_rollups_sync maps entity rows to existing date buckets, creating entities breakdown entry
+      for each entity_id (or "Unassigned"). Rows with api_key_rolled=true assign total metrics; rows with
+      api_key assign per-key breakdown. PTU sentinel rows skipped for key breakdown only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L1007-L1086
+    why: >-
+      get_daily_activity_aggregated calls repository.aggregated with scope and options, chains aggregate_grouping_rows
+      and _fold_entity_rollups_sync, builds response with metadata (page=1, total_pages=1, has_more=false),
+      includes entity_total_api_keys when include_entity_breakdown is true and api_key_limit from the caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L188-L207
+    why: >-
+      _reported_flat_cost and _record_to_spend_metrics are owned by B3090 and called here to extract metrics
+      from rollup rows and handle None coalescing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L177-L185
+    why: >-
+      _key_metadata and _entity_metadata helpers used to populate metadata dicts; owned by B3090.
+dod:
+  - text: Grouping bitmask constants match LiteLLM exactly (Grand Total 127, Date 63, and 11 dimension rollups).
+    proof: [grouping-constants-tests]
+  - text: aggregate_grouping_rows_sync dispatches each rollup row by group_level to the correct breakdown bucket without per-row summing.
+    proof: [grouping-dispatch-tests]
+  - text: PTU sentinel rows (api_key == PTU_SENTINEL_API_KEY) contribute to date and parent metrics but skip api_key and provider breakdowns.
+    proof: [ptu-sentinel-tests]
+  - text: Provider-level metrics zero flat_cost for rows emitted from PTU sentinels (provider metrics carry provider_metrics.flat_cost = 0.0).
+    proof: [provider-flatcost-tests]
+  - text: Nested helpers ensure_date, assign_metric_with_metadata and assign_api_key_breakdown build buckets lazily and assign metrics/key breakdowns in the correct targets.
+    proof: [helper-bucket-tests]
+  - text: aggregate_grouping_rows fetches api_key_metadata for non-sentinel keys, dispatches to the sync function on a worker thread, and returns aggregated spend data.
+    proof: [async-wrapper-tests]
+  - text: _fold_entity_rollups_sync writes entity breakdown rows onto existing date buckets, creating "Unassigned" for null entity_id.
+    proof: [entity-rollup-tests]
+  - text: Entity rows with api_key_rolled=true assign total metrics; rows with api_key assign per-key breakdown, skipping PTU sentinels for key breakdown.
+    proof: [entity-key-breakdown-tests]
+  - text: get_daily_activity_aggregated returns a single-page response (page=1, total_pages=1, has_more=false) with metadata including api_key_limit, total_api_keys and entity_total_api_keys when applicable.
+    proof: [aggregated-response-tests]
+  - text: Results are sorted by date descending (reverse chronological); grand-total metrics are set before iterating date groups.
+    proof: [date-ordering-tests]
+checks:
+  optional: []
+  commands:
+    - id: grouping-constants-tests
+      why: Grouping bitmask constants are missing, wrong or do not match the 7-bit dispatch semantics.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::grouping_constants/)'
+    - id: grouping-dispatch-tests
+      why: aggregate_grouping_rows_sync does not dispatch rows by group_level or skips rollup levels.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::dispatch_by_level/)'
+    - id: ptu-sentinel-tests
+      why: PTU sentinel rows are not handled correctly or contribute to wrong breakdowns.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::ptu_sentinel/)'
+    - id: provider-flatcost-tests
+      why: Provider metrics do not zero flat_cost or suppress it incorrectly at other rollup levels.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::provider_flatcost/)'
+    - id: helper-bucket-tests
+      why: Nested helpers do not build buckets lazily or assign metrics/key breakdowns incorrectly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::helper_buckets/)'
+    - id: async-wrapper-tests
+      why: aggregate_grouping_rows does not fetch metadata or does not use a worker thread.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::async_wrapper/)'
+    - id: entity-rollup-tests
+      why: _fold_entity_rollups_sync does not write entity rows or does not handle "Unassigned" correctly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::entity_rollups/)'
+    - id: entity-key-breakdown-tests
+      why: Entity rows with api_key_rolled do not assign total metrics or key breakdowns are missing for api_key rows.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::entity_key_breakdown/)'
+    - id: aggregated-response-tests
+      why: get_daily_activity_aggregated does not return single-page response or metadata is missing/wrong.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::aggregated_response/)'
+    - id: date-ordering-tests
+      why: Results are not sorted by date descending or grand-total metrics are not set first.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_rollups::date_ordering/)'
+oracle_cases: []
+deviations:
+  - what: The LiteLLM functions `_aggregate_grouping_sets_records_sync` (37 characters) and `_aggregate_grouping_sets_records` (32 characters) are renamed to `aggregate_grouping_rows_sync` (26 characters) and `aggregate_grouping_rows` (23 characters) respectively.
+    why: Rust identifier names must not exceed 30 characters per linter rules. The shortened names preserve the semantic meaning (aggregate grouping rows, not grouping sets which is SQL terminology) while fitting the constraint. Since these are internal Rust functions, not wire format types, a serde rename is not applicable.
+out_of_scope:
+  - >-
+    Helper functions _record_to_spend_metrics, _key_metadata and _entity_metadata are owned by B3090;
+    this task calls them through their signatures.
+  - >-
+    DailyActivityRepository and its aggregated method are owned by B729;
+    this task receives the repository as a parameter.
+  - >-
+    Grouping SETS query generation and row emission from the database;
+    B729 owns the query construction.
+  - >-
+    PTU feature flag checking is owned by B1664;
+    _reported_flat_cost from B3090 checks it.
+pitfalls:
+  - >-
+    Grouping bitmask constants use base-2 bit positions: the rightmost (least significant) bit is 0 (date),
+    the next is 1 (api_key), and so on. Off-by-one errors here dispatch rows to the wrong breakdowns.
+  - >-
+    PTU sentinel suppression only applies to provider and api_key breakdowns, not to date or parent buckets;
+    a sentinel still contributes its metrics to the parent.
+  - >-
+    The provider flatcost zeroing is conditional: only rows with is_ptu_sentinel=true get their flat_cost zeroed
+    at the provider level. Regular provider rows keep their flat_cost intact.
+  - >-
+    Entity rollup iteration does not add new date entries; a row for a date not in results is dropped silently.
+    The fold assumes the main aggregation has already built all date buckets.
+  - >-
+    aggregate_grouping_rows_sync receives the entire api_key set (including already-resolved keys
+    from the grouping query), not just the missing ones. The repository's key_metadata method is responsible
+    for caching hits.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

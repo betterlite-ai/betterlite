@@ -19,6 +19,7 @@ pub mod cache_accounting;
 pub mod cache_defaults;
 pub mod cohere;
 pub mod definitions;
+pub mod dotprompt_compilation;
 pub mod error;
 pub mod factory;
 pub mod file_ids;

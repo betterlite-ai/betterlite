@@ -2,8 +2,8 @@ id: B4667
 milestone: M9 agents and mcp
 title: MCP credential mode resolution and client adaptation
 status: todo
-depends_on: [B4650, B4654, B4656, B4661, B4665]
-file: null
+depends_on: [B4650, B4654, B4656, B4661, B4665, B4741]
+file: tasks/B4667-mcp-credential-adapters.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{adapter,resolver}.py"
 parent: B137

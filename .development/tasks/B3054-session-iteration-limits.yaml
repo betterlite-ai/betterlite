@@ -1,0 +1,142 @@
+id: B3054
+title: Per-session maximum iteration limits
+description: >-
+  Implement the session iteration limiter in betterlite-rate-limit, enforcing
+  a per-session cap on consecutive LLM calls in agentic loops. Count session
+  iterations before dispatch using a Redis first-increment TTL with in-memory
+  fallback, rejecting only after the count exceeds the selected limit. Rejected
+  attempts still increment the counter.
+
+  Extract session_id from metadata.session_id or litellm_metadata.session_id
+  (as string, tolerating missing sessions by passing through). Resolve max_iterations
+  with agent litellm_params taking precedence over key metadata; both fallback
+  to None when absent. Return early without checking if either is missing.
+
+  Build a Redis Lua script for atomic first-increment with TTL to preserve
+  counter lifetime across instances. Redis failures fall back to in-memory
+  cache with the same TTL. Cache keys use hash-tag pattern {session_iterations:<session_id>}:count
+  to group cluster slot requests per session.
+
+  Load LITELLM_MAX_ITERATIONS_TTL (default 3600 seconds) from environment through
+  betterlite-config as a setting; config tests verify defaults and overrides.
+  Raise ProxyRateLimitError with rate_limit_type MAX_ITERATIONS and resolved
+  model/provider on rejection (using B3030's provider resolution). Include
+  detail messages with current count and limit.
+
+  Implement _PROXY_MaxIterationsHandler as a pre-call hook accepting
+  user_api_key_dict, cache, data and call_type. B732 supplies authenticated
+  metadata; B3030 supplies ProxyRateLimitError and resolve_llm_provider_for_rate_limit.
+  B4776 supplies AgentRegistry.get_agent_by_id for agent parameter lookup;
+  B4328 supplies DualCache.async_register_script for Redis script registration.
+
+  Budget 130 Rust impl/tests in betterlite-rate-limit, 50 config tests/seeds,
+  50 oracle adapters, 30 wiring and 140 new oracle cases, 400 changed lines
+  estimated within a 500-line gate.
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/session_iteration_limits.rs
+    - crates/betterlite-rate-limit/src/session_iteration_limits/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/session-iteration-limits-*
+    - tools/oracle/cases/helpers/session-iteration-limits/**
+    - tools/oracle/fuzz/corpus/helper_case/session-iteration-limits-*
+    - crates/betterlite-config/src/sections/session_iteration_limits.rs
+    - crates/betterlite-config/src/sections/session_iteration_limits/**
+    - tools/oracle/helpers/b3054.py
+    - tools/oracle/helpers/b3054/**
+    - tools/oracle/src/helpers/rate_limit/b3054.rs
+    - tools/oracle/src/helpers/rate_limit/b3054/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L35-L45
+    why: Redis Lua script for atomic INCR with TTL on first increment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L48-L48
+    why: DEFAULT_MAX_ITERATIONS_TTL default value of 3600 seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L71-L82
+    why: Constructor initializing cache, TTL, and optional Redis script registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L83-L134
+    why: async_pre_call_hook extracting session_id and max_iterations, incrementing counter, raising on exceeded limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L136-L149
+    why: _get_session_id extracting from metadata or litellm_metadata, returning None if absent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L151-L172
+    why: _get_max_iterations with agent litellm_params precedence over key metadata fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L174-L181
+    why: Cache key pattern using Redis hash-tag for cluster slot grouping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L183-L204
+    why: _increment_and_get with Redis script fallback to in-memory, TTL preservation and exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L206-L221
+    why: _in_memory_increment implementing local cache counter with TTL using get_cache and set_cache.
+dod:
+  - text: >-
+      Cases missing_session_id, missing_max_iterations, first_call_passes,
+      second_call_within_limit, third_call_exceeds_limit,
+      redis_failure_fallback_increments, counter_increments_on_rejection,
+      error_detail_includes_session_and_counts,
+      agent_params_wins_over_metadata, cache_key_uses_hash_tag and
+      ttl_expires_counter verify full behavior without Redis outages.
+    proof:
+      - behavior-tests
+  - text: >-
+      The independently invoked helper reproduces rejection and counter
+      increment behavior exactly and replays the corpus successfully.
+    proof:
+      - helper-python
+      - helper-case-corpus
+  - text: >-
+      LITELLM_MAX_ITERATIONS_TTL loads through production config boundary
+      with 3600-second default, environment override and no invalid-value failure.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The session iteration limit behavior tests are absent or fail against the pinned implementation.
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^session_iteration_limits::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3054.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/session-iteration-limits-*")"
+        && grep -rlq "session_iteration" tools/oracle/fuzz/corpus/helper_case/session-iteration-limits-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::session_iteration_limits::tests::.*max_iterations($|::)/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/session-iteration-limits-*")"
+        && grep -rlq "max_iterations_ttl" crates/betterlite-config/fuzz/corpus/config_yaml/session-iteration-limits-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/session-iteration-limits/missing-session-id.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/missing-max-iterations.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/first-call-passes.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/counter-within-limit.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/counter-exceeds-limit.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/redis-fallback-to-memory.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/rejected-attempt-increments.yaml
+  - tools/oracle/cases/helpers/session-iteration-limits/agent-params-precedence.yaml
+deviations: []
+out_of_scope:
+  - Agent lookup through AgentRegistry.get_agent_by_id. B4776 owns this implementation in crates/betterlite-agent/src/registry.rs.
+  - Redis script registration through DualCache.async_register_script. B4328 owns this implementation in crates/betterlite-redis/**.
+pitfalls:
+  - The oracle helper for this task is pre-registered as b3054 in the rate_limit group. Replace
+    the stub Op in tools/oracle/src/helpers/rate_limit/b3054.rs with an impl Helper whose Input
+    is the typed input, and write run in tools/oracle/helpers/b3054.py. The registry files
+    (helpers/mod.rs, the group files, dispatch.py) are not this task's to edit.
+  - Cache keys use Redis hash-tag syntax {session_iterations:<session_id>} to ensure all requests for one session
+    land on the same cluster slot; do not simplify the hash-tag pattern.
+  - Rejected attempts must increment the counter before raising, so even failed requests count toward the limit.
+  - Missing session_id or max_iterations returns None (no error), allowing requests without configured limits to
+    pass through; validate that early exit does not raise.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

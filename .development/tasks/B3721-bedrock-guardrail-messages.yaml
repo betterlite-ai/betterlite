@@ -1,0 +1,124 @@
+id: B3721
+title: Bedrock guardrail message selection and masking
+description: >-
+  Build text extraction, trusted grounding-source selection, latest-user selection
+  and positional write-back into messages. Preserve INPUT content unqualified, honor
+  system/developer grounding sources only, and retain the source's behavior when masked
+  output cannot be aligned.
+
+  Text extraction flattens message content (string or list of content blocks) into blocks
+  with optional qualifiers (grounding_source, query, guard_content). Grounding selection
+  harvests tagged blocks from messages, prioritizing explicit tags over plain-message
+  fallback, and restricts grounding_source to system/developer roles to prevent user
+  content from forging evidence. Latest-user selection splits messages for the experimental
+  role-based filtering feature, returning the target message(s) and the original message
+  list for write-back tracking.
+
+  Masking write-back merges guardrail output (masked and filtered messages) into the
+  original message structure, preserving positions when a role-selected subset was
+  scanned and aligned, falling back to unmasked originals when alignment fails, and using
+  masked output directly when the whole list was scanned.
+
+  Direct dependency: B3720 for QualifiedTextBlock, BedrockRequest, BedrockContentItem,
+  BedrockTextContent, GuardrailMessageFilterResult and ApplyGuardrailMessageSelection.
+  Unresolved call: effective_scan_only_tool_results_for_guardrail (B2226). The architect
+  must add `pub mod bedrock_message_selection` and `pub mod bedrock_masking` to
+  crates/betterlite-guardrails/src/lib.rs and pre-register "bedrock_messages" in
+  tools/oracle/src/helpers/guardrails.rs before dispatch.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/bedrock_message_selection.rs
+    - crates/betterlite-guardrails/src/bedrock_message_selection/**
+    - crates/betterlite-guardrails/src/bedrock_masking.rs
+    - crates/betterlite-guardrails/src/bedrock_masking/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/helpers/bedrock-messages/**
+    - tools/oracle/helpers/b3721.py
+    - tools/oracle/helpers/b3721/**
+    - tools/oracle/src/helpers/guardrails/b3721.rs
+    - tools/oracle/src/helpers/guardrails/b3721/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L377-L424
+    why: Input/output content request creation, unqualified INPUT and guarded OUTPUT assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L425-L465
+    why: Response-to-Bedrock format conversion, content item building with qualifiers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L467-L495
+    why: Text extraction, flattening content blocks with grounding qualifiers, content item building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L496-L546
+    why: Grounding-source collection, trust on system/developer roles, contextual-grounding fallback from plain messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L548-L595
+    why: scan-only-tool-results support, latest-user and latest-role selection, message text counting and positioning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L619-L695
+    why: "Message selection for apply_guardrail: role-aware filtering with scanned-slice tracking and skip conditions."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L697-L752
+    why: Masked-text reconciliation with scanned slice, role-subset guarding and fallback-to-original behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2700-L2731
+    why: Message update with guardrail response, masked output application and masking-flag checking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2907-L3061
+    why: Masked-text extraction, message masking with index tracking, response-choice masking for Choices/StreamingChoices/TextChoices.
+dod:
+  - text: Text extraction and grounding-source selection honors system/developer role constraints and INPUT content remains unqualified.
+    proof: [message-selection-tests, helper-python, helper-case-corpus]
+  - text: Latest-user selection, role-subset filtering and scanned-slice tracking preserve message alignment for write-back or safely skip masking on mismatch.
+    proof: [message-selection-tests, helper-python, helper-case-corpus]
+  - text: Contextual-grounding fallback derives automatic grounding from plain messages when configured and no explicit tags are present.
+    proof: [message-selection-tests, helper-python, helper-case-corpus]
+  - text: Masked-text extraction and application across string/list/choice content respects index tracking and applies to messages and model responses.
+    proof: [masking-tests, helper-python, helper-case-corpus]
+  - text: Unaligned role-subset scans return originals rather than corrupting positions, with a warning logged.
+    proof: [message-selection-tests, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: message-selection-tests
+      why: Text extraction, grounding collection, role filtering and scanned-slice tracking absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_message_selection::tests::/) - test(/replays_the_/)'
+    - id: masking-tests
+      why: Masked-text extraction, message masking or choice content masking absent or wrong.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_masking::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3721.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock-messages-*")" && grep -rlq "bedrock_messages" tools/oracle/fuzz/corpus/helper_case/bedrock-messages-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/bedrock-messages/input-unqualified-output-grounded.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/grounding-source-roles-trusted.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/contextual-grounding-fallback.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/latest-user-selection.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/scanned-slice-alignment.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/role-subset-mismatch-guard.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/masked-text-extraction.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/message-masking-index-tracking.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/response-choice-masking.yaml
+  - tools/oracle/cases/helpers/bedrock-messages/filtered-messages-merge-back-by-index.yaml
+deviations: []
+out_of_scope:
+  - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py: B3720 owns all records
+    and chunk operations (L150-L196, L1389-L1738). B3722 owns redaction, logging and exception
+    handling (L210-L219, L1280-L1387, L2092-L2148, L2176-L2486). B3723 owns guardrail initialization,
+    credentials and transport (L1-L148, L232-L330, L339-L375, L758-L861, L1740-L1815, L2150-L2174).
+    B3724 owns ApplyGuardrail execution with retries (L863-L1278). B3725 owns InvokeGuardrailChecks
+    (L1819-L2090). B3726 owns streaming hooks and call-type selection (L222-L229, L332-L337,
+    L2488-L2695, L2733-L2905). B3727 owns incremental scanning and generic apply entry point (L3063-L3286)."
+  - "The framework utility effective_scan_only_tool_results_for_guardrail is called at L672 but
+    not defined in this LiteLLM file; it belongs to B2226 (shared local TTL cache primitives, guardrail framework initialization)."
+  - "Wire-format record constructors (ChatCompletionUserMessage, Choices, StreamingChoices, TextChoices)
+    are consumed from litellm imports, not built by this task."
+pitfalls:
+  - "The scanned_slice tracking requires exact alignment: when experimental_use_latest_role_message_only
+    filters the structured_messages, _locate_message_texts_slice must detect length mismatch and return
+    None, triggering the safe fallback-to-original behavior rather than misapplying masked content."
+  - "The contextual_grounding_from_messages fallback triggers only when explicit grounding tags are
+    absent AND the configured flag is true; if no explicit tags are present and the flag is false,
+    return an empty grounding list (no automatic derivation)."
+  - "INPUT requests must never attach grounding qualifiers, even when the source's grounding_source/query
+    tags are present, so a caller cannot bypass input-safety policies with grounding metadata."
+  - "Masked-text extraction stops at the first None or missing outputs field; an empty outputs list
+    returns an empty masked-text list (allowing pass-through of originals)."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

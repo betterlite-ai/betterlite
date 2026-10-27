@@ -55,7 +55,6 @@ scope:
   - crates/betterlite-router/src/bandit_math.rs
   - crates/betterlite-router/src/bandit_math/**
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - tools/oracle/helpers/b339.py
   - tools/oracle/helpers/b339/**

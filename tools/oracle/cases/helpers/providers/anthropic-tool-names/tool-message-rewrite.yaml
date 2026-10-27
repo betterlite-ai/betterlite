@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-tool-message-rewrite
+call: {anthropic_tool_names: {function: messages, messages: [null, 7, [], {tool_calls: false, function_call: {name: "bad/name"}}, {tool_calls: [null, 7, [], {function: false}, {function: {name: null}}, {function: {name: {}}}, {id: "1", function: {name: "bad/name", arguments: "{}"}}, {name: "bad/name"}]}, {function_call: {name: "bad/name", arguments: "{}"}}, {content: [{type: tool_use, name: "bad/name"}]}], forward: {"bad/name": bad_name}}}
+env: {}
+compare: {ignore: []}

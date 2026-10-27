@@ -1,0 +1,89 @@
+id: B3992
+title: Resolve S3 v2 parameters and construct log objects
+description: >-
+  Implement v2 parameter precedence, immutable event construction and partition resolution
+  without creating a running exporter. Resolve all S3 configuration parameters from a source
+  dict (or litellm.s3_callback_params), coercing types and applying defaults; never mutate
+  the source. Accept an explicit audit override dict in place of the global parameter source.
+  Build s3BatchLoggingElement payloads by reusing lower S3 option functions, preserving
+  cold-storage key validation (day and hour paths only), team/key prefixes, base64 stripping
+  and prompt-only projection. Partition granularity caches on the raw config value, so an
+  injected settings update invalidates the cached granularity. Missing queue size resolves
+  to 50,000; missing retry age defaults to 3,600 seconds, explicit zero/None disables retry
+  age, and invalid configured retry age falls back to the constructor arg. Return None for
+  events without a standard logging payload rather than raising ValueError. All named
+  settings (S3_PARTITION_GRANULARITY_ENV_VAR, S3_LOG_PROMPTS_ONLY) use LiteLLM's bindings.
+scope:
+  paths:
+    - crates/betterlite-logging/src/s3_v2.rs
+    - crates/betterlite-logging/src/s3_v2/**
+    - tools/oracle/helpers/b3992.py
+    - tools/oracle/helpers/b3992/**
+    - tools/oracle/src/helpers/logging/b3992.rs
+    - tools/oracle/src/helpers/logging/b3992/**
+    - "tools/oracle/cases/logging/s3-v2-params/**"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256-L391
+    why: Complete parameter initialization with precedence, type coercion and env var resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L775-L786
+    why: Partition granularity resolution with caching on raw value, invalidation on change.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L788-L868
+    why: Event construction, cold-storage key validation, prefix assembly and prompt-only selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/s3_v2.py#L1-L19
+    why: s3BatchLoggingElement contract, payload/key/filename/body/content_type fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L63-L64
+    why: DEFAULT_S3_MAX_CONCURRENT_UPLOADS and DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY used in parameter resolution; S3_PARTITION_GRANULARITY_ENV_VAR imported for partition caching.
+dod:
+  - text: Parameter initialization coerces types, applies defaults and respects precedence without mutating the source dict.
+    proof: [s3-params-tests, s3-params-oracle]
+  - text: Partition granularity caches on raw config value and invalidates when config changes.
+    proof: [s3-params-tests]
+  - text: Event construction preserves cold-storage key validation, prefixes, base64 stripping and prompt-only behavior.
+    proof: [s3-params-tests, s3-params-oracle]
+  - text: Missing queue/retry values resolve to documented defaults; invalid configured values fall back to constructor args.
+    proof: [s3-params-tests, s3-params-oracle]
+checks:
+  optional: []
+  commands:
+    - id: s3-params-tests
+      why: Parameter coercion, caching and event construction depend on type safety and immutability.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::/)' -- --test-threads=1
+    - id: s3-params-oracle
+      why: Oracle cases verify parameter precedence and event structure match LiteLLM behavior.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/logging/s3-v2-params/parameter-precedence-override-global.yaml
+  - tools/oracle/cases/logging/s3-v2-params/queue-and-retry-defaults.yaml
+  - tools/oracle/cases/logging/s3-v2-params/partition-granularity-caching.yaml
+  - tools/oracle/cases/logging/s3-v2-params/event-construction-with-prefixes.yaml
+  - tools/oracle/cases/logging/s3-v2-params/cold-storage-key-validation-day.yaml
+  - tools/oracle/cases/logging/s3-v2-params/cold-storage-key-validation-hour.yaml
+  - tools/oracle/cases/logging/s3-v2-params/base64-stripping.yaml
+  - tools/oracle/cases/logging/s3-v2-params/prompt-only-projection.yaml
+  - tools/oracle/cases/logging/s3-v2-params/invalid-retry-age-fallback.yaml
+  - tools/oracle/cases/logging/s3-v2-params/no-event-on-missing-payload.yaml
+deviations:
+  - what: Parameter source must accept a dict of os.environ/ markers; none are resolved here, leaving resolution to a config layer or caller.
+    why: LiteLLM's _init_s3_params resolves them inline; betterlite separates config lookup (B002) from parameter assembly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L297-L302
+  - what: The builder does not initialize BaseAWSLLM or asyncio.Semaphore; those are created by the exporter, not the parameter/event builder.
+    why: LiteLLM's __init__ sets up the logger instance; betterlite splits parameter resolution from state initialization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128-L254
+out_of_scope:
+  - B3990 owns every S3 option resolver (resolve_s3_max_concurrent_uploads, resolve_s3_partition_granularity, resolve_sse_params, get_s3_object_key, get_s3_object_download_filename, prompts_only_payload, s3BatchLoggingElement type).
+  - B002 owns litellm.s3_callback_params loading and S3_LOG_PROMPTS_ONLY/S3_PARTITION_GRANULARITY_ENV_VAR bindings.
+  - B3993 owns S3Logger._build_object_url, _sign_put, _sse_headers, _prepare_put, async_upload_data_to_s3, _recorded_put, _download_object_from_s3, and get_proxy_server_request_from_cold_storage_with_object_key in s3_v2.py.
+  - B3994 owns S3Logger._upload_semaphore, async_send_batch, _batch_file_mode_active, _upload_bounded, _upload_outcome, _batch_file_elements, and _build_batch_file_element in s3_v2.py; also _s3_key_parent and S3BatchUploadError.
+  - get_logging_id is unassigned; B3992 calls it to construct the file name.
+  - get_secret is unassigned; B3992 skips resolving os.environ/ markers in the source dict.
+  - CustomLogger._strip_base64_from_messages_sync is unassigned; B3992 calls it when s3_strip_base64_files is true.
+pitfalls:
+  - Parameter source defaults to litellm.s3_callback_params when no override is provided; an explicit empty dict ({}) must NOT be treated the same as an unset (None) override, since only None falls back to litellm.s3_callback_params.
+  - Partition granularity cache key is the raw config value (not the resolved granularity), so an injected environment change invalidates the cache.
+  - Cold-storage key is accepted only when it exactly equals one of the two locally computed keys (day and hour); a mismatch falls back to the configured granularity.
+  - Invalid configured retry age (e.g. a negative number) falls back to the constructor value; zero and None are valid and disable retry age.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

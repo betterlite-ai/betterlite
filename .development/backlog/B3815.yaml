@@ -2,8 +2,8 @@ id: B3815
 milestone: M6 guardrails
 title: Filter end-user MCP tools and check registered server references
 status: todo
-depends_on: [B189, B739]
-file: null
+depends_on: [B189, B739, B4669]
+file: tasks/B3815-mcp-permission-filtering.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/{mcp_end_user_permission,mcp_security}/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/mcp_end_user_permission.py"
