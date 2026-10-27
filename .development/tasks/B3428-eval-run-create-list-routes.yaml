@@ -20,7 +20,6 @@ scope:
     - crates/betterlite-server/src/api/eval_run_create_list_routes/**
     - tools/oracle/cases/evals/runs/**
     - Cargo.toml
-    - deny.toml
     - tools/oracle/helpers/b3428.py
     - tools/oracle/helpers/b3428/**
     - tools/oracle/src/helpers/server/b3428.rs

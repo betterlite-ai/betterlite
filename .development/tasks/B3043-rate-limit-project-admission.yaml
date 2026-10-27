@@ -1,0 +1,90 @@
+id: B3043
+title: Admit project input-output token reservations
+description: >-
+  Build _reserve_project_io_tokens_or_raise to enforce separate project input-token and output-token limits (ITPM/OTPM) on completion and embedding requests. This function orchestrates precise-input estimation, output capping and IO token reservation, refunding the preceding combined-TPM reservation and releasing concurrency slots on rejection to keep the request stash consistent.
+
+  The function examines only descriptors marked as PROJECT_ITPM_DESCRIPTOR_KEY or PROJECT_OTPM_DESCRIPTOR_KEY. For non-dict request data, it returns early without side effects. It reads the minimum configured OTPM limit to bound output estimation (the implicit cap prevents unbounded response generation from overshooting the budget before post-call accounting runs).
+
+  Estimation calls _estimate_input_and_output_tokens (early termination using the implicit floor on output) and _estimate_precise_input_tokens (async-offloaded, as the outline names offload_token_count as a dependency open to assignment), then passes both to reserve_io_tokens. The function stores itpm/otpm reserved token counts and their per-scope, per-window identities in the request stash: (counter_key, window_start, backend) tuples that post-call reconciliation uses to adjust actual usage.
+
+  On OVER_LIMIT from the IO reservation, the function refunds the combined-TPM reservation (stored by its caller in tpm_reservation_scopes/tpm_reservation_amount) by calling _refund_reserved_tokens, then releases the concurrency slot acquired earlier (via _release_stashed_parallel_slot). It marks the stash.reservation_released=True so post-call failure hooks don't refund the combined-TPM reservation a second time. Finally it calls _handle_rate_limit_error with the IO response to raise the limiter error.
+
+  On successful reservation, merge IO response statuses into the stored rate_limit_response (or store the IO response itself if none is stored yet) so response/logging headers carry both windowed and IO limits. Log the precise reserved amounts and model identity for observability.
+
+  The function reserves project IO tokens unconditionally whenever project ITPM/OTPM descriptors are present. The config key LITELLM_TPM_TOKEN_RESERVATION_ENABLED (default true, case-insensitive) only gates the caller's combined-TPM reservation and skip_tpm_check behavior, not this function's IO reservation.
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/project_admission.rs
+    - crates/betterlite-rate-limit/src/project_admission/tests.rs
+    - tools/oracle/cases/project_admission/**
+    - tools/oracle/helpers/b3043.py
+    - tools/oracle/helpers/b3043/**
+    - tools/oracle/src/helpers/rate_limit/b3043.rs
+    - tools/oracle/src/helpers/rate_limit/b3043/**
+    - crates/betterlite-rate-limit/src/project_admission/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3740-L3863
+    why: _reserve_project_io_tokens_or_raise and its call graph into estimation, stash management and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L471-L472
+    why: PROJECT_ITPM_DESCRIPTOR_KEY and PROJECT_OTPM_DESCRIPTOR_KEY constants and their values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L515-L521
+    why: RateLimitDescriptor structure, key and value fields, rate_limit nested object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3802-L3807
+    why: reserve_io_tokens call signature and IO response structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3830-L3851
+    why: Storing itpm/otpm reserved token counts and window identities from IO response into the stash.
+dod:
+  - text: Project IO token descriptors are filtered from the full descriptor list and examined for presence.
+    proof: [project-admission-tests]
+  - text: Non-dict request data returns early without claiming the stash or calling downstream functions.
+    proof: [project-admission-tests]
+  - text: Input and output tokens are estimated via the B3041 functions and passed to reserve_io_tokens.
+    proof: [project-admission-tests]
+  - text: On OVER_LIMIT response, combined-TPM is refunded when tpm_reservation_amount > 0, concurrency is released, and reservation_released=True is set.
+    proof: [project-admission-tests]
+  - text: Stash stores itpm_reserved_tokens, itpm_reserved_scopes and itpm_reserved_windows when ITPM amount > 0.
+    proof: [project-admission-tests]
+  - text: Stash stores otpm_reserved_tokens, otpm_reserved_scopes and otpm_reserved_windows when OTPM amount > 0.
+    proof: [project-admission-tests]
+  - text: Successful IO response statuses are merged into the stored rate_limit_response, or the IO response itself is stored if no prior response exists.
+    proof: [project-admission-tests]
+  - text: Observability logging includes reserved amounts and model identity.
+    proof: [project-admission-tests]
+  - text: Oracle cases cover non-dict data, missing IO descriptors, successful ITPM reservation, successful OTPM reservation, joint ITPM+OTPM reservation, over-limit with TPM refund, and over-limit with no TPM refund.
+    proof: [project-admission-oracle]
+checks:
+  optional: []
+  commands:
+    - id: project-admission-tests
+      why: the project_admission module is missing, does not compile, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^project_admission::/)'
+    - id: project-admission-oracle
+      why: oracle cases do not exist or fail against the mock provider
+      run: test -f tools/oracle/cases/project_admission/non_dict_request.yaml && test -f tools/oracle/cases/project_admission/no_io_descriptors.yaml && test -f tools/oracle/cases/project_admission/itpm_reserved.yaml && test -f tools/oracle/cases/project_admission/otpm_reserved.yaml && test -f tools/oracle/cases/project_admission/joint_io_reserved.yaml && test -f tools/oracle/cases/project_admission/io_over_limit_with_tpm_refund.yaml && test -f tools/oracle/cases/project_admission/io_over_limit_no_tpm.yaml && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/project_admission
+oracle_cases:
+  - tools/oracle/cases/project_admission/non_dict_request.yaml
+  - tools/oracle/cases/project_admission/no_io_descriptors.yaml
+  - tools/oracle/cases/project_admission/itpm_reserved.yaml
+  - tools/oracle/cases/project_admission/otpm_reserved.yaml
+  - tools/oracle/cases/project_admission/joint_io_reserved.yaml
+  - tools/oracle/cases/project_admission/io_over_limit_with_tpm_refund.yaml
+  - tools/oracle/cases/project_admission/io_over_limit_no_tpm.yaml
+deviations:
+  - what: "Request data that is not a dict is treated as having no project IO limits: the function returns early without claiming the stash or examining descriptors."
+    why: LiteLLM's function guards on isinstance(data, dict) and returns; betterlite enforces the same boundary to maintain compatible rate limiting behavior for non-standard request formats.
+out_of_scope:
+  - The estimation functions themselves (B3041 owns them), token reservation (B3042), error handling (B3030), stash access (B3031), and concurrency release (B3035).
+  - Offload execution model for _estimate_precise_input_tokens; the outline marks offload_token_count as an open dependency.
+  - Cache transport for window-identity storage; the outline marks post-call batch transport as an open dependency.
+pitfalls:
+  - "Refunding combined-TPM must check tpm_reservation_amount > 0 to avoid refunding a zero or nonexistent reservation, and must set stash.reservation_released=True before raising the error so post-call failure hooks do not refund the same reservation again."
+  - "Window identities are filtered by counter_key substring ('model_per_project_itpm' for ITPM, 'model_per_project_otpm' for OTPM) to exclude unrelated windows from the batch response."
+  - "io_response.get('reservation_windows', frozenset()) may return an empty sequence; both scopes and window identities must handle empty lists gracefully."
+  - "Storing scopes as frozenset() of tuples (key, value) and window_identities as frozenset() of tuples (counter_key, window_start, backend) ensures immutability and consistent post-call access."
+  - "The implicit output cap is applied before reservation, not after. A hard cap prevents unbounded responses from overshooting the budget during generation, so it must be called even if the reservation succeeds."
+  - "Merging IO response statuses into the stored rate_limit_response maintains header values from both windowed RPM/TPM and project IO limits; storing the IO response directly when none is stored yet ensures statuses reach logging callbacks."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

@@ -2,8 +2,8 @@ id: B4530
 milestone: M8 platform
 title: Memory records, visibility and write authorization
 status: todo
-depends_on: [B724, B726, B732, B800]
-file: null
+depends_on: [B724, B726, B732, B800, B3079]
+file: tasks/B4530-memory-records-and-access.yaml
 covers:
   - "litellm/proxy/memory/memory_endpoints.py"
   - "litellm/types/memory_management.py"

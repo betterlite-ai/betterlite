@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Resolve S3 v2 parameters and construct log objects
 status: todo
 depends_on: [B3990, B002]
-file: null
+file: tasks/B3992-s3-log-elements.yaml
 covers:
   - "litellm/integrations/s3_v2.py"
 parent: B115

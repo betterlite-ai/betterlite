@@ -100,7 +100,6 @@ scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-azure/src/azure_certificate.rs
   - crates/betterlite-azure/src/azure_certificate/**
   - tools/oracle/Cargo.toml

@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-reverse-name-map
+call: {anthropic_tool_names: {function: map, names: ["foo_bar", "foo/bar"]}}
+env: {}
+compare: {ignore: []}

@@ -69,7 +69,6 @@ scope:
   - crates/betterlite-router/src/semantic_math.rs
   - crates/betterlite-router/src/semantic_math/**
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-router/Cargo.toml
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml

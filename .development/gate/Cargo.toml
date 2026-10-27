@@ -13,13 +13,17 @@ name = "gate"
 path = "src/main.rs"
 
 [dependencies]
+camino = "1.2.6"
 clap = { version = "4.6.7", features = ["derive"] }
+determinator = "0.13.0"
 globset = "0.4.20"
+guppy = "0.19.1"
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = "1.0.154"
 strum = { version = "0.28.0", features = ["derive"] }
+tempfile = "3.27.0"
 thiserror = "2.0.21"
 toml = "0.9.8"
 

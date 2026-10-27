@@ -1,0 +1,18 @@
+kind: helper
+name: agent-history
+call:
+  codex_history_tools:
+    operation: normalize
+    input:
+      - type: agent_message
+        content:
+          - text: a
+          - encrypted_content: b
+          - text: 0
+            encrypted_content: c
+          - 7
+      - type: other
+        value: kept
+compare:
+  ignore: []
+env: {}

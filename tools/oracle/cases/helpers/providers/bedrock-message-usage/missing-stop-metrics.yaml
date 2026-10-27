@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-message-usage-missing-stop-metrics
+call:
+  bedrock_message_usage:
+    events:
+      - type: message_start
+        message: {usage: {cache_read_input_tokens: 4}}
+      - type: message_start
+        message: {usage: []}
+      - type: message_delta
+        usage: {}
+      - type: message_start
+      - type: message_delta
+      - raw
+      - type: message_delta
+      - type: other
+      - type: message_stop
+        usage: {input_tokens: 1}
+      - type: message_delta
+        usage: {}
+env: {}
+compare:
+  ignore: []

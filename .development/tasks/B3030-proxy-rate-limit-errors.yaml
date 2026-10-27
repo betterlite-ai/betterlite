@@ -35,7 +35,7 @@ scope:
   - crates/betterlite-rate-limit/**
   - tools/oracle/Cargo.toml
   - tools/oracle/cases/helpers/provider-attribution/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/b3030-*"
   - tools/oracle/helpers/b3030.py
   - tools/oracle/helpers/b3030/**
   - tools/oracle/src/helpers/oracle/b3030.rs
@@ -105,8 +105,8 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'provider_attribution' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b3030-*")"
+      && grep -lq 'provider_attribution' tools/oracle/fuzz/corpus/helper_case/b3030-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -131,6 +131,7 @@ out_of_scope:
 - Prometheus metric label mapping is handled at the error emission point; this task supplies the interface
   values only.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b3030-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as b3030 in the oracle group. Replace
   the stub Op in tools/oracle/src/helpers/oracle/b3030.rs with an impl Helper whose Input
   is the typed input, and write run in tools/oracle/helpers/b3030.py. The registry files (helpers/mod.rs,

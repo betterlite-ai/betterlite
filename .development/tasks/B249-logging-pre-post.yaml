@@ -23,7 +23,7 @@ scope:
   - tools/oracle/helpers/logging_pre_post.py
   - tools/oracle/helpers/logging_pre_post/**
   - tools/oracle/cases/helpers/logging-pre-post/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/logging_pre_post-*"
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1314-L1631
@@ -75,8 +75,8 @@ checks:
       ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: new helper seeds are missing or fail replay
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
-      && grep -rlq 'logging_pre_post' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/logging_pre_post-*")"
+      && grep -lq 'logging_pre_post' tools/oracle/fuzz/corpus/helper_case/logging_pre_post-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -95,6 +95,7 @@ out_of_scope:
 - Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/logging_pre_post-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as logging_pre_post in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/pre_post.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_pre_post.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.

@@ -1,0 +1,203 @@
+id: B3039
+title: Tag MCP agent and session rate-limit descriptors
+description: >-
+  Build descriptor builders for per-tag, per-MCP-server, agent-level and session-level rate limits, preserving
+  deduplication, source-team charging for MCP, and key-owned-agent precedence. Resolve configured tag budgets
+  through the existing batched lookup service and agent policy through an injected registry port.
+
+  Ownership includes:
+
+  - Tag rate limits: _tag_rate_limit_descriptor constructs a descriptor from a tag name and its TagRateLimit (rpm_limit,
+  tpm_limit), returning a RateLimitDescriptor with key="tag"; resolve_tag_rate_limits_from_db fetches tags via B740's
+  get_tag_objects_batch and returns an immutable mapping of tag names to TagRateLimit objects with budget limits.
+
+  - Tag-per-key descriptors: _add_tag_per_key_rate_limit_descriptor appends per-tag per-key RPM descriptors
+  (key="tag_per_key", value="{api_key}:{tag}") for every request tag with a configured per-key limit, deduplicating
+  by dict.fromkeys() order. Tags without a configured limit fall through to key-level descriptor.
+
+  - MCP-per-key descriptors: _add_mcp_per_key_rate_limit_descriptor appends a single per-MCP-server RPM descriptor
+  (key="mcp_per_key", value="{api_key}:{mcp_server_name}") if the server has a configured per-key limit; MCP tool
+  calls have no token usage, so tokens_per_unit stays None.
+
+  - MCP-per-team descriptors: _add_mcp_per_team_rate_limit_descriptor appends one descriptor per applicable team
+  (key="mcp_per_team", value="{team_id}:{mcp_server_name}"), reading both key.team_id and all source_team_rpm_limits
+  supplied by a keyless MCP grant; every applicable team's ceiling binds and no arbitrary team is picked when several
+  grant the same server.
+
+  - Agent-level descriptors: _create_agent_rate_limit_descriptors returns agent-global RPM/TPM descriptor
+  (key="agent") if the agent policy defines rpm_limit or tpm_limit; agent policy comes from an injected registry or
+  is supplied for testing.
+
+  - Session-level descriptors: _create_agent_rate_limit_descriptors appends session-scoped descriptor
+  (key="agent_session", value="{agent_id}:{session_id}") when session_id is present in data and agent policy defines
+  session_rpm_limit or session_tpm_limit.
+
+  - Agent and session resolution: _get_resolved_agent_id checks key.agent_id first (key-agent precedence), then
+  metadata.agent_id and returns None if neither is set; _get_session_id_from_data extracts session_id from data.litellm_session_id,
+  data.metadata.session_id, or data.litellm_metadata.session_id in order; _get_agent_from_registry looks up an agent by
+  id in the global registry.
+
+  - Tag deduplication: _create_tag_rate_limit_descriptors deduplicates request tags with dict.fromkeys() and filters
+  to only tags present in the tag_limits mapping; awaits the tag-rate-limit resolver.
+
+  Direct dependencies: B732 supplies UserAPIKeyAuth validation with team_id and mcp_source_team_rpm_limits fields;
+  B740 supplies get_tag_objects_batch to fetch tag budget metadata; B745 supplies get_key_tag_rpm_limit, get_key_mcp_rpm_limit,
+  get_team_mcp_rpm_limit lookups; B1102 supplies get_tags_from_request_body; B3031 supplies RateLimitDescriptor,
+  TagRateLimit and handler window_size configuration; B4776 supplies AgentRegistry.get_agent_by_id for agent policy
+  lookup.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/identity_descriptors.rs
+    - crates/betterlite-rate-limit/src/identity_descriptors/**
+    - tools/oracle/cases/identity_descriptors/**
+    - tools/oracle/helpers/b3039.py
+    - tools/oracle/helpers/b3039/**
+    - tools/oracle/src/helpers/rate_limit/b3039.rs
+    - tools/oracle/src/helpers/rate_limit/b3039/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L671-L698
+    why: _tag_rate_limit_descriptor and resolve_tag_rate_limits_from_db; tag budget resolution from get_tag_objects_batch and litellm_budget_table fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2837-L2872
+    why: _add_tag_per_key_rate_limit_descriptor; deduplication by dict.fromkeys(), get_tags_from_request_body, get_key_tag_rpm_limit lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2874-L2910
+    why: _add_mcp_per_key_rate_limit_descriptor; per-MCP-server RPM descriptor with get_key_mcp_rpm_limit, MCP tool calls have no token usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2912-L2955
+    why: _add_mcp_per_team_rate_limit_descriptor; source-team charging for both key.team_id and mcp_source_team_rpm_limits entries; multiple teams are all charged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3023-L3027
+    why: _get_agent_from_registry calls global_agent_registry.get_agent_by_id; B4776 owns the registry and get_agent_by_id contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3029-L3038
+    why: _get_resolved_agent_id checks key.agent_id first (precedence), then metadata.agent_id; returns None if neither set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3040-L3053
+    why: _get_session_id_from_data extracts session_id from litellm_session_id, metadata.session_id, or litellm_metadata.session_id; converts to string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3055-L3105
+    why: _create_agent_rate_limit_descriptors appends agent-global (key="agent") and session-level (key="agent_session") descriptors; reads rpm_limit, tpm_limit, session_rpm_limit, session_tpm_limit from agent policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3107-L3116
+    why: _create_tag_rate_limit_descriptors deduplicates tags by dict.fromkeys() and filters to mapped tags; awaits tag_rate_limit_resolver.
+
+dod:
+  - text: _tag_rate_limit_descriptor constructs a RateLimitDescriptor from tag name and TagRateLimit with key="tag", value=tag_name, window_size from handler.
+    proof: [tag-descriptor-tests]
+  - text: resolve_tag_rate_limits_from_db calls get_tag_objects_batch for tag_names and returns immutable mapping of tag names to TagRateLimit objects (rpm_limit, tpm_limit) from litellm_budget_table entries with non-None limits.
+    proof: [tag-resolution-tests]
+  - text: resolve_tag_rate_limits_from_db returns empty mapping when prisma_client is None or tag_names is empty, never null.
+    proof: [tag-resolution-tests]
+  - text: _add_tag_per_key_rate_limit_descriptor returns early if api_key is None or no tag_rpm_limit configured; appends one RPM-only descriptor per request tag with a configured limit.
+    proof: [tag-per-key-tests]
+  - text: _add_tag_per_key_rate_limit_descriptor deduplicates request tags using dict.fromkeys() to preserve order; skips tags without a limit mapping.
+    proof: [tag-per-key-dedup-tests]
+  - text: _add_tag_per_key_rate_limit_descriptor descriptor key is "tag_per_key", value is "{api_key}:{tag}", tokens_per_unit is None.
+    proof: [tag-per-key-tests]
+  - text: _add_mcp_per_key_rate_limit_descriptor returns early if mcp_server_name is None or api_key is None or no per-key limit configured; appends single RPM-only descriptor if server has configured limit.
+    proof: [mcp-per-key-tests]
+  - text: _add_mcp_per_key_rate_limit_descriptor descriptor key is "mcp_per_key", value is "{api_key}:{mcp_server_name}", tokens_per_unit is None.
+    proof: [mcp-per-key-tests]
+  - text: _add_mcp_per_team_rate_limit_descriptor returns early if mcp_server_name is None; appends descriptor for key.team_id (if present) and all source_team_rpm_limits entries in key.mcp_source_team_rpm_limits.
+    proof: [mcp-per-team-tests]
+  - text: _add_mcp_per_team_rate_limit_descriptor appends one descriptor per team with a configured limit; all applicable teams are charged (no arbitrary selection).
+    proof: [mcp-per-team-tests]
+  - text: _add_mcp_per_team_rate_limit_descriptor descriptor key is "mcp_per_team", value is "{team_id}:{mcp_server_name}", tokens_per_unit is None.
+    proof: [mcp-per-team-tests]
+  - text: _get_agent_from_registry calls global_agent_registry.get_agent_by_id(agent_id) and returns agent or None; method behavior depends on registry implementation.
+    proof: [agent-registry-tests]
+  - text: _get_resolved_agent_id checks key.agent_id first, returns it if non-None; otherwise checks metadata.agent_id; returns None if both absent.
+    proof: [agent-resolution-tests]
+  - text: _get_session_id_from_data extracts session_id from litellm_session_id, metadata.session_id, or litellm_metadata.session_id (in that order); converts result to string; returns None if all absent.
+    proof: [session-resolution-tests]
+  - text: _create_agent_rate_limit_descriptors returns empty list if agent is None; appends agent-global descriptor (key="agent", value=agent_id) if agent.rpm_limit or agent.tpm_limit non-None.
+    proof: [agent-descriptor-tests]
+  - text: _create_agent_rate_limit_descriptors appends session descriptor (key="agent_session", value="{agent_id}:{session_id}") if session_id non-None and agent.session_rpm_limit or agent.session_tpm_limit non-None.
+    proof: [agent-descriptor-tests]
+  - text: _create_agent_rate_limit_descriptors accepts optional policy parameter (for testing); uses supplied agent or looks up via _get_agent_from_registry.
+    proof: [agent-descriptor-tests]
+  - text: _create_tag_rate_limit_descriptors deduplicates request tags using dict.fromkeys(); returns tuple of descriptors only for tags present in tag_limits mapping.
+    proof: [tag-dedup-tests]
+  - text: _create_tag_rate_limit_descriptors awaits tag_rate_limit_resolver (async callable) with deduped tag tuple; returns immutable tuple.
+    proof: [tag-dedup-tests]
+
+oracle_cases:
+  - tools/oracle/cases/identity_descriptors/tag-descriptor-creation.yaml
+  - tools/oracle/cases/identity_descriptors/tag-budget-resolution.yaml
+  - tools/oracle/cases/identity_descriptors/tag-per-key-rpm.yaml
+  - tools/oracle/cases/identity_descriptors/tag-deduplication.yaml
+  - tools/oracle/cases/identity_descriptors/mcp-per-key-rpm.yaml
+  - tools/oracle/cases/identity_descriptors/mcp-per-team-rpm.yaml
+  - tools/oracle/cases/identity_descriptors/mcp-source-teams.yaml
+  - tools/oracle/cases/identity_descriptors/agent-global-limits.yaml
+  - tools/oracle/cases/identity_descriptors/agent-session-limits.yaml
+  - tools/oracle/cases/identity_descriptors/agent-resolution.yaml
+  - tools/oracle/cases/identity_descriptors/session-resolution.yaml
+
+checks:
+  optional: []
+  commands:
+    - id: tag-descriptor-tests
+      why: Tag descriptor builder is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::tag_descriptor/)'
+    - id: tag-resolution-tests
+      why: Tag budget resolution is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::tag_resolution/)'
+    - id: tag-per-key-tests
+      why: Tag-per-key descriptor builder is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::tag_per_key/)'
+    - id: tag-per-key-dedup-tests
+      why: Tag deduplication logic is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::(tag_dedup|tag_fromkeys)/)'
+    - id: mcp-per-key-tests
+      why: MCP-per-key descriptor builder is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::mcp_per_key/)'
+    - id: mcp-per-team-tests
+      why: MCP-per-team descriptor builder is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::mcp_per_team/)'
+    - id: agent-registry-tests
+      why: Agent registry lookup is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::agent_registry/)'
+    - id: agent-resolution-tests
+      why: Agent ID resolution (key-agent precedence) is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::agent_resolution/)'
+    - id: session-resolution-tests
+      why: Session ID extraction is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::session_resolution/)'
+    - id: agent-descriptor-tests
+      why: Agent and session descriptor builders are missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::agent_descriptor/)'
+    - id: tag-dedup-tests
+      why: Tag deduplication in _create_tag_rate_limit_descriptors is missing, incorrect, or tests fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::(tag_create|tag_create_dedup)/)'
+    - id: precedence-cases
+      why: Oracle cases verify agent resolution, session identification, MCP team charging and tag deduplication
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/identity_descriptors -k 'b3039'
+
+deviations:
+  - what: Tag and agent policy resolution use injected registry and batch lookup services; when a service or registry is unavailable, tag limits return empty mapping and agent lookup returns None, causing those rate-limit descriptors to be absent.
+    why: LiteLLM's tag resolution calls get_tag_objects_batch and returns empty mapping when prisma_client is None; agent lookup behavior depends on global_agent_registry implementation. betterlite mirrors this pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L680-L698
+  - what: MCP source-team charging appends descriptors for all applicable teams (both key.team_id and all source_team_rpm_limits entries); no team is arbitrarily selected when a keyless MCP request is granted by multiple teams.
+    why: A keyless MCP subject reaches servers through several teams at once and has no single team_id; every applicable team's ceiling must bind, preserving the grant structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2927-L2937
+  - what: Key-owned agent_id takes precedence over metadata-supplied agent_id; session_id is resolved from litellm_session_id, then metadata.session_id, then litellm_metadata.session_id in that order.
+    why: API key agent assignment is stronger than per-request override; session resolution spans multiple metadata sources for backward compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3029-L3053
+
+out_of_scope:
+  - AgentRegistry.get_agent_by_id implementation; this task calls the registry but does not implement it.
+  - Rate-limit descriptor window enforcement and atomic check logic belong to B3033–B3036.
+  - Tag rate-limit settlement belongs to B3045.
+  - Request body parsing (get_tags_from_request_body) belongs to B1102; this task uses the output.
+  - Auth context and UserAPIKeyAuth validation belong to B732.
+
+pitfalls:
+  - "Tag deduplication uses dict.fromkeys() to preserve order; tags are processed in request order with duplicates removed."
+  - "MCP tool calls (key='mcp_per_key' and key='mcp_per_team') have tokens_per_unit=None; they are RPM-only, not TPM."
+  - "MCP source-team charging appends a descriptor for every team in mcp_source_team_rpm_limits, not just key.team_id; all teams' limits bind."
+  - "Agent precedence: key.agent_id wins over metadata.agent_id; absence of both returns None without error."
+  - "Session ID is resolved in order: litellm_session_id, metadata['session_id'], litellm_metadata['session_id']; first non-None value is used."
+  - "resolve_tag_rate_limits_from_db returns immutable mapping (MappingProxyType); only tags with non-None rpm_limit or tpm_limit in litellm_budget_table are included."
+  - "Agent policy comes from registry lookup or test-supplied policy parameter; registry implementation determines available fields (rpm_limit, session_rpm_limit, etc.)."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

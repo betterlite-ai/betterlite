@@ -1,7 +1,7 @@
 id: B4050
 milestone: M7 observability
 title: Prompt contracts and compiled result projection
-status: todo
+status: done
 depends_on: [B004, B2228]
 file: tasks/B4050-prompt-contracts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/prompt_endpoints.py"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 256
