@@ -29,9 +29,10 @@ pub fn ollama(model: &str, messages: &[Message]) -> Result<OllamaPrompt, PromptE
             } else {
                 content.push_str(&text::joined(&turn.content));
             }
-            if label == "Assistant" && !turn.tool_calls.is_empty() {
+            let tool_calls = turn.tool_calls.as_slice();
+            if label == "Assistant" && !tool_calls.is_empty() {
                 content.push_str("Tool Calls: ");
-                content.push_str(&calls::render(&turn.tool_calls)?);
+                content.push_str(&calls::render(tool_calls)?);
             }
         }
         if !content.is_empty() {

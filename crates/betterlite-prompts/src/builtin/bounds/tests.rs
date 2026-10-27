@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use super::{OUTPUT_BYTES, check, finish};
-use crate::builtin::{Content, Message, PromptError, deepseek, images, ollama};
+use crate::builtin::{Calls, Content, Message, PromptError, deepseek, images, ollama};
+use indexmap::IndexMap;
 use rstest::rstest;
 
 #[derive(Clone, Copy)]
@@ -26,7 +27,8 @@ fn builtin_prompts_behavior_tests_behavior(
     let messages = [Message {
         role: "u".to_owned(),
         content: Content::Text("x".repeat(size)),
-        tool_calls: Vec::new(),
+        tool_calls: Calls::Absent,
+        extra: IndexMap::new(),
     }];
     match boundary {
         Boundary::Input => assert_eq!(check(&messages).is_ok(), accepted),

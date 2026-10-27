@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use super::ollama;
-use crate::builtin::{Content, Message, OllamaPrompt, PromptError, ToolCall, ToolFunction};
+use crate::builtin::{Calls, Content, Message, OllamaPrompt, PromptError, ToolCall, ToolFunction};
+use indexmap::IndexMap;
 use rstest::rstest;
 use std::{fs, path::PathBuf};
 
@@ -45,14 +46,17 @@ fn replays_the_tool_arguments_corpus(#[files("fuzz/corpus/tool_arguments/*")] pa
     let messages = [Message {
         role: "assistant".to_owned(),
         content: Content::Text(String::new()),
-        tool_calls: vec![ToolCall {
+        tool_calls: Calls::Present(vec![ToolCall {
             id: "id".to_owned(),
             kind: "function".to_owned(),
             function: ToolFunction {
                 name: "f".to_owned(),
                 arguments,
+                extra: IndexMap::new(),
             },
-        }],
+            extra: IndexMap::new(),
+        }]),
+        extra: IndexMap::new(),
     }];
     drop(ollama("model", &messages));
 }

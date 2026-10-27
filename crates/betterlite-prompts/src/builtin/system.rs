@@ -1,4 +1,5 @@
-use super::{Content, Message, PromptError, bounds, text};
+use super::{Calls, Content, Message, PromptError, bounds, text};
+use indexmap::IndexMap;
 
 pub fn map_system_message_pt(messages: &[Message]) -> Result<Vec<Message>, PromptError> {
     bounds::check(messages)?;
@@ -24,7 +25,8 @@ pub fn map_system_message_pt(messages: &[Message]) -> Result<Vec<Message>, Promp
             Some(_) | None => output.push(Message {
                 role: "user".to_owned(),
                 content: message.content.clone(),
-                tool_calls: Vec::new(),
+                tool_calls: Calls::Absent,
+                extra: IndexMap::new(),
             }),
         }
     }

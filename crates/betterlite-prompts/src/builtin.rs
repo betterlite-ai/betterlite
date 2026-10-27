@@ -44,20 +44,52 @@ pub struct ToolCall {
     #[serde(rename = "type")]
     pub kind: String,
     pub function: ToolFunction,
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Field>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ToolFunction {
     pub name: String,
     pub arguments: String,
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Field>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Message {
     pub role: String,
     pub content: Content,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tool_calls: Vec<ToolCall>,
+    #[serde(default, skip_serializing_if = "Calls::is_absent")]
+    pub tool_calls: Calls,
+    // System mapping copies fields that the text renderers do not inspect.
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Field>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Calls {
+    #[default]
+    #[serde(skip)]
+    Absent,
+    Null,
+    Present(Vec<ToolCall>),
+}
+
+impl Calls {
+    const fn is_absent(&self) -> bool {
+        match self {
+            Self::Absent => true,
+            Self::Null | Self::Present(_) => false,
+        }
+    }
+    fn as_slice(&self) -> &[ToolCall] {
+        match self {
+            Self::Absent | Self::Null => &[],
+            Self::Present(calls) => calls,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
