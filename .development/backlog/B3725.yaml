@@ -2,8 +2,8 @@ id: B3725
 milestone: M6 guardrails
 title: Bedrock resource-less guardrail checks
 status: todo
-depends_on: [B3720, B3721, B3723, B590, B595]
-file: null
+depends_on: [B3720, B3721, B3723, B590, B595, B164, B184]
+file: tasks/B3725-bedrock-guardrail-checks.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
 parent: B106

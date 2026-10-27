@@ -1,0 +1,68 @@
+id: B3486
+title: Execute GenAI calls through chat compatibility
+description: >-
+  Build the GenAI-to-completion handler in Rust that executes native generate_content calls through the existing chat completion pipeline.
+  Implement sync generate_content_handler and async async_generate_content_handler, both of which accept model, contents, config, stream, litellm_params and extra kwargs.
+  Transform the request to completion format using B3484's adapter, dispatch through litellm.completion or litellm.acompletion (B014), and translate the response back to GenAI format using B3485's transformers.
+
+  Preserve metadata, extra_headers and proxy_server_request from the caller through to the completion call, distinguishing them in the preparation phase so they survive the input transformation and are forwarded explicitly.
+  Detect streaming by checking for __iter__ (sync) or __aiter__ (async) on the completion response: responses with these attributes go to B3485's translate_completion_output_params_streaming, and responses without go to translate_completion_to_generate_content.
+  Wrap all completion failures as ValueError with a message naming the operation and preserving the original exception.
+  The sync handler accepts _is_async to delegate to the async handler, reusing one operation body over both entry modes without nested runtimes.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/genai/chat_call.rs
+    - crates/betterlite-core/src/api/genai/chat_call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L18-L165
+    why: Complete handler including _prepare_completion_kwargs (lines 18-54), async_generate_content_handler (lines 57-104) and generate_content_handler (lines 107-165), their metadata/extra_headers/proxy forwarding, stream detection and ValueError wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/google_genai/adapters.py#L10-L22
+    why: GenerateContentCompletionKwargs TypedDict defining the prepared completion request shape with metadata, extra_headers and proxy_server_request fields.
+dod:
+  - text: The handler prepares completion kwargs by transforming GenAI request to completion format, preserving metadata, extra_headers and proxy_server_request from the caller.
+    proof: [chat-call-tests]
+  - text: The sync handler executes completion, detects streaming with __iter__, and transforms the response to GenAI format.
+    proof: [chat-call-tests]
+  - text: The async handler executes acompletion, detects streaming with __aiter__, and transforms the response to GenAI format.
+    proof: [chat-call-tests]
+  - text: When stream=True and the response has __iter__ or __aiter__, the handler passes it to translate_completion_output_params_streaming.
+    proof: [chat-call-tests]
+  - text: When stream=True and the response does not have __iter__ or __aiter__, the handler passes it to translate_completion_to_generate_content.
+    proof: [chat-call-tests]
+  - text: Completion failures are wrapped as ValueError with a message naming the operation and the original exception.
+    proof: [chat-call-tests]
+  - text: The sync handler respects the _is_async flag, delegating to async_generate_content_handler when _is_async is True.
+    proof: [chat-call-tests]
+checks:
+  optional: []
+  commands:
+    - id: chat-call-tests
+      why: Handler request preparation, stream detection, response transformation or error wrapping does not pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai::chat_call::/) and not test(/replays/)'
+oracle_cases: []
+deviations:
+  - what: The handler is implemented as pure Rust functions accepting all parameters explicitly, not as methods on a stateful handler class.
+    why: Dependencies and completion execution come through function parameters; betterlite avoids module-level state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L15-L54
+  - what: Stream detection uses Rust's type system (checking for IntoIterator/AsyncIterator traits) rather than Python hasattr checks on __iter__/__aiter__.
+    why: Rust's static typing makes the distinction explicit at compile time; Python's runtime checks become trait bounds at the type level.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L140-L163
+  - what: Completion execution is delegated to B014's completion and acompletion functions, not reimplemented here.
+    why: Betterlite reuses the existing completion pipeline for consistency and compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L77-L104
+out_of_scope:
+  - GenAI request transformation (input side). Handled by B3484's translate_generate_content_to_completion.
+  - GenAI response transformation (output side). Handled by B3485's translate_completion_to_generate_content and translate_completion_output_params_streaming.
+  - Completion/acompletion execution. Handled by B014.
+  - HTTP client setup, authentication and request dispatch. Those are owned by the native GenAI HTTP handler (B3488).
+  - GenAI call setup, mock response handling and provider selection. Those are owned by B3483.
+pitfalls:
+  - Stream detection checks for __iter__ (sync) or __aiter__ (async) attributes. Objects with these attributes, including strings, are routed to translate_completion_output_params_streaming; only objects lacking these attributes are returned as-is through translate_completion_to_generate_content.
+  - Metadata, extra_headers and proxy_server_request must be explicitly extracted and forwarded from the caller's kwargs through to the completion call. They are preserved in the preparation phase and not dropped by the input transformer.
+  - Any exception from litellm.completion or litellm.acompletion must be wrapped as ValueError. The message names the operation (completion or acompletion) and includes the original exception to preserve the error context.
+  - The sync handler with _is_async=True returns a coroutine from the async handler without awaiting it; callers must handle the coroutine case, matching the pattern where a sync function can return either a direct result or a coroutine.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

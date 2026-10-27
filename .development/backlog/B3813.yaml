@@ -2,8 +2,8 @@ id: B3813
 milestone: M6 guardrails
 title: Enforce tool permissions on complete and streamed model responses
 status: todo
-depends_on: [B3810, B3811, B2227]
-file: null
+depends_on: [B3810, B3811, B2227, B3664, B189]
+file: tasks/B3813-tool-permission-responses.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"
 parent: B109

@@ -5,6 +5,7 @@ pub mod adaptive_feedback;
 pub mod adaptive_persistence;
 pub mod adaptive_selection;
 pub mod affinity_claims;
+pub mod auto_router_compression;
 pub mod automatic_router_pipeline;
 pub mod bandit_math;
 pub mod budget_increment;

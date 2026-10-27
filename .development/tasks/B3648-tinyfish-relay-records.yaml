@@ -1,0 +1,173 @@
+id: B3648
+title: TinyFish run policy and billing records
+description: >-
+  Build TinyFish URL/rate settings, permitted endpoint checks, run/SSE parsing
+  and logged billing payloads. Keep these below both the forwarding routes and
+  asynchronous pollers, with completed-only step pricing and saved request
+  attribution.
+
+  The task implements policy and record types for TinyFish automation runs in
+  the pass-through logging layer. Resolve the TinyFish agent API base (HTTPS
+  promotion from env variable or default) and cost per step (float from env or
+  0.016 default). Validate endpoint paths: reject empty segments, dot segments,
+  and paths outside the permitted POST /v1/automation/* submission routes and
+  GET /v1/runs/{run_id} and POST /v1/runs/{run_id}/cancel operations. Policy
+  checks separate billing operations from GET list/account operations without
+  implementing route enforcement.
+
+  TinyfishRun records are null-heavy until terminal; every field tolerates None
+  to handle polling responses that evolve to completion. Parse run objects from
+  JSON with validation-on-error logging; unpriced non-COMPLETED runs (FAILED,
+  CANCELLED, in-progress) charge zero. Completed runs invoice num_of_steps times
+  the cost per step.
+
+  Build helper functions for TinyFish URL hostname matching, API base resolution
+  with HTTPS promotion, cost-per-step parsing with warning/default fallback,
+  async run billing with SSE-poller spawn tracking, and SSE frame run-ID
+  extraction. Preserve the first SSE run ID found, nullable run fields, UTF-8
+  replacement decoding on malformed data, and the model name tinyfish/automation-run
+  stamped in all logging payloads.
+
+  Build in crates/betterlite-server as the pass_through_logging::tinyfish module.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/tinyfish.rs
+    - crates/betterlite-server/src/pass_through_logging/tinyfish/**
+    - crates/betterlite-models/src/tinyfish.rs
+    - tools/oracle/cases/server/pass-through-logging/tinyfish/**
+    - tools/oracle/helpers/b3648.py
+    - tools/oracle/helpers/b3648/**
+    - tools/oracle/src/helpers/server/b3648.rs
+    - tools/oracle/src/helpers/server/b3648/**
+    - crates/betterlite-models/src/tinyfish/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/tinyfish.py#L1-L55
+    why: TinyfishRun TypedDict, constants, endpoint validation, authenticated-run and envelope field gates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L1-L140
+    why: Logging payload class, billing task registry, SSE poller tracking, API base/cost resolution, URL checking, run parsing, cost calculation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L366-L425
+    why: Payload building, SSE chunk parsing for run ID extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L86-L110
+    why: API base resolution (HTTPS promotion), cost-per-step parsing, and hostname matching implementations.
+
+dod:
+  - text: >-
+      TinyfishRun records parse from JSON with all fields nullable, preserving
+      status, num_of_steps and run_id for cost calculation.
+    proof: [tinyfish-run-parsing-tests, oracle]
+  - text: >-
+      Endpoint paths reject empty/dot segments, only allow POST /v1/automation/{run,run-async,run-sse}
+      and POST /v1/runs/{id}/cancel and GET /v1/runs/{id} operations.
+    proof: [endpoint-validation-tests]
+  - text: >-
+      API base resolves from TINYFISH_AGENT_API_BASE env variable or default,
+      with host-only values promoted to HTTPS.
+    proof: [api-base-resolution-tests]
+  - text: >-
+      Cost per step resolves from TINYFISH_COST_PER_STEP env variable with
+      warning/default fallback on parse failure, using 0.016 default.
+    proof: [cost-per-step-resolution-tests]
+  - text: >-
+      Run cost returns None for non-COMPLETED runs or missing num_of_steps,
+      and num_of_steps * cost_per_step for COMPLETED runs.
+    proof: [run-cost-calculation-tests]
+  - text: >-
+      Hostname matching compares the parsed URL against the resolved API base hostname.
+    proof: [hostname-matching-tests]
+  - text: >-
+      SSE run ID extraction finds the first "data:" line, parses it as JSON,
+      and extracts run_id from the parsed TinyfishRun; returns None if not found.
+    proof: [sse-run-extraction-tests]
+  - text: >-
+      Billing task tracking registers asyncio tasks with weak reference cleanup
+      and exception logging on cancellation.
+    proof: [billing-task-registration-tests]
+  - text: >-
+      Requests are logged for billing only if they are POST with /v1/automation/
+      in the path; GET /v1/runs/* and POST /v1/runs/{id}/cancel are not logged.
+    proof: [request-logging-filter-tests]
+  - text: >-
+      The async route detector identifies POST /v1/automation/run-async requests
+      by checking if the URL path ends with that suffix.
+    proof: [async-route-detection-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: tinyfish-run-parsing-tests
+      why: TinyfishRun parsing does not handle nullable fields or validation errors correctly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(run_parsing|parse_run)/)'
+    - id: endpoint-validation-tests
+      why: Endpoint validation does not reject empty/dot segments or accept only allowed operations.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(endpoint_validation|allowed_endpoint)/)'
+    - id: api-base-resolution-tests
+      why: API base resolution does not promote host-only values or uses default incorrectly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(api_base_resolution|resolve.*api_base)/)'
+    - id: cost-per-step-resolution-tests
+      why: Cost per step resolution does not handle invalid input or uses incorrect default.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(cost_resolution|resolve.*cost)/)'
+    - id: run-cost-calculation-tests
+      why: Run cost calculation does not price completed runs or returns wrong costs.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(run_cost|cost_for_run)/)'
+    - id: hostname-matching-tests
+      why: Hostname matching does not correctly compare against the resolved API base.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(hostname|url_matching)/)'
+    - id: sse-run-extraction-tests
+      why: SSE run ID extraction does not find the first run_id or fails on malformed data.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(sse_extraction|run_id_from)/)'
+    - id: billing-task-registration-tests
+      why: Billing task registration does not hold tasks or log cancellation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(task_registration|billing_task)/)'
+    - id: request-logging-filter-tests
+      why: Request logging filter does not correctly identify POST /v1/automation/* requests or rejects GET/cancel operations.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(request_logging|should_log)/)'
+    - id: async-route-detection-tests
+      why: Async route detection does not correctly identify /v1/automation/run-async or identifies wrong paths.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(async_route|is_run_async)/)'
+
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/completed-run-cost.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/failed-run-zero-cost.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/api-base-https-promotion.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/cost-per-step-env-override.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/endpoint-path-validation.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/sse-frame-run-extraction.yaml
+
+deviations:
+  - what: "Invalid TINYFISH_COST_PER_STEP values log a warning and use the default 0.016. LiteLLM preserves this behavior; betterlite records the case and continues."
+    why: Logging continues with a safe default rather than failing the request. This preserves LiteLLM's warn-and-return pattern for configuration errors."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L92-L104
+  - what: "Malformed UTF-8 in SSE frames is replaced with U+FFFD (replacement character) rather than rejected. This preserves stream processing even when frames are corrupted."
+    why: SSE processing is best-effort; a corrupted frame should not drop the entire run's billing. The same behavior appears in other stream parsers."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L82-L83
+  - what: "The first SSE frame carrying a run_id is used; if multiple frames carry different run_id values, the first is retained and later ones ignored."
+    why: Run IDs should be consistent across frames. The first one is treated as authoritative; later changes likely indicate corrupted data or a server bug."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L411-L425
+
+out_of_scope:
+  - B002 owns configuration/environment variable resolution. This task calls get_secret_str for api_base and parses TINYFISH_COST_PER_STEP; the env value and defaults are resolved here.
+  - B190 owns the standard logging payload builder; this task calls it to build the logged response.
+  - The authenticated-run field gates and envelope-field rejection logic belong to B3626; this task defines the field sets and validation rules, and B3626 enforces them in the route handler.
+  - Async run polling, terminal-status detection, and SSE chunk collection belong to B3649; this task defines policy for billing and records run data, while B3649 owns the poller lifetime and dispatch to the logging sink.
+  - The request/response body and request headers are available to the handler; this task does not parse or modify them.
+
+pitfalls:
+  - "Endpoint validation checks path segments split on '/' after stripping leading slash; empty segments before the colon-check are caught first (path starts with '/' and no double slashes)."
+  - "The allowed POST run paths are /v1/automation/run, /v1/automation/run-async, and /v1/automation/run-sse. GET /v1/runs/{id} and POST /v1/runs/{id}/cancel are distinct operations; do not group them with the run-submit paths."
+  - "API base hostname comparison uses urlparse().hostname on both the env/default API base and the request URL; a schemeless API base resolves to None and always differs."
+  - "TinyfishRun is a TypedDict with all fields using ReadOnly; a mutable record is not the same type. The JSON adapter validates the shape; parse failures log a warning and return None."
+  - "Cost per step is a float; invalid env values must be caught before use. Parsing via float() with a ValueError fallback matches LiteLLM's pattern."
+  - "Billing task cleanup uses add_done_callback for both removal and cancellation logging; both callbacks fire, so don't duplicate the logic."
+  - "SSE chunk iteration skips non-'data:' lines; a line starting 'data:' is followed by content that must be JSON-decoded. Invalid JSON is caught and skipped, not logged with every chunk."
+  - "The model name 'tinyfish/automation-run' is stamped into every payload; requests do not supply it and it is not negotiable."
+  - "Run ID extraction from SSE is ordered; the first frame carrying a run_id wins. Subsequent frames are parsed but their run_id (if different) is ignored."
+  - "Completed runs invoice completed status exactly: COMPLETED runs charge, FAILED/CANCELLED/pending runs charge zero. The status field must be read from the run object after polling."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

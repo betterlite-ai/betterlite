@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Merge partial embedding hits and token usage
 status: todo
 depends_on: [B174, B196, B4300, B4301]
-file: null
+file: tasks/B4303-embedding-cache-merge.yaml
 covers:
   - "litellm/caching/caching_handler.py"
 parent: B125

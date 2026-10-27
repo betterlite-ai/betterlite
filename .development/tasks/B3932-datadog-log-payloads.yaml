@@ -1,0 +1,93 @@
+id: B3932
+title: Datadog standard and legacy log payloads
+description: >-
+  Build crates/betterlite-logging/datadog to create Datadog log payload structures for standard LLM logging and legacy formats.
+
+  Implement a DatadogPayload type as a TypedDict with required fields ddsource, ddtags, hostname, message, service, status (from B3930's DataDogStatus enum: INFO, WARN, ERROR)
+  and optional trace fields dd.trace_id and dd.span_id. Both required and optional fields serialize via B192's JSON serialization.
+
+  Implement standard_logging_to_datadog: given a StandardLoggingPayload (from B254), status (DataDogStatus), and configuration (from B3930's tag getters and hostname), create a DatadogPayload.
+  The message field is the JSON-serialized StandardLoggingPayload via B192. Use B3931's truncation to limit error_str, messages and response fields to 10,000 characters before serialization.
+
+  Implement legacy_v1_logging_to_datadog: given the old logging kwargs dict format, response_obj, start/end timestamps, status and configuration, create a DatadogPayload.
+  The message field serializes the old dict with id (from response_obj or generated), call_type, cache_hit, start_time, end_time, response_time, model, user, model_parameters,
+  spend (response_cost), messages, response, usage and metadata (with endpoint/caching_groups/previous_models filtered out). The helper cleans metadata before logging.
+
+  Both payload builders attach trace context via B3930's span context module when a trace ID is available, setting dd.trace_id and dd.span_id (when present).
+
+  Every default, environment variable and config key comes from B3930 (DD_SOURCE defaults to "litellm", DD_SERVICE to "litellm-server", etc., and DD_BASE_URL is read but has no literal default).
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog.rs
+    - crates/betterlite-logging/src/datadog/**
+    - crates/betterlite-logging/src/datadog/tests.rs
+    - crates/betterlite-logging/src/datadog/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/datadog.py#L12-L49
+    why: The DataDogStatus enum, DatadogPayload TypedDict structure, and DD_ERRORS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L518-L572
+    why: Standard logging payload creation with truncation applied before serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L680-L761
+    why: Legacy v1 payload creation with the old dict format, metadata cleaning, and optional parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L763-L807
+    why: Trace context attachment and active span accessors (_add_trace_context_to_payload and _get_active_trace_context).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py
+    why: JSON serialization for payloads and nested structures via safe_dumps.
+dod:
+  - text: DatadogPayload is a TypedDict with required fields ddsource, ddtags, hostname, message, service, status and optional dd.trace_id and dd.span_id.
+    proof: [payload-type]
+  - text: Standard payload creation takes StandardLoggingPayload with status and configuration, truncates error_str/messages/response to 10,000 chars via B3931's helper, JSON-serializes and wraps in DatadogPayload with source, tags, hostname and service from B3930.
+    proof: [standard-payload-tests]
+  - text: Legacy v1 payload creation takes old kwargs dict (with model, user, messages, response, usage, litellm_params, optional_params, call_type, cache_hit, response_cost), response_obj, timestamps and status, cleans metadata by filtering endpoint/caching_groups/previous_models, computes response_time from timestamps, JSON-serializes and wraps in DatadogPayload.
+    proof: [legacy-payload-tests]
+  - text: Both builders attach dd.trace_id and dd.span_id when trace context is available via B3930's span accessors.
+    proof: [trace-context-tests]
+  - text: All configuration defaults (DD_SOURCE="litellm", DD_SERVICE="litellm-server", DD_ENV="unknown", POD_NAME="unknown", DD_VERSION="unknown", HOSTNAME="") are read from B3930.
+    proof: [config-defaults-tests]
+  - text: Every mutant in payload building, metadata cleaning and trace attachment is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: payload-type
+      why: DatadogPayload type or enum is missing or does not match the spec
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_payload_types_behavior($|::)/)'
+    - id: standard-payload-tests
+      why: standard logging payload creation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_standard_logging_behavior($|::)/)'
+    - id: legacy-payload-tests
+      why: legacy v1 payload creation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_legacy_v1_logging_behavior($|::)/)'
+    - id: trace-context-tests
+      why: trace context attachment tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_trace_context_attachment_behavior($|::)/)'
+    - id: config-defaults-tests
+      why: configuration defaults are missing or incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_config_defaults_behavior($|::)/)'
+oracle_cases: []
+deviations:
+  - what: Legacy v1 payloads are JSON-serialized with the exact dict structure LiteLLM used, including the response_time field computed from timestamps.
+    why: betterlite replicates LiteLLM's v1 format for backward compatibility when litellm.datadog_use_v1 is true, though the standard format is preferred.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L680-L761
+  - what: Metadata cleaning in legacy payloads removes endpoint, caching_groups and previous_models keys before serialization; all other metadata keys are kept.
+    why: These internal LiteLLM keys contain routing and caching metadata that should not appear in observable logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L713-L728
+out_of_scope:
+  - Batch queue management, flushing, 413-split logic and HTTP delivery (B3933).
+  - Logger initialization, configuration parsing and environment resolution (B3930 and B3931).
+  - Request/response logging dispatch and callback invocation (B189).
+  - Proxy and service failure/success hook payloads (async_post_call_failure_hook, async_service_failure_hook and async_service_success_hook); owned by B3934.
+  - Health check payloads; the factory belongs to B3931.
+pitfalls:
+  - Standard payload truncation must be applied before JSON serialization via B3931; truncate a copy of the StandardLoggingPayload, not the original.
+  - Legacy v1 metadata cleaning happens after extracting metadata from litellm_params, before JSON serialization; filter out the three keys (endpoint, caching_groups, previous_models) and keep all others.
+  - Trace context attachment modifies the DatadogPayload dict in place by setting dd.trace_id and dd.span_id only when values are present; check for None before attaching.
+  - response_cost in legacy v1 comes from kwargs.get("response_cost", 0), not response_obj; it may be None or float, never a Decimal.
+  - Metadata in legacy v1 may be None (when litellm_params['metadata'] is None); handle None by treating it as an empty dict before cleaning.
+  - Do not call B3930's tag getters directly; receive them as injected configuration parameters so tests can mock them.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

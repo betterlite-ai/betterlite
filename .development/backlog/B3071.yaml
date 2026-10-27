@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Run CloudZero exports and previews
 status: todo
 depends_on: [B002, B189, B1690, B3060, B3069, B3070]
-file: null
+file: tasks/B3071-cloudzero-export-schedule.yaml
 covers:
   - "litellm/integrations/cloudzero/cloudzero.py"
 parent: B073

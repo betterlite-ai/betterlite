@@ -1,0 +1,82 @@
+id: B3490
+title: Select interaction providers and prepare optional fields
+description: >-
+  Define the Rust contract for the Google Interactions API and implement provider selection and optional-field preparation.
+  Build crates/betterlite-core with two new modules: betterlite_core::api::interactions::contract for the base interaction provider interface, and betterlite_core::api::interactions::utils for provider selection and optional-field extraction.
+  The Interactions API lets callers specify a provider (Gemini API via 'gemini' or Vertex AI via 'vertex_ai' and 'vertex_ai_beta') and create interactions (asynchronous conversations that may be resumed with previous_interaction_id). The contract defines the methods each provider implementation must provide: validation, URL construction, request transformation, response transformation, error conversion, and lifecycle operations (get, delete, cancel).
+  Provider selection matches the provider string against the literal identifiers 'gemini', 'vertex_ai' (LlmProviders.VERTEX_AI.value), and 'vertex_ai_beta' (LlmProviders.VERTEX_AI_BETA.value), returning GoogleAIStudioInteractionsConfig for 'gemini', VertexAIInteractionsConfig for the two Vertex values, and None for all other inputs including empty string or None. No default fallback to Gemini happens in this function; the HTTP handler tasks and route tasks decide what default to use when the selection returns None. The None signal is also consumed by the Responses compatibility bridge in B3498 to synthesize interaction records from the OpenAI SDK instead of calling the native API.
+  Optional-field extraction filters parameters to include only the named fields from the OpenAPI spec (tools, system_instruction, generation_config, stream, store, background, environment, response_modalities, response_format, response_mime_type, previous_interaction_id, agent_config), keeps explicitly passed false and empty values (they are not the same as unspecified None), and drops provider-specific defaults without encoding the provider name in the extraction logic.
+  PreProcessNonDefaultParams.base_pre_process_non_default_params (a shared utility that filters params by comparing to defaults) is the extraction implementation; this task calls it with the named optional-field set and a default_param_values dict that maps each field to None, then returns the filtered result to callers that decide which optional fields to include in provider requests.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/interactions/contract.rs
+    - crates/betterlite-core/src/api/interactions/utils.rs
+    - crates/betterlite-core/src/api/interactions/contract/**
+    - crates/betterlite-core/src/api/interactions/utils/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/interactions/transformation.py#L41-L295
+    why: The abstract base class BaseInteractionsAPIConfig with every provider contract method and the get_error_class example.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L11-L91
+    why: Provider selection logic, optional-field names from the OpenAPI spec, and the extraction utility using PreProcessNonDefaultParams.
+  - url: https://ai.google.dev/static/api/interactions.openapi.json
+    why: OpenAPI specification for the Google Interactions API defining request/response shapes and the complete optional-parameter list.
+  - url: https://ai.google.dev/gemini-api/docs/interactions
+    why: Google Interactions API documentation covering behavior, status lifecycle, streaming, agent interactions and background polling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py
+    why: Types for interaction inputs, responses, content records and streaming events (generated from OpenAPI).
+dod:
+  - text: The abstract contract defines methods for request/response transformation, URL construction, validation, error conversion and lifecycle operations (get, delete, cancel).
+    proof: [contract-tests]
+  - text: "Provider selection matches 'gemini' and returns GoogleAIStudioInteractionsConfig, matches 'vertex_ai' and 'vertex_ai_beta' and returns VertexAIInteractionsConfig, and returns None for empty string, None input, or any unsupported provider identifier."
+    proof: [provider-selection]
+  - text: Optional-field extraction returns only the named fields from the OpenAPI spec, preserving explicitly passed false and empty values.
+    proof: [optional-field-extraction]
+  - text: Each provider contract method names all required parameters and their types, matching the signature shape of LiteLLM's base class methods.
+    proof: [contract-tests]
+checks:
+  optional: []
+  commands:
+    - id: contract-tests
+      why: The abstract contract is missing methods or test cases for validation, URL construction, transformations and error conversion do not pass
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::contract::/) and not test(/replays/)'
+    - id: provider-selection
+      why: "Provider selection does not return correct configs for 'gemini', 'vertex_ai', 'vertex_ai_beta', or does not return None for empty/None/unsupported providers"
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::utils::.*provider/) and not test(/replays/)'
+    - id: optional-field-extraction
+      why: Optional-field extraction does not filter to the named OpenAPI spec fields, does not preserve explicit false/empty values, or does not use the provided default filtering utility
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::utils::.*optional/) and not test(/replays/)'
+oracle_cases: []
+deviations:
+  - what: "Provider selection does not fall back from empty/None to 'gemini'; it returns None for empty string, None input, or unsupported provider names. The default-to-Gemini behavior happens in the HTTP handler tasks (B3495, B3499) and route tasks (B3507), not in the provider selection function."
+    why: "Separation of concerns: this task selects the provider config if available, while callees decide what default to use when the selection returns None. This avoids hard-coding Gemini as a global default in the selection logic."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L57"
+  - what: "Provider selection and optional-field extraction are implemented as pure functions in Rust, not methods on a global config registry."
+    why: "Dependencies come in through function arguments; betterlite avoids globals and keeps provider setup composable."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L58"
+  - what: "The optional-field set is a const set of strings, not looked up by iterating a provider config object."
+    why: "Rust's const items are resolved at compile time and provide type safety; the field names are not provider-specific."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L11-L24"
+  - what: "None as the Responses-bridge signal is an explicit return type in the provider selection function, not an absent entry in a global dict."
+    why: "Rust's type system makes the absence explicit and forces callers to handle it; Python's None is implicit on missing dict entries."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L58"
+out_of_scope:
+  - "Default fallback from empty/None provider to 'gemini' — owned by HTTP handler tasks (B3495, B3499) and route tasks (B3507). This task returns None for unsupported/missing providers; callers decide what default to use."
+  - "Provider-specific implementations (Gemini API config, Vertex AI config, Responses bridge). Each provider implementation is owned by its own task."
+  - "HTTP client initialization, request sending or response reading. Those are owned by the HTTP handler task that calls the contract methods."
+  - "Streaming response handling or SSE event decoding. The contract names the transformation methods; each provider and the streaming iterator implement the details."
+  - "Background polling and billing. The polling task consumes the interaction types this task depends on (from B3481) and the contract interface."
+  - "Route handlers and request parsing. The proxy routes that accept /interactions requests are owned by a separate task."
+pitfalls:
+  - "The abstract base class in LiteLLM has two unused abstract methods (get_config and should_fake_stream) that are called nowhere at the pinned commit; do not build them."
+  - "Provider selection matches exactly three literal provider strings: 'gemini' (for GoogleAIStudioInteractionsConfig), 'vertex_ai' (for VertexAIInteractionsConfig), and 'vertex_ai_beta' (also for VertexAIInteractionsConfig). The values correspond to LlmProviders enum: GEMINI='gemini', VERTEX_AI='vertex_ai', VERTEX_AI_BETA='vertex_ai_beta'. Any other input including empty string or None returns None."
+  - "Provider selection returns None for empty string, None input, or unsupported providers; it does NOT fall back to Gemini. The default-to-Gemini fallback happens in the HTTP handler tasks (B3495 get, B3499 create) and route tasks (B3507), not in this provider selection function."
+  - "Provider selection must preserve None as the explicit Responses-bridge signal. An unsupported provider passes None to B3498, which checks for None and takes the Responses path instead of calling the native API."
+  - "Optional-field extraction must preserve explicit false and empty values (they are different from unspecified None). A caller that passes background=false wants to poll immediately; a caller that omits background gets the provider default."
+  - "The PreProcessNonDefaultParams utility is not namespaced by provider; the extraction function receives a list of valid field names and a dict of default values (all None) and returns the filtered dict."
+  - "The contract methods for request transformation, response transformation and URL construction take optional model and agent parameters; implementations must handle both cases (model-based and agent-based interactions)."
+  - "Error conversion must use the same exception types as other API families. get_error_class takes the status code, error message and headers and returns the appropriate exception for the task that depends on this one to raise."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

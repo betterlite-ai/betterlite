@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP token endpoint client and distributed refresh coordination
 status: todo
 depends_on: [B4650, B4656, B173]
-file: null
+file: tasks/B4657-mcp-token-endpoint-coordination.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{redis_distributed_lock,redis_refresh_coordinator,runtime_refresh_coordinator,token_endpoint}.py"
 parent: B137

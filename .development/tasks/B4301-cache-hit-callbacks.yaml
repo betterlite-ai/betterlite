@@ -1,0 +1,82 @@
+id: B4301
+title: Record cache-hit context and dispatch success callbacks
+description: >-
+  Implement cache-hit logging context by updating the logging object with cache duration,
+  original provider metadata, and cache details. Enqueue async success callbacks through the
+  worker from B191 and dispatch sync-on-async callbacks once per request. When a cache hit
+  occurs, project the cached result into request context with the provider and model from the
+  original cache lookup, measure elapsed time, and update the logging object environment to
+  reflect cache origin. Invoke B250's async_success_handler through B191's bounded worker and
+  B250's handle_sync_success_callbacks_for_async_calls for sync completion on async calls,
+  leaving stream deferral to callers. B4296 provides the preset cache key; B247 supplies the
+  environment updater. CachingDetails is an existing logging record (cache_hit, cache_duration_ms);
+  reuse it without adding fields.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/caching/hit_callbacks.rs
+    - crates/betterlite-core/src/caching/hit_callbacks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L721-L755
+    why: _async_log_cache_hit_on_callbacks; enqueues async success and invokes sync-on-async callback dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1226-L1286
+    why: _update_litellm_logging_obj_environment; projects cache hit into logging context with duration and original provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L448-L454
+    why: LoggingWorker.ensure_initialized_and_enqueue interface for enqueueing async callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L657
+    why: GLOBAL_LOGGING_WORKER singleton instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3193-L3209
+    why: Logging.async_success_handler signature and behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3983-L4004
+    why: Logging.handle_sync_success_callbacks_for_async_calls dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L910-L957
+    why: Logging.update_environment_variables and its typed parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3488-L3501
+    why: CachingDetails record (cache_hit, cache_duration_ms).
+dod:
+  - text: >-
+      Cache-hit context is recorded: cache duration (milliseconds), original provider, original model
+      and preset cache key are projected into the logging object environment before callbacks fire.
+    proof: [cache-hit-context-tests]
+  - text: >-
+      Async success handler is enqueued through the bounded logging worker from B191 with zero
+      blocking on a full queue, and no callback failure alters the cached result.
+    proof: [cache-hit-context-tests]
+  - text: >-
+      Sync-on-async callback dispatch happens exactly once per cache hit on async calls, and
+      stream deferral is left to callers of this module.
+    proof: [cache-hit-context-tests]
+  - text: >-
+      The preset cache key from B4296 is preserved without keeping a reference cycle through the
+      logging object.
+    proof: [cache-hit-context-tests]
+checks:
+  optional: []
+  commands:
+    - id: cache-hit-context-tests
+      why: cache hit logging and callback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::hit_callbacks::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B191 implements the logging worker and queue bounds; this task only enqueues through its interface.
+  - B250 implements async_success_handler and sync-on-async callback dispatch; this task only calls them.
+  - B247 implements Logging.update_environment_variables; this task only calls it with cache-hit values.
+  - B4296 implements _get_preset_cache_key_from_kwargs; this task only reads the key from the handler state.
+  - Stream callback deferral is the caller's responsibility; this task does not defer or buffer.
+pitfalls:
+  - >-
+    cache_duration_ms is measured from start_time to end_time at the point _async_log_cache_hit_on_callbacks
+    is called, not at cache hit detection; use the same timestamps the caller measured.
+  - >-
+    The preset_cache_key may be None if it was never set; _update_litellm_logging_obj_environment handles
+    this case by querying B4296 if the handler state is empty.
+  - >-
+    Sync callbacks on async calls must run after async_success_handler is enqueued, not before;
+    the order ensures all callbacks see the same updated environment.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

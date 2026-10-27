@@ -1,0 +1,241 @@
+id: B4309
+title: Serve cache health, deletion and Redis administration routes
+description: >-
+  Register four cache management routes in crates/betterlite-server: GET /cache/ping for health
+  checks with backend connectivity test, POST /cache/delete for selective key removal, GET
+  /cache/redis/info for Redis server state, and POST /cache/flushall for complete cache drain.
+  Each route requires user API key auth (from B003). Preserve LiteLLM's error status codes and
+  exception-to-status rewrites: /ping raises 503 when cache is uninitialized or backend ping
+  fails; /delete returns 500 when cache is uninitialized and for all exceptions (blanket rewrite);
+  /redis/info returns 503 for uninitialized cache, non-Redis backend, and all failures (blanket
+  rewrite); /flushall returns 503 when cache is uninitialized, non-Redis backend, and all exceptions
+  (blanket rewrite). Extract and clean cache params for the /ping response, masking sensitive fields
+  with SensitiveDataMasker.mask_dict. Handle CLIENT LIST restriction on managed Redis by falling
+  back to a warning message when unavailable. When /cache/ping tests a Redis cache, return
+  ping_response=true only when Redis ping completes (not its underlying boolean), and write a test
+  key to verify set_cache succeeds.
+  Dependencies: B4299 Cache.ping and delete_cache_keys; B4297 Cache.async_add_cache for test
+  writes; B4290 CachePingResponse and HealthCheckCacheParams types; B244 SensitiveDataMasker
+  for credential masking; B003 HTTP routing and error integration through user_api_key_auth.
+scope:
+  paths:
+    - crates/betterlite-server/src/cache_routes.rs
+    - crates/betterlite-server/src/cache_routes/**
+    - tools/oracle/cases/cache/**
+    - tools/oracle/helpers/b4309.py
+    - tools/oracle/helpers/b4309/**
+    - tools/oracle/src/helpers/server/b4309.rs
+    - tools/oracle/src/helpers/server/b4309/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L22-L47
+    why: "_extract_cache_params: safely extract and mask cache parameters from the backend instance."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L50-L119
+    why: "GET /cache/ping route: health check with optional Redis write test, status 503 on init/ping failure."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L122-L162
+    why: "POST /cache/delete route: delete keys from cache, 500 for non-Redis, 503 for Redis failure."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L165-L177
+    why: "_get_redis_client_info: safely get CLIENT LIST, fallback to warning message if unavailable."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L180-L213
+    why: "GET /cache/redis/info route: Redis server state, 500 for non-Redis, 503 on failure."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L216-L249
+    why: "POST /cache/flushall route: flush all cache entries, 500 for unsupported types, 503 on failure."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L50
+    why: "CachePingResponse and HealthCheckCacheParams type definitions."
+dod:
+  - text: >-
+      GET /cache/ping returns status 503 when cache is uninitialized (litellm.cache is None)
+      or when backend ping() fails for Redis type. Returns status 200 with ping_response=true
+      for successful Redis ping and set_cache operations, or without ping_response for
+      non-Redis types.
+    proof: [oracle, ping-tests]
+
+  - text: >-
+      GET /cache/ping extracts and masks cache parameters with HealthCheckCacheParams
+      validation, returning them in the response only when cache is initialized.
+    proof: [oracle, ping-param-tests]
+
+  - text: >-
+      POST /cache/delete requires keys parameter (list of strings), returns 500 when
+      cache is uninitialized (due to blanket exception rewrite), 500 when backend is not Redis,
+      and 200 with status=success when deletion completes. All exceptions return 500.
+    proof: [oracle, delete-tests]
+
+  - text: >-
+      GET /cache/redis/info returns 503 when cache is uninitialized or backend is not
+      Redis (blanket exception rewrite), and 503 when redis info() fails. Returns num_clients,
+      clients list (with fallback message if CLIENT LIST unavailable), and redis info dict.
+    proof: [oracle, redis-info-tests]
+
+  - text: >-
+      POST /cache/flushall returns 503 when cache is uninitialized, 503 when backend
+      is not Redis (blanket exception rewrite), and 200 with status=success when flushall()
+      completes. All exceptions return 503.
+    proof: [oracle, flushall-tests]
+
+  - text: >-
+      All four routes require user API key authentication through user_api_key_auth dependency.
+    proof: [oracle, auth-tests]
+
+  - text: >-
+      SensitiveDataMasker masks cache parameters in /ping response; credential fields
+      (host, port, password, connection strings) are redacted.
+    proof: [masking-tests]
+
+  - text: >-
+      CLIENT LIST restriction on managed Redis is handled gracefully: fallback returns
+      a warning message and num_clients=-1 instead of raising an exception.
+    proof: [oracle, client-list-fallback-test]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: ping-tests
+      why: /cache/ping does not health check or return correct initialization/ping status
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::ping::/)'
+
+    - id: ping-param-tests
+      why: /cache/ping does not extract, validate or mask cache parameters correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::ping_params::/)'
+
+    - id: delete-tests
+      why: /cache/delete does not parse keys, check cache type or return correct status
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::delete::/)'
+
+    - id: redis-info-tests
+      why: /cache/redis/info does not return Redis state or handle CLIENT LIST fallback
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::redis_info::/)'
+
+    - id: flushall-tests
+      why: /cache/flushall does not flush Redis or return correct error status
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::flushall::/)'
+
+    - id: auth-tests
+      why: routes do not require authentication or return 401 for missing/invalid keys
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::auth::/)'
+
+    - id: masking-tests
+      why: cache parameters in response are not masked or do not exclude sensitive fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::masking::/)'
+
+    - id: client-list-fallback-test
+      why: CLIENT LIST exception is not caught or does not return a fallback message with num_clients=-1
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::redis_info::client_list_restricted/)'
+
+oracle_cases:
+  - tools/oracle/cases/cache/ping-uninitialized.yaml
+  - tools/oracle/cases/cache/ping-redis-success.yaml
+  - tools/oracle/cases/cache/ping-redis-failure.yaml
+  - tools/oracle/cases/cache/ping-non-redis-success.yaml
+  - tools/oracle/cases/cache/delete-uninitialized.yaml
+  - tools/oracle/cases/cache/delete-redis-success.yaml
+  - tools/oracle/cases/cache/delete-non-redis.yaml
+  - tools/oracle/cases/cache/delete-redis-failure.yaml
+  - tools/oracle/cases/cache/redis-info-uninitialized.yaml
+  - tools/oracle/cases/cache/redis-info-non-redis.yaml
+  - tools/oracle/cases/cache/redis-info-success.yaml
+  - tools/oracle/cases/cache/redis-info-client-list-restricted.yaml
+  - tools/oracle/cases/cache/redis-info-failure.yaml
+  - tools/oracle/cases/cache/flushall-uninitialized.yaml
+  - tools/oracle/cases/cache/flushall-non-redis.yaml
+  - tools/oracle/cases/cache/flushall-success.yaml
+  - tools/oracle/cases/cache/flushall-redis-failure.yaml
+  - tools/oracle/cases/cache/routes-require-auth.yaml
+
+deviations:
+  - what: |-
+      /cache/ping returns ping_response=true only when Redis ping completes (a boolean
+      conversion from backend.ping()), not when it is awaited without exception.
+    why: |-
+      Distinguishes a backend that returns a true ping result from one that raises
+      silently on failure. LiteLLM converts the result to the string "True" in the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L81-L82
+
+  - what: |-
+      /cache/delete returns 500 when cache is uninitialized. The check at line 142 raises
+      HTTPException(503), but the blanket exception handler at lines 158-162 catches it
+      and rewrites to 500 with "Cache Delete Failed" message.
+    why: |-
+      LiteLLM's exception handler catches all exceptions during Redis delete operations
+      and returns 500, not 503, uniformly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L141-L162
+
+  - what: >-
+      /cache/redis/info returns 503 for both uninitialized cache (line 190) and
+      non-Redis backend (line 192-196), even though the checks raise HTTPException(500).
+      The blanket exception handler at lines 209-213 rewrites all exceptions to 503.
+    why: >-
+      LiteLLM's blanket handler treats initialization and backend-type failures uniformly
+      with 503, not 500, for /redis/info endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L188-L213
+
+  - what: >-
+      /cache/flushall returns 503 for non-Redis backend. The check at line 241-244
+      raises HTTPException(500), but the blanket exception handler at lines 245-249
+      rewrites it to 503 with "Service Unhealthy" message.
+    why: >-
+      LiteLLM's blanket exception handler catches all exceptions during flushall operations
+      and returns 503, rewriting the 500 from the backend-type check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L232-L249
+
+out_of_scope:
+  - B4299 owns Cache.ping, delete_cache_keys, and _supports_async; they are called
+    through dependency injection, not reimplemented.
+
+  - B4297 owns Cache.async_add_cache used in /cache/ping for test writes; this task
+    calls it, does not implement caching logic.
+
+  - B4290 owns CachePingResponse and HealthCheckCacheParams types; this task uses them
+    for serialization, does not define them.
+
+  - B244 owns SensitiveDataMasker and its mask_dict method; this task calls it to redact
+    credentials in responses.
+
+  - B003 owns user_api_key_auth dependency and HTTP error integration; this task applies
+    them as route guards and error handling.
+
+  - Redis client_list, info, flushall operations are owned by Redis backend task(s)
+    (B360 or lower); this task calls them through the RedisCache trait, does not implement
+    Redis protocol.
+
+  - safe_dumps JSON serialization is owned by B192; this task calls it
+    to format response bodies.
+
+  - Virtual key auth (user_api_key_auth with token validation) is owned by B052; this task
+    reuses the dependency as injected by B003.
+
+pitfalls:
+  - The /cache/ping route calls backend.ping() for Redis type only; non-Redis backends
+    have no ping implementation, so the response omits ping_response field entirely.
+
+  - /cache/delete raises HTTPException(503) on cache uninitialization at line 142, which
+    is caught by the blanket exception handler at lines 158-162 and rewritten to 500;
+    ensure betterlite preserves this exception-rewrite behavior.
+
+  - /cache/redis/info raises HTTPException(500) on uninitialized cache (line 189) and
+    non-Redis backend (line 192-196), both inside the try block; the blanket exception
+    handler at lines 209-213 catches them and rewrites to 503 uniformly.
+
+  - /cache/flushall raises HTTPException(503) on uninitialized cache (line 233) and
+    HTTPException(500) on non-Redis backend (line 241-244), both inside the try block;
+    the blanket exception handler at lines 245-249 catches all and rewrites to 503.
+
+  - CLIENT LIST command is unavailable on managed Redis (AWS ElastiCache, Azure Cache);
+    catch the exception and return -1 for num_clients and a warning message, not an error
+    status, per lines 175-177 of LiteLLM code.
+
+  - Cache parameters include nested dicts (redis_kwargs, ssl_certs); HealthCheckCacheParams
+    must filter these into safe displayable fields before masking.
+
+  - The test_key written in /cache/ping uses hardcoded model="test-model" and
+    messages with role="user", content="test from litellm"; preserve these exact values.
+
+  - /cache/ping catches HTTPException and re-raises it to skip the generic exception
+    handler (lines 105-106 in LiteLLM); ensure exception typing and re-raise logic
+    matches this pattern.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

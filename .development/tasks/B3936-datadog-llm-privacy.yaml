@@ -1,0 +1,232 @@
+id: B3936
+title: Datadog LLM span privacy and metadata
+description: >-
+  Build prompt-safe span metadata, message/tool redaction, router and cost dimensions, stream
+  detection, latency and budget projections for Datadog LLM Observability spans.
+  Keep guardrail audit fields while redacting classified prompt carriers and dropping unknown
+  guardrail keys; preserve the separate request/global/instance privacy controls.
+
+  Implement redaction of tool calls and results, replacing arguments and content with the
+  redaction marker when message redaction is enabled.
+  Project router decision fields into span tags, mapping routing_decision field names to
+  router_* dimensions and omitting prompt-quoting fields when redaction is on.
+  Redact guardrail information to audit fields only when message redaction is on, preserving
+  guardrail execution facts (name, mode, status, timings, counts) while marking prompt-carrying
+  fields with the redaction string.
+  Build cost dimension tags from user, key, model group and router fields, normalizing each
+  value through the Datadog tag value normalizer and omitting dimensions with empty normalized
+  values.
+
+  Extract and project span metadata from the standard logging payload: model, provider, ID,
+  trace ID, cache hit/key/cost, guardrail information, stream detection from both top-level
+  stream field and model_parameters, latency metrics (time to first token, overhead, guardrail
+  duration), and spend metrics (cost, budgets, budget reset time as ISO string).
+
+  Parse budget reset datetimes with a bounded ISO decoder, interpreting naive timestamps as UTC,
+  and omitting invalid values with debug diagnostics. The decoder must have a fuzz corpus and
+  replay test.
+
+  Tool and message redaction use the same safe-roles set as message projection; roles not in
+  the set are dropped.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog_llm_privacy.rs
+    - crates/betterlite-logging/src/datadog_llm_privacy/**
+    - tools/oracle/cases/helpers/datadog-llm-privacy/**
+    - tools/oracle/fuzz/corpus/datadog_budget_reset_decoder/**
+    - tools/oracle/fuzz/fuzz_targets/datadog_budget_reset_decoder.rs
+    - tools/oracle/fuzz/Cargo.toml
+    - Cargo.toml
+    - tools/oracle/helpers/b3936.py
+    - tools/oracle/helpers/b3936/**
+    - tools/oracle/src/helpers/logging/b3936.rs
+    - tools/oracle/src/helpers/logging/b3936/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L60-L87
+    why: >-
+      Safe message roles, classified guardrail field sets, prompt-carrying metadata field set,
+      router span field mapping, router dimensions and cost dimensions constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L90-L111
+    why: >-
+      _metadata_of, _router_span_fields extract and map routing decision, with prompt-quoting
+      field redaction controlled by redact_prompt_text flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L114-L165
+    why: >-
+      _guardrail_entries parses guardrail records from list or single-record shapes;
+      _guardrail_entry_without_prompt_carriers and _guardrail_information_without_prompt_carriers
+      apply field-level redaction while preserving audit fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L172-L204
+    why: >-
+      _redact_tool_call, _redact_tool_result, _redact_message, _redact_messages replace tool and
+      message content with redaction string while preserving message role and structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L216-L237
+    why: >-
+      _cost_dimension_tags builds span tags from user, key, model group and router fields,
+      normalizing values and omitting empty ones. _declared_cost_tags declares which dimensions
+      actually carry values on this span.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L720-L728
+    why: >-
+      redacts_messages_itself reports True; _payload_logging_is_off checks turn_off_message_logging,
+      deprecated message_logging flag and redaction per-request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L774-L791
+    why: >-
+      _get_time_to_first_token_seconds extracts time to first token from completionStartTime or
+      endTime, relative to startTime, falling back to zero.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L945-L1096
+    why: >-
+      _get_dd_llm_obs_payload_metadata, _get_latency_metrics, _get_stream_value_from_payload,
+      _get_spend_metrics assemble metadata with stream detection, latency (time to first token,
+      overhead, guardrail duration in milliseconds), and spend (cost, budgets, budget reset ISO
+      string with UTC fallback).
+dod:
+  - text: >-
+      Redaction decision combines global turn_off_message_logging flag, instance message_logging flag,
+      and per-request should_redact_message_logging with OR: any redaction signal causes messages and
+      metadata to redact.
+    proof: [redaction-decision-tests, oracle]
+  - text: >-
+      Redaction drops message content and tool arguments, replacing with the redaction marker, while
+      preserving message role, tool call name and ID, and tool result name and ID.
+    proof: [message-redaction-tests, oracle]
+  - text: >-
+      Message roles are kept only when in the safe roles set; unknown roles are dropped during redaction.
+    proof: [message-redaction-tests, oracle]
+  - text: >-
+      Router span fields are extracted and mapped from the routing_decision metadata field, with
+      prompt-quoting fields omitted when redaction is enabled.
+    proof: [oracle]
+  - text: >-
+      Guardrail information is reduced to audit fields only when redaction is enabled, with
+      prompt-carrying fields marked redacted and unknown keys dropped.
+    proof: [guardrail-redaction-tests, oracle]
+  - text: >-
+      Metadata drops prompt-carrying top-level keys when redaction is on (routing_decision,
+      prompt_management_metadata, mcp_tool_call_metadata, vector_store_request_metadata,
+      requester_metadata).
+    proof: [metadata-redaction-tests, oracle]
+  - text: >-
+      Cost dimension tags are built from user, key, model group and router fields, with each value
+      normalized through Datadog tag normalization and empty normalized values omitted.
+    proof: [cost-dimension-tests, oracle]
+  - text: >-
+      Declared cost dimensions list only the dimensions that actually carry values on the span.
+    proof: [cost-dimension-tests, oracle]
+  - text: >-
+      Time to first token is extracted from completionStartTime if present, falling back to endTime,
+      both relative to startTime, and returned as zero when absent.
+    proof: [oracle]
+  - text: >-
+      Stream detection checks top-level stream field first (completed streaming only), then
+      model_parameters.stream, returning false for non-streaming requests.
+    proof: [stream-detection-tests, oracle]
+  - text: >-
+      Latency metrics include time to first token in milliseconds, LiteLLM overhead when present, and
+      guardrail duration summed across all guardrail records in milliseconds.
+    proof: [latency-metrics-tests, oracle]
+  - text: >-
+      Spend metrics include response cost, user key max budget when present, user key spend when
+      valid, and user key budget reset as ISO string with naive timestamps interpreted as UTC.
+    proof: [spend-metrics-tests, budget-reset-decoder-corpus, oracle]
+  - text: >-
+      Budget reset datetime decoder handles ISO format strings with 'Z' suffix, datetime objects, and
+      naive timestamps as UTC, omitting invalid values with debug logs.
+    proof: [budget-reset-decoder-tests, budget-reset-decoder-corpus]
+  - text: >-
+      The budget reset datetime fuzz corpus is committed and replays without panics.
+    proof: [budget-reset-decoder-corpus]
+  - text: >-
+      Mutants in redaction decision logic, message/guardrail/metadata redaction, cost dimension
+      extraction and budget reset parsing are caught by tests.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: redaction-decision-tests
+      why: redaction decision combination (OR logic) tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*redaction_decision($|::)/)'
+    - id: message-redaction-tests
+      why: message and tool redaction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*message.*redact($|::)/)'
+    - id: guardrail-redaction-tests
+      why: guardrail field redaction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*guardrail.*redact($|::)/)'
+    - id: metadata-redaction-tests
+      why: metadata extraction with redaction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*metadata($|::)/)'
+    - id: cost-dimension-tests
+      why: cost dimension tag building tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*cost_dimension($|::)/)'
+    - id: stream-detection-tests
+      why: stream detection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*stream($|::)/)'
+    - id: latency-metrics-tests
+      why: latency metrics extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*latency($|::)/)'
+    - id: spend-metrics-tests
+      why: spend metrics extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*spend($|::)/)'
+    - id: budget-reset-decoder-tests
+      why: budget reset datetime decoder unit tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_budget_reset_decoder::test/)'
+    - id: budget-reset-decoder-corpus
+      why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/datadog_budget_reset_decoder)"
+        && test -f tools/oracle/fuzz/fuzz_targets/datadog_budget_reset_decoder.rs
+        && test -n "$(ls -A tools/oracle/fuzz/corpus/datadog_budget_reset_decoder)"
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_datadog_budget_reset_decoder_corpus)'
+    - id: helper-python
+      why: the oracle adapters fail strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3936.py)"
+        && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3936.py
+        && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/b3936.py
+oracle_cases:
+  - tools/oracle/cases/helpers/datadog-llm-privacy/redaction-decision-global-flag.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/redaction-decision-instance-flag.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/redaction-decision-per-request.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/message-redaction-with-tool-calls.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/guardrail-redaction-audit-preserved.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/metadata-without-prompt-carriers.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/router-span-fields-filtered.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/cost-dimension-tags.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/time-to-first-token-completion-start.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/latency-metrics-overhead.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/stream-detection-model-params.yaml
+  - tools/oracle/cases/helpers/datadog-llm-privacy/spend-metrics-budget-reset.yaml
+deviations:
+  - what: Message role validation uses the exact safe roles set from message projection; a role not in that set is dropped, not preserved.
+    why: Role validation must match the projection module's safe set to ensure redacted messages only carry roles the LLM Obs schema will accept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L60-L62
+  - what: Cost dimension tags include all router dimensions even when router_fields is empty; they are simply not included in the final tags when the field is absent.
+    why: The router_fields mapping controls which dimensions appear, preserving the conditional logic from _cost_dimension_tags.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L221-L231
+  - what: Budget reset datetime is interpreted as UTC when no timezone is present, matching LiteLLM's implicit UTC handling in Datadog spend metrics.
+    why: Naive ISO timestamps should not be rejected as invalid; they represent UTC times in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L1082-L1083
+  - what: Invalid budget reset datetime values are omitted with debug diagnostics, not included as null or error states.
+    why: LiteLLM logs invalid values but does not fail the span; betterlite skips the field rather than including a default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L1092-L1094
+  - what: Guardrail field redaction uses an allowlist of classified fields; unknown keys are dropped, not preserved.
+    why: Guardrails that write their own extra metadata cannot include prompt text on redacted spans; the allowlist prevents unvetted keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L128-L138
+out_of_scope:
+  - Message and tool projection from standard logging payloads into Datadog schema; B3935 handles that.
+  - Span assembly, initialization and intake delivery; B3938 composes the metadata this task produces.
+  - Redaction marker constants and classified field set definitions; these are imported from B3935.
+  - Message redaction policy decisions (turn_off_message_logging, message_logging flag); B3935 initializes those in the init parameters.
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b3936 in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/b3936.rs with an impl Helper whose Input is HelperInput and Output the typed output, and write run in tools/oracle/helpers/b3936.py. The registry files (helpers/mod.rs, dispatch.py) are not this task's to edit."
+  - "Redaction decision combines three flags with OR: turn_off_message_logging (global), message_logging (instance), and should_redact_message_logging (per-request). If any flag signals redaction, messages and metadata redact."
+  - "Cost dimension tags omit dimensions whose normalized value is empty string; \"\" is falsy but must be checked explicitly after normalization, not before."
+  - "Guardrail information may be a single record (dict) or a list of records; the entry handler must normalize both shapes."
+  - "Metadata redaction is a separate concern from message redaction; metadata drops prompt-carrying top-level keys when redaction is on, not via message-level redaction."
+  - "Budget reset datetime parsing must handle 'Z' suffix by replacing it with \"+00:00\" before parsing; Python's datetime parser rejects bare 'Z'."
+  - "Latency metrics use millisecond units for time-to-first-token and overhead durations, while the payload uses seconds from LiteLLM; conversion is sec * 1000."
+  - "Naive timestamps (no timezone info) are interpreted as UTC, not as the local system timezone."
+  - "The fuzz target datadog_budget_reset_decoder (28 characters) parses ISO datetime strings; the corpus covers naive timestamps, 'Z' suffixes, timezone offsets and invalid formats."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Datadog standard and legacy log payloads
 status: todo
 depends_on: [B3930, B3931, B192, B198, B254]
-file: null
+file: tasks/B3932-datadog-log-payloads.yaml
 covers:
   - "litellm/integrations/datadog/datadog.py"
   - "litellm/types/integrations/datadog.py"

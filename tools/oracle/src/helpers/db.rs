@@ -1,9 +1,9 @@
 helper_group! {
     "auth_reconnect" => auth_reconnect, "auxiliary_repository" => auxiliary_repository,
-    "b3102" => b3102, "baseline_publication" => baseline_publication,
-    "batch_claim_row" => batch_claim_row, "budget_permission_rows" => budget_permission_rows,
-    "cleanup_bounds" => cleanup_bounds, "combined_key_read" => combined_key_read,
-    "commit_remainder" => commit_remainder,
+    "b3102" => b3102, "b4501" => b4501, "b4711" => b4711,
+    "baseline_publication" => baseline_publication, "batch_claim_row" => batch_claim_row,
+    "budget_permission_rows" => budget_permission_rows, "cleanup_bounds" => cleanup_bounds,
+    "combined_key_read" => combined_key_read, "commit_remainder" => commit_remainder,
     "daily_activity_contracts" => daily_activity_contracts,
     "daily_activity_export" => daily_activity_export,
     "daily_activity_repository" => daily_activity_repository,

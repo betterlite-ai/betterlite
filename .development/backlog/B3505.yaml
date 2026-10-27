@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Retrieve delete and list versions of managed agents
 status: todo
 depends_on: [B3501, B3502, B3503, B185, B186, B198]
-file: null
+file: tasks/B3505-agent-item-calls.yaml
 covers:
   - "litellm/interactions/agents/main.py"
 parent: B098
