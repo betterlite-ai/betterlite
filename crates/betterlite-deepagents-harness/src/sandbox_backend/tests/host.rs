@@ -14,6 +14,7 @@ use tokio::time;
 // runs every command on the host inside workdir, the way LocalSandbox does
 pub(super) struct HostSandbox {
     pub(super) workdir: String,
+    pub(super) fail_find: bool,
 }
 
 pub(super) struct NoProcess {
@@ -71,6 +72,18 @@ impl Sandbox for HostSandbox {
         timeout: Duration,
         _max_output_bytes: usize,
     ) -> Result<CompletedRun, HarnessError> {
+        if self.fail_find
+            && command
+                .argv
+                .first()
+                .is_some_and(|program| program == "find")
+        {
+            return Ok(CompletedRun {
+                stdout: format!("{}/README.md\n", self.workdir),
+                stderr: "find: simulated traversal failure\n".to_owned(),
+                exit_code: 1,
+            });
+        }
         let (program, args) = command.argv.split_first().unwrap();
         let mut child = Command::new(program);
         child

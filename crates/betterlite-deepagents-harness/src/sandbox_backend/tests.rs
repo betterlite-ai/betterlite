@@ -2,7 +2,7 @@
 mod host;
 
 use std::fs;
-use std::os::unix::fs::{PermissionsExt as _, symlink};
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -35,9 +35,22 @@ fn backend_at(
     runtime: Handle,
     permissions: Permissions,
 ) -> SandboxBackend<HostSandbox> {
-    let sandbox = Arc::new(HostSandbox {
-        workdir: workdir.to_owned(),
-    });
+    backend_with_sandbox(
+        HostSandbox {
+            workdir: workdir.to_owned(),
+            fail_find: false,
+        },
+        runtime,
+        permissions,
+    )
+}
+
+fn backend_with_sandbox(
+    sandbox: HostSandbox,
+    runtime: Handle,
+    permissions: Permissions,
+) -> SandboxBackend<HostSandbox> {
+    let sandbox = Arc::new(sandbox);
     SandboxBackend::new(
         sandbox,
         runtime,
@@ -462,13 +475,15 @@ async fn glob_skips_snapshot_dirs_and_matches_relative_to_its_root() {
 #[tokio::test]
 async fn glob_marks_partial_results_when_find_fails() {
     let (_dir, repo) = repo_with_escape_links();
-    let locked = Path::new(&repo).join("locked");
-    fs::create_dir_all(&locked).unwrap();
-    fs::write(locked.join("hidden.md"), "x").unwrap();
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
-    let backend = backend_at(&repo, Handle::current(), READ_ONLY);
+    let backend = backend_with_sandbox(
+        HostSandbox {
+            workdir: repo.clone(),
+            fail_find: true,
+        },
+        Handle::current(),
+        READ_ONLY,
+    );
     let result = backend.glob("*.md", "/").await;
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
     let readme = FileInfo {
         path: "/README.md".to_owned(),
         is_dir: false,
