@@ -36,7 +36,7 @@ const SUPPORTED_CALLBACK_FIELDS: [&str; 33] = [
     "turn_off_message_logging",
 ];
 
-const REQUEST_BLOCKED_CALLBACK_FIELDS: [&str; 10] = [
+const REQUEST_BLOCKED_FIELDS: [&str; 10] = [
     "gcs_bucket_name",
     "gcs_path_service_account",
     "dd_api_key",
@@ -67,7 +67,7 @@ pub fn banned_fields() -> BTreeSet<&'static str> {
         .into_iter()
         .filter(|field| !SAFE_CLIENT_CALLBACK_FIELDS.contains(field))
         .collect();
-    banned.extend(REQUEST_BLOCKED_CALLBACK_FIELDS);
+    banned.extend(REQUEST_BLOCKED_FIELDS);
     banned.extend(EXTRA_BANNED_FIELDS);
     banned
 }
