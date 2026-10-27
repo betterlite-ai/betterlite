@@ -2,6 +2,6 @@ kind: helper
 name: filtered-messages-merge-back-by-index
 call:
   b3721:
-    step: {selection: {texts: [new], messages: [{role: system, content: setup}, {role: user, content: new}], latest_only: true}}
+    step: {merge_messages: {original: [{role: system, content: setup}, {role: user, content: old}], updated: [{role: user, content: MASK}], indices: [1]}}
 env: {}
 compare: {ignore: []}

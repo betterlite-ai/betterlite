@@ -1,118 +1,79 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_guardrails::bedrock_masking::{
-    apply_masking_to_messages, apply_masking_to_response, extract_masked_texts,
+    apply_to_messages, apply_to_response, extract_masked_texts,
 };
 use betterlite_guardrails::bedrock_message_selection::{
-    collect_grounding_blocks, create_input_content_request, merge_masked_texts,
-    select_messages_for_apply_guardrail,
+    content, prepare_for_role, reconcile, select,
 };
-use serde::Deserialize;
-use serde_json::{Value, json, to_value};
+use serde::Serialize;
+use serde_json::to_value;
+use wire::{Grounding, Input, Prepared, Selection, Step};
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct Input {
-    step: Step,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Step {
-    Input {
-        messages: Vec<Value>,
-    },
-    Grounding {
-        messages: Vec<Value>,
-        contextual_fallback: bool,
-    },
-    Selection {
-        texts: Vec<String>,
-        messages: Vec<Value>,
-        latest_only: bool,
-    },
-    Merge {
-        masked: Vec<String>,
-        texts: Vec<String>,
-        scanned_slice: Option<(usize, usize)>,
-        scanned_role_subset: bool,
-    },
-    Extract {
-        response: Option<Value>,
-    },
-    MaskMessages {
-        messages: Vec<Value>,
-        masked_texts: Vec<String>,
-    },
-    MaskResponse {
-        response: Value,
-        masked_texts: Vec<String>,
-    },
-}
-
+mod tests;
+mod wire;
 pub(crate) struct Op;
 
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
-        let result = match &input.step {
-            Step::Input { messages } => to_value(create_input_content_request(Some(messages))),
-            Step::Grounding {
-                messages,
-                contextual_fallback,
-            } => {
-                let blocks = collect_grounding_blocks(Some(messages), *contextual_fallback);
-                to_value(
-                    blocks
-                        .into_iter()
-                        .map(|block| json!({"text": block.text, "qualifier": block.qualifier}))
-                        .collect::<Vec<_>>(),
-                )
+        match &input.step {
+            Step::Format(args) => format(args),
+            Step::Grounding(args) => {
+                let blocks = content::grounding(args.messages.as_deref(), args.contextual_fallback);
+                encode(blocks.into_iter().map(Grounding::from).collect::<Vec<_>>())
             }
-            Step::Selection {
-                texts,
-                messages,
-                latest_only,
-            } => {
-                let selection =
-                    select_messages_for_apply_guardrail(texts, Some(messages), *latest_only);
-                to_value(
-                    json!({"filtered_messages": selection.filtered_messages, "scanned_slice": selection.scanned_slice, "scanned_role_subset": selection.scanned_role_subset, "skip_scan": selection.skip_scan}),
-                )
-            }
-            Step::Merge {
-                masked,
-                texts,
-                scanned_slice,
-                scanned_role_subset,
-            } => to_value(merge_masked_texts(
-                masked,
-                texts,
-                *scanned_slice,
-                *scanned_role_subset,
+            Step::Selection(args) => encode(Selection::from(select(&args.texts, &args.context))),
+            Step::Prepare(args) => encode(Prepared::from(prepare_for_role(
+                args.messages.as_deref(),
+                args.latest_only,
+            ))),
+            Step::Merge(args) => encode(reconcile::texts(
+                &args.masked,
+                &args.texts,
+                args.scanned_slice,
+                args.scanned_role_subset,
             )),
-            Step::Extract { response } => to_value(extract_masked_texts(response.as_ref())),
-            Step::MaskMessages {
-                messages,
-                masked_texts,
-            } => to_value(apply_masking_to_messages(messages, masked_texts)),
-            Step::MaskResponse {
-                response,
-                masked_texts,
-            } => {
-                let mut response = response.clone();
-                apply_masking_to_response(&mut response, masked_texts);
-                to_value(response)
+            Step::MergeMessages(args) => encode(reconcile::messages(
+                args.original.as_deref(),
+                &args.updated,
+                args.indices.as_deref(),
+            )),
+            Step::Extract(args) => encode(extract_masked_texts(args.response.as_ref())),
+            Step::MaskMessages(args) => {
+                encode(apply_to_messages(&args.messages, &args.masked_texts))
             }
-        };
-        result.map_err(|error| {
-            Box::new(HelperError {
-                class: "SerializationError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })
+            Step::MaskResponse(args) => {
+                let mut updated = args.response.clone();
+                apply_to_response(&mut updated, &args.masked_texts);
+                encode(updated)
+            }
+        }
     }
+}
+
+fn format(args: &wire::Format) -> HelperResult {
+    let request = content::convert(
+        args.source,
+        args.messages.as_deref(),
+        args.response.as_ref(),
+        args.contextual_fallback,
+    );
+    encode(request)
+}
+
+fn encode<T>(value: T) -> HelperResult
+where
+    T: Serialize,
+{
+    let encoded = to_value(value);
+    encoded.map_err(|error| {
+        Box::new(HelperError {
+            class: "SerializationError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })
 }
