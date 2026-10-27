@@ -511,6 +511,10 @@ const REPORT_JSON: &str = r#"{"report":{"id":null,"mode":"live","start":"2026-01
     update_outcome(r#"{"github_login": "octo", "email": null, "extra": 1}"#),
     "unknown field `extra`, expected `github_login` or `email` at line 1 column 47"
 )]
+#[case::update_truncated_body(
+    update_outcome(r#"{"github_login": "octo", "email""#),
+    "EOF while parsing an object at line 1 column 32"
+)]
 #[case::identity_map_response(
     identity_map_json(),
     r#"{"report":null,"identity_map":{"octo":"octo@example.com"}}"#
