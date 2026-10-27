@@ -1,4 +1,4 @@
-use betterlite_bedrock::message_usage::{Json, promote_message_usage};
+use betterlite_bedrock::message_usage::promote_message_usage;
 use serde::Deserialize;
 
 mod tests;
@@ -6,7 +6,7 @@ mod tests;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    events: Vec<Json>,
+    events: Vec<serde_json::Value>,
 }
 
 pub(crate) struct Op;
