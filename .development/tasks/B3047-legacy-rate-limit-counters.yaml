@@ -19,6 +19,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-core/src/rate_limiters.rs
     - crates/betterlite-core/src/rate_limiters/**
     - tools/oracle/cases/legacy-rate-limit-counters/**
   lint_tables: false

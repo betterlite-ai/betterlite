@@ -1,0 +1,135 @@
+id: B3965
+title: Galileo callback records and queue admission
+description: >-
+  Build Galileo success-event callback handling with record construction, queue admission and batch-threshold
+  triggering. Convert successful callbacks to Galileo LLMResponse records with latency and token normalization.
+  Use standard_logging_object startTime/endTime when present, fall back to callback start_time/end_time
+  parameters as naive datetimes (applying local timezone before UTC conversion). Normalize token counts from
+  standard_logging_object with zero-fallback, computing total_tokens when missing. Construct LLMResponse
+  records with required fields (latency_ms, status_code, input_text, output_text, node_type, model,
+  num_input_tokens, num_output_tokens, num_total_tokens, created_at) and optional cost field, using
+  B3963's _get_galileo_input_output_content for input/output extraction.
+
+  Enforce the 1,000-record drop-oldest cap (GALILEO_MAX_IN_MEMORY_RECORDS) by removing oldest records and
+  logging a warning when exceeded. Trigger flush_in_memory_records when in_memory_records length reaches or
+  exceeds batch_size (default 1). Skip callback processing when not configured or when standard_logging_object
+  is missing; return silently without queueing a record. The failure callback remains diagnostic-only: log at
+  debug level and return without queueing or calling flush. Queue lifecycle is caller-owned: success callback
+  appends and triggers flushes; delivery layer (B3964) removes the flushed prefix on success and retains the
+  buffer on failure.
+scope:
+  paths:
+  - crates/betterlite-logging/src/galileo/admission.rs
+  - tools/oracle/helpers/b3965.py
+  - tools/oracle/helpers/b3965/**
+  - tools/oracle/src/helpers/logging/b3965.rs
+  - tools/oracle/src/helpers/logging/b3965/**
+  - crates/betterlite-logging/src/galileo/admission/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L658-L674
+  why: The async_log_success_event entry point and exception handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L676-L765
+  why: The _async_log_success_event_impl implementation with configuration check, time fallback, token
+    normalization, record construction, queue admission and batch triggering.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L831-L838
+  why: The async_log_failure_event diagnostic-only handler.
+dod:
+- text: Implement async_log_success_event and _async_log_success_event_impl entry points, with exception
+    handling that logs unexpected errors at exception level and returns silently.
+  proof:
+  - admission-control-tests
+  - oracle
+- text: Check _is_configured before processing; skip silently if not configured. Require standard_logging_object;
+    skip silently if missing.
+  proof:
+  - admission-control-tests
+  - oracle
+- text: Use standard_logging_object startTime/endTime when both are present (as Unix timestamps); fall back
+    to start_time/end_time parameters (as datetime objects) when missing. For fallback path, apply local
+    timezone to naive datetimes, then convert to UTC.
+  proof:
+  - admission-control-tests
+- text: Normalize token counts from standard_logging_object (prompt_tokens, completion_tokens, total_tokens)
+    with zero-fallback and compute total_tokens from sum when total is zero but components are present.
+  proof:
+  - admission-control-tests
+- text: Construct LLMResponse record with required fields (latency_ms, status_code, input_text, output_text,
+    node_type, model, num_input_tokens, num_output_tokens, num_total_tokens, created_at), optional cost
+    field, and optional messages field when present in kwargs.
+  proof:
+  - admission-control-tests
+  - oracle
+- text: Append record to in_memory_records. Enforce 1,000-record cap by removing oldest records when exceeded,
+    log a warning naming the dropped count and advising to check connectivity/credentials.
+  proof:
+  - admission-control-tests
+- text: Trigger flush_in_memory_records when in_memory_records length reaches or exceeds batch_size (default 1).
+  proof:
+  - admission-control-tests
+  - oracle
+- text: >-
+    Implement async_log_failure_event as diagnostic-only (log at debug level and return without queueing
+    or calling flush).
+  proof:
+  - admission-control-tests
+- text: Every oracle case exercises success/failure callback paths with standard-payload time availability,
+    fallback time handling, token normalization, buffer bounding and batch triggering.
+  proof:
+  - galileo-admission-cases
+checks:
+  optional: []
+  commands:
+  - id: admission-control-tests
+    why: callback record construction, queue admission, buffering or batch triggering logic fails or is
+      absent
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^galileo_admission::/)
+      - test(/replays_the_/)'
+  - id: galileo-admission-cases
+    why: no success/failure callback scenarios or buffer/batch cases were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/galileo-admission)"
+oracle_cases:
+- tools/oracle/cases/logging/galileo-admission/success-callback-configured.yaml
+- tools/oracle/cases/logging/galileo-admission/success-callback-not-configured.yaml
+- tools/oracle/cases/logging/galileo-admission/success-callback-no-standard-logging-object.yaml
+- tools/oracle/cases/logging/galileo-admission/time-from-standard-logging-object.yaml
+- tools/oracle/cases/logging/galileo-admission/time-fallback-to-datetimes.yaml
+- tools/oracle/cases/logging/galileo-admission/token-normalization-with-zero-fallback.yaml
+- tools/oracle/cases/logging/galileo-admission/total-tokens-computed-from-sum.yaml
+- tools/oracle/cases/logging/galileo-admission/llm-response-record-construction.yaml
+- tools/oracle/cases/logging/galileo-admission/messages-field-optional.yaml
+- tools/oracle/cases/logging/galileo-admission/buffer-append.yaml
+- tools/oracle/cases/logging/galileo-admission/buffer-exceeded-drops-oldest.yaml
+- tools/oracle/cases/logging/galileo-admission/buffer-exceeded-logs-warning.yaml
+- tools/oracle/cases/logging/galileo-admission/batch-threshold-triggers-flush.yaml
+- tools/oracle/cases/logging/galileo-admission/failure-callback-diagnostic-only.yaml
+deviations: []
+out_of_scope:
+- Payload projection and content extraction; owned by B3963.
+- Authentication, health checking and buffered delivery; owned by B3964.
+- Configuration and environment variable loading beyond standard_logging_object and time parameters.
+- HTTP pooling and request execution.
+- Callback registration and lifecycle management.
+- Timer installation and flush scheduling.
+pitfalls:
+- >-
+  The standard_logging_object time path uses Unix timestamps (float seconds); fallback path uses datetime
+  objects with naive datetime handling requiring local timezone conversion before UTC.
+- >-
+  Token count zero-fallback requires checking individual counts and summing them only when total_tokens is
+  zero or missing.
+- >-
+  Buffer bounding must remove oldest records (by slice) and emit the warning with dropped count and advice;
+  the GALILEO_MAX_IN_MEMORY_RECORDS constant is 1000.
+- >-
+  Batch triggering compares in_memory_records length to batch_size after appending; default batch_size is 1
+  so every record triggers on initial append.
+- >-
+  The failure callback is diagnostic-only; it logs at debug level and must not queue records or trigger flush.
+- >-
+  Exception handling in async_log_success_event must catch all exceptions and log at exception level, then
+  return silently without propagating.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

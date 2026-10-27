@@ -1,0 +1,155 @@
+id: B3724
+title: Bedrock ApplyGuardrail execution and retries
+description: >-
+  Build ApplyGuardrail's whole-content probe, reactive size splitting, capped throttle
+  retry and consolidated success/failure logging, then expose the common ApplyGuardrail/checks
+  dispatcher. Probe once with the complete payload first, falling back to bin-packing on
+  too-large errors only; the per-batch responses merge transparently so callers see one
+  logical result. Preserve allow-through behavior for AWS exception markers embedded in
+  200 responses, stop immediately on policy blocks (logging them where they occur), and
+  exclude size errors from throttle retry since retrying the same oversized content
+  cannot succeed.
+
+  Make ApplyGuardrail the dispatcher that checks routes to and set up the consolidated
+  logging structure. Retry throttling on 429 with exponential backoff (0.5, 1, 2 seconds
+  matching the source), capped low because chunking already trades one call for several
+  smaller ones. Log a unified attempt record once per logical request only, including
+  completed-chunk usage from earlier batches plus the blocking call's usage when a block
+  stops the flow. Everything else that fails (size errors, non-throttle validation errors,
+  exhausted retries) is logged exactly once as an end-to-end failure with the accumulated
+  usage.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/bedrock_apply.rs
+    - crates/betterlite-guardrails/src/bedrock_apply/**
+    - tools/oracle/cases/guardrails/bedrock-apply/**
+    - tools/oracle/fuzz/corpus/helper_case/bedrock-apply-*
+    - tools/oracle/helpers/b3724.py
+    - tools/oracle/helpers/b3724/**
+    - tools/oracle/src/helpers/guardrails/b3724.rs
+    - tools/oracle/src/helpers/guardrails/b3724/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L863-L892
+    why: Own make_bedrock_api_request dispatcher; route checks vs apply based on self.checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L894-L997
+    why: Own _make_apply_guardrail_request; preserve probe-first strategy, contextual-grounding
+      exclusion, async AWS credential flow and consolidated logging structure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L999-L1135
+    why: Own _apply_guardrail_content_with_chunking; preserve whole-content probe, bin-packing
+      on size rejection, bisection fallback, fragment_group_size tracking on text splits,
+      immediate stop on block, block logging in the inner layer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1137-L1185
+    why: Own _post_apply_guardrail_content_with_retry; preserve throttle-only retry (429),
+      cap at 3 retries with exponential backoff, and exclude size errors from retry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1187-L1278
+    why: Own _post_apply_guardrail_content; preserve 200 JSON parsing, exception marker
+      allow-through, block detection and logging, usage accumulation from each chunk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L102-L114
+    why: Constants _BEDROCK_DYNAMIC_BODY_DENYLIST, _BEDROCK_TOO_LARGE_ERROR_SUBSTRINGS,
+      _BEDROCK_APPLY_GUARDRAIL_MAX_THROTTLE_RETRIES, _BEDROCK_APPLY_GUARDRAIL_BASE_BACKOFF_SECONDS.
+
+dod:
+  - text: ApplyGuardrail is called first with the complete payload (whole-content probe);
+      too-large errors trigger bin-packing only, and size errors are excluded from throttle
+      retry.
+    proof: [apply-tests, apply-oracle]
+  - text: Per-batch responses are merged transparently; the caller sees a single logical
+      result aligned to original content-item positions.
+    proof: [apply-tests, apply-oracle]
+  - text: Contextual-grounding content opt out of chunking entirely; a too-large error
+      on grounded content is not split but raised.
+    proof: [apply-tests, apply-oracle]
+  - text: Throttle retry (429 only) uses exponential backoff (0.5, 1, 2 seconds) capped
+      at 3 retries; exhausted retries raise 500.
+    proof: [apply-tests, apply-oracle]
+  - text: Policy blocks (guardrail_intervened) are logged where they occur and raise immediately;
+      the logged usage includes all completed chunks plus the blocking call.
+    proof: [apply-tests, apply-oracle]
+  - text: AWS exception markers in 200 responses allow through (not raised) and survive
+      merge; end-to-end failure is logged once with accumulated usage.
+    proof: [apply-tests, apply-oracle]
+  - text: Empty content is skipped without calling ApplyGuardrail; dynamic params never
+      replace content or source.
+    proof: [apply-tests, apply-oracle]
+  - text: make_bedrock_api_request routes to InvokeGuardrailChecks (B3725) when checks
+      is configured, else to ApplyGuardrail.
+    proof: [apply-tests, apply-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: apply-tests
+      why: Probe, chunking dispatch, retry logic, block detection or response parsing is
+        broken or incomplete.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^bedrock_apply::tests::/) - test(/replays_the_/)'
+    - id: apply-oracle
+      why: The HTTP request/response shape, retry timing, usage accumulation or block
+        behavior does not match the booted proxy.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/bedrock-apply/**)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3724.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/bedrock-apply/probe-whole-content-succeeds.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/probe-whole-content-fails-too-large.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/bin-pack-on-too-large-error-only.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/bisection-fallback-when-bin-pack-fails.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/contextual-grounding-exempted-from-chunking.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/policy-block-logged-and-raised.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/exception-marker-in-200-allows-through.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/throttle-retry-429-with-backoff.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/throttle-retry-exhausted-raises-500.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/throttle-retry-excludes-size-errors.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/size-error-excluded-from-retry.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/block-logging-includes-completed-chunks.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/merged-response-usage-accumulated.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/empty-content-skipped.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/dynamic-params-update-excludes-content.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/dispatcher-routes-to-checks.yaml
+  - tools/oracle/cases/guardrails/bedrock-apply/dispatcher-routes-to-apply.yaml
+
+deviations: []
+
+out_of_scope:
+  - B3720 owns _content_uses_contextual_grounding, _bin_pack_bedrock_content, _split_bedrock_content,
+    _is_input_too_large_error, _merge_bedrock_guardrail_responses and BedrockContentChunkResult;
+    B3721 owns convert_to_bedrock_format used in the convert step at L928.
+  - B3722 owns _log_apply_guardrail_attempt, _log_apply_guardrail_success, _log_apply_guardrail_failure,
+    _should_raise_guardrail_blocked_exception and _get_http_exception_for_blocked_guardrail
+    called at L980, L990, L1255, L1264.
+  - B3723 owns _load_credentials, _prepare_request, _sign_and_post and _parse_bedrock_guardrail_error_response
+    called at L959-960, L1222-1229, L1238, L1272.
+  - B3725 owns _make_invoke_guardrail_checks_request called at L879 when self.checks
+    is not None.
+  - B590 owns bedrock_bearer_token called at L960.
+  - B595 owns run_aws_signing called at L959-960, L1222-1229.
+  - get_guardrail_dynamic_request_body_params is called at L932, owned by B104 (unresolved).
+  - redact_nested_match_and_regex_keys is called at L1251, owned by U2 (unresolved).
+  - _get_masked_values is called at L1235, owned by U5 (unresolved).
+
+pitfalls:
+  - Probing with the whole payload first keeps single-batch requests at one call; bin-packing
+    multiplies calls and latency on traffic that never had a size problem.
+  - 'Size errors are recognized reactively: a too-large rejection is only discovered after
+    posting, so no budget can predict when to chunk preemptively.'
+  - Throttle retry must exclude size errors because retrying the same oversized content
+    fails identically, wasting backoff sleeps and billed attempts at every recursion level.
+  - Block logging occurs in the inner layer (_post_apply_guardrail_content) because chunking
+    stops immediately; logged usage accumulates from all completed chunks.
+  - AWS exception markers in 200 responses must not raise; they allow through and survive
+    merge so consolidated logs record them as transient failure.
+  - Contextual-grounding content is never split because grounding is scored holistically;
+    bisecting it would fragment that evaluation and yield misleading scores.
+  - 'The oracle helper for this task is pre-registered as bedrock_apply in the guardrails
+    group. Replace the stub Op in tools/oracle/src/helpers/guardrails/b3724.rs
+    with an impl Helper and write run in tools/oracle/helpers/b3724.py.'
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

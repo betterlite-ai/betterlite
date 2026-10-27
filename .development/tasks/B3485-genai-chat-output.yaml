@@ -1,0 +1,195 @@
+id: B3485
+title: Translate chat replies and tool deltas to GenAI
+description: >-
+  Build the output adapter in crates/betterlite-core::api, translating OpenAI chat completion
+  responses and streaming chunks into Google GenAI generate_content format. Map the first choice's
+  finish reason and usage into native candidates, and accumulate streaming tool call arguments by
+  tool-call index until JSON and a name are both available. Emit the SSE-wrapped async streaming
+  iterator that is actually returned by the handler, preserving direct upstream chunk iteration
+  without the unused wrapper iterator's EOF flush accumulation.
+
+  The adapter receives either a non-streaming ModelResponse (with choices, usage) or streaming
+  ModelResponseStream chunks (with choices, delta) from the completion pipeline. For non-streaming
+  responses, it transforms the first choice's message, finish reason and usage into a Google GenAI
+  candidates list with content parts, finishReason and usageMetadata. For streaming, it transforms
+  each chunk's delta into GenAI parts and accumulates incomplete tool call arguments across chunks
+  by tool-call index until both function name and parsed arguments are available, then emits the
+  completed function call part. Finish reason strings (stop, length, content_filter, tool_calls, function_call)
+  map to Google GenAI reasons (STOP, MAX_TOKENS, SAFETY, STOP, STOP). Usage fields (prompt_tokens,
+  completion_tokens, total_tokens) map directly to usageMetadata (promptTokenCount, candidatesTokenCount,
+  totalTokenCount). The streaming output is an async iterator of bytes with SSE framing: each
+  GenAI object is wrapped as "data: <json>\n\n", and the streaming state (wrapper initialization,
+  accumulated tool calls, returned-response flag) is owned here, not in a separate Python object
+  wrapper that does not run in production.
+
+  Owned implementation:
+  - _ToolCallAccumulator, _GenAIFunctionCall and _GenAIPart TypedDict definitions for streaming
+    tool call state and GenAI response structure.
+  - GoogleGenAIStreamWrapper __init__ initializing sent_first_chunk flag and accumulated_tool_calls
+    dict, both used only by the streaming output path.
+  - async_google_genai_sse_wrapper async iterator that yields bytes with SSE "data: " framing.
+  - translate_completion_output_params_streaming entry point returning the SSE-wrapped async
+    iterator, not a Python object wrapper.
+  - translate_completion_to_generate_content non-streaming response transformation, mapping first
+    choice message to parts, finish reason and usage to native output format.
+  - translate_streaming_completion_to_generate_content streaming chunk transformation, calling
+    delta-to-parts with accumulation and emitting GenAI objects only when parts exist or a
+    finish reason arrives.
+  - _transform_openai_message_to_google_genai_parts extracting text and tool_calls from a
+    complete message into GenAI parts.
+  - _transform_openai_delta_to_google_genai_parts_with_accumulation extracting text and tool call
+    deltas from a chunk delta, accumulating function name and arguments strings by index until
+    both are available and JSON parses, then emitting and removing the completed call from the
+    accumulator.
+  - _map_finish_reason mapping OpenAI reasons to Google GenAI reasons.
+  - _map_usage mapping OpenAI usage counts to Google GenAI metadata.
+
+  Reuse B3484's adapter constructor and _EMPTY_STR_MAPPING constant; use it without introducing
+  a reverse request-to-output dependency. Base AdapterCompletionStreamWrapper.__init__ supplies
+  the stream state: native state initialization (sent_first_chunk, accumulated_tool_calls)
+  belongs here, not in a new dependency on Python object wrappers.
+
+  Fuzz accumulated argument-string decoding: malformed JSON in tool call arguments, incomplete
+  escape sequences, and completely invalid JSON all eventually surface as non-accumulated when
+  JSON parsing fails and the parts are not emitted until a later chunk brings name and valid JSON.
+  Test malformed whole-response arguments becoming empty dicts, missing names defaulting to
+  undefined_tool_name, and empty arguments strings becoming empty objects when JSON-decoded as
+  "{}".
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/genai_chat_output.rs
+    - crates/betterlite-core/src/api/genai_chat_output/tests.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/genai_chat_output.rs
+    - crates/betterlite-core/fuzz/corpus/genai_chat_output/**
+    - crates/betterlite-core/src/api/genai_chat_output/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L48-L60
+    why: _ToolCallAccumulator, _GenAIFunctionCall and _GenAIPart TypedDict definitions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L157-L161
+    why: GoogleGenAIStreamWrapper __init__ initializing streaming state
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L262-L287
+    why: async_google_genai_sse_wrapper SSE-wrapped async iterator with data framing
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L421-L428
+    why: translate_completion_output_params_streaming entry point returning SSE iterator
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L587-L639
+    why: translate_completion_to_generate_content non-streaming response transformation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L641-L705
+    why: translate_streaming_completion_to_generate_content streaming chunk transformation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L707-L741
+    why: _transform_openai_message_to_google_genai_parts message to parts conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L743-L819
+    why: _transform_openai_delta_to_google_genai_parts_with_accumulation accumulating tool call arguments
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L821-L834
+    why: _map_finish_reason mapping OpenAI to Google GenAI finish reasons
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L836-L842
+    why: _map_usage mapping OpenAI usage to Google GenAI usageMetadata
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1183-L2277
+    why: ModelResponse, ModelResponseStream, Choices, StreamingChoices, Delta and Function types consumed by the output adapter
+dod:
+  - text: >-
+      Non-streaming responses map the first choice message, finish reason and usage to a native
+      generate_content response with one candidate, parts array, finishReason and usageMetadata.
+    proof: [chat-output-tests]
+  - text: Streaming chunks transform delta text content to parts without buffering.
+    proof: [chat-output-tests]
+  - text: >-
+      Streaming tool calls accumulate by index; a tool call emits only when both name and
+      parsed-JSON arguments arrive.
+    proof: [chat-output-tests]
+  - text: >-
+      Tool call arguments that fail JSON parsing are not emitted as parts until a later chunk
+      provides valid JSON or the stream ends.
+    proof: [chat-output-tests]
+  - text: >-
+      Missing tool call name defaults to undefined_tool_name; empty or missing arguments string
+      becomes an empty object {}.
+    proof: [chat-output-tests]
+  - text: >-
+      Finish reasons stop, length, content_filter, tool_calls, function_call map to STOP,
+      MAX_TOKENS, SAFETY, STOP, STOP respectively; unmapped reasons default to STOP.
+    proof: [chat-output-tests]
+  - text: >-
+      Usage is included only in non-streaming responses and streaming final chunks; intermediate
+      streaming chunks do not include usageMetadata.
+    proof: [chat-output-tests]
+  - text: >-
+      The streaming output is an async iterator of bytes with SSE framing "data: <json>\n\n";
+      each GenAI chunk is encoded as bytes and yielded immediately without buffering.
+    proof: [chat-output-tests]
+  - text: >-
+      Empty tool call deltas (no content, no tool calls) do not produce parts, and empty-parts
+      chunks are skipped unless a finish reason arrives.
+    proof: [chat-output-tests]
+  - text: >-
+      translate_completion_output_params_streaming returns the SSE-wrapped async iterator,
+      not a Python wrapper object.
+    proof: [chat-output-tests]
+  - text: >-
+      Malformed JSON in tool call arguments does not panic; invalid JSON is deferred until later
+      chunks or EOF.
+    proof: [chat-output-fuzz-corpus]
+  - text: >-
+      Every mutant in the tool argument accumulation, finish reason mapping and usage mapping
+      is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: chat-output-tests
+      why: the adapter output tests fail, do not exist, or streaming iterator tests are missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_chat_output::)'
+    - id: chat-output-fuzz-corpus
+      why: the output adapter fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/genai_chat_output.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_genai_chat_output_corpus)'
+oracle_cases: []
+deviations:
+  - what: Streaming wrapper __next__ and __anext__ are not implemented; only async_google_genai_sse_wrapper is used in production.
+    why: The production code path calls async_google_genai_sse_wrapper to wrap the completion_stream and yield SSE bytes directly. The wrapper's __next__ and __anext__ methods are not called by the handler; only the async iterator protocol is used.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L163-L250"
+  - what: Tool call arguments that fail JSON parsing do not emit a parts entry until a subsequent chunk arrives with valid JSON or the stream ends.
+    why: Incomplete or malformed JSON in the arguments string must wait for additional chunks that provide the closing brace or correction. Only when JSON parsing succeeds and both name and parsed arguments exist is the part emitted and removed from the accumulator. This prevents emitting incomplete function calls.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L794-L818"
+  - what: Empty tool call arguments string or string-only digits are parsed as empty dict {} when JSON-decoded as an empty string or missing.
+    why: The accumulation allows empty argument strings; when a tool call with name but no arguments completes (empty string), json.loads("{}") succeeds and produces an empty object, matching LiteLLM behavior.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L210-L214"
+  - what: Tool call name defaults to undefined_tool_name when missing or empty.
+    why: The transformed part constructs the function call with name or a fallback value; LiteLLM applies the same default when name is missing.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L217"
+  - what: Remaining accumulated tool calls are silently dropped when the stream ends.
+    why: The production code path calls async_google_genai_sse_wrapper, which iterates directly over the completion stream and wraps each chunk as SSE bytes. No EOF handler collects remaining tool calls; accumulated tool calls that have not been emitted before the stream exhausts are lost, matching the upstream behavior of async_google_genai_sse_wrapper.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L262-L287"
+out_of_scope:
+  - "GoogleGenAIStreamWrapper __next__ and __anext__ methods (lines 163-250): these are not used in production; only the async iterator protocol through async_google_genai_sse_wrapper is executed."
+  - "google_genai_sse_wrapper sync iterator (lines 251-260): only the async version is used by the handler."
+  - "HTTP request execution and completion endpoint call (B3486 calls the handler). This task only transforms parameters."
+  - "Chat completion dispatch and execution (B3484 prepares input, B3486 executes). This task transforms output only."
+  - "Fallback or retry logic (handled elsewhere in the completion pipeline)."
+pitfalls:
+  - >-
+    Tool call accumulation by index is keyed on the tool_call_index field from streaming
+    chunks; index is essential for distinguishing concurrent function calls in the same stream.
+  - >-
+    Accumulated tool call arguments are strings that concatenate across chunks; JSON parsing
+    is deferred until both name and arguments are non-empty, allowing incomplete JSON to persist
+    across yields.
+  - >-
+    Empty argument strings are valid; json.loads("{}") succeeds and produces an empty object,
+    so missing arguments do not cause the part to be dropped.
+  - >-
+    The SSE wrapper yields bytes, not strings; each GenAI object is json.dumps-encoded to a
+    string, wrapped as "data: <json>\n\n", and encoded to bytes.
+  - >-
+    Streaming finish_reason on intermediate chunks is None until the final chunk; only the
+    final chunk with a finish reason value gets usageMetadata added.
+  - >-
+    Tool call index is None for streaming chunks that do not have an index field; these are
+    skipped entirely and do not contribute to accumulation.
+  - >-
+    The _parse_accumulated_args closure handles json.loads failures; malformed JSON must be
+    caught and deferred, not allowed to raise.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

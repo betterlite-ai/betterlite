@@ -1,0 +1,132 @@
+id: B4412
+title: Initialize KMS clients and decrypt startup environment values
+description: >-
+  Implement AWS KMS and Google KMS bootstrap adapters in crates/betterlite-secret-managers.
+  Build the KMS client initialization and environment variable decryption that happens at startup,
+  before the secret manager dispatch is available.
+
+  For AWS KMS, validate that AWS_REGION_NAME is set, construct a boto3 KMS client through
+  the SDK boundary, and implement decrypt_value to read aws_kms/ prefixed environment values,
+  decrypt them with the KMS client, and return the plaintext as a string or boolean.
+  The decrypt_env_var function iterates the environment at startup, finds all variables
+  matching the pattern litellm_secret_aws_kms_* (case-insensitive) or values starting with aws_kms/,
+  strips the aws_kms/ prefix from values, decrypts them, and rewrites the key by removing the
+  litellm_secret_aws_kms_ prefix (case-insensitive). Decrypted values are base64-decoded, UTF-8 decoded,
+  whitespace-trimmed, and checked for Python boolean literals using ast.literal_eval semantics; only
+  the exact Python literals "True" and "False" become booleans, while other strings including "true",
+  "TRUE", "false" and other case variants raise ValueError and remain as strings.
+  Return the rewritten map to the caller; do not mutate the process environment.
+
+  For Google KMS, validate GOOGLE_APPLICATION_CREDENTIALS and GOOGLE_KMS_RESOURCE_NAME,
+  construct a google.cloud.kms_v1.KeyManagementServiceClient, and store the AWS KMS client in
+  AWS_KMS_CLIENT (crates/betterlite-secret-managers/src/aws_kms.rs) and the Google KMS client with
+  resource name in GOOGLE_KMS_CLIENT and GOOGLE_KMS_RESOURCE_NAME (crates/betterlite-secret-managers/src/google_kms.rs),
+  module-level statics that B4421 will read from at request time. Google KMS decryption is handled by B4421, not the bootstrap.
+
+  Own the AWS and Google KMS modules and their complete implementations. External SDK calls
+  are boto3 client("kms")/decrypt and Google KeyManagementServiceClient construction.
+  Use maintained SDK facilities through the HTTP boundary and a bounded decoder for KMS responses.
+  Manager-read KMS dispatch (the manager operation that calls KMS) belongs to B4421.
+
+  Callers are ProxyConfig.initialize_secret_manager (calls both loaders) and proxy_cli.run_server
+  (calls decrypt_env_var when USE_AWS_KMS is exactly the string "True"). Do not silently repair
+  the caller's expectation that environment values are strings; the returned map may contain booleans.
+scope:
+  paths:
+    - crates/betterlite-secret-managers/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L21-L41
+    why: Module-level AWS KMS validation and client loading
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L44-L116
+    why: AWSKeyManagementService_V2 class, __init__, validate_environment, load_aws_kms and decrypt_value methods
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L126-L140
+    why: decrypt_env_var function that reiterates environment at startup and rewrites keys
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_kms.py#L18-L39
+    why: Google KMS validation and client loading
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7179-L7240
+    why: ProxyConfig.initialize_secret_manager calls both KMS loaders
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1187-L1197
+    why: proxy_cli.run_server calls decrypt_env_var when USE_AWS_KMS is exactly "True"
+dod:
+  - text: AWS KMS validation raises an error if AWS_REGION_NAME is missing.
+    proof: [aws-kms-validation]
+  - text: AWS KMS client is initialized through boto3 client("kms", region_name=<AWS_REGION_NAME>).
+    proof: [aws-kms-loading]
+  - text: >-
+      decrypt_env_var iterates the environment, finds keys matching litellm_secret_aws_kms_* (case-insensitive)
+      or values starting with "aws_kms/", decrypts each with the KMS client, and returns a map
+      with the rewritten key (litellm_secret_aws_kms_ prefix removed, case-insensitive) and decrypted value.
+    proof: [kms-env-decryption]
+  - text: Decrypted values are base64-decoded, UTF-8 decoded, trimmed of whitespace, and parsed using ast.literal_eval semantics; only the exact Python literals "True" and "False" become booleans, while other strings including "true", "TRUE", "false" etc. remain as strings.
+    proof: [kms-boolean-parsing]
+  - text: >-
+      The aws_kms/ prefix is stripped from encrypted values before base64 decoding.
+    proof: [kms-prefix-stripping]
+  - text: Google KMS validation raises an error if GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_KMS_RESOURCE_NAME is missing.
+    proof: [google-kms-validation]
+  - text: Google KMS client is initialized through google.cloud.kms_v1.KeyManagementServiceClient().
+    proof: [google-kms-loading]
+  - text: >-
+      The AWS KMS client constructed by load_aws_kms is stored in AWS_KMS_CLIENT static
+      (crates/betterlite-secret-managers/src/aws_kms.rs) where B4421's dispatch will retrieve it at request time.
+    proof: [aws-client-storage]
+  - text: >-
+      The Google KMS client constructed by load_google_kms is stored in GOOGLE_KMS_CLIENT static
+      and the resource name is stored in GOOGLE_KMS_RESOURCE_NAME static
+      (crates/betterlite-secret-managers/src/google_kms.rs) where B4421's dispatch will retrieve them at request time.
+    proof: [google-client-storage]
+checks:
+  optional: []
+  commands:
+    - id: aws-kms-validation
+      why: AWS KMS validation does not reject missing AWS_REGION_NAME
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_initialization::validate_environment/)'
+    - id: aws-kms-loading
+      why: AWS KMS client initialization is missing or fails
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_initialization::load_aws_kms/)'
+    - id: kms-env-decryption
+      why: decrypt_env_var does not correctly decrypt and rewrite environment variables
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_environment::decrypt_env_var/)'
+    - id: kms-boolean-parsing
+      why: Decrypted boolean values are not parsed correctly
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_values::boolean_parsing/)'
+    - id: kms-prefix-stripping
+      why: The aws_kms/ prefix is not stripped from encrypted values before decryption
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_values::prefix_stripping/)'
+    - id: google-kms-validation
+      why: Google KMS validation does not reject missing credentials or resource name
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms_initialization::validate_environment/)'
+    - id: google-kms-loading
+      why: Google KMS client initialization is missing or fails
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms_initialization::load_google_kms/)'
+    - id: aws-client-storage
+      why: The AWS KMS client is not stored in the location where B4421 will retrieve it
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_initialization::client_storage/)'
+    - id: google-client-storage
+      why: The Google KMS client or resource name is not stored in the location where B4421 will retrieve it
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms_initialization::client_storage/)'
+oracle_cases: []
+deviations:
+  - what: Returned environment map from decrypt_env_var contains boolean values only for the exact Python boolean literals "True" and "False", not case variants like "true" or "TRUE".
+    why: The source at decrypt_value uses ast.literal_eval which is case-sensitive on Python's boolean literals. Only exact "True" and "False" parse to bool; other strings raise ValueError and remain as strings. The caller (proxy_cli.run_server) later assigns these to os.environ, which expects strings; that caller behavior is not repaired here, following the outline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L109-L112
+  - what: The MIT LiteLLM license check that raises an error in the source is removed.
+    why: betterlite has no paid tier and the project decision explicitly removes this gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L59-L70
+out_of_scope:
+  - Manager-level KMS dispatch and usage by the secret manager implementations (owned by B4421).
+  - Environment variable resolution in config loading (owned by B002).
+  - Custom Python secret managers and their runtime integration (owned by B4419).
+pitfalls:
+  - The AWS KMS client is constructed through boto3, not through a generic HTTP client. The Rust equivalent must use AWS SDK facilities, not subprocess or reimplementation of signing.
+  - Google KMS client is constructed as google.cloud.kms_v1.KeyManagementServiceClient() with automatic credential discovery through GOOGLE_APPLICATION_CREDENTIALS.
+  - Case-insensitive matching of litellm_secret_aws_kms_ prefix uses regex with re.IGNORECASE flag; the rewrite must preserve that behavior exactly.
+  - The aws_kms/ prefix appears in the value, not the key; it is stripped before base64 decoding, not as a separate parse step.
+  - Boolean parsing uses Python's ast.literal_eval, so only the exact Python literals "True" and "False" become booleans; "true", "TRUE", "false" and other case variants raise ValueError and remain as strings.
+  - decrypt_env_var modifies a map it returns, not the process environment; this is critical for concurrent startup code in Rust.
+  - Google KMS resource name is a full resource identifier like "projects/<PROJECT>/locations/<LOCATION>/keyRings/<KEY_RING>/cryptoKeys/<KEY>" and must be stored for use by B4421.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

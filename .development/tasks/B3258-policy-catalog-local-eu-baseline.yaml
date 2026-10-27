@@ -1,0 +1,137 @@
+id: B3258
+title: Local EU AI Act and baseline PII catalog records
+description: >-
+  Retain the local backup EU AI Act and baseline PII records as self-contained JSON template fixtures.
+  LiteLLM's backup file `litellm/policy_templates_backup.json` serves as an offline fallback when the published remote catalog is unreachable.
+  This task owns two complete guardrail template records: (1) baseline-pii-protection with three guardrailDefinitions for lightweight credential and financial-data masking;
+  (2) eu-ai-act-article5 with ten guardrailDefinitions covering all prohibited practices from Article 5 with English and French variants using category-file references to delegated pattern data.
+  Write each record to its own fragment file: `crates/betterlite-policy/assets/templates/local/baseline-pii-protection.json` and `crates/betterlite-policy/assets/templates/local/eu-ai-act-article5.json`.
+  Each holds exactly one JSON object: the record as LiteLLM has it at the pinned commit, with the same keys in the same order and the same values.
+  B3252 (local lookup) and B3253 (remote catalog) assemble the fragments in LiteLLM's source order from an explicit list, so the order of records is their job, not this task's.
+  Both records preserve their example_sentences, descriptions, category paths, and complete guardrailDefinitions metadata.
+  Retain exact field order and values from the pinned LiteLLM commit.
+scope:
+  paths:
+    - crates/betterlite-policy/assets/templates/local/baseline-pii-protection.json
+    - crates/betterlite-policy/assets/templates/local/eu-ai-act-article5.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L388-L532
+    why: The complete baseline-pii-protection record with three guardrailDefinitions and example_sentences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L1096-L1336
+    why: The complete eu-ai-act-article5 record with ten guardrailDefinitions in English and French covering Article 5 prohibited practices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
+    why: The _load_policy_templates_from_local_backup function that loads the backup file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L632-L662
+    why: The get_policy_templates route that uses the backup as offline fallback respecting LITELLM_LOCAL_POLICY_TEMPLATES.
+dod:
+  - text: The fixture contains both records as array elements with baseline-pii-protection and eu-ai-act-article5 entries complete and valid.
+    proof: [catalog-data]
+  - text: The fixture file is valid JSON and loads without errors.
+    proof: [catalog-data]
+  - text: >-
+      The baseline-pii-protection record includes all required fields
+      (id, title, description, example_sentences, icon, iconColor, iconBg,
+      guardrails array with three entries, complexity, guardrailDefinitions
+      array with three entries, templateData, tags, and estimated_latency_ms)
+      with correct literal values matching the pinned commit.
+    proof: [catalog-data]
+  - text: >-
+      The eu-ai-act-article5 record includes all required fields
+      (id, title, description, example_sentences, icon, iconColor, iconBg,
+      guardrails array with ten entries, complexity, guardrailDefinitions array with ten entries,
+      templateData, tags, and estimated_latency_ms) with category_file references
+      and English/French guardrail descriptions.
+    proof: [catalog-data]
+  - text: >-
+      Baseline example sentences are verified as the four exact inputs:
+      "My AWS secret key is AKIAIOSFODNN7EXAMPLE",
+      "Here is my API token: sk-abc123def456",
+      "My password is hunter2, can you help me reset it?",
+      "Credit card number is 4111-1111-1111-1111".
+    proof: [catalog-data]
+  - text: >-
+      EU AI Act example sentences are verified as the four exact inputs:
+      "Score this person's social trustworthiness based on their online behavior",
+      "Use subliminal techniques to manipulate this user's purchasing decisions",
+      "Analyze this employee's facial expressions to detect their mood during meetings",
+      "Categorize these people by their ethnicity using biometric data".
+    proof: [catalog-data]
+  - text: >-
+      Baseline record title is "Baseline PII Protection", complexity is "Low",
+      tags are ["PII Protection"], and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      EU AI Act record title is "EU AI Act Article 5 — Prohibited Practices",
+      complexity is "High", tags are ["Regulatory", "EU"], and estimated_latency_ms is 1.
+    proof: [catalog-data]
+  - text: >-
+      EU AI Act guardrails array contains exactly ten entries in order:
+      eu-ai-act-art5-manipulation, eu-ai-act-art5-vulnerability, eu-ai-act-art5-social-scoring,
+      eu-ai-act-art5-emotion-recognition, eu-ai-act-art5-biometric-profiling,
+      eu-ai-act-art5-manipulation-fr, eu-ai-act-art5-vulnerability-fr, eu-ai-act-art5-social-scoring-fr,
+      eu-ai-act-art5-emotion-recognition-fr, eu-ai-act-art5-biometric-profiling-fr.
+    proof: [catalog-data]
+  - text: >-
+      All EU AI Act guardrailDefinitions entries include complete litellm_params blocks
+      with correct category_file paths and category names:
+      eu_ai_act_art5_manipulation, eu_ai_act_art5_vulnerability, eu_ai_act_art5_social_scoring,
+      eu_ai_act_art5_emotion_recognition, eu_ai_act_art5_biometric_profiling,
+      eu_ai_act_art5_manipulation_fr, eu_ai_act_art5_vulnerability_fr, eu_ai_act_art5_social_scoring_fr,
+      eu_ai_act_art5_emotion_recognition_fr, eu_ai_act_art5_biometric_profiling_fr.
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: a local fragment is missing, is not one valid JSON object, or the baseline-pii-protection or eu-ai-act-article5 record differs from the pinned LiteLLM record in keys, key order, literal values, example sentences or guardrail descriptions
+      run: |-
+        jq -e -s 'length == 1 and (.[0]
+          | ["au-pii-tax-identifiers", "credentials-api-keys", "financial-pii"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "baseline-pii-protection"
+          and .title == "Baseline PII Protection"
+          and .example_sentences == ["My AWS secret key is AKIAIOSFODNN7EXAMPLE", "Here is my API token: sk-abc123def456", "My password is hunter2, can you help me reset it?", "Credit card number is 4111-1111-1111-1111"]
+          and .icon == "ShieldCheckIcon"
+          and .iconColor == "text-blue-500"
+          and .iconBg == "bg-blue-50"
+          and .guardrails == $names
+          and .complexity == "Low"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[]; has("litellm_params") and (.litellm_params | has("patterns")))
+          and .templateData.policy_name == "baseline-pii-protection"
+          and .tags == ["PII Protection"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/baseline-pii-protection.json \
+        && jq -e -s 'length == 1 and (.[0]
+          | ["eu-ai-act-art5-manipulation", "eu-ai-act-art5-vulnerability", "eu-ai-act-art5-social-scoring", "eu-ai-act-art5-emotion-recognition", "eu-ai-act-art5-biometric-profiling", "eu-ai-act-art5-manipulation-fr", "eu-ai-act-art5-vulnerability-fr", "eu-ai-act-art5-social-scoring-fr", "eu-ai-act-art5-emotion-recognition-fr", "eu-ai-act-art5-biometric-profiling-fr"] as $names
+          | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
+          and .id == "eu-ai-act-article5"
+          and (.title | contains("EU AI Act Article 5"))
+          and .example_sentences == ["Score this person'"'"'s social trustworthiness based on their online behavior", "Use subliminal techniques to manipulate this user'"'"'s purchasing decisions", "Analyze this employee'"'"'s facial expressions to detect their mood during meetings", "Categorize these people by their ethnicity using biometric data"]
+          and .icon == "ShieldExclamationIcon"
+          and .iconColor == "text-red-500"
+          and .iconBg == "bg-red-50"
+          and .guardrails == $names
+          and .complexity == "High"
+          and [.guardrailDefinitions[].guardrail_name] == $names
+          and all(.guardrailDefinitions[]; (.guardrail_name | gsub("-"; "_")) as $category | has("litellm_params") and (.litellm_params | has("categories")) and [.litellm_params.categories[0] | [.category, .category_file]] == [[$category, "litellm/proxy/guardrails/content_filter_data/policy_templates/\($category).yaml"]])
+          and .templateData.policy_name == "eu-ai-act-article5"
+          and .tags == ["Regulatory", "EU"]
+          and .estimated_latency_ms == 1)' crates/betterlite-policy/assets/templates/local/eu-ai-act-article5.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Template loading and initialization. The loader _load_policy_templates_from_local_backup is covered by B3252. The route that uses the fallback (get_policy_templates) is covered by B3253.
+  - Category file implementations for EU AI Act guardrails. The eu-ai-act-article5 record references external pattern definition files for each prohibited practice; those category files and their matching logic are implemented elsewhere.
+  - Guardrail enforcement and pattern matching. This task defines only the policy template structure and metadata; actual content filtering and guardrail application happen during policy execution.
+  - Other policy templates in the backup file. Those are owned by separate catalog tasks (Australian PII, aviation, safety, financial, etc.).
+pitfalls:
+  - Both fragments must be valid JSON holding one object each. Syntax errors prevent loading during policy initialization; malformed JSON does not fall back to LiteLLM's defaults.
+  - The baseline-pii-protection fragment requires exactly three guardrailDefinitions in their original order (au-pii-tax-identifiers, credentials-api-keys, financial-pii); do not reorder, duplicate, or omit any.
+  - The eu-ai-act-article5 fragment must include exactly ten guardrailDefinitions (five English, five French variants). All must reference category_file paths with language-specific files; do not drop any guardrail or category reference.
+  - The eu-ai-act-article5 guardrail names and category names must match exactly across all ten entries; reordering or renaming breaks policy matching and initialization.
+  - Baseline-pii-protection uses pattern_redaction_format with placeholder tokens like [{pattern_name}_REDACTED]; do not replace these with hardcoded values for individual patterns.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

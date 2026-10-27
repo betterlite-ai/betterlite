@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Braintrust project resolution and event logging
 status: todo
 depends_on: [B002, B173, B189]
-file: null
+file: tasks/B3962-braintrust-logging.yaml
 covers:
   - "litellm/integrations/braintrust_logging.py"
 parent: B114

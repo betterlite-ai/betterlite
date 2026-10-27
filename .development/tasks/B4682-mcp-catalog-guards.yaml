@@ -1,0 +1,238 @@
+id: B4682
+title: MCP catalog pinning and description guardrails
+description: >-
+  Build catalog override, pin-drift and description-scan services in betterlite-server::mcp::catalog_guard.
+  Scan tool descriptions in sequential batches of eight concurrent tools, fail closed per tool on guardrail
+  failures, and retain typed blocked-tool and drift alerts without introducing alert delivery here.
+
+  ToolDescriptionScan holds served tools (passed scan) and blocked tools (failed guardrail). The alert() method
+  returns a CatalogAlert with signature (comma-joined sorted tool names) and message (one sentence per blocked
+  tool) when blocked is non-empty, or None if all tools passed.
+
+  PinnedCatalogDrift holds added, removed and changed tool names. The alert() method returns a CatalogAlert
+  with signature (pipe-joined label:names) and message naming the drift type per label, or absent when no
+  drift (all three empty).
+
+  apply_description_overrides takes a sequence of MCPTool and a MCPServer, applies tool_name_to_description
+  overrides from the server config (keyed by tool name stripped of known prefixes via strip_known_server_prefix),
+  and returns a tuple of tools with updated descriptions or originals unchanged.
+
+  strip_known_server_prefix(name, server) removes exactly one of a server's registered prefixes from a tool name.
+  The server yields candidate prefixes in order of length (longest first) through iter_known_server_prefixes,
+  which includes the current prefix (alias, server_name, or server_id depending on short-prefix mode), short_prefix
+  if cached, computed short prefix from server_id, and all historical forms. Candidates are normalized (spaces
+  to underscores) and tried longest-first so a prefix containing the separator wins over a shorter leading segment.
+  On match, the function returns the bare tool name. Returns name unchanged if server is known but no prefix matches
+  (name is unprefixed). Falls back to split_server_prefix_from_name (first separator) only when server is None.
+
+  logging_safe_mcp_headers(raw_headers) sanitizes request headers before guardrail inspection. It drops proxy
+  virtual-key headers (including the custom deployment key header from litellm_key_header_name), upstream MCP
+  credential headers (the client-side auth header and any headers configured in a server's extra_headers), and
+  client-controlled behavior flags (litellm-disable-message-redaction). Host is dropped so the caller cannot
+  name the deployment in guardrail payload and spend tracking. Returns a mapping of lowercased header names
+  to values, with credential values masked by the proxy's standard redaction rules.
+
+  pin_tool_catalog takes upstream tools and a map of pinned MCPTool by name. It returns a tuple of served
+  tools (intersection: upstream tools in pinned_tools, descriptions/schemas from pinned where they differ)
+  and a PinnedCatalogDrift if any additions, removals or description/schema changes exist. Additions and
+  removals are reported; changed descriptions and schemas are silently restored from the pin without creating
+  a warning.
+
+  scan_tool_descriptions takes a sequence of MCPTool and a server context. It scans each tool's description
+  and input_schema through the proxy logging guardrail hook with call_type=list_mcp_tools and guardrails_only=True.
+  Scanning runs in batches of exactly eight concurrent tools (asyncio.gather in sequential loops). Each scan
+  either returns the original tool, returns a masked tool with guardrail-modified description/schema, or on
+  exception returns a BlockedTool with name and reason extracted from the exception. Returned ToolDescriptionScan
+  separates passed tools (MCPTool instances) from blocked tools (BlockedTool instances) by type check. Tools
+  with no scannable text (empty description and empty input_schema) are returned unscanned.
+
+  _block_reason extracts failure detail from an exception: if detail is a mapping with an "error" key,
+  return str(error); otherwise return "ExceptionType: message" or just the type name if message is empty.
+
+  _masked_tool applies guardrail result to a tool: validates guarded as a mapping, extracts mcp_tool_description
+  and mcp_input_schema fields (defaulting to original values), compares to original, and returns the original
+  tool if unchanged or a deep-copied tool with updated fields if changed. Validation uses Pydantic TypeAdapter
+  for safety.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/mcp/catalog_guard.rs
+    - crates/betterlite-server/src/mcp/catalog_guard/**
+    - crates/betterlite-server/src/mcp/catalog_guard/tests.rs
+    - tools/oracle/cases/helpers/catalog-guard/**
+    - tools/oracle/helpers/b4682.py
+    - tools/oracle/helpers/b4682/**
+    - tools/oracle/src/helpers/server/b4682.rs
+    - tools/oracle/src/helpers/server/b4682/**
+    - crates/betterlite-server/src/mcp/catalog_guard/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L58-L85
+    why: ToolDescriptionScan record with served tuple, blocked tuple, and alert() method returning CatalogAlert with signature and message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L88-L106
+    why: PinnedCatalogDrift record with added, removed, changed tuples and alert() method composing signature and message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L109-L119
+    why: apply_description_overrides applies tool_name_to_description from MCPServer to tools, stripping known prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L122-L149
+    why: pin_tool_catalog returns served tools and drift, _drifted compares description and input_schema, _pinned_tool applies pinned values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L152-L193
+    why: scan_tool_descriptions scans in batches of eight, _scan_tool calls _guarded_catalog_entry and _masked_tool, _guarded_catalog_entry calls proxy logging hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L232-L250
+    why: _block_reason extracts error from exception detail, _masked_tool validates and applies guarded changes, _with_served_entry does deep copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L446-L464
+    why: strip_known_server_prefix removes exactly one registered prefix (longest-first) from a tool name using iter_known_server_prefixes and match_known_server_prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L1060-L1089
+    why: logging_safe_mcp_headers sanitizes request headers for guardrail inspection by dropping proxy keys, upstream credentials, behavior flags and host.
+
+dod:
+  - text: CatalogAlert record with signature and message fields; BlockedTool record with name and reason.
+    proof: [catalog-alert-types]
+  - text: ToolDescriptionScan record holds served (tuple of Tool) and blocked (tuple of BlockedTool) and implements alert() returning CatalogAlert or None based on blocked content.
+    proof: [scan-types, scan-tests]
+  - text: PinnedCatalogDrift record holds added, removed, changed (all tuples of strings) and implements alert() returning CatalogAlert with pipe-joined signature and formatted message.
+    proof: [drift-types, drift-tests]
+  - text: apply_description_overrides applies tool_name_to_description overrides from MCPServer config, keyed by tool name after stripping known prefixes, returning tuple of modified or original tools.
+    proof: [scan-tests, override-tests]
+  - text: strip_known_server_prefix removes exactly one registered prefix from a tool name by trying longest candidates first;
+      returns name unchanged if server is known but no prefix matches, falls back to first-separator split if server is None.
+    proof: [prefix-strip-tests, override-tests]
+  - text: logging_safe_mcp_headers sanitizes headers for guardrail inspection by dropping proxy virtual-key headers, upstream
+      MCP credential headers, client behavior flags (litellm-disable-message-redaction), and host; returns lowercased names with
+      credential values masked.
+    proof: [header-sanitize-tests, guardrail-call]
+  - text: pin_tool_catalog returns served tools (only those in pinned map, with descriptions/schemas from pinned where they differ) and optional PinnedCatalogDrift when additions or removals exist.
+    proof: [scan-tests, pinning-tests]
+  - text: scan_tool_descriptions scans tools in sequential batches of exactly eight concurrent tools using asyncio.gather, collects passed (MCPTool) and blocked (BlockedTool) separately by type.
+    proof: [scan-tests, batch-concurrency]
+  - text: scan_tool_descriptions skips tools with no scannable text (empty description and empty input_schema) without calling guardrail.
+    proof: [scan-tests, scannable-text]
+  - text: _scan_tool catches guardrail exceptions and returns BlockedTool with name and reason extracted by _block_reason.
+    proof: [scan-tests, exception-handling]
+  - text: _guarded_catalog_entry builds MCPPreCallRequestObject, calls proxy_logging pre_call_hook with call_type=list_mcp_tools and guardrails_only=True, and returns optional guarded mapping.
+    proof: [scan-tests, guardrail-call]
+  - text: _masked_tool validates guarded result, extracts mcp_tool_description and mcp_input_schema fields, and returns original or deep-copied tool with updates if changed.
+    proof: [scan-tests, masking-tests]
+  - text: _block_reason extracts error from exception.detail mapping "error" key, or formats type name and message as fallback.
+    proof: [scan-tests, error-extraction]
+  - text: New oracle helper operation for catalog guard integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: catalog-alert-types
+      why: CatalogAlert and BlockedTool record types are missing or incomplete.
+      run: grep -qE 'struct (CatalogAlert|BlockedTool)' crates/betterlite-server/src/mcp/catalog_guard.rs && grep -qE 'signature|message|name|reason' crates/betterlite-server/src/mcp/catalog_guard.rs
+    - id: scan-types
+      why: ToolDescriptionScan record or its structure is missing.
+      run: grep -qE 'struct ToolDescriptionScan' crates/betterlite-server/src/mcp/catalog_guard.rs && grep -qE 'served|blocked' crates/betterlite-server/src/mcp/catalog_guard.rs
+    - id: scan-tests
+      why: Scan tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::/) - test(/replays_the_/)'
+    - id: drift-types
+      why: PinnedCatalogDrift record or its structure is missing.
+      run: grep -qE 'struct PinnedCatalogDrift' crates/betterlite-server/src/mcp/catalog_guard.rs && grep -qE 'added|removed|changed' crates/betterlite-server/src/mcp/catalog_guard.rs
+    - id: drift-tests
+      why: Drift alert and comparison tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*drift/)'
+    - id: override-tests
+      why: Description override tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*override/)'
+    - id: pinning-tests
+      why: Pinning logic tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*pin/)'
+    - id: batch-concurrency
+      why: Batch scanning with exactly eight concurrent tools is not implemented.
+      run: grep -qE '_CATALOG_SCAN_BATCH_SIZE|batch' crates/betterlite-server/src/mcp/catalog_guard.rs && grep -qE 'asyncio.gather|join_all|JoinSet' crates/betterlite-server/src/mcp/catalog_guard.rs
+    - id: scannable-text
+      why: The _has_scannable_text function is missing or does not skip unscannable tools.
+      run: grep -qE 'fn _has_scannable_text|fn has_scannable_text' crates/betterlite-server/src/mcp/catalog_guard.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*scannable/)'
+    - id: prefix-strip-tests
+      why: strip_known_server_prefix tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*strip.*prefix/)'
+    - id: header-sanitize-tests
+      why: logging_safe_mcp_headers tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*header.*sanitize|sanitize.*header/)'
+    - id: exception-handling
+      why: Exception handling and BlockedTool creation is missing.
+      run: grep -qE 'BlockedTool|_block_reason' crates/betterlite-server/src/mcp/catalog_guard.rs && grep -qE 'catch|except|match' crates/betterlite-server/src/mcp/catalog_guard.rs
+    - id: guardrail-call
+      why: Guardrail hook call with correct parameters is missing.
+      run: grep -qE 'pre_call_hook|guardrails_only|list_mcp_tools' crates/betterlite-server/src/mcp/catalog_guard.rs
+    - id: masking-tests
+      why: Masking tests or implementation is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*mask/)'
+    - id: error-extraction
+      why: Error reason extraction from exceptions is missing or incomplete.
+      run: grep -qE '_block_reason' crates/betterlite-server/src/mcp/catalog_guard.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_guard::tests::.*block/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4682.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/catalog-guard-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/catalog-guard/scan-passthrough.yaml
+  - tools/oracle/cases/helpers/catalog-guard/scan-masked.yaml
+  - tools/oracle/cases/helpers/catalog-guard/scan-blocked.yaml
+  - tools/oracle/cases/helpers/catalog-guard/scan-no-scannable-text.yaml
+  - tools/oracle/cases/helpers/catalog-guard/pin-intersection.yaml
+  - tools/oracle/cases/helpers/catalog-guard/pin-drift.yaml
+  - tools/oracle/cases/helpers/catalog-guard/pin-restore-description.yaml
+  - tools/oracle/cases/helpers/catalog-guard/override-from-server.yaml
+  - tools/oracle/cases/helpers/catalog-guard/batch-concurrency.yaml
+  - tools/oracle/cases/helpers/catalog-guard/error-extraction.yaml
+  - tools/oracle/cases/helpers/catalog-guard/strip-prefix-longest-match.yaml
+  - tools/oracle/cases/helpers/catalog-guard/strip-prefix-no-match.yaml
+  - tools/oracle/cases/helpers/catalog-guard/strip-prefix-null-server.yaml
+  - tools/oracle/cases/helpers/catalog-guard/sanitize-headers-proxy-keys.yaml
+  - tools/oracle/cases/helpers/catalog-guard/sanitize-headers-upstream-credentials.yaml
+  - tools/oracle/cases/helpers/catalog-guard/sanitize-headers-behavior-flags.yaml
+  - tools/oracle/cases/helpers/catalog-guard/sanitize-headers-host-removal.yaml
+
+deviations:
+  - what: Guardrail calls are initiated by scan_tool_descriptions with call_type=list_mcp_tools and guardrails_only=True,
+      rather than through the complete tool invocation path. In betterlite this is owned by the catalog guard service,
+      integrated at discovery time before the full manager/handler stack.
+    why: LiteLLM calls guardrails during tool execution in the chat completions flow. betterlite separates catalog
+      validation (discovery-time) from invocation (runtime) so guardrails can hide tools upfront. The proxy_logging
+      pre_call_hook is the same integration point; the call_type and guardrails_only flag tell the hook to scan
+      description/schema only without full invocation context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L196-L229
+  - what: Tool masking is applied before returning the catalog, preserving deep-copied MCPTool instances with guarded
+      description and input_schema. A guardrail failure blocks the entire tool rather than returning a partial result.
+    why: LiteLLM masks the tool during catalog filtering. betterlite preserves the same fail-closed behavior; exceptions
+      in the guardrail become BlockedTool entries in the scan result, hiding the tool from the served list. The distinction
+      between a tool that fails guardrail (BlockedTool) and a tool that is masked (MCPTool with modified fields) is preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L180-L193
+  - what: Batching uses exactly eight concurrent tools per sequential batch, not a different batch size or unlimited concurrency.
+    why: LiteLLM uses _CATALOG_SCAN_BATCH_SIZE = 8. betterlite preserves this limit for CPU-bound guardrail checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L55
+
+out_of_scope:
+  - Alert delivery and logging; CatalogAlert is a record only, not posted to Slack or stored.
+  - Guardrail hook implementation; this task calls the seam but does not implement guardrails.
+  - Manager discovery and startup integration; those belong in B138.
+  - ProxyLogging, UserAPIKeyAuth and MCPPreCallRequestObject type implementations; those are consumed as type dependencies from B732 and the proxy layer.
+  - Helper functions used by strip_known_server_prefix (iter_known_server_prefixes, match_known_server_prefix, split_server_prefix_from_name, get_server_prefix, compute_short_server_prefix, normalize_server_name) are owned here as part of prefix-stripping behavior; their full implementations at utils.py:335-384, 408-443 are available for reference.
+  - Helper functions and imports used by logging_safe_mcp_headers (clean_headers, redact_credential_headers, upstream_credential_headers, _custom_litellm_key_header_name, _identity_header_names, _forwarded_upstream_header_names) are owned here as part of header-sanitization behavior; their implementations and external dependencies are available for reference at utils.py:914-1089.
+
+pitfalls:
+  - The batch size is exactly eight concurrent tools per sequential batch. Do not change to a different size or make all scanning concurrent at once.
+  - Tools with empty description and empty input_schema are not scanned and are returned unchanged, even if other fields might be scannable.
+  - 'A guardrail exception blocks the entire tool with reason extracted by _block_reason. If the exception has a detail mapping with an "error" key, use that; otherwise format "Type: message" or just the type name.'
+  - '_masked_tool validates guarded as a mapping and extracts mcp_tool_description and mcp_input_schema fields. If either field is missing, use the original value as default. Only return a masked tool if at least one field differs from the original.'
+  - 'The pinned_tools map is keyed by tool name (not stripped). apply_description_overrides uses tool_name_to_description (keyed by stripped name). These are different maps with different lookup semantics.'
+  - 'PinnedCatalogDrift.alert() returns a signature with pipe-joined "label: names" parts, not comma-separated. Empty drift (all three tuples empty) has no drift return value (None), not an empty alert.'
+  - _with_served_entry does a deep copy of the tool. Do not use shallow copy or in-place mutation.
+  - 'strip_known_server_prefix tries candidate prefixes longest-first (by string length) so a prefix containing the separator wins. Candidates are normalized (spaces to underscores). Returns name unchanged if a prefix is known but does not match; only falls back to first-separator split when server is None.'
+  - 'logging_safe_mcp_headers drops the custom litellm_key_header_name from config, all upstream credential headers (client-side auth header and server extra_headers), and host. It returns lowercased header names with credential values masked by proxy redaction rules.'
+  - 'The helper oracle operation is pre-registered as b4682 in the server group. Replace the stub Op in tools/oracle/src/helpers/server/b4682.rs with an impl Helper, and write run in tools/oracle/helpers/b4682.py.'
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

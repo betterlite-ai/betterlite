@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Atomic rate-limit counter evaluation
 status: todo
 depends_on: [B3031]
-file: null
+file: tasks/B3033-rate-limit-atomic-counters.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072

@@ -2,8 +2,8 @@ id: B3764
 milestone: M6 guardrails
 title: Compresr recovery store and retrieval plans
 status: todo
-depends_on: [B3763, B226]
-file: null
+depends_on: [B3763, B226, B3663]
+file: tasks/B3764-compresr-recovery.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py"
 parent: B107

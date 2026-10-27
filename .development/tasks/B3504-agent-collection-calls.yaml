@@ -1,0 +1,119 @@
+id: B3504
+title: Create and list managed agents through the call pipeline
+description: >-
+  Expose the sync/async agent creation and listing entry points, keeping name-based error/log metadata
+  and the explicit default provider. Implement acreate, create, alist and list entry points. Each pair follows the
+  async-to-sync pattern: the async variant calls loop.run_in_executor with a context copy forwarding to its sync
+  counterpart, passing an operation-specific flag in kwargs. Both sync and async return typed results from agents.types
+  (AgentCreateResponse for create, AgentListResponse for list). Default provider is Gemini when absent from args or
+  kwargs.custom_llm_provider. All four operations acquire the agents config through B3501's _get_agents_api_config and
+  build logging metadata with operation name (create_agent for create, list_agents for list) and agent name (for create)
+  or empty string (for list) as the optional param. Create also accepts base_agent, instructions, base_environment,
+  extra_headers and extra_body parameters, forwarding them as kwargs to GenericLiteLLMParams or as override fields to
+  the HTTP handler. Delegate HTTP work to B3502 (create_agent and list_agents methods). Wrap exceptions through
+  litellm.exception_type with the agent name or empty string as model, provider and original exception. Implement the
+  four functions in crates/betterlite-core/src/api/agents/collection.rs and their Rust/Python oracle adapters.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/agents/collection.rs
+  - crates/betterlite-core/src/api/agents/collection/**
+  - tools/oracle/cases/agents/collection/**
+  - tools/oracle/helpers/b3504.py
+  - tools/oracle/helpers/b3504/**
+  - tools/oracle/src/helpers/core_ops/b3504.rs
+  - tools/oracle/src/helpers/core_ops/b3504/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L98-L207
+  why: acreate and create implementations with async-to-sync forwarding, base_agent/instructions/base_environment parameters and exception wrapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L208-L280
+  why: alist and list implementations with async-to-sync forwarding, context copying and logging with empty string for list operation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/utils.py#L11-L53
+  why: _get_agents_api_config and _make_logging_obj used by all four operations for provider setup and metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L35-L133
+  why: create_agent HTTP method that B3504 calls for agent creation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L139-L207
+  why: list_agents HTTP method that B3504 calls for listing agents.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents/__init__.py
+  why: AgentCreateResponse, AgentListResponse and related types.
+dod:
+- text: >-
+    Sync and async create/list operations match LiteLLM on the HTTP request sent
+    upstream (method, path, body, headers) and on typed response.
+  proof:
+    - oracle
+- text: >-
+    Default provider is Gemini; when absent from args or kwargs.custom_llm_provider, all four
+    calls use "gemini".
+  proof:
+    - behavior-tests
+- text: >-
+    Agent name is forwarded into the logging object's optional_params dict under the key "name"
+    for create operations; list operations pass an empty string as the model name.
+  proof:
+    - behavior-tests
+- text: >-
+    All four operations call B3501's _get_agents_api_config and _make_logging_obj with the
+    operation call_type (create_agent for create, list_agents for list) and name as the optional param.
+  proof:
+    - behavior-tests
+- text: >-
+    Exceptions wrap the original error through litellm.exception_type with the agent name
+    (not empty string) as the model for create, and empty string for list operations.
+  proof:
+    - behavior-tests
+- text: >-
+    Async variants delegate to their sync counterparts using loop.run_in_executor with
+    contextvars.copy_context, passing an operation-specific flag (acreate_agent for create,
+    alist_agents for list) in kwargs.
+  proof:
+    - behavior-tests
+- text: >-
+    Create operations accept and forward base_agent, instructions, base_environment as kwargs
+    to GenericLiteLLMParams and extra_headers, extra_body to the HTTP handler.
+  proof:
+    - behavior-tests
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: agent creation/listing tests are absent, incomplete or fail
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^agent_collection_calls(::|$)/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+- tools/oracle/cases/agents/collection/create-basic.yaml
+- tools/oracle/cases/agents/collection/create-with-base-agent.yaml
+- tools/oracle/cases/agents/collection/create-with-instructions.yaml
+- tools/oracle/cases/agents/collection/create-with-environment.yaml
+- tools/oracle/cases/agents/collection/list-basic.yaml
+- tools/oracle/cases/agents/collection/provider-absent-defaults-gemini.yaml
+- tools/oracle/cases/agents/collection/unsupported-provider-error.yaml
+- tools/oracle/cases/agents/collection/create-async-delegates-to-sync.yaml
+- tools/oracle/cases/agents/collection/list-async-delegates-to-sync.yaml
+deviations: []
+out_of_scope:
+- B3501 owns provider/logging setup (_get_agents_api_config, _make_logging_obj).
+- B3502 owns HTTP creation and listing (create_agent, list_agents methods).
+- B3503 owns HTTP deletion and version listing (delete_agent, list_agent_versions methods).
+- B3505 owns item operations (get, delete, list_versions entry points).
+- Client lifecycle and context decorators; those belong to betterlite-core's shared infrastructure, not this task.
+- B185/B186 exception construction; this task only calls litellm.exception_type.
+- B198 timeout/context propagation; this task forwards kwargs unmodified and respects the existing propagation.
+pitfalls:
+- >-
+  The acreate_agent and alist_agents flags are popped from kwargs before HTTP delegation, not passed downstream.
+  Create operations forward base_agent, instructions, and base_environment (when non-None) as explicit sync-variant parameters, while list passes only the provider and optional parameters; both check if the sync response is a coroutine before awaiting.
+- >-
+  Create operations require an agent name and optional base_agent, instructions, base_environment parameters.
+  These are forwarded as kwargs to GenericLiteLLMParams when non-None. List operations take no name parameter and pass
+  an empty string as the model name to both logging and exception construction.
+- >-
+  Extra headers and extra body parameters apply to both sync and async paths. Create operations forward extra_body
+  to the HTTP handler after provider transforms; list operations also accept these parameters but may not apply them.
+- >-
+  Default provider assignment happens before the try block in both async and sync paths, defaulting to Gemini when absent
+  from the function parameter or kwargs.custom_llm_provider. This ensures provider is available for logging and exception
+  construction within the block.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,230 @@
+id: B3962
+title: Braintrust project resolution and event logging
+description: >-
+  Build Braintrust event logging with project-name resolution, caching and insertion records.
+  Implement initialization with API key validation, sync and async project-ID retrieval with
+  fallback to default-project creation, and event payload construction. Read BRAINTRUST_API_KEY
+  and BRAINTRUST_API_BASE (default https://api.braintrustdata.com/v1) from B002; use B173's
+  pooled HTTP handler for sync and async POST requests; build on B189's CustomLogger contract.
+
+  Implement a cache mapping project names to project IDs, keyed by name and holding resolved IDs
+  across event callbacks. The sync project-resolution path POSTs to /project; the async path
+  POSTs to /project/register. Resolve project_id from metadata or create a default "litellm"
+  project using /project endpoint in both sync and async paths. Missing BRAINTRUST_API_KEY fails
+  validation at initialization; transient HTTP failures re-raise httpx.HTTPStatusError with
+  response.text.
+
+  Apply root-only tags: tags appear only when root_span_id is absent (non-root spans omit tags).
+  Tags are built from litellm.langfuse_default_tags list: when a metadata key appears in that
+  list, emit key:value pairs. Preserve string-only metadata extensions: only string values from
+  dynamic_metadata extend standard_logging_object when the key is absent (existing keys never
+  overwritten); non-string values pass through unchanged.
+
+  Preserve sync vs async time-to-first-token calculation: sync uses end_time.timestamp() -
+  start_time.timestamp(); async uses completion_start_time.timestamp() -
+  api_call_start_time.timestamp() when both are present. Both success paths extract prompt
+  tokens, completion tokens, total tokens, cost and start/end timestamps into metrics.
+
+  Span structure: span_name (default "Chat Completion") feeds span_attributes.name; root_span_id,
+  span_id and span_parents (comma-separated string converted to list) are top-level request_data
+  keys when truthy. Output field is always built from choices: initialized [] and reassigned only
+  for ModelResponse/TextCompletionResponse, producing empty output arrays for embeddings and
+  images. The failure callback is a no-op pass-through. Mock infrastructure remains in LiteLLM's
+  test harness; test seams supplied by B191.
+scope:
+  paths:
+    - crates/betterlite-logging/src/braintrust_logging.rs
+    - crates/betterlite-logging/src/braintrust_logging/**
+    - tools/oracle/cases/logging/braintrust/**
+    - tools/oracle/fuzz/corpus/helper_case/braintrust-*
+    - tools/oracle/helpers/b3962.py
+    - tools/oracle/helpers/b3962/**
+    - tools/oracle/src/helpers/logging/b3962.rs
+    - tools/oracle/src/helpers/logging/b3962/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L37-L53
+    why: BraintrustLogger.__init__ initialization with mock check, header setup, cache and HTTP handler initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L55-L67
+    why: validate_environment checks for BRAINTRUST_API_KEY and raises exception when missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L69-L88
+    why: get_project_id_sync uses /project endpoint with cache lookup and HTTP error re-raise on HTTPStatusError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L90-L108
+    why: get_project_id_async uses /project/register endpoint with same cache and error handling as sync version.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L110-L126
+    why: create_default_project_and_experiment and create_sync_default_project_and_experiment use /project endpoint in both paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L128-L252
+    why: log_success_event constructs request_data with project resolution, root-only tags, span structure (attributes as nested object, span_id/root_span_id/span_parents as top-level), metadata extension, output from choices, and insertion POST.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L254-L380
+    why: async_log_success_event uses completion_start_time - api_call_start_time for time-to-first-token when both present, otherwise same payload structure as sync version.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L382-L383
+    why: log_failure_event delegates to parent's no-op.
+dod:
+  - text: BraintrustLogger initializes with API key validation, default HTTP handler setup and empty project ID cache.
+    proof: [braintrust-init-test]
+
+  - text: validate_environment raises when BRAINTRUST_API_KEY is missing (passed as argument or via B002 environment lookup).
+    proof: [braintrust-validation-test, braintrust-validation-oracle]
+
+  - text: "Sync project-ID retrieval queries /project endpoint; async queries /project/register. Both cache by name and retry failed lookups; cache miss creates the project. HTTPStatusError re-raises with response.text."
+    proof: [braintrust-project-test, braintrust-project-oracle]
+
+  - text: Default project named "litellm" is created via POST /project when no project_id or project_name is supplied, and cached as default_project_id in both sync and async paths.
+    proof: [braintrust-default-test, braintrust-default-oracle]
+
+  - text: "Sync time-to-first-token is end_time.timestamp() - start_time.timestamp(); async is completion_start_time.timestamp() - api_call_start_time.timestamp() when both are present."
+    proof: [braintrust-ttft-test, braintrust-ttft-oracle]
+
+  - text: "Tags are applied only when root_span_id is absent (non-root spans carry no tags). Tags come from litellm.langfuse_default_tags list intersection with metadata keys."
+    proof: [braintrust-tags-test, braintrust-tags-oracle]
+
+  - text: "span_name (default 'Chat Completion') is written to span_attributes.name; root_span_id, span_id and span_parents (comma-separated string converted to list) are top-level request_data keys when truthy."
+    proof: [braintrust-span-test, braintrust-span-oracle]
+
+  - text: "String metadata values extend standard_logging_object only when the key is absent; existing keys are never overwritten."
+    proof: [braintrust-metadata-test, braintrust-metadata-oracle]
+
+  - text: "Output field is built from choices: [] when choices are None/falsy, [choice.dict() for choice in choices] when truthy. Embedding responses (call_type='embedding' or EmbeddingResponse type) initialize choices=[] and produce empty output."
+    proof: [braintrust-output-test, braintrust-output-oracle]
+
+  - text: "Metrics object includes prompt_tokens, completion_tokens, total_tokens, total_cost, start and end as timestamps. Only built when usage_obj is present."
+    proof: [braintrust-metrics-test, braintrust-metrics-oracle]
+
+  - text: "Insertion endpoint is POST /project_logs/{project_id}/insert with payload {\"events\": [request_data]}. Successful sync sends complete; failed sends raise."
+    proof: [braintrust-insert-test, braintrust-insert-oracle]
+checks:
+  optional: []
+  commands:
+    - id: braintrust-init-test
+      why: Initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-validation-test
+      why: Environment validation tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*validation($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-project-test
+      why: Project resolution tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*project($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-default-test
+      why: Default project creation tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*default($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-ttft-test
+      why: Time-to-first-token calculation tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*ttft($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-tags-test
+      why: Root-span tags tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*tags($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-span-test
+      why: Span structure tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*span($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-metadata-test
+      why: Metadata extension tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*metadata($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-output-test
+      why: Output field construction tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*output($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-metrics-test
+      why: Metrics object tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*metrics($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-insert-test
+      why: Insertion endpoint tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^braintrust_logging::.*insert($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: braintrust-validation-oracle
+      why: Missing-API-key error case not in oracle cases
+      run: grep -rlq 'missing.*api.*key\|BRAINTRUST_API_KEY' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-project-oracle
+      why: Project resolution oracle cases missing
+      run: grep -rlq 'project.*resolve\|project.*cache' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-default-oracle
+      why: Default project creation oracle cases missing
+      run: grep -rlq 'default.*project\|litellm.*project' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-ttft-oracle
+      why: Time-to-first-token oracle cases missing
+      run: grep -rlq 'time.*first.*token\|completion_start_time' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-tags-oracle
+      why: Tags oracle cases missing
+      run: grep -rlq 'root.*span\|tags.*root' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-span-oracle
+      why: Span structure oracle cases missing
+      run: grep -rlq 'span.*attribute\|span.*id\|span.*parent' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-metadata-oracle
+      why: Metadata extension oracle cases missing
+      run: grep -rlq 'metadata.*extend\|key.*absent' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-output-oracle
+      why: Output field oracle cases missing
+      run: grep -rlq 'embedding.*output\|output.*empty\|choice.*dict' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-metrics-oracle
+      why: Metrics oracle cases missing
+      run: grep -rlq 'metric\|prompt_token\|completion_token' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-insert-oracle
+      why: Insertion endpoint oracle cases missing
+      run: grep -rlq 'insert\|project_logs' tools/oracle/cases/logging/braintrust/ || exit 1
+
+    - id: braintrust-helper-corpus
+      why: Helper case corpus missing or corpus replay failing
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/braintrust)" && grep -rlq 'braintrust_logging:' tools/oracle/fuzz/corpus/helper_case/braintrust-* 2>/dev/null && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/logging/braintrust/api-key-validation-error.yaml
+  - tools/oracle/cases/logging/braintrust/project-resolution-with-caching.yaml
+  - tools/oracle/cases/logging/braintrust/default-project-creation.yaml
+  - tools/oracle/cases/logging/braintrust/time-to-first-token-sync.yaml
+  - tools/oracle/cases/logging/braintrust/time-to-first-token-async.yaml
+  - tools/oracle/cases/logging/braintrust/root-span-tags-excluded.yaml
+  - tools/oracle/cases/logging/braintrust/span-structure-and-attributes.yaml
+  - tools/oracle/cases/logging/braintrust/metadata-extends-when-absent.yaml
+  - tools/oracle/cases/logging/braintrust/embedding-output-empty-array.yaml
+deviations:
+  - what: >-
+      The output field is always built from the choices array (initialized as empty list and reassigned
+      only for ModelResponse/TextCompletionResponse), so embedding and image responses produce an empty output
+      array instead of their underlying response_obj.data.
+    why: >-
+      LiteLLM's code structure initializes choices as an empty list and only reassigns for specific response types;
+      the final check (if choices is not None: request_data["output"] = [choice.dict() for choice in choices])
+      is always true since choices is never None, resulting in empty arrays for embeddings/images.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L135-L149
+
+  - what: >-
+      Metadata values extend standard_logging_object only when the key is absent; existing keys are never
+      overwritten.
+    why: >-
+      The source code checks (if isinstance(value, str) and key not in standard_logging_object) before adding,
+      so absent keys are extended but present keys are preserved unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L176-L179
+out_of_scope:
+  - B002 owns environment variable lookup and API key loading through B002's config resolution.
+  - B173 owns the HTTP handler pool and sync/async request execution.
+  - B189 owns CustomLogger initialization contract.
+  - litellm.utils.get_logging_id is called but its result is discarded (line 186/311); the owner of this function is not determined by this task.
+  - Mock infrastructure (should_use_braintrust_mock, create_mock_braintrust_client) remains in LiteLLM's test harness; test fixtures supplied by B191.
+
+pitfalls:
+  - BRAINTRUST_API_KEY is a secret; keep it in secrecy::SecretString and never log its value.
+  - The sync project endpoint is /project, but async uses /project/register. Both can create or get a project; only differentiate on the call, not on error handling.
+  - span_parents is a comma-separated string in metadata; parse it to a list and filter empty strings after splitting.
+  - Tags are only applied when root_span_id is absent. A presence check on root_span_id (not a truthy check) determines tag inclusion.
+  - The output field must always be present in request_data, even if empty; never omit it.
+  - HTTPStatusError.response.text is the error message; betterlite re-raises it. Do not suppress HTTP errors; let them propagate.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

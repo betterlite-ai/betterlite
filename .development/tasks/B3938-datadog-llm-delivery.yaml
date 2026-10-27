@@ -1,0 +1,149 @@
+id: B3938
+title: Datadog LLM span assembly and intake delivery
+description: >-
+  Implement Datadog LLM Observability span assembly and intake delivery in betterlite-logging: initialize logger with direct API or agent configuration,
+  assemble complete LLM observation spans from standard logging payloads, and send intake envelopes to the `/api/intake/llm-obs/v1/trace/spans` endpoint.
+
+  Resolve datadog_llm_observability_params configuration through injected settings (B002's loader). Support agent mode via LITELLM_DD_AGENT_HOST
+  with port default LITELLM_DD_LLM_OBS_PORT=8126, and direct API mode via DD_API_KEY and DD_SITE; agent mode does not require DD_API_KEY.
+  Override intake_url with DD_BASE_URL environment variable when set.
+
+  Assemble spans with caller-provided span_id and name from request metadata (overriding defaults), trace_id from standard_logging_object or UUID fallback,
+  parent_id from metadata or "undefined", and nanosecond-precision start_ns and duration from request timestamps.
+  Include input/output message payloads, metadata, error info, span kind, token metrics and cost tags from B3935–B3937 payload construction functions.
+  Attach current APM trace ID via _get_apm_trace_id when available (checking current_span.trace_id from the injected tracer).
+
+  Send uncompressed JSON payloads to the intake endpoint with DD-API-KEY header when in direct API mode.
+  Accept only HTTP 202 (Accepted) status; other responses raise an exception.
+  Support periodic batch flushing through inherited CustomBatchLogger interface with configurable batch_size and timeout.
+  Test threshold-send (batch size reached) and inherited periodic-flush paths separately, since swallowed send errors interact with the base flush's queue clearing.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog_llm_observability.rs
+    - crates/betterlite-logging/src/datadog_llm_observability/**
+    - tools/oracle/cases/datadog_llm_observability/**
+    - tools/oracle/fuzz/corpus/datadog_llm_obs*
+    - Cargo.toml
+    - tools/oracle/helpers/b3938.py
+    - tools/oracle/helpers/b3938/**
+    - tools/oracle/src/helpers/logging/b3938.rs
+    - tools/oracle/src/helpers/logging/b3938/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L441-L486
+    why: DataDogLLMObsLogger.__init__ resolves configuration, initializes httpx client and inherited periodic_flush.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L488-L512
+    why: _configure_dd_agent and _configure_dd_direct_api set up endpoints with port/credential defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L514-L529
+    why: _get_datadog_llm_obs_params reads and validates datadog_llm_observability_params override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L531-L553
+    why: async_log_success_event and async_log_failure_event queue events and flush on batch-size threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L555-L610
+    why: async_send_batch serializes intake envelope and sends with HTTP 202 validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L612-L681
+    why: create_llm_obs_payload assembles complete span from standard logging payload with caller overrides, metrics and metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L683-L695
+    why: _get_apm_trace_id retrieves current APM trace ID from tracer when available.
+  - url: https://docs.datadoghq.com/llm_observability/setup/sdk/
+    why: Datadog LLM Observability intake endpoint reference and agent/direct API setup.
+  - url: https://docs.datadoghq.com/llm_observability/
+    why: LLM Observability span payload structure and intake schema.
+dod:
+  - text: Logger initialization with no dd_agent_host falls back to direct API; explicit dd_api_key and dd_site override environment; DD_API_KEY is required for direct API but not agent mode.
+    proof: [endpoint-configuration]
+  - text: Agent endpoint uses port LITELLM_DD_LLM_OBS_PORT (default 8126) from environment; direct API endpoint uses DD_SITE environment variable.
+    proof: [endpoint-configuration]
+  - text: DD_BASE_URL environment variable overrides intake_url when set; when unset, no override is applied.
+    proof: [endpoint-configuration]
+  - text: datadog_llm_observability_params configuration is resolved from injected settings and passed to inherited CustomBatchLogger initialization.
+    proof: [config-resolution]
+  - text: Spans are assembled with caller span_id and name from metadata (or generated UUIDs as defaults), trace_id from standard_logging_object or UUID fallback, parent_id from metadata or "undefined".
+    proof: [oracle]
+  - text: Span start_ns and duration are computed from request timestamps in nanoseconds; no integer overflow on duration calculation.
+    proof: [oracle]
+  - text: Input and output messages are redacted when payload_logging_is_off returns true; tool definitions are included only when not redacted.
+    proof: [oracle]
+  - text: Error info, span kind, token metrics and cost tags are assembled from B3935–B3937 functions; metadata enrichment includes router fields when applicable.
+    proof: [oracle]
+  - text: Current APM trace ID from tracer.current_span.trace_id is attached to payloads as apm_id when available; absence does not fail the request.
+    proof: [span-context-attachment]
+  - text: Payloads are sent as uncompressed JSON with Content-Type=application/json; DD-API-KEY header is included in direct API mode only.
+    proof: [payload-headers]
+  - text: Only HTTP 202 (Accepted) status is accepted; other responses raise an exception with status code and response body.
+    proof: [http-status-validation]
+  - text: Async_log_success_event and async_log_failure_event queue payloads and trigger async_send_batch when batch_size is reached; periodic_flush and threshold-send paths are tested separately.
+    proof: [batch-queueing]
+  - text: Every helper operation in datadog LLM delivery has a committed shared-parser corpus seed and replays successfully.
+    proof: [corpus-replay]
+  - text: Mutants in span ID generation, trace ID fallback, APM correlation, message redaction and HTTP status validation are caught by tests.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: endpoint-configuration
+      why: endpoint configuration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_endpoint_configuration_behavior($|::)/)'
+    - id: config-resolution
+      why: config resolution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_config_resolution_behavior($|::)/)'
+    - id: span-context-attachment
+      why: APM trace ID attachment tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_span_context_attachment_behavior($|::)/)'
+    - id: payload-headers
+      why: payload header tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_payload_headers_behavior($|::)/)'
+    - id: http-status-validation
+      why: HTTP status validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_http_status_validation_behavior($|::)/)'
+    - id: batch-queueing
+      why: batch queueing and flushing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_batch_queueing_behavior($|::)/)'
+    - id: corpus-replay
+      why: the fuzz corpus is missing, empty or replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)"
+        && grep -rlq 'datadog_llm' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+        && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+        --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/datadog_llm_observability/span-assembly-success.yaml
+  - tools/oracle/cases/datadog_llm_observability/span-assembly-with-parent-override.yaml
+  - tools/oracle/cases/datadog_llm_observability/span-assembly-with-redaction.yaml
+  - tools/oracle/cases/datadog_llm_observability/span-assembly-error.yaml
+  - tools/oracle/cases/datadog_llm_observability/apm-trace-attachment.yaml
+  - tools/oracle/cases/datadog_llm_observability/intake-delivery-agent-mode.yaml
+  - tools/oracle/cases/datadog_llm_observability/intake-delivery-direct-api.yaml
+  - tools/oracle/cases/datadog_llm_observability/api-key-header-absent-no-key.yaml
+  - tools/oracle/cases/datadog_llm_observability/batch-send-threshold.yaml
+deviations:
+  - what: When DD_API_KEY is unset in direct API mode, logger initialization raises an exception.
+    why: LiteLLM requires explicit credentials for direct API; betterlite enforces the same check at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L463-L466
+  - what: Agent mode does not require DD_API_KEY; direct API mode requires both DD_API_KEY and DD_SITE to be set.
+    why: LiteLLM distinguishes agent and direct API initialization based on LITELLM_DD_AGENT_HOST presence; betterlite follows the same logic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L451-L467
+  - what: Payloads are sent as uncompressed JSON, unlike log delivery which uses gzip compression.
+    why: LLM Observability intake endpoint accepts uncompressed JSON; log delivery to /api/v2/logs requires gzip per Datadog specifications.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L591-L595
+  - what: When APM trace ID is unavailable, the payload is sent without apm_id; missing apm_id does not fail the request.
+    why: APM correlation is best-effort; absence of the active span does not prevent LLM Observability intake.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L677-L679
+  - what: Swallowed send errors (network failures, timeouts) are logged but do not requeue or preserve queue state; the queue is cleared after every send attempt.
+    why: LiteLLM's LLM Observability intake clears the queue after sending regardless of success; transient failures do not preserve undelivered events for retry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L600-L610
+out_of_scope:
+  - Delivery retry, cancellation requeue or 413-splitting logic; LLM Observability intake sends uncompressed JSON and does not split on 413.
+  - Health checks; this task focuses on regular span delivery, not intake health monitoring.
+  - Team-scoped or key-scoped logger isolation; this task builds the global LLM Observability logger registered by B113.
+pitfalls:
+  - trace_id and span_id may both come from caller metadata; check both before attaching to payloads as they are independent fields.
+  - span_id and name defaults ("litellm_llm_call" for name, UUID for span_id) only apply when metadata does not provide them; do not override caller values.
+  - parent_id defaults to "undefined" string (not null) when not provided; this is a literal string value, not a missing field.
+  - APM trace ID is checked only on the current span, not root span fallback; if current_span is None or lacks trace_id attribute, apm_id is omitted.
+  - HTTP status validation requires exactly 202; status 200, 201 or other 2xx codes are failures and must be raised, not silently accepted.
+  - The injected tracer is passed through configuration; access its current_span method defensively without panicking on missing methods.
+  - DD_BASE_URL override is set after endpoint configuration; check for it and apply only after agent/direct API URL is established.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

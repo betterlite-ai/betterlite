@@ -1,0 +1,140 @@
+id: B3934
+title: Datadog proxy and service failure events
+description: >-
+  Implement Datadog logging for proxy-level failures and adjacent-service success/failure events
+  in betterlite-logging. Add async_post_call_failure_hook to enqueue proxy failures (auth, DB,
+  network errors) with sanitized user context, error extraction and immediate batch-size flush.
+  Add async_service_failure_hook and async_service_success_hook to enqueue adjacent-system
+  events (Redis, Postgres, budget reset) with service payload integration and warning/info status
+  respectively. Service hooks enqueue events without immediate flush; service failures always log,
+  while service successes log only for RESET_BUDGET_JOB service type.
+
+  Proxy failures resolve exception information via B253's StandardLoggingPayloadSetup.get_error_information
+  and build error_code, error_class, exception message and traceback fields. User context comes from
+  B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key with fallback to minimal
+  fields (request_route, team_id, user_id, end_user_id) when proxy utilities are unavailable. Proxy
+  hook payloads use ERROR status and attach trace context from B3930's span accessors. Proxy failure
+  hook has no event_metadata parameter.
+
+  Service hooks receive ServiceLoggerPayload from B012 (service type, call_type, event metadata),
+  merge event_metadata into the payload dict, and wrap with DatadogPayload (WARN for failures,
+  INFO for successes). The DD_LOGGED_SUCCESS_SERVICE_TYPES constant lists service types that produce
+  success records; only RESET_BUDGET_JOB appears at the pin. Service hooks do not attach trace context.
+  Exceptions during logging are caught and logged for diagnostics only.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog.rs
+    - crates/betterlite-logging/src/datadog/**
+    - crates/betterlite-logging/src/datadog/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L82-L84
+    why: DD_LOGGED_SUCCESS_SERVICE_TYPES constant listing service types that produce success records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L288-L362
+    why: async_post_call_failure_hook implementation with error extraction, user context and batch-size flush.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L607-L678
+    why: async_service_failure_hook and async_service_success_hook with event_metadata merging and service-type filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6105-L6168
+    why: StandardLoggingPayloadSetup.get_error_information extracting error_code, error_class, message and traceback.
+dod:
+  - text: DD_LOGGED_SUCCESS_SERVICE_TYPES is a list containing only RESET_BUDGET_JOB as the sole service type that produces success records.
+    proof: [success-types]
+  - text: async_post_call_failure_hook extracts error information via B253's StandardLoggingPayloadSetup.get_error_information, converting error_code to HTTP status code when present and numeric.
+    proof: [proxy-error-extraction]
+  - text: Proxy failure hook builds user_context from B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key when available, falling back to minimal fields (request_route, team_id, user_id, end_user_id) when proxy utilities are unavailable.
+    proof: [proxy-user-context]
+  - text: Proxy failure hook enqueues payload with ERROR status and flushes queue when batch size is reached.
+    proof: [proxy-queueing-flush]
+  - text: async_service_failure_hook enqueues service failures with WARN status without flushing.
+    proof: [service-failure-queueing]
+  - text: async_service_success_hook checks if payload.service is in DD_LOGGED_SUCCESS_SERVICE_TYPES before enqueuing with INFO status; returns silently if service type does not match.
+    proof: [service-success-filtering]
+  - text: Service hooks merge event_metadata into the payload dict (if present) before JSON serialization; proxy failure hook has no event_metadata parameter.
+    proof: [metadata-merging]
+  - text: Only async_post_call_failure_hook attaches trace context via B3930's span accessors; service hooks do not.
+    proof: [trace-context-attachment]
+  - text: All hooks catch exceptions during logging and log them via verbose_logger.exception for diagnostics; exceptions do not propagate.
+    proof: [exception-handling]
+  - text: Every mutant in error extraction, user context fallback, service filtering and metadata merging is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: success-types
+      why: DD_LOGGED_SUCCESS_SERVICE_TYPES constant is missing or does not contain RESET_BUDGET_JOB
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_success_service_types_behavior($|::)/)'
+    - id: proxy-error-extraction
+      why: proxy failure error extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_proxy_error_extraction_behavior($|::)/)'
+    - id: proxy-user-context
+      why: proxy failure user context resolution or fallback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_proxy_user_context_behavior($|::)/)'
+    - id: proxy-queueing-flush
+      why: proxy failure queueing and batch-size flush tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_proxy_queueing_flush_behavior($|::)/)'
+    - id: service-failure-queueing
+      why: service failure queueing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_service_failure_queueing_behavior($|::)/)'
+    - id: service-success-filtering
+      why: service success type filtering tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_service_success_filtering_behavior($|::)/)'
+    - id: metadata-merging
+      why: event metadata merging tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_metadata_merging_behavior($|::)/)'
+    - id: trace-context-attachment
+      why: trace context attachment tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_trace_context_attachment_behavior($|::)/)'
+    - id: exception-handling
+      why: exception handling in hooks tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_exception_handling_behavior($|::)/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Proxy failure hooks extract error information via B253's StandardLoggingPayloadSetup.get_error_information
+      and convert numeric error_code values to HTTP status code; absent or non-numeric codes set status_code to None.
+    why: >-
+      LiteLLM follows the same pattern: extract error_code from the exception and convert to int
+      when the code is a string digit. Betterlite preserves this behavior for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L308-L315
+  - what: >-
+      User context extraction from B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key
+      provides sanitized principal fields. When proxy utilities are unavailable or exception occurs,
+      fallback uses minimal fields (request_route, team_id, user_id, end_user_id) from user_api_key_dict.
+    why: >-
+      LiteLLM uses the same fallback pattern to handle cases where proxy is not available (e.g. SDK-only mode);
+      betterlite retains the fallback behavior but uses B1106's sanitized values as the primary path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L317-L337
+  - what: >-
+      Proxy failure hook flushes queue when batch size is reached; service hooks enqueue events
+      without immediate flush. Periodic_flush timeout handles delayed flushing for service events.
+    why: >-
+      LiteLLM only flushes proxy failures on batch-size threshold, not service failures;
+      service events are batched and flushed by periodic_flush inherited from CustomBatchLogger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L358-L359
+  - what: >-
+      Service success hook logs only service types in DD_LOGGED_SUCCESS_SERVICE_TYPES (currently only RESET_BUDGET_JOB);
+      other service types are silently skipped. Service failures always log with WARN status.
+    why: >-
+      LiteLLM preserves this filtering to avoid spammy logging of every service success event;
+      failures are always relevant for observability, while successes are filtered to reduce volume.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L656-L658
+out_of_scope:
+  - B3930's tag/source/service/hostname and trace-context helpers are called but not implemented here.
+  - B3932's DatadogPayload type and DataDogStatus enum are used but not defined here.
+  - B3933's flush_queue method and inherited CustomBatchLogger state are used but not implemented here.
+  - B192's safe_dumps function is called but not implemented here.
+  - B253's StandardLoggingPayloadSetup.get_error_information is called but not implemented here.
+  - B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key is called but not implemented here.
+  - B012's service dispatcher that calls these hooks and supplies ServiceLoggerPayload.
+pitfalls:
+  - "Proxy failure hook checks error_code after extracting it via B253; if error_code is absent or non-numeric (not all-digits string), status_code remains None."
+  - "User context fallback only extracts fields that exist on user_api_key_dict via hasattr checks; missing fields are omitted rather than set to None."
+  - "Proxy hook flushes if batch size >= self.batch_size; service hooks do NOT flush. Only periodic_flush drains service events."
+  - "Service success hook returns silently (without logging) if payload.service is not in DD_LOGGED_SUCCESS_SERVICE_TYPES; this is intentional filtering."
+  - "Service hooks merge event_metadata as a dict into the payload dict before JSON serialization; event_metadata is None-safe (or {} handles None). Proxy failure hook has no event_metadata parameter."
+  - "Exception logging in all hooks uses verbose_logger.exception, not raising; this preserves request processing even if logging fails."
+  - "Only proxy failure hook attaches trace context via B3930; service hooks enqueue to the queue without span attachment."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

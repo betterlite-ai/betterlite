@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Datadog LLM span assembly and intake delivery
 status: todo
 depends_on: [B3930, B3931, B3933, B3935, B3936, B3937, B002, B173, B192, B198, B256]
-file: null
+file: tasks/B3938-datadog-llm-delivery.yaml
 covers:
   - "litellm/integrations/datadog/datadog_llm_obs.py"
 parent: B113

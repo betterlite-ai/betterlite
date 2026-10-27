@@ -1,0 +1,88 @@
+id: B3064
+title: Filter and batch Vantage CSV uploads
+description: >-
+  Implement Vantage's supported-column filter and multipart delivery in `betterlite-logging::finops::vantage`.
+  Preserve the 10,000-row and 2 MiB per-batch boundaries, part filenames with batch offset and sub-batch indices,
+  warning-and-skip for oversized single rows, and continued batch attempts before rethrowing the first error.
+  Build the column filtering that silently drops unsupported columns from Vantage's list of 24, the multipart
+  upload handler that splits by row count first then by size, and the size-limited chunking that records the first
+  error and continues attempting uploads. The integration token and API key come from config; the base URL defaults
+  to https://api.vantage.sh. The destination receives CSV bytes (already serialized by B3061) with a time window
+  and filename, and uploads via POST with multipart/form-data encoding. Keep the physical-newline batching behavior
+  (header + newlines + data lines + trailing newline) distinct from CSV record parsing; a row spanning multiple lines
+  in the input stays one row in output. Column filtering normalizes line endings to CRLF throughout, while unfiltered
+  content preserves whatever line endings the upstream serializer produced.
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/vantage.rs
+    - crates/betterlite-logging/src/finops/vantage/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L60-L88
+    why: Strip unsupported columns from CSV, preserving supported column order and the csv.writer's CRLF line endings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L21-L57
+    why: Vantage limits (10,000 rows, 2 MiB), supported columns (24 values), and constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L94-L147
+    why: Constructor validation, deliver entry point, and limit check logic before batching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L149-L265
+    why: Upload, batching by row count then size, size-limited chunking, and first-error semantics.
+  - url: https://docs.vantage.sh/connecting_custom_providers
+    why: Vantage API endpoint and supported columns documentation.
+dod:
+  - text: Unsupported columns (not in the 24-column whitelist) are removed from CSV content before upload, with a debug log.
+    proof: [vantage-filter-tests]
+  - text: A single CSV that fits within both limits (10,000 rows and 2 MiB) uploads directly without batching.
+    proof: [vantage-filter-tests]
+  - text: Content exceeding the row or size limit is split into batches respecting both limits, with batch filenames including .partN indices.
+    proof: [vantage-filter-tests]
+  - text: When a row exceeds the 2 MiB limit even with just the header, it is skipped with a warning and not uploaded.
+    proof: [vantage-filter-tests]
+  - text: When a batch exceeds the 2 MiB limit, it is split further by size with filenames including both batch and sub-batch indices (.partN_M).
+    proof: [vantage-filter-tests]
+  - text: When a batch or sub-batch upload fails, the first error is recorded and all remaining batches are attempted before the first error is re-raised.
+    proof: [vantage-filter-tests]
+  - text: Empty content results in a debug log and returns without uploading.
+    proof: [vantage-filter-tests]
+  - text: Missing api_key or integration_token in config raises ValueError at initialization.
+    proof: [vantage-filter-tests]
+  - text: The base_url defaults to https://api.vantage.sh when not in config.
+    proof: [vantage-filter-tests]
+  - text: Multipart file uploads use POST with Authorization header and text/csv media type.
+    proof: [vantage-filter-tests]
+  - text: Physical newlines separate CSV rows in batches (header + newline + rows + trailing newline format).
+    proof: [vantage-filter-tests]
+  - text: Filtered CSV content carries CRLF line endings throughout (header and every row, single-shot or batched).
+    proof: [vantage-filter-tests]
+checks:
+  optional: []
+  commands:
+    - id: vantage-filter-tests
+      why: the required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^vantage_csv_upload_behaviors($|::)/)'
+oracle_cases: []
+deviations:
+  - what: Batching splits by row count (10,000) first, then by size (2 MiB), to match LiteLLM's order of checks.
+    why: Row-count batching happens before size-limiting in the source; reversing the order changes which rows end up in which batch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L138-L147
+  - what: Rows spanning multiple CSV lines are kept as single units (not split by line count within the row).
+    why: CSV parsing respects quoted fields and newlines within cells; the source batches by physical bytes and rows, not by newlines within quoted fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L82-L86
+  - what: "Filtered CSV content carries CRLF (0x0D 0x0A, \\r\\n) line endings end to end: every row (header and data) in single-shot or batched uploads ends with CRLF. Unfiltered content preserves whatever line ending the upstream serializer (B3061) produced."
+    why: "The source _strip_unsupported_columns calls csv.writer with the default dialect (lineterminator='\\r\\n'), producing bytes like 'ChargeCategory,BilledCost,ServiceName\\r\\nUSA,100.00,Compute\\r\\n'. The batching code in deliver/_upload_batched/_upload_size_limited splits only on b'\\n' (not b'\\r\\n'), leaving \\r attached to each line. Rejoining with b'\\n' reconstructs CRLF: split([...\\r\\n...]) yields [...\\r, ...\\r, ...], join([...\\r, ...\\r, ...]) with b'\\n' produces [...\\r\\n...\\r\\n...]. The filtered bytes sent to Vantage preserve CRLF throughout: 0x43 0x68 0x61 0x72 0x67 0x65 0x43 0x61 0x74 0x65 0x67 0x6f 0x72 0x79 0x2c 0x42 0x69 0x6c 0x6c 0x65 0x64 0x43 0x6f 0x73 0x74 0x2c 0x53 0x65 0x72 0x76 0x69 0x63 0x65 0x4e 0x61 0x6d 0x65 0x0d 0x0a 0x55 0x53 0x41 0x2c 0x31 0x30 0x30 0x2e 0x30 0x30 0x2c 0x43 0x6f 0x6d 0x70 0x75 0x74 0x65 0x0d 0x0a (header and row both end in 0x0d 0x0a). Unfiltered content (skipping _strip_unsupported_columns) passes B3061's serializer output as-is."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L80-L88,#L139,#L173,#L181,#L220,#L232,#L251
+out_of_scope:
+  - CSV record parsing and generation belong to B3061 (serialization).
+  - Request retry semantics and error handling belong to B173 (HTTP transport).
+  - Vantage configuration persistence and endpoint registration belong to B3075 and B3077.
+pitfalls:
+  - Column filtering uses CSV parsing (csv.reader) to respect quoted columns; a hand-written split on commas breaks quoted fields containing commas.
+  - The line split (b"\n") preserves empty lines between rows; the CSV writer adds its own newlines, so filtering must not double-escape or drop significant whitespace.
+  - Batch filenames (.partN, .partN_M) must be passed to the uploader unchanged so Vantage sees the structure of the upload.
+  - Size calculations must count header size in every chunk (header + newline) and line size (line + newline), not just the line bytes.
+  - Oversized single rows are skipped with a warning, not raised; error handling only applies to failed upload attempts, not row filtering.
+  - The first error from any batch attempt is re-raised after all batches finish, not on the first error.
+  - Filtering normalizes line endings to CRLF because csv.writer uses CRLF by default and split/rejoin on newline alone preserves the carriage return.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

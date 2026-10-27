@@ -2,8 +2,8 @@ id: B3035
 milestone: M4 keys, spend and management
 title: Per-request concurrency slots and release
 status: todo
-depends_on: [B393, B3031]
-file: null
+depends_on: [B393, B3031, B4293, B4294, B4331]
+file: tasks/B3035-rate-limit-concurrency.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072

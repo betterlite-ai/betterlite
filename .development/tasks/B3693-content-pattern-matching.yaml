@@ -1,0 +1,145 @@
+id: B3693
+title: Content pattern compilation and contextual span matching
+description: >-
+  Build pattern compilation for custom and prebuilt regex patterns, blocked-word file decoding
+  and contextual span matching with nearby keyword context. Preserve case-insensitive matching,
+  overlapping-span merging, wildcard keyword escaping (convert * to .? in regex), exact masking
+  tag format strings, and spelled-out digit conversion (zero/oh → 0, one → 1, etc.). Span detection
+  applies optional keyword-context rules: when a pattern has a keyword_pattern extra, a match
+  counts only if a keyword match appears within a bounded token gap; word-number sequences matching
+  the pattern are treated as additional matches when allow_word_numbers is true. Span merging
+  removes redundant overlaps before masking, and gap analysis rejects gaps containing digits
+  or more than one word between keyword and value spans. Write behavior rstest functions
+  pattern_matching_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names.
+scope:
+  paths:
+    - crates/betterlite/src/guardrails/pattern_matching.rs
+    - crates/betterlite/src/guardrails/pattern_matching/**
+    - crates/betterlite/fuzz/fuzz_targets/blocked_words_yaml.rs
+    - crates/betterlite/fuzz/corpus/blocked_words_yaml
+    - tools/oracle/cases/guardrails/pattern-matching/**
+    - tools/oracle/helpers/b3693.py
+    - tools/oracle/helpers/b3693/**
+    - tools/oracle/src/helpers/server/b3693.rs
+    - tools/oracle/src/helpers/server/b3693/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L75-L99
+    why: Pattern constants MAX_KEYWORD_VALUE_GAP_WORDS, GAP_WORD_TOKENIZER, SENTENCE_TERMINATORS, WORD_NUMBER_MAP and digit-sequence patterns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L340-L351
+    why: _normalize_patterns converts mixed list of dicts and models to ContentFilterPattern list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L353-L364
+    why: _normalize_blocked_words converts mixed list of dicts and models to BlockedWord list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L732-L770
+    why: _add_pattern compiles prebuilt patterns via get_compiled_pattern or custom regex, raises ValueError with exact messages for missing pattern_name/pattern and unknown pattern_type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L772-L778
+    why: _lookup_pattern_extra retrieves keyword_pattern and allow_word_numbers from PATTERN_EXTRA_CONFIG.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L780-L817
+    why: _load_blocked_words_file loads YAML with blocked_words list, validates keyword/action presence per entry with warn-and-skip behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L819-L852
+    why: _find_pattern_spans finds regex matches, applies keyword_regex filtering, converts word-number sequences to digits when allow_word_numbers is true, merges overlapping spans.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L854-L876
+    why: _match_near_keyword checks keyword-to-value distance; _gap_text_allowed rejects gaps with digits or more than MAX_KEYWORD_VALUE_GAP_WORDS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L878-L887
+    why: _gap_text_allowed analyzes text between spans to enforce word-gap rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L889-L904
+    why: _merge_spans sorts and merges overlapping match spans to prevent double-masking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L906-L919
+    why: _mask_spans applies redaction tags to matched spans left-to-right.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L921-L935
+    why: _convert_word_number_sequence converts zero/oh/one/two...nine sequences to digit strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L937-L956
+    why: _check_patterns iterates compiled patterns and returns first match; used by unit tests and _filter_single_text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1431-L1440
+    why: _keyword_to_regex_pattern escapes metacharacters via re.escape, replaces escaped \* with .? for single-character wildcards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1442-L1454
+    why: _mask_content formats redaction tags by pattern name (compatibility/test behavior).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L19-L88
+    why: get_compiled_pattern loads prebuilt patterns, PATTERN_EXTRA_CONFIG stores extra config, get_all_pattern_names lists available patterns.
+dod:
+- text: |-
+    Pattern compilation reads prebuilt patterns from B3691 catalog or accepts custom regex,
+    applies case-insensitive matching and keyword-context filtering when configured. Missing pattern_name
+    for prebuilt patterns raises ValueError with message 'pattern_name is required for prebuilt patterns',
+    missing pattern for regex patterns raises ValueError with message 'pattern is required for regex patterns',
+    and unknown pattern_type raises ValueError with message 'Unknown pattern_type: {pattern_type}'.
+  proof:
+    - pattern-matching-tests
+- text: Blocked-word YAML files with invalid per-word entries (missing keyword or action fields) log warnings
+    and skip those entries without failing the load.
+  proof:
+    - pattern-matching-tests
+- text: Blocked-word YAML files missing the blocked_words key raise ValueError with exact error message;
+    missing files raise FileNotFoundError.
+  proof:
+    - pattern-matching-tests
+- text: Overlapping pattern spans merge correctly before masking; no mask truncates or overlaps another.
+  proof:
+    - pattern-matching-tests
+- text: Spelled-out digit sequences (zero, oh, one, two...nine) separated by space or hyphen convert to digit strings
+    and match against regex patterns when allow_word_numbers is true.
+  proof:
+    - pattern-matching-tests
+- text: Gap analysis between keyword and value spans rejects gaps containing digits or more than one word (MAX_KEYWORD_VALUE_GAP_WORDS=1),
+    correctly allowing adjacent and single-space separators.
+  proof:
+    - pattern-matching-tests
+- text: Wildcard asterisks in keywords escape to re.escape, then translate to .? for single-character matching;
+    case-insensitive matching uses re.IGNORECASE.
+  proof:
+    - pattern-matching-tests
+- text: Blocked-word YAML corpus files exist, are committed, and replay without panic.
+  proof:
+    - blocked-words-yaml-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: pattern-matching-tests
+      why: the required pattern matching behavior tests fail or the filter selects no tests
+      run: |-
+        cargo nextest run --locked -p betterlite --no-tests=fail \
+          -E 'test(/::pattern_matching_behavior($|::)/)'
+    - id: blocked-words-yaml-corpus
+      why: the blocked words YAML fuzz target or committed corpus is missing, or corpus replay fails
+      run: |-
+        test -f crates/betterlite/fuzz/fuzz_targets/blocked_words_yaml.rs && \
+        test -n "$(ls -A crates/betterlite/fuzz/corpus/blocked_words_yaml)" && \
+        cargo nextest run --locked -p betterlite --no-tests=fail \
+          -E 'test(replays_the_blocked_words_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-add-prebuilt-valid.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-add-regex-valid.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-add-prebuilt-missing-name.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-add-regex-missing-pattern.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-add-invalid-type.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/blocked-words-valid.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/blocked-words-invalid-structure.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/blocked-words-missing-file.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-spans-overlapping.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-spans-with-keyword-context.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-spans-keyword-gap-allowed.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-spans-keyword-gap-disallowed.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/word-number-sequence-valid.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/word-number-sequence-disabled.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/keyword-pattern-escape.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/keyword-pattern-wildcard.yaml
+  - tools/oracle/cases/guardrails/pattern-matching/pattern-case-insensitive.yaml
+deviations: []
+out_of_scope:
+  - Category keyword scanning and conditional sentence matching (_check_category_keywords, _check_conditional_categories), handled by B3694.
+  - Phrase pattern matching (_check_phrase_patterns), handled by B3694.
+  - Pattern action execution (BLOCK vs MASK decisions and HTTP responses), handled by B3695.
+  - Final guardrail constructor, registration and initialization, handled by B105.
+  - Image processing, tool argument filtering and competitor intent policy, handled by B3699.
+pitfalls:
+  - Pattern name lookups into PATTERN_EXTRA_CONFIG use case-sensitive string keys matching pattern_name exactly; prebuilt patterns always load through get_compiled_pattern.
+  - Word-number conversion applies only when allow_word_numbers is true (per pattern in PATTERN_EXTRA_CONFIG); digits in gaps between keyword and value prevent matches.
+  - Overlapping span merging must preserve order after sorting; masking applies redaction tags left-to-right without re-parsing redacted text.
+  - Blocked-word YAML validation checks both the outer structure (blocked_words key) and per-entry presence (keyword/action); warnings on invalid entries do not stop the file load.
+  - Keyword-to-regex pattern calls re.escape first, then replaces the escaped wildcard \* with .? (single-character match, not zero-or-more).
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

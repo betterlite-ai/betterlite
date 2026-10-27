@@ -1,0 +1,102 @@
+id: B4730
+title: MCP temporary client execution and connection diagnostics
+description: >-
+  Build temporary-client execution with a deadline and user-friendly connection-error classification.
+  Implement `_execute_with_mcp_client`, which creates a temporary MCP client from a request, runs an
+  async operation within a timeout, and returns the result or a structured error response. Classify
+  connection failures into specific categories (unreachable server, malformed headers, protocol errors,
+  timeout, HTTP failures, network interruptions) with plain-language messages, returning an opaque
+  reference ID (UUID) for unknown failures. Extract OAuth credentials from request payloads and condition
+  static-preview-ID behavior on auth type: blank the server_id for auth types where credentials are
+  supplied in the request (api_key, bearer_token, basic, authorization, token) and also for auth types
+  None or MCPAuth.none; keep it for M2M and delegation modes so that saved server resolution does not
+  override the submitted config. Suppress M2M OAuth caller-authorization headers (do not forward the
+  incoming Authorization header when the server has client_id and client_secret). Preserve the one-shot
+  presented-token store for interactive authorization_code preview: a just-authorized token is held in
+  a temporary store, not persisted, so the preview uses it without touching the database. Never catch
+  KeyboardInterrupt, SystemExit or asyncio.CancelledError. The timeout bounds OAuth discovery, connect,
+  handshake and the operation combined; default timeout_seconds is 30.0 seconds (MCP_TOOL_LISTING_TIMEOUT,
+  env LITELLM_MCP_TOOL_LISTING_TIMEOUT) and request.timeout-is-None fallback is 60.0 seconds
+  (MCP_CLIENT_TIMEOUT, env LITELLM_MCP_CLIENT_TIMEOUT). When MCP protocol timeouts are involved,
+  report the effective timeout (the minimum of request.timeout and timeout_seconds) instead of the
+  timeout_seconds argument.
+scope:
+  paths:
+  - crates/betterlite-mcp/src/mcp_preview.rs
+  - crates/betterlite-mcp/src/mcp_preview/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L112-L213
+  why: The two connection-error-classification functions that walk exception trees and format messages.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1379-L1393
+  why: Credential extraction from request payloads.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1471-L1621
+  why: The main temporary-client execution function with deadline, preview-ID blanking, M2M suppression and presented-token handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L200-L204
+  why: MCP timeout constants (MCP_TOOL_LISTING_TIMEOUT=30.0s, MCP_CLIENT_TIMEOUT=60.0s) with env var overrides.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L154-L168
+  why: as_mcp_read_timeout function for MCP protocol timeout detection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py
+  why: MCPAuth enum values for auth-type matching.
+dod:
+- text: Connection errors are classified into specific categories with plain messages and no arbitrary upstream exception text.
+  proof:
+  - connection-error-classification
+- text: Unknown connection failures return a reference ID for manual investigation.
+  proof:
+  - connection-error-classification
+- text: Credentials are extracted from request.credentials (OAuth client_id, client_secret, scopes) or result in None values.
+  proof:
+  - preview-client-tests
+- text: Static-preview server_id is blank when credentials come from the request (STAGED_AUTH_VALUE_AUTH_TYPES or auth_type None/MCPAuth.none) and non-blank for resolved servers.
+  proof:
+  - preview-client-tests
+- text: M2M OAuth (client_id and client_secret) drops incoming Authorization headers so client_credentials flow works.
+  proof:
+  - preview-client-tests
+- text: Presented-token store holds a just-authorized token for interactive authorization_code preview without persistence.
+  proof:
+  - preview-client-tests
+- text: KeyboardInterrupt, SystemExit and CancelledError propagate without catching.
+  proof:
+  - preview-client-tests
+- text: Default timeout_seconds is 30.0 seconds (LITELLM_MCP_TOOL_LISTING_TIMEOUT env var override), request.timeout-is-None fallback is 60.0 seconds (LITELLM_MCP_CLIENT_TIMEOUT env var override).
+  proof:
+  - timeout-defaults
+- text: Timeout applies to OAuth discovery, client creation and operation combined; MCP read timeouts report effective timeout (minimum of request.timeout and timeout_seconds).
+  proof:
+  - preview-client-tests
+  - timeout-defaults
+checks:
+  optional: []
+  commands:
+  - id: connection-error-classification
+    why: Connection error messages are not classified, contain arbitrary exception text, or omit the reference ID for unknowns
+    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::(connection_error_message|known_connection_error_message)/)' && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::.*unknown.*connection/)'
+  - id: timeout-defaults
+    why: Default timeout_seconds is not 30.0, env var override LITELLM_MCP_TOOL_LISTING_TIMEOUT is not read, or request.timeout fallback is not 60.0
+    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::.*timeout.*defaults?/)'
+  - id: preview-client-tests
+    why: The preview client functions fail, do not exist, or do not handle auth_type None/MCPAuth.none blanking
+    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::/')
+oracle_cases: []
+deviations: []
+out_of_scope:
+- MCPClient creation and connection (B136).
+- OAuth token refresh and cache (B4715).
+- Actual tool execution and logging (B4728).
+- Request validation and payload normalization (B4716).
+- Credential inheritance from saved servers (B4717).
+- OpenAPI spec parsing and tool generation (B4683).
+pitfalls:
+- Never catch KeyboardInterrupt, SystemExit or asyncio.CancelledError; the try/except at the end must let them propagate.
+- The default timeout_seconds parameter is 30.0 (MCP_TOOL_LISTING_TIMEOUT, overridable via LITELLM_MCP_TOOL_LISTING_TIMEOUT env var); when request.timeout is None, the fallback is 60.0 (MCP_CLIENT_TIMEOUT, overridable via LITELLM_MCP_CLIENT_TIMEOUT env var).
+- The effective timeout for error messages uses the minimum of request.timeout and timeout_seconds when MCP protocol timeouts occur (detected via as_mcp_read_timeout), not the timeout_seconds argument alone.
+- Static preview-ID blanking applies to _STAGED_AUTH_VALUE_AUTH_TYPES (api_key, bearer_token, basic, authorization, token) and also when auth_type is None or MCPAuth.none; M2M and delegation modes keep server_id to preserve saved-server resolution.
+- For authorization_code OAuth, do not use the caller-override path; use the presented-token store to simulate a just-authorized token without persistence.
+- M2M servers with client_credentials flow must have oauth2_headers dropped so _create_mcp_client can auto-fetch a token; do not forward the caller's Authorization header.
+- Exception tree traversal must collect all causes (httpx, MCP, validation, network), not just the first; classify by exact exception type.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1
