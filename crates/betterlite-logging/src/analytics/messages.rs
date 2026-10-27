@@ -65,23 +65,23 @@ pub fn parse_tool_calls<Arguments>(calls: &[ToolCall<Arguments>]) -> Vec<ParsedC
 where
     Arguments: Clone,
 {
-    calls
-        .iter()
-        .filter_map(|call| {
-            let function = match &call.custom {
-                Some(custom) => Function {
-                    name: custom.name.clone(),
-                    arguments: custom.input.clone(),
-                },
-                None => call.function.clone()?,
-            };
-            Some(ParsedCall {
-                id: call.id.clone(),
-                kind: call.kind.clone(),
-                function,
-            })
-        })
-        .collect()
+    let mut parsed = Vec::new();
+    for call in calls {
+        let function = match (&call.custom, &call.function) {
+            (Some(custom), _) => Function {
+                name: custom.name.clone(),
+                arguments: custom.input.clone(),
+            },
+            (None, Some(function)) => function.clone(),
+            (None, None) => continue,
+        };
+        parsed.push(ParsedCall {
+            id: call.id.clone(),
+            kind: call.kind.clone(),
+            function,
+        });
+    }
+    parsed
 }
 
 pub fn parse_messages<Content, Arguments>(
