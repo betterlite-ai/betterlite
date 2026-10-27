@@ -68,13 +68,15 @@ impl TryFrom<ErrorInput> for BedrockError {
     type Error = HeaderError;
 
     fn try_from(input: ErrorInput) -> Result<Self, HeaderError> {
-        let (response, response_headers, response_body) = match input.response {
-            Some(reply) => (Some(reply.response), reply.headers, reply.body),
-            None => (
-                None,
-                synthesized_headers(input.headers.as_ref())?,
-                ResponseBody::Read(String::new()),
-            ),
+        let (response, response_headers, response_body) = if let Some(reply) = input.response {
+            (Some(reply.response), reply.headers, reply.body)
+        } else {
+            let headers = match &input.headers {
+                None => Vec::new(),
+                Some(ErrorHeaders::Http(pairs)) => pairs.clone(),
+                Some(ErrorHeaders::Mapping(entries)) => mapping_headers(entries)?,
+            };
+            (None, headers, ResponseBody::Read(String::new()))
         };
         // base.headers and base.response are replaced by the Bedrock views of the same inputs
         let parts = ProviderErrorParts {
@@ -104,16 +106,6 @@ fn text_headers(headers: &ErrorHeaders) -> Vec<(String, String)> {
                 | HeaderValue::Null => None,
             })
             .collect(),
-    }
-}
-
-fn synthesized_headers(
-    headers: Option<&ErrorHeaders>,
-) -> Result<Vec<(String, String)>, HeaderError> {
-    match headers {
-        None => Ok(Vec::new()),
-        Some(ErrorHeaders::Http(pairs)) => Ok(pairs.clone()),
-        Some(ErrorHeaders::Mapping(entries)) => mapping_headers(entries),
     }
 }
 

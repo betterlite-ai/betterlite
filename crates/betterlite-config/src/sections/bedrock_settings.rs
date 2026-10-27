@@ -3,7 +3,7 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::{resolve_secret, resolve_string};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 #[derive(Debug, Default, Deserialize)]
@@ -104,30 +104,21 @@ impl<L> Resolver<'_, L>
 where
     L: EnvironmentLookup,
 {
-    fn text(
+    fn value<T>(
         &self,
         value: Option<String>,
         key: &str,
         variable: &str,
-    ) -> Result<Option<String>, ConfigError> {
+    ) -> Result<Option<T>, ConfigError>
+    where
+        T: From<String>,
+    {
         let path = format!("model_list.{}.litellm_params.{key}", self.index);
-        value.map_or_else(
+        let text = value.map_or_else(
             || Ok(self.lookup.lookup(variable)),
             |text| resolve_string(text, &path, self.lookup).map(Some),
-        )
-    }
-
-    fn secret(
-        &self,
-        value: Option<String>,
-        key: &str,
-        variable: &str,
-    ) -> Result<Option<SecretString>, ConfigError> {
-        if value.is_none() {
-            return Ok(self.lookup.lookup(variable).map(SecretString::from));
-        }
-        let path = format!("model_list.{}.litellm_params.{key}", self.index);
-        resolve_secret(value, &path, self.lookup)
+        )?;
+        Ok(text.map(T::from))
     }
 }
 
@@ -137,32 +128,32 @@ where
 {
     let resolver = Resolver { index, lookup };
     Ok(AwsSettings {
-        access_key_id: resolver.secret(
+        access_key_id: resolver.value(
             raw.access_key_id,
             "aws_access_key_id",
             "AWS_ACCESS_KEY_ID",
         )?,
-        secret_access_key: resolver.secret(
+        secret_access_key: resolver.value(
             raw.secret_access_key,
             "aws_secret_access_key",
             "AWS_SECRET_ACCESS_KEY",
         )?,
-        session_token: resolver.secret(
+        session_token: resolver.value(
             raw.session_token,
             "aws_session_token",
             "AWS_SESSION_TOKEN",
         )?,
-        region_name: resolver.text(raw.region_name, "aws_region_name", "AWS_REGION_NAME")?,
-        session_name: resolver.text(raw.session_name, "aws_session_name", "AWS_SESSION_NAME")?,
-        profile_name: resolver.text(raw.profile_name, "aws_profile_name", "AWS_PROFILE_NAME")?,
-        role_name: resolver.text(raw.role_name, "aws_role_name", "AWS_ROLE_NAME")?,
-        web_identity_token: resolver.secret(
+        region_name: resolver.value(raw.region_name, "aws_region_name", "AWS_REGION_NAME")?,
+        session_name: resolver.value(raw.session_name, "aws_session_name", "AWS_SESSION_NAME")?,
+        profile_name: resolver.value(raw.profile_name, "aws_profile_name", "AWS_PROFILE_NAME")?,
+        role_name: resolver.value(raw.role_name, "aws_role_name", "AWS_ROLE_NAME")?,
+        web_identity_token: resolver.value(
             raw.web_identity_token,
             "aws_web_identity_token",
             "AWS_WEB_IDENTITY_TOKEN",
         )?,
-        sts_endpoint: resolver.text(raw.sts_endpoint, "aws_sts_endpoint", "AWS_STS_ENDPOINT")?,
-        external_id: resolver.text(raw.external_id, "aws_external_id", "AWS_EXTERNAL_ID")?,
+        sts_endpoint: resolver.value(raw.sts_endpoint, "aws_sts_endpoint", "AWS_STS_ENDPOINT")?,
+        external_id: resolver.value(raw.external_id, "aws_external_id", "AWS_EXTERNAL_ID")?,
         session_tags: raw.session_tags,
         role_arn: lookup.lookup("AWS_ROLE_ARN"),
         web_identity_token_file: lookup.lookup("AWS_WEB_IDENTITY_TOKEN_FILE"),
