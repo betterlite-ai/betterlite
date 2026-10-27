@@ -1,0 +1,10 @@
+kind: helper
+name: discriminator-removal
+call:
+  openapi_schema_transforms:
+    function: inline_request_body
+    schema: {type: object, discriminator: {propertyName: kind, mapping: {cat: '#/$defs/Cat'}}, $defs: {Cat: {type: object}}}
+    example: {}
+env: {}
+compare:
+  ignore: []

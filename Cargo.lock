@@ -650,6 +650,10 @@ dependencies = [
 [[package]]
 name = "betterlite-openapi"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-oracle"
@@ -670,6 +674,7 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-openapi",
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-rate-limit",

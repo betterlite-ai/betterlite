@@ -1,0 +1,10 @@
+kind: helper
+name: inline-depth-limit
+call:
+  openapi_schema_transforms:
+    function: inline_request_body
+    schema: {type: object, $defs: {Leaf: {type: string}}, properties: {value: {$ref: '#/$defs/Leaf'}}}
+    example: {value: ok}
+env: {}
+compare:
+  ignore: []

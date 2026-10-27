@@ -1,0 +1,11 @@
+kind: helper
+name: collision-different-shape
+call:
+  openapi_schema_transforms:
+    function: add_schema_to_components
+    openapi: {components: {schemas: {Message: {type: string}}}}
+    schema_name: Request
+    schema: {type: object, $defs: {Message: {type: integer}}}
+env: {}
+compare:
+  ignore: []

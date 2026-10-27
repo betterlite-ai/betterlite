@@ -1,0 +1,10 @@
+kind: helper
+name: schema-generation-fallback
+call:
+  openapi_schema_transforms:
+    function: inline_request_body
+    schema: null
+    example: {value: fallback}
+env: {}
+compare:
+  ignore: []
