@@ -19,6 +19,7 @@ pub struct Kwargs<Data> {
     pub cache_hit: Option<bool>,
     pub custom_llm_provider: Option<String>,
     pub litellm_params: ProviderParams,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub response_cost: Option<Decimal>,
     pub exception: Option<ExceptionInfo>,
     pub complete_streaming_response: Option<Response<Data>>,
@@ -39,7 +40,9 @@ pub struct Standard<Data> {
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     pub response: Option<Data>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub response_cost: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub saved_cache_cost: Option<Decimal>,
     pub request_tags: Vec<String>,
 }
@@ -62,7 +65,9 @@ pub enum Details<Data> {
         #[serde(rename = "mlflow.chat.tokenUsage")]
         usage: Usage,
         raw_llm_response: Option<Data>,
+        #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
         response_cost: Option<Decimal>,
+        #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
         saved_cache_cost: Option<Decimal>,
         request_tags: Vec<String>,
     },
@@ -70,6 +75,7 @@ pub enum Details<Data> {
         api_base: Option<String>,
         cache_hit: Option<bool>,
         custom_llm_provider: Option<String>,
+        #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
         response_cost: Option<Decimal>,
     },
 }

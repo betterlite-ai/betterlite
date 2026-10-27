@@ -461,6 +461,8 @@ fn fallback_attributes_preserve_kwargs_and_decimal_cost() {
     kwargs.response_cost = Some(rust_decimal::Decimal::new(123, 4));
     let attributes = kwargs.extract_attributes();
     assert_eq!(attributes.model.as_deref(), Some("model"));
+    let serialized = serde_json::to_string(&attributes).unwrap();
+    assert!(serialized.contains("\"response_cost\":0.0123"));
     assert!(
         matches!(attributes.details, Details::Fallback {api_base: Some(base), cache_hit: Some(false), custom_llm_provider: Some(provider), response_cost: Some(cost)} if base == "base" && provider == "provider" && cost == rust_decimal::Decimal::new(123, 4))
     );
