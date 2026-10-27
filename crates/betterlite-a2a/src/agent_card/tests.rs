@@ -4,7 +4,8 @@ use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
 use serde_json::{from_str, to_value};
 
-use super::{AgentCard, merge_agent_card, normalize_protocol_version, resolve_served_version};
+use super::merge::{merge_agent_card, normalize_protocol_version, resolve_served_version};
+use super::{AgentCard, ProtocolVersion};
 
 const PROXY_URL: &str = "https://proxy.example/a2a/agent-1";
 const PROXY_BASE: &str = "https://proxy.example";
@@ -27,23 +28,23 @@ fn merged(text: &str) -> AgentJson {
 }
 
 #[rstest]
-#[case("\"0.3\"", Some("0.3"))]
-#[case("\"1.0\"", Some("1.0"))]
-#[case("\"0.3.0-rc1+build.42\"", Some("0.3"))]
-#[case("\"1.0.1+build.42\"", Some("1.0"))]
-#[case("\"1.0\\n\"", Some("1.0"))]
+#[case("\"0.3\"", Some(ProtocolVersion::V0_3))]
+#[case("\"1.0\"", Some(ProtocolVersion::V1_0))]
+#[case("\"0.3.0-rc1+build.42\"", Some(ProtocolVersion::V0_3))]
+#[case("\"1.0.1+build.42\"", Some(ProtocolVersion::V1_0))]
+#[case("\"1.0\\n\"", Some(ProtocolVersion::V1_0))]
 #[case("\"1.0\\n\\n\"", None)]
-#[case("\"01.0\"", None)]
-#[case("\"1.0-rc1\"", None)]
-#[case("\"1.0.0-\"", None)]
-#[case("\"1.0.0+\"", None)]
-#[case("\"1.0.0-rc_1\"", None)]
-#[case("\"1.0.0+a+b\"", None)]
-#[case("\"1.0.x\"", None)]
-#[case("\"1.0.0-rc_1+build\"", None)]
-#[case("\"1.0.0-rc+bad_1\"", None)]
+#[case("\"01.0\"", None::<ProtocolVersion>)]
+#[case("\"1.0-rc1\"", None::<ProtocolVersion>)]
+#[case("\"1.0.0-\"", None::<ProtocolVersion>)]
+#[case("\"1.0.0+\"", None::<ProtocolVersion>)]
+#[case("\"1.0.0-rc_1\"", None::<ProtocolVersion>)]
+#[case("\"1.0.0+a+b\"", None::<ProtocolVersion>)]
+#[case("\"1.0.x\"", None::<ProtocolVersion>)]
+#[case("\"1.0.0-rc_1+build\"", None::<ProtocolVersion>)]
+#[case("\"1.0.0-rc+bad_1\"", None::<ProtocolVersion>)]
 #[case("1.0", None)]
-fn normalizes_versions(#[case] raw: &str, #[case] expected: Option<&str>) {
+fn normalizes_versions(#[case] raw: &str, #[case] expected: Option<ProtocolVersion>) {
     assert_eq!(normalize_protocol_version(&value(raw)), expected);
 }
 
@@ -51,9 +52,36 @@ fn normalizes_versions(#[case] raw: &str, #[case] expected: Option<&str>) {
 fn resolves_invalid_or_absent_versions_to_default() {
     assert_eq!(
         resolve_served_version(Some(&card(r#"{"protocolVersion":"bad"}"#))),
-        "1.0"
+        ProtocolVersion::V1_0
     );
-    assert_eq!(resolve_served_version(None), "1.0");
+    assert_eq!(resolve_served_version(None), ProtocolVersion::V1_0);
+}
+
+#[test]
+fn merge_preserves_explicit_nulls_in_cards_and_nested_records() {
+    let result = merged(
+        r#"{"name":null,"documentationUrl":null,"skills":[{"id":null,"name":"n"}],"provider":{"organization":null}}"#,
+    );
+    assert!(result.as_object().expect("object").contains_key("name"));
+    assert!(
+        result
+            .as_object()
+            .expect("object")
+            .contains_key("documentationUrl")
+    );
+    assert!(
+        result["skills"][0]
+            .as_object()
+            .expect("skill object")
+            .contains_key("id")
+    );
+    assert!(
+        result["provider"]
+            .as_object()
+            .expect("provider object")
+            .contains_key("organization")
+    );
+    assert_eq!(result["provider"]["organization"], AgentJson::Null);
 }
 
 #[test]
@@ -156,6 +184,6 @@ fn replays_protocol_version_fuzz_corpus() {
     let corpus = include_bytes!("../../fuzz/corpus/normalize_protocol_version/semver");
     assert_eq!(
         super::version_parser::normalize_version_bytes(corpus),
-        Some("0.3")
+        Some(ProtocolVersion::V0_3)
     );
 }

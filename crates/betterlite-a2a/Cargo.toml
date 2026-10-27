@@ -12,6 +12,7 @@ workspace = true
 betterlite-core = { path = "../betterlite-core" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.154"
+serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 
 [dev-dependencies]
 rstest = "=0.27.0"
