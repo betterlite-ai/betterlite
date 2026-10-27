@@ -673,9 +673,7 @@ fn concurrent_first_chunks_create_one_span() {
         })
         .take(8)
         .collect();
-        for thread in threads {
-            thread.join().unwrap();
-        }
+        assert!(threads.into_iter().all(|thread| thread.join().is_ok()));
     });
     let records = &state.lock().unwrap().records;
     assert_eq!(
