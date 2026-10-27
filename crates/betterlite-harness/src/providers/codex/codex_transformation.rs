@@ -3,6 +3,10 @@ use crate::types::JsonObject;
 use serde_json::Value;
 
 #[test]
+#[expect(
+    clippy::disallowed_types,
+    reason = "The test exercises the untyped JSON configuration boundary"
+)]
 fn config_translation_covers_toml_and_managed_keys() {
     assert_eq!(toml_key("plain-key"), "plain-key");
     assert_eq!(toml_key("a key"), "\"a key\"");
