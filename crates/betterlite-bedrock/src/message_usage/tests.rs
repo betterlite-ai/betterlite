@@ -20,6 +20,7 @@ use super::{StreamItem, promote_message_usage};
 #[case::falsey_metrics(r#"[{"type":"a","amazon-bedrock-invocationMetrics":null},{"type":"b","amazon-bedrock-invocationMetrics":0.0},{"type":"c","amazon-bedrock-invocationMetrics":""},{"type":"d","amazon-bedrock-invocationMetrics":[ ]},{"type":"e","amazon-bedrock-invocationMetrics":false,"usage":1}]"#, r#"[{"type":"a"},{"type":"b"},{"type":"c"},{"type":"d"},{"type":"e","usage":1}]"#)]
 #[case::truthy_metrics(r#"[{"type":"a","amazon-bedrock-invocationMetrics":"x"},{"type":"b","amazon-bedrock-invocationMetrics":-2,"usage":"y"}]"#, r#"[{"type":"a","usage":{}},{"type":"b","usage":{}}]"#)]
 #[case::escaped_type(r#"[{"type":"message\u005fdelta"},{"type":"message_stop","usage":{"input_tokens":1}}]"#, r#"[{"type":"message\u005fdelta","usage":{"input_tokens":1}},{"type":"message_stop","usage":{"input_tokens":1}}]"#)]
+#[case::non_string_type(r#"[{"type":1},{"type":null},{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":1}}]"#, r#"[{"type":1},{"type":null},{"type":"message_delta","usage":{"input_tokens":1}},{"type":"message_stop","usage":{"input_tokens":1}}]"#)]
 fn message_usage_cases(#[case] input: &str, #[case] expected: &str) {
     let events: Vec<StreamItem> = serde_json::from_str(input).unwrap();
     let promoted = promote_message_usage(events).unwrap();
