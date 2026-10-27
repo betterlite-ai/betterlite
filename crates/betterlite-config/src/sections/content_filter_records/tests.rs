@@ -39,11 +39,13 @@ fn config_records_load_litellm_fields() {
     assert!(minimal.enabled);
     assert_eq!(minimal.severity_threshold, ContentFilterSeverity::Medium);
     assert!(minimal.category_file.is_none());
-    assert!(serde_json::from_str::<ContentFilterCategoryConfig>(r#"{"action":"BLOCK"}"#).is_err());
-    assert!(
+    let no_category =
+        serde_json::from_str::<ContentFilterCategoryConfig>(r#"{"action":"BLOCK"}"#).unwrap_err();
+    assert!(no_category.to_string().contains("missing field `category`"));
+    let no_action =
         serde_json::from_str::<ContentFilterCategoryConfig>(r#"{"category":"bias_gender"}"#)
-            .is_err()
-    );
+            .unwrap_err();
+    assert!(no_action.to_string().contains("missing field `action`"));
 
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
     assert_eq!(code.action, BlockCodeAction::Mask);
