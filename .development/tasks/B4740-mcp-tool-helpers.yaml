@@ -39,7 +39,7 @@ scope:
     - crates/betterlite-mcp/src/tools/**
     - tools/oracle/cases/helpers/mcp-pagination/**
     - tools/oracle/cases/helpers/mcp-tool-calls/**
-    - tools/oracle/fuzz/corpus/helper_case/**
+    - "tools/oracle/fuzz/corpus/helper_case/b4740-*"
     - crates/betterlite-config/src/sections/mcp_tool_helpers.rs
     - crates/betterlite-config/src/sections/mcp_tool_helpers/**
     - tools/oracle/helpers/b4740.py
@@ -87,8 +87,8 @@ checks:
     - id: oracle-converters
       why: schema converters do not match the pinned LiteLLM implementation
       run: >-
-        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-        grep -rlq 'mcp_tool_schema' tools/oracle/fuzz/corpus/helper_case &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b4740-*")" &&
+        grep -lq 'mcp_tool_schema' tools/oracle/fuzz/corpus/helper_case/b4740-* &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(^oracle_helpers::mcp::schema.*)'
     - id: helper-python
       why: helper converters or adapters fail type checks
@@ -164,6 +164,7 @@ out_of_scope:
   - HTTP client construction and credential headers. B4741 handles the client settings and prepared auth; B4744 handles the session and transport lifecycle.
   - MCP SDK invocation itself; the helpers consume an already-open ClientSession from the calling code.
 pitfalls:
+  - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b4740-<case>.yaml. The rest of that folder belongs to other tasks.'
   - >-
       The effective_deadline for list_tools_with_pagination is max(client_timeout, listing_timeout),
       not listing_timeout alone. This preserves the guarantee that a single page slower than listing_timeout

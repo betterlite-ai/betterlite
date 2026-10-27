@@ -88,7 +88,6 @@ scope:
   - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-bedrock/fixtures/whitelisted_bedrock_models.txt
-  - deny.toml
   - crates/betterlite-provider/src/bedrock_dispatch_contract.rs
   - crates/betterlite-provider/src/bedrock_dispatch_contract/**
   - tools/oracle/Cargo.toml

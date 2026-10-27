@@ -36,7 +36,6 @@ scope:
   paths:
     - Cargo.toml
     - Cargo.lock
-    - deny.toml
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-auth/src/saml_provider.rs
     - crates/betterlite-auth/src/saml_provider/**

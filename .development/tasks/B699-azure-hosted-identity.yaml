@@ -112,7 +112,6 @@ scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-azure/src/azure_hosted_identity.rs
   - crates/betterlite-azure/src/azure_hosted_identity/**
   - tools/oracle/Cargo.toml

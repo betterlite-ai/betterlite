@@ -18,7 +18,6 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - deny.toml
     - crates/betterlite-auth/**
     - tools/oracle/cases/auth/**
     - tools/oracle/helpers/b3008.py
