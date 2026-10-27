@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP toolset records and persistence
 status: todo
 depends_on: [B726]
-file: null
+file: tasks/B4681-mcp-toolset-storage.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/toolset_db.py"
   - "litellm/types/mcp_server/mcp_toolset.py"

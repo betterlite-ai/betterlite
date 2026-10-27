@@ -1,0 +1,21 @@
+kind: helper
+name: fixed-point-rename
+call:
+  openapi_schema_transforms:
+    function: add_schema_to_components
+    schema_name: Chat
+    openapi:
+      components:
+        schemas:
+          Outer: {"$ref": "#/components/schemas/Inner"}
+          Inner: {properties: {kept: {}}}
+          List: {items: {"$ref": "#/components/schemas/Outer"}}
+    schema:
+      "$ref": "#/$defs/List"
+      "$defs":
+        List: {items: {"$ref": "#/$defs/Outer"}}
+        Outer: {"$ref": "#/$defs/Inner"}
+        Inner: {properties: {changed: {}}}
+env: {}
+compare:
+  ignore: []

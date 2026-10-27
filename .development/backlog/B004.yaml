@@ -1,7 +1,7 @@
 id: B004
 milestone: M1 openai data plane
 title: OpenAI chat completions without streaming
-status: todo
+status: done
 depends_on: [B003, B668]
 file: tasks/B004-openai-chat.yaml
 covers:
@@ -15,7 +15,7 @@ covers:
   - "litellm/llms/openai/openai.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 239

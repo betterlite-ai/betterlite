@@ -1,0 +1,14 @@
+kind: helper
+name: request-schema-generation-failure
+call:
+  openapi_schema_transforms:
+    function: add_request_schema
+    schema_name: ResponsesAPIRequestParams
+    schema: null
+    paths: [/v1/responses]
+    openapi:
+      paths:
+        /v1/responses: {post: {parameters: [{name: model, in: query}]}}
+env: {}
+compare:
+  ignore: []

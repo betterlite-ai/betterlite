@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Guardrail provider options and translation contracts
 status: todo
 depends_on: [B3660, B206]
-file: null
+file: tasks/B3661-guardrail-translation-contracts.yaml
 covers:
   - "litellm/types/guardrails.py"
   - "litellm/llms/base_llm/guardrail_translation/base_translation.py"

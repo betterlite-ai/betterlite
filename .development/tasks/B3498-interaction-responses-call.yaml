@@ -1,0 +1,108 @@
+id: B3498
+title: Execute Responses compatibility and synthesize interaction events
+description: >-
+  Build `betterlite-core::api::responses_handler` to invoke the existing Responses
+  operation and emit the ordered Interactions API event sequence to the caller.
+  The handler calls litellm.responses() or litellm.aresponses() with the request
+  prepared by B3497's transform functions, then wraps the streaming iterator to
+  emit interaction.created, step.start, step.delta events for each chunk, step.stop
+  when content ends, and interaction.completed at the terminal. Accumulate full
+  text across chunks and synthesize the terminal completion event if the upstream
+  stream ends without an explicit completion marker. Preserve the interaction ID
+  across all events for caller correlation, using a stable fallback when the ID
+  comes from a delta and later events use a different source. The handler returns
+  either a complete InteractionsAPIResponse (non-streaming) or an iterator of
+  InteractionsAPIStreamingResponse, with both sync and async entry points.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/responses_handler.rs
+    - crates/betterlite-core/src/api/responses_handler/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/handler.py#L25-L144
+    why: Handler class with sync and async entry points, request transformation and response dispatch
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L28-L73
+    why: Streaming iterator constructor, state initialization and field documentation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L78-L120
+    why: Five event builder methods for interaction.created, step.start, step.delta, step.stop and interaction.completed
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L126-L189
+    why: _events_for_chunk processes per-chunk event synthesis from text delta, response.created, response.in_progress and response.completed upstream events
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L191-L209
+    why: _build_terminal_events_on_eof synthesizes step.stop and interaction.completed when stream ends without explicit completion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L215-L265
+    why: Sync (__iter__/__next__) and async (__aiter__/__anext__) iterator protocols with event queue drain logic
+
+dod:
+  - text: "interactions_api_handler accepts model, input, optional_params and optional custom_llm_provider, builds a Responses API request dict with B3497's transform_interactions_request_to_responses_request, calls the Responses handler (origin unresolved), and dispatches to async or non-streaming path based on _is_async and response type."
+    proof: [responses-handler-tests]
+  - text: "async_interactions_api_handler accepts a pre-built responses_request dict, calls litellm.aresponses() (origin unresolved), detects streaming responses, wraps them in the streaming iterator, and transforms non-streaming ResponsesAPIResponse to InteractionsAPIResponse via B3497."
+    proof: [responses-handler-tests]
+  - text: "Non-streaming responses dispatch through B3497's transform_responses_response_to_interactions_response and return an InteractionsAPIResponse with no iterator."
+    proof: [responses-handler-tests]
+  - text: "Streaming iterator __init__ initializes request_input, optional_params, model, litellm_metadata, state flags (finished, sent_interaction_start, sent_content_start, _sent_completion_event) and the _pending_events deque for buffering multi-event chunks."
+    proof: [responses-handler-tests]
+  - text: "_build_interaction_start_event returns a StreamingResponse with event_type interaction.created, the given interaction_id, object literal 'interaction', status in_progress and model."
+    proof: [responses-handler-tests]
+  - text: "_build_content_start_event returns a StreamingResponse with event_type step.start, index 0 and step with type model_output and empty content array."
+    proof: [responses-handler-tests]
+  - text: "_build_text_delta_event returns a StreamingResponse with event_type step.delta, index 0 and delta with type text and the given text string."
+    proof: [responses-handler-tests]
+  - text: "_build_content_stop_event returns a StreamingResponse with event_type step.stop and index 0, with no other fields."
+    proof: [responses-handler-tests]
+  - text: "_build_completion_event returns a StreamingResponse with event_type interaction.completed, the given interaction_id, object literal 'interaction', status completed, model and steps containing one model_output step with the full accumulated text."
+    proof: [responses-handler-tests]
+  - text: "_events_for_chunk returns empty list for falsy chunks; on OutputTextDeltaEvent extracts delta_text and item_id, accumulates text, synthesizes missing interaction.created and step.start events, appends delta event and returns list; on ResponseCreatedEvent or ResponseInProgressEvent synthesizes interaction.created if not sent, resolves _interaction_id and returns list; on ResponseCompletedEvent synthesizes step.stop (if content started), appends completion event, sets _sent_completion_event and finished flags and returns list."
+    proof: [responses-handler-tests]
+  - text: "ID fallback: when OutputTextDeltaEvent provides item_id, use it; fallback to interaction_{id(self)} if missing. Preserve _interaction_id once set so terminal events use the same ID as start events for correlation."
+    proof: [responses-handler-tests]
+  - text: "Text accumulation in collected_text appends delta_text from every OutputTextDeltaEvent chunk; empty string default."
+    proof: [responses-handler-tests]
+  - text: "_build_terminal_events_on_eof returns empty list if _sent_completion_event already; otherwise synthesizes step.stop (if sent_content_start is true), builds completion event with fallback ID (either _interaction_id or id(self) hash), sets _sent_completion_event and returns list."
+    proof: [responses-handler-tests]
+  - text: "__iter__ and __next__ use deque drain to return pending events before fetching next chunk, call _events_for_chunk to build event list, extend _pending_events, and raise StopIteration after flushing _build_terminal_events_on_eof on upstream StopIteration."
+    proof: [responses-handler-tests]
+  - text: "__aiter__ and __anext__ follow sync logic but with async iteration (await __anext__) and raise StopAsyncIteration instead of StopIteration."
+    proof: [responses-handler-tests]
+  - text: "Streaming detection: isinstance(responses_response, BaseResponsesAPIStreamingIterator) routing to the streaming wrapper."
+    proof: [responses-handler-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: responses-handler-tests
+      why: responses handler and streaming iterator tests are missing, do not run, or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_handler::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "The Responses operation is called through unresolved dynamic dispatch (vars(litellm)[\"responses\"] and vars(litellm)[\"aresponses\"]) rather than a direct import, since B932 cannot be a direct prerequisite while the reverse umbrella dependency exists."
+    why: "This preserves LiteLLM's own dynamic lookup and keeps the circular dependency in the outline until the architect resolves it by restructuring the dependencies."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/handler.py#L81-L83
+  - what: "ID fallback uses object memory address (id(self) in Python) for stable correlation when chunks do not carry an explicit ID; Rust uses a Uuid or counter to ensure stability across event sequences."
+    why: "Memory addresses are non-deterministic and unsafe to rely on; Rust generates a stable identifier once per iterator instance to preserve event correlation in tests and logs."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L144
+
+out_of_scope:
+  - "_transform_responses_chunk_to_interactions_chunk (streaming_iterator.py L272-289) has no caller at the pin and is not implemented; only tests call it."
+  - The Responses API operation itself (owned by B932, unresolved).
+  - Interaction request preparation (owned by B3497).
+  - Interaction response transformation from complete Responses responses (owned by B3497).
+  - Interactions API response type construction (owned by B3481).
+  - HTTP routing and endpoint registration (owned by B3507 for the /interactions route).
+
+pitfalls:
+  - "Event buffering: a single upstream chunk may produce multiple downstream Interactions API events (e.g. a first text delta emits interaction.created + step.start + step.delta). Store them in _pending_events deque and drain before requesting the next chunk, not emitting them one at a time without queueing."
+  - "ID correlation: _interaction_id is set once by the first event carrying an ID (from item_id on a delta or response.id on response.created) and reused in all subsequent events to keep them correlated, including the fallback ID on EOF. If later chunks carry a different ID source, prefer the stored ID for consistency."
+  - "EOF synthesis: stream ends when next() or __anext__() raises StopIteration/StopAsyncIteration. At that point, _build_terminal_events_on_eof() must emit step.stop (if step.start was sent) and interaction.completed (if any content was seen or interaction.created was sent), using the stored _interaction_id or a fallback. Do not emit terminal events twice."
+  - "Text accumulation: collected_text appends delta_text to a string across all chunks; it is not overwritten or truncated. The final completion event contains the full accumulated text."
+  - "Falsy chunks: _events_for_chunk returns [] for empty/None chunks without raising or trying to process them."
+  - "Streaming detection: a BaseResponsesAPIStreamingIterator response triggers wrapping; a ResponsesAPIResponse (non-streaming) is transformed directly and returned as a single response, never wrapped in an iterator."
+  - "Async/sync branching: _is_async=true in the handler calls async_interactions_api_handler and awaits it. The sync path calls litellm.responses() directly and does not await. Both paths wrap streaming responses but non-streaming responses branch based on the input request."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

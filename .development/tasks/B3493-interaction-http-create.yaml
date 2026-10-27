@@ -1,0 +1,89 @@
+id: B3493
+title: Send interaction creation requests and open streams
+description: >-
+  Build the interaction creation HTTP handlers in crates/betterlite-http with two modules: betterlite_http::interactions::create for POST requests and betterlite_http::interactions::streaming for streaming iterator factories.
+  The create module implements sync and async creation methods that validate environment headers, construct the POST URL via get_complete_url, build request bodies via transform_request, apply extra_body overlays, log pre-call with input as the logged input, POST the request with timeout or the fallback from litellm.request_timeout (default 6000 seconds), handle errors via _BaseHTTPHandler._handle_error, and transform responses via transform_response. Stream requests return a streaming iterator immediately after the POST succeeds; non-streaming requests await and return the full response.
+  The streaming module exports two factory functions that construct streaming iterators: create_sync_iterator accepts response, model, logging_obj and interactions_api_config, returning SyncInteractionsAPIStreamingIterator; create_async_iterator accepts the same arguments and returns AsyncInteractionsAPIStreamingIterator. These factories pass constructor arguments directly without transformation.
+  This task completes the interaction HTTP foundation (B3492 owns retrieval, B3494 owns deletion/cancellation) and supplies the POST transport for public creation (B3495 retrieves, B3499 creates).
+scope:
+  paths:
+    - crates/betterlite-http/src/interactions/create.rs
+    - crates/betterlite-http/src/interactions/streaming.rs
+    - crates/betterlite-http/src/interactions/create/**
+    - crates/betterlite-http/src/interactions/streaming/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L89-L202
+    why: The create_interaction method that validates environment, constructs URL, transforms request, overlays extra_body, logs pre-call, sends POST and returns response or streaming iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L204-L297
+    why: The async_create_interaction method that mirrors the sync flow for asynchronous creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L299-L316
+    why: The _create_sync_streaming_iterator factory method that constructs SyncInteractionsAPIStreamingIterator by passing response, model, config and logging_obj directly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L318-L335
+    why: The _create_async_streaming_iterator factory method that constructs InteractionsAPIStreamingIterator by passing response, model, config and logging_obj directly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L561-L577
+    why: The DEFAULT_REQUEST_TIMEOUT_SECONDS constant defined at line 568 as 6000.0, and request_timeout at line 576 which uses this as the fallback when REQUEST_TIMEOUT environment variable is unset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L608-L700
+    why: AsyncHTTPHandler class definition and core methods for asynchronous HTTP operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1376-L1470
+    why: HTTPHandler class definition and core methods for synchronous HTTP operations.
+dod:
+  - text: The create_interaction method validates environment, constructs URL via get_complete_url, transforms request via transform_request, overlays extra_body, logs pre-call and sends a POST request.
+    proof: [create-interaction-tests]
+  - text: The create_interaction method returns a streaming iterator immediately when stream=true, or a transformed response when stream=false.
+    proof: [create-interaction-tests]
+  - text: The async_create_interaction method implements the same flow asynchronously without requiring a _is_async dispatcher argument.
+    proof: [async-create-interaction-tests]
+  - text: Both create and async_create methods preserve default timeout fallback using request_timeout (default 6000 seconds) when timeout is not supplied.
+    proof: [create-interaction-tests, async-create-interaction-tests]
+  - text: Both methods overlay extra_body onto the transformed request, allowing caller-supplied fields to override defaults.
+    proof: [extra-body-tests]
+  - text: Both methods log pre-call with input and additional_args containing complete_input_dict, api_base and headers.
+    proof: [create-interaction-tests, async-create-interaction-tests]
+  - text: The create_sync_iterator factory constructs SyncInteractionsAPIStreamingIterator by passing response, model, logging_obj and interactions_api_config directly.
+    proof: [streaming-iterator-tests]
+  - text: The create_async_iterator factory constructs InteractionsAPIStreamingIterator by passing response, model, logging_obj and interactions_api_config directly.
+    proof: [streaming-iterator-tests]
+  - text: HTTP errors from POST are converted via _handle_error and propagated; response transformation happens outside the error handler for non-streaming responses.
+    proof: [create-interaction-tests]
+checks:
+  optional: []
+  commands:
+    - id: create-interaction-tests
+      why: create_interaction does not validate environment, construct URLs, transform requests, overlay extra_body, log pre-call, send POST requests, handle timeouts, return streaming iterators or transform responses correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::create::/) and not test(/replays/)'
+    - id: async-create-interaction-tests
+      why: async_create_interaction does not implement the same flow asynchronously or does not handle streaming correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::create::/) and not test(/replays/)'
+    - id: extra-body-tests
+      why: extra_body entries do not override transformed request fields or are not handled correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::create::/) and not test(/replays/)'
+    - id: streaming-iterator-tests
+      why: create_sync_iterator or create_async_iterator do not construct iterators with the correct arguments
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::streaming::/) and not test(/replays/)'
+oracle_cases: []
+deviations:
+  - what: POST requests use timeout if supplied, else fallback to litellm.request_timeout (default 6000 seconds).
+    why: The LiteLLM source code at lines 179 and 193 uses `timeout or request_timeout` to select the deadline, preserving the sentinel default for long-running surfaces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L179
+  - what: Response transformation (transform_response) happens outside the HTTP error catch, so a transformation error does not trigger error mapping.
+    why: The LiteLLM source code at lines 198-202 and 293-297 calls transform_response after the exception handler closes, preserving provider-specific transformation semantics outside error conversion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L198-L202
+  - what: Streaming iterators are returned immediately when stream=True without awaiting the response body or testing it for errors until iteration begins.
+    why: The LiteLLM source code at lines 174-187 (sync) and 269-282 (async) construct and return the iterator while the response is still open, delegating validation to the first iteration step.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L174-L187
+out_of_scope:
+  - Provider contract methods (validate_environment, get_complete_url, transform_request, transform_response, get_error_class). These are owned by B3490 (contract definition) and B1369/B1370 (provider implementations).
+  - Streaming iterator construction and iteration logic. B3491 owns the streaming iterator classes and their SSE parsing.
+  - HTTP client factories and error handling infrastructure. B3492 owns _BaseHTTPHandler and its methods.
+  - Deletion and cancellation operations. B3494 owns DELETE and cancel POST transports.
+pitfalls:
+  - "The timeout parameter is always resolved at the create_interaction call site; when it is None, the fallback to litellm.request_timeout (default 6000 seconds) happens at call time, not in the HTTP module."
+  - "Response transformation is outside the HTTP error catch block, so a transformation error propagates as-is and does not go through _BaseHTTPHandler._handle_error."
+  - "When stream=True, create_interaction returns the iterator without consuming the response body; the iterator's first iteration step will fail if the response is an HTTP error."
+  - "The pre_call logging uses input as the main logged input and passes complete_input_dict (after extra_body overlay is applied) in additional_args, not in the request parameter."
+  - "The create_sync_iterator and create_async_iterator factories are thin wrappers that pass arguments directly to the streaming iterator constructors without transformation."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,147 @@
+id: B3519
+title: Sandbox tool registry and public lifecycle dispatch
+description: >-
+  Build the configured sandbox tool registry and three live public lifecycle entrypoints
+  over the concrete adapters (E2B from B3516 and OpenSandbox from B3518) in betterlite-core.
+  Preserve warning-and-skip behavior for malformed registry entries, last-entry-wins name
+  replacement, registry replacement semantics, internal-kwarg filtering and per-operation
+  logging through Logging.update_from_kwargs with operation-specific model names. Registry
+  entries map a configured name to a provider/api_key/api_base triple; credentials prefixed
+  with os.environ/ are resolved through get_secret_str. The three public operations
+  (acreate_sandbox, arun_code, adelete_sandbox) are @client-decorated so logging/tracing
+  behavior matches the existing call pipeline. Each operation accepts a provider string,
+  resolves its concrete adapter through the factory, and forwards prepared parameters.
+  The configuration loads sandbox_tools from the proxy config section; add config-loader
+  tests and fuzz the registry entry structure.
+scope:
+  paths:
+  - crates/betterlite-core/src/skills/sandbox.rs
+  - crates/betterlite-core/src/skills/sandbox/**
+  - crates/betterlite-models/src/sandbox_dispatch.rs
+  - tools/oracle/cases/sandbox/**
+  - crates/betterlite-config/src/sections/sandbox_dispatch.rs
+  - crates/betterlite-config/src/sections/sandbox_dispatch/**
+  - tools/oracle/helpers/b3519.py
+  - tools/oracle/helpers/b3519/**
+  - tools/oracle/src/helpers/core_ops/b3519.rs
+  - tools/oracle/src/helpers/core_ops/b3519/**
+  - crates/betterlite-models/src/sandbox_dispatch/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L15-L22
+  why: Secret value resolution for os.environ/ prefixed credentials.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L25-L46
+  why: Registry iteration with warning-and-skip for malformed entries.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L49-L55
+  why: Registry registration and lookup operations.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L32-L61
+  why: Internal kwargs declaration (litellm_logging_obj, litellm_call_id, litellm_trace_id, litellm_metadata), config getter, kwarg filtering, and per-operation logging.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L64-L116
+  why: Three public lifecycle operations with @client decoration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9918-L9934
+  why: Provider configuration factory returning concrete E2B or OpenSandbox adapters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6946-L6949
+  why: Registry initialization from proxy config during startup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L194-L197
+  why: Tool resolution by name during request interception.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L745-L779
+  why: Calls to three public lifecycle operations through resolved tool parameters.
+dod:
+- text: >-
+    Registry accepts configured sandbox_tools list, skips malformed entries with warnings,
+    and replaces previous registry on every register_sandbox_tools call.
+  proof:
+  - sandbox-registry-tests
+  - config-sandbox-loader
+- text: >-
+    All three public lifecycle operations forward to concrete adapters, accept optional
+    api_key/api_base overrides, filter internal kwargs, and invoke logging with
+    operation-specific model names.
+  proof:
+  - sandbox-lifecycle-tests
+  - oracle
+- text: >-
+    Secret resolution for os.environ/ prefix occurs during registry load; unsupported
+    prefix values remain as strings, and missing environment variables resolve to None.
+  proof:
+  - sandbox-registry-tests
+- text: >-
+    Calling acreate_sandbox, arun_code, or adelete_sandbox with an unsupported or unregistered
+    provider string (not E2B or OpenSandbox) raises ValueError with a message naming the provider.
+  proof:
+  - sandbox-provider-error
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: sandbox-registry-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^sandbox_registry::/) -
+      test(/replays_the_/)'
+  - id: sandbox-lifecycle-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^sandbox_dispatch::/) -
+      test(/replays_the_/)'
+  - id: config-sandbox-loader
+    why: the configured sandbox_tools section is not accepted
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::sandbox_dispatch::/) -
+      test(/replays_the_/)'
+  - id: sandbox-provider-error
+    why: unsupported provider strings do not raise ValueError or the test is missing
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^sandbox_dispatch::.*unsupported_provider/)'
+oracle_cases:
+- tools/oracle/cases/sandbox/create-e2b.yaml
+- tools/oracle/cases/sandbox/create-opensandbox.yaml
+- tools/oracle/cases/sandbox/run-code.yaml
+- tools/oracle/cases/sandbox/delete-basic.yaml
+- tools/oracle/cases/sandbox/malformed-registry.yaml
+- tools/oracle/cases/sandbox/secret-resolution.yaml
+- tools/oracle/cases/sandbox/unsupported-provider.yaml
+deviations:
+- what: >-
+    acode_interpreter_tool convenience wrapper is not implemented; callers split into
+    separate create/run/delete calls.
+  why: >-
+    No production caller at the pin; integration tests call operations separately, and
+    the interception handler composes them explicitly.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L119-L146
+- what: >-
+    clear_sandbox_tools is not exported; registry replacement is the only production
+    mechanism.
+  why: >-
+    No production caller at the pin; only test fixtures invoke it, and register_sandbox_tools([])
+    replaces the registry identically.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L58-L59
+out_of_scope:
+- >-
+  The __getattr__ lazy re-export of litellm.harness sandbox (local, docker, etc) is not
+  implemented; harness sandboxes live in betterlite-harness and are imported directly.
+- >-
+  E2B and OpenSandbox concrete implementations are provided by B3516 and B3518; this task
+  only calls their acreate_sandbox/arun_code/adelete_sandbox methods.
+- >-
+  Secret manager dispatch for non-os.environ/ prefixes is deferred to a named B129 leaf;
+  this task resolves only the os.environ/ case directly.
+pitfalls:
+- >-
+  Warning-and-skip for malformed entries must occur during registry loading, not on lookup;
+  missing provider/name fields are logged but not fatal.
+- >-
+  Internal kwargs (litellm_logging_obj, litellm_call_id, litellm_trace_id, litellm_metadata)
+  must be filtered before forwarding to adapter methods, or they will pollute provider request bodies.
+- >-
+  The get_secret_str call in _resolve_secret_value applies only to values starting with
+  os.environ/; other strings pass through unchanged and other prefixes fail at manager
+  dispatch time.
+- >-
+  Per-operation logging must use the operation name (create_sandbox, run_code, delete_sandbox)
+  not the task id, and must be called after config resolution but before forwarding to
+  the adapter.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

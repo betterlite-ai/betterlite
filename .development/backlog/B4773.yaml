@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Authoritative agent identity and verified human storage
 status: todo
 depends_on: [B4770, B4772, B700, B726, B733]
-file: null
+file: tasks/B4773-agent-identity-store.yaml
 covers:
   - "litellm/proxy/agent_endpoints/identity_store.py"
 parent: B141

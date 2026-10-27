@@ -1,0 +1,8 @@
+task: B4230
+deviations:
+  - what: add_request_schema takes the generated schema (None when generation failed) instead of a model class and an operation name, and writes none of LiteLLM's debug log lines.
+    why: TypeAdapter schema generation is a Python boundary the caller owns, and the catch-all except around the transform has nothing to catch in Rust, so operation_name was only ever used in that log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L292-L335
+  - what: The equality shortcut in the collision check compares JSON values exactly, so 1, 1.0 and true are three different values, where Python treats them as equal.
+    why: JSON numbers and booleans are different types on the wire; Pydantic never emits a definition that differs only this way, and such a pair then falls through to the property and required name comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L186-L199

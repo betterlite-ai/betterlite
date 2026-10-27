@@ -1,0 +1,163 @@
+id: B3649
+title: TinyFish terminal run polling and billing
+description: >-
+  Implement terminal-run billing, async run polling and SSE stream fallback over B3648's run records and constants.
+
+  Build handlers for three run-submission paths: blocking POST /v1/automation/run returns the terminal run object immediately and bills synchronously; POST /v1/automation/run-async returns a pending run and spawns a detached billing poller; POST /v1/automation/run-sse returns SSE frames and starts an at-most-one poller that runs to terminal before logging.
+
+  The async poller and SSE poller both poll GET /v1/runs/{run_id} using the same credentials lookup and HTTP transport as B3648's request routing, with a 5-second interval and 3600-second deadline. Stop polling when the run status reaches a terminal state (COMPLETED, FAILED, or CANCELLED), or after 12 consecutive fetch failures (reset to zero on successful fetch). Keep the last run even if polling fails, and log the request with cost None when the deadline passes or all fetches fail.
+
+  The SSE fallback makes one fetch if no poller was spawned (from the collected chunks SSE operation), extracting the run_id from the first data frame in the stream using B3648's SSE parser.
+
+  Both async and SSE paths dispatch through the injected PassThroughEndpointLogging._handle_logging sink once the run is terminal or the polling budget exhausted. Preserve model, custom_llm_provider, response_cost and litellm_call_id in the logged payload, and survive all billing failures without breaking the relayed response.
+
+  Build in crates/betterlite-server as the pass_through_logging::tinyfish module, extending B3648's implementation.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/tinyfish.rs
+    - crates/betterlite-server/src/pass_through_logging/tinyfish/**
+    - tools/oracle/cases/server/pass-through-logging/tinyfish/**
+    - tools/oracle/helpers/b3649.py
+    - tools/oracle/helpers/b3649/**
+    - tools/oracle/src/helpers/server/b3649.rs
+    - tools/oracle/src/helpers/server/b3649/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L143-L173
+    why: tinyfish_passthrough_handler for blocking runs; response parsing, payload building and exception fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L176-L201
+    why: start_async_run_billing spawning async polling task with run_id extraction and task registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L204-L223
+    why: start_sse_run_billing spawning SSE poller with spawned-flag marking and empty result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L226-L260
+    why: _poll_and_log polling loop, run fetching, logging dispatch and exception handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L263-L295
+    why: _poll_until_terminal polling loop with interval, deadline, failure tracking and terminal detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L298-L330
+    why: _fetch_run HTTP GET with credentials lookup, run_id validation, URL construction and response parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L333-L364
+    why: handle_logging_tinyfish_collected_chunks SSE fallback handler; run_id extraction, single fetch and payload building.
+
+dod:
+  - text: >-
+      Blocking POST /v1/automation/run returns the terminal run response and bills synchronously from the parsed response body.
+    proof: [blocking-run-tests]
+  - text: >-
+      Async POST /v1/automation/run-async spawns a detached billing poller that polls GET /v1/runs/{run_id} until terminal or budget exhausted.
+    proof: [async-polling-tests]
+  - text: >-
+      SSE POST /v1/automation/run-sse starts an at-most-one poller that runs to terminal before logging; if poller is already spawned, the fallback makes one fetch.
+    proof: [sse-polling-tests]
+  - text: >-
+      Polling uses a 5-second interval, 3600-second deadline and 12-consecutive-failure cutoff; failure count resets on successful fetch.
+    proof: [polling-budget-tests]
+  - text: >-
+      Terminal status detection checks if run status is in [COMPLETED, FAILED, CANCELLED]; non-terminal or missing status continues polling.
+    proof: [terminal-detection-tests]
+  - text: >-
+      Missing run_id in async/SSE responses logs a warning and continues polling with None; billing skips the run if fetch fails or times out.
+    proof: [missing-runid-tests]
+  - text: >-
+      HTTP GET includes X-API-Key header from passthrough_endpoint_router.get_credentials and screenshots=none query parameter.
+    proof: [fetch-request-tests]
+  - text: >-
+      Run_id validation rejects IDs containing /, \, #, ?, or the sequence ..; invalid IDs log a warning and return None cost.
+    proof: [runid-validation-tests]
+  - text: >-
+      Polling tasks are registered with weak reference cleanup and cancellation logging; they do not block the relayed response.
+    proof: [task-registration-tests]
+  - text: >-
+      SSE run_id extraction uses B3648's _run_id_from_sse_chunks; fallback makes one fetch if sse_poller_spawned flag is not set.
+    proof: [sse-fallback-tests]
+  - text: >-
+      Logging payload includes model, custom_llm_provider, response_cost and litellm_call_id preserved from initial request or polling state.
+    proof: [payload-preservation-tests]
+  - text: >-
+      All exceptions in polling and logging paths are caught and logged; they never break the relayed response.
+    proof: [exception-handling-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: blocking-run-tests
+      why: Blocking run handling does not parse response or bill synchronously.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(blocking_run|passthrough_handler)/)'
+    - id: async-polling-tests
+      why: Async polling does not spawn task or extract run_id from pending response.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(async_polling|start_async)/)'
+    - id: sse-polling-tests
+      why: SSE polling does not start poller or set spawned flag correctly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(sse_polling|start_sse)/)'
+    - id: polling-budget-tests
+      why: Polling does not use correct interval, deadline or failure-count reset logic.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(polling_budget|poll_until|deadline|failure)/)'
+    - id: terminal-detection-tests
+      why: Terminal status detection does not recognize COMPLETED/FAILED/CANCELLED or continues on non-terminal.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(terminal_detection|terminal_status)/)'
+    - id: missing-runid-tests
+      why: Missing run_id does not log warning or fallback to None cost.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(missing_runid|no_runid)/)'
+    - id: fetch-request-tests
+      why: HTTP GET does not include X-API-Key header or screenshots=none parameter.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(fetch_request|headers|credentials)/)'
+    - id: runid-validation-tests
+      why: Run_id validation does not reject disallowed characters or .. sequence.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(runid_validation|safe_runid)/)'
+    - id: task-registration-tests
+      why: Polling tasks are not registered, cleaned up, or do not log cancellation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(task_registration|background_task)/)'
+    - id: sse-fallback-tests
+      why: SSE fallback does not extract run_id or does not respect sse_poller_spawned flag.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(sse_fallback|collected_chunks)/)'
+    - id: payload-preservation-tests
+      why: Logging payload does not preserve model, custom_llm_provider, response_cost or litellm_call_id.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(payload_preservation|build_logging_payload)/)'
+    - id: exception-handling-tests
+      why: Exceptions in polling or logging paths break the relayed response or are not caught.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::(exception|error|fallback)/)'
+
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/blocking-run-bills-immediately.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/async-run-polls-to-terminal.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/async-run-missing-runid.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/sse-run-with-poller.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/sse-run-fallback.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/polling-stops-on-deadline.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/polling-stops-on-failed-status.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/polling-invalid-runid.yaml
+  - tools/oracle/cases/server/pass-through-logging/tinyfish/polling-max-consecutive-failures.yaml
+
+deviations:
+  - what: "Polling tasks run asynchronously and are not awaited by the relayed response handler. Both blocking-run and async-run paths are non-blocking except blocking-run processes the response body synchronously."
+    why: "Blocking requests poll synchronously; async requests spawn a task so the relayed response returns immediately. SSE polling also runs detached. This preserves LiteLLM's async pattern and non-blocking relayed responses."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L191-L201
+  - what: "The task lifetime is server-owned and persists across client disconnects for SSE and async runs. Tasks are registered in a global set and removed on completion or cancellation."
+    why: "Polling must survive client disconnect for cost measurement. Weak reference cleanup ensures tasks are properly freed when done. This keeps billing from leaking tasks or stopping on disconnect."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L55-L62
+
+out_of_scope:
+  - B3648 owns run parsing, endpoint validation, API base resolution, cost-per-step parsing, and the logging payload record type. This task calls those functions and uses their records.
+  - B173 owns the async HTTP client and credential lookup through passthrough_endpoint_router.get_credentials.
+  - The framework's PassThroughEndpointLogging._handle_logging sink and passthrough_endpoint_router service are unresolved dependencies per the outline.
+  - HTTP routing and request forwarding belong to the unresolved B102 route handler.
+  - "B3648 owns SSE frame parsing via _run_id_from_sse_chunks, which parses each data: line as a TinyfishRun and extracts the first run_id; this task dispatches that extraction to polling and billing."
+
+pitfalls:
+  - "Polling deadline is absolute monotonic time (now + 3600 seconds); it does not reset on retries and stopping at deadline returns the last polled run (not None)."
+  - "Consecutive failure count is scoped to one polling operation. A successful fetch (even if it returns None due to parsing) resets the counter."
+  - "The SSE poller is started before the handler finishes collecting chunks; it runs to terminal in background. The fallback checks if a poller was already spawned and makes one fetch if not."
+  - "HTTP status codes outside [200, 300) log a warning and return None, not raise. Timeout and network errors are caught and also return None."
+  - "Missing run_id from the submitted/pending response logs a warning and starts polling with None; None is passed through to _poll_until_terminal, which returns None and logs no cost."
+  - "Terminal status is checked against the TinyfishRun status field after polling; an absent or unknown status does not terminate polling early."
+  - "Payload building computes response_cost by calling _run_cost on the polled run; if the run is None or non-COMPLETED, cost is None."
+  - "The model name 'tinyfish/automation-run' and custom_llm_provider 'tinyfish' must be preserved in model_call_details and the logging kwargs."
+  - "Task cancellation fires both the removal callback and _warn_if_cancelled; do not duplicate the warning logic or the removal."
+  - "SSE stream collection is synchronous; the poller is spawned after chunks are fully collected, not during streaming."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,126 @@
+id: B3636
+title: OpenAI relayed stream assembly and prompt estimates
+description: >-
+  Assemble OpenAI relayed chunks with a local prompt estimate that never fetches
+  remote high-detail images. Expose this operation below core so Azure's passthrough
+  collector can call it without depending on all of B103. Chunks arrive as raw OpenAI
+  JSON; parse each with the iterator's chunk_parser, filter malformed chunks silently,
+  accumulate them, and build one complete response from the sequence. Count tokens
+  in the original request messages, treating remote URLs with detail="high" as
+  their upper-bound cost to avoid network calls during estimation. When no chunks
+  parse successfully, return None instead of a fallback response.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/src/openai_streaming_assembly.rs
+  - crates/betterlite-core/src/openai_streaming_assembly/tests.rs
+  - tools/oracle/cases/openai/stream-assembly-*.yaml
+  - tools/oracle/cases/openai/token-count-*.yaml
+  - tools/oracle/helpers/b3636.py
+  - tools/oracle/helpers/b3636/**
+  - tools/oracle/src/helpers/core_ops/b3636.rs
+  - tools/oracle/src/helpers/core_ops/b3636/**
+  - crates/betterlite-core/src/openai_streaming_assembly/tests/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L101-135
+  why: Functions that filter remote high-detail images and count relayed prompt tokens.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L552-611
+  why: Complete streaming response assembly from raw chunks, parsing and accumulation.
+- url: https://platform.openai.com/docs/api-reference/chat-streaming
+  why: OpenAI's streaming chunk format and complete response shape.
+- url: https://platform.openai.com/docs/guides/vision
+  why: Remote image URL recognition and detail levels.
+dod:
+- text: >-
+    count_relayed_prompt_tokens returns the token count of a message list after
+    removing remote high-detail images and applying the image upper-bound cost per
+    remote URL, matching the source result on the oracle cases.
+  proof:
+  - image-filter-tests
+- text: >-
+    _build_complete_streaming_response parses every chunk string with the OpenAI
+    iterator's chunk_parser, accumulates valid chunks silently dropping malformed ones,
+    and builds a complete response using stream_chunk_builder with a lazy prompt-token
+    callback.
+  proof:
+  - stream-assembly-tests
+- text: >-
+    _build_complete_streaming_response returns None when no chunks parse successfully,
+    and logs a warning without panicking.
+  proof:
+  - stream-assembly-tests
+- text: >-
+    _build_complete_streaming_response catches any exception raised while building the
+    complete response from parsed chunks (e.g., from stream_chunk_builder), logs an error,
+    and returns None instead of propagating the exception.
+  proof:
+  - stream-assembly-tests
+- text: >-
+    Remote images are identified by type="image_url", an http/https URL in image_url.url,
+    and detail="high", exactly matching LiteLLM.
+  proof:
+  - image-filter-tests
+- text: >-
+    The stream assembler never makes HTTP requests to fetch remote image metadata
+    or dimensions.
+  proof:
+  - stream-assembly-tests
+- text: >-
+    Messages with mixed content (text and local images) are counted without remote
+    calls, using the local token counter for text parts and image token bounds.
+  proof:
+  - image-filter-tests
+checks:
+  optional: []
+  commands:
+  - id: stream-assembly-tests
+    why: stream assembly unit tests fail or do not exist
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/openai_streaming_assembly/)'
+  - id: image-filter-tests
+    why: remote image filtering and token counting tests fail or do not exist
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/(remote_image|count_relayed)/)'
+oracle_cases:
+- tools/oracle/cases/openai/stream-assembly-basic.yaml
+- tools/oracle/cases/openai/stream-assembly-with-content.yaml
+- tools/oracle/cases/openai/stream-assembly-remote-images.yaml
+- tools/oracle/cases/openai/stream-assembly-malformed-chunks.yaml
+- tools/oracle/cases/openai/token-count-remote-high-detail.yaml
+- tools/oracle/cases/openai/token-count-mixed-content.yaml
+deviations:
+- what: >-
+    betterlite counts remote high-detail image tokens using high_detail_image_token_upper_bound()
+    without fetching the image URL, so estimates are instantaneous and do not fail on
+    network errors.
+  why: >-
+    Estimation must complete before returning the response, and fetching arbitrary URLs
+    introduces a security boundary and latency. LiteLLM's source also uses an upper
+    bound; the deviation is using it eagerly instead of deferring token counts.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L125-135
+out_of_scope:
+- Streaming response handling (selected by framework, not registered as an HTTP route here).
+- OpenAI provider configuration and model name resolution (B668, B3635).
+- Choice between different response iterators; this task uses the standard OpenAI iterator.
+- Retry, fallback or error recovery for individual chunks; malformed chunks are skipped.
+pitfalls:
+- >-
+  The chunk_parser accepts a dict and returns a parsed chunk or raises StopIteration;
+  catch both and continue rather than panicking. A normal test uses the oracle; a helper
+  test parsing bytes off the wire must use a mock provider through the harness.
+- >-
+  Remote images are identified by both the detail field ("high") and the URL scheme
+  (http/https). A missing detail field means unknown, and does not get the upper
+  bound applied.
+- >-
+  Messages is an Option in the function signature so callers can pass None without
+  wrapping an empty vec. An empty or None messages list returns a token count of zero.
+- >-
+  The lazy prompt-count callback passed to stream_chunk_builder is called only when
+  the builder needs to compute prompt tokens; avoid duplicating the count calculation
+  if the callback is never invoked.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

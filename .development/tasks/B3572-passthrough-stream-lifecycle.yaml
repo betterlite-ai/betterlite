@@ -1,0 +1,168 @@
+id: B3572
+title: Passthrough stream relay and collector lifecycle
+description: >-
+  Build async and sync stream relay wrappers that expose upstream status and
+  headers, closing resources on terminal iteration and scheduling spend
+  collection once per response. Implement spend tracking collection that tolerates
+  collector failures without breaking byte delivery to the caller, logging dropped
+  spend but passing through unchanged bytes.
+
+  AsyncPassthroughStreamingResponse wraps an async coroutine to httpx.Response,
+  implements the async generator protocol (awaitable, iterable, closeable), and
+  reads status/headers from the resolved response before exposing them. The
+  __await__ method initializes via an inner _init coroutine that reads the
+  response, captures headers and status, calls raise_for_status, and catches
+  cleanup errors. Properties throw RuntimeError when accessed before awaiting.
+  Iteration calls __anext__ which awaits the inner iterator, feeds each chunk to
+  the spend collector, and starts the flush task on iteration end or exception.
+  The aclose method schedules the flush once and closes the iterator/response,
+  suppressing exceptions during cleanup. An asyncio.Task set tracks pending flush
+  tasks for lifecycle accounting.
+
+  PassthroughStreamingResponse is the sync equivalent: takes an httpx.Response
+  directly, exposes status/headers immediately, iterates over response.iter_bytes(),
+  feeds chunks to spend tracking, and calls executor.submit for the flush callback
+  (not awaitable tasks). The __next__ method handles iteration and failure paths
+  identically to async; close() schedules the flush.
+
+  _SpendCollection wraps a provider_config's collector and defers failures: when
+  the collector throws, _failed becomes true and subsequent add() calls return
+  immediately. The should_flush property returns true only if chunks were added
+  and collection did not fail. Failures are logged with verbose_logger.exception
+  and the dropped chunk count.
+
+  _as_async_generator and _as_generator are control-flow passthrough: async yields
+  from an AsyncIterator[bytes], sync yields from Iterator[bytes]. Their docstrings
+  and signatures match the source.
+
+  _async_passthrough_request is the async entry point called by llm_passthrough_route
+  when allm_passthrough_route=True. It calls client.client.send (which returns a
+  coroutine for async clients), awaits it, and for non-streaming responses reads the
+  body before calling raise_for_status. For streaming requests it returns an awaited
+  AsyncPassthroughStreamingResponse. Non-coroutine responses raise an exception
+  indicating expected async behavior was violated.
+
+  Implement in betterlite-core::passthrough_stream. Every default, literal, env var
+  and error code a user can observe is named in cases. Preserve the async task set
+  mutable-ok comments, catch-all exception comments, and closure docstrings and
+  type ignore comments from the source. The three sync resource-close exception
+  handlers (response.close, response.aclose, iterator.aclose) are safe catch-alls
+  for cleanup; do not change their scope. The once-only flush flag prevents the
+  same collector from being flushed twice.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/passthrough_stream.rs
+    - crates/betterlite-core/src/passthrough_stream/**
+    - tools/oracle/cases/passthrough_stream/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L30-L36
+    why: _as_async_generator and _as_generator control-flow passthrough implementations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L39-L65
+    why: _SpendCollection init, add, and should_flush with failure tolerance and logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L68-L196
+    why: AsyncPassthroughStreamingResponse lifecycle with __await__, property access guards, iteration, and flush scheduling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L198-L264
+    why: PassthroughStreamingResponse sync lifecycle with immediate property exposure, iteration, and executor-based flush.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L604-L633
+    why: _async_passthrough_request coroutine handling and response lifecycle for streaming/non-streaming paths.
+
+dod:
+  - text: _SpendCollection init constructs a provider_config collector with model, custom_llm_provider, and endpoint from logging object; add tolerates collector exceptions without breaking relay.
+    proof: [spend-behavior-tests]
+  - text: AsyncPassthroughStreamingResponse.__await__ initializes via _init, awaits response, captures headers/status, calls raise_for_status, and cleans up aclose/aread on error.
+    proof: [async-init-tests]
+  - text: Properties status_code and headers throw RuntimeError when accessed before initialization.
+    proof: [async-property-tests]
+  - text: Async iteration via __anext__ feeds each chunk to spend tracking, handles exceptions by scheduling flush and closing the response.
+    proof: [async-iter-tests]
+  - text: Async aclose schedules the flush once, closes the iterator and response, and suppresses exceptions during cleanup.
+    proof: [async-close-tests]
+  - text: PassthroughStreamingResponse sync lifecycle exposes status/headers immediately, iterates chunks through spend tracking, and closes on exception.
+    proof: [sync-iter-tests]
+  - text: _async_passthrough_request awaits streaming responses as AsyncPassthroughStreamingResponse and reads bodies of non-streaming responses before raise_for_status.
+    proof: [async-passthrough-tests]
+  - text: Flush scheduling via asyncio.create_task (async) and executor.submit (sync) occurs only once, logs scheduling failures with chunk count, and completes without breaking the relay.
+    proof: [flush-behavior-tests]
+  - text: Background flush task failures log diagnostics without rethrowing or stopping iteration.
+    proof: [flush-error-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: spend-behavior-tests
+      why: _SpendCollection init, add, failure tolerance and should_flush tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::spend_collection::/)'
+    - id: async-init-tests
+      why: AsyncPassthroughStreamingResponse initialization and property access guard tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::async_lifecycle::init/)'
+    - id: async-property-tests
+      why: status_code and headers property access before initialization tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::async_lifecycle::properties/)'
+    - id: async-iter-tests
+      why: Async iteration, chunk feeding, and exception handling tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::async_lifecycle::iteration/)'
+    - id: async-close-tests
+      why: Async aclose, once-only flush scheduling, and exception suppression tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::async_lifecycle::close/)'
+    - id: sync-iter-tests
+      why: PassthroughStreamingResponse iteration, status/headers exposure, and sync flush scheduling tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::sync_lifecycle::/)'
+    - id: async-passthrough-tests
+      why: _async_passthrough_request coroutine handling, streaming/non-streaming paths, and error propagation tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::async_passthrough_request::/)'
+    - id: flush-behavior-tests
+      why: Flush scheduling via asyncio.create_task and executor.submit, once-only flag, and diagnostics tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::flush_scheduling::/)'
+    - id: flush-error-tests
+      why: Collector failure tolerance, verbose_logger diagnostics, and relay continuation tests must pass.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::flush_errors::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Background flush task failures log diagnostics via verbose_logger.exception but
+      do not break the relay; the original bytes, status and headers are returned to
+      the caller unchanged. Flush scheduling failure is itself logged with the chunk count
+      in the failure message.
+    why: >-
+      Spend tracking is best-effort and must never interrupt request/response relay. LiteLLM
+      uses the same approach: spend tracking exceptions are caught and logged, not propagated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L144-L149
+
+  - what: >-
+      Async initialization reads and closes error responses before rethrowing; the aread
+      and aclose calls in the except block suppress all exceptions (BLE001 S110), so cleanup
+      errors do not change the raised exception. The same safe-catch-all is applied to
+      aclose during iteration termination.
+    why: >-
+      Cleanup failures (e.g., socket already closed) must not mask the original error.
+      LiteLLM preserves this order: read the body, close the resource, then rethrow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L114-L126
+
+out_of_scope:
+  - B3570 owns the collector contract and provider_config.create_stream_collector; this task only calls it.
+  - B173 owns the HTTPHandler and AsyncHTTPHandler send/iter/aiter/read/aread/close/aclose; this task only calls them through the client interface.
+  - B252 owns Logging.flush_passthrough_collected_chunks and async_flush_passthrough_collected_chunks; this task only calls them via the logging object.
+  - Stream relay composition and guardrail translation owned by B101; this task only implements the lifecycle primitives.
+  - The llm_passthrough_route decorator and its request/response preparation are owned by B101.
+  - AsyncPassthroughStreamingResponse.asend/athrow and PassthroughStreamingResponse.send/throw have no caller at the pin and are not implemented.
+
+pitfalls:
+  - "AsyncPassthroughStreamingResponse must throw RuntimeError if status_code or headers are accessed before __await__ completes; accessing them before initialization is a contract violation."
+  - "The __await__ method returns the result of _init().__await__(), not a direct coroutine; pyright requires an ignore comment on the await inside _init."
+  - "Flush is scheduled only once: the _flush_scheduled flag prevents the same collector from being flushed on both __anext__ exception and aclose."
+  - "Background task tracking via _background_tasks.add and task.add_done_callback(discard) prevents the task set from growing without bound; a failed flush task is still removed."
+  - "The _hidden_params dict is noted as mutable-ok because the router attaches response headers there in place; this is a known side effect preserved from LiteLLM."
+  - "Collector failures set _failed = True and subsequent add() calls return immediately, so a collector exception stops all future collection but does not rethrow during iteration."
+  - "Sync close() is a final cleanup method that may suppress exceptions; calling it twice (e.g., in a finally and a __del__) is safe because _flush_scheduled remains true."
+  - "Empty streams (zero chunks fed to collector) do not schedule a flush; should_flush returns false when chunk_count is 0."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
