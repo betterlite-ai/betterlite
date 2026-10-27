@@ -143,8 +143,14 @@ fn names_rejected_key(#[case] setting: &str, #[case] key: &str) {
 #[case::path("s3_path: null")]
 #[case::config("s3_config: null")]
 fn null_optional_values_use_defaults(#[case] setting: &str) {
-    let yaml = format!("litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    {setting}\n");
-    let config = ConfigLoader { lookup: BTreeMap::new() }.load(&yaml).unwrap();
+    let yaml = format!(
+        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    {setting}\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
     let settings = config.sections.s3_response_cache.unwrap();
     assert_eq!(settings.key_prefix, "");
     assert_eq!(settings.config.connect_timeout, 5);
