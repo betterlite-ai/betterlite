@@ -372,12 +372,14 @@ async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
         header(&answered.headers, "x-litellm-response-duration-ms")
             .unwrap()
             .parse::<rust_decimal::Decimal>()
-            .is_ok()
+            .unwrap()
+            >= rust_decimal::Decimal::ZERO
     );
     assert!(
         header(&answered.headers, "x-litellm-overhead-duration-ms")
             .unwrap()
             .parse::<rust_decimal::Decimal>()
-            .is_ok()
+            .unwrap()
+            >= rust_decimal::Decimal::ZERO
     );
 }
