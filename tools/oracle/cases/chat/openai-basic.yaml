@@ -1,9 +1,9 @@
 name: chat-openai-basic
 config: |
   model_list:
-    - model_name: oracle-model
+    - model_name: basic-model
       litellm_params:
-        model: openai/oracle-model
+        model: openai/gpt-basic-upstream
         api_base: "{{upstream}}"
         api_key: oracle-key
 env: {}
@@ -13,41 +13,42 @@ request:
   headers:
     content-type: application/json
     authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-basic
   body:
-    model: oracle-model
+    model: basic-model
     messages:
-      - role: user
-        content: Say hello.
+      - {role: system, content: You are terse.}
+      - {role: user, content: [{type: text, text: Say hello.}]}
+    temperature: 0.2
+    top_p: 0.9
+    max_tokens: 20
+    n: 1
+    stop: ["\n"]
+    seed: 7
     stream: false
 upstream:
   - status: 200
-    headers:
-      content-type: application/json
+    headers: {content-type: application/json, x-request-id: upstream-request-1}
     body:
       id: chatcmpl-oracle
       object: chat.completion
       created: 1700000000
-      model: oracle-model
+      model: gpt-basic-upstream-2024
+      system_fingerprint: fp_oracle
+      service_tier: default
       choices:
         - index: 0
-          message:
-            role: assistant
-            content: Hello!
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          logprobs: null
           finish_reason: stop
       usage:
         prompt_tokens: 5
         completion_tokens: 2
         total_tokens: 7
+        prompt_tokens_details: {cached_tokens: 0, audio_tokens: 0}
+        completion_tokens_details: {reasoning_tokens: 0, audio_tokens: 0, accepted_prediction_tokens: 0, rejected_prediction_tokens: 0}
 compare:
-  headers:
-    - content-type
-  headers_present:
-    - x-litellm-call-id
-  upstream_headers:
-    - authorization
-    - content-type
-  ignore:
-    - pointer: /id
-      why: LiteLLM generates a request id for each gateway process.
-    - pointer: /created
-      why: LiteLLM timestamps each response.
+  headers: [content-type, llm_provider-content-type, llm_provider-x-request-id, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+  headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+  upstream_headers: [authorization, content-type]
+  ignore: []

@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Alert settings, records and trace links
 status: todo
 depends_on: [B002, B189, B253]
-file: null
+file: tasks/B4020-alert-settings.yaml
 covers:
   - "litellm/types/integrations/slack_alerting.py"
   - "litellm/integrations/SlackAlerting/utils.py"

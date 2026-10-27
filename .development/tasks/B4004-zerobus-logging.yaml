@@ -1,0 +1,220 @@
+id: B4004
+title: Queue redacted Zerobus logs and refresh connection settings
+description: >-
+  Implement live Zerobus connection resolution and bounded callback queuing with automatic client
+  refresh when settings change. Build the ZerobusLogger extending CustomBatchLogger to inherit
+  its queue, flushing, and lifecycle management.
+
+  Resolve connection parameters live from ZerobusInitParams (litellm.zerobus_params), with preference
+  for configured values falling back to environment variables (ZEROBUS_SERVER_ENDPOINT, ZEROBUS_WORKSPACE_URL,
+  ZEROBUS_TABLE_NAME, ZEROBUS_CLIENT_ID, ZEROBUS_CLIENT_SECRET). Secret references with os.environ/
+  prefix remain unresolved when not found; missing required parameters raise ValueError with guidance.
+  Extract workspace ID from the numeric first hostname label of server_endpoint (https://<workspace_id>.zerobus.<region>.<cloud>).
+  Validate table_name as fully qualified with exactly two dots (catalog.schema.table).
+
+  Cache a ZerobusIngestClient by connection; recreate it when any connection parameter changes.
+  Reuse the cached client's token only while the connection remains equal. Build the client with
+  an injected httpx async client from B173, preserving its timeout and pooling behavior.
+
+  Manage async tasks explicitly: create periodic and batch flush tasks only when an event loop is running,
+  store them as owned Task objects, and recreate a dead periodic task on enqueue. Query task liveness
+  safely and drop the task reference on shutdown without relying on Python event-loop globals.
+
+  Apply privacy redaction before row conversion: check should_redact_message_logging, call
+  redacted_standard_logging_payload when needed, and skip events with missing or non-dict payloads.
+  Convert each redacted payload to a trace_row, queue it, and drop the oldest queued rows when overflow
+  occurs, but never drop during a flush (preserve in-flight rows).
+
+  Dispatch retryable failures so B256 retains the rows; permanent failures log and drop the batch.
+  Defaults are batch_size 100 and flush_interval 10 seconds. At capacity during a flush, drop the arriving
+  row instead of queuing. Preserve arrivals during a flush by holding a separate _flushing flag.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/zerobus.rs
+    - crates/betterlite-logging/src/zerobus/logger.rs
+    - crates/betterlite-logging/src/zerobus/logger/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L25-L32
+    why: "_resolved_secret function resolving os.environ/ references and secret manager lookups."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L35-L41
+    why: "_configured_params extracting ZerobusInitParams from litellm.zerobus_params or returning defaults."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L44-L52
+    why: "_setting preferring configured values with fallback to environment variables and raising ValueError when missing."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L55-L64
+    why: "_workspace_id extracting numeric first label from hostname and validating format."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L67-L71
+    why: "_table_name validating fully qualified name with exactly two dots."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L74-L84
+    why: "connection_for building ZerobusConnection with all required parameters from _setting."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L87-L112
+    why: "ZerobusLogger.__init__ extending CustomBatchLogger with params caching, client initialization, and task setup."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L114-L128
+    why: "client property caching ZerobusIngestClient by connection and recreating on parameter change."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L130-L135
+    why: "_start_periodic_flush_task creating a Task if event loop is running."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L137-L144
+    why: "_start_batch_flush_task creating or reusing batch flush task and preventing duplicates."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L146-L148
+    why: "_flush_task_is_alive checking task state safely without event-loop globals."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L150-L166
+    why: "async_log_success_event and async_log_failure_event both dispatching to _enqueue."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L168-L187
+    why: "_enqueue reconstructing periodic task if needed, applying privacy, converting to rows, and triggering batch flush."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L189-L197
+    why: "_payload_for extracting standard_logging_object and applying redaction via redacted_standard_logging_payload."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L199-L207
+    why: "_drop_overflow trimming oldest rows except during flush, logging overflow events."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L209-L216
+    why: "flush_queue with _flushing flag to prevent arrivals during flush and protect overflow logic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L218-L228
+    why: "async_send_batch dispatching retryable failures and dropping permanent failures with logging."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/__init__.py#L1-L5
+    why: Module exports and declarations.
+dod:
+  - text: >-
+      _resolved_secret returns None for missing os.environ/ references, returns the resolved value when
+      get_secret_str succeeds, and returns the plaintext value when it does not start with os.environ/
+      and no secret resolves it.
+    proof: [connection-resolution-tests]
+  - text: >-
+      _configured_params returns litellm.zerobus_params when it is a ZerobusInitParams, model_validates
+      it when it is a Mapping, and returns ZerobusInitParams() with defaults otherwise.
+    proof: [connection-resolution-tests]
+  - text: >-
+      _setting prefers the configured value (_resolved_secret) over the environment variable, raises
+      ValueError with guidance when both are absent, and the error message names the config key to set.
+    proof: [connection-resolution-tests]
+  - text: >-
+      _workspace_id extracts the numeric first hostname label from server_endpoint, raises ValueError
+      if the label is not all digits, and rejects malformed URIs with clear error messages.
+    proof: [connection-resolution-tests]
+  - text: >-
+      _table_name validates that the configured or environment table_name has exactly two dots,
+      raising ValueError with the full qualified-name pattern when validation fails.
+    proof: [connection-resolution-tests]
+  - text: >-
+      connection_for builds a ZerobusConnection with all parameters resolved through _setting,
+      evaluating _workspace_id once, validating _table_name once, and propagating configuration errors.
+    proof: [connection-resolution-tests]
+  - text: >-
+      ZerobusLogger.__init__ stores ZerobusInitParams or uses _configured_params(), calls
+      CustomBatchLogger.__init__ with batch_size and flush_interval from params, initializes
+      _cached_client to None, and starts a periodic flush task if start_periodic_flush is True and an event loop is running.
+    proof: [task-lifecycle-tests]
+  - text: >-
+      The client property returns the given_client when provided, caches a ZerobusIngestClient by connection,
+      recreates it when the connection changes, and never returns an expired or wrong connection.
+    proof: [client-caching-tests]
+  - text: >-
+      _start_periodic_flush_task catches RuntimeError when no event loop runs and returns None,
+      otherwise returns a Task created from loop.create_task(periodic_flush()).
+    proof: [task-lifecycle-tests]
+  - text: >-
+      _start_batch_flush_task returns early if a batch task already exists and is not done(),
+      catches RuntimeError when no event loop runs and returns without creating a task, and creates
+      a new task only when none exists or the previous one has completed.
+    proof: [task-lifecycle-tests]
+  - text: >-
+      _flush_task_is_alive returns True only when _periodic_flush_task exists, is not done(),
+      and its event loop is not closed(), preventing crashes on closed-loop checks.
+    proof: [task-lifecycle-tests]
+  - text: >-
+      async_log_success_event and async_log_failure_event both await _enqueue with the same
+      kwargs, making both dispatch paths equivalent.
+    proof: [event-dispatch-tests]
+  - text: >-
+      _enqueue calls _flush_task_is_alive and recreates the periodic task if needed, builds the
+      payload via _payload_for, skips queuing when payload is None, drops the arriving row when
+      _flushing and queue is at max_queue_size, appends the row otherwise, calls _drop_overflow,
+      and triggers batch flush when queue >= batch_size, all exceptions logged and swallowed.
+    proof: [enqueuing-tests]
+  - text: >-
+      _payload_for calls redact_standard_logging_payload_from_model_call_details, extracts the
+      standard_logging_object, returns None for non-dict payloads, applies redacted_standard_logging_payload
+      when should_redact_message_logging is true, and returns the payload otherwise.
+    proof: [privacy-redaction-tests]
+  - text: >-
+      _drop_overflow returns immediately when _flushing is True, calculates overflow as
+      len(queue) - max_queue_size, trims from the front when overflow > 0, and logs the trimmed count.
+    proof: [overflow-handling-tests]
+  - text: >-
+      flush_queue sets _flushing to True, calls CustomBatchLogger.flush_queue, and sets _flushing
+      to False in a finally block, ensuring the flag is cleared even on error.
+    proof: [flush-state-tests]
+  - text: >-
+      async_send_batch calls client.insert, returns when failure is None, raises ZerobusIngestError
+      when failure.retryable is True (so B256 retains the batch), logs and returns when failure is permanent.
+    proof: [batch-sending-tests]
+  - text: >-
+      ZerobusLogger defaults: batch_size 100, flush_interval 10 seconds, turn_off_message_logging
+      converted to bool and passed to CustomBatchLogger.
+    proof: [defaults-tests]
+  - text: >-
+      At capacity during flush, _enqueue drops the arriving row and logs a warning instead of queuing
+      it, allowing new arrivals in the next cycle.
+    proof: [capacity-handling-tests]
+checks:
+  optional: []
+  commands:
+    - id: connection-resolution-tests
+      why: Connection resolution, secret lookup, table validation or workspace ID extraction fails.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_connection::/)' -- --include-ignored
+    - id: task-lifecycle-tests
+      why: Periodic or batch task creation, liveness checks or event-loop handling is broken.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_logger_tasks::/)' -- --include-ignored
+    - id: client-caching-tests
+      why: Client caching, connection comparison or client recreation on change fails.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_client_cache::/)' -- --include-ignored
+    - id: event-dispatch-tests
+      why: Success or failure event dispatch does not reach _enqueue.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_event_dispatch::/)' -- --include-ignored
+    - id: enqueuing-tests
+      why: Row queuing, batch triggering, exception swallowing or task recreation fails.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_enqueue::/)' -- --include-ignored
+    - id: privacy-redaction-tests
+      why: Privacy redaction, payload extraction or condition checking is wrong.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_privacy::/)' -- --include-ignored
+    - id: overflow-handling-tests
+      why: Queue overflow trimming, mid-flush protection or logging fails.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_overflow::/)' -- --include-ignored
+    - id: flush-state-tests
+      why: _flushing flag is not set, cleared, or cleared on error.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_flush_state::/)' -- --include-ignored
+    - id: batch-sending-tests
+      why: Retryable vs permanent failure handling or ZerobusIngestError dispatch is broken.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_batch_send::/)' -- --include-ignored
+    - id: defaults-tests
+      why: Default values for batch size, interval or message logging are wrong or missing.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_defaults::/)' -- --include-ignored
+    - id: capacity-handling-tests
+      why: At-capacity row dropping during flush is missing or breaks the queue.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_capacity::/)' -- --include-ignored
+oracle_cases: []
+deviations:
+  - what: >-
+      Task management uses tokio::task::JoinSet or tokio::task::TaskTracker to own spawned tasks
+      and join them on shutdown, replacing Python's implicit event-loop cleanup with explicit Rust
+      task lifecycle management.
+    why: >-
+      Rust async/await with tokio requires explicit task ownership; the Python pattern of relying
+      on asyncio.get_event_loop() and implicit cleanup on shutdown becomes explicit task joining
+      and cancellation in Rust to prevent task leaks or panics on shutdown.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L130-L148
+out_of_scope:
+  - "get_secret_str: the general secret-manager dispatcher owned by a lower task. This task consumes the resolved secrets."
+  - "CustomLogger.redact_standard_logging_payload_from_model_call_details: owned by B189."
+pitfalls:
+  - Confusing _flushing flag with a futures::lock::Mutex or tokio::sync::Mutex; it must be a plain bool guarded by the flush_lock from CustomBatchLogger.
+  - Creating periodic or batch tasks without checking if an event loop exists first; RuntimeError must be caught and the task set to None.
+  - Reusing a client after its connection changes; always compare the cached client's connection with the current connection_for(params) result.
+  - Dropping rows during a flush when the queue is full; the _flushing flag must prevent this drop-during-flush and allow it only between flushes.
+  - Forgetting to clear _flushing in a finally block after flush_queue, leaving the logger stuck if a flush error occurs.
+  - Raising ZerobusIngestError for permanent failures instead of logging and returning, breaking the row-removal logic.
+  - Missing async context when calling _enqueue, causing task creation to fail; ensure both log_success_event and log_failure_event are async.
+  - Not propagating event-loop shutdown; when the logger is dropped or the event loop exits, owned tasks must be joined or cancelled to prevent resource leaks.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

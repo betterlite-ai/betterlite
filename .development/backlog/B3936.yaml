@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Datadog LLM span privacy and metadata
 status: todo
 depends_on: [B3930, B3935, B188]
-file: null
+file: tasks/B3936-datadog-llm-privacy.yaml
 covers:
   - "litellm/integrations/datadog/datadog_llm_obs.py"
 parent: B113

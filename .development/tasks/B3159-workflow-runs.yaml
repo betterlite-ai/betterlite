@@ -1,0 +1,109 @@
+id: B3159
+title: Create and authorize durable workflow runs
+description: >-
+  Build workflow request records, ownership/sequence helpers and create/list/get/update
+  run routes in betterlite-server::workflow_runs, using the existing typed table repositories.
+  Implement POST/GET /v1/workflows/runs and GET/PATCH /v1/workflows/runs/{run_id} with
+  full key ownership enforcement, admin/view-only read scope and comma-separated status
+  filtering. Store the caller's hashed API key token as created_by so non-admin keys see
+  only their own runs. Both list and get endpoint examine admin scope: list omits the
+  owner filter for admins and view-only callers, while get enforces key ownership on
+  retrieval (returning 404 for foreign runs regardless of admin status) — preserve this
+  asymmetry. Parse comma-separated status filters (e.g. "running,paused") and convert
+  them to a database {in: [status]} query. Reject empty-update PATCH requests with 400
+  and "No fields to update" detail. Return 404 with "Run 'X' not found" when the run does
+  not exist or the caller is not its owner (non-admin and non-view-only). Return 500 with
+  CommonProxyErrors.db_not_connected_error detail when the database is absent. Create runs
+  with workflow_type, optional input/metadata (stored as JSON strings), and caller ownership.
+  GET /v1/workflows/runs/{run_id} fetches the run together with its most recent event via include.
+  GET /v1/workflows/runs filters by workflow_type query param, defaults limit to 50 with bounds 1–250,
+  and omits the owner filter for admin/view-only callers (unlike get, which returns 404 for non-owned runs).
+  The four request models (WorkflowRunCreateRequest, WorkflowRunUpdateRequest), status
+  literals, response contracts, the _RunRow/_SeqRow protocol row types, _RunCreateData,
+  _RunWhere, _RunUpdateData typed dict models, the _MAX_SEQUENCE_RETRIES constant (5),
+  and the _EVENT_STATUS_MAP transition table all live in the endpoint file (1-350).
+  Authenticate with B003's user_api_key_auth; do not bypass it.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/workflow_runs.rs
+    - crates/betterlite-server/src/workflow_runs/**
+    - tools/oracle/cases/management/workflows/**
+    - tools/oracle/helpers/b3159.py
+    - tools/oracle/helpers/b3159/**
+    - tools/oracle/src/helpers/server/b3159.rs
+    - tools/oracle/src/helpers/server/b3159/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L47-L350
+    why: Full request/response models, helper functions and four run routes with ownership scope enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/workflows/README.md
+    why: Workflow design, status transitions and API documentation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3554-L3564
+    why: user_api_key_has_admin_view returns true if the caller's role grants unscoped read access.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4390-L4399
+    why: CommonProxyErrors.db_not_connected_error and other error messages the routes return.
+dod:
+  - text: >-
+      Runs store caller ownership and enforce it — non-admin callers see and modify
+      only their own runs.
+    proof: [workflow-runs-tests, oracle]
+  - text: >-
+      List endpoint omits the owner filter for admin and view-only callers, while get
+      endpoint returns 404 for non-admin foreign runs.
+    proof: [workflow-runs-tests, oracle]
+  - text: >-
+      Comma-separated status filters parse and convert to a database in-clause, and
+      empty-update PATCH returns 400.
+    proof: [workflow-runs-tests, oracle]
+  - text: Routes return 404 for missing/foreign runs and 500 when the database is absent.
+    proof: [workflow-runs-tests, oracle]
+  - text: Request models, status literals, constants and row contracts match the booted proxy.
+    proof: [workflow-runs-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: workflow-runs-tests
+      why: Run creation, listing, retrieval and update logic fail or ownership enforcement is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^workflow_runs::/)'
+oracle_cases:
+  - tools/oracle/cases/management/workflows/create-run-stores-ownership.yaml
+  - tools/oracle/cases/management/workflows/list-admin-omits-owner-filter.yaml
+  - tools/oracle/cases/management/workflows/list-user-includes-owner-filter.yaml
+  - tools/oracle/cases/management/workflows/get-returns-404-for-foreign-run.yaml
+  - tools/oracle/cases/management/workflows/get-includes-latest-event.yaml
+  - tools/oracle/cases/management/workflows/update-run-requires-ownership.yaml
+  - tools/oracle/cases/management/workflows/status-filter-comma-separated.yaml
+  - tools/oracle/cases/management/workflows/workflow-type-filtering.yaml
+  - tools/oracle/cases/management/workflows/empty-update-is-400.yaml
+  - tools/oracle/cases/management/workflows/missing-run-is-404.yaml
+  - tools/oracle/cases/management/workflows/absent-database-is-500.yaml
+deviations: []
+out_of_scope:
+  - B3160 owns append_workflow_event, list_workflow_events, append_workflow_message and list_workflow_messages routes.
+  - B003 owns user_api_key_auth integration, the HTTP error boundary and route registration with the axum application.
+  - B700 owns the typed table operations (find_unique, find_many, create, update) and their Prisma translation.
+  - B726 owns WorkflowRunRepository, WorkflowEventRepository and WorkflowMessageRepository table handle construction via auxiliary_repository.
+  - B732 owns user_api_key_has_admin_view authentication check and the middleware hook that provides the authenticated principal.
+  - The database schema (WorkflowRun, WorkflowEvent, WorkflowMessage tables) is preregistered in schema.prisma at B000.
+pitfalls:
+  - >-
+    The list endpoint with no authentication token omits the owner filter and returns
+    all runs, while get with no token returns 404 for any non-admin caller — this
+    asymmetry is deliberate and must be preserved.
+  - >-
+    Status filtering accepts comma-separated values and must convert "running,paused"
+    to {in: ["running", "paused"]} for multiple values or statuses[0] for scalar equality.
+  - >-
+    Empty-update PATCH returns 400 with "No fields to update" before enforcing ownership,
+    even though the run might not exist.
+  - >-
+    The _json helper serializes Python objects to JSON strings for Prisma Json fields —
+    input and metadata use it both on create and update.
+  - >-
+    Caller key is determined once per request and cached; never call _caller_key
+    multiple times or use the caller key of a different authenticated session.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

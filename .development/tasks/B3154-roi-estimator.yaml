@@ -1,0 +1,202 @@
+id: B3154
+title: Estimate engineering effort from pull request metadata
+description: >-
+  Build crates/betterlite-server::roi_estimator around an injected completion callback, with typed
+  completion/evidence/result models in crates/betterlite-roi. The estimator consumes validated
+  ROISettings and ROIPullEvidence from B3150, calls a CompletionCaller protocol implementation
+  (supplied by B3161 at the gateway), extracts JSON and hours from the response, and returns a
+  typed ROIEstimate record.
+
+  The estimator gates evidence at 160,000 characters and refusal to score pulls with incomplete
+  metadata: the estimate returns status "needs_review" with null hours and a reason string when
+  GitHub did not provide all file or commit metadata, or when the evidence exceeds the character
+  limit. For valid evidence, the estimator constructs an exact system message (estimator_prompt plus
+  RESPONSE_CONTRACT), a JSON-formatted user message with pull/commit/file metadata, and a completion
+  request with the configured estimator model, temperature=0, max_tokens=1200, response_format
+  type "json_object", and reasoning_effort "none" only when all configured models support it.
+
+  Every completion request carries metadata as a required field with exact literals:
+  metadata={"tags": ("litellm-roi-estimator",), "litellm_roi_estimator": true}. The completion
+  response is validated as ROICompletionResponse, parsed with extract_classifier_json from B394
+  to handle optional JSON blocks, and deserialized into ROIEstimatorResult, which validates that
+  hours are finite and nonnegative and reasoning is not empty. Completed estimates include status
+  "estimated", the parsed hours and reasoning (truncated to 12,000 characters), model name,
+  evidence_source "pr_metadata", effort_basis "without_ai", and cached false. HTTP failures, parse
+  errors, validation errors and incomplete responses are caught and raised as SourceError with
+  message "The estimator did not return valid hours and reasoning. Check the selected model and prompt."
+
+  The cache context is a SHA256 of the estimator version, configured model, configured prompt,
+  response contract and estimator options, used by B3156 to identify and reuse previously estimated
+  pulls. estimator_options returns {"reasoning_effort": "none"} when all available models support it
+  via B2221's supports_none_reasoning_effort; an empty models tuple returns {} (not reasoning_effort
+  "none"). _configured_models returns the passed models tuple unchanged when not None, otherwise
+  substitutes (estimator_model, None). cache_context produces a consistent SHA-256 hash independent
+  of pull evidence.
+
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite-roi/src/estimator.rs
+    - crates/betterlite-roi/src/estimator/**
+    - crates/betterlite-server/src/roi_estimator.rs
+    - crates/betterlite-server/src/roi_estimator/**
+    - tools/oracle/cases/roi-estimator/**
+    - tools/oracle/helpers/b3154.py
+    - tools/oracle/helpers/b3154/**
+    - tools/oracle/src/helpers/roi/b3154.rs
+    - tools/oracle/src/helpers/roi/b3154/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L29-L40
+    why: MAX_EVIDENCE_CHARS=160000, ESTIMATE_VERSION, and RESPONSE_CONTRACT constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L42-L48
+    why: CompletionCaller protocol and _EstimatorOptions TypedDict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L50-L65
+    why: metadata_evidence function with exact field mapping from ROIPullEvidence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L67-L75
+    why: estimator_options guards with `if models and all(...)` so empty tuple returns {} not reasoning_effort "none".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L77-L79
+    why: _configured_models substitutes default when models is None, returns unchanged otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L81-L93
+    why: cache_context builds JSON digest and SHA-256 hash of estimator config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L95-L105
+    why: Estimator.__init__ stores settings, complete callback and resolved models as final.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L106-L166
+    why: Estimator.estimate validates metadata completeness, constructs request with metadata field (lines 132-143), invokes callback and validates response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L132-L135
+    why: metadata field construction with exact literals tags=("litellm-roi-estimator",) and litellm_roi_estimator=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L168-L173
+    why: _validate_completion wraps ValidationError when response parsing fails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L442-L472
+    why: ROIEstimatorChanges, ROIEstimatorFile, ROIEstimatorCommit, ROIEstimatorEvidence models and field types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L474-L515
+    why: ROICompletionMessage, ROICompletionMetadata, ROIResponseFormat, ROICompletionRequest (metadata as required field), ROICompletionResponse, ROIEstimatorResult with validators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L517-L538
+    why: ROIEstimatorResult.validate_hours (finite and nonnegative) and validate_reasoning (non-empty).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L216-L222
+    why: extract_classifier_json function for JSON extraction from completion response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3054-L3058
+    why: supports_none_reasoning_effort predicate for reasoning_effort "none" model filtering.
+
+dod:
+  - text: CompletionCaller is an injected async callback that takes ROICompletionRequest and returns object; Estimator is constructed with settings, complete callback and optional models tuple.
+    proof: [estimator-types]
+  - text: metadata_evidence converts ROIPullEvidence into ROIEstimatorEvidence with title, body, changes, files and commits tuples; all TypedDicts and records preserve exact LiteLLM field names.
+    proof: [metadata-evidence]
+  - text: "estimator_options returns {\"reasoning_effort\": \"none\"} only when all configured models support it via supports_none_reasoning_effort from B2221."
+    proof: [estimator-options-all-support]
+  - text: "estimator_options returns {} (not reasoning_effort \"none\") when models tuple is empty."
+    proof: [estimator-options-empty-tuple]
+  - text: _configured_models returns the passed models tuple unchanged when not None, otherwise substitutes (estimator_model, None).
+    proof: [configured-models]
+  - text: cache_context returns a SHA256 hexdigest of version, estimator model, prompt, RESPONSE_CONTRACT and estimator options, deterministic and independent of pull evidence.
+    proof: [cache-context]
+  - text: Estimator.estimate gates evidence at 160,000 characters and checks ROIPullEvidence.incomplete_metadata; returns status "needs_review" with null hours and reason when gating fails.
+    proof: [estimate-gating]
+  - text: Estimator.estimate constructs a system message of prompt plus RESPONSE_CONTRACT, user message of JSON-serialized evidence, and request with exact model, temperature 0, max_tokens 1200, json_object response format and conditional reasoning_effort.
+    proof: [estimate-request]
+  - text: "Estimator.estimate sets metadata to exactly {\"tags\": (\"litellm-roi-estimator\",), \"litellm_roi_estimator\": true} with exact literal values."
+    proof: [estimate-metadata]
+  - text: Estimator.estimate validates the response as ROICompletionResponse, extracts JSON from choice.message.content using extract_classifier_json from B394, and parses it as ROIEstimatorResult.
+    proof: [estimate-parsing]
+  - text: ROIEstimatorResult.validate_hours checks isfinite and nonnegative; validate_reasoning checks non-empty stripped content; strict mode forbids extra fields.
+    proof: [result-validation]
+  - text: Estimator.estimate returns status "estimated" with model, evidence_source "pr_metadata", effort_basis "without_ai", cached false, and reasoning truncated to 12,000 characters on success.
+    proof: [estimate-success]
+  - text: 'HTTP errors, parse failures, validation failures and incomplete responses are caught and raised as SourceError with exact message "The estimator did not return valid hours and reasoning. Check the selected model and prompt."'
+    proof: [estimate-error]
+
+checks:
+  optional: []
+  commands:
+    - id: estimator-types
+      why: CompletionCaller protocol or Estimator struct is missing or incorrectly defined
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_init_fields($|::)/)' - test(/replays_the_/)
+    - id: metadata-evidence
+      why: metadata_evidence function is missing or does not preserve exact field mapping from ROIPullEvidence
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::metadata_evidence($|::)/)' - test(/replays_the_/)
+    - id: estimator-options-all-support
+      why: "estimator_options does not return {\"reasoning_effort\": \"none\"} when all models support it"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_options_all_support($|::)/)' - test(/replays_the_/)
+    - id: estimator-options-empty-tuple
+      why: "estimator_options returns reasoning_effort for empty models tuple instead of empty dict {}"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_options_empty_tuple($|::)/)' - test(/replays_the_/)
+    - id: configured-models
+      why: _configured_models does not return models unchanged when not None, or does not substitute default correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::configured_models($|::)/)' - test(/replays_the_/)
+    - id: cache-context
+      why: cache_context does not produce consistent SHA256 hash or includes wrong fields
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^estimator::cache_context($|::)/)' - test(/replays_the_/)
+    - id: estimate-gating
+      why: evidence gating does not cover 160,000 character or incomplete metadata paths
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_gating($|::)/)' - test(/replays_the_/)
+    - id: estimate-request
+      why: request construction does not verify exact prompt, temperature, max_tokens or reasoning_effort
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_request($|::)/)' - test(/replays_the_/)
+    - id: estimate-metadata
+      why: "completion request metadata does not have exact tags tuple (\"litellm-roi-estimator\",) and litellm_roi_estimator bool true"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_metadata($|::)/)' - test(/replays_the_/)
+    - id: estimate-parsing
+      why: response parsing does not verify extract_classifier_json usage or response validation
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_parsing($|::)/)' - test(/replays_the_/)
+    - id: result-validation
+      why: ROIEstimatorResult validation does not cover finite/nonnegative hours and non-empty reasoning
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^estimator::result_validation($|::)/)' - test(/replays_the_/)
+    - id: estimate-success
+      why: complete estimate tests do not verify status, model, evidence_source, effort_basis and reasoning truncation
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_success($|::)/)' - test(/replays_the_/)
+    - id: estimate-error
+      why: error handling does not verify SourceError is raised on HTTP/parse/validation failures with exact message
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_error($|::)/)' - test(/replays_the_/)
+    - id: behavior-tests
+      why: the required behavior tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator_behavior($|::)/)' - test(/replays_the_/)
+
+oracle_cases:
+  - tools/oracle/cases/roi-estimator/metadata-evidence-mapping.yaml
+  - tools/oracle/cases/roi-estimator/estimator-options-all-support.yaml
+  - tools/oracle/cases/roi-estimator/estimator-options-empty-tuple.yaml
+  - tools/oracle/cases/roi-estimator/configured-models-passthrough.yaml
+  - tools/oracle/cases/roi-estimator/configured-models-default.yaml
+  - tools/oracle/cases/roi-estimator/cache-context-consistent.yaml
+  - tools/oracle/cases/roi-estimator/estimate-incomplete-metadata.yaml
+  - tools/oracle/cases/roi-estimator/estimate-oversized-evidence.yaml
+  - tools/oracle/cases/roi-estimator/estimate-request-construction.yaml
+  - tools/oracle/cases/roi-estimator/estimate-metadata-construction.yaml
+  - tools/oracle/cases/roi-estimator/estimate-completion-valid.yaml
+  - tools/oracle/cases/roi-estimator/estimate-completion-invalid-json.yaml
+  - tools/oracle/cases/roi-estimator/estimate-completion-http-error.yaml
+  - tools/oracle/cases/roi-estimator/result-hours-validation.yaml
+  - tools/oracle/cases/roi-estimator/result-reasoning-validation.yaml
+
+deviations:
+  - what: Reasoning output is capped at 12,000 characters in betterlite, preserving LiteLLM behavior from estimator.py:159.
+    why: Truncation happens on return, protecting against oversized token usage in downstream operations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L159
+
+out_of_scope:
+  - "B3150 owns ROISettings validators and ROIPullEvidence; this task consumes them without modification."
+  - "B3152 owns SourceError and GitHub client; this task imports SourceError as an error-contract dependency."
+  - "B3153 owns GitHub.evidence and pull collection; this task consumes ROIPullEvidence records."
+  - "B394 owns extract_classifier_json; this task calls it through betterlite-router::capability_forecast."
+  - "B2221 owns supports_none_reasoning_effort; this task calls it through betterlite-models::model_capability_predicates."
+  - "Actual completion implementation from the gateway; CompletionCaller is an injected callback contract."
+
+pitfalls:
+  - "estimator_options with empty models tuple must return {} not reasoning_effort: the `if models and all(...)` guard exists so a falsy truth condition returns the default, not the reasoning-enabled value."
+  - "metadata field in ROICompletionRequest is required, not optional; every estimate request carries tags=(\"litellm-roi-estimator\",) and litellm_roi_estimator=true with exact literal values."
+  - "cache_context hashes a tuple of (version, model, prompt, contract, options dict); all must be JSON-serializable and in this exact order."
+  - "_validate_completion uses from_attributes=True to accept response objects that may not be pure Pydantic instances from the callback."
+  - "incomplete_metadata flag on pull evidence gates the estimator; a pull with missing files or commits is never sent to the model."
+  - "Reasoning output is truncated to 12,000 characters on return, not stored; the cap happens after successful validation."
+  - "Each configured estimator model is a tuple (name, provider); provider is None for default, or a concrete provider string for overrides."
+  - "The evidence JSON is serialized with exclude_unset=True; only fields explicitly set appear in evidence, preserving NotRequired distinctions."
+  - "extract_classifier_json may return a JSON-escaped string or a complete object; always parse the result as ROIEstimatorResult, not as a string."
+  - "The RESPONSE_CONTRACT is appended to estimator_prompt on every estimate call; do not duplicate it in the prompt itself or the system message will be oversized."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Configure, reconfigure and disconnect agent commands
 status: todo
 depends_on: [B4560, B4562, B4563, B4569, B4570, B4571, B4574]
-file: null
+file: tasks/B4572-agent-setup-commands.yaml
 covers:
   - "litellm/proxy/client/cli/commands/configure.py"
 parent: B134

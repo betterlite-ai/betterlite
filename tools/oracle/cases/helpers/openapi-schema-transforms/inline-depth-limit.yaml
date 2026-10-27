@@ -1,0 +1,20 @@
+kind: helper
+name: inline-depth-limit
+call:
+  openapi_schema_transforms:
+    function: inline_request_body
+    example: {root: {value: 1}}
+    schema:
+      type: object
+      properties:
+        root: {"$ref": "#/$defs/Node", description: tree root}
+        ids: [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{"$ref": "#/$defs/Missing", "$defs": {Kept: {}}}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+      "$defs":
+        Node:
+          type: object
+          properties:
+            value: {type: integer}
+            next: {"$ref": "#/$defs/Node"}
+env: {}
+compare:
+  ignore: []

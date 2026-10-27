@@ -1,0 +1,119 @@
+id: B3999
+title: Publish standard and legacy spend logs to Google PubSub
+description: >-
+  Implement Google Cloud Pub/Sub logger for publishing spend and standard logging payloads.
+  The logger authenticates with Pub/Sub using Vertex AI bearer tokens (via _ensure_access_token_async and _get_token_and_url),
+  selects between standard logging payloads and v1 spend projections based on the gcs_pub_sub_use_v1 flag,
+  and publishes each message as base64-encoded JSON to the configured project and topic.
+
+  Require both project_id and topic_id at construction, resolving missing values from GCS_PUBSUB_PROJECT_ID and GCS_PUBSUB_TOPIC_ID
+  environment variables (B002 loader provides these). Accept service-account credentials path from constructor or GCS_PATH_SERVICE_ACCOUNT.
+
+  Publish messages via REST API with base64 encoding: POST to
+  https://pubsub.googleapis.com/v1/projects/{project_id}/topics/{topic_id}:publish
+  with Bearer token header. Accept only 200 and 202 status codes.
+
+  Clear the log queue in the finally block of async_send_batch, after attempted publication of all messages,
+  so failed publishes do not retain messages. Log exceptions from publish attempts at debug/error level without blocking
+  the caller. Do not route through the GCS bucket client; its per-credential/bucket settings and project selection are different.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/gcs_pubsub.rs
+    - crates/betterlite-logging/src/gcs_pubsub/tests.rs
+    - crates/betterlite-logging/src/gcs_pubsub/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L32-L63
+    why: GcsPubSubLogger.__init__ constructor, project/topic/credentials parameters and parent class init.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L65-L94
+    why: construct_request_headers uses Vertex AI _ensure_access_token_async and _get_token_and_url for bearer token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L96-L135
+    why: async_log_success_event selects standard or v1 spend payload and enqueues; flushes on batch size threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L137-L153
+    why: async_send_batch iterates messages and publishes each; clears queue in finally block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L155-L195
+    why: publish_message base64-encodes message JSON, constructs request, POSTs to Pub/Sub REST API.
+
+dod:
+  - text: GcsPubSubLogger.__init__ requires both project_id and topic_id, raising ValueError if either is missing.
+    proof: [pubsub-tests]
+  - text: Missing project_id and topic_id are resolved from GCS_PUBSUB_PROJECT_ID and GCS_PUBSUB_TOPIC_ID environment variables.
+    proof: [pubsub-tests]
+  - text: Service account credentials path is resolved from constructor parameter or GCS_PATH_SERVICE_ACCOUNT environment variable.
+    proof: [pubsub-tests]
+  - text: construct_request_headers calls _ensure_access_token_async with custom_llm_provider="vertex_ai" to obtain an access token.
+    proof: [pubsub-tests]
+  - text: construct_request_headers calls _get_token_and_url with model="pub-sub" and custom_llm_provider="vertex_ai" to construct the final bearer Authorization header value.
+    proof: [pubsub-tests]
+  - text: Authorization header in construct_request_headers has format "Bearer {token}".
+    proof: [pubsub-tests]
+  - text: async_log_success_event reads kwargs["standard_logging_object"] when gcs_pub_sub_use_v1 is false.
+    proof: [pubsub-tests]
+  - text: async_log_success_event calls get_logging_payload (B1716) to obtain v1 spend projection when gcs_pub_sub_use_v1 is true.
+    proof: [pubsub-tests]
+  - text: async_log_success_event enqueues the selected payload to the log_queue.
+    proof: [pubsub-tests]
+  - text: async_log_success_event calls async_send_batch when log_queue length reaches batch_size threshold.
+    proof: [pubsub-tests]
+  - text: async_log_success_event exceptions are caught and logged at exception level without propagating to caller.
+    proof: [pubsub-tests]
+  - text: async_send_batch returns early if log_queue is empty.
+    proof: [pubsub-tests]
+  - text: async_send_batch calls publish_message for each message in the queue.
+    proof: [pubsub-tests]
+  - text: async_send_batch clears log_queue in finally block, even if publish_message raises an exception.
+    proof: [pubsub-tests]
+  - text: publish_message converts message to JSON using json.dumps with default=str.
+    proof: [pubsub-tests]
+  - text: publish_message base64-encodes the JSON message string.
+    proof: [pubsub-tests]
+  - text: >-
+      publish_message constructs POST body with format {"messages": [{"data": encoded_message}]}.
+    proof: [pubsub-tests]
+  - text: >-
+      publish_message POSTs to https://pubsub.googleapis.com/v1/projects/{project_id}/topics/{topic_id}:publish
+      with Authorization and Content-Type headers.
+    proof: [pubsub-tests]
+  - text: publish_message only accepts HTTP 200 and 202 responses; other status codes are logged as errors.
+    proof: [pubsub-tests]
+  - text: publish_message exceptions are caught and logged at error level, returning None without propagating.
+    proof: [pubsub-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: pubsub-tests
+      why: the gcs_pubsub tests fail, do not exist, or are incomplete
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_pubsub::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: _premium_user_check() calls are removed from __init__ and async_log_success_event.
+    why: Project decision to omit paid-tier restrictions from the MIT implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L47-L49
+  - what: Bearer token construction delegates to B1303 (_ensure_access_token_async) and B1304 (_get_token_and_url) from the Vertex AI module.
+    why: These are external SDK functions with concrete contracts provided by those tasks; betterlite reuses the authenticated token path rather than duplicating credential handling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_pubsub/pub_sub.py#L72-L88
+
+out_of_scope:
+  - Vertex AI SDK implementation and token lifecycle management (owned by B1303, B1304).
+  - HTTP client initialization (owned by B173).
+  - Batch logger parent class and periodic flush timer (owned by B256).
+  - get_logging_payload v1 spend projection logic (owned by B1716).
+
+pitfalls:
+  - "Bearer token is obtained via Vertex AI auth (_ensure_access_token_async and _get_token_and_url), not direct service-account key parsing. The token path requires passing the service account JSON path to both functions."
+  - "Message encoding is base64(json.dumps(message)) with default=str to serialize non-JSON types; the request body expects a dict with messages list, each having a data field."
+  - "gcs_pub_sub_use_v1 flag gates selection: when false, read kwargs[\"standard_logging_object\"] for the standard payload; when true, call get_logging_payload for v1 spend projection."
+  - "Queue is cleared in finally block of async_send_batch even if publish_message raises, so failed publishes do not accumulate in the queue."
+  - "One message per event; async_send_batch publishes each message individually with separate POST requests, not batched in a single API call."
+  - "HTTP status 200 and 202 are the only accepted responses; other codes are logged as errors and treated as publish failures."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

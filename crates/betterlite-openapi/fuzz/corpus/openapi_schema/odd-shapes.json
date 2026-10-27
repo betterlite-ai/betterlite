@@ -1,0 +1,1 @@
+{"$defs":[],"properties":{"a":{"$ref":"#/$defs/Missing"},"b":{"$ref":"#/$defs/A#/$defs/B"},"c":[{"$ref":7},null,true,-1.5e3],"d":"text"},"required":"model","$ref":"#/components/schemas/Other"}

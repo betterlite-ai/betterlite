@@ -1,0 +1,122 @@
+id: B3735
+title: Model Armor buffered stream enforcement
+description: >-
+  Build buffered streaming enforcement for Model Armor's post-call hook that scans responses before they reach the client, covering three wire formats: chat completions, Anthropic messages, and Responses API.
+
+  The async_post_call_streaming_iterator_hook collects all chunks from the response stream, assembles them into a complete response body, scans the full text, and yields back either the original chunks or a sanitized version. For Responses API streams, also extract and scan reasoning and tool-call deltas that do not appear in the terminal response body, since those are visible to the client.
+
+  Three _classify_stream cases map chunks to wire format: raw SSE streams are either Anthropic or opaque, event-type streams with response.* are Responses, and standard OpenAI SSE is chat completions. Terminal error streams (purely error items, or SSE errors from earlier guardrails) bypass scanning. Unscannable streams fail closed unless fail_on_error is disabled.
+
+  When de-identification masking is enabled, _resolve_streaming_outcome decides whether to block or emit sanitized text, checking that the rewrite can be delivered on the current surface. Rewriting Responses and opaque SSE is not possible, so when a de-identify match requires masking, block instead of releasing unscanned content.
+
+  Error frames use anthropic_sse_error_frames for Anthropic, _build_responses_error_items for Responses, and fallback SSE encoding for chat. Both blocking and non-blocking errors are emitted as terminal stream items so create_response() detects them.
+scope:
+  paths:
+    - crates/betterlite-core/src/guardrails/model_armor/streams.rs
+    - crates/betterlite-core/src/guardrails/model_armor/streams/tests.rs
+    - tools/oracle/cases/guardrails/model-armor-streams/**
+    - tools/oracle/helpers/b3735.py
+    - tools/oracle/helpers/b3735/**
+    - tools/oracle/src/helpers/core_ops/b3735.rs
+    - tools/oracle/src/helpers/core_ops/b3735/**
+    - crates/betterlite-core/src/guardrails/model_armor/streams/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L458-L489
+    why: _resolve_streaming_outcome decides whether to block or emit sanitized text based on surface type and match availability
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L925-L936
+    why: _is_terminal_error_stream and _classify_stream to map buffered chunks to their wire format
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L951-L972
+    why: _final_responses_api_response and _responses_api_response_text to extract scannable text from Responses bodies
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1000-L1041
+    why: _responses_delta_field_texts and _streaming_content_to_scan to gather all visible text including delta-only fields
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1043-L1072
+    why: _apply_sanitized_content and _assemble_stream to rewrite and reassemble buffered responses
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1074-L1102
+    why: _error_payload, _build_responses_error_items and _stream_error_items to frame guardrail failures in each surface's format
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1104-L1237
+    why: async_post_call_streaming_iterator_hook orchestrates buffering, assembly, scanning, and yielding with fail-closed semantics
+dod:
+  - text: Four wire format cases return the correct _StreamSurface discriminant for Anthropic SSE, Responses events, opaque non-Anthropic SSE, and standard chat completion SSE.
+    proof: [format-classification]
+  - text: Terminal error streams (error-only and SSE errors) pass through without scanning.
+    proof: [error-stream-passthrough]
+  - text: A stream that cannot be assembled into a scannable response fails closed when fail_on_error is true and forwards unscanned when it is false.
+    proof: [assembly-failure-handling]
+  - text: For Responses API, every delta field that the terminal body does not contain is collected and scanned alongside the body text.
+    proof: [responses-delta-collection]
+  - text: When mask_response_content is enabled, de-identify matches without a possible rewrite on the current surface block instead of releasing unscanned content.
+    proof: [deidentify-fail-closed]
+  - text: Sanitized content replaces message content in every non-empty choice of a ModelResponse; other surfaces are not rewritten.
+    proof: [content-rewriting]
+  - text: Chat completion streams assemble through stream_chunk_builder; Anthropic streams through assemble_anthropic_sse_stream; Responses through extracting the terminal response body.
+    proof: [format-assembly]
+  - text: Blocking errors are framed as Anthropic SSE error lines, Responses error events, or generic SSE for opaque surfaces, so create_response() recognizes them as failures.
+    proof: [error-framing]
+  - text: Oracle cases cover buffered streaming on chat, Anthropic, and Responses surfaces with and without masking, and error cases for assembly failure and deidentify-without-rewrite.
+    proof: [streaming-oracle]
+checks:
+  optional: []
+  commands:
+    - id: format-classification
+      why: _classify_stream does not correctly map all chunk types to their surface
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*classify/)'
+    - id: error-stream-passthrough
+      why: terminal error streams are scanned or blocked instead of passing through
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*terminal_error/)'
+    - id: assembly-failure-handling
+      why: unscannable streams fail open when fail_on_error is false or fail closed unconditionally
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*assemble/)'
+    - id: responses-delta-collection
+      why: delta-only fields in Responses streams are not collected or are lost during assembly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*responses_delta/)'
+    - id: deidentify-fail-closed
+      why: de-identify matches without a rewrite target do not block or block when the rewrite is possible
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*resolve_outcome/)'
+    - id: content-rewriting
+      why: sanitized content is not applied to the right choice(s) or is applied to surfaces that cannot emit it
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*apply_sanitized/)'
+    - id: format-assembly
+      why: streams do not assemble through the correct builder for their surface type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*assembly/)'
+    - id: error-framing
+      why: errors are not framed correctly for their surface or do not reach create_response as terminal items
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::model_armor::streams::.*error/)'
+    - id: streaming-oracle
+      why: buffered streaming responses do not match LiteLLM on chunk content, order or error handling
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/guardrails/model-armor-streams
+oracle_cases:
+  - tools/oracle/cases/guardrails/model-armor-streams/chat-buffered-no-match.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/chat-buffered-block.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/chat-buffered-mask.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/anthropic-buffered-no-match.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/anthropic-buffered-block.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/anthropic-buffered-mask.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/responses-buffered-no-match.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/responses-buffered-block.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/responses-buffered-mask.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/responses-buffered-delta-only-reasoning.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/responses-buffered-delta-only-tool-args.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/buffered-terminal-error.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/buffered-assembly-failure-fail-closed.yaml
+  - tools/oracle/cases/guardrails/model-armor-streams/buffered-deidentify-no-rewrite-fail-closed.yaml
+deviations: []
+out_of_scope:
+  - Framework dispatch of the streaming iterator hook through callback registration and event type filtering.
+  - "should_run_guardrail and log_guardrail_information from the guardrail decorator, owned by B3664."
+  - "Anthropic SSE classifiers, framing and assembly helpers (is_anthropic_sse_stream, anthropic_sse_error_frames, assemble_anthropic_sse_stream), owned by B3669."
+  - "OpenAIResponsesHandler._extract_output_text_and_images and build_stream_error_items, owned by B3670."
+  - "MockResponseIterator and response record constructors, owned by B2214."
+  - "add_guardrail_to_applied_guardrails_header callback helper, owned by B189."
+  - Non-streaming masking decisions and content rewriting in async_post_call_success_hook (B3734).
+pitfalls:
+  - "The source's _resolve_streaming_outcome returns (blocked, sanitized_content) where blocked is true even when sanitized_content is None, so failed-closed cases never try to yield a None rewrite."
+  - "Terminal error streams are identified by is_sse_error_stream() or by checking that every chunk's type attribute equals 'error', not by catching exceptions."
+  - "Responses API deltas come from events whose type attribute starts with 'response.' or is in _RESPONSES_DELTA_EVENT_TYPES; fields are accessed via _RESPONSES_DELTA_FIELD_ATTRS."
+  - "A Responses stream cut short before response.done is missing its body, so _final_responses_api_response reads the last response.* event but returns None if the stream ends on an input event or incomplete event."
+  - "The source collects all chunks into a tuple before classifying, not streaming; assemble_anthropic_sse_stream expects a restored identity, not the original fragment sequence."
+  - "Anthropic SSE error frames are produced by anthropic_sse_error_frames(message) and must be yielded as individual SSE items; MockResponseIterator is used only when the response can be yielded back as OpenAI SSE."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

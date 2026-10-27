@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Execute GenAI calls through chat compatibility
 status: todo
 depends_on: [B3484, B3485, B014]
-file: null
+file: tasks/B3486-genai-chat-call.yaml
 covers:
   - "litellm/google_genai/adapters/handler.py"
 parent: B098

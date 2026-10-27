@@ -1,0 +1,7 @@
+kind: helper
+name: examine-executions-concurrency-bounded
+call:
+  b4507: {"claim":{"lens_id":"lens","job":{"id":"job","created_at":"2026-01-01T00:00:00Z","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:00:00Z","settings":{"name":"lens","model":"model","context":"context","concurrency":2},"revision":1},"findings":[]},"sample":{"eligible":7,"executions":[{"id":"0","source":"traces","trace_id":"t","team_id":"","name":"run","start_time":"","span_count":1},{"id":"1","source":"traces","trace_id":"t","team_id":"","name":"run","start_time":"","span_count":1},{"id":"2","source":"traces","trace_id":"t","team_id":"","name":"run","start_time":"","span_count":1}]},"pages":[{"cursor":"","offset":0,"content":{"execution":{"id":"0","source":"traces","trace_id":"t","team_id":"","name":"run","start_time":"","span_count":1},"parts":[{"execution_id":"0","span_id":"s","name":"root","kind":"agent","content":"answer"}]}},{"cursor":"","offset":0,"content":{"execution":{"id":"1","source":"traces","trace_id":"t","team_id":"","name":"run","start_time":"","span_count":1},"parts":[{"execution_id":"1","span_id":"s","name":"root","kind":"agent","content":"answer"}]}},{"cursor":"","offset":0,"content":{"execution":{"id":"2","source":"traces","trace_id":"t","team_id":"","name":"run","start_time":"","span_count":1},"parts":[{"execution_id":"2","span_id":"s","name":"root","kind":"agent","content":"answer"}]}}],"responses":[{"content":"{}","cost":0},{"content":"{}","cost":0},{"content":"{}","cost":0}]}
+env: {}
+compare:
+  ignore: []
