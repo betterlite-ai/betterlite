@@ -1,29 +1,119 @@
-#![cfg(test)]
-use super::{Guardrail, GuardrailInput, GuardrailOutput, McpGuardrailHandler};
-use serde_json::json;
-use std::future::Future;
-struct Echo;
-impl Guardrail for Echo {
-    fn apply<'a>(
-        &'a self,
-        input: GuardrailInput,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<GuardrailOutput, String>> + Send + 'a>> {
-        Box::pin(async move {
-            Ok(GuardrailOutput {
-                texts: Some(input.texts),
-            })
-        })
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+
+use super::error::{ContentBlocked, NestedPayload, TranslationError};
+use super::guardrail::{ApplyGuardrail, GuardrailInputs};
+use super::input_writeback::write_back;
+use super::nesting_depth::{Leaf, PathPart, scan_json};
+use super::tool_request::McpToolRequest;
+use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailToolParam};
+
+mod tests;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputScan {
+    pub inputs: GuardrailInputs,
+    pub description: Option<String>,
+    pub schema: BTreeMap<String, GuardrailValue>,
+    pub schema_leaves: Vec<Leaf>,
+    pub argument_leaves: Vec<Leaf>,
+}
+
+pub async fn process_input_messages<Guardrail>(
+    request: &mut McpToolRequest,
+    guardrail: &Guardrail,
+) -> Result<(), TranslationError<Guardrail::Error>>
+where
+    Guardrail: ApplyGuardrail + Sync,
+{
+    let Some(scan) = InputScan::of(request)? else {
+        tracing::debug!("MCP guardrail: mcp_tool_name missing");
+        return Ok(());
+    };
+    let returned = guardrail
+        .apply_guardrail(scan.inputs.clone(), GuardrailInputType::Request)
+        .await
+        .map_err(TranslationError::Guardrail)?;
+    write_back(&scan, request, returned)?;
+    Ok(())
+}
+
+impl InputScan {
+    pub fn of(request: &McpToolRequest) -> Result<Option<Self>, ContentBlocked> {
+        let Some(name) = request.tool_name() else {
+            return Ok(None);
+        };
+        let description = request.tool_description().map(str::to_owned);
+        let schema = match &request.mcp_input_schema {
+            Some(GuardrailValue::Object(entries)) => entries.clone(),
+            Some(_) | None => BTreeMap::new(),
+        };
+        let schema_leaves: Vec<Leaf> = scan_json(
+            &GuardrailValue::Object(schema.clone()),
+            NestedPayload::InputSchema,
+        )?
+        .leaves
+        .into_iter()
+        .filter(|leaf| leaf.path.0.last() == Some(&PathPart::Key("description".to_owned())))
+        .collect();
+        let argument_leaves = argument_leaves(request.tool_arguments())?;
+        let texts = description
+            .iter()
+            .cloned()
+            .chain(schema_leaves.iter().map(|leaf| leaf.text.clone()))
+            .chain(argument_leaves.iter().map(|leaf| leaf.text.clone()))
+            .collect();
+        let tool = tool_definition(name, description.as_deref(), &schema);
+        Ok(Some(Self {
+            inputs: GuardrailInputs {
+                tools: vec![tool],
+                texts,
+            },
+            description,
+            schema,
+            schema_leaves,
+            argument_leaves,
+        }))
     }
 }
-#[tokio::test]
-async fn projects_tool_and_argument_texts() {
-    let mut data = json!({"mcp_tool_name":"tool","mcp_arguments":{"value":"text"}})
-        .as_object()
-        .cloned()
-        .expect("object");
-    McpGuardrailHandler
-        .process_input_messages(&mut data, &Echo)
-        .await
-        .expect("input");
-    assert_eq!(data["mcp_arguments"]["value"], "text");
+
+pub(super) fn argument_leaves(
+    arguments: Option<&GuardrailValue>,
+) -> Result<Vec<Leaf>, ContentBlocked> {
+    match arguments {
+        Some(value) => Ok(scan_json(value, NestedPayload::ToolArguments)?.leaves),
+        None => Ok(Vec::new()),
+    }
+}
+
+// the same defaults LiteLLM's MCP-to-OpenAI tool conversion fills in for function parameters
+fn tool_definition(
+    name: &str,
+    description: Option<&str>,
+    schema: &BTreeMap<String, GuardrailValue>,
+) -> GuardrailToolParam {
+    let mut parameters = schema.clone();
+    parameters
+        .entry("type".to_owned())
+        .or_insert_with(|| GuardrailValue::Text("object".to_owned()));
+    parameters
+        .entry("properties".to_owned())
+        .or_insert_with(|| GuardrailValue::Object(BTreeMap::new()));
+    parameters
+        .entry("additionalProperties".to_owned())
+        .or_insert(GuardrailValue::Boolean(false));
+    let function = BTreeMap::from([
+        ("name".to_owned(), GuardrailValue::Text(name.to_owned())),
+        (
+            "description".to_owned(),
+            GuardrailValue::Text(description.unwrap_or_default().to_owned()),
+        ),
+        ("parameters".to_owned(), GuardrailValue::Object(parameters)),
+        ("strict".to_owned(), GuardrailValue::Boolean(false)),
+    ]);
+    GuardrailToolParam {
+        tool_type: "function".to_owned(),
+        extra: BTreeMap::from([("function".to_owned(), GuardrailValue::Object(function))]),
+    }
 }
