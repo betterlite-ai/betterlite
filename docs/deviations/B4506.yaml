@@ -5,7 +5,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L143-L181
   - what: Content, catalog and feedback limits account for UTF-8 bytes and conservatively reserve JSON framing.
     why: The task requires byte bounds; Python counts characters for content and omits outer framing for catalog and feedback pages.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/trace_store.py#L64-L80
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L363-L372
   - what: Span storage is file-backed SQLite instead of LiteLLM's in-memory dictionary.
     why: A long-running worker needs bounded disk-backed storage for large traces, and a temporary directory gives deterministic cleanup when the store exits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/trace_store.py#L17-L22
