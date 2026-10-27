@@ -1,11 +1,12 @@
-use std::collections::BTreeMap;
-
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::{resolve_secret, resolve_string};
+
+pub mod options;
+use options::Options;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -28,8 +29,8 @@ struct CacheParams {
     region_name: Option<String>,
     #[serde(rename = "s3_api_version")]
     api_version: Option<String>,
-    #[serde(rename = "s3_use_ssl", default = "default_use_ssl")]
-    use_ssl: bool,
+    #[serde(rename = "s3_use_ssl")]
+    use_ssl: Option<bool>,
     #[serde(rename = "s3_verify")]
     verify: Option<bool>,
     #[serde(rename = "s3_endpoint_url")]
@@ -41,24 +42,28 @@ struct CacheParams {
     #[serde(rename = "s3_aws_session_token")]
     aws_session_token: Option<SecretString>,
     #[serde(rename = "s3_config")]
-    config: Option<BTreeMap<String, String>>,
+    config: Options,
     #[serde(rename = "s3_path")]
-    path: Option<String>,
+    path: String,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Settings {
+pub type Settings = Option<S3Settings>;
+
+#[derive(Debug, Clone)]
+pub struct S3Settings {
     pub bucket_name: String,
-    pub region_name: Option<String>,
-    pub api_version: Option<String>,
-    pub use_ssl: bool,
-    pub verify: Option<bool>,
+    pub region_name: String,
     pub endpoint_url: Option<String>,
-    pub aws_access_key_id: Option<SecretString>,
-    pub aws_secret_access_key: Option<SecretString>,
-    pub aws_session_token: Option<SecretString>,
-    pub config: Option<BTreeMap<String, String>>,
-    pub path: Option<String>,
+    pub credentials: Option<Credentials>,
+    pub config: Options,
+    pub key_prefix: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Credentials {
+    pub access_key: SecretString,
+    pub secret_key: SecretString,
+    pub session_token: Option<SecretString>,
 }
 
 impl Section for Raw {
@@ -68,75 +73,99 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let Some(params) = self.litellm_settings.cache_params else {
-            return Ok(Settings::default());
-        };
-        convert_params(params, lookup)
+        self.litellm_settings
+            .cache_params
+            .map(|params| convert_params(params, lookup))
+            .transpose()
     }
 }
 
-fn convert_params<L>(params: CacheParams, lookup: &L) -> Result<Settings, ConfigError>
+fn convert_params<L>(params: CacheParams, lookup: &L) -> Result<S3Settings, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let bucket_name = params
+    validate(&params)?;
+    let bucket = params
         .bucket_name
         .ok_or_else(|| ConfigError::MissingEnvironment {
             variable: "s3_bucket_name".to_owned(),
             path: "litellm_settings.cache_params.s3_bucket_name".to_owned(),
-        })
-        .and_then(|value| {
-            resolve_string(
-                value,
-                "litellm_settings.cache_params.s3_bucket_name",
-                lookup,
-            )
         })?;
-    Ok(Settings {
+    let bucket_name = resolve_string(
+        bucket,
+        "litellm_settings.cache_params.s3_bucket_name",
+        lookup,
+    )?;
+    let credentials = credentials(
+        params.aws_access_key_id,
+        params.aws_secret_access_key,
+        params.aws_session_token,
+        lookup,
+    )?;
+    let key_prefix = if params.path.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", params.path.trim_end_matches('/'))
+    };
+    Ok(S3Settings {
         bucket_name,
-        region_name: params.region_name,
-        api_version: params.api_version,
-        use_ssl: params.use_ssl,
-        verify: params.verify,
+        region_name: params.region_name.unwrap_or_else(|| "us-east-1".to_owned()),
         endpoint_url: params.endpoint_url,
-        aws_access_key_id: resolve_optional_secret(
-            params.aws_access_key_id,
-            "litellm_settings.cache_params.s3_aws_access_key_id",
-            lookup,
-        )?,
-        aws_secret_access_key: resolve_optional_secret(
-            params.aws_secret_access_key,
-            "litellm_settings.cache_params.s3_aws_secret_access_key",
-            lookup,
-        )?,
-        aws_session_token: resolve_optional_secret(
-            params.aws_session_token,
-            "litellm_settings.cache_params.s3_aws_session_token",
-            lookup,
-        )?,
+        credentials,
         config: params.config,
-        path: params.path,
+        key_prefix,
     })
 }
 
-fn resolve_optional_secret<L>(
-    value: Option<SecretString>,
-    path: &str,
+fn validate(params: &CacheParams) -> Result<(), ConfigError> {
+    let mut paths = Vec::new();
+    if !params.use_ssl.unwrap_or(true) {
+        paths.push("litellm_settings.cache_params.s3_use_ssl".to_owned());
+    }
+    if params.verify == Some(false) {
+        paths.push("litellm_settings.cache_params.s3_verify".to_owned());
+    }
+    if params
+        .api_version
+        .as_deref()
+        .is_some_and(|version| version != "2006-03-01")
+    {
+        paths.push("litellm_settings.cache_params.s3_api_version".to_owned());
+    }
+    params.config.validate(&mut paths);
+    if paths.is_empty() {
+        Ok(())
+    } else {
+        Err(ConfigError::Unsupported { paths })
+    }
+}
+
+fn credentials<L>(
+    access: Option<SecretString>,
+    secret: Option<SecretString>,
+    token: Option<SecretString>,
     lookup: &L,
-) -> Result<Option<SecretString>, ConfigError>
+) -> Result<Option<Credentials>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let missing = || Ok(None);
-    value.map_or_else(missing, |secret| {
-        resolve_secret(Some(secret.expose_secret().to_owned()), path, lookup)
-    })
+    match (access, secret, token) {
+        (None, None, None) => Ok(None),
+        (Some(access_key), Some(secret_key), session_token) => Ok(Some(Credentials {
+            access_key: SecretString::from(resolve_string(access_key.expose_secret().to_owned(),
+                "s3_aws_access_key_id", lookup)?),
+            secret_key: SecretString::from(resolve_string(secret_key.expose_secret().to_owned(),
+                "s3_aws_secret_access_key", lookup)?),
+            session_token: match session_token {
+                None => None,
+                Some(value) => resolve_secret(Some(value.expose_secret().to_owned()),
+                    "s3_aws_session_token", lookup)?,
+            },
+        })),
+        _ => Err(ConfigError::Unsupported { paths: vec![
+            "s3_aws_access_key_id/s3_aws_secret_access_key/s3_aws_session_token (partial credentials)".to_owned(),
+        ] }),
+    }
 }
 
-const fn default_use_ssl() -> bool {
-    const ENABLED: bool = true;
-    ENABLED
-}
-
-#[path = "s3_response_cache/tests.rs"]
 mod tests;

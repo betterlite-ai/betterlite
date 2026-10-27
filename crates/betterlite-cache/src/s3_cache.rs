@@ -1,25 +1,25 @@
-#![expect(
-    clippy::disallowed_types,
-    clippy::disallowed_methods,
-    reason = "S3 cache values use JSON passthrough and blocking SDK bridges"
-)]
+use std::num::{NonZeroUsize, TryFromIntError};
+use std::time::{Duration, SystemTime, SystemTimeError};
 
-use std::time::{Duration, SystemTime};
-
-use aws_config::meta::region::RegionProviderChain;
-use aws_config::{BehaviorVersion, defaults};
 use aws_sdk_s3::Client;
-use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials};
+use aws_sdk_s3::config::SharedHttpClient;
+use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
-use aws_smithy_types::date_time::{DateTime, Format};
-use aws_types::region::Region;
-use betterlite_config::sections::s3_response_cache::Settings;
-use secrecy::ExposeSecret as _;
-use serde_json::Value;
-use std::str;
-use tokio::runtime::Builder;
-use tokio::task::{spawn_blocking, yield_now};
+use aws_smithy_types::DateTime;
+use betterlite_config::sections::s3_response_cache::S3Settings;
+use tokio::runtime::Handle;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
+
+pub mod body;
+mod client;
+#[expect(
+    clippy::disallowed_types,
+    reason = "the entry module contains only an opaque JSON payload newtype and its derives"
+)]
+pub mod entry;
+mod read;
+use entry::CachedEntry;
 
 const DEFAULT_TTL: u64 = 31_536_000;
 
@@ -28,216 +28,204 @@ pub struct S3Cache {
     client: Client,
     bucket_name: String,
     key_prefix: String,
+    clock: fn() -> SystemTime,
+    max_object_bytes: NonZeroUsize,
+    read_timeout: Duration,
 }
 
 impl S3Cache {
-    #[must_use]
-    pub fn new(settings: &Settings) -> Self {
-        let runtime_result = Builder::new_current_thread().enable_all().build();
-        runtime_result.map_or_else(
-            |_| Self::from_client(settings, Client::from_conf(S3ConfigBuilder::new().build())),
-            |built_runtime| built_runtime.block_on(Self::new_async(settings)),
-        )
-    }
-
-    pub async fn new_async(settings: &Settings) -> Self {
-        let http_client = aws_smithy_http_client::Builder::new()
-            .tls_provider(Provider::Rustls(CryptoMode::Ring))
-            .build_https();
-        let mut loader = defaults(BehaviorVersion::latest()).http_client(http_client);
-        if let Some(region) = &settings.region_name {
-            loader = loader.region(RegionProviderChain::first_try(Region::new(region.clone())));
-        }
-        if let (Some(access), Some(secret)) =
-            (&settings.aws_access_key_id, &settings.aws_secret_access_key)
-        {
-            let credentials = Credentials::new(
-                access.expose_secret(),
-                secret.expose_secret(),
-                settings
-                    .aws_session_token
-                    .as_ref()
-                    .map(|token| token.expose_secret().to_owned()),
-                None,
-                "betterlite-config",
-            );
-            loader = loader.credentials_provider(credentials);
-        }
-        let shared_config = loader.load().await;
-        let mut builder = S3ConfigBuilder::from(&shared_config);
-        if let Some(endpoint) = &settings.endpoint_url {
-            builder = builder.endpoint_url(endpoint);
-        }
-        Self::from_client(settings, Client::from_conf(builder.build()))
-    }
-
-    pub fn from_client(settings: &Settings, client: Client) -> Self {
-        let key_prefix = settings
-            .path
-            .as_deref()
-            .filter(|path| !path.is_empty())
-            .map_or_else(String::new, |path| {
-                format!("{}/", path.trim_end_matches('/'))
-            });
+    pub fn new(
+        settings: &S3Settings,
+        transport: SharedHttpClient,
+        clock: fn() -> SystemTime,
+        max_object_bytes: NonZeroUsize,
+    ) -> Self {
+        let client = client::build(settings, transport);
         Self {
             client,
             bucket_name: settings.bucket_name.clone(),
-            key_prefix,
+            key_prefix: settings.key_prefix.clone(),
+            clock,
+            max_object_bytes,
+            read_timeout: Duration::from_secs(settings.config.read_timeout),
         }
     }
 
-    pub fn set_cache(&self, key: &str, value: &Value, ttl: Option<u64>) {
-        let Ok(serialized) = serde_json::to_vec(value) else {
+    pub fn set_cache(&self, runtime: &Handle, key: &str, value: &CachedEntry, ttl: Option<u64>) {
+        if Handle::try_current().is_ok() {
+            tracing::warn!(
+                error = "sync cache called inside async runtime",
+                "S3 cache write failed"
+            );
             return;
-        };
-        let (client, bucket, object_key) = self.request_target(key);
-        let Ok(runtime) = Builder::new_current_thread().enable_all().build() else {
-            return;
-        };
-        runtime.block_on(put_request(&client, &bucket, &object_key, serialized, ttl));
+        }
+        runtime.block_on(self.async_set_cache(key, value, ttl));
     }
 
-    pub async fn async_set_cache(&self, key: &str, value: Value, ttl: Option<u64>) {
-        let owned_key = key.to_owned();
-        let cache = self.clone();
-        drop(spawn_blocking(move || cache.set_cache(&owned_key, &value, ttl)).await);
-    }
-
-    #[must_use]
-    pub fn get_cache(&self, key: &str) -> Option<Value> {
-        if self.bucket_name.is_empty() {
+    pub fn get_cache(&self, runtime: &Handle, key: &str) -> Option<CachedEntry> {
+        if Handle::try_current().is_ok() {
+            tracing::error!(
+                error = "sync cache called inside async runtime",
+                "S3 cache read failed"
+            );
             return None;
         }
-        self.read_object(key)
+        runtime.block_on(self.async_get_cache(key))
     }
 
-    fn read_object(&self, key: &str) -> Option<Value> {
-        let (client, bucket, object_key) = self.request_target(key);
-        let runtime = Builder::new_current_thread().enable_all().build().ok()?;
-        runtime.block_on(async move {
-            let output = client
-                .get_object()
-                .bucket(bucket)
-                .key(object_key)
-                .send()
-                .await
-                .ok()?;
-            if output.expires_string().is_some_and(|expires_text| {
-                DateTime::from_str(expires_text, Format::HttpDate)
-                    .ok()
-                    .and_then(|date_time| SystemTime::try_from(date_time).ok())
-                    .is_some_and(|expiration| SystemTime::now() > expiration)
-            }) {
-                return None;
+    pub async fn async_set_cache(&self, key: &str, value: &CachedEntry, ttl: Option<u64>) {
+        let serialized = match serde_json::to_vec(value) {
+            Ok(body) => body,
+            Err(source) => {
+                tracing::warn!(error = %source, "S3 cache serialization failed");
+                return;
             }
-            let bytes = output.body.collect().await.ok()?.into_bytes();
-            decode_body(&bytes)
-        })
-    }
-
-    pub async fn async_get_cache(&self, key: &str) -> Option<Value> {
-        let owned_key = key.to_owned();
-        let cache = self.clone();
-        spawn_blocking(move || cache.get_cache(&owned_key))
-            .await
-            .ok()
-            .flatten()
-    }
-
-    pub async fn async_set_cache_pipeline(&self, entries: Vec<(String, Value)>, ttl: Option<u64>) {
-        let mut tasks = Vec::with_capacity(entries.len());
-        for (key, value) in entries {
-            let cache = self.clone();
-            tasks.push(spawn_blocking(move || cache.set_cache(&key, &value, ttl)));
-        }
-        for task in tasks {
-            drop(task.await);
-        }
-    }
-
-    pub async fn disconnect(&self) {
-        if self.bucket_name.is_empty() {
-            yield_now().await;
+        };
+        if serialized.len() > self.max_object_bytes.get() {
+            tracing::warn!(error = "object exceeds size limit", "S3 cache write failed");
             return;
         }
-        yield_now().await;
+        let expires = match self.expiration(ttl) {
+            Ok(expiration) => expiration,
+            Err(source) => {
+                tracing::warn!(error = %source, "S3 cache write failed");
+                return;
+            }
+        };
+        self.put(key, serialized, ttl, expires).await;
+    }
+
+    async fn put(
+        &self,
+        key: &str,
+        serialized: Vec<u8>,
+        ttl: Option<u64>,
+        expires: Option<DateTime>,
+    ) {
+        let cache_ttl = ttl.unwrap_or(DEFAULT_TTL);
+        let object_key = self.object_key(key);
+        let result = self
+            .client
+            .put_object()
+            .bucket(&self.bucket_name)
+            .key(&object_key)
+            .body(ByteStream::from(serialized))
+            .cache_control(format!(
+                "immutable, max-age={cache_ttl}, s-maxage={cache_ttl}"
+            ))
+            .content_type("application/json")
+            .content_language("en")
+            .content_disposition(format!("inline; filename=\"{object_key}.json\""))
+            .set_expires(expires)
+            .send()
+            .await;
+        if let Err(source) = result {
+            tracing::warn!(error = %source, "S3 cache write failed");
+        }
+    }
+
+    fn expiration(&self, ttl: Option<u64>) -> Result<Option<DateTime>, CacheError> {
+        let Some(seconds) = ttl else {
+            return Ok(None);
+        };
+        let expires = (self.clock)()
+            .checked_add(Duration::from_secs(seconds))
+            .ok_or(CacheError::ExpirationOverflow)?;
+        let timestamp = expires
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|source| CacheError::Clock { source })?;
+        let epoch = i64::try_from(timestamp.as_secs())
+            .map_err(|source| CacheError::Timestamp { source })?;
+        // Python datetime cannot represent years beyond 9999.
+        if epoch > 253_402_300_799 {
+            return Err(CacheError::ExpirationOverflow);
+        }
+        Ok(Some(DateTime::from_secs(epoch)))
+    }
+
+    pub async fn async_set_cache_pipeline(
+        &self,
+        entries: Vec<(String, CachedEntry)>,
+        ttl: Option<u64>,
+    ) {
+        let mut tasks = JoinSet::new();
+        for (key, value) in entries {
+            if tasks.len() >= 16
+                && let Some(Err(source)) = tasks.join_next().await
+            {
+                tracing::warn!(error = %source, "S3 cache pipeline failed");
+            }
+            let cache = self.clone();
+            tasks.spawn(async move {
+                cache.async_set_cache(&key, &value, ttl).await;
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            if let Err(source) = result {
+                tracing::warn!(error = %source, "S3 cache pipeline failed");
+            }
+        }
+    }
+
+    pub async fn async_get_cache(&self, key: &str) -> Option<CachedEntry> {
+        let output = match self
+            .client
+            .get_object()
+            .bucket(&self.bucket_name)
+            .key(self.object_key(key))
+            .send()
+            .await
+        {
+            Ok(output) => output,
+            Err(source) => {
+                if source
+                    .as_service_error()
+                    .is_some_and(GetObjectError::is_no_such_key)
+                {
+                    tracing::debug!(error = %source, "S3 cache miss");
+                } else {
+                    tracing::error!(error = %source, "S3 cache read failed");
+                }
+                return None;
+            }
+        };
+        match timeout(self.read_timeout, read::read_body(self, output)).await {
+            Ok(result) => result,
+            Err(source) => {
+                tracing::error!(error = %source, "S3 cache body timed out");
+                None
+            }
+        }
     }
 
     fn object_key(&self, key: &str) -> String {
-        let normalized_key = key.replace(':', "/");
-        format!("{}{}", self.key_prefix, normalized_key)
-    }
-
-    fn request_target(&self, key: &str) -> (Client, String, String) {
-        let client = self.client.clone();
-        let bucket = self.bucket_name.clone();
-        let object_key = self.object_key(key);
-        (client, bucket, object_key)
+        let normalized = key.replace(':', "/");
+        format!("{}{normalized}", self.key_prefix)
     }
 }
 
-async fn put_request(client: &Client, bucket: &str, key: &str, body: Vec<u8>, ttl: Option<u64>) {
-    let cache_ttl = ttl.unwrap_or(DEFAULT_TTL);
-    let cache_control = format!("immutable, max-age={cache_ttl}, s-maxage={cache_ttl}");
-    let mut request = client
-        .put_object()
-        .bucket(bucket)
-        .key(key)
-        .body(ByteStream::from(body))
-        .cache_control(cache_control)
-        .content_type("application/json")
-        .content_language("en")
-        .content_disposition(format!("inline; filename=\"{key}.json\""));
-    if let Some(expiration_ttl) = ttl {
-        let seconds = i64::try_from(expiration_ttl).unwrap_or(i64::MAX);
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or(Duration::ZERO)
-            .as_secs();
-        let epoch_seconds = now.saturating_add(u64::try_from(seconds).unwrap_or(0));
-        let expires = DateTime::from_secs(i64::try_from(epoch_seconds).unwrap_or(i64::MAX));
-        request = request.expires(expires);
-    }
-    if request.send().await.is_err() {
-        tracing::warn!("S3 cache write failed");
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum CacheError {
+    #[error("S3 cache expiration overflows")]
+    ExpirationOverflow,
+    #[error("S3 cache clock is before epoch")]
+    Clock {
+        #[source]
+        source: SystemTimeError,
+    },
+    #[error("S3 cache timestamp overflows")]
+    Timestamp {
+        #[source]
+        source: TryFromIntError,
+    },
 }
 
-fn decode_body(bytes: &[u8]) -> Option<Value> {
-    let text = str::from_utf8(bytes).ok()?;
-    let parsed = serde_json::from_str(text)
-        .or_else(|_| {
-            let normalized = text.replace('\'', "\"");
-            serde_json::from_str(&normalized)
-        })
-        .ok()?;
-    match parsed {
-        Value::Object(object) => Some(Value::Object(object)),
-        Value::Array(values) => {
-            let mut object = serde_json::Map::new();
-            for pair in values {
-                let Value::Array(mut pair_values) = pair else {
-                    return None;
-                };
-                if pair_values.len() != 2 {
-                    return None;
-                }
-                let value = pair_values.pop().ok_or(()).ok()?;
-                let Value::String(object_key) = pair_values.pop().ok_or(()).ok()? else {
-                    return None;
-                };
-                object.insert(object_key, value);
-            }
-            Some(Value::Object(object))
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
-    }
+pub trait Disconnect {
+    fn disconnect(&self) -> impl Future<Output = ()> + Send;
 }
 
-#[must_use]
-pub fn decode_for_fuzzing(bytes: &[u8]) -> Option<Value> {
-    let mut decoded = decode_body(bytes);
-    decoded.take()
+impl Disconnect for S3Cache {
+    async fn disconnect(&self) {}
 }
 
 mod tests;

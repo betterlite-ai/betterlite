@@ -6,3 +6,18 @@ deviations:
   - what: "The S3 SDK uses SigV4 signing without optional SigV4a support or subprocess credential providers."
     why: "SigV4a pulls in crypto-bigint 0.5.5 affected by RUSTSEC-2026-0387; subprocess credential providers conflict with the gateway no-subprocess rule."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L43-L57
+  - what: "S3 uses native async SDK calls; sync calls require an injected runtime handle and return a logged miss or skipped write when called inside a runtime."
+    why: "The Rust SDK is async; an executor bridge would create unnecessary blocking work and nested runtimes can panic."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L103-L118
+  - what: "s3_use_ssl=false, s3_verify=false, custom CA paths and API versions other than 2006-03-01 are rejected with named configuration errors. s3_config supports integer connect_timeout/read_timeout from 1 to 86400 seconds, retries.max_attempts and auto/path s3.addressing_style; other fields are rejected."
+    why: "The injected transport retains certificate verification, and the Rust SDK uses a compiled service model; only explicitly mapped botocore options are supported. Explicit HTTP endpoints remain supported."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L43-L57
+  - what: "The decoder accepts JSON objects and dict-compatible JSON sequences with string keys, including two-character strings. Python literals and non-string dictionary keys return logged misses."
+    why: "Cache writes produce JSON; preserving arbitrary Python literal types would require a separate payload model. The misleading quote-replacement fallback was removed rather than corrupting apostrophes and Python scalar values."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L147-L153
+  - what: "Without explicit credentials the SDK makes unsigned requests and does not discover AWS environment, profiles, SSO or IMDS; missing region defaults to us-east-1."
+    why: "All deployment discovery belongs to betterlite-config, and this backend accepts only resolved settings."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L43-L57
+  - what: "Cache objects have a constructor-supplied byte limit, operations and reads time out, and pipelines run at most 16 writes concurrently."
+    why: "Untrusted or stalled S3 objects and large pipelines must not consume unbounded memory or execution resources."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L127-L182
