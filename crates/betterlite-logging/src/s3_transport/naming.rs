@@ -3,7 +3,6 @@ use sha2::{Digest as _, Sha256};
 
 use crate::s3_transport::options::PartitionGranularity;
 
-#[cfg(test)]
 mod tests;
 
 const MAX_OBJECT_KEY_BYTES: usize = 1024;

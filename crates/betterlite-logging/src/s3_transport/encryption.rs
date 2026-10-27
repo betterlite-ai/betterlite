@@ -1,6 +1,5 @@
 use crate::s3_transport::option_value::OptionValue;
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

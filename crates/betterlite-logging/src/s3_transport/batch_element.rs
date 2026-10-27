@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -9,7 +8,7 @@ pub enum ContentType {
     #[serde(rename = "application/json")]
     Json,
     #[serde(rename = "application/x-ndjson")]
-    NdJson,
+    Ndjson,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

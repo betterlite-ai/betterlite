@@ -10,7 +10,7 @@ use tracing::subscriber::with_default;
 
 use crate::s3_transport::option_value::OptionValue;
 use crate::s3_transport::options::{
-    Bound, Toggle, default_max_adaptive_concurrency, resolve_bound, resolve_log_prompts_only,
+    Bound, Toggle, default_adaptive_limit, resolve_bound, resolve_log_prompts_only,
     resolve_max_retry_age, resolve_partition_granularity, resolve_toggle,
 };
 
@@ -68,7 +68,7 @@ fn render(
         }
         Resolver::Toggle(toggle) => format!("{:?}", resolve_toggle(toggle, value)),
         Resolver::CeilingDefault => {
-            format!("{:?}", default_max_adaptive_concurrency(environment))
+            format!("{:?}", default_adaptive_limit(environment))
         }
     }
 }
@@ -137,7 +137,7 @@ fn render(
 #[case::adaptive_unset(ADAPTIVE, "null", &[], "false")]
 #[case::adaptive_short_true(ADAPTIVE, "t", &[], "true")]
 #[case::adaptive_short_yes(ADAPTIVE, "'Y'", &[], "true")]
-#[case::adaptive_mixed_case(ADAPTIVE, "TrUe", &[], "true")]
+#[case::adaptive_mixed_case(ADAPTIVE, "tRuE", &[], "true")]
 #[case::adaptive_one(ADAPTIVE, "1", &[], "true")]
 #[case::adaptive_zero_float(ADAPTIVE, "0.0", &[], "false")]
 #[case::adaptive_one_float(ADAPTIVE, "1.0", &[], "true")]

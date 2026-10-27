@@ -4,13 +4,12 @@ use betterlite_config::loader::EnvironmentLookup;
 
 use crate::s3_transport::option_value::{OptionValue, integer_from_text};
 
-#[cfg(test)]
 mod tests;
 
 const LOG_PROMPTS_ONLY_VARIABLE: &str = "S3_LOG_PROMPTS_ONLY";
 const PARTITION_GRANULARITY_VARIABLE: &str = "S3_PARTITION_GRANULARITY";
-const MAX_ADAPTIVE_CONCURRENCY_VARIABLE: &str = "DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY";
-const DEFAULT_MAX_ADAPTIVE_CONCURRENCY: usize = 200;
+const ADAPTIVE_LIMIT_ENV: &str = "DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY";
+const DEFAULT_ADAPTIVE_LIMIT: usize = 200;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartitionGranularity {
@@ -216,22 +215,22 @@ pub fn resolve_toggle(toggle: Toggle, configured: Option<&OptionValue>) -> bool 
 }
 
 #[must_use]
-pub fn default_max_adaptive_concurrency(environment: &dyn EnvironmentLookup) -> usize {
-    let configured = environment.lookup(MAX_ADAPTIVE_CONCURRENCY_VARIABLE);
+pub fn default_adaptive_limit(environment: &dyn EnvironmentLookup) -> usize {
+    let configured = environment.lookup(ADAPTIVE_LIMIT_ENV);
     // LiteLLM reads this with int(), which refuses the decimal zeros pydantic accepts
     let parsed = configured
         .as_deref()
         .filter(|text| !text.contains('.'))
         .and_then(integer_from_text);
     match parsed.map(usize::try_from) {
-        None => DEFAULT_MAX_ADAPTIVE_CONCURRENCY,
+        None => DEFAULT_ADAPTIVE_LIMIT,
         Some(Ok(ceiling)) => ceiling,
         Some(Err(_)) => {
             tracing::warn!(
                 ?configured,
                 "s3 logging: DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY is negative, using 200"
             );
-            DEFAULT_MAX_ADAPTIVE_CONCURRENCY
+            DEFAULT_ADAPTIVE_LIMIT
         }
     }
 }
