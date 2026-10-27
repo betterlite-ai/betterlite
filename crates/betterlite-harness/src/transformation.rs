@@ -8,6 +8,7 @@ use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::options::OptionsKind;
+use crate::sandbox::Sandbox;
 use crate::types::{Capabilities, Harness, JsonObject};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -87,12 +88,16 @@ pub trait BaseCLIHarnessConfig: BaseHarnessConfig {
         &self,
         context: &SessionContext<S>,
         private_dir: &str,
-    ) -> Result<HarnessSessionSetup, HarnessError>;
+    ) -> Result<HarnessSessionSetup, HarnessError>
+    where
+        S: Sandbox;
     fn transform_turn_request<S>(
         &self,
         context: &SessionContext<S>,
         turn: TurnInput<'_>,
-    ) -> Result<HarnessTurnRequest, HarnessError>;
+    ) -> Result<HarnessTurnRequest, HarnessError>
+    where
+        S: Sandbox;
     fn create_stream_state(&self) -> Self::StreamState;
     fn transform_stream_line(&self, line: &JsonObject, state: &mut Self::StreamState)
     -> Vec<Event>;

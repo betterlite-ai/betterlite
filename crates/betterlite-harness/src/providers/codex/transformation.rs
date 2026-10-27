@@ -17,6 +17,7 @@ use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::options::{CodexOptions, OptionsKind, ReasoningEffort};
 use crate::payloads::{stderr_tail_text, strict_json_schema};
+use crate::sandbox::Sandbox;
 use crate::transformation::{
     BaseCLIHarnessConfig, BaseHarnessConfig, HarnessSessionSetup, HarnessTurnRequest,
     HarnessTurnResponse, PersistedDir, TurnInput,
@@ -129,7 +130,10 @@ fn provider_overrides<S>(context: &SessionContext<S>) -> Result<Vec<String>, Har
     ])
 }
 
-fn permission_args<S>(context: &SessionContext<S>, resumed: bool) -> Vec<String> {
+fn permission_args<S: Sandbox>(context: &SessionContext<S>, resumed: bool) -> Vec<String> {
+    if context.settings.permissions != PermissionMode::ReadOnly && context.sandbox.is_container() {
+        return vec!["--dangerously-bypass-approvals-and-sandbox".to_owned()];
+    }
     let mode = match context.settings.permissions {
         PermissionMode::ReadOnly => "read-only",
         PermissionMode::Full | PermissionMode::Ask | PermissionMode::Edit => "workspace-write",
@@ -336,7 +340,10 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
         &self,
         context: &SessionContext<S>,
         private_dir: &str,
-    ) -> Result<HarnessSessionSetup, HarnessError> {
+    ) -> Result<HarnessSessionSetup, HarnessError>
+    where
+        S: Sandbox,
+    {
         let gateway = context.settings.gateway.as_ref().ok_or_else(mismatch)?;
         let mut setup = HarnessSessionSetup {
             persisted_dirs: vec![PersistedDir {
@@ -383,7 +390,10 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
         &self,
         context: &SessionContext<S>,
         turn: TurnInput<'_>,
-    ) -> Result<HarnessTurnRequest, HarnessError> {
+    ) -> Result<HarnessTurnRequest, HarnessError>
+    where
+        S: Sandbox,
+    {
         let options = self.get_options(context)?;
         let mut argv = vec!["codex".to_owned(), "exec".to_owned()];
         if let Some(id) = turn.native_session_id {
@@ -403,13 +413,15 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 format!("{}/{}", turn.private_dir, CODEX_SCHEMA_FILENAME),
             ]);
         }
-        // The process runner supplies the sandbox workdir as its default cwd.
+        if turn.native_session_id.is_none() {
+            argv.extend(["-C".to_owned(), context.sandbox.workdir().to_owned()]);
+        }
         argv.push("-".to_owned());
         Ok(HarnessTurnRequest {
             argv,
             env: turn.setup.env.clone(),
             stdin: turn.prompt.to_owned(),
-            cwd: None,
+            cwd: Some(context.sandbox.workdir().to_owned()),
         })
     }
     fn create_stream_state(&self) -> Self::StreamState {
