@@ -36,46 +36,87 @@ pub fn build_key_search_sql<Clock>(
 where
     Clock: Fn() -> DateTime<Utc>,
 {
-    let (where_sql, params, [search_index, sentinel_index, limit_index]) =
-        ranked_indexes(scope, limit, clock)?;
     let escaped = search
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
-    let table = scope.as_ref().table.metadata().relation;
-    let predicate = format!(
-        "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
-    );
-    let normalized_predicate = predicate.replace("\\\\", "\\");
-    let sql = format!(
-        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {normalized_predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
-    );
-    Ok(finish_ranked(sql, params, format!("%{escaped}%"), limit))
+    let predicate = search_predicate();
+    let query = ranked_query(scope, limit, clock, predicate, format!("%{escaped}%"))?;
+    Ok(query)
 }
 
-pub fn build_model_top_keys_sql<Clock>(
+fn search_predicate() -> Box<dyn FnOnce([usize; 3]) -> String> {
+    let predicate = move |[search_index, sentinel_index, _]: [usize; 3]| {
+        let predicate = format!(
+            "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
+        );
+        predicate.replace("\\\\", "\\")
+    };
+    Box::new(predicate)
+}
+
+#[rustfmt::skip]
+pub fn build_model_top_keys_sql<Clock>(scope: &DailyActivityScope, model_group: &str, by_model_group: bool, limit: i64, clock: &Clock) -> Result<SqlQuery, DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+{
+    let model_value = model_group.to_owned();
+    let request = (model_value, by_model_group);
+    let query = build_model_ranked(scope, limit, clock, request)?;
+    Ok(query)
+}
+
+fn build_model_ranked<Clock>(
     scope: &DailyActivityScope,
-    model_group: &str,
-    by_model_group: bool,
     limit: i64,
     clock: &Clock,
+    request: (String, bool),
 ) -> Result<SqlQuery, DailyActivityExportError>
 where
     Clock: Fn() -> DateTime<Utc>,
 {
-    let (where_sql, params, [model_index, sentinel_index, limit_index]) =
-        ranked_indexes(scope, limit, clock)?;
-    let model_sql = if by_model_group {
-        format!("COALESCE(NULLIF(model_group, ''), model) = ${model_index}")
-    } else {
-        format!("model = ${model_index}")
-    };
+    let (model_value, by_model_group) = request;
+    ranked_query(
+        scope,
+        limit,
+        clock,
+        move |[model_index, sentinel_index, _]: [usize; 3]| {
+            let model_sql = if by_model_group {
+                format!("COALESCE(NULLIF(model_group, ''), model) = ${model_index}")
+            } else {
+                format!("model = ${model_index}")
+            };
+            format!("AND {model_sql} AND api_key <> ${sentinel_index}")
+        },
+        model_value,
+    )
+}
+
+fn ranked_query<Clock, Predicate>(
+    scope: &DailyActivityScope,
+    limit: i64,
+    clock: &Clock,
+    predicate: Predicate,
+    extra: String,
+) -> Result<SqlQuery, DailyActivityExportError>
+where
+    Clock: Fn() -> DateTime<Utc>,
+    Predicate: FnOnce([usize; 3]) -> String,
+{
+    let (where_sql, params, indexes @ [_, _, limit_index]) = ranked_indexes(scope, limit, clock)?;
     let table = scope.as_ref().table.metadata().relation;
-    let predicate = format!("AND {model_sql} AND api_key <> ${sentinel_index}");
-    let sql = format!(
-        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
-    );
-    Ok(finish_ranked(sql, params, model_group.to_owned(), limit))
+    let predicate_sql = predicate(indexes);
+    Ok(finish_ranked(
+        RankedSql {
+            table,
+            where_sql,
+            predicate: predicate_sql,
+            limit_index,
+            params,
+        },
+        extra,
+        limit,
+    ))
 }
 
 fn ranked_indexes<Clock>(
@@ -101,12 +142,25 @@ where
     Ok((sql, params, [first, second, third]))
 }
 
-fn finish_ranked(
-    sql: String,
-    mut params: Vec<SqlParameter>,
-    extra: String,
-    limit: i64,
-) -> SqlQuery {
+struct RankedSql {
+    table: &'static str,
+    where_sql: String,
+    predicate: String,
+    limit_index: usize,
+    params: Vec<SqlParameter>,
+}
+
+fn finish_ranked(plan: RankedSql, extra: String, limit: i64) -> SqlQuery {
+    let RankedSql {
+        table,
+        where_sql,
+        predicate,
+        limit_index,
+        mut params,
+    } = plan;
+    let sql = format!(
+        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
+    );
     params.extend([
         SqlParameter::Text(extra),
         SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()),

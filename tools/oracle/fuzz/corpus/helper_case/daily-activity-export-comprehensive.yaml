@@ -24,3 +24,5 @@ call:
         export_type: daily_with_users
         after: null
         batch_size: 2
+env: {}
+compare: {ignore: []}
