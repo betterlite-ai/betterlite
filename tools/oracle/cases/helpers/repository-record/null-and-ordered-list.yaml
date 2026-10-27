@@ -2,7 +2,18 @@ kind: helper
 name: repository-record-null-and-ordered-list
 call:
   repository_record:
-    operation: to_model_list
-    record: [null, {id: 2}, null, {id: 1}]
+    cases:
+        null_record_returns_none:
+          operation: model
+          records: [null]
+        null_list_entries_dropped:
+          operation: list
+          records: [null, {mapping: {id: 1}}, null]
+        conversion_none_dropped:
+          operation: list
+          records: [{mapping: {id: -1}}, {mapping: {id: 2}}]
+        list_order_preserved:
+          operation: list
+          records: [{mapping: {id: 2}}, {mapping: {id: 1}}]
 env: {}
 compare: {ignore: []}

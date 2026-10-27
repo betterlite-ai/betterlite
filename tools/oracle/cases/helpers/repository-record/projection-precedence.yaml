@@ -2,7 +2,12 @@ kind: helper
 name: repository-record-projection-precedence
 call:
   repository_record:
-    operation: record_to_dict
-    record: {model_dump: {a: 1}, dict: {a: 2}}
+    cases:
+        model_dump_before_dict:
+          operation: projection
+          records: [{model_dump: {id: 1}, dict: {id: 2}, mapping: {id: 3}}]
+        dict_before_mapping:
+          operation: projection
+          records: [{dict: {id: 2}, mapping: {id: 3}}]
 env: {}
 compare: {ignore: []}

@@ -2,7 +2,9 @@ kind: helper
 name: repository-record-seed
 call:
   repository_record:
-    operation: to_model_list
-    record: [null, {id: 1}, {id: 2}]
+    cases:
+      nullable_list:
+        operation: list
+        records: [null, {mapping: {id: 1}}, {mapping: {id: 2}}]
 env: {}
 compare: {ignore: []}

@@ -2,7 +2,12 @@ kind: helper
 name: repository-record-invalid-model-propagates
 call:
   repository_record:
-    operation: to_model
-    record: {invalid: true}
+    cases:
+        invalid_record_propagates:
+          operation: model
+          records: [{mapping: {invalid: 1}}]
+        invalid_list_record_propagates:
+          operation: list
+          records: [{mapping: {id: 1}}, {mapping: {invalid: 1}}]
 env: {}
 compare: {ignore: []}
