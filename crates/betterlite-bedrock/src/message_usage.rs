@@ -103,7 +103,9 @@ fn copy_stop_usage(delta: &mut Object, stop_usage: Option<&Object>) {
             delta.insert(field.to_owned(), value.clone());
         }
     }
-    if let Some(value) = stop.get("input_tokens") {
+    if let Some(value) = stop.get("input_tokens")
+        && !value.is_null()
+    {
         let input = if is_integer(value) {
             value.clone()
         } else {

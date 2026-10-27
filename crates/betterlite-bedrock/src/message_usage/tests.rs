@@ -13,6 +13,11 @@ use super::promote_message_usage;
 #[case::missing_stop_metrics(r#"[{"type":"message_start","message":{"usage":{"cache_read_input_tokens":4}}},{"type":"message_delta","usage":{}}]"#, r#"[{"type":"message_start","message":{"usage":{"cache_read_input_tokens":4}}},{"type":"message_delta","usage":{"cache_read_input_tokens":4}}]"#)]
 #[case::cache_creation_details(r#"[{"type":"message_start","message":{"usage":{"cache_creation":{"ephemeral_5m_input_tokens":5}}}},{"type":"message_delta","usage":{"cache_creation":null}},{"type":"message_stop","usage":{"cache_creation":{"ignored":1}}}]"#, r#"[{"type":"message_start","message":{"usage":{"cache_creation":{"ephemeral_5m_input_tokens":5}}}},{"type":"message_delta","usage":{"cache_creation":null}},{"type":"message_stop","usage":{"cache_creation":{"ignored":1}}}]"#)]
 #[case::event_order_after_promotion(r#"[{"type":"message_stop","usage":{"input_tokens":99}},{"type":"message_delta","usage":{}},{"type":"message_stop","usage":{}},{"type":"other","value":1}]"#, r#"[{"type":"message_stop","usage":{"input_tokens":99}},{"type":"message_delta","usage":{}},{"type":"message_stop","usage":{}},{"type":"other","value":1}]"#)]
+#[case::null_stop_input(r#"[{"type":"message_delta","usage":{"input_tokens":7}},{"type":"message_stop","usage":{"input_tokens":null}}]"#, r#"[{"type":"message_delta","usage":{"input_tokens":7}},{"type":"message_stop","usage":{"input_tokens":null}}]"#)]
+#[case::null_stop_input_without_delta_usage(
+    r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":null}}]"#,
+    r#"[{"type":"message_delta"},{"type":"message_stop","usage":{"input_tokens":null}}]"#
+)]
 fn message_usage_cases(#[case] input: &str, #[case] expected: &str) {
     let events: Vec<Value> = serde_json::from_str(input).unwrap();
     let wanted: Vec<Value> = serde_json::from_str(expected).unwrap();

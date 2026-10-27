@@ -9,6 +9,13 @@ call:
         usage: {cache_read_input_tokens: 2}
       - type: message_stop
         usage: {cache_creation_input_tokens: 3, input_tokens: 4}
+      - type: message_delta
+        usage: {input_tokens: 7}
+      - type: message_stop
+        usage: {input_tokens: null}
+      - type: message_delta
+      - type: message_stop
+        usage: {input_tokens: null}
 env: {}
 compare:
   ignore: []
