@@ -1,0 +1,8 @@
+kind: helper
+name: wrong-router-type
+call:
+  routing_decision_headers:
+    function: complexity
+    request: {metadata: {routing_decision: {router_type: quality, tier: high}}}
+env: {}
+compare: {ignore: []}

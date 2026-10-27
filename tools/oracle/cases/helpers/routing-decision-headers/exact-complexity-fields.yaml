@@ -1,0 +1,8 @@
+kind: helper
+name: exact-complexity-fields
+call:
+  routing_decision_headers:
+    function: complexity
+    request: {metadata: {routing_decision: {router_type: complexity, tier: high, cause: score, score: 0.75, tier_litellm_params: {reasoning_effort: high}}}}
+env: {}
+compare: {ignore: []}
