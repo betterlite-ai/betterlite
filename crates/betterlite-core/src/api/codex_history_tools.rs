@@ -31,12 +31,12 @@ pub fn normalize_codex_input_items(input: &Value) -> (Value, Vec<String>) {
     let mut rewritten_types = BTreeSet::new();
     let mut normalized = Vec::with_capacity(items.len());
     for item in items {
-        let (rewritten, rewritten_type) = normalize_item(item);
-        if let Some(rewritten_type) = rewritten_type {
-            rewritten_types.insert(rewritten_type.to_owned());
+        let (normalized_item, item_type) = normalize_item(item);
+        if let Some(item_type) = item_type {
+            rewritten_types.insert(item_type.to_owned());
         }
-        if let Some(rewritten) = rewritten {
-            normalized.push(rewritten);
+        if let Some(normalized_item) = normalized_item {
+            normalized.push(normalized_item);
         }
     }
     (
@@ -76,17 +76,51 @@ pub fn drop_unsupported_tools(
 pub fn hoist_additional_tools(input: &Value, tools: Option<&[Value]>) -> HoistedAdditionalTools {
     let existing = tools.map_or_else(Vec::new, <[Value]>::to_vec);
     if !input.is_array() {
-        return result(input, existing, Vec::new(), None);
+        return HoistedAdditionalTools {
+            input: input.clone(),
+            tools: existing,
+            hoisted: Vec::new(),
+            debug: None,
+        };
     }
-    let items = input.as_array().map_or(0, |values| {
-        values
-            .iter()
-            .filter(|item| is_additional_tools(item))
-            .count()
-    });
+    let items = input
+        .as_array()
+        .map_or(0, |values| additional_tools_count(values));
     if items == 0 {
-        return result(input, existing, Vec::new(), None);
+        return HoistedAdditionalTools {
+            input: input.clone(),
+            tools: existing,
+            hoisted: Vec::new(),
+            debug: None,
+        };
     }
+    let (remaining, hoisted) = split_additional_tools(input);
+    let debug = format!(
+        "Responses API: hoisting {} tool(s) out of {} 'additional_tools' input item(s) into the top-level tools param.",
+        hoisted.len(),
+        items
+    );
+    let mut all_tools = existing;
+    all_tools.extend(hoisted.iter().cloned());
+    HoistedAdditionalTools {
+        input: Value::Array(remaining),
+        tools: all_tools,
+        hoisted,
+        debug: Some(debug),
+    }
+}
+
+fn additional_tools_count(items: &[Value]) -> usize {
+    let mut count: usize = 0;
+    for item in items {
+        if is_additional_tools(item) {
+            count = count.saturating_add(1);
+        }
+    }
+    count
+}
+
+fn split_additional_tools(input: &Value) -> (Vec<Value>, Vec<Value>) {
     let mut hoisted = Vec::new();
     let mut remaining = Vec::new();
     for item in input.as_array().into_iter().flatten() {
@@ -98,28 +132,7 @@ pub fn hoist_additional_tools(input: &Value, tools: Option<&[Value]>) -> Hoisted
             remaining.push(item.clone());
         }
     }
-    let debug = format!(
-        "Responses API: hoisting {} tool(s) out of {} 'additional_tools' input item(s) into the top-level tools param.",
-        hoisted.len(),
-        items
-    );
-    let mut all_tools = existing;
-    all_tools.extend(hoisted.iter().cloned());
-    result(&Value::Array(remaining), all_tools, hoisted, Some(debug))
-}
-
-fn result(
-    input: &Value,
-    tools: Vec<Value>,
-    hoisted: Vec<Value>,
-    debug: Option<String>,
-) -> HoistedAdditionalTools {
-    HoistedAdditionalTools {
-        input: input.clone(),
-        tools,
-        hoisted,
-        debug,
-    }
+    (remaining, hoisted)
 }
 
 fn normalize_item(item: &Value) -> (Option<Value>, Option<&str>) {
@@ -138,19 +151,13 @@ fn normalize_agent_message(item: &Map<String, Value>) -> Option<Value> {
     let content = item.get("content")?.as_array()?;
     let mut text = String::new();
     for block in content {
-        let Some(block) = block.as_object() else {
+        let Some(block_object) = block.as_object() else {
             continue;
         };
-        let value = block
-            .get("text")
-            .filter(|value| is_truthy(value))
-            .or_else(|| {
-                block
-                    .get("encrypted_content")
-                    .filter(|value| is_truthy(value))
-            });
-        if let Some(value) = value {
-            text.push_str(&value_to_python_string(value));
+        let selected_value = truthy_field(block_object, "text")
+            .or_else(|| truthy_field(block_object, "encrypted_content"));
+        if let Some(selected_value) = selected_value {
+            text.push_str(&value_to_python_string(selected_value));
         }
     }
     if text.is_empty() {
@@ -162,18 +169,12 @@ fn normalize_agent_message(item: &Map<String, Value>) -> Option<Value> {
 }
 
 fn normalize_compaction(item: &Map<String, Value>) -> Option<Value> {
-    let encrypted = item
-        .get("encrypted_content")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())?;
+    let encrypted = nonempty_field(item, "encrypted_content")?;
     Some(serde_json::json!({"type":"compaction","encrypted_content":encrypted}))
 }
 
 fn normalize_local_shell(item: &Map<String, Value>) -> Option<Value> {
-    let call_id = item
-        .get("call_id")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())?;
+    let call_id = nonempty_field(item, "call_id")?;
     let arguments = item
         .get("action")
         .filter(|value| value.is_object())
@@ -184,7 +185,20 @@ fn normalize_local_shell(item: &Map<String, Value>) -> Option<Value> {
 }
 
 fn is_additional_tools(item: &Value) -> bool {
-    item.get("type").and_then(Value::as_str) == Some(ADDITIONAL_TOOLS)
+    let item_type = item.get("type").and_then(Value::as_str);
+    item_type == Some(ADDITIONAL_TOOLS)
+}
+
+fn nonempty_field<'value>(item: &'value Map<String, Value>, field: &str) -> Option<&'value str> {
+    let value = item.get(field).and_then(Value::as_str)?;
+    if value.is_empty() {
+        return None;
+    }
+    Some(value)
+}
+
+fn truthy_field<'value>(item: &'value Map<String, Value>, field: &str) -> Option<&'value Value> {
+    item.get(field).filter(|value| is_truthy(value))
 }
 
 fn is_truthy(value: &Value) -> bool {
@@ -197,15 +211,17 @@ fn is_truthy(value: &Value) -> bool {
 }
 
 fn value_name(value: &Value) -> String {
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), ToOwned::to_owned)
+    if let Some(name) = value.as_str() {
+        return name.to_owned();
+    }
+    value.to_string()
 }
 
 fn value_to_python_string(value: &Value) -> String {
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), ToOwned::to_owned)
+    if let Some(text) = value.as_str() {
+        return text.to_owned();
+    }
+    value.to_string()
 }
 
 fn python_json(value: &Value) -> String {
@@ -231,9 +247,11 @@ fn python_json(value: &Value) -> String {
 }
 
 fn json_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_owned())
+    if let Ok(encoded) = serde_json::to_string(value) {
+        return encoded;
+    }
+    "\"\"".to_owned()
 }
 
-#[cfg(test)]
 #[path = "codex_history_tools/tests.rs"]
 mod tests;

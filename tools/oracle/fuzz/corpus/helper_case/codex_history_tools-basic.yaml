@@ -1,4 +1,4 @@
-codex_history_tools:
+  codex_history_tools:
   operation: normalize
   input:
     - type: agent_message
