@@ -37,7 +37,7 @@ fn scans_up_to_the_depth_limit(#[case] depth: usize, #[case] leaf: &str, #[case]
 #[test]
 fn leaves_come_with_their_paths_and_labels_with_keys_first() {
     let found = scan_json(
-        &value(r#"{"b":[1,{"c":"deep"}],"a":"top","d":2,"e":true,"f":null}"#),
+        &value(r#"{"b":[1,{"c":"deep"}],"a":"top","d":2.5,"e":true,"f":null}"#),
         NestedPayload::StructuredContent,
     )
     .unwrap();
@@ -60,7 +60,7 @@ fn leaves_come_with_their_paths_and_labels_with_keys_first() {
     );
     assert_eq!(
         found.labels,
-        texts(&["a", "b", "d", "e", "f", "1", "c", "2"])
+        texts(&["a", "b", "d", "e", "f", "1", "c", "2.5"])
     );
 }
 #[tokio::test]

@@ -4,7 +4,7 @@ deviations:
     why: The MCP value type stores objects in a BTreeMap; LiteLLM walks dicts in insertion order. The positional write-back stays consistent because scan and write-back use the same order.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L801-L819
   - what: Numeric structuredContent labels use serde_json's standard numeric rendering rather than Python's str(float) rendering for every value.
-    why: Standard serde_json parsing preserves the payload's numeric type and rendering. Object-shaped values, including the private-number-shaped object emitted by arbitrary-precision serde_json, remain objects so their keys are labels and string children remain visible to scanning.
+    why: Real JSON numbers remain numbers with their original rendering in both standard and arbitrary-precision builds. Only a client-sent single-key private-number-shaped object with a non-numeric string remains an object, with its key as a label and its string as a scanned leaf.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L837-L863
   - what: A tool result that carries both structuredContent and structured_content fails to parse instead of LiteLLM preferring structuredContent.
     why: Both keys name the same field; keeping one and dropping the other silently would break rule no-silent-drops.
