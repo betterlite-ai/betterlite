@@ -1,5 +1,14 @@
 [graph]
 all-features = true
+# reqwest with rustls pulls in webpki-root-certs (CDLA-Permissive-2.0) for wasm32 only, so checks cover the targets betterlite ships; add a target here before shipping a build for it
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
 
 [advisories]
 version = 2

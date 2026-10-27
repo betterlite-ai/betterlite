@@ -36,7 +36,7 @@ scope:
   - tools/oracle/helpers/error_call_id/**
   - tools/oracle/cases/helpers/error-normalization/**
   - tools/oracle/cases/errors/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/error_normalization-*"
   lint_tables: false
 references:
 - url: >-
@@ -102,8 +102,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'error_normalization' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'error_call_id' tools/oracle/fuzz/corpus/helper_case
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/error_normalization-*")" &&
+      grep -lq 'error_normalization' tools/oracle/fuzz/corpus/helper_case/error_normalization-* && grep -lq 'error_call_id' tools/oracle/fuzz/corpus/helper_case/error_normalization-*
       && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -123,6 +123,7 @@ out_of_scope:
 - The normalized logging code is not a replacement for the LiteLLM-compatible HTTP error type/code.
 - Budget, rate-limit and auth enforcement remain in their own tasks.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/error_normalization-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as error_normalization and error_call_id in the error group. Replace the stub Op in tools/oracle/src/helpers/error/normalization.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/error_normalization.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   Compare a random call id for presence in the oracle and assert header/body equality inside the real-server test.

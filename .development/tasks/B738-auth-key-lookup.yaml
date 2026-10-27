@@ -87,7 +87,6 @@ scope:
     - crates/betterlite-auth/src/auth_key_lookup/**
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
-    - deny.toml
     - tools/oracle/src/helpers/server/auth_key_lookup.rs
     - tools/oracle/src/helpers/server/auth_key_lookup/**
     - tools/oracle/helpers/auth_key_lookup.py
