@@ -24,7 +24,6 @@ scope:
   - tools/oracle/helpers/redis_cluster_node_isolation/**
   - tools/oracle/cases/helpers/redis-cluster-node-isolation/**
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-redis/src/redis_cluster_node_isolation/tests/**
   lint_tables: false
 references:

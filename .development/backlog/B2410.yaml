@@ -1,7 +1,7 @@
 id: B2410
 milestone: M5 API families
 title: Codex history normalization and additional tools
-status: todo
+status: done
 depends_on: [B004, B171]
 file: tasks/B2410-codex-history-tools.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/responses/additional_tools.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 249

@@ -1,0 +1,14 @@
+kind: helper
+name: additional-tools-malformed
+call:
+  codex_history_tools:
+    operation: hoist_additional_tools
+    input:
+      - type: additional_tools
+        tools:
+          - type: discarded
+          - malformed
+    tools: []
+compare:
+  ignore: []
+env: {}

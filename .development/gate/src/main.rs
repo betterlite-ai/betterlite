@@ -1,3 +1,4 @@
+mod affected;
 mod answer;
 mod backlog;
 mod builtins;
@@ -49,6 +50,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(
+        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set prints --workspace"
+    )]
+    Affected,
     #[command(
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
     )]
@@ -174,6 +179,7 @@ fn run_command(
     development: &Development,
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
+        Command::Affected => Ok((affected::affected(&development.root)?, true)),
         Command::Validate => {
             let problems = validate::validate(&development.root)?;
             let passed = problems.is_empty();
