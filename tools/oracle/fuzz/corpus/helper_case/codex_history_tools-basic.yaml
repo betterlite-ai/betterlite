@@ -1,7 +1,13 @@
+kind: helper
+name: codex-history-tools-basic
+call:
   codex_history_tools:
-  operation: normalize
-  input:
-    - type: agent_message
-      content:
-        - text: a
-        - encrypted_content: b
+    operation: normalize
+    input:
+      - type: agent_message
+        content:
+          - text: a
+          - encrypted_content: b
+env: {}
+compare:
+  ignore: []

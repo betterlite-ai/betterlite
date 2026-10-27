@@ -198,7 +198,11 @@ fn nonempty_field<'value>(item: &'value Map<String, Value>, field: &str) -> Opti
 }
 
 fn truthy_field<'value>(item: &'value Map<String, Value>, field: &str) -> Option<&'value Value> {
-    item.get(field).filter(|value| is_truthy(value))
+    let value = item.get(field)?;
+    if is_truthy(value) {
+        return Some(value);
+    }
+    None
 }
 
 fn is_truthy(value: &Value) -> bool {
