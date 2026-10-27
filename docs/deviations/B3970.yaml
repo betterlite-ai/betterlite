@@ -1,0 +1,5 @@
+task: B3970
+deviations:
+  - what: MLflow SDK calls are represented by an injected MlflowClient contract rather than a live Python SDK bridge.
+    why: The task explicitly places MlflowClient and span lifecycle execution outside scope until an execution contract exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L16-L18
