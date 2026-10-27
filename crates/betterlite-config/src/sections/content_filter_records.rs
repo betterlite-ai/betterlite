@@ -13,9 +13,9 @@ use crate::sections::guardrail_identity::config_models::GuardrailConfigModelIden
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentFilterAction {
-    #[serde(rename = "BLOCK", alias = "block")]
+    #[serde(rename = "BLOCK")]
     Block,
-    #[serde(rename = "MASK", alias = "mask")]
+    #[serde(rename = "MASK")]
     Mask,
 }
 

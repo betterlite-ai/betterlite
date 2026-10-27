@@ -56,6 +56,11 @@ fn config_records_load_litellm_fields() {
         serde_json::from_str::<ContentFilterCategoryConfig>(r#"{"category":"bias_gender"}"#)
             .unwrap_err();
     assert!(no_action.to_string().contains("missing field `action`"));
+    let lowercase = serde_json::from_str::<ContentFilterCategoryConfig>(
+        r#"{"category":"bias_gender","action":"block"}"#,
+    )
+    .unwrap_err();
+    assert!(lowercase.to_string().contains("unknown variant `block`"));
 
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
     assert_eq!(code.action, BlockCodeAction::Mask);
