@@ -85,39 +85,39 @@ struct RawDeployment {
 
 #[derive(Debug, Clone, Default)]
 pub struct AwsSettings {
-    pub aws_access_key_id: Option<SecretString>,
-    pub aws_secret_access_key: Option<SecretString>,
-    pub aws_session_token: Option<SecretString>,
-    pub aws_region_name: Option<String>,
-    pub aws_session_name: Option<String>,
-    pub aws_profile_name: Option<String>,
-    pub aws_role_name: Option<String>,
-    pub aws_web_identity_token: Option<SecretString>,
-    pub aws_sts_endpoint: Option<String>,
-    pub aws_external_id: Option<SecretString>,
-    pub aws_role_arn: Option<String>,
-    pub aws_web_identity_token_file: Option<String>,
-    pub aws_bearer_token_bedrock: Option<SecretString>,
-    pub aws_session_tags: Option<RawValue>,
+    pub access_key_id: Option<SecretString>,
+    pub secret_access_key: Option<SecretString>,
+    pub session_token: Option<SecretString>,
+    pub region_name: Option<String>,
+    pub session_name: Option<String>,
+    pub profile_name: Option<String>,
+    pub role_name: Option<String>,
+    pub web_identity_token: Option<SecretString>,
+    pub sts_endpoint: Option<String>,
+    pub external_id: Option<SecretString>,
+    pub role_arn: Option<String>,
+    pub web_identity_token_file: Option<String>,
+    pub bearer_token_bedrock: Option<SecretString>,
+    pub session_tags: Option<RawValue>,
 }
 
 impl AwsSettings {
     #[must_use]
     pub fn deployable(&self, field: &str) -> bool {
         match field {
-            "aws_access_key_id" => self.aws_access_key_id.is_some(),
-            "aws_secret_access_key" => self.aws_secret_access_key.is_some(),
-            "aws_session_token" => self.aws_session_token.is_some(),
-            "aws_region_name" => self.aws_region_name.is_some(),
-            "aws_session_name" => self.aws_session_name.is_some(),
-            "aws_profile_name" => self.aws_profile_name.is_some(),
-            "aws_role_name" => self.aws_role_name.is_some(),
-            "aws_web_identity_token" => self.aws_web_identity_token.is_some(),
-            "aws_sts_endpoint" => self.aws_sts_endpoint.is_some(),
-            "aws_external_id" => self.aws_external_id.is_some(),
-            "aws_role_arn" => self.aws_role_arn.is_some(),
-            "aws_web_identity_token_file" => self.aws_web_identity_token_file.is_some(),
-            "aws_bearer_token_bedrock" => self.aws_bearer_token_bedrock.is_some(),
+            "aws_access_key_id" => self.access_key_id.is_some(),
+            "aws_secret_access_key" => self.secret_access_key.is_some(),
+            "aws_session_token" => self.session_token.is_some(),
+            "aws_region_name" => self.region_name.is_some(),
+            "aws_session_name" => self.session_name.is_some(),
+            "aws_profile_name" => self.profile_name.is_some(),
+            "aws_role_name" => self.role_name.is_some(),
+            "aws_web_identity_token" => self.web_identity_token.is_some(),
+            "aws_sts_endpoint" => self.sts_endpoint.is_some(),
+            "aws_external_id" => self.external_id.is_some(),
+            "aws_role_arn" => self.role_arn.is_some(),
+            "aws_web_identity_token_file" => self.web_identity_token_file.is_some(),
+            "aws_bearer_token_bedrock" => self.bearer_token_bedrock.is_some(),
             _ => false,
         }
     }
@@ -153,8 +153,8 @@ impl Section for Raw {
 }
 
 macro_rules! resolve_value {
-    (secret, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $input:ident, $name:literal) => {
-        $raw.$input
+    (secret, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $name:literal) => {
+        $raw.$field
             .or_else(|| {
                 $fallback
                     .and_then(|settings| settings.$field.as_ref())
@@ -165,8 +165,8 @@ macro_rules! resolve_value {
             .transpose()
             .map(Option::flatten)?
     };
-    (text, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $input:ident, $name:literal) => {
-        $raw.$input
+    (text, $raw:ident, $fallback:ident, $lookup:ident, $field:ident, $name:literal) => {
+        $raw.$field
             .or_else(|| {
                 $fallback
                     .and_then(|settings| settings.$field.as_ref())
@@ -187,28 +187,32 @@ where
     L: EnvironmentLookup,
 {
     macro_rules! resolve {
-        ($kind:ident, $field:ident, $input:ident, $name:literal) => {
-            resolve_value!($kind, raw, fallback, lookup, $field, $input, $name)
+        ($kind:ident, $field:ident, $name:literal) => {
+            resolve_value!($kind, raw, fallback, lookup, $field, $name)
         };
     }
     raw.session_tags.as_ref().map(RawValue::preserve);
     Ok(AwsSettings {
-        aws_access_key_id: resolve!(secret, aws_access_key_id, access_key_id, "AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key: resolve!(secret, aws_secret_access_key, secret_access_key, "AWS_SECRET_ACCESS_KEY"),
-        aws_session_token: resolve!(secret, aws_session_token, session_token, "AWS_SESSION_TOKEN"),
-        aws_region_name: resolve!(text, aws_region_name, region_name, "AWS_REGION_NAME"),
-        aws_session_name: resolve!(text, aws_session_name, session_name, "AWS_SESSION_NAME"),
-        aws_profile_name: resolve!(text, aws_profile_name, profile_name, "AWS_PROFILE_NAME"),
-        aws_role_name: resolve!(text, aws_role_name, role_name, "AWS_ROLE_NAME"),
-        aws_web_identity_token: resolve!(secret, aws_web_identity_token, web_identity_token, "AWS_WEB_IDENTITY_TOKEN"),
-        aws_sts_endpoint: resolve!(text, aws_sts_endpoint, sts_endpoint, "AWS_STS_ENDPOINT"),
-        aws_external_id: resolve!(secret, aws_external_id, external_id, "AWS_EXTERNAL_ID"),
-        aws_role_arn: resolve!(text, aws_role_arn, role_arn, "AWS_ROLE_ARN"),
-        aws_web_identity_token_file: resolve!(text, aws_web_identity_token_file, web_identity_token_file, "AWS_WEB_IDENTITY_TOKEN_FILE"),
-        aws_bearer_token_bedrock: resolve!(secret, aws_bearer_token_bedrock, bearer_token_bedrock, "AWS_BEARER_TOKEN_BEDROCK"),
-        aws_session_tags: raw.session_tags.or_else(|| {
+        access_key_id: resolve!(secret, access_key_id, "AWS_ACCESS_KEY_ID"),
+        secret_access_key: resolve!(secret, secret_access_key, "AWS_SECRET_ACCESS_KEY"),
+        session_token: resolve!(secret, session_token, "AWS_SESSION_TOKEN"),
+        region_name: resolve!(text, region_name, "AWS_REGION_NAME"),
+        session_name: resolve!(text, session_name, "AWS_SESSION_NAME"),
+        profile_name: resolve!(text, profile_name, "AWS_PROFILE_NAME"),
+        role_name: resolve!(text, role_name, "AWS_ROLE_NAME"),
+        web_identity_token: resolve!(secret, web_identity_token, "AWS_WEB_IDENTITY_TOKEN"),
+        sts_endpoint: resolve!(text, sts_endpoint, "AWS_STS_ENDPOINT"),
+        external_id: resolve!(secret, external_id, "AWS_EXTERNAL_ID"),
+        role_arn: resolve!(text, role_arn, "AWS_ROLE_ARN"),
+        web_identity_token_file: resolve!(
+            text,
+            web_identity_token_file,
+            "AWS_WEB_IDENTITY_TOKEN_FILE"
+        ),
+        bearer_token_bedrock: resolve!(secret, bearer_token_bedrock, "AWS_BEARER_TOKEN_BEDROCK"),
+        session_tags: raw.session_tags.or_else(|| {
             let settings = fallback?;
-            settings.aws_session_tags.clone()
+            settings.session_tags.clone()
         }),
     })
 }

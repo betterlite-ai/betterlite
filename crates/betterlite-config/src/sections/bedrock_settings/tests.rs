@@ -42,7 +42,7 @@ fn bedrock_settings_config_cases(#[case] field: &str) {
                 .sections
                 .bedrock_settings
                 .litellm_settings
-                .aws_session_tags
+                .session_tags
                 .is_some()
         );
     } else {
