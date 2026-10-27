@@ -80,31 +80,27 @@ impl Helper for Op {
                         .and_then(Value::as_str)
                         .unwrap_or_default();
                     let completed = event.get("type").and_then(Value::as_str) == Some("item.completed");
-                    if kind == "agent_message" && completed {
-                        item
-                            .get("text")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .clone_into(&mut final_text);
-                        events.push(json!({"kind": "text", "id": id}));
-                    } else if kind == "reasoning" && completed {
-                        events.push(json!({"kind": "reasoning", "id": id}));
-                    } else if [
-                        "command_execution",
-                        "file_change",
-                        "web_search",
-                        "mcp_tool_call",
-                    ]
-                    .contains(&kind)
-                    {
-                        if started.insert(id.to_owned()) {
-                            events.push(json!({"kind": "tool_call", "id": id}));
+                    match kind {
+                        "agent_message" if completed => {
+                            item
+                                .get("text")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .clone_into(&mut final_text);
+                            events.push(json!({"kind": "text", "id": id}));
                         }
-                        if completed {
-                            events.push(json!({"kind": "tool_result", "id": id}));
+                        "reasoning" if completed => {
+                            events.push(json!({"kind": "reasoning", "id": id}));
                         }
-                    } else {
-                        continue;
+                        "command_execution" | "file_change" | "web_search" | "mcp_tool_call" => {
+                            if started.insert(id.to_owned()) {
+                                events.push(json!({"kind": "tool_call", "id": id}));
+                            }
+                            if completed {
+                                events.push(json!({"kind": "tool_result", "id": id}));
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
