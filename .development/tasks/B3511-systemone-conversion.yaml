@@ -1,0 +1,144 @@
+id: B3511
+title: SystemOne conversion and decision provider contract
+description: >-
+  Implement the bidirectional SystemOne/IR conversions and inherited provider behavior in betterlite-openai's lower decision module, plus the small TypeSafe specialization. The conversions preserve fallback numeric question keys for unnamed questions, image rejection on OpenAI input, refusal omission in response alignment, reserved-header warnings, and the difference between invalid JSON and validated-but-invalid provider responses.
+
+  SystemOne requests convert to IR through question keying and image screening; IR converts back to SystemOne with serialized levels and criteria mapping. OpenAI input messages concatenate into state text or reject images. Response answers reconstruct from IR through choice/score/predicate answering, dropping refusals and using numeric keys when questions lack names.
+
+  The BaseDecisionsConfig class provides inherited provider behavior: credential resolution through environment names or defaults, header validation with reserved-header filtering, cost tracking, AWS signing detection, URL normalization, error translation and response parsing. Concrete providers (TypeSafe, Strands, OpenAI) override specific methods. TypeSafe uses TYPESAFE_API_KEY and TYPESAFE_API_BASE with default https://api.typesafe.ai.
+
+  Copy the conversion functions and BaseDecisionsConfig from litellm/llms/base_llm/decisions/transformation.py into a new module in crates/betterlite-openai/src/decisions/, and add TypeSafeDecisionsConfig to a new decisions module in crates/betterlite-openai/src/providers/typesafe/. Validate round-trip conversions (SystemOne to IR to SystemOne, OpenAI to IR to SystemOne) in tests; B3514 will consume the transport interface.
+
+scope:
+  paths:
+    - crates/betterlite-openai/src/decisions/**
+    - crates/betterlite-openai/src/providers/typesafe/decisions/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L63-L104
+    why: SystemOne to IR conversion functions, question keying and IR question construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L107-L180
+    why: Image detection, message text extraction, SystemOne state construction, and IR request building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L182-L242
+    why: IR to SystemOne response conversion, answer reconstruction from IR answers, response parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L244-L296
+    why: SystemOne answer deserialization, IR to SystemOne response building, refusal handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L299-L356
+    why: BaseDecisionsConfig class, credential resolution, header validation, URL normalization, signing behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L358-L394
+    why: Request transformation, response parsing, error translation, and exception mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/typesafe/decisions/transformation.py
+    why: TypeSafe provider configuration with API base and key environment names.
+
+dod:
+  - text: >-
+      systemone_keys maps questions by name when all names are unique, otherwise by index. Unnamed or duplicate-name questions use numeric string keys. A SystemOne request with three named questions returns (name1, name2, name3); with named and unnamed returns (name1, "1", "2").
+    proof: [systemone-conversion-keys]
+  - text: >-
+      _ir_question constructs IR question types matching SystemOne question types: noul to predicate, choice to choice, score to score. Choice values and criteria map bidirectionally; score criteria become level labels.
+    proof: [decisions-ir-question]
+  - text: >-
+      systemone_request_to_ir converts a SystemOne request body to IR by keying questions and constructing IR questions. ir_to_systemone_request reverses it, building the model/state/questions object. An image in OpenAI input returns UnsupportedDecisionsRequest.
+    proof: [decisions-systemone-request]
+  - text: >-
+      systemone_response_to_ir converts a SystemOne response to IR by matching answers to IR questions through numeric keys, reconstructing choice/score/predicate answers and usage records. ir_to_systemone_response reverses it, building a DecisionsResponse with keyed answers and serialized usage.
+    proof: [decisions-systemone-response]
+  - text: >-
+      parse_systemone_response validates and parses a JSON object as a DecisionsResponse, then converts it to IR. _systemone_answer reconstructs a DecisionAnswer from IR, mapping choice/score/predicate answers back to their SystemOne types and dropping refusals.
+    proof: [decisions-systemone-response]
+  - text: >-
+      BaseDecisionsConfig.resolve_api_base returns the passed base, then a secret from api_base_env names, then get_default_api_base. resolve_api_key follows the same pattern with api_key_env. _first_secret iterates env names and returns the first non-empty get_secret_str result.
+    proof: [decisions-base-config]
+  - text: >-
+      BaseDecisionsConfig.validate_environment filters headers to exclude authorization and content-type (case-insensitive), adds Bearer authorization if api_key is set, and adds Content-Type: application/json.
+    proof: [decisions-base-config]
+  - text: >-
+      BaseDecisionsConfig.get_complete_url strips trailing slashes from api_base and removes one trailing /v1, then appends the path. get_error_class constructs a BaseLLMException with status code and message. transform_decisions_request converts an IR request through the provider model name; transform_decisions_response parses JSON response content, catches ValidationError and returns a 500 BaseLLMException.
+    proof: [decisions-base-config]
+  - text: >-
+      BaseDecisionsConfig.signs_with_aws returns False for the base class (AWS signing is provider-specific and owned by B3512 for Strands).
+    proof: [decisions-base-config]
+  - text: >-
+      BaseDecisionsConfig.sign_request returns headers unchanged and None for signed bytes for the base class (signing is provider-specific).
+    proof: [decisions-base-config]
+  - text: >-
+      BaseDecisionsConfig.provider_reported_cost returns None for the base class (cost tracking is applied after sending by downstream tasks).
+    proof: [decisions-base-config]
+  - text: >-
+      BaseDecisionsConfig.missing_api_base_message returns a formatted string that names the provider: "api_base is required for Decisions provider 'NAME'".
+    proof: [decisions-base-config]
+  - text: >-
+      TypeSafeDecisionsConfig sets api_key_env = ("TYPESAFE_API_KEY",), api_base_env = ("TYPESAFE_API_BASE",) and returns default api_base = "https://api.typesafe.ai". It inherits all other behavior from BaseDecisionsConfig.
+    proof: [typesafe-config]
+  - text: >-
+      Round-trip conversions preserve question names, choices, scores, answer confidences, choice probabilities and all extra fields. SystemOne to IR to SystemOne and OpenAI input to IR text maintain semantic equivalence.
+    proof: [decisions-roundtrip]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: systemone-conversion-keys
+      why: >-
+        systemone_keys does not exist, does not return tuple with named keys when all unique, or does not fall back to numeric string indices
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_systemone_keys::/)'
+    - id: decisions-ir-question
+      why: >-
+        _ir_question does not exist, does not construct correct IR question types (predicate/choice/score), or does not map criteria/levels correctly
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_ir_question::/)'
+    - id: decisions-systemone-request
+      why: >-
+        systemone_request_to_ir or ir_to_systemone_request does not exist, does not convert correctly, or does not detect and reject images with UnsupportedDecisionsRequest
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_systemone_request::/)'
+    - id: decisions-systemone-response
+      why: >-
+        systemone_response_to_ir, ir_to_systemone_response, parse_systemone_response or _systemone_answer does not exist, does not match answers through keys, does not reconstruct types correctly, or does not drop refusals
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_systemone_response::/)'
+    - id: decisions-base-config
+      why: >-
+        BaseDecisionsConfig does not exist, resolve_api_base/resolve_api_key do not follow env-then-default pattern, validate_environment does not filter reserved headers or add Content-Type, get_complete_url does not normalize slashes, transform_decisions_request/transform_decisions_response do not handle model/response correctly, or signs_with_aws/sign_request/provider_reported_cost/missing_api_base_message do not exist or have wrong defaults
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_base_config::/)'
+    - id: typesafe-config
+      why: >-
+        TypeSafeDecisionsConfig does not exist, does not set api_key_env/api_base_env to the correct environment names, or does not return the correct default api_base
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^typesafe_config::/)'
+    - id: decisions-roundtrip
+      why: >-
+        Round-trip conversions (SystemOne to IR to SystemOne, OpenAI to IR to SystemOne) do not preserve question names, answer values, confidences, probabilities or extra fields
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_roundtrip::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: When a SystemOne question has no name or multiple questions share the same name, questions are keyed by numeric string index instead of using the name.
+    why: "LiteLLM falls back to numeric keys when names are absent or duplicated; betterlite preserves this behavior to match provider response mapping."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L63-L67
+  - what: OpenAI input with image content parts is rejected with UnsupportedDecisionsRequest reason, and no state text is constructed.
+    why: "SystemOne providers accept text-only input; image rejection is explicit rather than silently dropping images to preserve data loss clarity."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L54-L56
+
+out_of_scope:
+  - >-
+    B3513 owns decision request preparation, provider selection, and safety-identifier policy application.
+  - >-
+    B3514 owns HTTP transport, request signing, and response error handling.
+  - >-
+    B3512 owns Strands-specific request/response transformations and AWS credential handling.
+  - >-
+    B3510 owns record types, validators and the decisions_text helper function.
+
+pitfalls:
+  - "systemone_keys returns a tuple of strings, all unique. If a question has no name (None), it must fall back to numeric string indices: questions at indices 0, 1, 2 become ('0', '1', '2'). Mixed named/unnamed questions use names where present and numeric strings where absent."
+  - "ImageContent and TextContent are union types within OpenAI message content. A message.content can be str or list[ImageContent | TextContent]; check isinstance before accessing .text or .url."
+  - "_has_image returns True only if the message content is a list and contains at least one image part. A string content is never an image."
+  - "Choice answers map back through systemone_choice_key. If the provider returns a key not in the original choices, it stays as the key string, not rejected; choice_key(true) and choice_key('true') both map to 'true'."
+  - "ScoreAnswer.legend is a dict of str index (not int) to level label; populate it from level labels enumerated by index and answer.probabilities dict keys are also string indices."
+  - "Reserved headers (authorization, content-type, case-insensitive) are filtered out before validation adds them back explicitly. Other headers pass through as-is."
+  - "BaseDecisionsConfig.transform_decisions_response catches ValidationError from Pydantic response parsing and wraps it in a BaseLLMException with status 500, not re-raised."
+  - "api_base normalization removes trailing slashes and exactly one trailing /v1. The method call is base.rstrip('/').removesuffix('/v1'), which removes all trailing slashes then one /v1 suffix if present."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

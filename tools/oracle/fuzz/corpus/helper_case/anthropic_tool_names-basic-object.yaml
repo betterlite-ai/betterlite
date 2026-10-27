@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-tool-names-basic-object
+call: {anthropic_tool_names: {function: basic, name: {"unexpected":[1,null]}}}
+env: {}
+compare: {ignore: []}

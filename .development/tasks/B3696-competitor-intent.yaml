@@ -1,0 +1,148 @@
+id: B3696
+title: Competitor intent configuration and text normalization
+description: >-
+  Add competitor intent detection to betterlite-guardrails: text normalization,
+  entity token matching, and the BaseCompetitorIntentChecker class that classifies
+  text as competitor comparison, possible competitor comparison, category ranking,
+  or non-competitor intent with configurable thresholds and policy mappings.
+
+  Create crates/betterlite-guardrails/src/content_filter/ as a module directory with
+  crates/betterlite-guardrails/src/content_filter/mod.rs and
+  crates/betterlite-guardrails/src/content_filter/competitor_intent_base.rs.
+
+  Implement the following from litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py:
+
+  - normalize(text) function: lowercase, NFKC Unicode normalization, strip zero-width
+  characters (U+200B–U+200D, U+2060, U+FEFF), replace leet-speak substitutions
+  (@ → a, 4 → a, 0 → o, 3 → e, 1 → i, 5 → s, 7 → t), collapse runs of whitespace
+  to single space, and strip leading/trailing whitespace.
+
+  - text_for_entity_matching(text) function: strip punctuation, keep letters, digits
+  and whitespace, collapse whitespace, return stripped result for entity lookup.
+
+  - Helper functions: _word_boundary_match(text, token) using regex word boundaries,
+  _count_signals(text, patterns) counting regex matches (case-insensitive),
+  _compile_marker(pattern) to compile optional regex patterns or return None on error.
+
+  - BaseCompetitorIntentChecker class with constructor taking a config dict containing:
+    brand_self (list of strings, lowercased), competitors (list of strings),
+    competitor_aliases (dict mapping competitor to list of alias strings),
+    locations (list of strings treated as other-meaning tokens),
+    policy (dict mapping intent strings to action hints),
+    threshold_high (default 0.70), threshold_medium (default 0.45),
+    threshold_low (default 0.30), reframe_message_template, refuse_message_template,
+    comparison_words (default list of comparison language), domain_words (list of domain-specific words).
+
+  - _classify_ambiguous(text, token) method: overridable in subclasses; base returns
+  ("OTHER_MEANING", 0.5) for any token (safe default).
+
+  - _find_matches(text) method: find competitor and alias tokens using word-boundary
+  matching on normalized text, return list of (token, canonical, is_ambiguous) tuples,
+  deduplicating on (token, canonical).
+
+  - run(text) method: main entry point that normalizes input, finds competitor matches,
+  classifies ambiguous tokens, detects comparison and domain language, applies confidence
+  thresholds, and returns CompetitorIntentResult with intent, confidence, entities
+  (brand_self, competitors, category), signals, action_hint, and evidence list.
+
+  When no competitors are found: check for category_ranking (comparison + domain language,
+  confidence 0.65) or return non-competitor. When competitors are found but below
+  OTHER_MEANING_THRESHOLD (0.65), treat as non-competitor. Otherwise classify
+  intent (competitor_comparison at >= threshold_high, possible_competitor_comparison at
+  >= threshold_medium, log_only at >= threshold_low, other below that) and resolve
+  action_hint from policy or defaults.
+
+  Depend on betterlite-config for CompetitorIntentResult and related types (defined in B3690).
+  Use regex and unicode crates for NFKC normalization and pattern compilation.
+  Export normalize and text_for_entity_matching as public. Keep all other functions
+  private to the module.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_filter.rs
+    - crates/betterlite-guardrails/src/content_filter/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py
+    why: "Complete BaseCompetitorIntentChecker implementation, text normalization and entity matching logic"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L11-L38
+    why: "CompetitorIntentType, CompetitorActionHint, CompetitorIntentResult and CompetitorIntentEvidenceEntry type definitions"
+  - url: https://docs.rs/unicode-normalization/latest/unicode_normalization/
+    why: "NFKC normalization for text preprocessing"
+
+dod:
+  - text: "The normalize() function lowercases input, applies NFKC normalization, removes zero-width characters, replaces leet-speak substitutions, collapses whitespace, and strips leading/trailing whitespace."
+    proof: [text-normalization-tests]
+  - text: "The text_for_entity_matching() function strips punctuation and returns only letters, digits and whitespace (collapsed)."
+    proof: [text-normalization-tests]
+  - text: "Helper functions _word_boundary_match, _count_signals and _compile_marker exist and behave as documented."
+    proof: [helper-functions-tests]
+  - text: "BaseCompetitorIntentChecker initializes from a config dict with brand_self, competitors, competitor_aliases, locations, policy, thresholds, message templates and comparison_words."
+    proof: [competitor-init-tests]
+  - text: "_classify_ambiguous returns ('OTHER_MEANING', 0.5) for any token in the base implementation."
+    proof: [competitor-init-tests]
+  - text: "_find_matches returns competitor and alias tokens as (token, canonical, is_ambiguous) tuples with deduplication."
+    proof: [competitor-matching-tests]
+  - text: "run() classifies text as competitor_comparison (confidence >= threshold_high), possible_competitor_comparison (>= threshold_medium), log_only (>= threshold_low), category_ranking (comparison + domain without competitors), or other."
+    proof: [competitor-intent-tests]
+  - text: "Confidence is 0.75 when competitors are found and comparison language is present, 0.55 without comparison, and 0.65 for category_ranking."
+    proof: [competitor-intent-tests]
+  - text: "Ambiguous tokens (in both competitor and location sets) are passed to _classify_ambiguous and classified as COMPETITOR or OTHER_MEANING."
+    proof: [competitor-intent-tests]
+  - text: "Evidence entries are built with type (entity or signal), key (competitor, brand_self, comparison, category_ranking, other_meaning, other_meaning_default), match (matched substring) and value (resolved canonical form for entities)."
+    proof: [competitor-intent-tests]
+  - text: "action_hint is resolved from policy or defaults (allow for non-competitor, reframe for category_ranking, log_only for intent=='log_only')."
+    proof: [competitor-intent-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: text-normalization-tests
+      why: "normalize() and text_for_entity_matching() tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_base::(normalize|text_for_entity_matching)/)'
+    - id: helper-functions-tests
+      why: "_word_boundary_match, _count_signals and _compile_marker tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_base::(word_boundary|count_signals|compile_marker)/)'
+    - id: competitor-init-tests
+      why: "BaseCompetitorIntentChecker initialization and _classify_ambiguous tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_base::(init|classify_ambiguous)/)'
+    - id: competitor-matching-tests
+      why: "_find_matches tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_base::find_matches/)'
+    - id: competitor-intent-tests
+      why: "run() method tests for intent classification, confidence thresholds and evidence building fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_base::run/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Text normalization treats any non-string input (None, numbers, objects) as empty string, returning empty result instead of panicking."
+    why: "Input validation for config and test data allows flexible structures; returning empty string is safe and matches LiteLLM's behavior of returning empty for falsy inputs."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L23-L31"
+
+out_of_scope:
+  - "Airline-specific competitor intent checking and _load_competitors_excluding_brand logic (belongs to B3697)"
+  - "major_airlines.json data (belongs to B3697)"
+  - "CompetitorIntentDetection type and integration with ContentFilterDetection enum (belongs to B3690)"
+  - "Configuration loading and parsing from YAML (belongs to betterlite-config)"
+  - "HTTP routes for competitor intent configuration or policy updates"
+  - "Competitor intent caching or performance optimization"
+
+pitfalls:
+  - "LiteLLM checks entity is an instance of str before processing; Rust has no duck typing, so normalize receives &str directly."
+  - "The regex for zero-width characters must include U+200B, U+200C, U+200D, U+2060 and U+FEFF; the pattern in LiteLLM is \\u200b-\\u200d\\u2060\\ufeff."
+  - "NFKC normalization is applied AFTER zero-width stripping; order matters for correct output."
+  - "Leet-speak replacement happens at the character level after NFKC; check that unicode-normalization handles this correctly."
+  - "Word boundary matching uses \\b which works on ASCII and Unicode; test with non-ASCII competitor names (e.g. Ñoño Airways)."
+  - "Evidence entries for OTHER_MEANING have match but no value, while COMPETITOR entities have both. Maps in Rust must use Option<String> or omit the field with serde(skip_serializing_if)."
+  - "Confidence is rounded to 2 decimal places; use .round() * 100 / 100 or the round method of f64."
+  - "other_meaning_default signal (OTHER_MEANING_THRESHOLD = 0.65) carries confidence as a formatted string (e.g. 'confidence 0.45'); format and store it in evidence.match."
+  - "A token in both competitor and location sets is marked is_ambiguous=true; check the set intersection logic when setting up the struct."
+  - "When thresholds are equal or crossed at exactly the boundary, the check uses >= so a confidence of 0.70 with threshold_high 0.70 is a match."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

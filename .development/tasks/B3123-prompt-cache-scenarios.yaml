@@ -1,0 +1,157 @@
+id: B3123
+title: Price cache scenarios and expose native routing predictions
+description: >-
+  Implement `betterlite-anthropic::cache_aware_routing` to build typed cache cost scenarios
+  and the `AnthropicCacheRouting` service, with model/usage DTOs and injected counting,
+  observation and cost services. Preserve unknown/disabled/stale/partial/warm cache state
+  distinctions, custom deployment pricing via `_select_model_name_for_cost_calc`, zero-versus-missing
+  price handling, minimum-prefix checks via `get_prompt_cache_min_tokens`, and the common
+  billing timestamp (pinned_billing_time) for cold, warm and estimate scenarios. The published
+  basis remains input cost before discounts and margins. Pricing functions validate required
+  prices per scenario token buckets, read from custom deployment tariffs before catalog,
+  and return None on any missing price field or completion_tokens mismatch.
+
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/cache_aware_routing.rs
+    - crates/betterlite-anthropic/src/cache_aware_routing/**
+    - crates/betterlite-core/src/cost/prompt_cache_scenarios.rs
+    - crates/betterlite-core/src/cost/prompt_cache_scenarios/**
+    - tools/oracle/cases/prompt-cache/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/prompt_cache_pricing.py#L20-L100
+    why: Core pricing logic for cache token scenarios, price validation and cost computation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L65-L236
+    why: AnthropicCacheRouting service, cache state determination, and predict_arm orchestration
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L1-L64
+    why: Imports, _NATIVE_OPTIONS frozenset, and _ModelLimits type declaration
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/prompt_cache_prediction.py
+    why: CachePredictionArm, CacheCostScenario, CacheTokenBuckets, CacheEvidence response types
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/prompt_cache_prediction.py#L10-L20
+    why: has_request_transforms implementation for transform eligibility checking
+
+dod:
+  - text: price_cache_tokens selects custom deployment tariff via _select_model_name_for_cost_calc, validates all required prices per token buckets, and returns None on any missing price or invalid completion_tokens.
+    proof: [pricing-validation-cases]
+  - text: _valid_price returns true only for non-negative finite numbers (excluding booleans).
+    proof: [price-validation-cases]
+  - text: _has_required_prices checks input_cost_per_token (always required), cache_read_input_token_cost (if cache_read_tokens > 0), cache_creation_input_token_cost (if 5m creation tokens > 0), cache_creation_input_token_cost_above_1hr (if 1h creation tokens > 0), output_cost_per_token (if completion_tokens > 0), and all *_above_* variants matching required bases.
+    proof: [required-prices-cases]
+  - text: AnthropicCacheRouting.request_body validates URL ends with /v1/messages, checks supported_prediction_headers, merges body and request_kwargs with native options, and returns typed validated JSON.
+    proof: [request-body-cases]
+  - text: AnthropicCacheRouting.from_body parses max_tokens as positive integer, calls parse_prompt, and returns None if prefix or max_tokens missing/invalid.
+    proof: [from-body-cases]
+  - text: AnthropicCacheRouting.supports returns true only when resolve_prediction_target returns NativePredictionTarget.
+    proof: [supports-cases]
+  - text: AnthropicCacheRouting.is_warm returns true only when observation is found, fingerprint matches, and expires_at > now.
+    proof: [is-warm-cases]
+  - text: AnthropicCacheRouting.fits returns true only when both max_input_tokens and max_output_tokens are present and fit the request within limits.
+    proof: [fits-cases]
+  - text: AnthropicCacheRouting.predict calls predict_arm and returns a CachePredictionArm with all three scenarios or a reason why prediction failed.
+    proof: [predict-cases]
+  - text: AnthropicCacheRouting.cost calls price_cache_tokens with arm.estimate tokens and output_tokens, returns None if estimate unavailable.
+    proof: [cost-cases]
+  - text: AnthropicCacheRouting.count_tokens calls count_prompt_tokens with deployment API key and returns token count or None on failure.
+    proof: [count-tokens-cases]
+  - text: _buckets builds CacheTokenBuckets with correct token distribution per TTL, assigning creation tokens only to matching 5m or 1h bucket.
+    proof: [buckets-cases]
+  - text: _scenario calls price_cache_tokens and returns CacheCostScenario with tokens and cost, or None if pricing fails.
+    proof: [scenario-cases]
+  - text: predict_arm determines cache_state (warm/partial/stale/unknown/disabled), reason, and constructs all three scenarios with pinned_billing_time for cold, warm and estimate, returning unknown with appropriate reason on any failure.
+    proof: [predict-arm-cases]
+  - text: predict_arm returns disabled state with below_cache_minimum reason when cacheable tokens are less than minimum, with disabled scenario repeated across all three arms.
+    proof: [minimum-tokens-cases]
+  - text: has_request_transforms returns true when custom loggers exist with overridden pre-call/pre-request/pre-deployment hooks beyond built-in implementations.
+    proof: [transforms-cases]
+  - text: CacheTokenBuckets.total_tokens sums all four token bucket fields (uncached, cache_read, 5m_creation, 1h_creation).
+    proof: [total-tokens-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: pricing-validation-cases
+      why: price_cache_tokens validation or cost computation fails or is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::(price_cache_tokens|pricing_validation)/)'
+    - id: price-validation-cases
+      why: _valid_price tests are missing or return wrong result for edge cases
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::valid_price/)'
+    - id: required-prices-cases
+      why: _has_required_prices tests are missing or price requirements are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::required_prices/)'
+    - id: request-body-cases
+      why: AnthropicCacheRouting.request_body tests are missing or body merging fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::(request_body|validation)/)'
+    - id: from-body-cases
+      why: AnthropicCacheRouting.from_body tests are missing or parsing fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::from_body/)'
+    - id: supports-cases
+      why: AnthropicCacheRouting.supports tests are missing or detection fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::supports/)'
+    - id: is-warm-cases
+      why: AnthropicCacheRouting.is_warm tests are missing or freshness check fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::is_warm/)'
+    - id: fits-cases
+      why: AnthropicCacheRouting.fits tests are missing or limit checking fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::fits/)'
+    - id: predict-cases
+      why: AnthropicCacheRouting.predict tests are missing or delegation to predict_arm fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::predict/)'
+    - id: cost-cases
+      why: AnthropicCacheRouting.cost tests are missing or pricing delegation fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::cost/)'
+    - id: count-tokens-cases
+      why: AnthropicCacheRouting.count_tokens tests are missing or delegation fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::count_tokens/)'
+    - id: buckets-cases
+      why: _buckets token distribution tests are missing or TTL assignment is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::token_buckets/)'
+    - id: scenario-cases
+      why: _scenario scenario builder tests are missing or pricing delegation fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::cache_cost_scenario/)'
+    - id: predict-arm-cases
+      why: predict_arm orchestration tests are missing or cache state determination fails
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::predict_arm/)'
+    - id: minimum-tokens-cases
+      why: Minimum prefix token check tests are missing or disabled state is not returned
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::minimum_/)'
+    - id: transforms-cases
+      why: has_request_transforms tests are missing or transform detection fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^prompt_cache_prediction::has_request_transforms/)'
+    - id: total-tokens-cases
+      why: CacheTokenBuckets.total_tokens tests are missing or sum is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cache_token_buckets::total_tokens/)'
+
+oracle_cases: []
+
+deviations:
+  - what: price_cache_tokens returns None on any pricing failure, including missing model_info or custom tariff lookup, rather than falling back to catalog.
+    why: "LiteLLM's completion_cost tries catalog as fallback; betterlite follows explicit tariff selection (B1682/B2225 owned behavior) and returns None when tariff resolution or pricing validation fails, so cache prediction itself can report the reason to the user."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/prompt_cache_pricing.py#L99-L100"
+
+out_of_scope:
+  - "LiteLLM's per-provider count_prompt_tokens implementations; B3121 owns count_prompt_tokens service contract and B585 owns Anthropic count-tokens handler."
+  - "Observation lookup and caching; B3122 owns lookup and PromptCacheObserver."
+  - "Prompt parsing and cache plan prediction; B3120 owns parse_prompt, PromptPrefix and PromptCachePlan."
+  - "Cache-aware routing model selection and deployment filtering; B3124 owns eligible_models, candidate selection and choose_cached_model orchestration."
+  - "Management endpoints for predict-cache and prompt-caching-requests routes; B3125 owns the route registrations and HTTP adapter."
+  - "Authorization checks and model allowlist filtering; B886 and B732 own those decisions."
+  - "Cost calculation for non-cache scenarios; B068 and B2225 own completion_cost and tariff resolution."
+  - "Minimum prompt cache token threshold with env-var override and default fallback (get_prompt_cache_min_tokens); B157 (unplanned)."
+
+pitfalls:
+  - "price_cache_tokens returns None for negative completion_tokens, even when other prices are valid; the sign check comes before price validation."
+  - "required prices map names use underscores and include _above_ variants, not hyphens; the cache_creation check keys split 5m and 1h TTLs into separate field names."
+  - "_has_required_prices checks not whether a price exists in the mapping, but whether its value passes _valid_price, so a zero price counts as present."
+  - "_buckets creation tokens go into 5m or 1h bucket only if TTL matches exactly (300 or 3600 seconds); mismatched or zero TTL puts all creation tokens in the disabled bucket."
+  - "AnthropicCacheRouting.is_warm requires both fingerprint match AND expiry check; a fresh observation with mismatched fingerprint is not warm."
+  - "predict_arm uses observation.cached_tokens for the cacheable estimate and read count, not the prefix token count; inconsistent values between observations trigger inconsistent_prefix_token_count reason."
+  - "pinned_billing_time wraps all three scenario price calls; the billing instant is identical across cold, warm and estimate, not re-evaluated per scenario."
+  - "cache_state determined as warm only when observation is fresh AND exact; partial (fresh but stale fingerprint) and stale (expired observation) are distinct states."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

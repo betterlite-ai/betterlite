@@ -1,0 +1,152 @@
+id: B3698
+title: Content filter detections and request tracing
+description: >-
+  Build detection metrics, match details formatting, and structured guardrail logging for the content filter.
+  This task implements helpers for accumulating and reporting on detected content policy violations, including
+  masked entity counts, match detail formatting, risk score calculation, and the standard guardrail information
+  written to request metadata.
+
+  Implement in betterlite-guardrails crates/betterlite-guardrails/src/content_filter/:
+
+  - detection_metrics.rs: Helper functions to gather detection statistics. Owns _count_masked_entities
+    (CF:1524-1551 LiteLLM) which counts masked patterns, blocked words and category keywords by name from
+    a detection list and updates a tally dict. Owns _build_match_details (CF:1553-1575) which formats
+    each detection (pattern, blocked_word, category_keyword, competitor_intent) into a detail dict with
+    type, action_taken, detection_method (regex/keyword/intent), and snippet (pattern name, keyword,
+    category name, or intent). Owns _get_detection_methods (CF:1577-1587) which returns comma-separated
+    sorted list of methods found in detections (regex, keyword, intent or empty string). Owns
+    _get_patterns_checked_count (CF:1589-1596) which sums compiled_patterns, blocked_words,
+    category_keywords and always_block_category_keywords counts. Owns _get_policy_templates (CF:1598-1603)
+    which returns comma-separated policy template names from loaded_categories, description or
+    category_name fields, or None if empty.
+
+  - risk_scoring.rs: Owns _compute_risk_score (CF:1605-1638 LiteLLM) which calculates a bounded 0-10
+    risk score. On guardrail_intervened status, returns 10.0. Otherwise computes match_ratio
+    (masked_entity_count sum divided by patterns_checked), contributing 0-7 points; detection count
+    (min(detection count, 5) * 0.6) contributing 0-3 points; adds points; floors to 2.0 if any masked;
+    caps at 10.0; rounds to one decimal. Risk score uses the same status type as logging (_get_status):
+    success, guardrail_intervened, or guardrail_failed_to_respond.
+
+  - guardrail_tracing.rs: Owns _log_guardrail_information (CF:1702-1754 LiteLLM) which builds
+    a GuardrailTracingDetail record with guardrail_id/name, policy_template,
+    detection_method, match_details (formatted by _build_match_details), patterns_checked count,
+    and risk_score. Tracing detail includes the first competitor_intent classification and confidence
+    if present. Calls add_standard_logging_guardrail_information_to_request_data (unresolved B104 callee)
+    with guardrail_provider, guardrail_json_response (detections or exception_str), request_data,
+    guardrail_status, start_time timestamp, end_time timestamp, duration (wall clock or provided override),
+    masked_entity_count, and the constructed tracing_detail. On status != success, guardrail_json_response is the
+    exception_str if provided, else detections list. GuardrailTracingDetail is a typed record carrying
+    guardrail_id, policy_template, detection_method, match_details, patterns_checked, risk_score,
+    confidence_score (optional, from first competitor_intent), classification (optional, dict of first
+    competitor_intent detection).
+
+  Types from B3690: ContentFilterDetection union (pattern, blocked_word, category_keyword, competitor_intent
+  variants), GuardrailStatus literal (success, guardrail_intervened, guardrail_failed_to_respond),
+  GuardrailTracingDetail typed record.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_filter/detection_metrics.rs
+    - crates/betterlite-guardrails/src/content_filter/risk_scoring.rs
+    - crates/betterlite-guardrails/src/content_filter/guardrail_tracing.rs
+    - crates/betterlite-guardrails/src/content_filter/detection_metrics/**
+    - crates/betterlite-guardrails/src/content_filter/risk_scoring/**
+    - crates/betterlite-guardrails/src/content_filter/guardrail_tracing/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1524-L1551
+    why: _count_masked_entities tallies masked entity types from detection list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1553-L1575
+    why: _build_match_details formats detection objects for logging output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1577-L1587
+    why: _get_detection_methods summarizes methods used in detections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1589-L1596
+    why: _get_patterns_checked_count counts evaluated patterns and keywords.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1598-L1603
+    why: _get_policy_templates retrieves loaded category template names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1605-L1638
+    why: _compute_risk_score calculates 0-10 bounded risk from detection metrics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1702-L1754
+    why: _log_guardrail_information writes structured tracing to request metadata.
+
+dod:
+  - text: _count_masked_entities counts each pattern, blocked_word and category_keyword detection whose action is MASK,
+      mapping names to occurrence counts. Detections with action BLOCK or any non-MASK action are skipped entirely.
+      Competitor_intent detections are never counted.
+    proof: [tracing-tests]
+  - text: _build_match_details formats each detection into a dict with type, action_taken, detection_method and
+      snippet. Patterns include pattern_name, blocked_words include keyword, categories include keyword and category,
+      competitor_intent includes intent and confidence.
+    proof: [tracing-tests]
+  - text: _get_detection_methods returns a comma-separated sorted string of unique methods from detections (regex,
+      keyword, intent) or empty string if no detections.
+    proof: [tracing-tests]
+  - text: _get_patterns_checked_count returns the sum of compiled_patterns, blocked_words, category_keywords and
+      always_block_category_keywords lengths.
+    proof: [tracing-tests]
+  - text: _get_policy_templates returns a comma-separated list of policy template names from loaded_categories, using
+      description or category_name fields, or None if no categories.
+    proof: [tracing-tests]
+  - text: _compute_risk_score returns 10.0 for guardrail_intervened status. For other statuses, it computes
+      match_ratio (masked sum / patterns_checked), ratio_score (ratio * 7.0 up to 7 points), detection_score
+      (min(detection count, 5) * 0.6 up to 3 points), sums them, floors to 2.0 if masked > 0, caps at 10.0,
+      rounds to 1 decimal place.
+    proof: [tracing-tests]
+  - text: _log_guardrail_information builds a GuardrailTracingDetail record with guardrail_id/name,
+      policy_template, detection_method, match_details, patterns_checked, risk_score, and optional confidence_score and
+      classification from first competitor_intent detection. Calls add_standard_logging_guardrail_information_to_request_data
+      with all required parameters including guardrail_status, timestamps, duration, masked_entity_count and tracing_detail.
+    proof: [tracing-tests]
+  - text: GuardrailTracingDetail typed record carries all tracing fields and is passed to the logging API. First
+      competitor_intent detection's confidence and classification are preserved in the trace.
+    proof: [tracing-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: tracing-tests
+      why: detection metrics, risk scoring or guardrail tracing functions fail or are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::(detection_metrics|risk_scoring|guardrail_tracing)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Risk score floors to 2.0 when any entities are masked and raw score would be lower. LiteLLM uses the same
+      logic and floor threshold."
+    why: "Ensures detections always surface a minimum risk level when content was masked."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1634-L1638"
+  - what: "GuardrailTracingDetail is a typed record instead of a dict. Structure and field names match LiteLLM's
+      tracing_kw dict written to request metadata."
+    why: "Type safety and clarity in a Rust codebase; serialized form is identical."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1730-L1742"
+
+out_of_scope:
+  - "ContentFilterDetection union and status type definitions (B3690)."
+  - "Pattern compilation, blocked word file loading, span matching and masking (B3693)."
+  - "Category loading and conditional category matching (B3692, B3694)."
+  - "Text evaluation and action handling (B3695)."
+  - "Competitor intent classification (B3696, B3697)."
+  - "add_standard_logging_guardrail_information_to_request_data logging API (unresolved B104 callee)."
+  - "Request/response filtering orchestration and exception handling (belongs to apply_guardrail and streaming hooks)."
+
+pitfalls:
+  - "Masked entity counting only includes detections with action==MASK. A pattern/blocked_word/category_keyword detection
+      with action=BLOCK (or any non-MASK action) is skipped entirely and contributes nothing to masked_entity_count."
+  - "Competitor_intent detections are never counted in masked_entity_count, regardless of their action field."
+  - "Match details formatting preserves detection.action and detection.action_hint fields; action_taken is
+      action or action_hint if action is absent."
+  - "Risk score match_ratio divides by patterns_checked; if patterns_checked is zero, ratio is 0.0 and
+      ratio_score is 0.0, allowing other factors to set risk."
+  - "Detection methods set handles category_keyword as keyword, not category. Only pattern adds regex, competitor_intent
+      adds intent, everything else adds keyword."
+  - "Policy templates joins one name per loaded category (description falling back to category_name) with no filtering
+      of empty strings. The 'if names else None' check only guards against an empty category dict, not empty strings."
+  - "GuardrailTracingDetail confidence_score and classification come from the first competitor_intent detection only;
+      later competitor_intent detections are ignored."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

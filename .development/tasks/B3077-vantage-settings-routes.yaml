@@ -1,0 +1,125 @@
+id: B3077
+title: Expose Vantage settings management routes
+description: >-
+  Register four HTTP routes for Vantage FinOps management in betterlite-server.
+  Implement GET /vantage/settings to view current configuration with masking;
+  PUT /vantage/settings for partial updates; POST /vantage/init for initial setup;
+  and DELETE /vantage/delete to remove configuration and deregister the callback.
+  Enforce admin-only mutations with admin-or-viewer read access for GET.
+  Preserve exception handling for database unavailability, update-before-init ordering,
+  and decryption failures; return 400 when PUT receives no fields to update, 422 for invalid request bodies, 403 for authorization,
+  404 when settings are absent and cannot be updated, and 500 for unrecoverable errors.
+  Sensitive API keys and integration tokens are masked with first and last 4 characters visible using B244's masker.
+  Deletion removes both database configuration and the in-memory VantageLogger callback registration,
+  so subsequent export requests must reinitialize or use an already-registered logger.
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/vantage_routes.rs
+    - crates/betterlite-server/src/finops/vantage_routes/**
+    - tools/oracle/cases/finops/vantage-routes/**
+    - tools/oracle/helpers/b3077.py
+    - tools/oracle/helpers/b3077/**
+    - tools/oracle/src/helpers/server/b3077.rs
+    - tools/oracle/src/helpers/server/b3077/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L147-L196"
+    why: get_vantage_settings route handler with admin/viewer permission check and masking.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L199-L265"
+    why: update_vantage_settings route with partial field update and update-before-init 404.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L310-L354"
+    why: init_vantage_settings route for initial setup with admin-only access.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L521-L578"
+    why: delete_vantage_settings route removing both database settings and registered callback.
+dod:
+  - text: GET /vantage/settings returns 200 with masked API key and integration token, or 200 with null fields if unconfigured, accessible only to admin and admin-view roles.
+    proof: [get-settings-cases]
+  - text: PUT /vantage/settings returns 400 with message "At least one field must be provided for update" when no fields are provided, before checking database state.
+    proof: [update-no-fields-cases]
+  - text: PUT /vantage/settings updates only provided fields when at least one is supplied, returns 404 if settings do not exist, accessible only to PROXY_ADMIN role.
+    proof: [update-settings-cases]
+  - text: POST /vantage/init stores encrypted API key and integration token in database, fails with 403 for non-admin, accessible only to PROXY_ADMIN.
+    proof: [init-settings-cases]
+  - text: DELETE /vantage/delete removes Vantage settings from database and deregisters the VantageLogger callback, fails with 404 if settings are absent, accessible only to PROXY_ADMIN.
+    proof: [delete-settings-cases]
+  - text: All routes return 403 (not_allowed_access) when user lacks required role; 422 when request body validation fails; 500 when database is unavailable.
+    proof: [auth-error-cases]
+  - text: Decryption failures in update and GET routes raise HTTPException with 500 status and descriptive error message.
+    proof: [decryption-error-cases]
+  - text: API key and integration token masking uses SensitiveDataMasker.mask_dict preserving first 4 and last 4 characters matching LiteLLM behavior.
+    proof: [masking-cases]
+checks:
+  optional: []
+  commands:
+    - id: get-settings-cases
+      why: GET /vantage/settings route does not return masked settings or handle missing configuration
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::(get_settings|missing_settings)/)'
+    - id: update-no-fields-cases
+      why: PUT /vantage/settings route does not reject requests with no fields provided
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::update_no_fields/)'
+    - id: update-settings-cases
+      why: PUT /vantage/settings route does not update fields or handle missing settings
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::(update_settings|update_before_init)/)'
+    - id: init-settings-cases
+      why: POST /vantage/init route does not store encrypted settings or enforce admin role
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::init_settings/)'
+    - id: delete-settings-cases
+      why: DELETE /vantage/delete route does not remove settings, deregister callbacks, or handle absent configuration
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::delete_settings/)'
+    - id: auth-error-cases
+      why: Authorization and validation error responses do not match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::(auth_|validation_)/)'
+    - id: decryption-error-cases
+      why: Decryption failure handling does not raise appropriate errors
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::decrypt/)'
+    - id: masking-cases
+      why: API key and integration token masking does not preserve first 4 and last 4 characters
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_routes::mask/)'
+oracle_cases:
+  - tools/oracle/cases/finops/vantage-routes/get-settings-admin-view.yaml
+  - tools/oracle/cases/finops/vantage-routes/get-settings-admin.yaml
+  - tools/oracle/cases/finops/vantage-routes/get-settings-user-forbidden.yaml
+  - tools/oracle/cases/finops/vantage-routes/get-settings-missing.yaml
+  - tools/oracle/cases/finops/vantage-routes/update-settings-no-fields.yaml
+  - tools/oracle/cases/finops/vantage-routes/update-settings-admin.yaml
+  - tools/oracle/cases/finops/vantage-routes/update-settings-admin-view-forbidden.yaml
+  - tools/oracle/cases/finops/vantage-routes/update-settings-before-init.yaml
+  - tools/oracle/cases/finops/vantage-routes/update-settings-invalid-body.yaml
+  - tools/oracle/cases/finops/vantage-routes/init-settings-success.yaml
+  - tools/oracle/cases/finops/vantage-routes/init-settings-admin-view-forbidden.yaml
+  - tools/oracle/cases/finops/vantage-routes/init-settings-invalid-body.yaml
+  - tools/oracle/cases/finops/vantage-routes/delete-settings-success.yaml
+  - tools/oracle/cases/finops/vantage-routes/delete-settings-not-found.yaml
+  - tools/oracle/cases/finops/vantage-routes/delete-settings-admin-only.yaml
+deviations:
+  - what: Update returns 404 when settings do not exist, instead of failing with a more generic error.
+    why: LiteLLM explicitly checks and returns 404 with message "Vantage settings not found. Please initialize settings first using /vantage/init".
+  - what: API key and integration token are masked with the first 4 and last 4 characters visible; betterlite uses SensitiveDataMasker identical to LiteLLM.
+    why: LiteLLM's masking behavior preserves endpoint transparency across both implementations.
+  - what: Delete operation removes the callback registration from the in-memory callback manager, preventing the scheduler from triggering further exports.
+    why: LiteLLM deregisters the VantageLogger callback on deletion to ensure the scheduler stops firing; removal does not cancel already-bound jobs, only prevents new triggers.
+out_of_scope:
+  - Settings accessor functions (_get_vantage_settings, _set_vantage_settings) owned by B3075.
+  - Setup detection functions (is_vantage_setup_in_db, is_vantage_setup_in_config, is_vantage_setup) owned by B3075.
+  - Helper function _get_registered_vantage_logger owned by B073.
+  - Dry-run export route (vantage_dry_run_export) owned by B073.
+  - Actual export route (vantage_export) owned by B073.
+  - Request/response model definitions (VantageInitRequest, VantageSettingsUpdate, VantageSettingsView, VantageExportRequest, VantageExportResponse, VantageDryRunRequest) owned by B3079.
+  - User role predicate (user_api_key_has_admin_view) owned by B3079.
+  - SensitiveDataMasker implementation owned by B244.
+  - Database table and configuration repository owned by B725.
+  - VantageLogger implementation and export methods owned by B3067.
+  - Encryption/decryption utilities owned by B1600.
+  - User authentication dependency injection owned by B052.
+  - Callback removal implementation owned by B189.
+pitfalls:
+  - Update endpoint requires at least one field (api_key, integration_token, or base_url) to be provided; reject requests with all fields None with 400 "At least one field must be provided for update".
+  - Update endpoint checks for empty settings and returns 404 with message "Vantage settings not found. Please initialize settings first using /vantage/init"; the 404 comes from explicit check, not from missing settings.
+  - Decryption of api_key and integration_token on read may fail; decryption failure raises HTTPException with 500 status and descriptive error message.
+  - DELETE endpoint deletes the database row first (ConfigRepository.table.delete), then deregisters the VantageLogger callback afterward using remove_callbacks_by_type; removing the registry entry does not itself cancel an already-bound scheduler job.
+  - All error responses use CommonProxyErrors enum values, matching LiteLLM's CommonProxyErrors.not_allowed_access, CommonProxyErrors.db_not_connected_error.
+  - The base_url field must have default "https://api.vantage.sh" matching VantageInitRequest; during updates, preserve existing base_url if not provided.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2
