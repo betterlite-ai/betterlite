@@ -46,11 +46,11 @@ fn backend_at(
 }
 
 fn backend_with_sandbox(
-    sandbox: HostSandbox,
+    fixture: HostSandbox,
     runtime: Handle,
     permissions: Permissions,
 ) -> SandboxBackend<HostSandbox> {
-    let sandbox = Arc::new(sandbox);
+    let sandbox = Arc::new(fixture);
     SandboxBackend::new(
         sandbox,
         runtime,
