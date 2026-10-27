@@ -1,5 +1,5 @@
 task: B3690
 deviations:
-  - what: "LiteLLM's category file schema includes phase_patterns (regex phrases for paraphrases), inherit_from (inheritance chains), and exceptions (substring exemptions). The schema maps fields to lowercase and merges YAML/JSON sources; betterlite defines the same field names for serde mapping."
+  - what: "LiteLLM's category file schema includes phrase_patterns (regex phrases for paraphrases), inherit_from (inheritance chains), and exceptions (substring exemptions). The schema maps fields to lowercase and merges YAML/JSON sources; betterlite defines the same field names for serde mapping."
     why: "The structure is read from configuration files; matching LiteLLM's field names ensures the configuration keeps working across the two implementations."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L156"
