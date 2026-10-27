@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-roi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-roi = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "roi_identity_map_update"
+path = "fuzz_targets/roi_identity_map_update.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
