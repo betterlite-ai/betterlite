@@ -206,10 +206,18 @@ fn dictionary_conversion(#[case] input: &str, #[case] expected: &str) {
 }
 
 #[rstest]
-#[case::none("{'key': None}")]
-#[case::boolean("{'key': True, 'other': False}")]
-#[case::tuple("(('key', 1),)")]
-#[case::quotes("{'key': \"isn't JSON\"}")]
+#[case::none("{'key': None}", r#"{"key":null}"#)]
+#[case::boolean("{'key': True, 'other': False}", r#"{"key":true,"other":false}"#)]
+#[case::tuple("(('key', 1),)", r#"{"key":1}"#)]
+#[case::quotes(r#"{'key': "isn't JSON"}"#, r#"{"key":"isn't JSON"}"#)]
+fn python_literals_use_ast_fallback(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(
+        decode_body(input.as_bytes()).unwrap(),
+        decode_body(expected.as_bytes()).unwrap()
+    );
+}
+
+#[rstest]
 #[case::numeric_key("[[1,2]]")]
 #[case::scalar("1")]
 #[case::wrong_pair("[[\"a\"]]")]
