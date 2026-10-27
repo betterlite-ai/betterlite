@@ -1093,6 +1093,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
+ "betterlite-websearch",
  "chrono",
  "clap",
  "futures-util",
@@ -1299,6 +1300,10 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-websearch"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "bit-set"
