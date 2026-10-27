@@ -1,0 +1,139 @@
+id: B3091
+title: Aggregate paginated daily spend into attributed breakdowns
+description: >-
+  Implement the paginated read service and per-record aggregation in `betterlite-server::daily_activity::pages`.
+  The module aggregates daily spend records into breakdowns by model, model_group, provider, endpoint, mcp_server
+  and api_key, each with optional nested api_key_breakdown and metadata dicts.
+
+  Keep totals limited to the returned records only (not the full dataset), preserve descending date ordering,
+  implement model-group fallback (always use model_group fallback for model_groups bucket; for models bucket use
+  model for non-sentinel rows and fall back to model_group/model only for PTU sentinel rows), and exclude PTU
+  sentinel rows from models, model_groups, providers and top-level api_keys breakdowns while including their
+  flat costs in parent buckets. PTU sentinels appear in mcp_servers and endpoints api_key_breakdowns.
+
+  Implement three aggregation paths: per-record sync aggregation that updates metrics incrementally, async wrapper
+  that fetches api_key metadata from the repository, and the main paginated read service that resolves scopes,
+  queries the repository, aggregates results and returns them with metadata. Accept an optional metadata callback
+  to override computed totals (for queries like daily activity by entity, where tallies include unmapped records).
+
+  Reference LiteLLM for field layout, ordering, sentinel handling, model-group resolution, pagination metadata
+  computation from total_count, and the boundary between page data (returned records only) and aggregate metadata
+  (totals from the page).
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity/pages.rs
+    - crates/betterlite-server/src/daily_activity/pages/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L282-L450
+    why: >-
+      update_breakdown_metrics function that aggregates a single record's metrics into
+      BreakdownMetrics buckets across all dimensions, handling PTU sentinel exclusions
+      and metadata resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L605-L652
+    why: >-
+      _aggregate_spend_records_sync synchronous loop that processes a sequence of records,
+      groups them by date, updates metrics per dimension and returns results sorted
+      in descending date order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L655-L685
+    why: >-
+      _aggregate_spend_records async wrapper that fetches api_key metadata, filters
+      out PTU sentinels and delegates to the sync aggregator on a worker thread.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L886-L970
+    why: >-
+      get_daily_activity service that parses date ranges, resolves scopes, queries paginated
+      records, aggregates them, applies optional metadata callbacks and returns paginated
+      response with metadata computed from the page (not the full dataset).
+dod:
+  - text: update_breakdown_metrics aggregates a single DailySpendRecord into BreakdownMetrics across all dimensions (models, model_groups, mcp_servers, providers, endpoints, api_keys, entities) with correct nesting and metadata resolution.
+    proof: [breakdown-aggregation-tests]
+  - text: PTU sentinel rows (api_key == PTU_SENTINEL_API_KEY) add flat_cost to all parent buckets, do not appear as api_key breakdown entries in models, model_groups, providers or api_keys dimensions, but do appear in mcp_servers and endpoints api_key_breakdowns.
+    proof: [ptu-sentinel-tests]
+  - text: >-
+      Model-group fallback is dimension-specific: models bucket uses record.model for non-sentinel rows
+      (never model_group), switching to model_group/model fallback only for PTU sentinel rows; model_groups
+      bucket always uses model_group/model fallback for all rows.
+    proof: [model-group-tests]
+  - text: _aggregate_spend_records_sync groups records by date, calls update_breakdown_metrics for each, and returns results sorted in descending date order.
+    proof: [sync-aggregation-tests]
+  - text: _aggregate_spend_records async wrapper fetches api_key metadata from repository, filters out PTU sentinels, and dispatches to sync aggregator on a worker thread.
+    proof: [async-aggregation-tests]
+  - text: get_daily_activity parses canonical date ranges, resolves daily activity scope, queries paginated records, aggregates them and returns SpendAnalyticsPaginatedResponse with metadata computed from the returned page only.
+    proof: [read-service-tests]
+  - text: Metadata callback injection works correctly, allowing callers to override the default totals (e.g., for entity queries that include unmapped records in their tallies).
+    proof: [metadata-callback-tests]
+  - text: Pagination metadata total_pages and has_more are computed from the repository's full matching-row total_count together with page and page_size, distinct from per-record metrics which are limited to the returned page.
+    proof: [pagination-tests]
+checks:
+  optional: []
+  commands:
+    - id: breakdown-aggregation-tests
+      why: update_breakdown_metrics does not correctly aggregate records across all dimensions or metadata handling is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::breakdown/)'
+    - id: ptu-sentinel-tests
+      why: PTU sentinel handling is incorrect (appears in models/model_groups/providers/api_keys api_key_breakdowns, missing from mcp_servers/endpoints, or flat_cost not added to parents)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::(sentinel|ptu_)/)'
+    - id: model-group-tests
+      why: model-group fallback does not work correctly; models bucket uses model_group for non-sentinel or model_groups bucket does not use fallback
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::model_group/)'
+    - id: sync-aggregation-tests
+      why: sync aggregation does not group by date, returns wrong order, or loses metrics
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::sync_aggregate/)'
+    - id: async-aggregation-tests
+      why: async aggregation does not fetch metadata correctly or does not dispatch to worker thread
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::async_aggregate/)'
+    - id: read-service-tests
+      why: read service does not parse dates, resolve scopes, query pages, or return correct paginated response
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::read_service/)'
+    - id: metadata-callback-tests
+      why: metadata callback is not invoked correctly or does not override computed totals
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::metadata_callback/)'
+    - id: pagination-tests
+      why: pagination metadata (total_pages, has_more) does not use full total_count or is computed from page_size and page number alone
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::pagination/)'
+oracle_cases: []
+deviations:
+  - what: Metadata callback remains a typed injected callback (not resurrecting the unused tag-deduplication helper from LiteLLM).
+    why: The callback is optional and allows callers to compute totals differently based on query context (e.g., entity queries may include unmapped records). This preserves flexibility without duplicating the aggregation logic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L899
+  - what: Pagination metadata total_pages and has_more are computed from the repository's full matching-row total_count, which is a separate COUNT(*) over the entire filtered date range, not derivable from page_size and page number alone. Per-record totals (metrics) are limited to the returned page.
+    why: LiteLLM's pagination keeps per-record totals limited to the returned page, but pagination navigation requires the full query cardinality to calculate total_pages and has_more. The repository supplies both the page rows and the full count separately.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L938-L965
+out_of_scope:
+  - B3090 owns SpendMetrics, BreakdownMetrics, KeyMetadata and response types; B3091 constructs and fills them.
+  - B3092 owns scope construction (daily_activity_scope), repository adapter and key recovery.
+  - B729 owns DailyActivityRepository and its daily_rows and key_metadata methods.
+  - B727 owns database row types (DailySpendRecord, KeyMetadataRow) and the data layer.
+  - PTU cost attribution checking and feature flags; handled by B1664.
+pitfalls:
+  - >-
+    PTU sentinels have api_key == PTU_SENTINEL_API_KEY. They add flat_cost to all parent buckets but are excluded from
+    api_key_breakdown in models, model_groups, providers and top-level api_keys dimensions only. They DO appear in
+    mcp_servers and endpoints api_key_breakdowns. Check is_ptu_sentinel conditionally for each dimension.
+  - >-
+    Model-group fallback differs between buckets. For models bucket: always use record.model for non-sentinel rows;
+    only switch to (record.model_group or record.model) for PTU sentinel rows. For model_groups bucket: always use
+    (record.model_group or record.model) for all rows regardless of sentinel status.
+  - >-
+    Descending date order means sorting by date descending (newest first). Use a reverse sort on the date field.
+  - >-
+    Metadata callback is optional and may override totals. If present, compute metadata from its result
+    instead of the aggregated metrics. Otherwise use the aggregated totals.
+  - >-
+    api_key_breakdown nesting: each dimension (model, provider, etc.) has its own api_key_breakdown dict.
+    PTU sentinels do not appear in models, model_groups, providers or api_keys api_key_breakdowns, but do appear in
+    mcp_servers and endpoints api_key_breakdowns. They still contribute to parent dimension metrics.
+  - >-
+    Entity field resolution uses getattr with entity_id_field name; missing values default to "Unassigned".
+    Do not skip entities with None values.
+  - >-
+    Repository's key_metadata call filters out PTU_SENTINEL_API_KEY before fetching;
+    pass a frozenset of api_keys after filtering.
+  - >-
+    Pagination metadata computation uses the repository's full total_count (a separate COUNT(*) over the entire
+    filtered date range), not the count of rows in the current page. total_pages and has_more are derived from this
+    total_count together with page and page_size parameters.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

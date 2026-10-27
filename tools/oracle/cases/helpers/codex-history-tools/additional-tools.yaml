@@ -1,0 +1,20 @@
+kind: helper
+name: additional-tools
+call:
+  codex_history_tools:
+    operation: hoist_additional_tools
+    input:
+      - type: message
+      - type: additional_tools
+        tools:
+          - type: vendor
+            name: extra
+            custom: 7
+      - type: additional_tools
+        tools: 7
+    tools:
+      - type: function
+        name: first
+compare:
+  ignore: []
+env: {}

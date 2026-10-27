@@ -1,0 +1,151 @@
+id: B4530
+title: Memory records, visibility and write authorization
+description: >-
+  Build betterlite-server::memory_records with typed memory row models, request decoders, and visibility/authorization helpers
+  for the memory API routes. Consume betterlite-auth principals (B732), betterlite-db repositories (B726), team repositories (B724),
+  team-access decisions (B800), and the admin-view predicate (B3079). Keep these helpers below the routes B133 builds and preserve
+  the distinction between read and write authorization: visibility filters restrict reads while mutation checks enforce ownership.
+
+  Row models: LiteLLM_MemoryRow carries memory_id, key, value, metadata (optional JSON), user_id/team_id (scoping), created_at,
+  created_by, updated_at, updated_by. MemoryCreateRequest requires key and value, with optional metadata and overridable user_id/team_id
+  (admin-only). MemoryUpdateRequest makes value and metadata both optional, captures field-presence awareness for updates, and also
+  includes user_id/team_id for admin PUT-create. MemoryListResponse and MemoryDeleteResponse model the collection and delete responses.
+  All JSON metadata is stored as string via json.dumps and deserialized on read; the row projection returns all ten named fields including
+  nullable audit fields.
+
+  Visibility: non-admin callers see rows where (user_id matches caller OR team_id matches caller); admins (PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY)
+  see all rows. Callers matching neither user_id nor team_id see no rows. A visibility filter returns None for admins (no restriction) or a Prisma
+  where clause for non-admins. The list operation preserves separate OR predicates under AND with the key filter so search cannot expand visibility.
+
+  Ownership/mutation: PROXY_ADMIN always allowed. Personal ownership (row.user_id == caller.user_id) always allowed. Pure team rows (row.user_id is None,
+  row.team_id set) require team/org-admin approval via team_access.allows() check. Anything else is 403. Team lookup/access-check failures log and deny,
+  returning 403 without granting access or falling back. Team admins are roster members with role admin or organization admins for that team's organization.
+
+  Scope resolution on creation: admin may override user_id/team_id; non-admin must match their own (or omit). Defaults match the caller's identity.
+  Identity-less creation (both user_id and team_id null) is rejected for non-admins with 400; admins may create global rows. Non-null null-override attempts
+  (admin passing null to clear a non-null caller identity) are not permitted—omitted fields default to caller.
+
+  Key filter precedence: search (key prefix OR exact memory_id), then key_prefix (key prefix), then key (exact match). Empty string remains a supplied filter.
+  Unique key is global, not scoped; duplicate creates return 409 regardless of visibility. Upsert races: when PUT-create gets a unique violation, reread within
+  visibility, return 409 if invisible, otherwise recheck _assert_write_access and update by memory_id. Do not use blind atomic upsert; the recheck is required.
+  Missing row on final PUT/DELETE returns 404.
+
+  Unique violation detection: prefer typed error code P2002, fall back to substring matching (P2002, Unique, unique, UniqueViolation) for robustness.
+  Database errors on lookup, create, update, delete log and surface as HTTP 500 with a generic detail to avoid leaking connection/table metadata.
+  _find_visible_memory_or_none suppresses only 404 from scoped lookup and returns None on that case; other failures raise.
+
+  Production code sizing: 134 lines of owned helper functions + 75 lines of supporting declarations (imports, TypedDict filters, models) = 209 counted lines.
+  Preserve all function boundaries; no premature extraction. Native behavior tests exercise role-based access (personal vs team vs admin), visibility OR patterns,
+  scope-default logic, unique-violation detection, and error wrapping. Helper cases are pure functions only (not routes); raw database and HTTP oracle coverage
+  belong to B133's route task. Both require security review.
+scope:
+  paths:
+    - crates/betterlite-server/src/memory_records.rs
+    - crates/betterlite-server/src/memory_records/**
+    - tools/oracle/cases/helpers/memory-records/**
+    - tools/oracle/fuzz/corpus/helper_case/memory-records-*
+    - tools/oracle/helpers/b4530.py
+    - tools/oracle/helpers/b4530/**
+    - tools/oracle/src/helpers/server/b4530.rs
+    - tools/oracle/src/helpers/server/b4530/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L10-L20
+    why: Own LiteLLM_MemoryRow; all ten fields including nullable audit timestamps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L23-L37
+    why: Own MemoryCreateRequest; required key/value, optional metadata and overridable scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L40-L47
+    why: Own MemoryUpdateRequest; field-presence awareness and admin scope override on PUT-create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L50-L52
+    why: Own MemoryListResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L55-L57
+    why: Own MemoryDeleteResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L56-L57
+    why: Own _memory_table; memory table accessor via MemoryRepository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L60-L72
+    why: Own _serialize_metadata_for_prisma; json.dumps for Json column storage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L75-L76
+    why: Own _is_admin; PROXY_ADMIN role check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L79-L94
+    why: Own _visibility_filter; non-admin visibility via user_id OR team_id, admin sees all.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L97-L110
+    why: Own _StartsWith, _MemoryKeyWhere, _MemoryIdWhere, _MemorySearchWhere TypedDicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L113-L124
+    why: Own _key_filter; search/key_prefix/key precedence with prefix matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L127-L139
+    why: Own _row_to_model; all-field row projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L142-L147
+    why: Own _require_prisma; database availability check with CommonProxyErrors detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L150-L157
+    why: Own _internal_error; generic error wrapping with server-side exception logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L160-L199
+    why: Own _assert_write_access; personal vs team vs admin authorization for mutations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L202-L220
+    why: Own _is_team_admin_for; team admin status via team_access.allows() with org-admin fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L223-L235
+    why: Own _is_unique_violation; P2002 code detection plus substring fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L238-L282
+    why: Own _resolve_scope; non-admin identity defaults, mismatch rejection, orphan rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L388-L398
+    why: Own _find_memory_for_caller; key lookup within visibility scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L401-L410
+    why: Own _find_visible_memory_or_none; visible-or-none helper for upsert race handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L20-L51
+    why: All imports consumed by these helpers, including UserAPIKeyAuth, user_api_key_has_admin_view, team_access, and model types.
+dod:
+  - text: 'Model cases name: all_ten_row_fields, create_request_required_and_optional,
+      update_request_field_presence, list_response_structure, delete_response_structure,
+      metadata_json_serialization, null_vs_absent_metadata.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Access cases name: admin_unrestricted_view, non_admin_user_visibility,
+      non_admin_team_visibility, non_admin_or_visibility, identity_less_no_match,
+      personal_ownership_allowed, team_row_requires_admin, team_row_allows_org_admin,
+      team_lookup_failure_denies, team_access_check_failure_denies, admin_scope_override,
+      non_admin_scope_mismatch_403, non_admin_orphan_creation_400, admin_orphan_allowed,
+      null_does_not_erase_caller_identity.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Key filter cases name: search_precedence_over_prefix_and_key,
+      search_matches_key_prefix, search_matches_exact_memory_id, key_prefix_startswith,
+      key_exact_match, empty_string_filter_remains, none_filter_returns_none.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Unique violation cases name: typed_p2002_code, substring_detection,
+      global_key_uniqueness, create_duplicate_409, upsert_race_detection, invisible_duplicate_409,
+      visible_duplicate_recheck_write_access.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Error cases name: missing_database_500, lookup_failure_logs_and_500,
+      create_failure_logs_and_500, update_failure_logs_and_500, delete_failure_logs_and_500,
+      visibility_helper_suppresses_404_only, team_admin_check_logs_and_denies.'
+    proof: [behavior-tests, helper-python, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Access and key-filter logic, scope resolution, unique detection and error wrapping must pass.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^memory_records::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The helper adapter must invoke pure access/filter/scope functions without database mocks.
+      run: test -f tools/oracle/helpers/b4530.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: New memory_records seeds must reach the shared typed helper envelope corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/memory-records-*")" && grep -rlq memory_records tools/oracle/fuzz/corpus/helper_case/memory-records-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/memory-records/models-and-defaults.yaml
+  - tools/oracle/cases/helpers/memory-records/visibility-and-ownership.yaml
+  - tools/oracle/cases/helpers/memory-records/key-filtering.yaml
+  - tools/oracle/cases/helpers/memory-records/scope-resolution.yaml
+  - tools/oracle/cases/helpers/memory-records/unique-and-errors.yaml
+deviations: []
+out_of_scope:
+  - 'litellm/proxy/memory/memory_endpoints.py: B133 owns all five routes (create_memory, list_memory, get_memory,
+    upsert_memory, delete_memory) and the router declaration. This task owns only the helpers they call.'
+  - 'litellm/proxy/memory/__init__.py: Empty package initializer; zero lines, no ownership work.'
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b4530 in the server group. Replace the stub Op in tools/oracle/src/helpers/server/b4530.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b4530.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - Visibility filter returns None (no restriction) for admins; non-admins get an explicit where clause.
+  - _find_visible_memory_or_none catches only 404 from the scoped lookup; other exceptions propagate.
+  - Upsert race requires re-read and re-check authority before update, not a blind atomic upsert.
+  - Team admin checks log and return false on any error, not granting access or retrying.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

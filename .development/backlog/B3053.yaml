@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Dynamic priority token accounting and headers
 status: todo
 depends_on: [B732, B3031, B3037, B3044, B3046, B3051]
-file: null
+file: tasks/B3053-dynamic-rate-limit-callbacks.yaml
 covers:
   - "litellm/proxy/hooks/dynamic_rate_limiter_v3.py"
 parent: B072

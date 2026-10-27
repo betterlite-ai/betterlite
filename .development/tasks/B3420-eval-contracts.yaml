@@ -1,0 +1,129 @@
+id: B3420
+title: Eval wire contracts and inherited provider errors
+description: >-
+  Build the live eval request/response contracts in crates/betterlite-openai::evals, using
+  the EvalDefinition and EvalRun names already specified by B523 so its transforms consume
+  these models. Add the inherited provider-error construction below core/server and preserve
+  the base constructor's lack of side effects.
+
+  Export from betterlite-openai::evals: DataSourceConfigCustom, DataSourceConfigLogs,
+  DataSourceConfigStoredCompletions, DataSourceConfig union, LLMAsJudgeGraderConfig,
+  GroundTruthGraderConfig, CustomGraderConfig, GraderConfig union, CreateEvalRequest,
+  UpdateEvalRequest, ListEvalsParams, Eval, ListEvalsResponse, DeleteEvalResponse,
+  CancelEvalResponse, CreateRunRequest, ListRunsParams, ResultCounts, PerTestingCriteriaResult,
+  Run, ListRunsResponse, CancelRunResponse, RunDeleteResponse. These classes have no user-defined
+  methods. Also export the base class BaseEvalsAPIConfig with all transformation hooks
+  (validate_environment, sign_request, get_complete_url, transform_*_request,
+  transform_*_response, get_error_class) and the inherited provider-error construction.
+
+scope:
+  paths:
+    - crates/betterlite-openai/src/evals/**
+    - crates/betterlite-openai/src/lib.rs
+    - crates/betterlite-openai/tests/fixtures/evals/**
+    - crates/betterlite-openai/Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L1-257
+    why: Live eval request types (DataSourceConfigCustom, DataSourceConfigLogs, DataSourceConfigStoredCompletions, DataSourceConfig union, LLMAsJudgeGraderConfig, GroundTruthGraderConfig, CustomGraderConfig, GraderConfig union, CreateEvalRequest, UpdateEvalRequest, ListEvalsParams) and response types (Eval, ListEvalsResponse, DeleteEvalResponse, CancelEvalResponse) through line 204; lines 205-257 contain unused types DataSourceDatasetConfig, DataSourceSampleSetConfig, DataSourceInlineConfig, RunDataSourceConfig, CompletionConfig which are out_of_scope but documented here for reference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L258-416
+    why: Run API request types (CreateRunRequest, ListRunsParams) and response types (ResultCounts, PerTestingCriteriaResult, Run, ListRunsResponse, CancelRunResponse, RunDeleteResponse) with all fields and defaults preserved.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/evals/transformation.py#L1-39
+    why: BaseEvalsAPIConfig class declaration and imports preamble.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/evals/transformation.py#L40-41
+    why: BaseEvalsAPIConfig.__init__ method with no-side-effects base initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/evals/transformation.py#L507-518
+    why: BaseEvalsAPIConfig.get_error_class inherited method that constructs BaseLLMException with status_code, message and headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L31-56
+    why: BaseLLMException signature and initialization for inherited error class construction.
+
+dod:
+  - text: DataSourceConfigCustom holds type (required, literal "custom"), item_schema (required dict), and optional include_sample_schema (bool).
+    proof: [eval-types-test]
+  - text: DataSourceConfigLogs holds type (required, literal "logs") and optional metadata (dict).
+    proof: [eval-types-test]
+  - text: DataSourceConfigStoredCompletions holds type (required, literal "stored_completions") and optional metadata (dict).
+    proof: [eval-types-test]
+  - text: DataSourceConfig is a union type of DataSourceConfigCustom, DataSourceConfigLogs, and DataSourceConfigStoredCompletions.
+    proof: [eval-types-test]
+  - text: LLMAsJudgeGraderConfig holds type (required, literal "llm_as_judge"), optional model (str), and optional prompt (str).
+    proof: [eval-types-test]
+  - text: GroundTruthGraderConfig holds type (required, literal "ground_truth") and optional metric (one of "exact_match", "f1_score", "bleu").
+    proof: [eval-types-test]
+  - text: CustomGraderConfig holds type (required, literal "custom") and function_id (required str).
+    proof: [eval-types-test]
+  - text: GraderConfig is a union type of LLMAsJudgeGraderConfig, GroundTruthGraderConfig, and CustomGraderConfig.
+    proof: [eval-types-test]
+  - text: CreateEvalRequest holds optional name (str), required data_source_config (DataSourceConfig), required testing_criteria (list of GraderConfig), and optional metadata (dict).
+    proof: [eval-types-test]
+  - text: UpdateEvalRequest holds optional name (str) and optional metadata (dict).
+    proof: [eval-types-test]
+  - text: ListEvalsParams holds optional limit (int), after (str), before (str), order (asc or desc), and order_by (created_at or updated_at).
+    proof: [eval-types-test]
+  - text: Eval holds id (required str), object (str defaulting to "eval"), created_at (required int), optional updated_at (int), optional name (str), data_source_config (required dict), testing_criteria (required list of dict), and optional metadata (dict).
+    proof: [eval-types-test]
+  - text: ListEvalsResponse holds object (str defaulting to "list"), data (required list of Eval), optional first_id (str), optional last_id (str), and has_more (bool defaulting to false).
+    proof: [eval-types-test]
+  - text: DeleteEvalResponse holds eval_id (required str), object (str defaulting to "eval.deleted"), and deleted (bool defaulting to true).
+    proof: [eval-types-test]
+  - text: CancelEvalResponse holds id (required str), object (str defaulting to "eval"), and status (required literal "cancelled").
+    proof: [eval-types-test]
+  - text: CreateRunRequest holds required data_source (dict), optional name (str), and optional metadata (dict).
+    proof: [eval-types-test]
+  - text: ListRunsParams holds optional limit (int), after (str), before (str), and order (asc or desc).
+    proof: [eval-types-test]
+  - text: ResultCounts holds required total (int), passed (int defaulting to 0), failed (int defaulting to 0), and error (int defaulting to 0).
+    proof: [eval-types-test]
+  - text: PerTestingCriteriaResult holds required testing_criteria_index (int), required result_counts (ResultCounts), and optional average_score (float).
+    proof: [eval-types-test]
+  - text: Run holds id (required str), object (str defaulting to "eval.run"), created_at (required int), required status (one of "queued", "running", "completed", "failed", "cancelled"), required data_source (dict), required eval_id (str), optional name (str), optional started_at (int), optional completed_at (int), optional model (str), optional per_model_usage (object), optional per_testing_criteria_results (list of PerTestingCriteriaResult), optional report_url (str), optional result_counts (dict), optional shared_with_openai (bool), optional metadata (dict), and optional error (dict).
+    proof: [eval-types-test]
+  - text: ListRunsResponse holds object (str defaulting to "list"), data (required list of Run), optional first_id (str), optional last_id (str), and has_more (bool defaulting to false).
+    proof: [eval-types-test]
+  - text: CancelRunResponse holds id (required str), object (str defaulting to "eval.run"), and status (required literal "cancelled").
+    proof: [eval-types-test]
+  - text: RunDeleteResponse holds run_id (required str), object (Option<str> defaulting to Some("eval.run.deleted")), and deleted (Option<bool> defaulting to Some(true)).
+    proof: [eval-types-test]
+  - text: BaseEvalsAPIConfig.__init__ executes with no side effects and initializes the base class.
+    proof: [base-config-test]
+  - text: BaseEvalsAPIConfig.get_error_class constructs BaseLLMException with status_code, message, and headers parameters.
+    proof: [base-config-test]
+
+checks:
+  optional: []
+  commands:
+    - id: eval-types-test
+      why: eval type definitions do not parse, serialize, or have missing fields
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^eval_types::/ || /^eval_contracts::/)'
+    - id: base-config-test
+      why: BaseEvalsAPIConfig initialization or error class construction fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^base_evals_config::/ || /^eval_error_class::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: RunDeleteResponse.object and RunDeleteResponse.deleted are both Option types that default to specific values ("eval.run.deleted" and true respectively), matching LiteLLM's wire contract.
+    why: The response may omit these fields on the wire, so they must be Optional in the model to allow deserialization of partial responses while preserving LiteLLM's default values.
+
+out_of_scope:
+  - Unused types DataSourceDatasetConfig (205-212), DataSourceSampleSetConfig (215-222), DataSourceInlineConfig (225-232), RunDataSourceConfig (235), and CompletionConfig (238-257) have no callers at the pinned commit; they are documented but not built. These union types and completion model are not referenced by any create_run flow at the pin.
+  - Abstract transformation hooks in BaseEvalsAPIConfig (validate_environment, get_complete_url, transform_*_request, transform_*_response) have no callers at the pin in open-source LiteLLM; their OpenAI subclass implementations belong to B523.
+  - All non-abstract BaseEvalsAPIConfig methods beyond __init__ and get_error_class (custom_llm_provider property, sign_request, etc.) are abstract and belong with their concrete provider implementations in B523.
+  - HTTP transport and request dispatch; that belongs to later transport-layer tasks.
+  - Provider selection and routing; that is owned by external router tasks.
+
+pitfalls:
+  - "RunDeleteResponse.object defaults to Some(\"eval.run.deleted\") when omitted from the wire; RunDeleteResponse.deleted defaults to Some(true) when omitted. Both may be None if explicitly set to null, but the default values match LiteLLM's wire contract."
+  - "Eval.object always defaults to \"eval\" (not a union); ListEvalsResponse.object always defaults to \"list\"; Run.object always defaults to \"eval.run\"; DeleteEvalResponse.object always defaults to \"eval.deleted\"; CancelEvalResponse.object always defaults to \"eval\"; CancelRunResponse.object always defaults to \"eval.run\". These constants are part of the wire format contract."
+  - "ListEvalsResponse.has_more defaults to false, not None; ListRunsResponse.has_more defaults to false. Omitted has_more is treated as false, not as missing data."
+  - "CreateEvalRequest.data_source_config is required; the union (DataSourceConfig) does not include the unused dataset/sample-set/inline variants (those belong to run requests only). Do not conflate the request and response data source types."
+  - "ResultCounts.passed, ResultCounts.failed, and ResultCounts.error all default to 0 when omitted. A response that omits these counts should deserialize to zero, not None."
+  - "Run fields started_at, completed_at, model, per_model_usage, per_testing_criteria_results, report_url, result_counts, shared_with_openai, metadata, and error are all optional and may be null. None of these should have unexpected defaults."
+  - "BaseEvalsAPIConfig.get_error_class is inherited by concrete provider configs; it calls BaseLLMException.__init__ from B2202, which is owned upstream. The inherited method must not add side effects or raise exceptions (except the expected ones from BaseLLMException itself)."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

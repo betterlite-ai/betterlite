@@ -1,0 +1,170 @@
+id: B3570
+title: Passthrough provider contract and relay projection helpers
+description: >-
+  Build the lower passthrough contract and pure URL, metadata and logged-response projections
+  in crates/betterlite-openai::passthrough. This module exports the trait BasePassthroughConfig
+  (abstract methods is_streaming_request and get_complete_url, default implementations sign_request,
+  logging_non_streaming_response, handle_collected_chunks, create_stream_collector), the trait
+  PassthroughStreamCollector (methods add and build_logged_response), and the default RawBytesStreamCollector
+  that joins chunks before strict UTF-8 decoding and strips empty lines.
+
+  Also export pure functions for URL and metadata transformation: model_group_from (reads model_group
+  from PassthroughMetadata in litellm_params), strip_leading_model_segment (removes the leading model
+  name from a path), replace_path_segment (replaces a path segment within forward-slash boundaries using
+  regex), relayed_json_object (returns parsed JSON when status is 200 and the body is a dict, otherwise
+  None), relayed_body (returns parsed JSON when the body is a dict, otherwise returns response text),
+  logged_relay_shape (matches the first RelayShape in the given sequence whose path_suffix the endpoint
+  ends with, matched via endswith() in list order; sets logging_obj.call_type to the matched shape's
+  call_type.value and returns the parsed response).
+
+  Register oracle helper PassthroughMetadata (Pydantic model with model_group: str field, ignoring
+  extra fields), RelayShape (frozen dataclass with path_suffix: str, call_type: CallTypes, parse callable),
+  LoggedRelayResponse type alias (union of CostResponseTypes, RerankResponse, ResponsesAPIResponse,
+  ResponsesTerminalEvent), and RELAYED_JSON_OBJECT (TypeAdapter for Mapping).
+
+  Retain slash trimming in format_url, boundary-aware segment replacement via regex, query replacement
+  using urlencode without doseq, HTTP-200-only object projection, and first suffix-match selection in
+  list order before parsing. Invalid PassthroughMetadata gives an empty model_group; failed shape
+  validation does not change logging_obj.call_type. Default collection joins bytes before strict UTF-8
+  decoding and strips empty lines. Keep signed bytes dominant over content/data/JSON, including an empty
+  signed byte string. The raw-bytes-to-lines decoder accepts arbitrary bytes split across chunks,
+  including code points split at chunk boundaries.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-openai/**
+    - tools/oracle/cases/passthrough-metadata/**
+    - tools/oracle/helpers/b3570.py
+    - tools/oracle/helpers/b3570/**
+    - tools/oracle/src/helpers/oracle/b3570.rs
+    - tools/oracle/src/helpers/oracle/b3570/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py
+    why: All owned functions and the PassthroughConfig trait, PassthroughStreamCollector contract, RawBytesStreamCollector and type aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L43-L100
+    why: BaseLLMModelInfo base class that BasePassthroughConfig extends.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L449-L636
+    why: CallTypes enum that RelayShape.call_type uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L1-L50
+    why: BaseLLMException that get_error_class returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py
+    why: RerankResponse type for LoggedRelayResponse union.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1-L50
+    why: ResponsesAPIResponse and ResponsesTerminalEvent types for LoggedRelayResponse union.
+dod:
+  - text: >-
+      model_group_from extracts the model_group field from PassthroughMetadata in
+      litellm_params, returning empty string on validation error.
+    proof: [passthrough-helpers-tests]
+  - text: >-
+      strip_leading_model_segment removes a leading model name from the path if it is
+      in the model_names list, returning the rest of the path without the model name
+      and separator, or the original path.
+    proof: [passthrough-helpers-tests]
+  - text: >-
+      replace_path_segment replaces a path segment with a boundary-aware regex that
+      matches only when the segment is surrounded by forward slashes or preceded by a colon.
+    proof: [passthrough-helpers-tests]
+  - text: >-
+      relayed_json_object returns parsed JSON as a dict when the response status is 200
+      and the body is valid JSON with a dict structure, otherwise None.
+    proof: [passthrough-helpers-tests]
+  - text: >-
+      relayed_body returns parsed JSON as a dict when the body is valid JSON with a dict
+      structure, otherwise returns the response text as a string.
+    proof: [passthrough-helpers-tests]
+  - text: >-
+      logged_relay_shape matches the first RelayShape in the given sequence whose path_suffix
+      the endpoint ends with (matched via endswith() in list order), sets logging_obj.call_type
+      to the matched shape's call_type.value, and returns the parsed response; returns None on
+      no match or parse failure.
+    proof: [passthrough-helpers-tests]
+  - text: >-
+      PassthroughStreamCollector trait defines add(chunk) and build_logged_response(litellm_logging_obj)
+      contracts.
+    proof: [passthrough-collector-tests]
+  - text: >-
+      RawBytesStreamCollector implements PassthroughStreamCollector by joining all chunks,
+      decoding as UTF-8, and calling the provider's handle_collected_chunks.
+    proof: [passthrough-collector-tests]
+  - text: >-
+      convert_raw_bytes_to_lines joins raw byte chunks, decodes as UTF-8, and returns lines
+      split by newlines with empty lines stripped.
+    proof: [passthrough-helpers-tests, passthrough-fuzz-corpus]
+  - text: >-
+      Every type and function from transformation.py is built or out_of_scope with its owner.
+    proof: [passthrough-bounds]
+  - text: >-
+      The raw-bytes-to-lines decoder has a cargo-fuzz target at
+      crates/betterlite-openai/fuzz/fuzz_targets/passthrough_bytes.rs, and
+      replays_the_passthrough_bytes_corpus parses every file in its corpus without panicking
+      or data corruption.
+    proof: [passthrough-fuzz-corpus]
+checks:
+  optional: []
+  commands:
+    - id: passthrough-helpers-tests
+      why: the transformation helper functions fail or do not exist
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^passthrough::(model_group|strip_leading|replace_path|relayed|logged_relay)/)' || cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(passthrough)'
+    - id: passthrough-collector-tests
+      why: the collector trait and implementation fail or do not exist
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^passthrough::(PassthroughStreamCollector|RawBytesStreamCollector)/)' || cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(collector)'
+    - id: passthrough-bounds
+      why: the transformation.py scope is incomplete or an owned function is missing
+      run: |-
+        grep -q 'PassthroughMetadata' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'RelayShape' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn model_group_from' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn strip_leading_model_segment' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn replace_path_segment' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn relayed_json_object' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn relayed_body' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn logged_relay_shape' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'trait PassthroughStreamCollector' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'struct RawBytesStreamCollector' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'trait BasePassthroughConfig' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn convert_raw_bytes_to_lines' crates/betterlite-openai/src/passthrough/transformation.rs && \
+        grep -q 'fn handle_collected_chunks' crates/betterlite-openai/src/passthrough/transformation.rs
+    - id: passthrough-fuzz-corpus
+      why: the raw-bytes-to-lines fuzz target or its corpus is missing, or replaying the corpus fails
+      run: |-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/passthrough_bytes.rs && \
+        test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/passthrough_bytes)" && \
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_passthrough_bytes_corpus)'
+oracle_cases:
+  - tools/oracle/cases/passthrough-metadata/empty-metadata.yaml
+  - tools/oracle/cases/passthrough-metadata/valid-model-group.yaml
+  - tools/oracle/cases/passthrough-metadata/invalid-metadata.yaml
+  - tools/oracle/cases/passthrough-metadata/missing-field.yaml
+deviations:
+  - what: >-
+      betterlite limits the raw-bytes-to-lines decoder to 16 MiB of accumulated chunks,
+      disabling collection and skipping spend flush while continuing to relay bytes unchanged.
+    why: LiteLLM retains every raw chunk; betterlite logging must be bounded per B3570 architect decision.
+    link: null
+out_of_scope:
+  - Provider-specific overrides of BasePassthroughConfig methods (owned by concrete provider tasks).
+  - The factory ProviderConfigManager.get_provider_passthrough_config and its provider constructors (unresolved in B101).
+  - Passthrough request routing and handler dispatch (B3572, B101).
+  - Logging orchestration and spend tracking (B3572, B252).
+  - Header and timeout policies (B3571).
+pitfalls:
+  - >-
+    logged_relay_shape matches by endswith() on path_suffix in list order, not by
+    shortest matching suffix. If two shapes have overlapping suffixes, only the first
+    match in the sequence is used.
+  - RelayShape.call_type is a CallTypes enum value; accessing its string form requires .value.
+  - >-
+    convert_raw_bytes_to_lines joins all chunks before decoding, so a code point split
+    across chunk boundaries is valid and reconstructed.
+  - >-
+    BasePassthroughConfig.sign_request is called before JSON transformation, so the original
+    body (including files and query params) are available for signing.
+  - >-
+    PassthroughStreamCollector is a protocol/trait; RawBytesStreamCollector is the default
+    but provider configs can override create_stream_collector to return a different collector.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

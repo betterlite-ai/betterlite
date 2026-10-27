@@ -1,4 +1,6 @@
 pub mod context;
+pub mod deepagents;
+pub mod endpoint;
 pub mod errors;
 pub mod events;
 pub mod handlers;

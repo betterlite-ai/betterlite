@@ -1,0 +1,98 @@
+id: B3367
+title: Explicit container file upload
+description: >-
+  Build the explicit top-level upload operation in betterlite-core, preserving named
+  credential arguments, mock-response short circuit, managed-ID decoding and upload
+  call-type logging. The async wrapper aupload_container_file runs the sync variant
+  through asyncio while preserving call context. The sync function accepts a container ID,
+  file, timeout (default 600), optional named credentials (api_key, api_base, api_version),
+  custom_llm_provider override, optional headers and query additions, and control flags
+  in kwargs. It checks for mock_response first and returns a parsed ContainerFileObject;
+  otherwise, it builds GenericLiteLLMParams from named credentials, decodes any managed
+  container ID to recover the original ID and provider metadata, retrieves the provider
+  config using that provider, updates logging with the upload call type, and delegates
+  file normalization and HTTP execution to the generic executor with the decoded container
+  ID and file passed through. Both handlers support sync and async execution: the sync
+  variant dispatches to async when _is_async=True, while the async handler awaits the
+  operation. The implementation reuses B3361's managed ID decoder and provider config
+  manager, B3363's generic container handler, B247's logging state update, and B185's
+  exception dispatching. Do not forward extra_body to the executor; it is accepted
+  by the operation signature but not passed to the handler.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_file_upload.rs
+    - crates/betterlite-core/src/api/container_file_upload/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1133-L1214
+    why: Async wrapper aupload_container_file that runs sync variant through asyncio.get_event_loop with context preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1219-L1232
+    why: First overload of upload_container_file returning a Coroutine when aupload_container_file=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1235-L1248
+    why: Second overload of upload_container_file returning typed response when aupload_container_file=False or omitted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1253-L1374
+    why: Implementation of upload_container_file including mock short-circuit, named credential argument handling, managed ID decoding, provider config lookup, logging update with upload call-type, and delegation to generic container handler.
+
+dod:
+  - text: upload_container_file accepts container_id, file, timeout (default 600), named credentials (api_key, api_base, api_version), custom_llm_provider override, headers, query, and control in kwargs.
+    proof: [upload-tests]
+  - text: aupload_container_file wraps the sync operation through asyncio with context preservation.
+    proof: [upload-tests]
+  - text: Mock responses are parsed as ContainerFileObject and short-circuit provider selection and HTTP calls.
+    proof: [upload-tests]
+  - text: Named credential arguments are extracted and passed to GenericLiteLLMParams; api_key, api_base, api_version are accepted as explicit parameters.
+    proof: [upload-tests]
+  - text: Managed container IDs are decoded to recover original ID and provider; provider selection respects explicit override.
+    proof: [upload-tests]
+  - text: Provider config is fetched using the resolved provider; missing config raises a clear error.
+    proof: [upload-tests]
+  - text: Logging is updated with kwargs before delegation; call type is set to upload_container_file.
+    proof: [upload-tests]
+  - text: File normalization and HTTP execution are delegated to generic_container_handler.handle with endpoint_name="upload_container_file", passing the decoded container ID and file.
+    proof: [upload-tests]
+  - text: Sync handlers dispatch to async handlers when _is_async is true.
+    proof: [upload-tests]
+  - text: All exceptions from provider selection, credential handling and handler delegation are caught and re-raised through exception_type dispatch.
+    proof: [upload-tests]
+  - text: extra_body is accepted as an optional parameter but not forwarded to the executor.
+    proof: [upload-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: upload-tests
+      why: Upload handlers fail, do not exist, or async/mock/credential/provider selection/logging behavior differs from the source
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_upload::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: extra_body is accepted as an optional parameter in the operation signature but is not forwarded to the executor.
+    why: The LiteLLM source accepts extra_body but does not pass it to the generic container handler, so this implementation matches that behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1264
+
+out_of_scope:
+  - B3360 owns ContainerFileObject and upload contract validation; this task uses them without modification.
+  - B3361 owns decode_managed_container_id_for_request and ProviderConfigManager.get_provider_container_config; this task calls them to resolve provider and ID.
+  - B3363 owns GenericContainerHandler and handle method; this task delegates file execution to it.
+  - B247 owns Logging.update_from_kwargs and call-type state; this task calls update_from_kwargs and sets the upload call type.
+  - B185 owns exception_type dispatch; this task calls it to convert all exceptions.
+
+pitfalls:
+  - Mock response parsing at lines 1308-1314 checks mock_response before validating the file or looking up a provider, so mock short-circuits file upload entirely.
+  - Container ID decoding happens early and uses the decoded original ID for the handler call, not the input managed ID.
+  - Named credentials (api_key, api_base, api_version) are explicit parameters, not extracted from kwargs; they must be built into GenericLiteLLMParams before provider config lookup.
+  - Provider config lookup at line 1333 may return None for unsupported providers; the code at lines 1337-1338 explicitly raises ValueError.
+  - The call type must be set to upload_container_file through the logging object's call_type field after logging update.
+  - The file parameter is passed directly to the handler without Python file-object normalization or adaptation; that remains the SDK boundary.
+  - extra_body is accepted to match the operation signature but must not be forwarded to the handler.
+  - "The upload_container_file overloads define different return types: Coroutine when aupload_container_file=True (line 1229), direct ContainerFileObject otherwise (line 1245)."
+  - All exceptions from provider config lookup, credential building, and handler delegation are caught at line 1367 and re-raised through exception_type at line 1368, preserving original errors.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

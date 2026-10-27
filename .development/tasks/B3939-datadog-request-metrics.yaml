@@ -32,7 +32,6 @@ scope:
     - crates/betterlite-logging/src/datadog/metrics/**
     - tools/oracle/cases/logging/datadog-metrics/**
     - Cargo.toml
-    - deny.toml
     - tools/oracle/helpers/b3939.py
     - tools/oracle/helpers/b3939/**
     - tools/oracle/src/helpers/logging/b3939.rs

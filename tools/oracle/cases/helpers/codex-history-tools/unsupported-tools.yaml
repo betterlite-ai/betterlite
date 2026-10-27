@@ -1,0 +1,16 @@
+kind: helper
+name: unsupported-tools
+call:
+  codex_history_tools:
+    operation: drop_unsupported_tools
+    supported_types: [function]
+    tools:
+      - type: function
+        name: kept
+      - type: web_search
+      - type: custom
+      - sentinel
+      - type: web_search
+compare:
+  ignore: []
+env: {}

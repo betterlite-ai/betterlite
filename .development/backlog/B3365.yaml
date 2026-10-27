@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Container retrieve and delete HTTP execution
 status: todo
 depends_on: [B3360, B3363, B522, B547, B173, B249, B2402]
-file: null
+file: tasks/B3365-container-resource-http.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
 parent: B094
