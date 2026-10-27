@@ -156,6 +156,7 @@ pub fn mask_credentials_in_payload(data: &Value) -> Value {
 }
 
 mod keys;
+mod number;
 pub mod parse;
 pub mod redact;
 mod tests;

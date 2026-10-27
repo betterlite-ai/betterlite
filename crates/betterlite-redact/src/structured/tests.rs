@@ -24,9 +24,13 @@ fn parse(source: &str) -> Value {
     parse(r#"{"oci_tenancy":"secret"}"#),
     parse(r#"{"oci_tenancy":"secr**"}"#)
 )]
+#[case::numeric_notation(
+    parse(r#"{"token_small":1e-5,"token_tiny":1.2e-7,"token_negative":-1.2345e-5}"#),
+    parse(r#"{"token_small":"1e-0*","token_tiny":"1.2e***","token_negative":"-1.2*******"}"#)
+)]
 #[case::scalar_conversion(
-    parse(r#"{"token":null,"auth":true,"plain":null,"items":[null,true],"key":[null,false,17,"secret"]}"#),
-    parse(r#"{"token":"","auth":"****","plain":"None","items":["None",true],"key":["None",false,17,"secr**"]}"#)
+    parse(r#"{"token":null,"auth":true,"password":false,"plain":null,"items":[null,true],"key":[null,false,17,"secret"]}"#),
+    parse(r#"{"token":"","auth":"****","password":"Fals*","plain":"None","items":["None",true],"key":["None",false,17,"secr**"]}"#)
 )]
 #[case::nested_sequence(
     parse(r#"{"headers":[{"authorization":"Bearer abcdefghijk"}, "plain"]}"#),

@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-use super::{REDACTED, SensitiveDataMasker};
+use super::{REDACTED, SensitiveDataMasker, number};
 
 pub(super) enum Kind<'fields> {
     Config,
@@ -100,7 +100,7 @@ impl Walker<'_> {
                     Value::Null | Value::Array(_) | Value::Object(_) => String::new(),
                     Value::Bool(true) => "True".to_owned(),
                     Value::Bool(false) => "False".to_owned(),
-                    Value::Number(number) => number.to_string(),
+                    Value::Number(value) => number::text(value),
                     Value::String(text) => text.clone(),
                 };
                 Value::String(self.masker.mask_value(&text))
