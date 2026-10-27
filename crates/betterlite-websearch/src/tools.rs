@@ -77,40 +77,66 @@ pub struct OpenAiFunctionName {
 }
 
 fn input_schema() -> SearchInputSchema {
-    SearchInputSchema { schema_type: "object".to_owned(), properties: SearchInputProperties {
+    let properties = SearchInputProperties {
         query: StringProperty { property_type: "string".to_owned(), description: "The search query to execute".to_owned() },
         objective: StringProperty { property_type: "string".to_owned(), description: "Natural-language description of the goal behind the search, including any source or freshness requirements.".to_owned() },
         search_queries: SearchQueriesProperty { property_type: "array".to_owned(), items: StringType { value_type: "string".to_owned() }, description: "Two to five short keyword queries (3-6 words each) covering different angles of the objective, e.g. varying names, synonyms, or phrasings. Provide together with objective for the best results.".to_owned() },
-    }, required: vec!["query".to_owned()] }
+    };
+    SearchInputSchema {
+        schema_type: "object".to_owned(),
+        properties,
+        required: vec!["query".to_owned()],
+    }
 }
 #[must_use]
-pub fn get_litellm_web_search_tool() -> AnthropicWebSearchTool {
+pub fn anthropic_tool() -> AnthropicWebSearchTool {
+    let description = DESCRIPTION.to_owned();
     AnthropicWebSearchTool {
         name: LITELLM_WEB_SEARCH_TOOL_NAME.to_owned(),
-        description: DESCRIPTION.to_owned(),
+        description,
         input_schema: input_schema(),
     }
 }
 #[must_use]
-pub fn get_litellm_web_search_tool_openai() -> OpenAiFunctionTool {
+pub fn chat_tool() -> OpenAiFunctionTool {
+    let parameters = input_schema();
     OpenAiFunctionTool {
         tool_type: "function".to_owned(),
         function: OpenAiFunction {
             name: LITELLM_WEB_SEARCH_TOOL_NAME.to_owned(),
             description: DESCRIPTION.to_owned(),
-            parameters: input_schema(),
+            parameters,
         },
     }
 }
 #[must_use]
-pub fn get_litellm_web_search_tool_responses() -> ResponsesFunctionTool {
+pub fn responses_tool() -> ResponsesFunctionTool {
+    let parameters = input_schema();
     ResponsesFunctionTool {
         tool_type: "function".to_owned(),
         name: LITELLM_WEB_SEARCH_TOOL_NAME.to_owned(),
         description: DESCRIPTION.to_owned(),
-        parameters: input_schema(),
+        parameters,
     }
 }
+macro_rules! export_tool_builder {
+    ($name:ident, $implementation:ident, $output:ty) => {
+        pub fn $name() -> $output {
+            $implementation()
+        }
+    };
+}
+export_tool_builder!(
+    get_litellm_web_search_tool,
+    anthropic_tool,
+    AnthropicWebSearchTool
+);
+export_tool_builder!(openai_web_search_tool, chat_tool, OpenAiFunctionTool);
+export_tool_builder!(
+    responses_web_search_tool,
+    responses_tool,
+    ResponsesFunctionTool
+);
 #[must_use]
 pub fn is_web_search_tool_responses(tool: &Tool) -> bool {
     let Some(tool_type) = tool.tool_type.as_deref() else {
@@ -122,7 +148,7 @@ pub fn is_web_search_tool_responses(tool: &Tool) -> bool {
     tool_type == "web_search" || tool_type.starts_with("web_search_")
 }
 #[must_use]
-pub fn is_web_search_tool_chat_completion(tool: &Tool) -> bool {
+pub fn chat_completion(tool: &Tool) -> bool {
     if tool.tool_type.as_deref() == Some("function")
         && tool
             .function
@@ -134,6 +160,14 @@ pub fn is_web_search_tool_chat_completion(tool: &Tool) -> bool {
     }
     tool.name.as_deref() == Some(LITELLM_WEB_SEARCH_TOOL_NAME)
 }
+macro_rules! export_chat_detector {
+    ($name:ident) => {
+        pub fn $name(tool: &Tool) -> bool {
+            chat_completion(tool)
+        }
+    };
+}
+export_chat_detector!(is_chat_web_search_tool);
 #[must_use]
 pub fn is_web_search_tool(tool: &Tool) -> bool {
     if tool.tool_type.as_deref() == Some("function")

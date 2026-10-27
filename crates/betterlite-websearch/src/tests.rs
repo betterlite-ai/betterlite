@@ -3,16 +3,16 @@
 use crate::records::{SearchFailed, SearchOutcome, SearchSucceeded, WebSearchToolResultErrorCode};
 use crate::tools::{
     OpenAiFunctionName, SearchInputProperties, SearchInputSchema, SearchQueriesProperty,
-    StringProperty, StringType, Tool, get_litellm_web_search_tool,
-    get_litellm_web_search_tool_openai, get_litellm_web_search_tool_responses, is_web_search_tool,
-    is_web_search_tool_chat_completion, is_web_search_tool_responses,
+    StringProperty, StringType, Tool, get_litellm_web_search_tool, is_chat_web_search_tool,
+    is_web_search_tool, is_web_search_tool_responses, openai_web_search_tool,
+    responses_web_search_tool,
 };
 
 #[test]
 fn web_search_builders_have_expected_dialects() {
     let anthropic = serde_json::to_value(get_litellm_web_search_tool()).unwrap();
-    let openai = serde_json::to_value(get_litellm_web_search_tool_openai()).unwrap();
-    let responses = serde_json::to_value(get_litellm_web_search_tool_responses()).unwrap();
+    let openai = serde_json::to_value(openai_web_search_tool()).unwrap();
+    let responses = serde_json::to_value(responses_web_search_tool()).unwrap();
     assert_eq!(anthropic["name"], "litellm_web_search");
     assert_eq!(openai["function"]["name"], "litellm_web_search");
     assert_eq!(responses["name"], "litellm_web_search");
@@ -43,19 +43,19 @@ fn web_search_tool_responses() {
 
 #[test]
 fn web_search_tool_chat_completion() {
-    assert!(is_web_search_tool_chat_completion(&tool(
+    assert!(is_chat_web_search_tool(&tool(
         None,
         Some("litellm_web_search"),
         None,
         false
     )));
-    assert!(is_web_search_tool_chat_completion(&tool(
+    assert!(is_chat_web_search_tool(&tool(
         Some("function"),
         None,
         Some("litellm_web_search"),
         false
     )));
-    assert!(!is_web_search_tool_chat_completion(&tool(
+    assert!(!is_chat_web_search_tool(&tool(
         Some("web_search_20250305"),
         Some("web_search"),
         None,
