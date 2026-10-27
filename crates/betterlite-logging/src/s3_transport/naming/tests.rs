@@ -58,4 +58,5 @@ fn s3_object_naming_behaviors_behavior(#[case] name: Name<'_>, #[case] expected:
     };
     assert_eq!(built, expected);
     assert!(built.len() <= 1024);
+    assert!(built.chars().map(char::len_utf8).sum::<usize>() <= 1024);
 }
