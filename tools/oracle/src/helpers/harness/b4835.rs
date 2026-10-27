@@ -66,7 +66,7 @@ impl Helper for Op {
                             Some(value.to_owned())
                         });
                 }
-                Some("item.started") | Some("item.updated") | Some("item.completed") => {
+                Some("item.started" | "item.updated" | "item.completed") => {
                     let Some(item) = event.get("item").and_then(Value::as_object) else {
                         continue;
                     };
@@ -99,6 +99,8 @@ impl Helper for Op {
                         if completed {
                             events.push(json!({"kind": "tool_result", "id": id}));
                         }
+                    } else {
+                        continue;
                     }
                 }
                 _ => {}
