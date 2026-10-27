@@ -1,14 +1,14 @@
 id: B3259
 milestone: M6 guardrails
 title: Published EU AI Act and baseline PII catalog records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3259-policy-catalog-published-eu-baseline.yaml
 covers:
   - "policy_templates.json"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 217

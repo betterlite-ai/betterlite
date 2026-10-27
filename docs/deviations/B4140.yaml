@@ -1,0 +1,11 @@
+task: B4140
+deviations:
+  - what: SettingsStore keeps its layers in BTreeMap, so resolved() and every key list come back sorted by key instead of in the order the file, the stored rows and the runtime values first named them.
+    why: The order carries no meaning for a settings lookup, and a sorted map keeps the store deterministic without a new dependency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_store.py#L154-L163
+  - what: Values compare as JSON, so 1, 1.0 and true are three different values. Python treats them as equal, so LiteLLM sees no change, no rejected write and no shadowed row where betterlite sees one.
+    why: The settings are JSON values, and a row that turns true into 1 is a real change an admin made.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_store.py#L79-L87
+  - what: When empty means cleared, resolve_fields writes a stored list or object as compact JSON text, and a float in serde_json's form (1e16), where LiteLLM's str() gives a Python repr ([1, 'a'], 1e+16). Text, booleans (True, False) and integers read the same.
+    why: The alerting and SSO rows hold env var strings, so only a malformed row reaches this path, and a Python repr writer would be code for that case alone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/_descriptors.py#L46

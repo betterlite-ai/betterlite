@@ -1,0 +1,9 @@
+kind: helper
+name: quality-zero-false-empty
+call:
+  routing_decision_headers:
+    function: quality
+    headers: {}
+    request: {metadata: {quality_router_decision: {quality_tier: '', routed_via: false, matched_keyword: 0}}}
+env: {}
+compare: {ignore: []}
