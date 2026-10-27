@@ -26,12 +26,12 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-guardrails/src/guardrail_translation_contracts.rs
-    - crates/betterlite-guardrails/src/guardrail_translation_contracts/**
+    - crates/betterlite-guardrails/src/guardrail_translation.rs
+    - crates/betterlite-guardrails/src/guardrail_translation/**
     - tools/oracle/cases/helpers/guardrail-provider-options/**
     - tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*
-    - crates/betterlite-config/src/sections/guardrail_translation_contracts.rs
-    - crates/betterlite-config/src/sections/guardrail_translation_contracts/**
+    - crates/betterlite-config/src/sections/guardrail_translation.rs
+    - crates/betterlite-config/src/sections/guardrail_translation/**
     - tools/oracle/helpers/b3661.py
     - tools/oracle/helpers/b3661/**
     - tools/oracle/src/helpers/guardrails/b3661.rs
@@ -95,10 +95,10 @@ checks:
       run: grep -q "BedrockGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "LakeraV2GuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "PillarGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "NomaGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "ZscalerAIGuardConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "JavelinGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs
     - id: from-extras-method-works
       why: BedrockGuardrailStreamParams.from_extras is missing or fails to extract fields
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation_contracts::guardrail_provider_options::.*from_extras/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::guardrail_provider_options::.*from_extras/)'
     - id: defaults-correct
       why: Provider config defaults do not match LiteLLM
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation_contracts::guardrail_provider_options::.*defaults/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::guardrail_provider_options::.*defaults/)'
     - id: sink-and-key-types-exist
       why: StreamTransformSink, StreamingScanKey or has_nothing_to_scan property is missing
       run: grep -q "StreamTransformSink" crates/betterlite-guardrails/src/*.rs && grep -q "StreamingScanKey" crates/betterlite-guardrails/src/*.rs && grep -q "has_nothing_to_scan" crates/betterlite-guardrails/src/*.rs
@@ -107,10 +107,10 @@ checks:
       run: grep -q "trait BaseTranslation" crates/betterlite-guardrails/src/*.rs && grep -q "process_input_messages" crates/betterlite-guardrails/src/*.rs && grep -q "process_output_response" crates/betterlite-guardrails/src/*.rs && grep -q "get_structured_messages" crates/betterlite-guardrails/src/*.rs
     - id: user-metadata-transform-works
       why: transform_user_api_key_dict_to_metadata is missing or does not prefix keys correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation_contracts::.*user_metadata/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::.*user_metadata/)'
     - id: user-metadata-merge-works
       why: merge_user_api_key_metadata_into_request is missing or does not merge correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation_contracts::.*metadata_merge/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::.*metadata_merge/)'
     - id: guardrail-provider-oracle
       why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
       run: test -f tools/oracle/helpers/b3661.py && test -f tools/oracle/src/helpers/guardrails/b3661.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_provider_options::|replays_the_helper_case_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)"

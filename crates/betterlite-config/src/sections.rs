@@ -121,7 +121,7 @@ sections! {
     file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gemini_cache_create, gemini_cache_prefix, guardrail_identity, guardrail_judge,
-    guardrail_translation_contracts, headroom_compression, headroom_hiddenlayer_support,
+    guardrail_translation, headroom_compression, headroom_hiddenlayer_support,
     hiddenlayer_evaluation, image_edit_call, image_generation_call, image_variations,
     io_token_reservations, jev_classifier, jina_infinity_rerank, jwt_auth, jwt_claims,
     jwt_db_teams, jwt_key_resolution, jwt_keys, jwt_permissions, jwt_provisioning,

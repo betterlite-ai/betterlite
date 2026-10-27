@@ -19,7 +19,7 @@ pub mod content_filter_streaming;
 pub mod custom_code;
 pub mod enkryptai;
 pub mod generic_guardrail_contracts;
-pub mod guardrail_translation_contracts;
+pub mod guardrail_translation;
 pub mod guardrails_ai_guardrail;
 pub mod headroom;
 pub mod hiddenlayer;
