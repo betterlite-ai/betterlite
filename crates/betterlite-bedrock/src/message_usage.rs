@@ -106,7 +106,7 @@ fn copy_stop_usage(delta: &mut Object, stop_usage: Option<&Object>) {
     if let Some(value) = stop.get("input_tokens")
         && !value.is_null()
     {
-        let input = if is_integer(value) {
+        let input = if value.is_boolean() || value.is_i64() || value.is_u64() {
             value.clone()
         } else {
             Value::from(0_u64)
@@ -135,10 +135,6 @@ fn flush(
         }
         output.push(Value::Object(delta));
     }
-}
-
-fn is_integer(value: &Value) -> bool {
-    value.is_boolean() || value.is_i64() || value.is_u64()
 }
 
 fn merge_start(delta: &mut Object, start_usage: Option<&Object>) {
