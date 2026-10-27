@@ -1,8 +1,5 @@
 task: B4844
 deviations:
-  - what: Gateway URL and key are required when routing through litellm_proxy/ or the proxy flag; missing values return an explicit error.
-    why: Silent fallback could route through a different backend than requested.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L95-L117
   - what: Output validation uses generic serde deserialization instead of Pydantic model_validate_json.
     why: betterlite is Rust and has no Pydantic runtime; the generic contract preserves typed validation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L247-L255
