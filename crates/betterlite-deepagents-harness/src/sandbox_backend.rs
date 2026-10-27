@@ -18,6 +18,7 @@ use betterlite_harness::errors::HarnessError;
 use betterlite_harness::sandbox::{CompletedRun, Sandbox, SandboxCommand};
 use tokio::runtime::Handle;
 use tokio::sync::OnceCell;
+use typed_path::Utf8UnixPath;
 use uuid::Uuid;
 
 use crate::sandbox_backend::errors::BackendError;
@@ -187,17 +188,11 @@ impl<S: Sandbox> SandboxBackend<S> {
     }
 }
 
-// posixpath.normpath of an absolute path: ".." at the root stays at the root
 fn normalize(path: &str) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            name => parts.push(name),
-        }
-    }
-    format!("/{}", parts.join("/"))
+    let absolute = if path.starts_with('/') {
+        path.to_owned()
+    } else {
+        format!("/{path}")
+    };
+    Utf8UnixPath::new(&absolute).normalize().to_string()
 }

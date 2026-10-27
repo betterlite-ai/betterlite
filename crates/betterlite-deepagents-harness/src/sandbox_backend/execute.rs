@@ -1,14 +1,12 @@
 use betterlite_harness::sandbox::Sandbox;
 
 use crate::sandbox_backend::protocol::ExecuteResponse;
-use crate::sandbox_backend::{
-    EXECUTE_TIMEOUT_SECONDS, EXIT_TIMEOUT, MAX_OUTPUT_BYTES, NO_EXECUTE_ERROR, SandboxBackend,
-};
+use crate::sandbox_backend::{EXIT_TIMEOUT, MAX_OUTPUT_BYTES, NO_EXECUTE_ERROR, SandboxBackend};
 
 pub(crate) async fn execute<S>(
     backend: &SandboxBackend<S>,
     command: &str,
-    timeout_seconds: Option<u64>,
+    timeout_seconds: u64,
 ) -> ExecuteResponse
 where
     S: Sandbox,
@@ -20,11 +18,7 @@ where
             truncated: false,
         };
     }
-    // LiteLLM treats a zero timeout like a missing one
-    let seconds = timeout_seconds
-        .filter(|seconds| *seconds > 0)
-        .unwrap_or(EXECUTE_TIMEOUT_SECONDS);
-    let done = match backend.run(&["sh", "-c", command], seconds).await {
+    let done = match backend.run(&["sh", "-c", command], timeout_seconds).await {
         Ok(done) => done,
         Err(error) => {
             return ExecuteResponse {

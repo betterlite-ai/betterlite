@@ -5,10 +5,12 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rstest::rstest;
 use tempfile::TempDir;
 use tokio::runtime::{Builder, Handle, Runtime};
+use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::sandbox_backend::bridge::SandboxBackendProtocol as _;
@@ -17,7 +19,7 @@ use crate::sandbox_backend::protocol::{
     Edited, Encoding, ExecuteResponse, FileData, FileInfo, GrepMatch, GrepQuery, Listing,
     ReadResult, Replacement, Reply,
 };
-use crate::sandbox_backend::{Permissions, SandboxBackend};
+use crate::sandbox_backend::{EXECUTE_TIMEOUT_SECONDS, Permissions, SandboxBackend};
 use host::HostSandbox;
 
 const SECRET: &str = "AWS_SECRET_ACCESS_KEY=leaked-from-host";
@@ -609,7 +611,10 @@ async fn execute_merges_stderr_into_stdout(
         exit_code,
         truncated: false,
     };
-    assert_eq!(backend.execute(command, None).await, expected);
+    assert_eq!(
+        backend.execute(command, EXECUTE_TIMEOUT_SECONDS).await,
+        expected
+    );
 }
 
 #[tokio::test]
@@ -617,7 +622,10 @@ async fn execute_truncates_on_a_character_boundary() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
     let response = backend
-        .execute("printf a; yes \u{e9} | head -n 60000 | tr -d '\\n'", None)
+        .execute(
+            "printf a; yes \u{e9} | head -n 60000 | tr -d '\\n'",
+            EXECUTE_TIMEOUT_SECONDS,
+        )
         .await;
     assert_eq!(
         (
@@ -633,12 +641,25 @@ async fn execute_truncates_on_a_character_boundary() {
 async fn execute_maps_a_sandbox_failure_to_exit_124() {
     let (_dir, repo) = repo_with_escape_links();
     let backend = backend_at(&repo, Handle::current(), WRITABLE);
-    let response = backend.execute("exec sleep 3", Some(1)).await;
+    let response = backend
+        .execute("echo $$ > child.pid; exec sleep 3", 1)
+        .await;
     assert_eq!((response.exit_code, response.truncated), (124_i32, false));
     assert!(
         response.output.starts_with("Error: the sandbox failed: "),
         "{}",
         response.output
+    );
+    let child_pid = fs::read_to_string(Path::new(&repo).join("child.pid"))
+        .unwrap()
+        .trim()
+        .parse::<u32>()
+        .unwrap();
+    let child_proc = Path::new(&format!("/proc/{child_pid}")).to_owned();
+    sleep(Duration::from_millis(50)).await;
+    assert!(
+        !child_proc.exists(),
+        "timed out waiting for child process {child_pid} to exit"
     );
 }
 
@@ -655,7 +676,10 @@ async fn execute_is_refused_when_disabled() {
         exit_code: 1,
         truncated: false,
     };
-    assert_eq!(backend.execute("touch made", None).await, refused);
+    assert_eq!(
+        backend.execute("touch made", EXECUTE_TIMEOUT_SECONDS).await,
+        refused
+    );
     assert!(!Path::new(&repo).join("made").exists());
 }
 
@@ -669,7 +693,10 @@ fn sync_methods_run_from_a_plain_thread() {
         Reply::Done("/b.txt".to_owned())
     );
     assert_eq!(
-        backend.blocking_execute("cat b.txt", None).unwrap().output,
+        backend
+            .blocking_execute("cat b.txt", EXECUTE_TIMEOUT_SECONDS)
+            .unwrap()
+            .output,
         "bee"
     );
     assert_eq!(

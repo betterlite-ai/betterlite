@@ -85,8 +85,12 @@ impl Sandbox for HostSandbox {
             });
         }
         let (program, args) = command.argv.split_first().unwrap();
-        let mut child = Command::new(program);
+        let mut child = Command::new("setpriv");
         child
+            .arg("--pdeathsig")
+            .arg("KILL")
+            .arg("--")
+            .arg(program)
             .args(args)
             .current_dir(&self.workdir)
             .kill_on_drop(true);

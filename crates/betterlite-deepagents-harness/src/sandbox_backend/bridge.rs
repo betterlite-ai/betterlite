@@ -39,7 +39,7 @@ pub trait SandboxBackendProtocol {
     fn execute(
         &self,
         command: &str,
-        timeout_seconds: Option<u64>,
+        timeout_seconds: u64,
     ) -> impl Future<Output = ExecuteResponse> + Send;
 
     fn blocking_ls(&self, path: &str) -> Result<LsResult, BackendError> {
@@ -96,7 +96,7 @@ pub trait SandboxBackendProtocol {
     fn blocking_execute(
         &self,
         command: &str,
-        timeout_seconds: Option<u64>,
+        timeout_seconds: u64,
     ) -> Result<ExecuteResponse, BackendError> {
         self.block_on(self.execute(command, timeout_seconds))
     }
@@ -180,7 +180,7 @@ where
     fn execute(
         &self,
         command: &str,
-        timeout_seconds: Option<u64>,
+        timeout_seconds: u64,
     ) -> impl Future<Output = ExecuteResponse> + Send {
         execute::execute(self, command, timeout_seconds)
     }
