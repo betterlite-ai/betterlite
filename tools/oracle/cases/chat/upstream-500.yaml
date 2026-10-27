@@ -1,0 +1,22 @@
+name: chat-upstream-500
+config: |
+  model_list:
+    - model_name: server-error-model
+      litellm_params: {model: openai/gpt-500-upstream, api_base: "{{upstream}}", api_key: oracle-key, timeout: 30}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-500}
+  body: {model: server-error-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 500
+    headers: {content-type: application/json}
+    body: {error: {message: "The server had an error", type: server_error, param: null, code: null}}
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

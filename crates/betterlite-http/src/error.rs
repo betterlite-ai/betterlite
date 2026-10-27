@@ -14,4 +14,8 @@ pub enum HttpError {
     Client(#[source] reqwest::Error),
     #[error("the request failed")]
     Request(#[source] reqwest::Error),
+    #[error("the request timed out")]
+    Timeout,
+    #[error("the response body is larger than {limit} bytes")]
+    TooLarge { limit: usize },
 }
