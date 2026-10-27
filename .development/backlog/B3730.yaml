@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Azure text moderation thresholds and hooks
 status: todo
 depends_on: [B3728]
-file: null
+file: tasks/B3730-azure-text-moderation.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_text_moderation.py"

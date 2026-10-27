@@ -1,0 +1,201 @@
+id: B3933
+title: Datadog log delivery and health checks
+description: >-
+  Implement Datadog log delivery pipeline in betterlite-logging: initialize logger with explicit credentials before environment fallback,
+  configure agent or direct API endpoints with caller-controlled allow_env_credentials flag,
+  deliver batches with gzip compression to /api/v2/logs endpoint, split oversized payloads on 413 responses and proactively when they would exceed
+  Datadog's 5MB uncompressed limit, handle cancellation by requeueing undelivered events, and check service health.
+
+  Resolve and clamp DD_BATCH_SIZE environment variable to 1–1,000 with invalid-string warning and fallback to DD_MAX_BATCH_SIZE constant.
+  Support agent port default 10518 via LITELLM_DD_AGENT_PORT environment variable (note: LITELLM_DD_AGENT_HOST, not DD_AGENT_HOST, to avoid ddtrace conflicts),
+  direct API via DD_SITE and DD_API_KEY, and DD_BASE_URL override for testing. Preserve explicit constructor arguments before environment lookup;
+  allow_env_credentials false prevents reading DD_API_KEY for team/key-scoped loggers with caller-supplied destinations.
+
+  Log sync/async success and failure events by building payloads, queuing them, and flushing on batch-size threshold or timeout via inherited periodic_flush.
+  Send payloads with gzip Content-Encoding header. Accept only HTTP 202 (Accepted) status; other responses trigger 413-split retry or error requeue.
+  Health check creates a dummy payload, sends it, and returns healthy or unhealthy with error message based on response status.
+
+  Health POST exceptions (network errors, timeouts) return unhealthy with string error; do not turn every transport exception into a healthy result.
+  The payload-inspection no-op method get_request_response_payload returns None and is live through AdditionalLoggingUtils dispatch on DataDogLogger instances only.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog_logging.rs
+    - crates/betterlite-logging/src/datadog_logging/**
+    - tools/oracle/cases/datadog/**
+    - tools/oracle/fuzz/corpus/datadog_logs*
+    - Cargo.toml
+    - tools/oracle/helpers/b3933.py
+    - tools/oracle/helpers/b3933/**
+    - tools/oracle/src/helpers/logging/b3933.rs
+    - tools/oracle/src/helpers/logging/b3933/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L87-L100
+    why: _resolve_dd_batch_size clamps DD_BATCH_SIZE environment variable to 1–1,000 with invalid-string warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L113-L193
+    why: DataDogLogger.__init__ resolves credentials and configuration, initializes httpx clients and inherited periodic_flush.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L195-L208
+    why: _get_datadog_params reads and validates litellm.datadog_params override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L210-L231
+    why: _configure_dd_agent sets up Datadog agent endpoint with port default 10518.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L233-L259
+    why: _configure_dd_direct_api sets up direct API endpoint with DD_SITE and DD_API_KEY validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L261-L286
+    why: async_log_success_event and async_log_failure_event queue events for async batch delivery.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L364-L404
+    why: async_send_batch retrieves and sends queued events; _send_with_413_split handles oversized payloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L406-L428
+    why: _send_with_413_split halves batches on 413 and size-limit violations before sending; drops undeliverable lone events.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L430-L443
+    why: _exceeds_intake_limits checks batch size and payload byte count against Datadog limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L445-L454
+    why: flush_queue sends any pending events under lock and updates last_flush_time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L456-L502
+    why: log_success_event is the sync API that builds and sends a single payload immediately (used by Python SDK, not proxy).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L504-L516
+    why: _log_async_event queues payload and flushes if batch size is reached.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L574-L605
+    why: async_send_compressed_data gzips the payload and sends with Content-Encoding and DD-API-KEY headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L809-L839
+    why: async_health_check creates dummy payload, sends, and returns IntegrationHealthCheckStatus based on response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L841-L847
+    why: get_request_response_payload is a no-op dispatch target for DataDogLogger only; returns None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/batch_utils.py#L1-L50
+    why: send_batch_with_413_split and requeue_after_http_error utilities for batch transport.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L1-L100
+    why: CustomBatchLogger base class providing batch initialization, queue and periodic_flush.
+  - url: https://docs.datadoghq.com/api/latest/logs/
+    why: >-
+      Datadog Logs API endpoint reference: /api/v2/logs, 202 acceptance,
+      5MB uncompressed limit.
+dod:
+  - text: DD_BATCH_SIZE environment variable resolves to an integer between 1 and DD_MAX_BATCH_SIZE; invalid strings log a warning and use the default; invalid-string warning includes the variable name and default value.
+    proof: [batch-size-resolution]
+  - text: Logger initialization with no dd_agent_host falls back to environment, then tries direct API; explicit dd_api_key and dd_site override environment; allow_env_credentials false prevents DD_API_KEY lookup.
+    proof: [credentials-resolution]
+  - text: Agent endpoint uses port default 10518 from LITELLM_DD_AGENT_PORT environment variable; direct API endpoint uses DD_SITE environment variable fallback.
+    proof: [endpoint-configuration]
+  - text: DD_BASE_URL environment variable overrides intake_url when set; when unset, no override is applied.
+    proof: [endpoint-configuration]
+  - text: Sync log_success_event builds and sends immediately without async queuing; async_log_success_event and async_log_failure_event queue events for batch delivery.
+    proof: [sync-async-delivery]
+  - text: Payloads are queued and flushed when batch size is reached or periodic_flush timeout fires; flush_queue sends all queued events under lock.
+    proof: [batch-queueing]
+  - text: Batches are compressed with gzip and sent with Content-Encoding=gzip and DD-API-KEY headers; requests expect HTTP 202 (Accepted) status.
+    proof: [compression-headers]
+  - text: Payloads exceeding Datadog's 5MB uncompressed limit are proactively split in half before sending; a 413 response triggers half-splitting recursion; lone events that 413 are dropped with DD_ERRORS.DATADOG_413_ERROR message.
+    proof: [dd-413-splitting]
+  - text: Transient (non-413) delivery errors requeue only the undelivered events; BatchSendCancelled exceptions requeue and raise CancelledError.
+    proof: [error-requeue]
+  - text: Health check creates dummy payload, sends to intake endpoint, and returns healthy if HTTP 202 or unhealthy with error message for any other status or exception.
+    proof: [health-check]
+  - text: get_request_response_payload returns None for DataDogLogger (payload inspection not implemented).
+    proof: [payload-inspection-noop]
+  - text: Every helper operation in datadog delivery has a committed shared-parser corpus seed and replays successfully.
+    proof: [corpus-replay]
+  - text: Mutants in batch-size resolution, credential precedence, endpoint configuration, compression headers and delivery error classification are caught by tests.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: batch-size-resolution
+      why: DD_BATCH_SIZE resolution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_batch_size_resolution_behavior($|::)/)'
+    - id: credentials-resolution
+      why: credential resolution and precedence tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_credentials_resolution_behavior($|::)/)'
+    - id: endpoint-configuration
+      why: endpoint configuration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_endpoint_configuration_behavior($|::)/)'
+    - id: sync-async-delivery
+      why: sync/async event delivery tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_delivery_sync_async_behavior($|::)/)'
+    - id: batch-queueing
+      why: batch queueing and flushing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_batch_queueing_behavior($|::)/)'
+    - id: compression-headers
+      why: compression and header tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_compression_headers_behavior($|::)/)'
+    - id: dd-413-splitting
+      why: 413 splitting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_413_splitting_behavior($|::)/)'
+    - id: error-requeue
+      why: error requeue and cancellation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_error_requeue_behavior($|::)/)'
+    - id: health-check
+      why: health check tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_health_check_behavior($|::)/)'
+    - id: payload-inspection-noop
+      why: payload inspection no-op tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_payload_inspection_noop_behavior($|::)/)'
+    - id: corpus-replay
+      why: the fuzz corpus is missing, empty or replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/datadog_logs)"
+        && grep -rlq 'datadog' tools/oracle/fuzz/corpus/datadog_logs && test -f tools/oracle/fuzz/fuzz_targets/datadog_logs.rs
+        && test -n "$(ls -A tools/oracle/fuzz/corpus/datadog_logs)" && cargo nextest run --locked -p betterlite-oracle
+        --no-tests=fail -E 'test(replays_the_datadog_logs_corpus)'
+oracle_cases:
+  - tools/oracle/cases/datadog/batch-size-clamping.yaml
+  - tools/oracle/cases/datadog/credentials-precedence.yaml
+  - tools/oracle/cases/datadog/agent-endpoint-configuration.yaml
+  - tools/oracle/cases/datadog/direct-api-endpoint-configuration.yaml
+  - tools/oracle/cases/datadog/batch-queueing-sync.yaml
+  - tools/oracle/cases/datadog/batch-queueing-async.yaml
+  - tools/oracle/cases/datadog/gzip-compression.yaml
+  - tools/oracle/cases/datadog/413-payload-split.yaml
+  - tools/oracle/cases/datadog/transient-error-requeue.yaml
+  - tools/oracle/cases/datadog/health-check-success.yaml
+  - tools/oracle/cases/datadog/health-check-failure.yaml
+deviations:
+  - what: >-
+      When DD_BATCH_SIZE environment variable is not a valid integer, a warning is logged
+      and DD_MAX_BATCH_SIZE is used as fallback instead of silently using it.
+    why: >-
+      Betterlite follows LiteLLM's strict-fallback pattern for config values: invalid
+      inputs produce diagnostics so users discover typos rather than silent behavior changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L87-L100
+  - what: >-
+      Explicit constructor arguments (dd_api_key, dd_site, dd_agent_host, dd_agent_port)
+      take precedence over environment variables; allow_env_credentials false prevents
+      DD_API_KEY environment lookup.
+    why: >-
+      LiteLLM also prefers explicit arguments and supports allow_env_credentials;
+      betterlite retains the same credential isolation for team/key-scoped loggers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L113-L177
+  - what: >-
+      Health check exceptions (httpx.HTTPStatusError, other exceptions) return unhealthy
+      with error message; network/timeout exceptions do not return healthy.
+    why: >-
+      LiteLLM returns unhealthy for all exceptions; betterlite preserves the same behavior
+      (no swallowing of transport failures as healthy).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L824-L839
+out_of_scope:
+  - "`_span_attribute`, `_add_trace_context_to_payload` and `_get_active_trace_context` (called by async_health_check for trace ID injection) are owned by B3930."
+  - "The datadog_mock_client.py module is Python test-only infrastructure replaced by injected test transports per B191; betterlite does not ship DATADOG_MOCK as a production feature."
+  - The payload construction for standard and legacy v0 logging formats (owned by B3932).
+  - Tag normalization, source, service, hostname and base-URL resolution (owned by B3930).
+  - The truncate_standard_logging_payload_content function (owned by B3931).
+  - Initialization parameters and exporter options (owned by B3931).
+  - The CustomBatchLogger base class, periodic_flush and batch size defaults (owned by B256).
+  - HTTP client creation and pooling (owned by B173).
+  - JSON serialization and safe_dumps function (owned by B192).
+  - Proxy failure hooks and service callbacks (owned by B3934).
+  - LLM Observability span assembly and delivery (owned by B3938).
+  - Dynamic logger cache and credential-scoped selection (owned by B113 and B3945).
+  - The injected logger registration and callback dispatch that invokes these methods.
+pitfalls:
+  - DD_BATCH_SIZE environment variable must be clamped after string-to-int conversion; an empty or negative value should be clamped to at least 1.
+  - allow_env_credentials true allows DD_API_KEY lookup when no explicit dd_api_key is provided; allow_env_credentials false disables it entirely.
+  - LITELLM_DD_AGENT_HOST and LITELLM_DD_AGENT_PORT use the LITELLM_ prefix, not DD_AGENT_HOST, to avoid conflicts with ddtrace's own DD_AGENT_HOST.
+  - The async_client is obtained from B173's get_async_httpx_client() and sync_client from _get_httpx_client(); both must be stored as instance variables.
+  - A 413 response from async_send_compressed_data is raised as httpx.MaskedHTTPStatusError by raise_for_status(); it is caught and triggers _send_with_413_split retry, not returned as a response.
+  - Lone events that still exceed intake limits after individual sending are dropped silently with a DD_ERRORS.DATADOG_413_ERROR message, not requeued.
+  - BatchSendCancelled exception must be caught and its undelivered list requeued before raising CancelledError.
+  - Health check does not use the request/response payload inspection; it only checks HTTP status. A non-202 status from async_send_compressed_data raises HTTPStatusError, not returned.
+  - get_request_response_payload is live dispatch through AdditionalLoggingUtils.payload_reading_on_dd but only for DataDogLogger instances; a return value of None is correct.
+  - flush_queue requires a flush_lock (asyncio.Lock) acquired in __init__ by the parent CustomBatchLogger; it must not be None during operation.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

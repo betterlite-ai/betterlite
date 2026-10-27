@@ -1,0 +1,19 @@
+[package]
+name = "betterlite-router-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+metadata.cargo-fuzz = true
+
+[dependencies]
+betterlite-router = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "routing_header_value"
+path = "fuzz_targets/routing_header_value.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

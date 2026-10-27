@@ -1,0 +1,1 @@
+{"$defs":{"Node":{"properties":{"value":{"type":"integer"},"children":{"items":{"$ref":"#/$defs/Node"},"type":"array"},"parent":{"anyOf":[{"$ref":"#/$defs/Node"},{"type":"null"}]}},"type":"object"}},"properties":{"root":{"$ref":"#/$defs/Node","description":"tree root"},"messages":{"items":{"type":"object"},"type":"array"}},"required":["root"],"type":"object"}

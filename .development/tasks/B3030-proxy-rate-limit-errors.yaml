@@ -1,0 +1,148 @@
+id: B3030
+title: Proxy rate-limit errors and provider attribution
+description: >-
+  Build the shared proxy 429 error classification in betterlite-error with detail/header preservation,
+  and implement provider attribution fallback through model resolution and router alias scanning.
+  Port the v3 descriptor-to-error projection from litellm/proxy/hooks/parallel_request_limiter_v3.py
+  (lines 3488–3537) into betterlite-error and betterlite-rate-limit, preserving retry-after,
+  rate_limit_type header, reset_at timestamp formatting, RateLimitErrorCategory assignment and
+  historical HTTPException Prometheus label.
+
+  Direct dependencies: B184 provides the base RateLimitError type and HTTP envelope shared across
+  provider transports; B174 supplies get_llm_provider resolution; B3031 supplies _get_current_time
+  for reset timestamp generation and RateLimitDescriptor/RateLimitResponse typed records for
+  _handle_rate_limit_error integration.
+
+  Owned functions map the v3 limiter's internal rate_limit_type strings ("tokens", "requests",
+  "max_parallel_requests") onto the public RateLimitType enum, coerce exception detail objects
+  to safe strings (extracting nested message fields, JSON-encoding if needed), and build provider
+  attribution through two-phase resolution: direct get_llm_provider call, then router alias
+  fallback scanning model_list in source order. Defensive fallback returns empty model and
+  "litellm_proxy" provider when model is falsy or both lookups fail, never raising secondary
+  exceptions from the rate-limit raise path. Implementation stores window_size for reset
+  calculation and does not bind to descriptor/counter decision logic (owned by B3031 and later).
+
+  Build tests with named rstest cases for each literal input/outcome: provider string mapping
+  with unrecognized values, detail coercion with nested message extraction and JSON fallback,
+  and provider resolution with three distinct cases: falsy model input, successful direct
+  resolution, and both-lookups-fail fallback.
+
+  Budget 130 Rust impl/tests, 50 route/integration (180 total), 1500 max_changed_lines.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-error/**
+  - crates/betterlite-rate-limit/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/cases/helpers/provider-attribution/**
+  - "tools/oracle/fuzz/corpus/helper_case/b3030-*"
+  - tools/oracle/helpers/b3030.py
+  - tools/oracle/helpers/b3030/**
+  - tools/oracle/src/helpers/oracle/b3030.rs
+  - tools/oracle/src/helpers/oracle/b3030/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L47-L66
+  why: map_v3_rate_limit_type string-to-enum projection with None fallback for unrecognized values.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L69-L86
+  why: _coerce_message nested extraction from dicts and JSON-safe fallback stringification.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L144-L193
+  why: ProxyRateLimitError.__init__ header stringification, dual-MRO initialization and status preservation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L14-L65
+  why: resolve_llm_provider_for_rate_limit two-phase resolution, model falsy guard and fallback behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L68-L119
+  why: _resolve_provider_from_router_alias model_list scanning in source order and exception suppression.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L122-L154
+  why: convert_priority_to_percent percent/rpm/tpm normalization and fallback to percent.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3488-L3537
+  why: _handle_rate_limit_error descriptor matching, window reset time formatting and header construction.
+dod:
+- text: map_v3_rate_limit_type returns RateLimitType::TOKENS for "tokens", RateLimitType::CONCURRENT_REQUESTS
+    for "max_parallel_requests", RateLimitType::REQUESTS for "requests", and None for any unrecognized value
+    (empty string, null, misspelled variants).
+  proof:
+  - provider-attribution-tests
+  - helper-python
+- text: _coerce_message returns empty string for None input, pass-through for string detail, extracts nested
+    error.message or message.message from dict detail, JSON-encodes other dict payloads, and converts non-string
+    non-dict objects to str without raising.
+  proof:
+  - provider-attribution-tests
+- text: resolve_llm_provider_for_rate_limit with falsy input model ("", None) immediately returns ("", "litellm_proxy")
+    before attempting any provider lookup.
+  proof:
+  - provider-attribution-tests
+  - oracle
+  - helper-python
+- text: resolve_llm_provider_for_rate_limit with non-empty model tries litellm.get_llm_provider first; on success
+    returns (resolved_model or input_model, custom_llm_provider or "litellm_proxy"); on failure or None result,
+    scans router model_list for matching model_name entry, extracts litellm_params.model underlying value, calls
+    get_llm_provider on underlying model, and returns underlying provider if found; if both lookups fail returns
+    (original_non_empty_model, "litellm_proxy") with model preserved.
+  proof:
+  - provider-attribution-tests
+  - helper-python
+- text: convert_priority_to_percent accepts float/int directly as percent (0.9 → 0.9), accepts dict with type:percent
+    and returns value as float, accepts dict with type:rpm and divides value by model_info.rpm (or returns value
+    if model_info absent/zero), accepts dict with type:tpm and divides value by model_info.tpm (or returns value
+    if absent/zero), and returns float(value) for unrecognized dict type.
+  proof:
+  - provider-attribution-tests
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-attribution-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-error -p betterlite-rate-limit --no-tests=fail -E 'test(/::provider_attribution_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b3030-*")"
+      && grep -lq 'provider_attribution' tools/oracle/fuzz/corpus/helper_case/b3030-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/provider-attribution/litellm-direct-gpt4.yaml
+- tools/oracle/cases/helpers/provider-attribution/custom-provider-qualified.yaml
+- tools/oracle/cases/helpers/provider-attribution/model-falsy-early-return.yaml
+- tools/oracle/cases/helpers/provider-attribution/router-alias-fallback.yaml
+- tools/oracle/cases/helpers/provider-attribution/both-lookups-fail-preserved-model.yaml
+- tools/oracle/cases/helpers/provider-attribution/map-tokens-type.yaml
+- tools/oracle/cases/helpers/provider-attribution/map-concurrent-type.yaml
+- tools/oracle/cases/helpers/provider-attribution/map-requests-type.yaml
+- tools/oracle/cases/helpers/provider-attribution/coerce-nested-message.yaml
+- tools/oracle/cases/helpers/provider-attribution/coerce-dict-json.yaml
+- tools/oracle/cases/helpers/provider-attribution/priority-percent-direct.yaml
+- tools/oracle/cases/helpers/provider-attribution/priority-rpm-with-model-info.yaml
+deviations: []
+out_of_scope:
+- Rate-limit descriptor construction, window size configuration and counter evaluation are B3031/B3032/B3033;
+  router model_list initialization and get_llm_provider execution belong to existing providers (B174).
+- RateLimitDescriptor and RateLimitResponse typed records are B3031; integration into async_pre_call_hook
+  is B072.
+- Prometheus metric label mapping is handled at the error emission point; this task supplies the interface
+  values only.
+pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b3030-<case>.yaml. The rest of that folder belongs to other tasks.'
+- 'The oracle helper for this task is pre-registered as b3030 in the oracle group. Replace
+  the stub Op in tools/oracle/src/helpers/oracle/b3030.rs with an impl Helper whose Input
+  is the typed input, and write run in tools/oracle/helpers/b3030.py. The registry files (helpers/mod.rs,
+  the group files, dispatch.py) are not this task''s to edit.'
+- resolve_llm_provider_for_rate_limit does not raise exceptions from get_llm_provider or alias scanning; callers
+  always get a valid tuple.
+- The router model_list is a live reference injected at construction time; it may be empty, absent or not yet
+  initialized if get_llm_provider fails before alias fallback runs.
+- RateLimitType::CONCURRENT_REQUESTS is the public user-facing name for the v3 limiter's internal "max_parallel_requests"
+  string; do not expose the internal string name outside this boundary.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,173 @@
+id: B3940
+title: Datadog FOCUS cost aggregation and upload
+description: >-
+  Build the Datadog cost management logger that aggregates successful API call costs into
+  FOCUS daily cost entries and uploads them to Datadog's custom costs API.
+
+  The logger extends CustomBatchLogger and accepts cost_tag_keys: a list of metadata
+  fields allowed in cost attribution tags. Aggregate positive-cost success records by
+  provider, model, date (UTC) and normalized tags, then PUT the array of DatadogFOCUSCostEntry
+  objects to https://api.{DD_SITE}/api/v2/cost/custom_costs with DD-API-KEY and
+  DD-APPLICATION-KEY headers (both required for upload).
+
+  Tag extraction pulls base tags (env, service, host, pod_name) from environment configuration,
+  always-on canonical FOCUS dimensions (provider, model, model_id) from StandardLoggingPayload
+  top-level fields, and optional user/team/model_group metadata. The allowlist cost_tag_keys
+  gates request_tags (split on ":", preserved if in allowlist and nonempty), metadata
+  fields, and nested metadata under spend_logs_metadata and requester_metadata. Reserved keys
+  (env, service, host, pod_name, provider, model, model_id, team, user, model_group) are
+  hard-blocked even when allowlisted, preventing team-controlled overwrite of trusted cost
+  attribution. Warn and drop reserved keys when user supplies them. Normalize user, team, and
+  allowlist-gated custom tags through the tag normalizer; base tags and FOCUS dimensions are
+  stored as-is.
+
+  Load configuration from environment: DD_API_KEY (required for upload, warn if missing),
+  DD_APP_KEY (required for upload, warn if missing), DD_SITE (default datadoghq.com), and
+  cost_tag_keys (default empty list). The default flush_interval is five seconds from CustomBatchLogger. Missing credentials
+  skip upload but leave logs in the queue without error. Requeue order is preserved: failed
+  batch is prepended to the queue on exception. Direct threshold send and inherited periodic
+  flush paths must be compared separately because their requeue retention differs; the
+  batch from the queue is mutated in place, so failed sends restore the original batch.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog/cost_management.rs
+    - crates/betterlite-logging/src/datadog/cost_management/**
+    - tools/oracle/cases/logging/datadog-cost-management/**
+    - Cargo.toml
+    - tools/oracle/helpers/b3940.py
+    - tools/oracle/helpers/b3940/**
+    - tools/oracle/src/helpers/logging/b3940.rs
+    - tools/oracle/src/helpers/logging/b3940/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L32-L45
+    why: Reserved tag keys that are protected from user override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L48-L72
+    why: DatadogCostManagementLogger.__init__ with environment variable resolution and periodic flush setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L74-L109
+    why: async_log_success_event and async_send_batch batch aggregation and upload logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L111-L167
+    why: _aggregate_costs groups logs by provider, model, date and tags into FOCUS entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L169-L222
+    why: _extract_tags pulls base, FOCUS and allowlist-gated tags with reserved-key blocking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L224-L240
+    why: _set_custom_tag and _add_tag helpers with reserved-key warning and normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L241-L260
+    why: _upload_to_datadog PUT request with headers and payload serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/datadog_cost_management.py#L1-L26
+    why: DatadogCostManagementInitParams and DatadogFOCUSCostEntry TypedDict definitions.
+
+dod:
+  - text: DatadogCostManagementLogger loads cost_tag_keys from configuration and accepts cost_tag_keys in constructor, defaulting to an empty list.
+    proof: [config-init]
+  - text: Only success records with positive response_cost are added to the log queue; zero and negative costs are silently dropped.
+    proof: [positive-costs-only]
+  - text: Costs are aggregated by provider, model, UTC date (YYYY-MM-DD) and normalized tags into DatadogFOCUSCostEntry objects with ProviderName, ChargeDescription, ChargePeriodStart, ChargePeriodEnd, BilledCost, BillingCurrency and optional Tags.
+    proof: [cost-aggregation]
+  - text: Base tags (env, service, host, pod_name) come from environment configuration, and FOCUS dimensions (provider, model, model_id) come from StandardLoggingPayload fields.
+    proof: [base-focus-tags]
+  - text: User/team/model_group tags are extracted from metadata when present, with team preferring user_api_key_team_alias, then team_alias, then user_api_key_team_id, then team_id.
+    proof: [user-team-tags]
+  - text: Allowlist-gated request_tags (split on colon) and metadata fields from spend_logs_metadata and requester_metadata are added only when their keys are in cost_tag_keys.
+    proof: [allowlist-gating]
+  - text: Reserved keys (env, service, host, pod_name, provider, model, model_id, team, user, model_group) are hard-blocked even when allowlisted; a debug log warns and drops them.
+    proof: [reserved-keys-blocked]
+  - text: User, team, and allowlist-gated custom tags are normalized through normalize_datadog_tag_value; base tags and FOCUS dimensions (provider, model, model_id) are stored as-is via str() conversion.
+    proof: [tag-normalization]
+  - text: Configuration loads DD_API_KEY (required for upload, warn if missing), DD_APP_KEY (required for upload, warn if missing), DD_SITE (default datadoghq.com), and cost_tag_keys through the B002 loader.
+    proof: [config-defaults]
+  - text: Upload URL is constructed as https://api.{DD_SITE}/api/v2/cost/custom_costs with no trailing slash.
+    proof: [upload-url]
+  - text: Failed batches are prepended to the queue on exception, preserving requeue order.
+    proof: [requeue-order]
+  - text: Direct threshold send and inherited periodic flush paths both trigger upload and preserve queue behavior separately.
+    proof: [flush-paths]
+  - text: Mutants in tag extraction, reserved-key checking, aggregation and upload logic are caught by tests.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-init
+      why: cost_tag_keys parameter or loading fails or does not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::init)'
+    - id: positive-costs-only
+      why: zero or negative costs are not filtered out
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::positive_cost)'
+    - id: cost-aggregation
+      why: aggregation by provider, model, date and tags fails or does not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::aggregat)'
+    - id: base-focus-tags
+      why: base or FOCUS dimension tags are missing or incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::tags)'
+    - id: user-team-tags
+      why: user/team/model_group extraction fails or precedence is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::user_team)'
+    - id: allowlist-gating
+      why: cost_tag_keys allowlist does not gate request_tags or metadata
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::allowlist)'
+    - id: reserved-keys-blocked
+      why: reserved keys are not blocked or warning is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::reserved)'
+    - id: tag-normalization
+      why: tag values are not normalized
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::normaliz)'
+    - id: config-defaults
+      why: configuration resolution or defaults fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::config)'
+    - id: upload-url
+      why: upload URL construction is incorrect
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::url)'
+    - id: requeue-order
+      why: failed batches are not prepended correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::requeue)'
+    - id: flush-paths
+      why: direct threshold send or periodic flush does not work correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::flush)'
+
+oracle_cases:
+  - tools/oracle/cases/logging/datadog-cost-management/positive-cost-success-aggregation.yaml
+  - tools/oracle/cases/logging/datadog-cost-management/base-and-focus-tags.yaml
+  - tools/oracle/cases/logging/datadog-cost-management/allowlist-gated-custom-tags.yaml
+  - tools/oracle/cases/logging/datadog-cost-management/reserved-key-blocking.yaml
+  - tools/oracle/cases/logging/datadog-cost-management/missing-api-key-warning.yaml
+  - tools/oracle/cases/logging/datadog-cost-management/upload-to-datadog-endpoint.yaml
+  - tools/oracle/cases/logging/datadog-cost-management/batch-requeue-on-failure.yaml
+
+deviations:
+  - what: When either DD_API_KEY or DD_APP_KEY is absent, the logger warns at initialization and skips upload on send, but does not fail; missing credentials do not prevent the logger from operating.
+    why: This matches LiteLLM's behavior where cost management warns if either key is missing but continues to accept logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L55-L58
+  - what: Dates are computed using local system time via datetime.fromtimestamp, not UTC, despite the comment suggesting UTC interpretation.
+    why: This matches LiteLLM's implementation which uses fromtimestamp without explicit UTC specification.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L132
+  - what: Reserved keys are blocked with a debug-level log, not a warning, when user supplies them.
+    why: LiteLLM logs at debug level when filtering reserved keys to avoid log noise for allowlisted but then rejected keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L227-L232
+
+out_of_scope:
+  - Datadog API authentication beyond environment variable loading; B002 supplies resolved credentials.
+  - HTTP transport implementation; B173 supplies the async client and PUT method.
+  - Payload serialization and compression; B192 supplies safe_dumps.
+  - StandardLoggingPayload type definition and metadata records; B254 owns those.
+  - Batch initialization and periodic flush base behavior; B256 supplies CustomBatchLogger.
+  - Configuration key resolution from config.yaml; B002's loader handles all config inputs.
+  - Datadog tag normalization; B3930 supplies normalize_datadog_tag_value.
+  - Exporter initialization and callback registration; B113 composes the logger with others.
+
+pitfalls:
+  - The DD_SITE environment variable must not have a trailing slash when constructing the upload URL; datadoghq.com is the correct format, not datadoghq.com/.
+  - Cost aggregation groups by a tuple of (provider, model, date_str, tags_key); the tags_key is a sorted tuple of (key, value) pairs for stable grouping across requests.
+  - Team tag extraction tries four different metadata keys in order; only the first found value is used, not a merge of all four.
+  - Nested metadata extraction checks isinstance(nested, dict) to ensure only dict-typed fields are traversed; lists and other types are skipped.
+  - The upload method must prepend the failed batch to the queue (batch_to_send + self.log_queue) to preserve order on exception.
+  - Reserved keys are checked after user supply, not before filtering from metadata; the check prevents overwrites by allowlist membership alone.
+  - When zero or negative costs appear in the aggregation loop, they are silently skipped with no queue mutation, unlike failed sends which cause requeue.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

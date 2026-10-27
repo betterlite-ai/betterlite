@@ -37,6 +37,7 @@ mod db;
 mod error;
 mod foundry;
 mod guardrails;
+mod harness;
 mod http;
 mod lens;
 mod logging;
@@ -54,6 +55,7 @@ mod proxy;
 mod rate_limit;
 mod redact;
 mod redis;
+mod roi;
 mod router;
 mod sdk;
 mod secret_managers;
@@ -120,7 +122,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 40] = [
+const GROUPS: [Group; 42] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
@@ -135,6 +137,7 @@ const GROUPS: [Group; 40] = [
     error::GROUP,
     foundry::GROUP,
     guardrails::GROUP,
+    harness::GROUP,
     http::GROUP,
     lens::GROUP,
     logging::GROUP,
@@ -152,6 +155,7 @@ const GROUPS: [Group; 40] = [
     rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,
+    roi::GROUP,
     router::GROUP,
     sdk::GROUP,
     secret_managers::GROUP,

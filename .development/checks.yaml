@@ -46,6 +46,8 @@ settings:
   always_in_scope:
     - Cargo.lock
     - "**/Cargo.toml"
+    - "**/fuzz/fuzz_targets/**"
+    - "**/fuzz/corpus/**"
     - crates/betterlite-config/tests/fixtures/unsupported/**
   budget_excludes:
     - .development/backlog/**

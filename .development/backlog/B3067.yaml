@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Configure and schedule Vantage exports
 status: todo
 depends_on: [B002, B189, B1690, B3066]
-file: null
+file: tasks/B3067-vantage-export-schedule.yaml
 covers:
   - "litellm/integrations/vantage/**"
 parent: B073

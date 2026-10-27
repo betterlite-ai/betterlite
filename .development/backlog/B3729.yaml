@@ -2,8 +2,8 @@ id: B3729
 milestone: M6 guardrails
 title: Azure Prompt Shield and billing usage
 status: todo
-depends_on: [B3728, B1667]
-file: null
+depends_on: [B3728, B1667, B3664]
+file: tasks/B3729-azure-prompt-shield.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_prompt_shield.py"

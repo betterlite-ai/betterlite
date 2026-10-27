@@ -1,0 +1,355 @@
+id: B4711
+title: MCP table access, identifier locks and server reads
+description: >-
+  Build typed MCP table access, case-insensitive alias/name conflict detection under
+  advisory locks, decoded server reads, review-state writes and pinned-catalog writes in
+  betterlite-db. Put both management DB-handle accessors in betterlite-server where they
+  are called by management endpoints, so helper functions that present server data do not
+  depend on registry reloads.
+
+  Table access: Implement _mcp_server_table_actions, _oauth_client_table_actions,
+  _db_transaction_manager, _user_credential_actions, _user_env_var_actions, and a local
+  _MCPUserEnvVarsRepository that provides table operations for MCP servers, OAuth clients,
+  user credentials and per-user environment variables. Each function returns a TableActions
+  handle from the auxiliary repository layer that owns these tables.
+
+  Identifier conflict detection: _identifier_where constructs a Prisma WHERE clause that
+  matches case-insensitively against both server_name and alias, excludes draft approval
+  statuses (reserving them for transient OAuth session flows that never reach the registry),
+  includes NULL approval_status (rows predating the approval workflow), and optionally
+  excludes a specific server_id to support update operations. _identifier_field extracts
+  a field value from a dict and returns it only if it is a string. _find_mcp_server_identifier_conflict
+  checks alias first (so the reported field is deterministic), then server_name, and returns
+  a McpIdentifierConflict with the colliding field, value and server_id, or None if both
+  are clear. find_mcp_server_identifier_conflict is an unlocked check for callers outside
+  write paths.
+
+  Advisory locks: _mcp_identifier_lock_keys computes deterministic sorted signed 64-bit
+  BLAKE2b advisory-lock keys from lowercased identifiers. Each key is the output of
+  hashlib.blake2b(f"mcp_identifier:{normalized}", digest_size=8) interpreted as a big-endian
+  signed integer. Only non-empty identifiers produce keys, duplicates are deduped, and
+  the keys are sorted so concurrent requests for the same pair always lock in the same order.
+  _mcp_server_write_if_identifier_free acquires per-identifier advisory locks in transaction
+  order, checks for conflicts while locked, and runs a write closure only if no conflict exists.
+  Return the written row, a McpIdentifierConflict if a collision was found, or None if the
+  write produced no row.
+
+  Server lookup and mutation: _db_find_mcp_server_rows queries with optional WHERE clause
+  filters (used by other parts). _db_find_mcp_server_row gets a single server by server_id,
+  returning None if absent. _db_update_mcp_server_row updates by server_id and raises
+  ValueError with message "MCP server not found, passed server_id={server_id}" if the row
+  is absent.
+
+  User credential and environment tables: _db_find_user_credential_row gets a single
+  credential by user_id and server_id composite key. _db_find_user_credential_rows queries
+  with optional WHERE filters. _db_upsert_user_credential_row inserts or updates a
+  credential_b64 blob (encrypted value) using the composite key. _db_find_user_env_var_rows
+  queries environment variables with optional WHERE filters.
+
+  _UserEnvVarsTransactionClient and _UserEnvVarsTransaction are Protocol types that declare
+  the transaction contract: a client with litellm_mcpuserenvvars, litellm_mcpservertable
+  table actions and an async execute_raw(query: str, *args) for advisory locks. They are
+  never implemented in this task; they define the seam that B714 provides.
+
+  Readable servers: _readable_mcp_servers iterates rows, validates each with
+  LiteLLM_MCPServerTable.model_validate (owned by B858), decrypts its env_vars
+  (owned by B4710), and yields it. On SecretMapDecodeError, warn with
+  "Skipping MCP server {server_id}: cannot decrypt secret map" and skip that row.
+
+  Server reads: get_all_mcp_servers returns all servers except drafts, optionally filtered
+  by approval_status. When approval_status is None, include NULL approval_status and
+  exclude draft status (using an OR clause so NULL is not silently dropped by a bare inequality).
+  get_mcp_server returns a single server by server_id, or None if absent, with env vars
+  decrypted. get_mcp_servers returns a list by server_ids iterable.
+
+  Review operations: approve_mcp_server sets approval_status to "active", records reviewed_at
+  as current UTC time, and sets updated_by. reject_mcp_server sets approval_status to "rejected",
+  records reviewed_at and updated_by, and optionally sets review_notes only if non-null.
+  get_mcp_submissions returns all servers with submitted_at IS NOT NULL, ordered by
+  submitted_at DESC, capped at 500 items for safety, wrapped in MCPSubmissionsSummary with
+  total count and counts by pending_review, active, rejected status. All read rows through
+  _readable_mcp_servers so secret-map failures are warned and skipped.
+
+  Pinned tools: set_mcp_server_pinned_tools imports safe_dumps (owned by B192), checks
+  the server exists (return None if absent), serializes the pinned_tools mapping to JSON
+  (calling model_dump on each tool), writes the serialized JSON and updated_by, and returns
+  the validated updated row with env vars decrypted.
+
+  Active submissions: get_active_submitted_mcp_server_ids_for_user returns server IDs of
+  servers submitted by a user with approval_status="active" (creator visibility). Return
+  empty list if user_id is empty.
+
+  Management accessors: _get_prisma_client_or_none returns the global prisma_client from
+  litellm.proxy.proxy_server, or None if the proxy is configured without a database (so
+  in-memory OAuth sessions can degrade gracefully). get_prisma_client_or_throw raises
+  HTTPException with status 500 and detail {"error": message} if prisma_client is None,
+  where message is a supplied string parameter.
+
+  Preserve alias-first conflict reporting (alias checked before server_name), exclusion of
+  drafts but inclusion of NULL approval status, sorted signed BLAKE2b lock keys, the 500-item
+  submissions cap, and warn-and-skip secret-map failures in listings. Handle empty user_id
+  as falsy without error.
+
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/mcp/table_access.rs
+    - crates/betterlite-db/src/mcp/table_access/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/mcp/management_access.rs
+    - crates/betterlite-server/src/mcp/management_access/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-table-access/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-table-access-*
+    - tools/oracle/helpers/b4711.py
+    - tools/oracle/helpers/b4711/**
+    - tools/oracle/src/helpers/db/b4711.rs
+    - tools/oracle/src/helpers/db/b4711/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L65-L75
+    why: _UserEnvVarsTransactionClient and _UserEnvVarsTransaction Protocol declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L479-L483
+    why: _mcp_server_table_actions returns table handle from MCPServerRepository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L502-L509
+    why: _oauth_client_table_actions returns table handle from MCPServerOAuthClientRepository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L511-L514
+    why: _db_transaction_manager returns prisma_client.db.tx() transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L516-L531
+    why: _identifier_where filters by case-insensitive alias/server_name, includes NULL approval_status, excludes drafts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L533-L536
+    why: _identifier_field extracts string value from dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L538-L565
+    why: _find_mcp_server_identifier_conflict checks alias first, returns McpIdentifierConflict or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L594
+    why: _mcp_identifier_lock_keys computes sorted signed BLAKE2b advisory-lock keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L596-L623
+    why: _mcp_server_write_if_identifier_free acquires locks, checks conflicts, runs write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L625-L650
+    why: _db_find_mcp_server_rows, _db_find_mcp_server_row, _db_update_mcp_server_row lookups and mutations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L652-L707
+    why: User credential and env var table actions and lookups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L734-L792
+    why: _readable_mcp_servers, get_all_mcp_servers, get_mcp_server, get_mcp_servers reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2101-L2210
+    why: get_active_submitted_mcp_server_ids_for_user, approve_mcp_server, set_mcp_server_pinned_tools, reject_mcp_server, get_mcp_submissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L576-L581
+    why: _get_prisma_client_or_none non-throwing accessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L982-L990
+    why: get_prisma_client_or_throw raises 500 with detail dict.
+
+dod:
+  - text: McpIdentifierConflict record with field (literal "server_name" or "alias"), value, and server_id.
+    proof: [table-access-types]
+  - text: _mcp_server_table_actions returns MCPServerRepository table handle.
+    proof: [table-access-tests]
+  - text: _oauth_client_table_actions returns MCPServerOAuthClientRepository table handle.
+    proof: [table-access-tests]
+  - text: _db_transaction_manager returns prisma_client.db.tx().
+    proof: [table-access-tests]
+  - text: _identifier_where filters by case-insensitive alias and server_name, includes NULL approval_status, excludes drafts and optionally a specified server_id.
+    proof: [table-access-tests, conflict-where-clause]
+  - text: _identifier_field extracts a string value from a mapping by key, returns None if absent or not a string.
+    proof: [table-access-tests]
+  - text: _find_mcp_server_identifier_conflict checks alias first, then server_name, returns McpIdentifierConflict with field name or None.
+    proof: [table-access-tests, conflict-alias-first]
+  - text: _mcp_identifier_lock_keys computes sorted signed BLAKE2b advisory-lock keys from lowercased identifiers, deduping and returning empty tuple if all are empty.
+    proof: [table-access-tests, lock-keys-sorted, lock-keys-signed]
+  - text: _mcp_server_write_if_identifier_free acquires advisory locks for each key, checks for conflicts while locked, and runs write closure or returns conflict.
+    proof: [table-access-tests, lock-write-conflict]
+  - text: _db_find_mcp_server_rows queries server table with optional WHERE filter.
+    proof: [table-access-tests]
+  - text: _db_find_mcp_server_row returns single server by server_id or None.
+    proof: [table-access-tests]
+  - text: _db_update_mcp_server_row updates server by server_id and raises ValueError "MCP server not found..." if absent.
+    proof: [table-access-tests, update-not-found]
+  - text: _db_find_user_credential_row returns credential by user_id/server_id composite key or None.
+    proof: [table-access-tests]
+  - text: _db_find_user_credential_rows queries credentials with optional WHERE filter.
+    proof: [table-access-tests]
+  - text: _db_upsert_user_credential_row inserts or updates credential_b64 by composite key.
+    proof: [table-access-tests]
+  - text: _db_find_user_env_var_rows queries env vars with optional WHERE filter.
+    proof: [table-access-tests]
+  - text: _readable_mcp_servers validates and decrypts each row, warns and skips on SecretMapDecodeError.
+    proof: [table-access-tests, readable-secret-error]
+  - text: get_all_mcp_servers returns all non-draft servers, including NULL approval_status, optionally filtered by approval_status.
+    proof: [table-access-tests, get-all-drafts-excluded, get-all-null-included]
+  - text: get_mcp_server returns single server by server_id with env vars decrypted, or None.
+    proof: [table-access-tests]
+  - text: get_mcp_servers returns list of servers by server_ids iterable.
+    proof: [table-access-tests]
+  - text: approve_mcp_server sets approval_status to "active", records reviewed_at as current UTC, sets updated_by.
+    proof: [table-access-tests, review-approve]
+  - text: reject_mcp_server sets approval_status to "rejected", records reviewed_at and updated_by, optionally sets review_notes.
+    proof: [table-access-tests, review-reject]
+  - text: get_mcp_submissions returns MCPSubmissionsSummary with servers ordered by submitted_at DESC, capped at 500, with status counts.
+    proof: [table-access-tests, submissions-cap, submissions-counts]
+  - text: set_mcp_server_pinned_tools returns None if server absent, serializes tools with model_dump, writes JSON via safe_dumps, returns validated row.
+    proof: [table-access-tests, pinned-tools-serialize]
+  - text: get_active_submitted_mcp_server_ids_for_user returns server IDs submitted by user with approval_status "active", or empty list if user_id empty.
+    proof: [table-access-tests, active-submissions]
+  - text: _get_prisma_client_or_none returns global prisma_client or None.
+    proof: [management-tests]
+  - text: get_prisma_client_or_throw raises HTTPException status 500 with detail dict if prisma_client is None.
+    proof: [management-tests, prisma-throw-status]
+  - text: New oracle helper operation for MCP table access integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: table-access-types
+      why: McpIdentifierConflict or table access types are missing or incomplete.
+      run: grep -qE 'struct McpIdentifierConflict|pub struct McpIdentifierConflict' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'field.*Literal|value.*String|server_id.*String' crates/betterlite-db/src/mcp/table_access.rs
+    - id: table-access-tests
+      why: Table access tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::/) - test(/replays_the_/)'
+    - id: conflict-where-clause
+      why: _identifier_where does not filter correctly.
+      run: grep -qE 'fn _identifier_where' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'case.*insensitive|mode.*insensitive' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'OR.*approval_status.*None|approval_status.*not.*draft' crates/betterlite-db/src/mcp/table_access.rs
+    - id: conflict-alias-first
+      why: Identifier conflict detection does not check alias before server_name.
+      run: grep -qE 'fn.*find.*identifier.*conflict|fn.*conflict.*check' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*alias.*first/)'
+    - id: lock-keys-sorted
+      why: _mcp_identifier_lock_keys does not sort keys.
+      run: grep -qE 'fn _mcp_identifier_lock_keys' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'sorted\(|sort\(' crates/betterlite-db/src/mcp/table_access.rs
+    - id: lock-keys-signed
+      why: _mcp_identifier_lock_keys does not use signed BLAKE2b.
+      run: grep -qE 'blake2b|BLAKE2b' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'signed.*True|signed=True|"big".*"signed"' crates/betterlite-db/src/mcp/table_access.rs
+    - id: lock-write-conflict
+      why: Write-if-identifier-free operation does not check conflicts while locked.
+      run: grep -qE 'fn.*write.*if.*identifier|fn.*write_if.*conflict' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'execute_raw|pg_advisory_xact_lock' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'McpIdentifierConflict' crates/betterlite-db/src/mcp/table_access.rs
+    - id: update-not-found
+      why: _db_update_mcp_server_row does not raise ValueError when server absent.
+      run: grep -qE 'fn _db_update_mcp_server_row' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCP server not found' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*update.*not_found/)'
+    - id: readable-secret-error
+      why: _readable_mcp_servers does not warn and skip on SecretMapDecodeError.
+      run: grep -qE 'fn _readable_mcp_servers' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'SecretMapDecodeError|Skipping MCP server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'warning|warn' crates/betterlite-db/src/mcp/table_access.rs
+    - id: get-all-drafts-excluded
+      why: get_all_mcp_servers does not exclude drafts.
+      run: grep -qE 'fn get_all_mcp_servers' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*draft|not.*draft' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*get_all.*draft/)'
+    - id: get-all-null-included
+      why: get_all_mcp_servers does not include NULL approval_status.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*get_all.*null/)'
+    - id: review-approve
+      why: approve_mcp_server does not set approval_status or reviewed_at.
+      run: grep -qE 'fn approve_mcp_server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active|approval_status.*active' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'reviewed_at' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*approve/)'
+    - id: review-reject
+      why: reject_mcp_server does not set approval_status or review_notes.
+      run: grep -qE 'fn reject_mcp_server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*rejected|approval_status.*rejected' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'review_notes' crates/betterlite-db/src/mcp/table_access.rs
+    - id: submissions-cap
+      why: get_mcp_submissions does not cap at 500 items.
+      run: grep -qE 'fn get_mcp_submissions' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'take.*500|take\(500\)' crates/betterlite-db/src/mcp/table_access.rs
+    - id: submissions-counts
+      why: get_mcp_submissions does not return MCPSubmissionsSummary with status counts.
+      run: grep -qE 'MCPSubmissionsSummary' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'pending_review|active|rejected' crates/betterlite-db/src/mcp/table_access.rs
+    - id: pinned-tools-serialize
+      why: set_mcp_server_pinned_tools does not serialize tools or use safe_dumps.
+      run: grep -qE 'fn set_mcp_server_pinned_tools' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'safe_dumps|model_dump' crates/betterlite-db/src/mcp/table_access.rs
+    - id: active-submissions
+      why: Active submission query does not filter by approval_status or handle empty user_id.
+      run: grep -qE 'fn.*active.*submissions|fn.*get.*active.*server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*active.*submission/)'
+    - id: management-tests
+      why: Management accessor tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_management_access::tests::/) - test(/replays_the_/)'
+    - id: prisma-throw-status
+      why: get_prisma_client_or_throw does not raise 500 status.
+      run: grep -qE 'fn get_prisma_client_or_throw' crates/betterlite-server/src/mcp/management_access.rs && grep -qE 'HTTP_500|status.*500|status_code.*500' crates/betterlite-server/src/mcp/management_access.rs && grep -qE 'detail.*error|"error"' crates/betterlite-server/src/mcp/management_access.rs
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4711.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/mcp-table-access-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-table-access/conflict-where-case-insensitive.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/conflict-where-alias-first.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/conflict-where-null-included.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/conflict-where-draft-excluded.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/identifier-field-string.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/identifier-field-non-string.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/lock-keys-sorted.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/lock-keys-signed.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/lock-keys-dedup.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/lock-keys-empty.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/find-conflict-alias-first.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/find-conflict-none.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/find-conflict-exclude-self.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/readable-secret-error-skip.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/readable-success-decrypt.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/get-all-servers-drafts-excluded.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/get-all-servers-null-included.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/get-all-servers-filter.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/get-mcp-server-found.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/get-mcp-server-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/approve-server.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/reject-server.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/reject-server-with-notes.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/submissions-cap.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/submissions-counts.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/submissions-secret-error-skip.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/pinned-tools-absent.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/pinned-tools-serialize.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/active-submissions-empty-user.yaml
+  - tools/oracle/cases/helpers/mcp-table-access/active-submissions-found.yaml
+
+deviations:
+  - what: McpIdentifierConflict is a typed record with field, value, and server_id, replacing
+      LiteLLM's tuple return values where present.
+    why: Typed records document fields and are easier to extend than tuples. The Rust
+      struct name differs from the Python semantics but the conflict data structure
+      is preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L538-L565
+  - what: Advisory locks use signed BLAKE2b instead of Python's hashlib implementation
+      directly, but maintain the same lock-key semantics and order.
+    why: Rust's blake2b crate computes the same digest; the only difference is the
+      input transformation and byte-order interpretation, which is preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L594
+  - what: _UserEnvVarsTransactionClient and _UserEnvVarsTransaction are Protocol types
+      declaring the transaction contract, not implementations. They are fulfilled by B714's
+      WriterSession or equivalent.
+    why: Rust Protocol types define the seam between this task and B714's transaction
+      provider. This task never implements the protocol; callers supply the implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L65-L75
+
+out_of_scope:
+  - 'litellm/proxy/_experimental/mcp_server/db.py: B4710 owns _blank_to_none (L107-110), _credential_auth_class, _drop_stale_minted_on_client_rotation, _is_global_env_var_scope, _encrypt_global_env_var_values (L163-201), decrypt_global_env_var_values, _decrypt_env_vars_on_returned_row (L204-269), _prepare_mcp_server_data, encrypt_credentials, _credentials_blob_to_mutable_dict (L320-476), decrypt_credentials (L709-731).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: get_mcp_servers_by_verificationtoken (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: get_mcp_servers_by_team (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: get_objectpermissions_for_mcp_server (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: get_virtualkeys_for_mcp_server (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: delete_mcp_server_from_team (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: delete_mcp_server_from_virtualkey (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: has_user_credential (no caller at the pin in production code).'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: B4712 owns delete_mcp_server, create_mcp_server, create_mcp_server_if_identifier_free, create_draft_mcp_server, _prune_expired_draft_mcp_servers, get_draft_mcp_server, _update_mcp_server_row, update_mcp_server, get_mcp_server_oauth_client_credentials, upsert_mcp_server_oauth_client_credentials.'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: B4713 owns _decode_user_credential, _warn_undecryptable_credential, _parse_oauth_payload, _decode_oauth_payload, store_user_credential, get_user_credential, delete_user_credential, store_user_oauth_credential, is_oauth_credential_expired, oauth_grant_state, get_user_oauth_credential, _server_user_credential_item, list_server_user_credentials, list_user_oauth_credentials.'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: B4714 owns _reencrypt_global_env_var_values, _reencrypt_mcp_credentials_blob, rotate_mcp_server_credentials_master_key, rotate_mcp_user_credentials_master_key, rotate_mcp_user_env_vars_master_key, _decode_user_env_vars, get_user_env_vars, get_user_env_vars_bulk, merge_user_env_vars, delete_user_env_vars.'
+  - 'litellm/proxy/_experimental/mcp_server/db.py: B4715 owns _decrypted_credential_field, mcp_oauth_token_identity, purge_user_oauth_credentials_for_server, refresh_user_oauth_token, resolve_valid_user_oauth_token, resolve_user_oauth_access_token, _remaining_token_seconds.'
+  - 'litellm/proxy/management_endpoints/mcp_management_endpoints.py: B4716–B4722 own routes and validation functions in ranges not listed in B4711''s scope.'
+  - Global prisma_client management and startup; those belong to infrastructure tasks.
+  - Authentication and authorization checks; those are supplied by the calling routes.
+
+pitfalls:
+  - _mcp_identifier_lock_keys returns an empty tuple if all identifiers are empty or None,
+    which is correct (no locks needed). Test both empty and non-empty cases.
+  - _identifier_where uses "insensitive" mode for database case-insensitivity. Different
+    databases may have different collation behavior; test against the actual Prisma schema.
+  - _mcp_server_write_if_identifier_free acquires locks in sorted order across concurrent
+    requests. A test should verify that two concurrent requests for the same identifier
+    cannot both pass the check.
+  - 'get_all_mcp_servers with approval_status=None is special: it includes both NULL and non-draft rows. This is unlike a bare query that would drop NULLs on an inequality.'
+  - SecretMapDecodeError from _readable_mcp_servers is caught and logged as a warning,
+    not raised. The server is skipped, so the caller never sees it. This is distinct from
+    other errors which propagate.
+  - set_mcp_server_pinned_tools calls model_dump on each PinnedMCPTool before serializing,
+    then safe_dumps the dict. This imports B192's safe_dumps, which must be available at runtime.
+  - The MCPUserEnvVarsRepository is local to this task and is not shared; no other task
+    should use it directly.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

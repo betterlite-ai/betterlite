@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Token-budget compression and retrieval tool generation
 status: todo
 depends_on: [B3540, B3541, B196, B575]
-file: null
+file: tasks/B3542-compression-budget.yaml
 covers:
   - "litellm/compression/__init__.py"
   - "litellm/compression/compress.py"

@@ -1,0 +1,22 @@
+name: chat-upstream-401
+config: |
+  model_list:
+    - model_name: unauthorized-model
+      litellm_params: {model: openai/gpt-401-upstream, api_base: "{{upstream}}", api_key: oracle-wrong-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-401}
+  body: {model: unauthorized-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body: {error: {message: "Incorrect API key provided", type: invalid_request_error, param: null, code: invalid_api_key}}
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

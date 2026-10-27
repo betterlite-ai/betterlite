@@ -1,0 +1,94 @@
+id: B4020
+title: Alert settings, records and trace links
+description: >-
+  Build typed alert settings and records from LiteLLM's slack alerting types.
+  Create alert types (budget alerts, outage alerts, spend reports, etc.), webhook URL resolution
+  with environment variable support through `process_slack_alerting_variables`, and optional Langfuse
+  trace link lookup via `_add_langfuse_trace_id_to_alert`. The SlackAlertingArgs record holds
+  thresholds and defaults: threshold 300 seconds at construction, report frequency 43200 seconds
+  (SLACK_DAILY_REPORT_FREQUENCY env var), check interval 300, budget TTL 86400, outage TTLs 60,
+  outage thresholds 5/10, outage list cap 10, console logging false, digest interval 86400,
+  daily/monthly user spend thresholds null, anomaly multiplier 3, baseline seven days, minimum
+  spend 10 and user check interval 3600 with minimum 60. Create AlertType enum covering llm
+  exceptions, slow/hanging responses, budget and spend alerts, daily reports, deployment events,
+  outage alerts, fallback reports, virtual key events, team events, internal user events and MCP
+  tool catalog events. DEFAULT_ALERT_TYPES omits user_spend_anomalies. Build HangingRequestData
+  and AlertTypeConfig records for digest settings. AlertQueueItem and DigestEntry TypedDicts
+  describe queued webhook payloads and in-flight digest buckets. Implement webhook URL resolution
+  with os.environ/NAME support through dependency injection. Implement Langfuse trace lookup:
+  three attempts with three-second waits, dynamic host from config overriding the logger instance
+  host, returning null if not found. Expose the list of selectable alert types through a method
+  consumed by the UI. Keep trace lookup's async nature and three-second retry waits, with timeout
+  behavior matching the source.
+scope:
+  paths:
+    - crates/betterlite-logging/src/alert_settings.rs
+    - crates/betterlite-logging/src/alert_settings/
+    - crates/betterlite-config/src/sections/alert_settings/
+    - crates/betterlite-config/src/sections/alert_settings.rs
+    - crates/betterlite-config/src/sections/alert_settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L1-L293
+    why: Alert type enums, alert configuration records, default thresholds and constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/utils.py#L22-L57
+    why: Webhook URL resolution with environment variable support and type validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/utils.py#L60-L94
+    why: Langfuse trace ID lookup with retry logic and dynamic host resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L200-L204
+    why: UI-facing list of all selectable alert types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L92-L129
+    why: SlackAlertingArgs construction and default values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L254-L259
+    why: 'Q1: resolve_langfuse_host used by trace lookup utility.'
+dod:
+  - text: SlackAlertingArgs record is parsed from config with all thresholds, timeouts and boolean flags at their LiteLLM defaults.
+    proof: [alert-config-tests]
+  - text: AlertType enum covers all 19 LiteLLM alert types including budget alerts, outage alerts, spend reports and virtual key events.
+    proof: [alert-types-tests]
+  - text: DEFAULT_ALERT_TYPES omits user_spend_anomalies and matches LiteLLM's list.
+    proof: [alert-types-tests]
+  - text: Webhook URL resolution processes os.environ/NAME references through `process_slack_alerting_variables` with validation.
+    proof: [alert-config-tests]
+  - text: Langfuse trace lookup makes three attempts with three-second waits, returns null if not found, and uses dynamic host when supplied.
+    proof: [alert-trace-tests]
+  - text: HangingRequestData and AlertTypeConfig records carry all fields with correct types and validation.
+    proof: [alert-types-tests]
+  - text: DigestEntry TypedDict matches the live digest bucket structure with first message, severity and URL.
+    proof: [alert-types-tests]
+  - text: SLACK_DAILY_REPORT_FREQUENCY environment variable resolves through B002's environment loader.
+    proof: [alert-config-tests]
+  - text: The list of selectable alert types is available for the UI and matches AlertType enum members.
+    proof: [alert-types-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: alert-config-tests
+      why: alert settings and webhook resolution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config -p betterlite-logging --no-tests=fail -E 'test(/^(sections::)?alert_settings::/) - test(/replays_the_/)'
+    - id: alert-types-tests
+      why: alert type and record tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_settings::(?!.*trace_lookup)/)'
+    - id: alert-trace-tests
+      why: langfuse trace lookup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_settings::.*trace_lookup/)'
+oracle_cases: []
+deviations:
+  - what: Missing Slack email branding constants default to LiteLLM's values. betterlite does not fetch replacement assets implicitly.
+    why: B4020 defines the types and defaults; B4022 and B4023 use them without implicit network fetches for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L37-L39
+out_of_scope:
+  - Callback registration and configuration loading live in B189 and B002, not here.
+  - Alert destination selection, webhook URL precedence and delivery to Slack, Teams, email or webhook endpoints are owned by B4021, B4022, B4023 and B4024.
+  - Alert production and event filtering are owned by B4025-B4030.
+  - Database queries for user/team lookups are owned by later repository tasks.
+pitfalls:
+  - "AlertType is a closed enum; adding a variant breaks exhaustive matching in all alert producers, so validate it against LiteLLM's list at the pinned commit."
+  - "Webhook URL resolution must reject missing os.environ/ references with the variable name, not silently use empty strings. Preserve LiteLLM's loud failure."
+  - "HangingRequestData.created_at uses a float timestamp at construction time; use the injected clock, not a direct time call."
+  - "DigestEntry.webhook_url is a union of a string or a list of strings; both must be handled by consumers without coercion."
+  - "Langfuse host resolution can fail silently in the source; return None and let the alert proceed without a trace link, never panic or log event dumps."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

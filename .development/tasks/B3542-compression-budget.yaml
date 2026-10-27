@@ -1,0 +1,217 @@
+id: B3542
+title: Token-budget compression and retrieval tool generation
+description: >-
+  Implement the compress orchestrator that combines normalized messages, relevance
+  scores, protected history and token counting to return compressed messages,
+  the original-content cache and schema-appropriate retrieval tools. This is
+  the core compression engine in betterlite-compression crate, layered above
+  B3540's message normalization and B3541's scoring.
+
+  Functions to port:
+  - build_retrieval_tool: build OpenAI-format tool definition with enum parameter
+    for available keys.
+  - _build_retrieval_tools: convert to target schema (OpenAI function tool or
+    Anthropic custom tool) by calling AnthropicConfig._map_tools when needed.
+  - _select_kept_indices_for_budget: fill token budget greedily from highest-scoring
+    units (single messages or atomic Anthropic tool exchanges). Truncate single
+    messages only when >= 100 tokens remain in budget. Preserve exact token
+    accounting per message and per span.
+  - _get_dropped_tool_span_indices: mark all indices in completely dropped
+    Anthropic exchanges (spans with no kept indices).
+  - compress: the main orchestrator. Normalize messages by call type, count
+    original tokens, skip compression if below compression_trigger, score messages,
+    select kept messages within token budget, stub dropped non-exchange messages,
+    build cache and retrieval tools, count compressed tokens, return CompressedResult.
+
+  Also own the retrieval tool name constant ('litellm_content_retrieve') and the
+  CompressedResult TypedDict fields.
+
+  Default compression_target is compression_trigger * 7 // 10 when not supplied.
+  Compression ratio is rounded to 4 decimal places. The target is not enforced
+  as a hard bound: if protected content alone exceeds it, the result can be larger.
+  Messages below the trigger pass through unchanged with compression_skipped_reason.
+  Invalid Anthropic tool sequences return original messages with
+  invalid_anthropic_tool_sequence reason (after scoring has completed).
+  Dropped Anthropic exchanges are omitted entirely (not stubbed); only non-exchange
+  messages are replaced with stubs.
+
+  Scope:
+  - betterlite-compression: message budgeting, tool building, retrieval cache, result type
+  - betterlite-compression imports from B3540 (normalization), B3541 (scoring),
+    B196 (token_counter), and B575 (AnthropicConfig._map_tools)
+
+scope:
+  paths:
+    - crates/betterlite-compression/src/compress.rs
+    - crates/betterlite-compression/src/retrieval_tool.rs
+    - crates/betterlite-compression/src/tests.rs
+    - crates/betterlite-compression/src/tests/**
+    - crates/betterlite-compression/src/compress/**
+    - crates/betterlite-compression/src/retrieval_tool/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/retrieval_tool.py#L6-L32
+    why: build_retrieval_tool tool definition with enum parameter
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L47-L66
+    why: _build_retrieval_tools schema conversion (OpenAI vs Anthropic)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L268-L343
+    why: _select_kept_indices_for_budget greedy scoring, truncation and token accounting
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L346-L351
+    why: _get_dropped_tool_span_indices to mark removed exchanges
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L354-L512
+    why: compress orchestrator flow, trigger/target defaults, protected indices, scoring calls, budget selection, caching and ratio calculation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/compression.py#L15-L22
+    why: CompressedResult TypedDict fields and optional compression_skipped_reason
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/__init__.py#L1-L3
+    why: compress re-export from module init
+
+dod:
+  - text: Messages below compression_trigger pass through unchanged with
+      compression_skipped_reason set to "below_trigger".
+    proof: [compress-below-trigger]
+  - text: The default compression_target is set to compression_trigger * 7 // 10
+      when not explicitly supplied.
+    proof: [compress-target-default]
+  - text: Original and compressed token counts are calculated correctly for each
+      message and the overall result.
+    proof: [token-counting-tests]
+  - text: Compression ratio is calculated as (1 - (compressed / original))
+      rounded to 4 decimal places.
+    proof: [compression-ratio-tests]
+  - text: Protected indices (system, last user, last assistant, cache prefixes)
+      are never compressed.
+    proof: [protected-indices-tests]
+  - text: Anthropic tool exchanges are atomic; the entire span is kept or dropped
+      together, never individual messages.
+    proof: [tool-exchange-atomic-tests]
+  - text: Invalid Anthropic tool sequences return the original messages with
+      compression_skipped_reason "invalid_anthropic_tool_sequence" before any
+      truncation occurs.
+    proof: [invalid-tool-sequence-tests]
+  - text: Budget selection greedily fills the token budget from highest-scoring
+      units (messages or tool-exchange spans) in descending score order.
+    proof: [budget-selection-tests]
+  - text: Single messages are truncated only when they exceed the remaining budget
+      AND at least 100 tokens remain available.
+    proof: [truncation-budget-tests]
+  - text: Dropped messages are replaced with stubs containing the retrieval tool
+      reference, while dropped Anthropic exchanges are omitted entirely.
+    proof: [stub-vs-omit-tests]
+  - text: The retrieval tool is generated in the target call-type schema (OpenAI
+      function tool or Anthropic custom tool) with the enum parameter listing
+      all cache keys.
+    proof: [retrieval-tool-schema-tests]
+  - text: The original-content cache maps stable keys (extracted paths or message
+      indices) to full message text content.
+    proof: [cache-key-tests]
+  - text: The compression_ratio is not enforced as a hard bound; results can exceed
+      the target when protected content alone exceeds it.
+    proof: [protected-target-override-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: compress-below-trigger
+      why: Messages below compression_trigger must pass through unchanged
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::below_trigger($|::)/)' -E 'test(/^compress_behavior::skipped_reason($|::)/)'
+    - id: compress-target-default
+      why: Default compression_target calculation must be correct
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::default_target($|::)/)'
+    - id: token-counting-tests
+      why: Token counting per message and overall must match expected values
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::token_counting($|::)/)' -E 'test(/^budget_selection::token_counting($|::)/)'
+    - id: compression-ratio-tests
+      why: Compression ratio must be calculated correctly and rounded to 4 places
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::compression_ratio($|::)/)'
+    - id: protected-indices-tests
+      why: Protected indices must never be compressed
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::protected_indices($|::)/)' -E 'test(/^budget_selection::preserves_protected($|::)/)'
+    - id: tool-exchange-atomic-tests
+      why: Anthropic tool exchanges must be kept or dropped atomically
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^tool_exchange_atomicity($|::)/)'
+    - id: invalid-tool-sequence-tests
+      why: Invalid Anthropic sequences must be detected before truncation and return original messages
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::invalid_anthropic($|::)/)'
+    - id: budget-selection-tests
+      why: Budget selection must greedily fill from highest-scoring units
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^budget_selection($|::)/) - test(/^budget_selection::token_counting($|::)/)'
+    - id: truncation-budget-tests
+      why: Truncation must only occur with >= 100 tokens remaining and only for single messages
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^budget_selection::truncation($|::)/)'
+    - id: stub-vs-omit-tests
+      why: Stubs must replace dropped messages; exchanges must be omitted
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^dropped_span_handling($|::)/)'
+    - id: retrieval-tool-schema-tests
+      why: Retrieval tool must be in correct schema for call type
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^retrieval_tool_schema($|::)/)'
+    - id: cache-key-tests
+      why: Cache keys must be stable and unique, mapped to full content
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^cache_key_extraction($|::)/)'
+    - id: protected-target-override-tests
+      why: Protected content alone can exceed the compression_target
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::target_override($|::)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Retrieval tool constant is 'litellm_content_retrieve', matching the tool
+      definition and stub message references from B3540.
+    why: >-
+      The model must see a consistent tool name in stubs and in the tool
+      definition. Betterlite preserves this from LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L68-L71
+  - what: >-
+      Token counting is delegated to B196's token_counter function, which may
+      sample very large inputs rather than counting every token. The budgeting
+      logic handles this by using the same counter for all measurements (original,
+      compressed, and per-message budgets).
+    why: >-
+      Exact token counting has diminishing returns above ~4M characters; LiteLLM
+      samples beyond that threshold. Betterlite delegates to B196's implementation
+      to avoid reimplementing the sampling logic and ensure consistency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L584-L605
+
+out_of_scope:
+  - Message normalization and content extraction, owned by B3540.
+  - BM25 and embedding relevance scoring and score combination, owned by B3541.
+  - Token counting and model-specific tokenization, owned by B196.
+  - Anthropic tool schema transformation (OpenAI to custom format), owned by B575.
+  - Retrieval cache persistence and multi-turn state management, owned by B3543.
+  - Retrieval loop planning and agentic follow-up construction, owned by B3544.
+  - Native provider compaction capability and summary extraction, owned by B3545.
+  - Auto-router compression policy and guardrail execution, owned by B3546.
+
+pitfalls:
+  - >-
+    Default compression_target uses integer division (trigger * 7 // 10),
+    rounding down. For trigger=200,000, target is exactly 140,000.
+  - >-
+    Anthropic tool exchanges are indivisible: if any message in a span is
+    protected, the entire span is protected. If no message fits the budget,
+    the entire span is dropped atomically.
+  - >-
+    Truncation applies only to single messages, not tool-exchange spans, and
+    only when remaining budget is >= 100 tokens.
+  - >-
+    Invalid Anthropic sequences are detected after normalization but before
+    budget selection. Flow: normalize → count → check trigger → score →
+    check Anthropic sequences → budget.
+  - >-
+    Dropped Anthropic exchanges are completely omitted, not stubbed.
+    They do not appear in the cache.
+  - >-
+    Compression ratio can exceed 1.0 if token_counter samples large inputs
+    differently between calls. Round to 4 decimal places.
+  - >-
+    Cache keys must be unique. The extract_key function (from B3540) handles
+    duplicates by appending _2, _3, etc.
+  - >-
+    Retrieval tool enum parameter lists cache keys. If no messages are
+    compressed, the tool is not included in the result.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

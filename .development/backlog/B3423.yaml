@@ -2,8 +2,8 @@ id: B3423
 milestone: M5 api families
 title: Eval deletion and cancellation operations
 status: todo
-depends_on: [B3420, B523, B247, B185, B186]
-file: null
+depends_on: [B3420, B523, B247, B185, B186, B024]
+file: tasks/B3423-eval-delete-cancel.yaml
 covers:
   - "litellm/evals/main.py"
 parent: B096
