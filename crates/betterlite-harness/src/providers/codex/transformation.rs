@@ -6,16 +6,14 @@
     clippy::style,
     reason = "This adapter mirrors a third-party CLI protocol within the existing harness contract"
 )]
-
-use std::collections::{BTreeMap, BTreeSet};
-
 use secrecy::SecretString;
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::events::Event;
-use crate::options::{CodexOptions, OptionsKind, ReasoningEffort};
+use crate::options::{CodexOptions, OptionsKind};
 use crate::payloads::{stderr_tail_text, strict_json_schema};
 use crate::sandbox::Sandbox;
 use crate::transformation::{
@@ -23,289 +21,16 @@ use crate::transformation::{
     HarnessTurnResponse, PersistedDir, TurnInput,
 };
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
-
-pub const CODEX_TOKEN_ENV: &str = "LITELLM_HARNESS_TOKEN";
-pub const CODEX_SCHEMA_FILENAME: &str = "output_schema.json";
-const CODEX_HOME_ENV: &str = "CODEX_HOME";
-const MANAGED_CONFIG_KEYS: [&str; 8] = [
-    "model",
-    "model_provider",
-    "model_providers",
-    "approval_policy",
-    "sandbox_mode",
-    "mcp_servers",
-    "developer_instructions",
-    "web_search",
-];
-
-#[derive(Clone, Debug, Default)]
-pub struct CodexStreamState {
-    pub thread_id: Option<String>,
-    pub final_text: String,
-    pub error: Option<String>,
-    pub failed: bool,
-    started: BTreeSet<String>,
-}
-
-fn mismatch() -> HarnessError {
-    HarnessError::OptionsMismatch {
-        given: "CodexOptions.config",
-        harness: Harness::Codex,
-        expected: "valid Codex configuration",
-    }
-}
-
-pub fn toml_key(key: &str) -> String {
-    if key
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
-        key.to_owned()
-    } else {
-        serde_json::to_string(key).unwrap_or_else(|_| "\"\"".to_owned())
-    }
-}
-
-pub fn toml_value(value: &Value, depth: usize) -> Result<String, HarnessError> {
-    if depth > crate::payloads::DEFAULT_MAX_RECURSE_DEPTH {
-        return Err(mismatch());
-    }
-    match value {
-        Value::Bool(value) => Ok(value.to_string()),
-        Value::Number(value) => Ok(value.to_string()),
-        Value::String(value) => serde_json::to_string(value).map_err(|_| mismatch()),
-        Value::Array(values) => values
-            .iter()
-            .map(|value| toml_value(value, depth.saturating_add(1)))
-            .collect::<Result<Vec<_>, _>>()
-            .map(|values| format!("[{}]", values.join(", "))),
-        Value::Object(values) => values
-            .iter()
-            .map(|(key, value)| {
-                Ok(format!(
-                    "{} = {}",
-                    toml_key(key),
-                    toml_value(value, depth.saturating_add(1))?
-                ))
-            })
-            .collect::<Result<Vec<_>, HarnessError>>()
-            .map(|values| format!("{{{}}}", values.join(", "))),
-        Value::Null => Err(mismatch()),
-    }
-}
-
-pub fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError> {
-    config
-        .iter()
-        .map(|(key, value)| {
-            let first = key.split('.').next().unwrap_or_default();
-            if key.is_empty() || key.contains('=') || MANAGED_CONFIG_KEYS.contains(&first) {
-                return Err(mismatch());
-            }
-            Ok(format!("{}={}", key, toml_value(value, 0)?))
-        })
-        .collect()
-}
-
-fn pairs(flag: &str, values: &[String]) -> Vec<String> {
-    values
-        .iter()
-        .flat_map(|value| [flag.to_owned(), value.clone()])
-        .collect()
-}
-
-fn provider_overrides<S>(context: &SessionContext<S>) -> Result<Vec<String>, HarnessError> {
-    let gateway = context.settings.gateway.as_ref().ok_or_else(mismatch)?;
-    let base = format!("{}/v1", gateway.api_base.trim_end_matches('/'));
-    Ok(vec![
-        "model_provider=litellm".to_owned(),
-        "model_providers.litellm.name=litellm".to_owned(),
-        format!(
-            "model_providers.litellm.base_url={}",
-            toml_value(&Value::String(base), 0)?
-        ),
-        format!("model_providers.litellm.env_key={CODEX_TOKEN_ENV}"),
-        "model_providers.litellm.wire_api=responses".to_owned(),
-        "approval_policy=never".to_owned(),
-    ])
-}
-
-fn permission_args<S: Sandbox>(context: &SessionContext<S>, resumed: bool) -> Vec<String> {
-    if context.settings.permissions != PermissionMode::ReadOnly && context.sandbox.is_container() {
-        return vec!["--dangerously-bypass-approvals-and-sandbox".to_owned()];
-    }
-    let mode = match context.settings.permissions {
-        PermissionMode::ReadOnly => "read-only",
-        PermissionMode::Full | PermissionMode::Ask | PermissionMode::Edit => "workspace-write",
-    };
-    if resumed {
-        vec!["-c".to_owned(), format!("sandbox_mode=\"{mode}\"")]
-    } else {
-        vec!["--sandbox".to_owned(), mode.to_owned()]
-    }
-}
-
-fn feature_overrides<S>(context: &SessionContext<S>, options: &CodexOptions) -> Vec<String> {
-    let mut values = vec![format!(
-        "web_search={}",
-        if options.web_search {
-            "live"
-        } else {
-            "disabled"
-        }
-    )];
-    if let Some(effort) = options.reasoning_effort {
-        let value = match effort {
-            ReasoningEffort::Low => "low",
-            ReasoningEffort::Medium => "medium",
-            ReasoningEffort::High => "high",
-            ReasoningEffort::Xhigh => "xhigh",
-        };
-        values.push(format!("model_reasoning_effort={value}"));
-        values.push("model_reasoning_summary=auto".to_owned());
-    }
-    if let Some(instructions) = context.settings.instructions.as_ref() {
-        if let Ok(encoded) = toml_value(&Value::String(instructions.clone()), 0) {
-            values.push(format!("developer_instructions={encoded}"));
-        }
-    }
-    values
-}
-
-fn object(value: Option<&Value>) -> Option<JsonObject> {
-    value.and_then(Value::as_object).map(|value| {
-        value
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect()
-    })
-}
-
-fn tool_input(item: &JsonObject) -> (String, String, JsonObject, bool) {
-    let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
-    match kind {
-        "command_execution" => (
-            "bash".to_owned(),
-            kind.to_owned(),
-            BTreeMap::from([(
-                "command".to_owned(),
-                item.get("command")
-                    .cloned()
-                    .unwrap_or(Value::String(String::new())),
-            )]),
-            true,
-        ),
-        "file_change" => (
-            "edit".to_owned(),
-            "apply_patch".to_owned(),
-            BTreeMap::from([(
-                "changes".to_owned(),
-                item.get("changes")
-                    .cloned()
-                    .unwrap_or(Value::Array(Vec::new())),
-            )]),
-            true,
-        ),
-        "web_search" => (
-            "web_search".to_owned(),
-            kind.to_owned(),
-            BTreeMap::from([(
-                "query".to_owned(),
-                item.get("query")
-                    .cloned()
-                    .unwrap_or(Value::String(String::new())),
-            )]),
-            true,
-        ),
-        _ => {
-            let server = item
-                .get("server")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let native = item.get("tool").and_then(Value::as_str).unwrap_or_default();
-            let input = match item.get("arguments") {
-                Some(Value::Object(map)) => {
-                    map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                }
-                Some(value) => BTreeMap::from([("arguments".to_owned(), value.clone())]),
-                None => BTreeMap::new(),
-            };
-            (
-                if server.is_empty() {
-                    native.to_owned()
-                } else {
-                    format!("{server}.{native}")
-                },
-                native.to_owned(),
-                input,
-                false,
-            )
-        }
-    }
-}
-
-fn tool_output(item: &JsonObject) -> (String, bool) {
-    let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
-    let status = item.get("status").and_then(Value::as_str);
-    match kind {
-        "command_execution" => (
-            item.get("aggregated_output")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            status == Some("failed")
-                || item
-                    .get("exit_code")
-                    .is_some_and(|v| v.as_i64().is_some_and(|code| code != 0)),
-        ),
-        "file_change" => (
-            item.get("changes")
-                .and_then(Value::as_array)
-                .map(|changes| {
-                    changes
-                        .iter()
-                        .map(|change| {
-                            format!(
-                                "{} {}",
-                                change
-                                    .get("kind")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or_default(),
-                                change
-                                    .get("path")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or_default()
-                            )
-                            .trim()
-                            .to_owned()
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default(),
-            status == Some("failed"),
-        ),
-        "web_search" => (String::new(), status == Some("failed")),
-        _ => match item.get("error") {
-            Some(error) => (
-                error
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .map_or_else(|| error.to_string(), str::to_owned),
-                true,
-            ),
-            None => (
-                item.get("result").map_or_else(String::new, |value| {
-                    value
-                        .as_str()
-                        .map_or_else(|| value.to_string(), str::to_owned)
-                }),
-                status == Some("failed"),
-            ),
-        },
-    }
-}
-
+#[path = "config.rs"]
+mod config;
+#[path = "stream.rs"]
+mod stream;
+use config::{
+    CODEX_HOME_ENV, CODEX_SCHEMA_FILENAME, CODEX_TOKEN_ENV, feature_overrides, mismatch, pairs,
+    permission_args, provider_overrides,
+};
+pub use config::{config_overrides, toml_key, toml_value};
+pub use stream::CodexStreamState;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CodexHarnessConfig;
 
@@ -463,7 +188,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 Vec::new()
             }
             Some(event_type @ ("item.started" | "item.updated" | "item.completed")) => {
-                let Some(item) = object(line.get("item")) else {
+                let Some(item) = stream::object(line.get("item")) else {
                     return Vec::new();
                 };
                 let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
@@ -508,7 +233,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 }
                 let mut events = Vec::new();
                 if state.started.insert(id.clone()) {
-                    let (name, native_name, input, builtin) = tool_input(&item);
+                    let (name, native_name, input, builtin) = stream::tool_input(&item);
                     events.push(Event::ToolCall {
                         id: id.clone(),
                         name,
@@ -518,7 +243,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                     });
                 }
                 if event_type == "item.completed" {
-                    let (output, is_error) = tool_output(&item);
+                    let (output, is_error) = stream::tool_output(&item);
                     events.push(Event::ToolResult {
                         id,
                         output,
@@ -571,44 +296,5 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 .as_ref()
                 .map(|_| state.final_text.clone()),
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{CodexHarnessConfig, CodexStreamState, config_overrides, toml_key, toml_value};
-    use crate::events::Event;
-    use crate::transformation::BaseCLIHarnessConfig;
-    use crate::types::JsonObject;
-    use serde_json::json;
-
-    #[test]
-    fn toml_values_and_managed_keys_match_codex_syntax() {
-        assert_eq!(toml_key("plain-key"), "plain-key");
-        assert_eq!(toml_key("a key"), "\"a key\"");
-        assert_eq!(
-            toml_value(&json!({"a key": [true, 2]}), 0).unwrap(),
-            "{\"a key\" = [true, 2]}"
-        );
-        let config = JsonObject::from([("model".to_owned(), json!("wrong"))]);
-        assert!(config_overrides(&config).is_err());
-    }
-
-    #[test]
-    fn stream_parser_orders_tool_call_before_result() {
-        let mut state = CodexStreamState::default();
-        let line: JsonObject = serde_json::from_value(json!({
-            "type": "item.completed",
-            "item": {"id": "tool-1", "type": "command_execution", "command": "echo hi", "aggregated_output": "hi\\n", "exit_code": 0, "status": "completed"}
-        })).unwrap();
-        let events = CodexHarnessConfig.transform_stream_line(&line, &mut state);
-        assert!(matches!(events.first(), Some(Event::ToolCall { .. })));
-        assert!(matches!(
-            events.get(1),
-            Some(Event::ToolResult {
-                is_error: false,
-                ..
-            })
-        ));
     }
 }
