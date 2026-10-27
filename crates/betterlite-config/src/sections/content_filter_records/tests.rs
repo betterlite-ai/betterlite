@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::{
     BlockCodeAction, BlockCodeExecGuardrailConfig, CodeBlockActionTaken, CodeBlockDetection,
     ContentFilterAction, ContentFilterCategoryConfig, ContentFilterDetection,
@@ -20,8 +22,16 @@ fn config_defaults_match_litellm() {
 
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str("{}").unwrap();
     assert_eq!(code.action, BlockCodeAction::Block);
-    assert!((code.confidence_threshold - 0.5_f64).abs() < f64::EPSILON);
+    assert!((code.confidence_threshold.0 - 0.5_f64).abs() < f64::EPSILON);
     assert!(code.detect_execution_intent);
+}
+
+#[rstest]
+#[case::above_one(r#"{"confidence_threshold":1.5}"#)]
+#[case::below_zero(r#"{"confidence_threshold":-0.1}"#)]
+fn confidence_threshold_outside_unit_range_is_rejected(#[case] config: &str) {
+    let error = serde_json::from_str::<BlockCodeExecGuardrailConfig>(config).unwrap_err();
+    assert!(error.to_string().contains("between 0.0 and 1.0"));
 }
 
 #[test]
@@ -53,6 +63,10 @@ fn config_records_load_litellm_fields() {
         serde_json::to_string(&code).unwrap(),
         r#"{"blocked_languages":null,"action":"mask","confidence_threshold":0.5,"detect_execution_intent":true}"#
     );
+
+    let strict: BlockCodeExecGuardrailConfig =
+        serde_json::from_str(r#"{"confidence_threshold":1.0}"#).unwrap();
+    assert!((strict.confidence_threshold.0 - 1.0_f64).abs() < f64::EPSILON);
 
     let secrets: HideSecretsGuardrailConfig =
         serde_json::from_str(r#"{"detect_secrets_config":{"plugins_used":[]}}"#).unwrap();

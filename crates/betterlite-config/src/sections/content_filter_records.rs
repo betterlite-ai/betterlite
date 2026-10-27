@@ -7,6 +7,7 @@ pub mod overrides;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_inline_default::serde_inline_default;
 
 use crate::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
 
@@ -108,10 +109,11 @@ pub enum ContentFilterDetection {
     CompetitorIntent(CompetitorIntentDetection),
 }
 
+#[serde_inline_default]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentFilterCategoryConfig {
     pub category: String,
-    #[serde(default = "default_true")]
+    #[serde_inline_default(true)]
     pub enabled: bool,
     pub action: ContentFilterAction,
     #[serde(default)]
@@ -120,10 +122,7 @@ pub struct ContentFilterCategoryConfig {
     pub category_file: Option<String>,
 }
 
-const fn default_true() -> bool {
-    true
-}
-
+#[serde_inline_default]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentFilterGuardrailConfig {
     #[serde(default)]
@@ -134,26 +133,14 @@ pub struct ContentFilterGuardrailConfig {
     pub blocked_words_file: Option<String>,
     #[serde(default)]
     pub categories: Option<Vec<ContentFilterCategoryConfig>>,
-    #[serde(default = "default_severity_threshold")]
+    #[serde_inline_default(String::from("medium"))]
     pub severity_threshold: String,
-    #[serde(default = "default_pattern_redaction_format")]
+    #[serde_inline_default(String::from("[{pattern_name}_REDACTED]"))]
     pub pattern_redaction_format: String,
-    #[serde(default = "default_keyword_redaction_tag")]
+    #[serde_inline_default(String::from("[KEYWORD_REDACTED]"))]
     pub keyword_redaction_tag: String,
     #[serde(default)]
     pub competitor_intent_config: Option<overrides::CompetitorIntentConfig>,
-}
-
-fn default_severity_threshold() -> String {
-    String::from("medium")
-}
-
-fn default_pattern_redaction_format() -> String {
-    String::from("[{pattern_name}_REDACTED]")
-}
-
-fn default_keyword_redaction_tag() -> String {
-    String::from("[KEYWORD_REDACTED]")
 }
 
 impl ContentFilterGuardrailConfig {
@@ -194,20 +181,39 @@ pub enum BlockCodeAction {
     Mask,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
+pub enum ConfidenceThresholdError {
+    #[error("confidence_threshold must be between 0.0 and 1.0, got {value}")]
+    OutOfRange { value: f64 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64")]
+pub struct ConfidenceThreshold(pub f64);
+
+impl TryFrom<f64> for ConfidenceThreshold {
+    type Error = ConfidenceThresholdError;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if (0.0..=1.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(ConfidenceThresholdError::OutOfRange { value })
+        }
+    }
+}
+
+#[serde_inline_default]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockCodeExecGuardrailConfig {
     #[serde(default)]
     pub blocked_languages: Option<Vec<String>>,
     #[serde(default)]
     pub action: BlockCodeAction,
-    #[serde(default = "default_confidence_threshold")]
-    pub confidence_threshold: f64,
-    #[serde(default = "default_true")]
+    #[serde_inline_default(ConfidenceThreshold(0.5))]
+    pub confidence_threshold: ConfidenceThreshold,
+    #[serde_inline_default(true)]
     pub detect_execution_intent: bool,
-}
-
-const fn default_confidence_threshold() -> f64 {
-    0.5
 }
 
 impl BlockCodeExecGuardrailConfig {
