@@ -70,6 +70,12 @@ fn collect(
             }
         }
         McpValue::Object(entries) => {
+            if entries.len() == 1
+                && let Some(McpValue::Text(number)) = entries.get("$serde_json::private::Number")
+            {
+                found.labels.push(number.clone());
+                return Ok(());
+            }
             found.labels.extend(entries.keys().cloned());
             for (key, item) in entries {
                 path.push(PathPart::Key(key.clone()));

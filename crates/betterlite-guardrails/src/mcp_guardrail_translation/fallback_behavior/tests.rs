@@ -13,7 +13,9 @@ async fn a_missing_tool_name_leaves_the_request_unchanged(#[case] json: &str) {
     let original = request(json);
     let mut call = original.clone();
     let guardrail = ScriptedGuardrail::new(Reply::Mask("secret"));
-    process_input_messages(&mut call, &guardrail).await.unwrap();
+    process_input_messages(&mut call, &guardrail, None)
+        .await
+        .unwrap();
     assert!(guardrail.calls().is_empty());
     assert_eq!(call, original);
 }
@@ -45,7 +47,9 @@ fn empty_mcp_fields_fall_back_to_the_plain_ones(
 async fn missing_arguments_and_schema_project_as_empty(#[case] json: &str) {
     let mut call = request(json);
     let guardrail = ScriptedGuardrail::new(Reply::Mask("secret"));
-    process_input_messages(&mut call, &guardrail).await.unwrap();
+    process_input_messages(&mut call, &guardrail, None)
+        .await
+        .unwrap();
     assert_eq!(guardrail.calls()[0].0.texts, texts(&["Tool"]));
     assert_eq!(call.modified_arguments, None);
 }

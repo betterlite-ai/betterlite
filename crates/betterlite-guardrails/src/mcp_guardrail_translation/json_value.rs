@@ -7,10 +7,12 @@ use serde_json::Number;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum McpValue {
+    Object(BTreeMap<String, Self>),
     Null,
     Boolean(bool),
     Number(Number),
     Text(String),
     Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
 }
+
+mod tests;

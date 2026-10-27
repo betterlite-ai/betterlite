@@ -6,6 +6,8 @@ use serde::Serialize;
 
 use super::json_value::McpValue;
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
+use crate::mcp_guardrail_translation::tool_request::McpToolRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuardrailInputs {
@@ -34,6 +36,8 @@ pub trait ApplyGuardrail {
     fn apply_guardrail(
         &self,
         inputs: GuardrailInputs,
+        request_data: Option<&mut McpToolRequest>,
         input_type: GuardrailInputType,
+        logging_obj: Option<&mut LoggingObjectContext>,
     ) -> impl Future<Output = Result<Option<Vec<String>>, Self::Error>> + Send;
 }

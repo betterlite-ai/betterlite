@@ -8,6 +8,7 @@ use super::input_writeback::write_back;
 use super::nesting_depth::{Leaf, PathPart, scan_json};
 use super::tool_request::McpToolRequest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
 
 mod tests;
 
@@ -23,6 +24,7 @@ pub struct InputScan {
 pub async fn process_input_messages<Guardrail>(
     request: &mut McpToolRequest,
     guardrail: &Guardrail,
+    logging_obj: Option<&mut LoggingObjectContext>,
 ) -> Result<(), TranslationError<Guardrail::Error>>
 where
     Guardrail: ApplyGuardrail + Sync,
@@ -32,7 +34,12 @@ where
         return Ok(());
     };
     let returned = guardrail
-        .apply_guardrail(scan.inputs.clone(), GuardrailInputType::Request)
+        .apply_guardrail(
+            scan.inputs.clone(),
+            Some(request),
+            GuardrailInputType::Request,
+            logging_obj,
+        )
         .await
         .map_err(TranslationError::Guardrail)?;
     write_back(&scan, request, returned)?;

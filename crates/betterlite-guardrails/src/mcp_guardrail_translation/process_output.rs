@@ -5,6 +5,8 @@ use super::nesting_depth::{JsonScan, scan_json};
 use super::result_mutation::mask_result;
 use super::text_count_mismatch::masked_texts;
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
+use crate::mcp_guardrail_translation::tool_request::McpToolRequest;
 
 mod tests;
 
@@ -17,6 +19,8 @@ pub struct OutputScan {
 pub async fn process_output_response<Guardrail>(
     result: &mut CallToolResult,
     guardrail: &Guardrail,
+    request_data: Option<&mut McpToolRequest>,
+    logging_obj: Option<&mut LoggingObjectContext>,
 ) -> Result<(), TranslationError<Guardrail::Error>>
 where
     Guardrail: ApplyGuardrail + Sync,
@@ -33,7 +37,12 @@ where
         texts,
     };
     let returned = guardrail
-        .apply_guardrail(inputs, GuardrailInputType::Response)
+        .apply_guardrail(
+            inputs,
+            request_data,
+            GuardrailInputType::Response,
+            logging_obj,
+        )
         .await
         .map_err(TranslationError::Guardrail)?;
     let Some(masked) = masked_texts(returned, scanned, ScanTarget::ToolResult)? else {

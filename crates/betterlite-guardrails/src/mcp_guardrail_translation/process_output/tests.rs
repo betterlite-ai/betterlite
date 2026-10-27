@@ -14,7 +14,7 @@ async fn text_blocks_structured_leaves_and_labels_go_out_in_one_call() {
             "structuredContent":{"name":"Ann","age":41}}"#,
     );
     let guardrail = ScriptedGuardrail::new(Reply::Nothing);
-    process_output_response(&mut result, &guardrail)
+    process_output_response(&mut result, &guardrail, None, None)
         .await
         .unwrap();
     let calls = guardrail.calls();
@@ -42,7 +42,7 @@ async fn a_masked_label_is_rejected(#[case] structured: &str) {
         "secret"
     };
     let guardrail = ScriptedGuardrail::new(Reply::Mask(secret));
-    let outcome = process_output_response(&mut result, &guardrail).await;
+    let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(matches!(
         outcome,
         Err(TranslationError::Blocked(ContentBlocked::UnrewritableLabel))
@@ -59,7 +59,7 @@ async fn a_result_without_text_skips_the_guardrail(#[case] json: &str) {
     let original = tool_result(json);
     let mut result = original.clone();
     let guardrail = ScriptedGuardrail::new(Reply::Mask("x"));
-    process_output_response(&mut result, &guardrail)
+    process_output_response(&mut result, &guardrail, None, None)
         .await
         .unwrap();
     assert!(guardrail.calls().is_empty());
@@ -70,6 +70,6 @@ async fn a_result_without_text_skips_the_guardrail(#[case] json: &str) {
 async fn a_guardrail_failure_on_the_result_reaches_the_caller() {
     let mut result = tool_result(r#"{"content":[{"type":"text","text":"x"}]}"#);
     let guardrail = ScriptedGuardrail::new(Reply::Fail);
-    let outcome = process_output_response(&mut result, &guardrail).await;
+    let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(matches!(outcome, Err(TranslationError::Guardrail(_))));
 }

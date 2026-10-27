@@ -39,7 +39,7 @@ async fn a_short_reply_leaves_the_tool_call_untouched() {
     let original = request(r#"{"mcp_tool_name":"t","mcp_arguments":{"a":"one","b":"two"}}"#);
     let mut call = original.clone();
     let guardrail = ScriptedGuardrail::new(Reply::Texts(texts(&["[MASKED]"])));
-    let outcome = process_input_messages(&mut call, &guardrail).await;
+    let outcome = process_input_messages(&mut call, &guardrail, None).await;
     assert!(matches!(
         outcome,
         Err(TranslationError::Blocked(ContentBlocked::TextCount {
@@ -56,7 +56,7 @@ async fn a_long_reply_leaves_the_tool_result_untouched() {
     let original = tool_result(r#"{"content":[{"type":"text","text":"one"}]}"#);
     let mut result = original.clone();
     let guardrail = ScriptedGuardrail::new(Reply::Texts(texts(&["x", "y"])));
-    let outcome = process_output_response(&mut result, &guardrail).await;
+    let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(matches!(
         outcome,
         Err(TranslationError::Blocked(ContentBlocked::TextCount {

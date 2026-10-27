@@ -10,7 +10,7 @@ async fn the_result_is_masked_in_place_and_keeps_everything_else() {
             "structuredContent":{"note":"secret-2","items":["secret-3","ok"]},"isError":false}"#,
     );
     let guardrail = ScriptedGuardrail::new(Reply::Mask("secret"));
-    process_output_response(&mut result, &guardrail)
+    process_output_response(&mut result, &guardrail, None, None)
         .await
         .unwrap();
     assert_eq!(
@@ -23,7 +23,7 @@ async fn the_result_is_masked_in_place_and_keeps_everything_else() {
 async fn snake_case_structured_content_is_scanned_and_masked() {
     let mut result = tool_result(r#"{"content":[],"structured_content":{"note":"secret"}}"#);
     let guardrail = ScriptedGuardrail::new(Reply::Mask("secret"));
-    process_output_response(&mut result, &guardrail)
+    process_output_response(&mut result, &guardrail, None, None)
         .await
         .unwrap();
     assert_eq!(
@@ -38,7 +38,7 @@ async fn text_content_is_written_before_a_label_match_blocks() {
         r#"{"content":[{"type":"text","text":"secret"}],"structuredContent":{"secret":"x"}}"#,
     );
     let guardrail = ScriptedGuardrail::new(Reply::Mask("secret"));
-    let outcome = process_output_response(&mut result, &guardrail).await;
+    let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(outcome.is_err());
     assert_eq!(result.content[0].text.as_deref(), Some("[MASKED]"));
     assert_eq!(to_json(&result.structured_content), r#"{"secret":"x"}"#);

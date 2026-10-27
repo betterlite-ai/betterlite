@@ -13,7 +13,9 @@ async fn sends_description_schema_descriptions_and_argument_leaves_in_one_call()
             "mcp_arguments":{"email":"a@example.com","filters":[{"tag":"vip"},7,true]}}"#,
     );
     let guardrail = ScriptedGuardrail::new(Reply::Nothing);
-    process_input_messages(&mut call, &guardrail).await.unwrap();
+    process_input_messages(&mut call, &guardrail, None)
+        .await
+        .unwrap();
     let calls = guardrail.calls();
     assert_eq!(calls.len(), 1);
     let (inputs, input_type) = &calls[0];
@@ -33,7 +35,9 @@ async fn sends_description_schema_descriptions_and_argument_leaves_in_one_call()
 async fn an_empty_schema_becomes_an_empty_object_definition() {
     let mut call = request(r#"{"mcp_tool_name":"ping","mcp_input_schema":"not a schema"}"#);
     let guardrail = ScriptedGuardrail::new(Reply::Nothing);
-    process_input_messages(&mut call, &guardrail).await.unwrap();
+    process_input_messages(&mut call, &guardrail, None)
+        .await
+        .unwrap();
     let calls = guardrail.calls();
     let (inputs, _) = &calls[0];
     assert!(inputs.texts.is_empty());
@@ -50,7 +54,9 @@ async fn only_description_keyed_schema_strings_are_scanned() {
             "properties":{"description":{"type":"string","enum":["a"]}}}}"#,
     );
     let guardrail = ScriptedGuardrail::new(Reply::Nothing);
-    process_input_messages(&mut call, &guardrail).await.unwrap();
+    process_input_messages(&mut call, &guardrail, None)
+        .await
+        .unwrap();
     assert_eq!(guardrail.calls()[0].0.texts, texts(&["Top"]));
 }
 
@@ -58,6 +64,6 @@ async fn only_description_keyed_schema_strings_are_scanned() {
 async fn a_guardrail_failure_reaches_the_caller() {
     let mut call = request(r#"{"mcp_tool_name":"lookup","mcp_arguments":{"q":"x"}}"#);
     let guardrail = ScriptedGuardrail::new(Reply::Fail);
-    let outcome = process_input_messages(&mut call, &guardrail).await;
+    let outcome = process_input_messages(&mut call, &guardrail, None).await;
     assert!(matches!(outcome, Err(TranslationError::Guardrail(_))));
 }

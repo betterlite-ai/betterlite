@@ -73,7 +73,7 @@ async fn arguments_past_the_limit_fail_closed_before_the_guardrail_runs() {
         nested(MAX_SCAN_DEPTH + 1, r#""x""#)
     ));
     let guardrail = ScriptedGuardrail::new(Reply::Mask("x"));
-    let outcome = process_input_messages(&mut call, &guardrail).await;
+    let outcome = process_input_messages(&mut call, &guardrail, None).await;
     assert!(matches!(
         outcome,
         Err(TranslationError::Blocked(ContentBlocked::TooDeep {
@@ -91,7 +91,7 @@ async fn a_schema_past_the_limit_fails_closed() {
         nested(MAX_SCAN_DEPTH, r#""x""#)
     ));
     let guardrail = ScriptedGuardrail::new(Reply::Nothing);
-    let outcome = process_input_messages(&mut call, &guardrail).await;
+    let outcome = process_input_messages(&mut call, &guardrail, None).await;
     assert!(matches!(
         outcome,
         Err(TranslationError::Blocked(ContentBlocked::TooDeep {
@@ -107,7 +107,7 @@ async fn structured_content_past_the_limit_fails_closed() {
         nested(MAX_SCAN_DEPTH + 1, "0")
     ));
     let guardrail = ScriptedGuardrail::new(Reply::Nothing);
-    let outcome = process_output_response(&mut result, &guardrail).await;
+    let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(matches!(
         outcome,
         Err(TranslationError::Blocked(ContentBlocked::TooDeep {

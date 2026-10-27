@@ -9,6 +9,7 @@ use super::call_tool_result::CallToolResult;
 use super::guardrail::{ApplyGuardrail, GuardrailInputs};
 use super::tool_request::McpToolRequest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
 
 #[derive(Debug, Error)]
 #[error("the scripted guardrail failed")]
@@ -45,7 +46,9 @@ impl ApplyGuardrail for ScriptedGuardrail {
     fn apply_guardrail(
         &self,
         inputs: GuardrailInputs,
+        _request_data: Option<&mut McpToolRequest>,
         input_type: GuardrailInputType,
+        _logging_obj: Option<&mut LoggingObjectContext>,
     ) -> impl Future<Output = Result<Option<Vec<String>>, ScriptedFailure>> + Send {
         self.calls
             .lock()
