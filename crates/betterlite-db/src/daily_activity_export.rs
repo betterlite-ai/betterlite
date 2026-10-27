@@ -42,7 +42,8 @@ pub fn build_key_search_sql(
     let predicate = format!(
         "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
     );
-    let sql = render_key_query(table, &where_sql, &predicate, limit_index);
+    let normalized_predicate = predicate.replace("\\\\", "\\");
+    let sql = render_key_query(table, &where_sql, &normalized_predicate, limit_index);
     Ok(finish_ranked(sql, params, format!("%{escaped}%"), limit))
 }
 

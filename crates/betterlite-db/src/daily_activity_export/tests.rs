@@ -18,7 +18,7 @@ fn daily_activity_export_rejects_nonpositive_limits_before_where() {
 #[test]
 fn daily_activity_export_search_escapes_literals_and_binds_them() {
     let query = build_key_search_sql(&scope(), "\\%_", 101).unwrap();
-    assert!(query.sql.contains("ESCAPE '\\\\'"));
+    assert!(query.sql.contains("ESCAPE '\\'"));
     assert_eq!(
         query.params[2],
         SqlParameter::Text("%\\\\\\%\\_%".to_owned())
