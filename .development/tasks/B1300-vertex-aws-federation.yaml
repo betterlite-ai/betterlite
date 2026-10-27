@@ -25,7 +25,6 @@ scope:
   paths:
     - Cargo.toml
     - Cargo.lock
-    - deny.toml
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/aws_federation.rs
     - crates/betterlite-vertex/src/aws_federation/**

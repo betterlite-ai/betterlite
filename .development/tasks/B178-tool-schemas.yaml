@@ -22,7 +22,7 @@ scope:
   - tools/oracle/helpers/tool_schema.py
   - tools/oracle/helpers/tool_schema/**
   - tools/oracle/cases/helpers/tool-schema/**
-  - tools/oracle/fuzz/corpus/helper_case/**
+  - "tools/oracle/fuzz/corpus/helper_case/tool_schema-*"
   lint_tables: false
 references:
 - url: >-
@@ -76,8 +76,8 @@ checks:
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'tool_schema' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/tool_schema-*")" &&
+      grep -lq 'tool_schema' tools/oracle/fuzz/corpus/helper_case/tool_schema-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
       && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
@@ -94,6 +94,7 @@ out_of_scope:
   Argument repair and common tool shape helpers are B216; definition expansion is B217; get_file_ids_from_messages
   is B183.
 pitfalls:
+- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/tool_schema-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as tool_schema in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/tool_schema.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tool_schema.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
   The repository's untyped-JSON exception applies only to the schema/argument passthrough field, never the surrounding

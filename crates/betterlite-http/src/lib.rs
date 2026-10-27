@@ -3,6 +3,7 @@ pub mod error;
 pub mod mcp_sigv4;
 pub mod metrics_server;
 pub mod openai_mock_transport;
+pub mod otlp_client;
 pub mod passthrough;
 pub mod proxy;
 pub mod skill_archive;
