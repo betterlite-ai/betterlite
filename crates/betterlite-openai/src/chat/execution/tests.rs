@@ -221,3 +221,36 @@ fn stream_options_preserve_caller(#[case] input: &str, #[case] usage: Option<boo
         .and_then(Value::as_bool);
     assert_eq!(actual, usage);
 }
+
+#[rstest]
+#[case::success(200)]
+#[case::provider_failure(429)]
+#[tokio::test]
+async fn stream_distinguishes_status(#[case] status: u16) {
+    let (listener, base) = listen().await;
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k}}}}]"
+    );
+    let chat = executor(&entries, 1);
+    let request = ChatRequest::parse(br#"{"model":"g","messages":[],"stream":true}"#).unwrap();
+    let body = r#"{"error":{"type":"requests","param":"p"}}"#;
+    let (sent, result) = tokio::join!(
+        provider(listener, status, body, Duration::ZERO),
+        chat.stream(chat.pick("g").unwrap(), &request)
+    );
+    assert!(sent.contains("accept: text/event-stream"));
+    if status == 200 {
+        let response = result
+            .unwrap()
+            .buffered(super::RESPONSE_LIMIT)
+            .await
+            .unwrap();
+        assert_eq!(response.status, status);
+        assert_eq!(response.body, body.as_bytes());
+    } else {
+        let failure = result.err().unwrap().failure();
+        assert_eq!(failure.status, status);
+        assert_eq!(failure.error_type, "throttling_error");
+        assert_eq!(failure.param.as_deref(), Some("p"));
+    }
+}
