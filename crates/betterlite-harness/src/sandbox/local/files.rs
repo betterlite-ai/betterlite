@@ -1,8 +1,6 @@
 use std::fs::{self, File};
-use std::io::{self, Read as _};
-use std::path::{Path, PathBuf};
-
-use soft_canonicalize::soft_canonicalize;
+use std::io::Read as _;
+use std::path::Path;
 
 use super::LocalSandbox;
 use super::error::SandboxError;
@@ -13,11 +11,6 @@ pub(super) fn path_string(path: &Path) -> Result<String, HarnessError> {
         .to_str()
         .ok_or_else(|| SandboxError::PathEncoding(path.to_path_buf()))?;
     Ok(text.to_owned())
-}
-
-pub(super) fn real_path(path: &Path) -> io::Result<PathBuf> {
-    let resolved = soft_canonicalize(path)?;
-    Ok(resolved)
 }
 
 pub(super) fn read_file(path: &Path, max: usize) -> Result<Vec<u8>, HarnessError> {

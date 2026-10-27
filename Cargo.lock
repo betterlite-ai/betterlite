@@ -546,7 +546,6 @@ dependencies = [
 name = "betterlite-harness"
 version = "0.1.0"
 dependencies = [
- "bstr",
  "futures-core",
  "futures-util",
  "hex",

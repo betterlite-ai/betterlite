@@ -7,9 +7,10 @@ use rustix::process::Signal;
 use tempfile::{Builder, TempDir};
 
 use super::error::SandboxError;
-use super::files::{path_string, real_path};
+use super::files::path_string;
 use super::process::OwnedChild;
 use crate::errors::HarnessError;
+use soft_canonicalize::soft_canonicalize;
 
 #[derive(Default)]
 pub(super) struct State {
@@ -24,7 +25,8 @@ impl State {
             return Err(HarnessError::from(SandboxError::Closed));
         }
         let joined = Path::new(root).join(path);
-        let resolved = real_path(&joined).map_err(|source| HarnessError::Sandbox { source })?;
+        let resolved =
+            soft_canonicalize(&joined).map_err(|source| HarnessError::Sandbox { source })?;
         if !resolved.starts_with(root)
             && !self
                 .tempdirs

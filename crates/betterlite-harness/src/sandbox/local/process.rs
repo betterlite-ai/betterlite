@@ -5,7 +5,6 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bstr::ByteSlice as _;
 use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process, kill_process_group};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -171,8 +170,8 @@ pub(super) async fn collect(
         )?;
         let exit_code = process.wait().await?;
         Ok(CompletedRun {
-            stdout: stdout.to_str_lossy().into_owned(),
-            stderr: stderr.to_str_lossy().into_owned(),
+            stdout: decode_utf8(&stdout),
+            stderr: decode_utf8(&stderr),
             exit_code,
         })
     };
@@ -186,6 +185,17 @@ pub(super) async fn collect(
         process.kill().await?;
     }
     result
+}
+
+fn decode_utf8(bytes: &[u8]) -> String {
+    let mut text = String::new();
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push('\u{fffd}');
+        }
+    }
+    text
 }
 
 async fn read_capped<Reader>(reader: &mut Reader, max: usize) -> Result<Vec<u8>, HarnessError>
