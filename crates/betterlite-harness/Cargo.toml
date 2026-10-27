@@ -17,11 +17,16 @@ sha2.workspace = true
 similar = "3.2.0"
 thiserror.workspace = true
 tokio.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["time"] }
+
+[[test]]
+name = "session_input"
+path = "src/session/session_input.rs"
 
 [lints]
 workspace = true
