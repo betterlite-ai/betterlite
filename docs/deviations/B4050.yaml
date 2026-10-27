@@ -1,0 +1,5 @@
+task: B4050
+deviations:
+  - what: Template optional params fully overwrite request params instead of merging at the top level; the last two arguments of post_compile_prompt_processing flatten and override in one pass.
+    why: LiteLLM does the same; the spec does not require key-by-key merging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L154-L157
