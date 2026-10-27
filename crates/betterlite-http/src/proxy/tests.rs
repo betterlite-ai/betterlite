@@ -7,17 +7,20 @@ use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use reqwest::{ClientBuilder, Method, Request, Url};
 use rstest::rstest;
+use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::time::sleep;
 use tracing::subscriber::set_default;
 
 use crate::error::HttpError;
-use crate::proxy::ProxiedClient;
+use crate::proxy::{JsonPost, ProxiedClient};
 
 // nothing listens on port 1, so a request that skips its proxy fails at once
 const CLOSED: &str = "http://127.0.0.1:1/v1/models";
@@ -94,6 +97,84 @@ async fn http_proxies_proxy_policy_tests_behavior(
         .filter(|leak| written.contains(leak) || debug.contains(leak))
         .collect();
     assert_eq!(leaked, Vec::<&str>::new());
+}
+
+async fn reply_after(listener: TcpListener, delay: Duration) -> String {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n{}") {
+        received.push(stream.read_u8().await.unwrap());
+    }
+    sleep(delay).await;
+    let reply = b"HTTP/1.1 201 Created\r\nx-request-id: r1\r\ncontent-length: 5\r\nconnection: close\r\n\r\nhello";
+    let _written = stream.write_all(reply).await;
+    String::from_utf8(received).unwrap()
+}
+
+#[rstest]
+#[case::body_at_the_limit(5, Duration::ZERO, "201 hello")]
+#[case::body_over_the_limit(4, Duration::ZERO, "the response body is larger than 4 bytes")]
+#[case::slower_than_the_timeout(5, Duration::from_secs(2), "the request timed out")]
+#[tokio::test]
+async fn posts_json_with_a_bearer_key_and_bounded_answer(
+    #[case] body_limit: usize,
+    #[case] delay: Duration,
+    #[case] expected: &str,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let policy = Arc::new(ProxyPolicy::resolve(
+        &ProxyTrust::default(),
+        &BTreeMap::new(),
+    ));
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let key = SecretString::from("sk-test");
+    let post = JsonPost {
+        url: Url::parse(&format!("http://{address}/v1/chat/completions")).unwrap(),
+        bearer: &key,
+        headers: vec![("OpenAI-Organization", "org-1".to_owned())],
+        body: b"{}".to_vec(),
+        timeout: Duration::from_millis(300),
+        body_limit,
+    };
+    let (sent, answered) = tokio::join!(reply_after(listener, delay), client.post_json(post));
+    assert!(sent.contains("POST /v1/chat/completions HTTP/1.1"));
+    assert!(sent.contains("authorization: Bearer sk-test"));
+    assert!(sent.contains("openai-organization: org-1"));
+    assert!(sent.contains("content-type: application/json"));
+    assert!(sent.contains("accept: application/json"));
+    let observed = answered.map_or_else(
+        |error| error.to_string(),
+        |response| {
+            assert_eq!(response.headers.get("x-request-id").unwrap(), "r1");
+            format!(
+                "{} {}",
+                response.status,
+                String::from_utf8(response.body).unwrap()
+            )
+        },
+    );
+    assert_eq!(observed, expected);
+}
+
+#[tokio::test]
+async fn reports_a_refused_connection_as_a_failed_request() {
+    let policy = Arc::new(ProxyPolicy::resolve(
+        &ProxyTrust::default(),
+        &BTreeMap::new(),
+    ));
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let key = SecretString::from("sk-test");
+    let post = JsonPost {
+        url: Url::parse(CLOSED).unwrap(),
+        bearer: &key,
+        headers: Vec::new(),
+        body: Vec::new(),
+        timeout: Duration::from_secs(5),
+        body_limit: 1,
+    };
+    let error = client.post_json(post).await.unwrap_err();
+    assert!(matches!(error, HttpError::Request(_)), "{error:?}");
 }
 
 #[rstest]
