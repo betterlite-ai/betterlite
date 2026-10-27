@@ -11,6 +11,7 @@ use aws_config::{BehaviorVersion, defaults};
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials};
 use aws_sdk_s3::primitives::ByteStream;
+use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
 use aws_smithy_types::date_time::{DateTime, Format};
 use aws_types::region::Region;
 use betterlite_config::sections::s3_response_cache::Settings;
@@ -40,7 +41,10 @@ impl S3Cache {
     }
 
     pub async fn new_async(settings: &Settings) -> Self {
-        let mut loader = defaults(BehaviorVersion::latest());
+        let http_client = aws_smithy_http_client::Builder::new()
+            .tls_provider(Provider::Rustls(CryptoMode::Ring))
+            .build_https();
+        let mut loader = defaults(BehaviorVersion::latest()).http_client(http_client);
         if let Some(region) = &settings.region_name {
             loader = loader.region(RegionProviderChain::first_try(Region::new(region.clone())));
         }
@@ -194,7 +198,9 @@ async fn put_request(client: &Client, bucket: &str, key: &str, body: Vec<u8>, tt
         let expires = DateTime::from_secs(i64::try_from(epoch_seconds).unwrap_or(i64::MAX));
         request = request.expires(expires);
     }
-    drop(request.send().await);
+    if request.send().await.is_err() {
+        tracing::warn!("S3 cache write failed");
+    }
 }
 
 fn decode_body(bytes: &[u8]) -> Option<Value> {

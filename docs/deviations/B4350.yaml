@@ -3,3 +3,6 @@ deviations:
   - what: "betterlite loads S3 cache settings from litellm_settings.cache_params in config.yaml."
     why: "LiteLLM accepts cache configuration from both direct environment variables and constructor parameters; betterlite centralizes all S3 cache settings through configuration to enforce consistent discovery and credential handling."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L24-L57
+  - what: "The S3 SDK uses SigV4 signing without optional SigV4a support or subprocess credential providers."
+    why: "SigV4a pulls in crypto-bigint 0.5.5 affected by RUSTSEC-2026-0387; subprocess credential providers conflict with the gateway no-subprocess rule."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/s3_cache.py#L43-L57
