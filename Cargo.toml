@@ -19,7 +19,7 @@ percent-encoding = "2.3.2"
 phf = { version = "0.13.1", features = ["macros"] }
 regex = "1.13.1"
 rust_decimal = { version = "1.43.0", features = ["serde-with-arbitrary-precision"] }
-rustls = { version = "0.23.46", default-features = false, features = ["aws-lc-rs"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 rustls-native-certs = "0.8.5"
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -27,11 +27,11 @@ serde-saphyr = { version = "2.0.0", features = ["serialize"] }
 serde_ignored = "0.1.14"
 sha2 = "0.11.1"
 subtle = "2.6.1"
-testcontainers = { version = "0.28.0", default-features = false, features = ["watchdog"] }
+testcontainers = { version = "0.28.0", features = ["watchdog"] }
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync"] }
 tokio-postgres = "0.7.18"
-tokio-postgres-rustls-improved = { version = "0.17.1", default-features = false, features = ["aws-lc-rs"] }
+tokio-postgres-rustls-improved = { version = "0.17.1", default-features = false, features = ["ring"] }
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }
