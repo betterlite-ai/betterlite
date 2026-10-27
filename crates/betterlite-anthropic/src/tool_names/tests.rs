@@ -99,19 +99,25 @@ fn tool_choice_rewrite_copies_only_custom_tools() {
                 tool_type: Some(String::from("custom")),
                 name: Some(String::from("bad/name")),
                 description: Some(String::from("keep")),
-                ..ToolRecord::default()
+                additional_fields: BTreeMap::new(),
             },
             ToolRecord {
                 tool_type: Some(String::from("web_search")),
                 name: Some(String::from("host/name")),
-                ..ToolRecord::default()
+                description: None,
+                additional_fields: BTreeMap::new(),
             },
-            ToolRecord::default(),
+            ToolRecord {
+                tool_type: None,
+                name: None,
+                description: None,
+                additional_fields: BTreeMap::new(),
+            },
         ]),
         tool_choice: Some(ToolChoiceRecord {
             choice_type: Some(String::from("tool")),
             name: Some(String::from("bad/name")),
-            ..ToolChoiceRecord::default()
+            additional_fields: BTreeMap::new(),
         }),
     };
     let maps = sanitize_tool_names_in_request(&mut params);
@@ -184,21 +190,26 @@ fn message_records() -> Vec<MessageRecord> {
                         name: Some(String::from("bad/name")),
                         arguments: Some(String::from("{}")),
                     }),
-                    ..ToolCallRecord::default()
+                    name: None,
+                    additional_fields: BTreeMap::new(),
                 },
                 ToolCallRecord {
+                    id: None,
                     name: Some(String::from("bad/name")),
-                    ..ToolCallRecord::default()
+                    function: None,
+                    additional_fields: BTreeMap::new(),
                 },
             ]),
-            ..MessageRecord::default()
+            function_call: None,
+            content: None,
         },
         MessageRecord {
             function_call: Some(FunctionRecord {
                 name: Some(String::from("bad/name")),
                 arguments: Some(String::from("{}")),
             }),
-            ..MessageRecord::default()
+            tool_calls: None,
+            content: None,
         },
     ]
 }
