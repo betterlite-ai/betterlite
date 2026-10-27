@@ -25,9 +25,9 @@ use crate::sandbox_backend::errors::BackendError;
 pub const EXECUTE_TIMEOUT_SECONDS: u64 = 120;
 pub const FS_TIMEOUT_SECONDS: u64 = 60;
 pub const MAX_OUTPUT_BYTES: usize = 100_000;
-// the Rust Sandbox needs caps LiteLLM leaves open: the 50 MiB snapshot file limit for reads
+// LiteLLM reads without a cap; 50 MiB is its snapshot file limit
 const READ_CAP_BYTES: usize = 52_428_800;
-// and 16 MiB of command output, well above what execute keeps
+// LiteLLM runs without a cap; 16 MiB sits far above execute's 100,000-byte limit
 const RUN_CAP_BYTES: usize = 0x0100_0000;
 const EXIT_NOT_FOUND: i32 = 3;
 const EXIT_NOT_DIR: i32 = 4;

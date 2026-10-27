@@ -2,8 +2,8 @@ use betterlite_harness::errors::HarnessError;
 use betterlite_harness::sandbox::Sandbox;
 
 use crate::sandbox_backend::SandboxBackend;
-use crate::sandbox_backend::errors::BackendError;
-use crate::sandbox_backend::protocol::{FileUploadResponse, TransferError};
+use crate::sandbox_backend::errors::{BackendError, TransferError};
+use crate::sandbox_backend::protocol::FileUploadResponse;
 
 pub(crate) async fn upload<S>(
     backend: &SandboxBackend<S>,
@@ -13,9 +13,10 @@ where
     S: Sandbox,
 {
     let outcome = if backend.permissions.writable {
-        backend.write_bytes(path, data).await.map_err(|error| {
-            transfer_error(error, |source| TransferError::Sandbox(source.to_string()))
-        })
+        backend
+            .write_bytes(path, data)
+            .await
+            .map_err(|error| transfer_error(error, TransferError::Sandbox))
     } else {
         Err(TransferError::PermissionDenied)
     };

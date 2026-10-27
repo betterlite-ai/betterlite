@@ -514,6 +514,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-harness",
+ "brace-expansion",
  "futures-util",
  "glob",
  "regex",
@@ -1037,6 +1038,12 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "brace-expansion"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0466e75f55342d0801e7f097cb4b37e6154f54e97e5deea03a63110b98bfa6e"
 
 [[package]]
 name = "bs58"

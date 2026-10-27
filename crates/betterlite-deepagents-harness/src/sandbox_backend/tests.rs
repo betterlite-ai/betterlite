@@ -12,11 +12,10 @@ use tokio::runtime::{Builder, Handle, Runtime};
 use uuid::Uuid;
 
 use crate::sandbox_backend::bridge::SandboxBackendProtocol as _;
-use crate::sandbox_backend::errors::BackendError;
+use crate::sandbox_backend::errors::{BackendError, TransferError};
 use crate::sandbox_backend::protocol::{
-    Edited, Encoding, ExecuteResponse, FileData, FileDownloadResponse, FileInfo,
-    FileUploadResponse, GrepMatch, GrepQuery, Listing, ReadResult, Replacement, Reply,
-    TransferError,
+    Edited, Encoding, ExecuteResponse, FileData, FileInfo, GrepMatch, GrepQuery, Listing,
+    ReadResult, Replacement, Reply,
 };
 use crate::sandbox_backend::{Permissions, SandboxBackend};
 use host::HostSandbox;
@@ -322,13 +321,15 @@ async fn read_only_sessions_refuse_every_change() {
     let upload = backend
         .upload_files(&[("/a.txt".to_owned(), b"x".to_vec())])
         .await;
+    assert_eq!(upload.len(), 1);
     assert_eq!(
-        upload,
-        vec![FileUploadResponse {
-            path: "/a.txt".to_owned(),
-            outcome: Err(TransferError::PermissionDenied),
-        }]
+        upload.first().map(|response| response.path.as_str()),
+        Some("/a.txt")
     );
+    assert!(matches!(
+        upload.first().map(|response| &response.outcome),
+        Some(Err(TransferError::PermissionDenied))
+    ));
     assert_eq!(on_disk(&repo, "README.md"), "hello\n");
     assert!(!Path::new(&repo).join("a.txt").exists());
 }
@@ -550,19 +551,30 @@ async fn upload_and_download_report_each_path() {
         .into_iter()
         .map(|response| response.outcome)
         .collect();
-    assert_eq!(outcomes, vec![Ok(()), Err(TransferError::InvalidPath)]);
+    assert!(matches!(outcomes.first(), Some(Ok(()))));
+    assert!(matches!(
+        outcomes.get(1),
+        Some(Err(TransferError::InvalidPath))
+    ));
     let paths = ["/data/a.bin", "/missing", "/creds_link"].map(str::to_owned);
     let downloaded = backend.download_files(&paths).await;
-    let expected = [
-        ("/data/a.bin", Ok(vec![0_u8, 1])),
-        ("/missing", Err(TransferError::FileNotFound)),
-        ("/creds_link", Err(TransferError::InvalidPath)),
-    ]
-    .map(|(path, content)| FileDownloadResponse {
-        path: path.to_owned(),
-        content,
-    });
-    assert_eq!(downloaded, expected.to_vec());
+    assert_eq!(downloaded.len(), 3);
+    assert_eq!(
+        downloaded.first().map(|response| response.path.as_str()),
+        Some("/data/a.bin")
+    );
+    assert!(matches!(
+        downloaded.first().map(|response| &response.content),
+        Some(Ok(content)) if content == &vec![0_u8, 1]
+    ));
+    assert!(matches!(
+        downloaded.get(1).map(|response| &response.content),
+        Some(Err(TransferError::FileNotFound))
+    ));
+    assert!(matches!(
+        downloaded.get(2).map(|response| &response.content),
+        Some(Err(TransferError::InvalidPath))
+    ));
 }
 
 #[rstest]

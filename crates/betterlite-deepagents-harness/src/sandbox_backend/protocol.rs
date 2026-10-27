@@ -1,4 +1,4 @@
-use thiserror::Error;
+use crate::sandbox_backend::errors::TransferError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Reply<T> {
@@ -94,25 +94,13 @@ pub struct ExecuteResponse {
     pub truncated: bool,
 }
 
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum TransferError {
-    #[error("file_not_found")]
-    FileNotFound,
-    #[error("permission_denied")]
-    PermissionDenied,
-    #[error("invalid_path")]
-    InvalidPath,
-    #[error("{0}")]
-    Sandbox(String),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct FileUploadResponse {
     pub path: String,
     pub outcome: Result<(), TransferError>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct FileDownloadResponse {
     pub path: String,
     pub content: Result<Vec<u8>, TransferError>,

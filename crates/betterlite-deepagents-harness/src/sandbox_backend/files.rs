@@ -5,9 +5,10 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_harness::sandbox::{CompletedRun, Sandbox};
 
 use crate::sandbox_backend::errors::BackendError;
+use crate::sandbox_backend::errors::TransferError;
 use crate::sandbox_backend::protocol::{
     DeleteResult, EditResult, Edited, Encoding, FileData, FileDownloadResponse, FileInfo, LsResult,
-    ReadResult, Replacement, Reply, TransferError,
+    ReadResult, Replacement, Reply,
 };
 use crate::sandbox_backend::read_window::slice_read;
 use crate::sandbox_backend::replace::replace_occurrences;

@@ -18,3 +18,15 @@ pub enum BackendError {
     #[error("SandboxBackend sync methods cannot run on the event loop thread")]
     EventLoopThread,
 }
+
+#[derive(Debug, Error)]
+pub enum TransferError {
+    #[error("file_not_found")]
+    FileNotFound,
+    #[error("permission_denied")]
+    PermissionDenied,
+    #[error("invalid_path")]
+    InvalidPath,
+    #[error("{0}")]
+    Sandbox(#[source] HarnessError),
+}

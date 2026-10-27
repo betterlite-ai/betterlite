@@ -3,7 +3,7 @@ mod tests;
 use glob::{MatchOptions, Pattern, PatternError};
 use thiserror::Error;
 
-// wcmatch's brace expansion limit, the matcher deepagents compiles with
+// Deep Agents rejects patterns that would produce more than 1,000 alternatives.
 const BRACE_LIMIT: usize = 1000;
 
 const MATCH_OPTIONS: MatchOptions = MatchOptions {
@@ -32,12 +32,6 @@ pub struct IncludeGlob {
     anchored: bool,
 }
 
-struct BraceGroup<'pattern> {
-    prefix: &'pattern str,
-    alternatives: Vec<&'pattern str>,
-    suffix: &'pattern str,
-}
-
 impl IncludeGlob {
     pub fn compile(pattern: &str) -> Result<Self, InvalidGlobPattern> {
         if pattern
@@ -49,8 +43,15 @@ impl IncludeGlob {
                 pattern: pattern.to_owned(),
             });
         }
-        let mut expanded = Vec::new();
-        expand_braces(pattern, pattern.trim_start_matches('/'), &mut expanded)?;
+        let expanded = brace_expansion::expand_with_max(
+            pattern.trim_start_matches('/'),
+            BRACE_LIMIT.saturating_add(1),
+        );
+        if expanded.len() > BRACE_LIMIT {
+            return Err(InvalidGlobPattern::TooManyExpansions {
+                pattern: pattern.to_owned(),
+            });
+        }
         let alternatives = expanded
             .iter()
             .map(|alternative| Pattern::new(alternative))
@@ -80,75 +81,4 @@ impl IncludeGlob {
             .iter()
             .any(|alternative| alternative.matches_with(subject, MATCH_OPTIONS))
     }
-}
-
-fn expand_braces(
-    original: &str,
-    pattern: &str,
-    expanded: &mut Vec<String>,
-) -> Result<(), InvalidGlobPattern> {
-    let first_group = unescaped(pattern)
-        .filter(|(_, byte)| *byte == b'{')
-        .find_map(|(open, _)| group_at(pattern, open));
-    let Some(group) = first_group else {
-        if expanded.len() >= BRACE_LIMIT {
-            return Err(InvalidGlobPattern::TooManyExpansions {
-                pattern: original.to_owned(),
-            });
-        }
-        expanded.push(pattern.to_owned());
-        return Ok(());
-    };
-    for alternative in group.alternatives {
-        let joined = format!("{}{alternative}{}", group.prefix, group.suffix);
-        expand_braces(original, &joined, expanded)?;
-    }
-    Ok(())
-}
-
-// the bytes a backslash does not escape, with their positions
-fn unescaped(pattern: &str) -> impl Iterator<Item = (usize, u8)> + '_ {
-    let mut escaped = false;
-    pattern.bytes().enumerate().filter(move |(_, byte)| {
-        let plain = !escaped && *byte != b'\\';
-        escaped = !escaped && *byte == b'\\';
-        plain
-    })
-}
-
-fn group_at(pattern: &str, open: usize) -> Option<BraceGroup<'_>> {
-    let mut depth = 0_usize;
-    let mut cuts = vec![open];
-    for (index, byte) in unescaped(pattern).filter(|(index, _)| *index > open) {
-        match byte {
-            b'{' => depth = depth.saturating_add(1),
-            b'}' if depth == 0 => return split_group(pattern, &cuts, index),
-            b'}' => depth = depth.saturating_sub(1),
-            b',' if depth == 0 => cuts.push(index),
-            _ => {}
-        }
-    }
-    None
-}
-
-fn split_group<'pattern>(
-    pattern: &'pattern str,
-    cuts: &[usize],
-    close: usize,
-) -> Option<BraceGroup<'pattern>> {
-    let open = *cuts.first()?;
-    if cuts.len() < 2 {
-        return None;
-    }
-    let ends = cuts.iter().skip(1).copied().chain([close]);
-    let alternatives = cuts
-        .iter()
-        .zip(ends)
-        .map(|(cut, end)| pattern.get(cut.saturating_add(1)..end))
-        .collect::<Option<Vec<&str>>>()?;
-    Some(BraceGroup {
-        prefix: pattern.get(..open)?,
-        alternatives,
-        suffix: pattern.get(close.saturating_add(1)..)?,
-    })
 }
