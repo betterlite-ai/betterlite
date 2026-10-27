@@ -6,8 +6,6 @@ use betterlite_core::agents::json::AgentJson;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-const DEFAULT_VERSION: &str = "1.0";
-
 #[must_use]
 pub fn normalize_protocol_version(raw_version: &AgentJson) -> Option<ProtocolVersion> {
     let raw_text = raw_version.as_str()?;
@@ -43,11 +41,10 @@ pub fn resolve_served_version(upstream_card: Option<&AgentCard>) -> ProtocolVers
     card.protocol_version
         .as_ref()
         .and_then(Option::as_ref)
-        .map(|wire_value| match wire_value {
-            WireValue::Typed(version) => AgentJson::String(version_string(*version)),
-            WireValue::Passthrough(raw_value) => raw_value.clone(),
+        .and_then(|wire_value| match wire_value {
+            WireValue::Typed(version) => Some(*version),
+            WireValue::Passthrough(raw_value) => normalize_protocol_version(raw_value),
         })
-        .and_then(|version| normalize_protocol_version(&version))
         .unwrap_or(ProtocolVersion::V1_0)
 }
 
@@ -159,13 +156,6 @@ where
 fn truthy_wire(value: WireValue<bool>) -> Option<WireValue<bool>> {
     let json = serde_json::to_value(&value).ok()?;
     is_truthy(&json).then_some(value)
-}
-
-fn version_string(version: ProtocolVersion) -> String {
-    match version {
-        ProtocolVersion::V0_3 => "0.3".to_owned(),
-        ProtocolVersion::V1_0 => DEFAULT_VERSION.to_owned(),
-    }
 }
 
 fn valid_suffix(suffix: &str) -> bool {
