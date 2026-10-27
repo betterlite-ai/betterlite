@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::context::{SessionContext, SessionSettings, TurnOutcome};
 use crate::session::routing::{ProxySettings, resolve_model_route};
-use crate::session::skills::{SkillError, normalize_skills};
+use crate::session::skills::{SkillError, normalize_skill};
 use crate::types::Harness;
 
 #[derive(Clone, Default)]
@@ -41,7 +41,11 @@ pub fn build_config<S>(
     )?;
     settings.model = model;
     settings.gateway = gateway;
-    settings.skills = normalize_skills(&settings.skills, directory)?;
+    settings.skills = settings
+        .skills
+        .iter()
+        .map(|skill| normalize_skill(Path::new(skill), directory))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(SessionConfig {
         harness,
         sandbox,

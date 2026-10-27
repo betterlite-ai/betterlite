@@ -40,10 +40,3 @@ pub fn normalize_skill(skill: &Path, directory: &Path) -> Result<String, SkillEr
         .map(str::to_owned)
         .ok_or(SkillError::PathNotUtf8(normalized))
 }
-
-pub fn normalize_skills(skills: &[String], directory: &Path) -> Result<Vec<String>, SkillError> {
-    let paths = skills.iter().map(Path::new);
-    paths
-        .map(|skill| normalize_skill(skill, directory))
-        .collect()
-}

@@ -9,7 +9,7 @@ use std::time::Duration;
 use betterlite_harness::context::ApprovalHandler;
 use betterlite_harness::errors::HarnessError;
 use betterlite_harness::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions};
-use betterlite_harness::session::output::parse_output;
+use betterlite_harness::session::output::{OutputError, parse_output};
 use betterlite_harness::session::routing::{ProxySettings, RouteError, resolve_model_route};
 use betterlite_harness::session::skills::{SkillError, normalize_skill};
 use betterlite_harness::session::validation::{
@@ -33,9 +33,8 @@ struct Answer {
 #[case::structured(Some("{\"value\": 7}"), "{\"value\": 2}")]
 #[case::empty(Some(""), "{\"value\": 7}")]
 fn parses_the_final_json_object(#[case] structured: Option<&str>, #[case] text: &str) {
-    let (answer, error) = parse_output::<Answer>(structured, text);
-    assert_eq!(answer, Some(Answer { value: 7 }));
-    assert!(error.is_none());
+    let answer = parse_output::<Answer>(structured, text).unwrap();
+    assert_eq!(answer, Answer { value: 7 });
 }
 
 #[rstest]
@@ -48,9 +47,13 @@ fn rejects_invalid_output(
     #[case] text: &str,
     #[case] message: &str,
 ) {
-    let (answer, error) = parse_output::<Answer>(structured, text);
-    assert!(answer.is_none());
-    assert!(error.unwrap().contains(message));
+    let error = parse_output::<Answer>(structured, text).unwrap_err();
+    assert!(error.to_string().contains(message));
+    if message.starts_with("no JSON") {
+        assert!(matches!(error, OutputError::NoJsonObject));
+    } else {
+        assert!(matches!(error, OutputError::Invalid(_)));
+    }
 }
 
 #[test]
