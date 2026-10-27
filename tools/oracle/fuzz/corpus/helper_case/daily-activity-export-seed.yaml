@@ -1,0 +1,12 @@
+kind: helper
+name: daily-activity-export-seed
+call:
+  daily_activity_export:
+    cases:
+      search:
+        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+        function: search
+        search: key
+        limit: 1
+env: {}
+compare: {ignore: []}
