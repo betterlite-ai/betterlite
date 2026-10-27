@@ -1,0 +1,5 @@
+task: B4835
+deviations:
+  - what: Codex turn requests omit the first-turn -C workdir argument and leave cwd unset.
+    why: The existing BaseCLIHarnessConfig method does not expose Sandbox::workdir(), and adding a bound would change an out-of-scope shared contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py
