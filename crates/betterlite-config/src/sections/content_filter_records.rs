@@ -10,10 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentFilterAction {
     #[serde(rename = "BLOCK", alias = "block")]
-    #[default]
     Block,
     #[serde(rename = "MASK", alias = "mask")]
     Mask,
@@ -110,60 +109,51 @@ pub enum ContentFilterDetection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct ContentFilterCategoryConfig {
     pub category: String,
+    #[serde(default = "default_true")]
     pub enabled: bool,
     pub action: ContentFilterAction,
+    #[serde(default)]
     pub severity_threshold: ContentFilterSeverity,
+    #[serde(default)]
     pub category_file: Option<String>,
 }
 
-impl Default for ContentFilterCategoryConfig {
-    fn default() -> Self {
-        let category = String::default();
-        let category_file = Option::<String>::default();
-        Self {
-            category_file,
-            severity_threshold: ContentFilterSeverity::default(),
-            action: ContentFilterAction::default(),
-            enabled: true,
-            category,
-        }
-    }
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct ContentFilterGuardrailConfig {
+    #[serde(default)]
     pub patterns: Option<Vec<ContentFilterPattern>>,
+    #[serde(default)]
     pub blocked_words: Option<Vec<BlockedWord>>,
+    #[serde(default)]
     pub blocked_words_file: Option<String>,
+    #[serde(default)]
     pub categories: Option<Vec<ContentFilterCategoryConfig>>,
+    #[serde(default = "default_severity_threshold")]
     pub severity_threshold: String,
+    #[serde(default = "default_pattern_redaction_format")]
     pub pattern_redaction_format: String,
+    #[serde(default = "default_keyword_redaction_tag")]
     pub keyword_redaction_tag: String,
+    #[serde(default)]
     pub competitor_intent_config: Option<overrides::CompetitorIntentConfig>,
 }
 
-impl Default for ContentFilterGuardrailConfig {
-    fn default() -> Self {
-        let patterns = Option::<Vec<ContentFilterPattern>>::default();
-        let blocked_words = Option::<Vec<BlockedWord>>::default();
-        let blocked_words_file = Option::<String>::default();
-        let categories = Option::<Vec<ContentFilterCategoryConfig>>::default();
-        let competitor_intent_config = Option::<overrides::CompetitorIntentConfig>::default();
-        Self {
-            patterns,
-            blocked_words,
-            blocked_words_file,
-            categories,
-            severity_threshold: String::from("medium"),
-            pattern_redaction_format: String::from("[{pattern_name}_REDACTED]"),
-            keyword_redaction_tag: String::from("[KEYWORD_REDACTED]"),
-            competitor_intent_config,
-        }
-    }
+fn default_severity_threshold() -> String {
+    String::from("medium")
+}
+
+fn default_pattern_redaction_format() -> String {
+    String::from("[{pattern_name}_REDACTED]")
+}
+
+fn default_keyword_redaction_tag() -> String {
+    String::from("[KEYWORD_REDACTED]")
 }
 
 impl ContentFilterGuardrailConfig {
@@ -205,28 +195,22 @@ pub enum BlockCodeAction {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct BlockCodeExecGuardrailConfig {
+    #[serde(default)]
     pub blocked_languages: Option<Vec<String>>,
+    #[serde(default)]
     pub action: BlockCodeAction,
+    #[serde(default = "default_confidence_threshold")]
     pub confidence_threshold: f64,
+    #[serde(default = "default_true")]
     pub detect_execution_intent: bool,
 }
 
-impl Default for BlockCodeExecGuardrailConfig {
-    fn default() -> Self {
-        Self {
-            blocked_languages: None,
-            action: BlockCodeAction::Block,
-            confidence_threshold: Self::CONFIDENCE_THRESHOLD,
-            detect_execution_intent: Self::DETECT_EXECUTION_INTENT,
-        }
-    }
+const fn default_confidence_threshold() -> f64 {
+    0.5
 }
 
 impl BlockCodeExecGuardrailConfig {
-    const CONFIDENCE_THRESHOLD: f64 = 0.5;
-    const DETECT_EXECUTION_INTENT: bool = true;
     pub const UI_FRIENDLY_NAME: &'static str = "Block Code Execution";
 }
 

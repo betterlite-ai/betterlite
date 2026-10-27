@@ -34,6 +34,17 @@ fn config_records_load_litellm_fields() {
     assert!(category.enabled);
     assert_eq!(category.severity_threshold, ContentFilterSeverity::High);
 
+    let minimal: ContentFilterCategoryConfig =
+        serde_json::from_str(r#"{"category":"bias_gender","action":"MASK"}"#).unwrap();
+    assert!(minimal.enabled);
+    assert_eq!(minimal.severity_threshold, ContentFilterSeverity::Medium);
+    assert!(minimal.category_file.is_none());
+    assert!(serde_json::from_str::<ContentFilterCategoryConfig>(r#"{"action":"BLOCK"}"#).is_err());
+    assert!(
+        serde_json::from_str::<ContentFilterCategoryConfig>(r#"{"category":"bias_gender"}"#)
+            .is_err()
+    );
+
     let code: BlockCodeExecGuardrailConfig = serde_json::from_str(r#"{"action":"mask"}"#).unwrap();
     assert_eq!(code.action, BlockCodeAction::Mask);
     assert_eq!(
