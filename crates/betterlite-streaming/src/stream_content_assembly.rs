@@ -1,7 +1,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use std::mem;
 use thiserror::Error;
 
 const DEFAULT_AUDIO_LIMIT: usize = 8 * 1024 * 1024;
@@ -16,42 +17,76 @@ pub enum AssemblyError {
     AudioTooLarge { limit: usize },
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize)]
 pub struct Chunk {
     pub choices: Vec<Choice>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize)]
 pub struct Choice {
     #[serde(default)]
     pub delta: Option<Delta>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Delta {
     #[serde(default)]
-    pub content: Option<Value>,
+    pub content: Option<ChunkText>,
     #[serde(default)]
-    pub reasoning_content: Option<Value>,
+    pub reasoning_content: Option<ChunkText>,
     #[serde(default)]
-    pub thinking_blocks: Option<Value>,
+    pub thinking_blocks: Option<ThinkingBlocks>,
     #[serde(default)]
     pub audio: Option<AudioDelta>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-pub struct AudioDelta {
-    #[serde(default)]
-    pub data: Option<Value>,
-    #[serde(default)]
-    pub transcript: Option<Value>,
-    #[serde(default)]
-    pub expires_at: Option<Value>,
-    #[serde(default)]
-    pub id: Option<Value>,
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ChunkText {
+    Text(String),
+    Other(IgnoredAny),
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ThinkingBlocks {
+    List(Vec<ThinkingInput>),
+    Other(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ThinkingInput {
+    #[serde(default)]
+    pub r#type: Option<String>,
+    #[serde(default)]
+    pub thinking: Option<String>,
+    #[serde(default)]
+    pub signature: Option<String>,
+    #[serde(default)]
+    pub data: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct AudioDelta {
+    #[serde(default)]
+    pub data: Option<ChunkText>,
+    #[serde(default)]
+    pub transcript: Option<ChunkText>,
+    #[serde(default)]
+    pub expires_at: Option<ExpiryValue>,
+    #[serde(default)]
+    pub id: Option<ChunkText>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
+#[serde(untagged)]
+pub enum ExpiryValue {
+    Boolean(bool),
+    Signed(i64),
+    Unsigned(u64),
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum ThinkingBlock {
     #[serde(rename = "thinking")]
@@ -60,10 +95,10 @@ pub enum ThinkingBlock {
     Redacted { data: String },
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct AudioResponse {
     pub data: String,
-    pub expires_at: Value,
+    pub expires_at: ExpiryValue,
     pub transcript: String,
     pub id: Option<String>,
 }
@@ -75,22 +110,27 @@ pub fn get_combined_content(
     let mut combined = String::new();
     for chunk in chunks {
         for choice in &chunk.choices {
-            let Some(delta) = &choice.delta else { continue };
-            let value = match field {
-                ContentField::Content => delta.content.as_ref(),
-                ContentField::Reasoning => delta.reasoning_content.as_ref(),
-            };
-            let Some(value) = value else { continue };
-            let Some(text) = value.as_str() else {
-                if value.is_null() {
-                    continue;
-                }
-                return Err(AssemblyError::NonStringContent);
-            };
-            combined.push_str(text);
+            append_content(&mut combined, choice.delta.as_ref(), field)?;
         }
     }
     Ok(combined)
+}
+
+fn append_content(
+    combined: &mut String,
+    delta: Option<&Delta>,
+    field: ContentField,
+) -> Result<(), AssemblyError> {
+    let value = delta.and_then(|chunk_delta| match field {
+        ContentField::Content => chunk_delta.content.as_ref(),
+        ContentField::Reasoning => chunk_delta.reasoning_content.as_ref(),
+    });
+    match value {
+        Some(ChunkText::Text(text)) => combined.push_str(text),
+        Some(ChunkText::Other(_)) => return Err(AssemblyError::NonStringContent),
+        None => {}
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,73 +139,66 @@ pub enum ContentField {
     Reasoning,
 }
 
+#[must_use]
 pub fn get_combined_thinking_content(chunks: &[Chunk]) -> Option<Vec<ThinkingBlock>> {
-    let mut blocks = Vec::new();
-    let mut text = String::new();
-    let mut signature: Option<String> = None;
+    let mut state = ThinkingState::default();
     for chunk in chunks {
         for choice in &chunk.choices {
-            let Some(Some(Value::Array(thinking_blocks))) = choice
+            let Some(Some(ThinkingBlocks::List(blocks))) = choice
                 .delta
                 .as_ref()
                 .map(|delta| delta.thinking_blocks.as_ref())
             else {
                 continue;
             };
-            for block in thinking_blocks {
-                let Value::Object(fields) = block else {
-                    continue;
-                };
-                if fields.get("type").and_then(Value::as_str) == Some("redacted_thinking") {
-                    flush_thinking(&mut blocks, &mut text, &mut signature);
-                    if let Some(data) = fields
-                        .get("data")
-                        .and_then(Value::as_str)
-                        .filter(|data| !data.is_empty())
-                    {
-                        blocks.push(ThinkingBlock::Redacted {
-                            data: data.to_owned(),
-                        });
-                    }
-                    continue;
-                }
-                if let Some(value) = fields
-                    .get("thinking")
-                    .and_then(Value::as_str)
-                    .filter(|value| !value.is_empty())
-                {
-                    text.push_str(value);
-                }
-                if let Some(value) = fields
-                    .get("signature")
-                    .and_then(Value::as_str)
-                    .filter(|value| !value.is_empty())
-                {
-                    signature = Some(value.to_owned());
-                    flush_thinking(&mut blocks, &mut text, &mut signature);
-                }
+            for block in blocks {
+                state.consume(block);
             }
         }
     }
-    if blocks.is_empty() {
-        None
-    } else {
-        Some(blocks)
-    }
+    state.finish()
 }
 
-fn flush_thinking(
-    blocks: &mut Vec<ThinkingBlock>,
-    text: &mut String,
-    signature: &mut Option<String>,
-) {
-    if let Some(signature) = signature.take() {
-        blocks.push(ThinkingBlock::Thinking {
-            thinking: std::mem::take(text),
-            signature,
-        });
-    } else {
-        text.clear();
+#[derive(Default)]
+struct ThinkingState {
+    blocks: Vec<ThinkingBlock>,
+    text: String,
+    signature: Option<String>,
+}
+
+impl ThinkingState {
+    fn consume(&mut self, block: &ThinkingInput) {
+        if block.r#type.as_deref() == Some("redacted_thinking") {
+            self.flush();
+            if let Some(data) = block.data.as_deref().filter(|data| !data.is_empty()) {
+                self.blocks.push(ThinkingBlock::Redacted {
+                    data: data.to_owned(),
+                });
+            }
+            return;
+        }
+        if let Some(thinking) = block.thinking.as_deref().filter(|text| !text.is_empty()) {
+            self.text.push_str(thinking);
+        }
+        if let Some(signature) = block.signature.as_deref().filter(|value| !value.is_empty()) {
+            self.signature = Some(signature.to_owned());
+            self.flush();
+        }
+    }
+
+    fn flush(&mut self) {
+        if let Some(signature_value) = self.signature.take() {
+            self.blocks.push(ThinkingBlock::Thinking {
+                thinking: mem::take(&mut self.text),
+                signature: signature_value,
+            });
+        } else {
+            self.text.clear();
+        }
+    }
+
+    fn finish(self) -> Option<Vec<ThinkingBlock>> {
+        (!self.blocks.is_empty()).then_some(self.blocks)
     }
 }
 
@@ -173,44 +206,66 @@ pub fn get_combined_audio_content(
     chunks: &[Chunk],
     now: i64,
 ) -> Result<AudioResponse, AssemblyError> {
-    let mut bytes = Vec::new();
-    let mut transcript = String::new();
-    let mut expires_at = None;
-    let mut id = None;
+    let mut state = AudioState::default();
     for chunk in chunks {
         for choice in &chunk.choices {
-            let Some(audio) = choice.delta.as_ref().and_then(|delta| delta.audio.as_ref()) else {
-                continue;
-            };
-            if let Some(Value::String(data)) = &audio.data {
-                let fragment = decode_stream_audio_fragment(
-                    data,
-                    DEFAULT_AUDIO_LIMIT.saturating_sub(bytes.len()),
-                )?;
-                bytes.extend(fragment);
-            }
-            if let Some(Value::String(value)) = &audio.transcript {
-                transcript.push_str(value);
-            }
-            if let Some(value) = &audio.expires_at {
-                if !value.is_null() && (value.is_i64() || value.is_u64() || value.is_boolean()) {
-                    expires_at = Some(value.clone());
-                }
-            }
-            if let Some(Value::String(value)) = &audio.id {
-                id = Some(value.clone());
-            }
+            state.consume(choice.delta.as_ref())?;
         }
     }
-    let expires_at = expires_at
-        .filter(|value| !value.as_bool().unwrap_or(false) && value != &Value::from(0))
-        .unwrap_or_else(|| Value::from(now.saturating_add(3600)));
-    Ok(AudioResponse {
-        data: STANDARD.encode(bytes),
-        expires_at,
-        transcript,
-        id,
-    })
+    Ok(state.finish(now))
+}
+
+#[derive(Default)]
+struct AudioState {
+    bytes: Vec<u8>,
+    transcript: String,
+    expires_at: Option<ExpiryValue>,
+    id: Option<String>,
+}
+
+impl AudioState {
+    fn consume(&mut self, delta: Option<&Delta>) -> Result<(), AssemblyError> {
+        let Some(audio) = delta.and_then(|chunk_delta| chunk_delta.audio.as_ref()) else {
+            return Ok(());
+        };
+        if let Some(ChunkText::Text(data)) = &audio.data {
+            let remaining = DEFAULT_AUDIO_LIMIT.saturating_sub(self.bytes.len());
+            self.bytes
+                .extend(decode_stream_audio_fragment(data, remaining)?);
+        }
+        if let Some(ChunkText::Text(value)) = &audio.transcript {
+            self.transcript.push_str(value);
+        }
+        if let Some(value) = &audio.expires_at {
+            self.expires_at = Some(value.clone());
+        }
+        if let Some(ChunkText::Text(value)) = &audio.id {
+            self.id = Some(value.clone());
+        }
+        Ok(())
+    }
+
+    fn finish(self, now: i64) -> AudioResponse {
+        let expires_at = self
+            .expires_at
+            .filter(|value| !value.is_falsey())
+            .unwrap_or_else(|| ExpiryValue::Signed(now.saturating_add(3600)));
+        AudioResponse {
+            data: STANDARD.encode(self.bytes),
+            expires_at,
+            transcript: self.transcript,
+            id: self.id,
+        }
+    }
+}
+
+impl ExpiryValue {
+    const fn is_falsey(&self) -> bool {
+        matches!(
+            self,
+            Self::Boolean(false) | Self::Signed(0) | Self::Unsigned(0)
+        )
+    }
 }
 
 pub fn decode_stream_audio_fragment(
