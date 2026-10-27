@@ -5,7 +5,7 @@ use crate::daily_activity_sql::filters::build_where_clause;
 use crate::daily_activity_sql::metrics::KEY_SPEND_SELECT;
 use crate::daily_activity_sql::{DailyActivitySqlError, PTU_SENTINEL_API_KEY};
 use chrono::{DateTime, Utc};
-mod export;
+pub mod export;
 mod grouping;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -37,8 +37,33 @@ pub fn build_export_sql<Clock>(
 where
     Clock: Fn() -> DateTime<Utc>,
 {
-    let query = export::build_export_sql(scope, export_type, after, batch_size, clock)?;
-    Ok(query)
+    bounded_limit(batch_size)?;
+    let SqlQuery {
+        sql: where_sql,
+        mut params,
+    } = build_where_clause(scope, 1, clock)?;
+    let grouping = grouping::export_grouping(export_type, scope.as_ref().table);
+    let indexes = export::export_bind_indexes(params.len(), export_type, after.is_some())?;
+    let plan = export::ExportPlan {
+        scope,
+        export_type,
+        grouping: &grouping,
+        where_sql: &where_sql,
+        indexes,
+    };
+    let sql = export::render_export_sql(&plan);
+    if plan.indexes.sentinel.is_some() {
+        params.push(SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()));
+    }
+    if let Some(cursor_value) = after {
+        params.extend([
+            SqlParameter::Text(cursor_value.date.clone()),
+            SqlParameter::Text(cursor_value.entity_id.clone()),
+            SqlParameter::Text(cursor_value.group_key.clone()),
+        ]);
+    }
+    params.push(SqlParameter::Integer(batch_size));
+    Ok(SqlQuery { sql, params })
 }
 
 pub fn build_key_search_sql<Clock>(
@@ -54,53 +79,43 @@ where
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
-    let predicate = search_predicate();
-    let query = ranked_query(scope, limit, clock, predicate, format!("%{escaped}%"))?;
-    Ok(query)
+    let wildcard = format!("%{escaped}%");
+    ranked_query(
+        scope,
+        limit,
+        clock,
+        move |[search_index, sentinel_index, _]: [usize; 3]| {
+            format!(
+                "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
+            )
+            .replace("\\\\", "\\")
+        },
+        wildcard,
+    )
 }
 
-fn search_predicate() -> Box<dyn FnOnce([usize; 3]) -> String> {
-    let predicate = move |[search_index, sentinel_index, _]: [usize; 3]| {
-        let predicate = format!(
-            "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
-        );
-        predicate.replace("\\\\", "\\")
-    };
-    Box::new(predicate)
-}
-
-#[rustfmt::skip]
-pub fn build_model_top_keys_sql<Clock>(scope: &DailyActivityScope, model_group: &str, by_model_group: bool, limit: i64, clock: &Clock) -> Result<SqlQuery, DailyActivityExportError>
-where
-    Clock: Fn() -> DateTime<Utc>,
-{
-    let model_value = model_group.to_owned();
-    let request = (model_value, by_model_group);
-    let query = build_model_ranked(scope, limit, clock, request)?;
-    Ok(query)
-}
-
-fn build_model_ranked<Clock>(
+pub fn build_model_top_keys_sql<Clock>(
     scope: &DailyActivityScope,
+    model_group: &str,
+    by_model_group: bool,
     limit: i64,
     clock: &Clock,
-    request: (String, bool),
 ) -> Result<SqlQuery, DailyActivityExportError>
 where
     Clock: Fn() -> DateTime<Utc>,
 {
-    let (model_value, by_model_group) = request;
+    let model_expression = if by_model_group {
+        "COALESCE(NULLIF(model_group, ''), model)"
+    } else {
+        "model"
+    };
+    let model_value = model_group.to_owned();
     ranked_query(
         scope,
         limit,
         clock,
         move |[model_index, sentinel_index, _]: [usize; 3]| {
-            let model_sql = if by_model_group {
-                format!("COALESCE(NULLIF(model_group, ''), model) = ${model_index}")
-            } else {
-                format!("model = ${model_index}")
-            };
-            format!("AND {model_sql} AND api_key <> ${sentinel_index}")
+            format!("AND {model_expression} = ${model_index} AND api_key <> ${sentinel_index}")
         },
         model_value,
     )

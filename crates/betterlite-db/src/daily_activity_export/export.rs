@@ -1,66 +1,22 @@
-use super::grouping::{Grouping, cursor_clause as export_cursor_clause, export_grouping};
-use super::{DailyActivityExportError, bounded_limit};
-use crate::daily_activity_contracts::{
-    DailyActivityScope, ExportCursor, ExportType, SqlParameter, SqlQuery,
-};
-use crate::daily_activity_sql::PTU_SENTINEL_API_KEY;
-use crate::daily_activity_sql::filters::build_where_clause;
+use super::DailyActivityExportError;
+use super::grouping::{Grouping, cursor_clause as export_cursor_clause};
+use crate::daily_activity_contracts::{DailyActivityScope, ExportType};
 use crate::daily_activity_sql::metrics::ptu_flat_cost_select;
-use chrono::{DateTime, Utc};
 
-pub(super) fn build_export_sql<Clock>(
-    scope: &DailyActivityScope,
-    export_type: ExportType,
-    after: Option<&ExportCursor>,
-    batch_size: i64,
-    clock: &Clock,
-) -> Result<SqlQuery, DailyActivityExportError>
-where
-    Clock: Fn() -> DateTime<Utc>,
-{
-    bounded_limit(batch_size)?;
-    let SqlQuery {
-        sql: where_sql,
-        mut params,
-    } = build_where_clause(scope, 1, clock)?;
-    let grouping = export_grouping(export_type, scope.as_ref().table);
-    let indexes = export_bind_indexes(params.len(), export_type, after.is_some())?;
-    let plan = ExportPlan {
-        scope,
-        export_type,
-        grouping: &grouping,
-        where_sql: &where_sql,
-        indexes,
-    };
-    let sql = render_export_sql(&plan);
-    if plan.indexes.sentinel.is_some() {
-        params.push(SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()));
-    }
-    if let Some(cursor_value) = after {
-        params.extend([
-            SqlParameter::Text(cursor_value.date.clone()),
-            SqlParameter::Text(cursor_value.entity_id.clone()),
-            SqlParameter::Text(cursor_value.group_key.clone()),
-        ]);
-    }
-    params.push(SqlParameter::Integer(batch_size));
-    Ok(SqlQuery { sql, params })
+pub(super) struct ExportPlan<'scope> {
+    pub(super) scope: &'scope DailyActivityScope,
+    pub(super) export_type: ExportType,
+    pub(super) grouping: &'scope Grouping,
+    pub(super) where_sql: &'scope str,
+    pub(super) indexes: ExportIndexes,
 }
-
-struct ExportPlan<'scope> {
-    scope: &'scope DailyActivityScope,
-    export_type: ExportType,
-    grouping: &'scope Grouping,
-    where_sql: &'scope str,
-    indexes: ExportIndexes,
-}
-struct ExportIndexes {
-    sentinel: Option<usize>,
+pub(super) struct ExportIndexes {
+    pub(super) sentinel: Option<usize>,
     cursor: Option<[usize; 3]>,
     limit: usize,
 }
 
-fn export_bind_indexes(
+pub(super) fn export_bind_indexes(
     parameter_count: usize,
     export_type: ExportType,
     has_cursor: bool,
@@ -96,7 +52,7 @@ fn export_bind_indexes(
     })
 }
 
-fn render_export_sql(plan: &ExportPlan<'_>) -> String {
+pub(super) fn render_export_sql(plan: &ExportPlan<'_>) -> String {
     let scope = plan.scope;
     let grouping = plan.grouping;
     let sentinel_sql = plan
