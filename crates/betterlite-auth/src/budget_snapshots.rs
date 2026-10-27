@@ -22,6 +22,8 @@ pub enum BudgetSnapshotError {
 }
 
 pub trait BudgetSnapshot: Serialize + for<'de> Deserialize<'de> + Sized {
+    const ALIASES: &'static [(&'static str, &'static str)];
+
     fn metadata_entries(&self) -> Result<BTreeMap<String, Box<RawValue>>, BudgetSnapshotError> {
         let bytes =
             serde_json::to_vec(self).map_err(|source| BudgetSnapshotError::Serialize { source })?;
@@ -30,14 +32,10 @@ pub trait BudgetSnapshot: Serialize + for<'de> Deserialize<'de> + Sized {
 
     #[must_use]
     fn from_metadata(metadata: &BTreeMap<String, Box<RawValue>>) -> Option<Self> {
-        let normalized = Self::normalize_aliases(metadata);
+        let normalized = normalized(metadata, Self::ALIASES);
         let bytes = serde_json::to_vec(&normalized).ok()?;
         serde_json::from_slice(&bytes).ok()
     }
-
-    fn normalize_aliases(
-        metadata: &BTreeMap<String, Box<RawValue>>,
-    ) -> BTreeMap<String, Box<RawValue>>;
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -76,14 +74,8 @@ pub struct KeyBudgetSnapshot {
 }
 
 impl BudgetSnapshot for KeyBudgetSnapshot {
-    fn normalize_aliases(
-        metadata: &BTreeMap<String, Box<RawValue>>,
-    ) -> BTreeMap<String, Box<RawValue>> {
-        normalized(
-            metadata,
-            &[("budget_reset_at", "user_api_key_budget_reset_at")],
-        )
-    }
+    const ALIASES: &'static [(&'static str, &'static str)] =
+        &[("budget_reset_at", "user_api_key_budget_reset_at")];
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -103,17 +95,10 @@ pub struct TeamBudgetSnapshot {
 }
 
 impl BudgetSnapshot for TeamBudgetSnapshot {
-    fn normalize_aliases(
-        metadata: &BTreeMap<String, Box<RawValue>>,
-    ) -> BTreeMap<String, Box<RawValue>> {
-        normalized(
-            metadata,
-            &[
-                ("budget_reset_at", "user_api_key_team_budget_reset_at"),
-                ("max_budget", "user_api_key_team_table_max_budget"),
-            ],
-        )
-    }
+    const ALIASES: &'static [(&'static str, &'static str)] = &[
+        ("budget_reset_at", "user_api_key_team_budget_reset_at"),
+        ("max_budget", "user_api_key_team_table_max_budget"),
+    ];
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -139,18 +124,11 @@ pub struct UserBudgetSnapshot {
 }
 
 impl BudgetSnapshot for UserBudgetSnapshot {
-    fn normalize_aliases(
-        metadata: &BTreeMap<String, Box<RawValue>>,
-    ) -> BTreeMap<String, Box<RawValue>> {
-        normalized(
-            metadata,
-            &[
-                ("budget_reset_at", "user_api_key_user_budget_reset_at"),
-                ("max_budget", "user_api_key_user_table_max_budget"),
-                ("user_alias", "user_api_key_user_alias"),
-            ],
-        )
-    }
+    const ALIASES: &'static [(&'static str, &'static str)] = &[
+        ("budget_reset_at", "user_api_key_user_budget_reset_at"),
+        ("max_budget", "user_api_key_user_table_max_budget"),
+        ("user_alias", "user_api_key_user_alias"),
+    ];
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -170,15 +148,8 @@ pub struct OrgBudgetSnapshot {
 }
 
 impl BudgetSnapshot for OrgBudgetSnapshot {
-    fn normalize_aliases(
-        metadata: &BTreeMap<String, Box<RawValue>>,
-    ) -> BTreeMap<String, Box<RawValue>> {
-        normalized(
-            metadata,
-            &[
-                ("spend", "user_api_key_org_spend"),
-                ("max_budget", "user_api_key_org_max_budget"),
-            ],
-        )
-    }
+    const ALIASES: &'static [(&'static str, &'static str)] = &[
+        ("spend", "user_api_key_org_spend"),
+        ("max_budget", "user_api_key_org_max_budget"),
+    ];
 }
