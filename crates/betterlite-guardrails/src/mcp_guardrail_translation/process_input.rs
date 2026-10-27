@@ -1,16 +1,13 @@
-use std::collections::BTreeMap;
-
-use super::json_value::McpValue;
-
 use super::error::{ContentBlocked, NestedPayload, TranslationError};
 use super::guardrail::{ApplyGuardrail, FunctionDefinition, GuardrailInputs, ToolDefinition};
 use super::input_writeback::write_back;
+use super::json_value::McpValue;
 use super::nesting_depth::{Leaf, PathPart, scan_json};
 use super::tool_request::McpToolRequest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
+use std::collections::BTreeMap;
 mod tests;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputScan {
     pub inputs: GuardrailInputs,
@@ -19,7 +16,6 @@ pub struct InputScan {
     pub schema_leaves: Vec<Leaf>,
     pub argument_leaves: Vec<Leaf>,
 }
-
 pub async fn process_input_messages<Guardrail>(
     request: &mut McpToolRequest,
     guardrail: &Guardrail,
@@ -44,7 +40,6 @@ where
     write_back(&scan, request, returned)?;
     Ok(())
 }
-
 impl InputScan {
     pub fn of(request: &McpToolRequest) -> Result<Option<Self>, ContentBlocked> {
         let Some(name) = request.tool_name() else {

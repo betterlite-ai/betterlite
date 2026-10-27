@@ -8,7 +8,6 @@ pub enum McpCallType {
     CallMcpTool,
     ListMcpTools,
 }
-
 // both call types run process_input::process_input_messages and process_output::process_output_response
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct McpGuardrailTranslationHandler;

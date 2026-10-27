@@ -7,15 +7,12 @@ use super::text_count_mismatch::masked_texts;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::headers::LoggingObjectContext;
 use crate::mcp_guardrail_translation::tool_request::McpToolRequest;
-
 mod tests;
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OutputScan {
     pub text_blocks: Vec<(usize, String)>,
     pub structured: JsonScan,
 }
-
 pub async fn process_output_response<Guardrail>(
     result: &mut CallToolResult,
     guardrail: &Guardrail,
@@ -51,7 +48,6 @@ where
     mask_result(&scan, result, masked)?;
     Ok(())
 }
-
 impl OutputScan {
     pub fn of(result: &CallToolResult) -> Result<Self, ContentBlocked> {
         let mut text_blocks = Vec::new();
@@ -69,7 +65,6 @@ impl OutputScan {
             structured,
         })
     }
-
     #[must_use]
     pub fn texts(&self) -> Vec<String> {
         let mut texts: Vec<String> = self

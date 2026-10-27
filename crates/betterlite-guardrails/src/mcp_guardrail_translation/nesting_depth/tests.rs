@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use crate::mcp_guardrail_translation::json_value::McpValue;
 use rstest::rstest;
 
@@ -16,7 +15,6 @@ use crate::mcp_guardrail_translation::tests::{
 fn nested(depth: usize, leaf: &str) -> String {
     format!("{}{leaf}{}", "[".repeat(depth), "]".repeat(depth))
 }
-
 fn value(json: &str) -> McpValue {
     serde_json::from_str(json).unwrap()
 }

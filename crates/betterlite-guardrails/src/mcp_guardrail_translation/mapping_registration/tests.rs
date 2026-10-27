@@ -1,11 +1,8 @@
 #![cfg(test)]
-
-use rstest::rstest;
-
 use crate::mcp_guardrail_translation::mapping_registration::{
     GUARDRAIL_TRANSLATION_MAPPINGS, McpCallType, McpGuardrailTranslationHandler,
 };
-
+use rstest::rstest;
 #[rstest]
 #[case::call_tool(r#""call_mcp_tool""#, McpCallType::CallMcpTool)]
 #[case::list_tools(r#""list_mcp_tools""#, McpCallType::ListMcpTools)]
@@ -23,7 +20,6 @@ fn both_mcp_call_types_map_to_the_mcp_handler(#[case] wire: &str, #[case] call_t
         vec![McpGuardrailTranslationHandler]
     );
 }
-
 #[test]
 fn other_call_types_are_not_mcp_call_types() {
     let unknown = serde_json::from_str::<McpCallType>(r#""acompletion""#).unwrap_err();

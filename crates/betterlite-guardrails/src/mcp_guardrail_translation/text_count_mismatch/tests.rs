@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use rstest::rstest;
 
 use crate::mcp_guardrail_translation::error::{ContentBlocked, ScanTarget, TranslationError};
@@ -24,7 +23,6 @@ fn a_wrong_count_fails_closed(#[case] returned: &[&str]) {
         })
     );
 }
-
 #[test]
 fn the_right_count_and_no_texts_pass() {
     assert_eq!(
@@ -33,7 +31,6 @@ fn the_right_count_and_no_texts_pass() {
     );
     assert_eq!(masked_texts(None, 2, ScanTarget::ToolResult), Ok(None));
 }
-
 #[tokio::test]
 async fn a_short_reply_leaves_the_tool_call_untouched() {
     let original = request(r#"{"mcp_tool_name":"t","mcp_arguments":{"a":"one","b":"two"}}"#);
@@ -50,7 +47,6 @@ async fn a_short_reply_leaves_the_tool_call_untouched() {
     ));
     assert_eq!(call, original);
 }
-
 #[tokio::test]
 async fn a_long_reply_leaves_the_tool_result_untouched() {
     let original = tool_result(r#"{"content":[{"type":"text","text":"one"}]}"#);

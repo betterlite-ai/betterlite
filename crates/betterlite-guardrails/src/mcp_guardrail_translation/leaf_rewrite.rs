@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use super::json_value::McpValue;
-
 use super::nesting_depth::{Leaf, LeafPath, PathPart};
 
 pub fn leaf_replacements<Masked>(leaves: &[Leaf], masked: Masked) -> BTreeMap<LeafPath, String>
@@ -16,7 +15,6 @@ where
     }
     replacements
 }
-
 pub fn rewrite_leaves(value: &mut McpValue, replacements: &BTreeMap<LeafPath, String>) {
     for (path, replacement) in replacements {
         if let Some(McpValue::Text(text)) = value_at(value, path) {

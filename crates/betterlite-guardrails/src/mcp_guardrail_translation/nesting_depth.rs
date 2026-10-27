@@ -1,8 +1,6 @@
-use super::json_value::McpValue;
-
 use super::error::{ContentBlocked, NestedPayload};
+use super::json_value::McpValue;
 mod tests;
-
 pub const MAX_SCAN_DEPTH: usize = 100;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PathPart {
@@ -11,7 +9,6 @@ pub enum PathPart {
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LeafPath(pub Vec<PathPart>);
-
 impl LeafPath {
     #[must_use]
     pub fn dotted(&self) -> String {
@@ -25,7 +22,6 @@ impl LeafPath {
         parts.join(".")
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Leaf {
     pub path: LeafPath,

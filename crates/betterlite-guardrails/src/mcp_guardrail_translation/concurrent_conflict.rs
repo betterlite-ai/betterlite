@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
-
 use super::nesting_depth::{Leaf, LeafPath};
+use std::collections::BTreeMap;
 
 mod tests;
 

@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
-
 use super::json_value::McpValue;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallToolResult {

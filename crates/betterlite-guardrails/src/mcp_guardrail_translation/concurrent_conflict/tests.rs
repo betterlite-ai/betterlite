@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use crate::mcp_guardrail_translation::error::ContentBlocked;
 use crate::mcp_guardrail_translation::input_writeback::write_back;
 use crate::mcp_guardrail_translation::nesting_depth::{LeafPath, PathPart};
@@ -16,7 +15,6 @@ fn path(keys: &[&str]) -> LeafPath {
             .collect(),
     )
 }
-
 #[test]
 fn two_different_rewrites_of_one_leaf_are_rejected() {
     let mut call = request(SNAPSHOT);
@@ -44,7 +42,6 @@ fn two_different_rewrites_of_one_leaf_are_rejected() {
         r#"{"body":"hi","to":"[EMAIL]"}"#
     );
 }
-
 #[test]
 fn the_same_rewrite_twice_is_safe() {
     let mut call = request(SNAPSHOT);
@@ -57,7 +54,6 @@ fn the_same_rewrite_twice_is_safe() {
         r#"{"body":"hi","to":"[EMAIL]"}"#
     );
 }
-
 #[test]
 fn rewrites_of_different_leaves_merge() {
     let mut call = request(SNAPSHOT);

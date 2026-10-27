@@ -1,11 +1,8 @@
+use super::json_value::McpValue;
+use super::tool_request::McpToolRequest;
 use std::num::FpCategory;
 
-use super::json_value::McpValue;
-
-use super::tool_request::McpToolRequest;
-
 mod tests;
-
 // LiteLLM reads `mcp_tool_name or name`, so an empty value counts as absent
 impl McpToolRequest {
     #[must_use]

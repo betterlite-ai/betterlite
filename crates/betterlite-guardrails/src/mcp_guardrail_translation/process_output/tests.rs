@@ -1,11 +1,10 @@
 #![cfg(test)]
 
-use rstest::rstest;
-
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::mcp_guardrail_translation::error::{ContentBlocked, TranslationError};
 use crate::mcp_guardrail_translation::process_output::process_output_response;
 use crate::mcp_guardrail_translation::tests::{Reply, ScriptedGuardrail, texts, tool_result};
+use rstest::rstest;
 
 #[tokio::test]
 async fn text_blocks_structured_leaves_and_labels_go_out_in_one_call() {
@@ -70,7 +69,6 @@ async fn a_guardrail_failure_on_the_result_reaches_the_caller() {
     let outcome = process_output_response(&mut result, &guardrail, None, None).await;
     assert!(matches!(outcome, Err(TranslationError::Guardrail(_))));
 }
-
 #[tokio::test]
 async fn private_number_shaped_structured_strings_are_scanned_and_masked() {
     let mut result = tool_result(

@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use rstest::rstest;
 
 use crate::mcp_guardrail_translation::process_input::process_input_messages;
@@ -19,7 +18,6 @@ async fn a_missing_tool_name_leaves_the_request_unchanged(#[case] json: &str) {
     assert!(guardrail.calls().is_empty());
     assert_eq!(call, original);
 }
-
 #[rstest]
 #[case::mcp_fields(
     r#"{"mcp_tool_name":"a","mcp_tool_description":"d","mcp_arguments":{"q":"v"}}"#,
@@ -38,7 +36,6 @@ fn empty_mcp_fields_fall_back_to_the_plain_ones(
     assert_eq!(call.tool_description(), Some(description));
     assert_eq!(to_json(&call.tool_arguments()), r#"{"q":"v"}"#);
 }
-
 #[rstest]
 #[case::no_arguments(r#"{"mcp_tool_name":"t","description":"Tool"}"#)]
 #[case::null_arguments(r#"{"mcp_tool_name":"t","description":"Tool","mcp_arguments":null}"#)]

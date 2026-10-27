@@ -1,16 +1,14 @@
 use std::vec::IntoIter;
 
-use super::json_value::McpValue;
-
 use super::concurrent_conflict::conflicting_paths;
 use super::error::{ContentBlocked, ScanTarget};
+use super::json_value::McpValue;
 use super::leaf_rewrite::{leaf_replacements, rewrite_leaves};
 use super::process_input::{InputScan, argument_leaves};
 use super::text_count_mismatch::masked_texts;
 use super::tool_request::McpToolRequest;
 
 mod tests;
-
 pub fn write_back(
     scan: &InputScan,
     request: &mut McpToolRequest,
@@ -41,7 +39,6 @@ pub fn write_back(
     request.modified_arguments = Some(arguments);
     Ok(())
 }
-
 fn write_tool_definition(
     scan: &InputScan,
     request: &mut McpToolRequest,

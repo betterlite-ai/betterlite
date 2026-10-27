@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use super::call_tool_result::CallToolResult;
 use super::guardrail::{ApplyGuardrail, GuardrailInputs};
 use super::tool_request::McpToolRequest;
@@ -11,14 +10,12 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[error("the scripted guardrail failed")]
 pub(super) struct ScriptedFailure;
-
 pub(super) enum Reply {
     Mask(&'static str),
     Nothing,
     Texts(Vec<String>),
     Fail,
 }
-
 pub(super) struct ScriptedGuardrail {
     pub(super) reply: Reply,
     pub(super) calls: Mutex<Vec<(GuardrailInputs, GuardrailInputType)>>,

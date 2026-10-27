@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::mcp_guardrail_translation::error::TranslationError;
 use crate::mcp_guardrail_translation::process_input::process_input_messages;

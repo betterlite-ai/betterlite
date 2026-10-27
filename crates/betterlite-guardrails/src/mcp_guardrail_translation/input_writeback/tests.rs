@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use crate::mcp_guardrail_translation::process_input::process_input_messages;
 use crate::mcp_guardrail_translation::tests::{Reply, ScriptedGuardrail, request, to_json};
 
@@ -16,7 +15,6 @@ async fn masked_argument_leaves_land_in_place_and_keep_the_structure() {
     assert_eq!(to_json(&call.mcp_arguments), masked);
     assert_eq!(to_json(&call.modified_arguments), masked);
 }
-
 #[tokio::test]
 async fn a_guardrail_that_returns_no_texts_leaves_the_request_as_it_was() {
     let original = request(r#"{"mcp_tool_name":"send","mcp_arguments":{"to":"secret"}}"#);
@@ -27,7 +25,6 @@ async fn a_guardrail_that_returns_no_texts_leaves_the_request_as_it_was() {
         .unwrap();
     assert_eq!(call, original);
 }
-
 #[tokio::test]
 async fn description_and_schema_are_written_back_on_their_own() {
     let mut call = request(
@@ -51,7 +48,6 @@ async fn description_and_schema_are_written_back_on_their_own() {
     assert_eq!(to_json(&call.mcp_arguments), r#"{"to":"a@example.com"}"#);
     assert_eq!(call.modified_arguments, None);
 }
-
 #[tokio::test]
 async fn arguments_read_from_the_fallback_field_are_written_to_mcp_arguments() {
     let mut call = request(r#"{"name":"send","arguments":{"to":"secret"}}"#);
