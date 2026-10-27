@@ -1089,6 +1089,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-prompts",
  "betterlite-rate-limit",
  "betterlite-router",
  "betterlite-secrets",
@@ -1158,6 +1159,9 @@ version = "0.1.0"
 name = "betterlite-prompts"
 version = "0.1.0"
 dependencies = [
+ "betterlite-logging",
+ "indexmap 2.14.2",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror",
