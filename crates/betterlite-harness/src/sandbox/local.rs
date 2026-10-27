@@ -86,23 +86,6 @@ impl LocalSandbox {
         })
         .await
     }
-
-    async fn file_operation<Job, Output>(
-        &self,
-        path: &str,
-        job: Job,
-    ) -> Result<Output, HarnessError>
-    where
-        Job: FnOnce(&Path) -> Result<Output, HarnessError> + Send + 'static,
-        Output: Send + 'static,
-    {
-        let name = path.to_owned();
-        self.access(move |state, root| {
-            let resolved = state.resolve(root, &name)?;
-            job(&resolved)
-        })
-        .await
-    }
 }
 
 impl Sandbox for LocalSandbox {
@@ -152,14 +135,12 @@ impl Sandbox for LocalSandbox {
     }
 
     async fn read(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>, HarnessError> {
-        self.file_operation(path, move |resolved| read_file(resolved, max_bytes))
-            .await
+        files::operation(self, path, move |resolved| read_file(resolved, max_bytes)).await
     }
 
     async fn write(&self, path: &str, data: &[u8]) -> Result<(), HarnessError> {
         let bytes = data.to_vec();
-        self.file_operation(path, move |resolved| write_file(resolved, &bytes))
-            .await
+        files::operation(self, path, move |resolved| write_file(resolved, &bytes)).await
     }
 
     fn host_url(&self, port: u16) -> String {

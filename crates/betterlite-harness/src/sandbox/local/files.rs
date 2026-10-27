@@ -4,6 +4,7 @@ use std::io::{self, Read as _};
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Component, Path, PathBuf};
 
+use super::LocalSandbox;
 use super::error::SandboxError;
 use crate::errors::{CappedOperation, HarnessError};
 
@@ -89,4 +90,22 @@ pub(super) fn decode_utf8(bytes: &[u8]) -> String {
         }
     }
     text
+}
+
+pub(super) async fn operation<Job, Output>(
+    sandbox: &LocalSandbox,
+    path: &str,
+    job: Job,
+) -> Result<Output, HarnessError>
+where
+    Job: FnOnce(&Path) -> Result<Output, HarnessError> + Send + 'static,
+    Output: Send + 'static,
+{
+    let name = path.to_owned();
+    sandbox
+        .access(move |state, root| {
+            let resolved = state.resolve(root, &name)?;
+            job(&resolved)
+        })
+        .await
 }
