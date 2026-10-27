@@ -1,0 +1,8 @@
+task: B3970
+deviations:
+  - what: MLflow SDK calls are represented by an injected typed Client contract rather than a live Python SDK bridge.
+    why: The task explicitly places MlflowClient and span lifecycle execution outside scope until an execution contract exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L16-L18
+  - what: New streaming spans are refused at an injected capacity limit, with a debug log.
+    why: The repository requires bounded state; LiteLLM retains an unbounded stream map until final chunks arrive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mlflow.py#L104-L146
