@@ -14,7 +14,8 @@ pub(super) fn fixed_renames(
     namespace: &str,
 ) -> BTreeMap<String, String> {
     let mut renames = BTreeMap::new();
-    loop {
+    // every round that changes anything renames one more definition, so the fixed point comes in time
+    for _ in 0..=definitions.len() {
         let mut next = renames.clone();
         for (name, definition) in definitions {
             let Some(existing) = schemas.get(name) else {
@@ -29,10 +30,11 @@ pub(super) fn fixed_renames(
             }
         }
         if next == renames {
-            return renames;
+            break;
         }
         renames = next;
     }
+    renames
 }
 
 // LiteLLM compares property names and required names only, and a schema without properties has no shape

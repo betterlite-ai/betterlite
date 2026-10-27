@@ -100,12 +100,19 @@ fn renamed_reference_reaches_fixed_point_collision() {
     assert_eq!(document, expected);
 }
 
-#[test]
-fn equal_definition_without_properties_reuses_on_collision() {
+#[rstest]
+#[case::equal_reused(r#"["a","b"]"#, r#""Mode":{"enum":["a","b"]}"#)]
+#[case::different_renamed(
+    r#"["a","c"]"#,
+    r#""Mode":{"enum":["a","b"]},"Request_Mode":{"enum":["a","c"]}"#
+)]
+fn unshaped_definition_compares_whole_on_collision(#[case] incoming: &str, #[case] schemas: &str) {
     let mut document = parse(r#"{"components":{"schemas":{"Mode":{"enum":["a","b"]}}}}"#);
-    let schema = parse(r#"{"$defs":{"Mode":{"enum":["a","b"]}}}"#);
+    let schema = parse(&format!(r#"{{"$defs":{{"Mode":{{"enum":{incoming}}}}}}}"#));
     add_schema_to_components(&mut document, "Request", &schema);
-    let expected = parse(r#"{"components":{"schemas":{"Mode":{"enum":["a","b"]},"Request":{}}}}"#);
+    let expected = parse(&format!(
+        r#"{{"components":{{"schemas":{{{schemas},"Request":{{}}}}}}}}"#
+    ));
     assert_eq!(document, expected);
 }
 
