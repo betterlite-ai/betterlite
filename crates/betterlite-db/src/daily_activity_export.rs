@@ -7,6 +7,7 @@ use crate::daily_activity_sql::{DailyActivitySqlError, PTU_SENTINEL_API_KEY};
 use chrono::{DateTime, Utc};
 pub mod export;
 mod grouping;
+mod ranking;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum DailyActivityExportError {
@@ -75,23 +76,8 @@ pub fn build_key_search_sql<Clock>(
 where
     Clock: Fn() -> DateTime<Utc>,
 {
-    let escaped = search
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_");
-    let wildcard = format!("%{escaped}%");
-    ranked_query(
-        scope,
-        limit,
-        clock,
-        move |[search_index, sentinel_index, _]: [usize; 3]| {
-            format!(
-                "AND api_key <> ${sentinel_index} AND ( api_key ILIKE ${search_index} ESCAPE '\\\\' OR api_key IN ( SELECT v.token FROM \"LiteLLM_VerificationToken\" v LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = v.user_id WHERE v.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR v.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' UNION SELECT d.token FROM \"LiteLLM_DeletedVerificationToken\" d LEFT JOIN \"LiteLLM_UserTable\" u ON u.user_id = d.user_id WHERE d.key_alias ILIKE ${search_index} ESCAPE '\\\\' OR d.user_id ILIKE ${search_index} ESCAPE '\\\\' OR u.user_email ILIKE ${search_index} ESCAPE '\\\\' ) )"
-            )
-            .replace("\\\\", "\\")
-        },
-        wildcard,
-    )
+    bounded_limit(limit)?;
+    ranking::build(scope, ranking::Filter::Search(search), limit, clock)
 }
 
 pub fn build_model_top_keys_sql<Clock>(
@@ -104,98 +90,18 @@ pub fn build_model_top_keys_sql<Clock>(
 where
     Clock: Fn() -> DateTime<Utc>,
 {
-    let model_expression = if by_model_group {
+    bounded_limit(limit)?;
+    let expression = if by_model_group {
         "COALESCE(NULLIF(model_group, ''), model)"
     } else {
         "model"
     };
-    let model_value = model_group.to_owned();
-    ranked_query(
+    ranking::build(
         scope,
+        ranking::Filter::Model(expression, model_group),
         limit,
         clock,
-        move |[model_index, sentinel_index, _]: [usize; 3]| {
-            format!("AND {model_expression} = ${model_index} AND api_key <> ${sentinel_index}")
-        },
-        model_value,
     )
-}
-
-fn ranked_query<Clock, Predicate>(
-    scope: &DailyActivityScope,
-    limit: i64,
-    clock: &Clock,
-    predicate: Predicate,
-    extra: String,
-) -> Result<SqlQuery, DailyActivityExportError>
-where
-    Clock: Fn() -> DateTime<Utc>,
-    Predicate: FnOnce([usize; 3]) -> String,
-{
-    let (where_sql, params, indexes @ [_, _, limit_index]) = ranked_indexes(scope, limit, clock)?;
-    let table = scope.as_ref().table.metadata().relation;
-    let predicate_sql = predicate(indexes);
-    Ok(finish_ranked(
-        RankedSql {
-            table,
-            where_sql,
-            predicate: predicate_sql,
-            limit_index,
-            params,
-        },
-        extra,
-        limit,
-    ))
-}
-
-fn ranked_indexes<Clock>(
-    scope: &DailyActivityScope,
-    limit: i64,
-    clock: &Clock,
-) -> Result<(String, Vec<SqlParameter>, [usize; 3]), DailyActivityExportError>
-where
-    Clock: Fn() -> DateTime<Utc>,
-{
-    bounded_limit(limit)?;
-    let SqlQuery { sql, params } = build_where_clause(scope, 1, clock)?;
-    let first = params
-        .len()
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    let second = first
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    let third = second
-        .checked_add(1)
-        .ok_or(DailyActivityExportError::BindOverflow)?;
-    Ok((sql, params, [first, second, third]))
-}
-
-struct RankedSql {
-    table: &'static str,
-    where_sql: String,
-    predicate: String,
-    limit_index: usize,
-    params: Vec<SqlParameter>,
-}
-
-fn finish_ranked(plan: RankedSql, extra: String, limit: i64) -> SqlQuery {
-    let RankedSql {
-        table,
-        where_sql,
-        predicate,
-        limit_index,
-        mut params,
-    } = plan;
-    let sql = format!(
-        "SELECT api_key, {KEY_SPEND_SELECT} FROM \"{table}\" WHERE {where_sql} {predicate} GROUP BY api_key ORDER BY SUM(spend::numeric) DESC, api_key LIMIT ${limit_index}"
-    );
-    params.extend([
-        SqlParameter::Text(extra),
-        SqlParameter::Text(PTU_SENTINEL_API_KEY.to_owned()),
-        SqlParameter::Integer(limit),
-    ]);
-    SqlQuery { sql, params }
 }
 
 pub fn build_cache_leakage_keys_sql<Clock>(

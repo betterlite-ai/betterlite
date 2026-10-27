@@ -3,31 +3,48 @@ name: model-and-leakage-rankings
 call:
   daily_activity_export:
     cases:
-      model:
-        utc_now: '2026-08-06T00:30:00Z'
-        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
-        function: model
-        model_group: g
+      model_group_empty_falls_back:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "model"
+        model_group: ""
         by_model_group: true
-        limit: 2
-      leakage:
-        utc_now: '2026-08-06T00:30:00Z'
-        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
-        function: leakage
-        limit: 2
-      exact_model:
-        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
-        utc_now: '2026-08-06T00:30:00Z'
-        function: model
-        model_group: g
+        limit: 1
+      model_exact_mode_does_not_use_group:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "model"
+        model_group: "  "
         by_model_group: false
         limit: 101
-      rejected_limit:
-        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
-        utc_now: '2026-08-06T00:30:00Z'
-        function: model
-        model_group: g
+      model_filter_intersects_scope:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["owner", ""], "exclude_entity_ids": ["excluded"], "api_keys": ["key", ""], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "existing", "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "model"
+        model_group: "group"
         by_model_group: true
-        limit: 0
+        limit: 2
+      model_empty_exact_value_bound:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "model"
+        model_group: ""
+        by_model_group: false
+        limit: 3
+      leakage_positive_uncached_tokens_only:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "leakage"
+        limit: 1
+      leakage_cache_creation_ignored:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": ["cached-key"], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "leakage"
+        limit: 101
+      leakage_difference_rank_and_key_tie:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["owner", ""], "exclude_entity_ids": ["excluded"], "api_keys": ["key", ""], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "existing", "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "leakage"
+        limit: 2
 env: {}
 compare: {ignore: []}
