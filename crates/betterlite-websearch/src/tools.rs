@@ -121,26 +121,24 @@ pub fn responses_web_search_tool() -> ResponsesFunctionTool {
 }
 #[must_use]
 pub fn is_web_search_tool_responses(tool: &Tool) -> bool {
-    let Some(tool_type) = tool.tool_type.as_deref() else {
-        return false;
-    };
-    if tool_type == "function" {
-        return tool.name.as_deref() == Some(LITELLM_WEB_SEARCH_TOOL_NAME);
+    match tool.tool_type.as_deref() {
+        Some("function") => tool.name.as_deref() == Some(LITELLM_WEB_SEARCH_TOOL_NAME),
+        Some(tool_type) => tool_type == "web_search" || tool_type.starts_with("web_search_"),
+        None => false,
     }
-    tool_type == "web_search" || tool_type.starts_with("web_search_")
+}
+fn openai_function_name(tool: &Tool) -> Option<&str> {
+    if tool.tool_type.as_deref() != Some("function") {
+        return None;
+    }
+    let function = tool.function.as_ref()?;
+    function.name.as_deref()
 }
 #[must_use]
 pub fn is_chat_web_search_tool(tool: &Tool) -> bool {
-    if tool.tool_type.as_deref() == Some("function")
-        && tool
-            .function
-            .as_ref()
-            .and_then(|function| function.name.as_deref())
-            == Some(LITELLM_WEB_SEARCH_TOOL_NAME)
-    {
-        return true;
-    }
-    tool.name.as_deref() == Some(LITELLM_WEB_SEARCH_TOOL_NAME)
+    let nested_name = openai_function_name(tool);
+    nested_name == Some(LITELLM_WEB_SEARCH_TOOL_NAME)
+        || tool.name.as_deref() == Some(LITELLM_WEB_SEARCH_TOOL_NAME)
 }
 #[must_use]
 pub fn is_web_search_tool(tool: &Tool) -> bool {

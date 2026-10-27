@@ -3,9 +3,3 @@ deviations:
   - what: betterlite exports typed Rust builders instead of Python functions returning dictionaries.
     why: Rust uses explicit serde wire structs while preserving the identical serialized tool shapes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L59-L123
-  - what: betterlite models the optional search response with the local typed SearchResponse record.
-    why: The provider-specific execution response is owned by a separate task; this record keeps the outcome typed without importing that provider contract.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/websearch_interception.py#L69-L76
-  - what: Some Rust builder and strict chat-detector symbols use shorter names than the LiteLLM-inspired Python names.
-    why: The repository's enforced 30-character naming rule rejects the longer symbols; serialized behavior and oracle operation names remain unchanged.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L85-L204
