@@ -1,7 +1,5 @@
 use crate::helpers::{HelperError, HelperResult};
-use betterlite_lens::analysis::{
-    AnalysisError, ModelCall, ModelFuture, ReadContent, ReadFuture, ReportProgress,
-};
+use betterlite_lens::analysis::{AnalysisError, ModelCall, ReadContent, ReportProgress};
 use betterlite_lens::extraction::examine_executions;
 use betterlite_lens::models::execution::{Coverage, ExecutionContent, Sample};
 use betterlite_lens::models::messages::{Claim, ModelResult};
@@ -64,15 +62,10 @@ async fn run(input: Input) -> HelperResult {
             .map_err(|error| AnalysisError::Callback(error.to_string()));
         Box::pin(async move { result })
     });
-    let mut examined = examine_executions(
-        input.claim,
-        input.sample,
-        reader(input.pages, Arc::clone(&counters)),
-        model(input.responses, Arc::clone(&counters)),
-        progress,
-    )
-    .await
-    .map_err(failure)?;
+    let (read, model) = callbacks(input.pages, input.responses, Arc::clone(&counters));
+    let mut examined = examine_executions(input.claim, input.sample, read, model, progress)
+        .await
+        .map_err(failure)?;
     examined.sort_by(|left, right| left.execution.id.cmp(&right.execution.id));
     let coverage = progress_log.lock().map_err(failure)?.clone();
     serde_json::to_value((
@@ -93,8 +86,13 @@ struct Counters {
     maximum: AtomicUsize,
 }
 
-fn reader(pages: Vec<Page>, counters: Arc<Counters>) -> ReadContent {
-    let callback = move |execution: String, cursor: String, offset: i64| -> ReadFuture {
+fn callbacks(
+    pages: Vec<Page>,
+    responses: Vec<ModelResult>,
+    counters: Arc<Counters>,
+) -> (ReadContent, ModelCall) {
+    let model_counters = Arc::clone(&counters);
+    let read: ReadContent = Arc::new(move |execution, cursor, offset| {
         counters.reads.fetch_add(1, Ordering::SeqCst);
         let content = pages
             .iter()
@@ -107,15 +105,11 @@ fn reader(pages: Vec<Page>, counters: Arc<Counters>) -> ReadContent {
         Box::pin(async move {
             content.ok_or_else(|| AnalysisError::Callback(String::from("unscripted read")))
         })
-    };
-    Arc::new(callback)
-}
-
-fn model(responses: Vec<ModelResult>, counters: Arc<Counters>) -> ModelCall {
-    let callback = move |_| -> ModelFuture {
-        let index = counters.models.fetch_add(1, Ordering::SeqCst);
+    });
+    let model: ModelCall = Arc::new(move |_| {
+        let index = model_counters.models.fetch_add(1, Ordering::SeqCst);
         let result = responses.get(index).cloned();
-        let current = Arc::clone(&counters);
+        let current = Arc::clone(&model_counters);
         Box::pin(async move {
             let active = current
                 .active
@@ -126,6 +120,6 @@ fn model(responses: Vec<ModelResult>, counters: Arc<Counters>) -> ModelCall {
             current.active.fetch_sub(1, Ordering::SeqCst);
             result.ok_or_else(|| AnalysisError::Callback(String::from("unscripted model call")))
         })
-    };
-    Arc::new(callback)
+    });
+    (read, model)
 }
