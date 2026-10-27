@@ -33,10 +33,21 @@ fn structured_redaction_behavior_tests_behavior(
     assert_eq!(masker.mask_value(input), expected);
 }
 
-#[test]
-fn bounds_unicode_mask_expansion() {
+#[rstest]
+#[case::input_over("abcdef", 5, "*", "REDACTED")]
+#[case::input_equal("abcde", 5, "*", "*****")]
+#[case::unicode_expansion("ab", 5, "\u{1f980}", "REDACTED")]
+#[case::mask_equal("ab", 4, "**", "****")]
+#[case::output_equal("abcdefghi", 9, "*", "abcd*fghi")]
+#[case::output_over("abcdefghi", 9, "**", "REDACTED")]
+fn mask_value_bounds(
+    #[case] input: &str,
+    #[case] work: usize,
+    #[case] mask: &str,
+    #[case] expected: &str,
+) {
     let mut masker = SensitiveDataMasker::new();
-    masker.mask_char = "\u{1f980}".to_owned();
-    masker.max_work = 5;
-    assert_eq!(masker.mask_value("ab"), "REDACTED");
+    masker.mask_char = mask.to_owned();
+    masker.max_work = work;
+    assert_eq!(masker.mask_value(input), expected);
 }

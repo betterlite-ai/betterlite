@@ -39,3 +39,10 @@ fn replays_the_structured_redaction_corpus(
         }
     }
 }
+
+#[test]
+fn accepts_exact_byte_limit() {
+    let mut bytes = vec![b' '; MAX_WORK];
+    *bytes.first_mut().unwrap() = b'0';
+    assert_eq!(parse_payload(&bytes).unwrap().to_string(), "0");
+}
