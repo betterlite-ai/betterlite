@@ -187,13 +187,7 @@ pub fn span_row(span: &DecodedSpan) -> SpanRow {
         resource_attributes: span.resource_attributes.clone(),
         scope_name: span.scope_name.clone(),
         scope_version: span.scope_version.clone(),
-        // The codec already moved the consumed attributes into normalized fields, so only the rest is stored
-        span_attributes: span
-            .attributes
-            .iter()
-            .filter(|&(key, _)| !span.consumed_attributes.contains(key))
-            .map(|(key, value)| (key.clone(), truncate(value)))
-            .collect(),
+        span_attributes: stored_attributes(span),
         duration: span.end_ns.saturating_sub(span.start_ns),
         status_code: span.status_code.clone(),
         status_message: status_message(span),
@@ -208,6 +202,17 @@ pub fn span_row(span: &DecodedSpan) -> SpanRow {
         input: truncate_payload(&normalized.input),
         output: truncate(&normalized.output),
     }
+}
+
+// The codec already moved the consumed attributes into normalized fields, so only the rest is stored
+fn stored_attributes(span: &DecodedSpan) -> IndexMap<String, String> {
+    let mut attributes = IndexMap::new();
+    for (key, value) in &span.attributes {
+        if !span.consumed_attributes.contains(key) {
+            attributes.insert(key.clone(), truncate(value));
+        }
+    }
+    attributes
 }
 
 fn status_message(span: &DecodedSpan) -> String {

@@ -182,7 +182,11 @@ fn tool_name_and_arguments<'json>(
     match function {
         Json::Null => Ok(fallback_arguments(fields, call_name)),
         Json::Object(inner) => {
-            let function_name = required_text(inner, "name")?;
+            // Pydantic's str with an empty default: only a missing key takes the default, so null fails validation
+            let function_name = match inner.get("name") {
+                None => "",
+                Some(value) => as_text(value)?,
+            };
             let name = if function_name.is_empty() {
                 call_name
             } else {
@@ -216,7 +220,11 @@ fn argument_text(value: Option<&Json>) -> String {
 
 fn tool_call(value: &Json) -> Result<UiToolCall, Invalid> {
     let fields = as_object(value)?;
-    let call_name = required_text(fields, "name")?;
+    // Pydantic's str with an empty default: only a missing key takes the default, so null fails validation
+    let call_name = match fields.get("name") {
+        None => "",
+        Some(name) => as_text(name)?,
+    };
     let (name, arguments) = tool_name_and_arguments(fields, call_name)?;
     Ok(UiToolCall {
         name: name.to_owned(),
@@ -241,16 +249,5 @@ fn optional_text<'json>(
     match fields.get(key) {
         None | Some(Json::Null) => Ok(None),
         Some(other) => as_text(other).map(Some),
-    }
-}
-
-// Pydantic's str with an empty default: only a missing key takes the default, so null fails validation
-fn required_text<'json>(
-    fields: &'json IndexMap<String, Json>,
-    key: &str,
-) -> Result<&'json str, Invalid> {
-    match fields.get(key) {
-        None => Ok(""),
-        Some(value) => as_text(value),
     }
 }
