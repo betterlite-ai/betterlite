@@ -2,8 +2,8 @@ id: B4574
 milestone: M8 platform
 title: CLI credential renewal and storage coordination
 status: todo
-depends_on: [B4573]
-file: null
+depends_on: [B4573, B4591, B4592]
+file: tasks/B4574-cli-credential-lifecycle.yaml
 covers:
   - "litellm/proxy/client/cli/commands/pkce_login.py"
   - "litellm/proxy/client/cli/commands/auth.py"

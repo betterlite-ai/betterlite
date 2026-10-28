@@ -1,0 +1,5 @@
+task: B244
+deviations:
+  - what: Structured traversal replaces over-depth containers and byte-work-exhausted payloads with REDACTED. Explicit mask_dict depth limits are capped at 100, and standalone masking caps input and output bytes.
+    why: Fail-closed masking prevents credentials from escaping when a payload exceeds traversal limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L117-L145

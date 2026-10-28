@@ -1,0 +1,7 @@
+kind: helper
+name: empty-target-indices
+call:
+  b3721:
+    step: {"merge_messages": {"original": [{"role": "user", "content": "old"}], "updated": [{"role": "user", "content": "new"}], "indices": []}}
+env: {}
+compare: {ignore: []}

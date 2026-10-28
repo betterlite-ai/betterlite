@@ -1,0 +1,7 @@
+kind: helper
+name: null-output-list
+call:
+  b3721:
+    step: {"extract": {"response": {"outputs": null}}}
+env: {}
+compare: {ignore: []}

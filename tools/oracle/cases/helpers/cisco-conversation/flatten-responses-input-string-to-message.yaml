@@ -1,0 +1,9 @@
+kind: helper
+name: cisco-flatten-string
+call:
+  cisco_conversation:
+    function: flatten
+    input: hello
+env: {}
+compare:
+  ignore: []

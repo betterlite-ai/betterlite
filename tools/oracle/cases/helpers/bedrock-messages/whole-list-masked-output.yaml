@@ -1,0 +1,7 @@
+kind: helper
+name: whole-list-masked-output
+call:
+  b3721:
+    step: {"merge": {"texts": ["old", "new"], "masked": ["mask"], "scanned_slice": null, "scanned_role_subset": false}}
+env: {}
+compare: {ignore: []}

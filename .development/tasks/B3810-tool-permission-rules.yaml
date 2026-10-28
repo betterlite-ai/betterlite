@@ -1,0 +1,88 @@
+id: B3810
+title: Compile tool permission rules and expose validated configuration
+description: >-
+  Port tool permission guardrail compilation to betterlite. Build typed permission rules, default actions, and compiled pattern lookups so both pre-call and post-call enforcement paths use identical matching semantics. The ToolPermissionGuardrail class inherits from CustomGuardrail and loads rules from config at init time.
+
+  Implement core helpers: _object_mapping and _object_list cast to dict/list without panic, _rule_from_fields validates a dict into ToolPermissionRule, _load_rules parses and compiles all regex patterns, atomically swapping compiled maps only after every pattern compiles. _matches_regex tests a compiled pattern against a string (None pattern always matches). _rule_matches_tool returns whether a rule matches and whether parameter checks apply. _get_mapping_value reads dict keys or object attributes, returning None on miss.
+
+  Keep default_action as "deny", on_disallowed_action as "block", whitespace-to-None targets and lowercase normalization. Regex compilation uses fullmatch, not search. When duplicate rule IDs appear, both rules stay in the ordered list but the last one wins in the compiled lookup maps; this matches LiteLLM's behavior. Every regex error raises ValueError with the rule ID before any state changes.
+
+  Expose get_config_model and get_supported_event_hooks for the proxy to read the configuration shape and [pre_call, post_call] hook list. The config model ui_friendly_name returns "LiteLLM Tool Permission Guardrail". Normalize default_action and on_disallowed_action to lowercase at init. Log debug message with rule count and default action once at initialization.
+
+  Own all imports, module-level constants (GUARDRAIL_NAME), class/field declarations and the _ToolPermissionRuleFields shape. This task compiles rules; B3811 and B3812 evaluate them against requests, B3813 enforces them in responses.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/tool_permission/**
+    - tools/oracle/cases/tool_permission/**
+    - tools/oracle/helpers/b3810.py
+    - tools/oracle/helpers/b3810/**
+    - tools/oracle/src/helpers/guardrails/b3810.rs
+    - tools/oracle/src/helpers/guardrails/b3810/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L45-L110
+    why: "ToolPermissionGuardrail.__init__, rule loading and _object_mapping, _object_list, _rule_from_fields helpers"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L112-L160
+    why: "_load_rules method: parsing rules, compiling patterns, atomic swap of compiled lookup maps"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L209-L251
+    why: "get_config_model, get_supported_event_hooks, _matches_regex and _rule_matches_tool"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L464-L468
+    why: "_get_mapping_value opaque accessor"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py
+    why: "ToolPermissionRule, PermissionError, ToolResult and ToolPermissionGuardrailConfigModel with all field validators"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: "DEFAULT_MAX_RECURSE_DEPTH constant for recursive argument traversal"
+dod:
+  - text: ToolPermissionRule requires at least tool_name or tool_type; whitespace-only fields normalize to None; decision and action fields normalize to lowercase.
+    proof: [rule-validation]
+  - text: _load_rules compiles all regex patterns and builds lookup maps only after every pattern compiles; invalid regex raises ValueError with rule ID and pattern; prior state untouched on error.
+    proof: [rule-validation]
+  - text: _matches_regex returns true when pattern is None, false when value is None, and uses fullmatch (not search) when both are present.
+    proof: [rule-matching]
+  - text: _rule_matches_tool returns overall match and whether parameter checks apply based on name pattern presence and match.
+    proof: [rule-matching]
+  - text: get_config_model returns the configuration model class; get_supported_event_hooks returns [pre_call, post_call].
+    proof: [interface-tests]
+  - text: Every guarded code path (regex compile, rule match, field access, value cast) has behavior tests covering success and error outcomes.
+    proof: [behavior-tests]
+  - text: ToolPermissionGuardrail.__init__ logs debug message once with rule count and default_action.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: rule-validation
+      why: rule validators, compilation or normalization fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission::rule/)'
+    - id: rule-matching
+      why: pattern or rule matching tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission::match/)'
+    - id: interface-tests
+      why: config model or hook interface tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission::config/)'
+    - id: behavior-tests
+      why: behavior tests fail or do not cover all guarded paths
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission::/)'
+oracle_cases:
+  - tools/oracle/cases/tool_permission/load_rules_valid.yaml
+  - tools/oracle/cases/tool_permission/invalid_regex_error.yaml
+deviations:
+  - what: "When duplicate rule IDs appear, both stay in the ordered rule list but the last one wins in the compiled_targets and compiled_patterns lookups."
+    why: "Matches LiteLLM's behavior exactly. The no-silent-drops rule requires this to be explicit, not a hidden overwrite."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L125-L153
+  - what: "Regex dialect compatibility is not resolved; fullmatch is LiteLLM's specified behavior. Unsupported features will be discovered at pattern compile time"
+    why: "Python regex and Rust regex differ on backreferences, lookarounds and other features. Users porting patterns from LiteLLM may need to adjust"
+out_of_scope:
+  - Decision evaluation and enforcement logic; B3811 checks permissions against tool calls, B3812 evaluates requests, B3813 filters responses.
+  - CustomGuardrail.__init__ base class and its dependencies, owned by B3664.
+  - The log_guardrail_information and add_guardrail_to_applied_guardrails_header functions; owned by other tasks.
+  - The update_in_memory_litellm_params method (lines 162-207), which has no caller at the pinned commit.
+pitfalls:
+  - "Rule compilation must fail atomically: on any regex error, leave prior maps intact so a partial update doesn't corrupt the live ruleset"
+  - "_matches_regex returns true for None pattern (wildcard match) and false for None value (no string matches a pattern)"
+  - "Whitespace-to-None normalization applies only to tool_name and tool_type patterns, not to rule IDs, decisions or parameter paths"
+  - "Duplicate rule IDs overwrite compiled lookup but both rules stay in the ordered list; this is the last-wins-by-ID behavior built to match LiteLLM"
+  - allowed_param_patterns is a dict that may be None or empty; both compile to no parameter constraints.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

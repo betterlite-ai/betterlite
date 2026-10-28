@@ -1,0 +1,148 @@
+id: B4297
+title: Read and write response cache envelopes
+description: >-
+  Implement timestamped response cache envelopes with freshness validation and ordinary read/write operations.
+  Build get_cache and async_get_cache with max-age handling, where a cached response with a timestamp
+  older than the max-age threshold is rejected as stale. Build add_cache and async_add_cache to wrap
+  results in {"timestamp": time.time(), "response": result} envelopes. Implement _get_cache_logic to
+  decode cached envelopes: accept bounded literal shapes (dicts, JSON strings) and reject unrestricted
+  evaluation. When a timestamp exists and response_age exceeds max-age, return None; otherwise extract
+  and deserialize the response field with fallback to ast.literal_eval only for strings the JSON
+  decoder rejected. Support a fuzz corpus of valid and invalid cached forms the decoder must handle.
+  Preserve sync/async max-age differences and support both Redis and memory cache backends through
+  dependency injection. Cache lookup kwargs are safely projected from request kwargs to preserve only
+  messages, input and metadata. When no cache backend supports the operation, failures are logged but
+  do not block the request.
+scope:
+  paths:
+    - crates/betterlite-cache/src/envelope.rs
+    - crates/betterlite-cache/src/envelope/**
+    - crates/betterlite-cache/fuzz/fuzz_targets/cache_envelope_decoder.rs
+    - crates/betterlite-cache/fuzz/corpus/cache_envelope_decoder-*
+    - crates/betterlite-cache/Cargo.toml
+    - tools/oracle/cases/envelope/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/helpers/b4297.py
+    - tools/oracle/helpers/b4297/**
+    - tools/oracle/src/helpers/cache/b4297.rs
+    - tools/oracle/src/helpers/cache/b4297/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L539-L570
+    why: Cache._get_cache_logic checks timestamp and max-age, decodes cached strings with JSON and literal fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L572-L583
+    why: _get_safe_cache_lookup_kwargs projects only messages, input and metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L585-L602
+    why: Metadata copy and semantic-similarity stamping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L604-L646
+    why: "get_cache: checks should_use_cache, derives cache_key, handles max-age with _get_cache_logic."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L648-L682
+    why: "async_get_cache mirrors get_cache with async backend calls."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L684-L712
+    why: "_add_cache_logic wraps result in timestamp envelope, applies TTL controls."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L714-L743
+    why: "add_cache and _log_add_cache_failure for sync writes with Redis failure logging."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L745-L767
+    why: "async_add_cache branches on Redis flush_size for batching vs direct write."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L985-L987
+    why: "batch_cache_write delegates to cache backend."
+dod:
+  - text: "get_cache returns None when should_use_cache is false or cache_key is None."
+    proof: [facade-cache-behavior]
+  - text: "Cached responses with timestamps are checked against max-age; responses older than max-age return None."
+    proof: [facade-cache-behavior]
+  - text: "Sync max-age uses s-maxage from cache control, async uses s-max-age or s-maxage."
+    proof: [facade-cache-behavior]
+  - text: 'add_cache wraps results in {"timestamp": time.time(), "response": result} envelopes.'
+    proof: [facade-cache-behavior]
+  - text: "TTL precedence is applied (cache control ttl overrides Cache.ttl default)."
+    proof: [facade-cache-behavior]
+  - text: "Cache lookup kwargs preserve only messages, input and metadata from request."
+    proof: [facade-cache-behavior]
+  - text: "Semantic-similarity from lookup_semantic is stamped into metadata."
+    proof: [facade-cache-behavior]
+  - text: "Cache read/write failures are logged but do not block requests (best-effort)."
+    proof: [facade-cache-behavior]
+
+  - text: "The fuzz target cache_envelope_decoder accepts arbitrary bytes and replays its corpus without panic, validating the bounded decoder behavior."
+    proof: [envelope-decoder-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: facade-cache-behavior
+      why: cache envelope read/write behavior is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^envelope::/)'
+
+    - id: envelope-decoder-corpus
+      why: Fuzz target is missing, corpus is empty, or replaying corpus causes panic
+      run: test -f crates/betterlite-cache/fuzz/fuzz_targets/cache_envelope_decoder.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-cache/fuzz/corpus/cache_envelope_decoder-*)" && cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(replays_the_cache_envelope_decoder_corpus)'
+oracle_cases:
+  - tools/oracle/cases/envelope/timestamp-envelope-valid.yaml
+  - tools/oracle/cases/envelope/timestamp-envelope-missing-timestamp.yaml
+  - tools/oracle/cases/envelope/freshness-max-age-within-bounds.yaml
+  - tools/oracle/cases/envelope/freshness-max-age-exceeded.yaml
+  - tools/oracle/cases/envelope/cached-string-json-decode.yaml
+  - tools/oracle/cases/envelope/cached-string-literal-fallback.yaml
+  - tools/oracle/cases/envelope/cached-string-decode-failure.yaml
+  - tools/oracle/cases/envelope/semantic-similarity-metadata-update.yaml
+  - tools/oracle/cases/envelope/response-wrap-timestamp-on-write.yaml
+  - tools/oracle/cases/envelope/batch-write-delegation.yaml
+deviations:
+  - what: >-
+      Native cache request dispatch and ResponseCacheRuntime integration are not implemented. The envelope
+      facade operates on Python backends only; native storage integration (request/lookup_semantic/store)
+      is excluded from this task.
+    why: >-
+      The rust_bridge package is outside the repository inventory per repository policy. Native ResponseCacheRuntime
+      and native request/lookup_semantic/store dispatch are not built. Per B4299, _native_cache is never set
+      in betterlite, so native dispatch has no runtime path to exercise.
+    link: null
+
+  - what: >-
+      The ast.literal_eval fallback in _get_cache_logic accepts a bounded set of cached string shapes
+      (dicts, strings, JSON literals) rather than unrestricted evaluation of arbitrary Python expressions.
+    why: >-
+      Unrestricted evaluation of cached strings is a security and correctness risk. The fuzz corpus
+      defines the supported shapes; decoding failures log and return the original cached value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L562-L569
+
+  - what: Cache lookup kwargs are safely projected to only messages, input and metadata to avoid request mutation during lookup.
+    why: LiteLLM's original code modifies kwargs in place during lookup, which betterlite avoids by projecting safe fields to a new dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L572-L583
+
+  - what: Failures in cache backend calls (get, set, delete) are logged but never propagate to block request execution.
+    why: LiteLLM's best-effort cache behavior skips errors silently; betterlite logs them for observability.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L615-L646
+out_of_scope:
+  - B4296 owns should_use_cache, get_cache_key, _is_semantic_cache and print_verbose; envelope operations call them.
+
+  - B4290 owns backend get/set/batch-write contracts and timestamp/cache control types; envelopes apply
+    them without reimplementation.
+
+  - B393 owns log_redis_failure; envelope write paths delegate Redis errors to this logging handler.
+
+  - The rust_bridge package is excluded by the repository inventory; native ResponseCacheRuntime and
+    native request/lookup/store dispatch are not built per repository policy.
+
+  - Embedding-specific envelope writes (versioning, per-item usage) are owned by B4298; the common
+    facade must not depend on them.
+pitfalls:
+  - The _get_cache_logic function expects cached_result to be either a dict with a "timestamp" field,
+    a JSON string, or a literal string. It does not use unrestricted ast.literal_eval; it handles only
+    the bounded shapes validated by the fuzz corpus. A cached string that is valid JSON takes precedence
+    over literal evaluation.
+
+  - The sync get_cache function checks freshness inline and returns None when stale. The async_get_cache
+    function returns the absolute stored timestamp (not remaining TTL) so callers can implement their own
+    freshness policy. Never swap the behaviors.
+
+  - Semantic similarity metadata is stamped into kwargs metadata only when present in the cache lookup;
+    if the backend does not supply it, the metadata field remains absent.
+
+  - Cache write failures log but do not prevent response delivery. The response is returned on a best-effort
+    basis, and storage errors are observed through logging, not thrown exceptions.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

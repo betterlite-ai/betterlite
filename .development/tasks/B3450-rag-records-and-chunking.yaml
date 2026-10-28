@@ -1,0 +1,200 @@
+id: B3450
+title: RAG records, provider selection and document chunking
+description: >-
+  Build live RAG ingestion type definitions and provider selection logic in a lower document module,
+  plus recursive character splitting and PDF extraction. Preserve Unicode character counting,
+  separator selection, overlap/whitespace behavior, and the PDF extraction fallback behavior
+  (returns None on missing libraries or error, logging at debug level on ImportError).
+
+  Wire types for the ingestion pipeline: RAGChunkingStrategy (chunk_size, chunk_overlap, separators),
+  RAGIngestOCROptions, RAGIngestEmbeddingOptions, provider-specific options for OpenAI
+  (custom_llm_provider=openai, vector_store_id, ttl_days, litellm_credential_name, api_key: SecretString,
+  api_base), Bedrock (custom_llm_provider=bedrock, vector_store_id, s3_bucket, s3_prefix, embedding_model,
+  data_source_id, wait_for_ingestion, ingestion_timeout, litellm_credential_name, aws_access_key_id: SecretString,
+  aws_secret_access_key: SecretString, aws_session_token: SecretString, aws_region_name, aws_role_name,
+  aws_session_name, aws_profile_name, aws_web_identity_token: SecretString, aws_sts_endpoint: SecretString,
+  aws_external_id: SecretString), Vertex AI (custom_llm_provider=vertex_ai, vector_store_id, vertex_project, vertex_location,
+  vertex_credentials, gcs_bucket, wait_for_import, import_timeout), and S3 Vectors
+  (custom_llm_provider=s3_vectors, vector_bucket_name, index_name, dimension, distance_metric,
+  non_filterable_metadata_keys, litellm_credential_name, aws_access_key_id: SecretString,
+  aws_secret_access_key: SecretString, aws_session_token: SecretString, aws_region_name, aws_role_name,
+  aws_session_name, aws_profile_name, aws_web_identity_token: SecretString, aws_sts_endpoint: SecretString, aws_external_id: SecretString).
+  Union them into RAGIngestVectorStoreOptions and bundle with OCR/embedding/chunking into RAGIngestOptions.
+  Include result types: RAGIngestResponse with id, status (completed/in_progress/failed), vector_store_id,
+  file_id, error.
+
+  Provider selection through INGESTION_REGISTRY dict mapping provider names to ingestion classes and
+  get_ingestion_class(provider) which raises ValueError with supported-provider list on mismatch.
+  Five providers: openai, bedrock, gemini, s3_vectors, vertex_ai. Selection returns the provider identity;
+  construction stays in B3460.
+
+  Recursive character splitting: RecursiveCharacterTextSplitter with chunk_size (default 1000),
+  chunk_overlap (default 200), separators list (default ["\n\n", "\n", " ", ""]). The split_text method
+  and _split_text recursion with depth-bounded fallback at max_recurse_depth=100. Preserve exact
+  overlap/merge behavior including separator length in current_length accounting. Character-by-character
+  Unicode counting, no encoding assumptions. The _merge_splits method reassembles with overlap window sliding.
+  _force_split handles characters when no separator matches, respecting overlap in the stride calculation.
+
+  PDF extraction: extract_text_from_pdf(file_content: bytes) returns text or None. Tries pypdf first, falls
+  back to PyPDF2. Preserves page-by-page extraction joined with "\n\n", exact logging with character count,
+  and logs at debug level on ImportError or extraction failure. Returns None when libraries are missing or
+  extraction fails, no exception escape.
+
+  All imports and declarations in litellm/types/rag.py:14-225, litellm/rag/main.py imports, the
+  INGESTION_REGISTRY and get_ingestion_class functions, and complete file declarations in the splitter and
+  PDF modules including __init__.py exports.
+
+  These three defaults (chunk_size=1000, chunk_overlap=200, max_recurse_depth=100) are hardcoded as
+  constants in betterlite; environment variables (DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP,
+  DEFAULT_MAX_RECURSE_DEPTH) are not read at runtime.
+
+scope:
+  paths:
+    - tools/oracle/cases/document_parsing/**
+    - crates/betterlite-core/src/rag/document.rs
+    - crates/betterlite-core/src/rag/document/**
+    - crates/betterlite-config/src/rag/document.rs
+    - crates/betterlite-config/src/rag/document/**
+    - crates/betterlite-config/src/sections/rag_records_and_chunking.rs
+    - crates/betterlite-config/src/sections/rag_records_and_chunking/**
+    - tools/oracle/helpers/b3450.py
+    - tools/oracle/helpers/b3450/**
+    - tools/oracle/src/helpers/core_ops/b3450.rs
+    - tools/oracle/src/helpers/core_ops/b3450/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rag.py#L14-L225
+    why: All wire-format type definitions from chunking strategy through result models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L46-L52
+    why: INGESTION_REGISTRY dict mapping provider names to classes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L74-L91
+    why: get_ingestion_class provider lookup and error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134
+    why: Complete RecursiveCharacterTextSplitter including __init__, split_text, _split_text, _merge_splits, _force_split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
+    why: extract_text_from_pdf with pypdf/PyPDF2 fallback and None return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L85
+    why: DEFAULT_MAX_RECURSE_DEPTH=100.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2033-L2034
+    why: DEFAULT_CHUNK_SIZE=1000 and DEFAULT_CHUNK_OVERLAP=200.
+
+dod:
+  - text: "RAGChunkingStrategy has chunk_size: int and chunk_overlap: int fields."
+    proof: [type-tests]
+  - text: "OpenAIVectorStoreOptions has api_key: SecretString and api_base fields for credentials."
+    proof: [type-tests]
+  - text: "BedrockVectorStoreOptions has aws_secret_access_key: SecretString, aws_session_token: SecretString, aws_web_identity_token: SecretString, aws_sts_endpoint: SecretString, aws_external_id: SecretString, plus aws_access_key_id, aws_role_name, aws_session_name, aws_profile_name fields."
+    proof: [type-tests]
+  - text: "S3VectorsVectorStoreOptions has aws_secret_access_key: SecretString, aws_session_token: SecretString, aws_web_identity_token: SecretString, aws_sts_endpoint: SecretString, aws_external_id: SecretString, plus aws_access_key_id and related fields."
+    proof: [type-tests]
+  - text: INGESTION_REGISTRY maps openai, bedrock, gemini, s3_vectors, vertex_ai to their respective ingestion classes.
+    proof: [type-tests, behavior-tests]
+  - text: get_ingestion_class raises a typed error listing all supported providers when the provider is unknown.
+    proof: [behavior-tests]
+  - text: "RecursiveCharacterTextSplitter.__init__ sets chunk_size: int (default 1000), chunk_overlap: int (default 200), separators: list (default [\"\\n\\n\", \"\\n\", \" \", \"\"])."
+    proof: [type-tests, behavior-tests]
+  - text: "split_text(text: str) splits a string and returns list of strings, calling _split_text with separators."
+    proof: [behavior-tests]
+  - text: "_split_text uses separators in order, recurses with new_separators on depth increase up to max_recurse_depth=100, then falls back to character splitting."
+    proof: [behavior-tests]
+  - text: "_merge_splits assembles chunks respecting chunk_size and chunk_overlap, accounting for separator length in current_length."
+    proof: [behavior-tests]
+  - text: "_force_split handles text without separators, respecting overlap in stride (end - overlap if not final, else len(text))."
+    proof: [behavior-tests]
+  - text: "extract_text_from_pdf(file_content: bytes) tries pypdf first with BytesIO, joins pages with \"\\n\\n\", returns text or None on missing library or exception."
+    proof: [behavior-tests]
+  - text: "All three chunk defaults (1000, 200, 100) are hardcoded constants, not read from environment at runtime."
+    proof: [behavior-tests]
+  - text: "RecursiveCharacterTextSplitter rejects chunk_size<=0, chunk_overlap<0, or chunk_overlap>=chunk_size with a typed error before splitting."
+    proof: [chunk-validation-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: type-tests
+      why: Type definitions are missing or incomplete
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types($|::)/)'
+    - id: behavior-tests
+      why: Provider selection or text splitting does not preserve pin behavior
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::/) - test(/::replays_corpus$/)'
+    - id: pdf-behavior
+      why: PDF extraction does not match the fallback and error handling
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::pdf_/)'
+    - id: chunk-validation-tests
+      why: Chunk configuration validation errors are missing or incomplete
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::chunk_config_/)'
+    - id: pdf-fuzz-corpus
+      why: the PDF extraction fuzz target or its seeded corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/pdf_extraction.rs && test "$(ls crates/betterlite-core/fuzz/corpus/pdf_extraction 2>/dev/null | wc -l)" -ge 1 && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_pdf_extraction_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/document_parsing/splitter-basic.yaml
+  - tools/oracle/cases/document_parsing/splitter-overlap.yaml
+  - tools/oracle/cases/document_parsing/splitter-separators.yaml
+  - tools/oracle/cases/document_parsing/splitter-recursion.yaml
+  - tools/oracle/cases/document_parsing/splitter-force-split.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-pypdf.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-pypdf2-fallback.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-missing-library.yaml
+  - tools/oracle/cases/document_parsing/provider-lookup-openai.yaml
+  - tools/oracle/cases/document_parsing/provider-lookup-bedrock.yaml
+  - tools/oracle/cases/document_parsing/provider-lookup-gemini.yaml
+  - tools/oracle/cases/document_parsing/provider-lookup-s3_vectors.yaml
+  - tools/oracle/cases/document_parsing/provider-lookup-vertex_ai.yaml
+  - tools/oracle/cases/document_parsing/provider-lookup-unsupported.yaml
+
+deviations:
+  - what: >-
+      betterlite hardcodes the three chunk configuration defaults (chunk_size=1000, chunk_overlap=200,
+      max_recurse_depth=100). LiteLLM reads these from environment variables at module load time
+      (DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, DEFAULT_MAX_RECURSE_DEPTH), making them runtime-overridable.
+      betterlite treats them as build-time constants.
+    why: >-
+      Environment variable reads in the gateway are restricted to the config crate boundary,
+      so chunk defaults come from the config file or built-in constants, never from the process environment.
+
+  - what: >-
+      When chunk_size<=0, chunk_overlap<0, or chunk_overlap>=chunk_size, the splitter raises a typed
+      chunk-configuration error before splitting. LiteLLM's _force_split can hang or fail to progress
+      when overlap is at least size, or when size is zero. betterlite rejects nonprogressing input upfront.
+    why: >-
+      The native splitter prevents a customer request from hanging the gateway thread. Invalid configurations
+      fail at request validation time with a typed error, not inside the pipeline as a fallback.
+
+  - what: >-
+      PDF extraction returns None on library ImportError or extraction failure. LiteLLM logs at debug level
+      and continues with None; betterlite calls the same fallback and None return without logging at this level.
+    why: >-
+      The ingestion pipeline decides whether a missing PDF library is recoverable (OCR can fill in) or a
+      pipeline failure. Betterlite surfaces None and lets the caller's logging layer report it.
+
+out_of_scope:
+  - RAGIngestRequest, RAGRetrievalConfig, RAGRerankConfig, RAGQueryRequest, RAGQueryResponse wire models.
+    Routes parse request dictionaries directly. The outline excludes these unused type model validators.
+  - Chunking configuration defaults loaded from a config file (B1385 declares separate chunk defaults for
+    Vertex GCS import; those are independent).
+  - Provider constructor calls and their initialization state. B3460 and the provider subtasks own those.
+  - The helper functions aingest, aquery, ingest, query, _execute_ingest_pipeline, _execute_query_pipeline,
+    and _suppressed_sub_call_billing from litellm/rag/main.py are owned by B3460.
+
+pitfalls:
+  - The architect adds `pub mod rag;` to crates/betterlite-core/src/lib.rs and crates/betterlite-config/src/lib.rs before this task runs, since module tasks never edit lib.rs themselves.
+  - Register helper operation `document_parsing` in the `document_parsing` group before this task runs by adding it to tools/oracle/src/helpers/mod.rs GROUPS and tools/oracle/helpers/b3450.py OPERATIONS.
+  - "Character counting is per Unicode character (len() in Python), not byte length or grapheme clusters."
+  - "The _merge_splits overlap window includes separator length in current_length, which is unusual: separator
+    length is added when a chunk is assembled, then subtracted when popping from the window during overlap."
+  - "Overlap at chunk_size or greater means _force_split makes no progress and produces an infinite loop in
+    the pin; betterlite validates input before splitting."
+  - "RAG types list SecretString fields for all credentials: api_key, aws_secret_access_key, aws_session_token,
+    aws_web_identity_token, aws_sts_endpoint, aws_external_id. These must not appear in logs or Debug output."
+  - "The PDF extraction fallback order is pypdf first, then PyPDF2, then None. Both may be missing; the code
+    tries each and logs only at debug level on ImportError."
+  - "Add a cargo-fuzz target for extract_text_from_pdf's byte input in crates/betterlite-core/fuzz/fuzz_targets/pdf_extraction.rs,
+    seeding the corpus with malformed and valid PDFs, and a test named replays_the_pdf_extraction_corpus replays
+    it on stable."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

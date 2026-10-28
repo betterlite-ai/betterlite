@@ -1,0 +1,9 @@
+kind: helper
+name: cisco-flatten-scalar
+call:
+  cisco_conversation:
+    function: flatten
+    input: 123
+env: {}
+compare:
+  ignore: []

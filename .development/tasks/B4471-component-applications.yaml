@@ -1,0 +1,122 @@
+id: B4471
+title: Gateway and backend application route filtering
+description: >-
+  Create two binaries in crates/betterlite-gateway and crates/betterlite-backend
+  that each reuse the betterlite-server application and filter incoming requests
+  against the allowlists from B4470. The gateway serves the LLM data-plane surface,
+  and the backend serves the management/dashboard surface; both enforce their route
+  policies as a tower middleware that checks each request path before routing.
+
+  Each binary takes the same CLI flags as betterlite (--config required, --host
+  default 0.0.0.0 via HOST env, --port default 4000/4001 via PORT env) and starts
+  the HTTP server with the betterlite-server application and its auth layer from B003.
+  A request to a path outside the component's allowlist returns 404, just as if the
+  path does not exist. A request to a path inside the allowlist is routed normally through
+  the application.
+
+  Route filtering occurs at the request level using tower middleware: each incoming request
+  path is checked against GATEWAY_PATH_PREFIXES (startswith), GATEWAY_EXACT_PATHS (exact
+  match), and GATEWAY_MOUNT_PATHS (exact match), with the same priority as LiteLLM
+  (exact paths before prefixes, mounts before prefix checks). Paths matching the allowlist
+  pass through; others return 404. The backend does the same with its three allowlist
+  sets. The middleware runs on every request to verify the path is allowed before routing;
+  there is no startup-time route list mutation.
+
+  Both binaries are pure entrypoints with no shared code. The gateway runs on port 4000
+  (via --port or PORT env) and the backend on 4001; both bind to 0.0.0.0 by default (via
+  --host or HOST env). Each binary exits with status 2 if database startup fails, just as
+  the legacy uvicorn launcher does. Each binary is built as a separate Cargo binary target
+  (crates/betterlite-gateway/src/main.rs and crates/betterlite-backend/src/main.rs) and
+  shipped in its own Docker image.
+
+scope:
+  paths:
+    - crates/betterlite-gateway/**
+    - crates/betterlite-backend/**
+    - crates/betterlite-server/src/lib.rs
+    - tools/oracle/helpers/b4471.py
+    - tools/oracle/helpers/b4471/**
+    - tools/oracle/src/helpers/server/b4471.rs
+    - tools/oracle/src/helpers/server/b4471/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/main.py#L35-L49
+    why: The _is_gateway_route logic showing exact vs prefix vs mount matching; adapted to per-request middleware instead of startup route list filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/main.py#L30-L41
+    why: The _is_backend_route logic showing exact vs prefix vs mount matching; adapted to per-request middleware instead of startup route list filtering.
+  - url: https://docs.rs/tower/latest/tower/
+    why: Tower middleware for per-request path validation before routing.
+dod:
+  - text: The gateway binary reads --config (required), --host (default 0.0.0.0, env HOST) and --port (default 4000, env PORT) and serves on a listening socket with the betterlite-server application and auth.
+    proof: [gateway-backend-cli-flags]
+  - text: The backend binary reads --config (required), --host (default 0.0.0.0, env HOST) and --port (default 4001, env PORT) and serves on a listening socket with the betterlite-server application and auth.
+    proof: [gateway-backend-cli-flags]
+  - text: A request to a path in GATEWAY_PATH_PREFIXES, GATEWAY_EXACT_PATHS or GATEWAY_MOUNT_PATHS on the gateway returns the routed response or 401 if auth fails; a path outside these sets returns 404 with no routing attempt.
+    proof: [component-route-filtering]
+  - text: A request to a path in BACKEND_PATH_PREFIXES, BACKEND_EXACT_PATHS or BACKEND_MOUNT_PATHS on the backend returns the routed response or 401 if auth fails; a path outside these sets returns 404 with no routing attempt.
+    proof: [component-route-filtering]
+  - text: Exact-path matches take precedence over prefix matches; a request to /v1/chat/completions matches GATEWAY_EXACT_PATHS before checking GATEWAY_PATH_PREFIXES.
+    proof: [component-route-filtering]
+  - text: Mount paths match exactly, not as prefixes; a request to /metrics passes the gateway check, a request to /metricsz returns 404.
+    proof: [component-route-filtering]
+  - text: Gateway and backend list their paths in the same order as the LiteLLM source, with every template like "/{provider}/" and "/{mcp_server_name}/" preserved.
+    proof: [component-route-filtering]
+  - text: Both binaries exit with status 2 on database startup failure and status 0 on successful SIGTERM or Ctrl-C shutdown.
+    proof: [component-route-filtering, component-shutdown]
+  - text: Every stderr line from both binaries is JSON with at least timestamp, level and message, exactly as from betterlite in B003.
+    proof: [component-logging]
+checks:
+  optional: []
+  commands:
+    - id: gateway-backend-cli-flags
+      why: Gateway or backend CLI flags, defaults or environment variables differ from the specification
+      run: |
+        gateway_help="$(cargo run --locked --quiet -p betterlite-gateway -- --help)" &&
+        backend_help="$(cargo run --locked --quiet -p betterlite-backend -- --help)" &&
+        grep -q -- '--config' <<<"$gateway_help" && grep -qE -- '--host.*\[env: HOST=' <<<"$gateway_help" && grep -q 'default: 0.0.0.0' <<<"$gateway_help" && grep -qE -- '--port.*\[env: PORT=' <<<"$gateway_help" && grep -q 'default: 4000' <<<"$gateway_help" &&
+        grep -q -- '--config' <<<"$backend_help" && grep -qE -- '--host.*\[env: HOST=' <<<"$backend_help" && grep -q 'default: 0.0.0.0' <<<"$backend_help" && grep -qE -- '--port.*\[env: PORT=' <<<"$backend_help" && grep -q 'default: 4001' <<<"$backend_help"
+    - id: component-route-filtering
+      why: Request path filtering does not match the allowlists or HTTP status/auth behavior differs
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/gateway tools/oracle/cases/backend
+    - id: component-shutdown
+      why: Database startup failure or SIGTERM does not exit with the correct status code
+      run: |
+        cargo nextest run --locked -p betterlite-gateway -p betterlite-backend --no-tests=fail -E 'test(shutdown)' &&
+        cargo nextest run --locked -p betterlite-gateway -p betterlite-backend --no-tests=fail -E 'test(startup_failure)'
+    - id: component-logging
+      why: Stderr output does not use JSON format or contains non-JSON lines from the binaries
+      run: cargo nextest run --locked -p betterlite-gateway -p betterlite-backend --no-tests=fail -E 'test(stderr_json)'
+oracle_cases:
+  - tools/oracle/cases/gateway/allowed-exact-path.yaml
+  - tools/oracle/cases/gateway/blocked-unknown-path.yaml
+  - tools/oracle/cases/gateway/blocked-unrelated-prefix.yaml
+  - tools/oracle/cases/gateway/allowed-mount-exact.yaml
+  - tools/oracle/cases/gateway/blocked-mount-prefix.yaml
+  - tools/oracle/cases/gateway/allowed-path-prefix.yaml
+  - tools/oracle/cases/backend/allowed-exact-path.yaml
+  - tools/oracle/cases/backend/blocked-unknown-path.yaml
+  - tools/oracle/cases/backend/blocked-unrelated-prefix.yaml
+  - tools/oracle/cases/backend/allowed-mount-exact.yaml
+  - tools/oracle/cases/backend/blocked-mount-prefix.yaml
+  - tools/oracle/cases/backend/allowed-path-prefix.yaml
+deviations:
+  - what: Route filtering runs at the request level using tower middleware, not by mutating a runtime route registry after startup.
+    why: axum's Router is constructed once and immutable; there is no mutable routes list to filter like FastAPI has. Tower middleware provides the same semantic filtering on each request.
+  - what: Both binaries are separate Cargo targets with separate main.rs files, not Python wrapper modules importing a shared proxy_server.app.
+    why: betterlite uses Rust binaries with independent entry points, not Python import-time app sharing.
+  - what: Database configuration and pool setup are not assembled here via env mutation before startup; they are wired through the application and B051's database_startup.
+    why: The native startup path threads typed endpoints through the config loader and application context, not through process environment variables at binary startup.
+out_of_scope:
+  - Database URL assembly or environment variable mutation. B051 owns database_startup configuration through the proxy lifespan and application context.
+  - Multiple worker processes or instrumentation (NUM_WORKERS, USE_DDTRACE). The native binary serves requests in a single Tokio runtime; multi-process scaling and tracing instrumentation are future tasks.
+  - Any route handler implementation. Both binaries serve the full application from B003; filtering only.
+pitfalls:
+  - Request filtering is done at the middleware level per-request, not by modifying a static route list. A request to /v1/chat/completions on the backend (which is not in its allowlist) returns 404 even though the route exists in the application.
+  - 'Exact paths take precedence: /v1/chat/completions is in GATEWAY_EXACT_PATHS, so it matches before checking /v1/chat as a prefix.'
+  - Mount paths (e.g., /metrics, /swagger, /mcp) are matched exactly, not as prefixes. /metrics/foo returns 404 on the gateway because /metrics is in GATEWAY_MOUNT_PATHS but /metrics/foo is not.
+  - Both binaries share the same CLI signature as betterlite (same flags, same defaults, same env vars). Changing one changes both.
+  - The gateway defaults to port 4000, the backend to 4001. These are wired in the binary targets, not configuration.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

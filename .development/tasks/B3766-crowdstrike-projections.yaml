@@ -1,0 +1,308 @@
+id: B3766
+title: CrowdStrike message projections and streaming settings
+description: >-
+  Build CrowdStrike AIDR's input/response data models, message selection, and
+  constructor with streaming configuration. The guardrail inspects requests and
+  responses through POST to the CrowdStrike AIDR /v1/guard_chat_completions
+  endpoint, transforming messages into a guard_input payload with scoped message
+  selection (system + messages since last assistant for requests, assistant text
+  for responses) and optional tools. On success, apply transformed output back to
+  the original messages via positional writeback when the guard reports
+  transformed=true.
+
+  Preserve malformed or unrecognized content-part types (e.g., untyped dicts,
+  unknown type values) as dropped content rather than replacing them with empty
+  strings or errors; the caller handles fail-closed semantics for incomplete
+  rewrites. Streaming settings control buffering and scan frequency when the
+  stream hook calls this guardrail. The constructor reads api_key and api_base
+  from litellm_params, falling back to environment variables (CS_AIDR_TOKEN,
+  CS_AIDR_BASE_URL) when absent, validates both are present, and fail_on_error
+  defaults to true (unrecoverable API failures block).
+
+  The architect must add five `pub mod crowdstrike_*` lines to
+  crates/betterlite-guardrails/src/lib.rs before this task can compile. This
+  task registers the oracle helper operation "crowdstrike_aidr" in the guardrails
+  group; the architect must add `"crowdstrike_aidr" => crowdstrike_aidr` to
+  tools/oracle/src/helpers/guardrails.rs before dispatch, and add "crowdstrike_aidr"
+  to the OPERATIONS frozenset in tools/oracle/helpers/b3766.py before this
+  task's oracle checks can pass.
+scope:
+  paths:
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/crowdstrike_aidr.rs
+    - crates/betterlite-guardrails/src/crowdstrike_aidr/**
+    - crates/betterlite-guardrails/src/crowdstrike_normalization.rs
+    - crates/betterlite-guardrails/src/crowdstrike_normalization/**
+    - crates/betterlite-guardrails/src/crowdstrike_message_selection.rs
+    - crates/betterlite-guardrails/src/crowdstrike_message_selection/**
+    - crates/betterlite-guardrails/src/crowdstrike_writeback.rs
+    - crates/betterlite-guardrails/src/crowdstrike_writeback/**
+    - crates/betterlite-guardrails/src/crowdstrike_streaming.rs
+    - crates/betterlite-guardrails/src/crowdstrike_streaming/**
+    - tools/oracle/cases/helpers/crowdstrike-aidr/**
+    - tools/oracle/fuzz/corpus/helper_case/crowdstrike-aidr-*
+    - tools/oracle/helpers/b3766.py
+    - tools/oracle/helpers/b3766/**
+    - tools/oracle/src/helpers/guardrails/b3766.rs
+    - tools/oracle/src/helpers/guardrails/b3766/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L40-L104
+    why: Content data models (_TextContentPart, _ImageUrlContentPart, _Message, _GuardInput, _GuardChatCompletionsResult, _GuardChatCompletionsResponse) and message filtering container (_FilteredMessages, _GuardInputWithIndices).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L106-L129
+    why: _normalize_content converts raw content (string, list, dict, non-list/non-string) to normalized form, JSON-stringifying non-dict list items and silently dropping dict blocks with unrecognized or malformed type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L132-L148
+    why: _extract_text_from_content and _extract_text_from_message extract plain text from content parts and messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L150-L158
+    why: _merge_metadata_bags combines request metadata and litellm_metadata dictionaries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L160-L173
+    why: streaming_params_from_litellm_params extracts streaming configuration from litellm_params.model_extra and optional_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L175-L195
+    why: _messages_since_last_assistant filters messages to include system messages and all messages since (inclusive of) the last assistant turn; if the last message is assistant, selects only system and final assistant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L197-L213
+    why: _merge_request_transforms merges redacted text back into the original text list using position tracking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L215-L226
+    why: _apply_message_redaction rewrites original message content (string or list) with redacted message content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L228-L242
+    why: _redacted_messages maps redacted messages back to original message positions; returns None if redaction indices do not align with full message list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L244-L315
+    why: "CrowdStrikeAIDRHandler.__init__ constructor reads api_key/api_base from env/params, initializes streaming config via _set_streaming_params, validates required secrets, get_supported_event_hooks returns [pre_call, post_call]."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L316-L326
+    why: _set_streaming_params and update_in_memory_litellm_params load streaming configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L327-L401
+    why: _call_crowdstrike_aidr_guard makes POST request to the AIDR API and parses response; raises HTTPException when blocked=true or returns the result dict on success; handles validation errors when transformed=true but response shape is malformed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L402-L427
+    why: _build_guard_input_for_request filters messages via _messages_since_last_assistant, normalizes content, and returns indices; falls back to texts if no structured messages; turns None/empty content into empty string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L428-L434
+    why: _build_guard_input_for_response builds guard_input from output texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L435-L438
+    why: _extract_transformed_texts pulls transformed assistant messages from guard output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L439-L466
+    why: _call_or_fail_open wraps the API call with error handling; raises HTTPException for blocked, re-raises for fail_on_error=true, logs and returns empty result for fail_open.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L467-L470
+    why: structured_messages_cover_full_request reports whether system/tool message skipping is configured.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L471-L488
+    why: _writeback_messages applies redacted messages back to the full request message list when skip flags are set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L489-L572
+    why: apply_guardrail orchestrates the full request/response inspection flow, building payloads, calling the API, and merging transformed results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/crowdstrike_aidr.py#L574-L582
+    why: get_config_model returns the CrowdStrikeAIDRGuardrailConfigModel class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/crowdstrike_aidr.py
+    why: Configuration model for streaming settings (streaming_buffer_until_moderated, streaming_buffer_release_on_scan, streaming_end_of_stream_only, streaming_sampling_rate) and core settings (api_key, api_base, fail_on_error).
+dod:
+  - text: >-
+      _normalize_content_string returns the string unchanged; null returns None; non-string non-list returns json.dumps(raw).
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _normalize_content_list iterates over items; non-dict items are json.dumps()'d as _TextContentPart; dict items with type="text" and text string become _TextContentPart; dict items with type="image_url" become _ImageUrlContentPart with url extracted from image_url field; all other dict types are silently dropped with no replacement appended.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _normalize_content_returns_empty_list_unchanged null/empty/non-list/non-string inputs produce their correct normalized form; the caller (_build_guard_input_for_request) turns the resulting None or empty list into an empty string at lines 412-413.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _extract_text_from_content_string returns the string unchanged; null returns ""; non-string non-list returns ""; list items with type="text" and string text are concatenated with newlines.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _extract_text_from_message_string_content with content being a string returns the string; null content returns ""; list content extracts text-type parts only and joins with newlines.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _merge_metadata_bags combines request_data.metadata and request_data.litellm_metadata dicts; returns the merged dict if at least one exists, otherwise None.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      streaming_params_from_litellm_params extracts streaming_buffer_until_moderated, streaming_buffer_release_on_scan, streaming_end_of_stream_only, streaming_sampling_rate from litellm_params.model_extra and optional_params, preferring model_extra values.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _messages_since_last_assistant_no_messages returns empty messages and indices.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _messages_since_last_assistant_last_is_assistant selects all system messages plus the final assistant message.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _messages_since_last_assistant_last_is_not_assistant selects all system messages plus all messages after (inclusive) the last assistant turn; skips assistant turns before the last one.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _merge_request_transforms merges redacted text from guard_output back into original texts by position, returning the same-length list with redacted values where the guard sent redactions and original values elsewhere.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _apply_message_redaction_string_content rewrites original.content to the extracted text from the redacted message.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _apply_message_redaction_list_content rewrites original.content to the redacted message content, converting _ContentPart objects to dicts.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _apply_message_redaction_no_text_content returns original unchanged when extracted text from original is empty.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _redacted_messages maps redacted messages by position back to original list via id(); returns None if any redacted index falls outside the full_messages list.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      constructor_validates_api_key raises CrowdStrikeAIDRGuardrailMissingSecrets when api_key is None and CS_AIDR_TOKEN is unset.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      constructor_validates_api_base raises CrowdStrikeAIDRGuardrailMissingSecrets when api_base is None and CS_AIDR_BASE_URL is unset.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      constructor_reads_api_key_from_env reads CS_AIDR_TOKEN when api_key param is None.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      constructor_reads_api_base_from_env reads CS_AIDR_BASE_URL when api_base param is None.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      constructor_fail_on_error_defaults_true resolves fail_on_error None to True when constructing the handler.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      constructor_initializes_streaming_defaults calls _set_streaming_params with provided values; unset fields default to false (or 5 for sampling_rate).
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _set_streaming_params_defaults unset None fields default to false or 5.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      update_in_memory_litellm_params calls _set_streaming_params with extracted values from litellm_params.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      get_supported_event_hooks returns [pre_call, post_call].
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _call_crowdstrike_aidr_guard_success parses _GuardChatCompletionsResponse from json response; returns the result dict.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_crowdstrike_aidr_guard_blocked raises HTTPException with status 400 and error message when blocked=true.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_crowdstrike_aidr_guard_transformed_malformed raises HTTPException with status 500 when transformed=true but response shape is invalid.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_crowdstrike_aidr_guard_malformed_not_transformed re-raises ValidationError when response shape is invalid and transformed is not true.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _build_guard_input_for_request_structured_messages filters via _messages_since_last_assistant, normalizes content, and returns with indices.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _build_guard_input_for_request_texts_fallback uses texts when no structured_messages, returning one message per text with user role.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _build_guard_input_for_request_no_input returns None when neither structured_messages nor texts are provided.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _build_guard_input_for_request_empty_content turns None or empty-list content to empty string.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _build_guard_input_for_response builds guard_input from output texts with assistant role.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _extract_transformed_texts pulls the last num_assistant_messages from guard_output and extracts text from each.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_or_fail_open_success returns the result from _call_crowdstrike_aidr_guard.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_or_fail_open_http_exception re-raises HTTPException (blocked verdict).
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_or_fail_open_fail_closed raises exception when fail_on_error=true and API call fails.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      _call_or_fail_open_fail_open logs error and returns empty result when fail_on_error=false.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      structured_messages_cover_full_request returns true when system or tool message skipping is configured.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _writeback_messages_skipping_enabled reconstructs full_messages from request_data.messages when skip flags are set.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _writeback_messages_no_skipping uses structured_messages as full_messages.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      _writeback_messages_applies_redactions rewrites original messages via _redacted_messages.
+    proof: [crowdstrike-aidr-tests]
+  - text: >-
+      apply_guardrail_request_input constructs guard_input via _build_guard_input_for_request, calls _call_or_fail_open, applies redactions if transformed=true.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      apply_guardrail_response_input constructs guard_input via _build_guard_input_for_response, calls _call_or_fail_open, applies redactions if transformed=true.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      apply_guardrail_includes_model_in_payload when model field is present.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      apply_guardrail_includes_user_id_in_payload when metadata.user_api_key_user_id is present.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      apply_guardrail_includes_user_email_in_extra_info when metadata.user_api_key_user_email is present.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      apply_guardrail_returns_inputs_unchanged when guard_input is empty or result.transformed is false.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      apply_guardrail_adds_to_applied_guardrails_header when request_data has body or messages.
+    proof: [crowdstrike-aidr-tests, helper-python]
+  - text: >-
+      get_config_model returns CrowdStrikeAIDRGuardrailConfigModel class.
+    proof: [crowdstrike-aidr-tests]
+checks:
+  optional: []
+  commands:
+    - id: crowdstrike-aidr-tests
+      why: The CrowdStrike AIDR tests fail, do not exist, or do not cover the required cases.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^crowdstrike_aidr::/) or test(/^crowdstrike_normalization::/) or test(/^crowdstrike_message_selection::/) or test(/^crowdstrike_writeback::/) or test(/^crowdstrike_streaming::/)' --no-capture
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3766.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/crowdstrike-aidr/normalize-content-string.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/normalize-content-non-string.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/normalize-content-list-mixed.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/normalize-content-unrecognized-type-dropped.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/extract-text-from-content-string.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/extract-text-from-content-list.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/extract-text-from-message.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/merge-metadata-bags.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/streaming-params-from-litellm-params.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/messages-since-last-assistant-empty.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/messages-since-last-assistant-last-is-assistant.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/messages-since-last-assistant-mixed.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/merge-request-transforms-by-position.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/apply-message-redaction-string.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/apply-message-redaction-list.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/redacted-messages-alignment.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/guard-input-request-structured-messages.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/guard-input-request-texts.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/guard-input-response.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/api-call-success.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/api-call-blocked.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/api-call-malformed-response-transformed-true.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/api-call-malformed-response-transformed-false.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/get-supported-event-hooks.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/constructor-env-vars.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/constructor-params-override-env.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/constructor-missing-api-key.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/constructor-missing-api-base.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/constructor-fail-on-error-default.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/apply-request-guard-input.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/apply-response-guard-input.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/apply-with-metadata-and-tools.yaml
+  - tools/oracle/cases/helpers/crowdstrike-aidr/apply-preserves-malformed-redaction-as-fail-closed.yaml
+deviations: []
+out_of_scope:
+  - "CustomGuardrail base class and log_guardrail_information decorator: B3664 covers litellm/integrations/custom_guardrail.py and owns these imports."
+  - "Message skip-flag helpers effective_skip_system_message_for_guardrail and effective_skip_tool_message_for_guardrail: B3663 covers litellm/llms/base_llm/guardrail_translation/utils.py and owns these functions."
+  - "HTTP client primitives get_async_httpx_client and AsyncHTTPHandler: shared transport layer has no owning task; flag for the architect."
+  - "Applied guardrails header callback add_guardrail_to_applied_guardrails_header: header composition has no owning task; flag for the architect."
+  - "Service invocation and higher-level apply hook orchestration: B107 owns the dispatching and lifecycle integration."
+pitfalls:
+  - "_normalize_content distinguishes between JSON-stringifiable items and dropped items: non-dict list items become _TextContentPart with json.dumps(item) as text, but dict items with an unrecognized or malformed type are silently dropped with no replacement; only type=\"text\" with string text or type=\"image_url\" with url-like structure are kept."
+  - "Empty content normalization happens in _build_guard_input_for_request (lines 412-413), not _normalize_content: when content is None or an empty list after normalization, the caller converts it to an empty string for the guard_input."
+  - "Message filtering for requests preserves system messages across all turns but includes non-system messages only from the last assistant turn onward; when the last message is already assistant, the selection includes only system and that final assistant."
+  - "Redaction writeback via _redacted_messages uses Python id() to map original message objects back to positions; failing to align redaction indices with the full message list returns None so the caller preserves the unredacted messages."
+  - "Streaming configuration defaults to false for all boolean flags (streaming_buffer_until_moderated, streaming_buffer_release_on_scan, streaming_end_of_stream_only) and 5 for sampling_rate; these are updated via _set_streaming_params when litellm_params change."
+  - "API request failure handling distinguishes HTTPException (blocked verdict) from other exceptions: blocked verdicts are re-raised immediately; other exceptions trigger fail_on_error checks so fail_open logs and returns empty results."
+  - "Malformed response handling: when transformed=true but the response shape cannot be parsed, a 500 is raised immediately to avoid dropping delivered redactions; when transformed is false or absent, validation errors re-raise naturally."
+  - "Constructor's fail_on_error parameter defaults to True when None is passed, using the pattern 'True if fail_on_error is None else fail_on_error'."
+  - "LiteLLM class names exceed the 30-character Rust identifier limit: CrowdStrikeAIDRGuardrailMissingSecrets (38 chars), CrowdStrikeAIDRGuardrailConfigModel (35 chars), CrowdStrikeAIDRGuardrailConfigModelOptionalParams (51 chars). Use shorter names: CrowdStrikeMissingSecrets (25 chars), CrowdStrikeAIDRConfig (20 chars), CrowdStrikeAIDROptionalParams (27 chars)."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

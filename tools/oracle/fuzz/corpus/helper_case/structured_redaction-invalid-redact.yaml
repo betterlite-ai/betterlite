@@ -1,0 +1,9 @@
+kind: helper
+name: structured-invalid-redact
+call:
+  structured_redaction:
+    function: redact_credentials_in_payload
+    data: []
+env: {}
+compare:
+  ignore: [{pointer: /error/message, why: betterlite writes its own message}]

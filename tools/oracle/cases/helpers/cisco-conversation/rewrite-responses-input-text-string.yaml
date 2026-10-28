@@ -1,0 +1,10 @@
+kind: helper
+name: cisco-rewrite-string
+call:
+  cisco_conversation:
+    function: rewrite
+    input: original text
+    sanitized_text: clean
+env: {}
+compare:
+  ignore: []

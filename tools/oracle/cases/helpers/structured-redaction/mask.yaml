@@ -1,0 +1,9 @@
+kind: helper
+name: structured-mask
+call:
+  structured_redaction:
+    function: mask
+    data: {token: short, other: null}
+env: {}
+compare:
+  ignore: []

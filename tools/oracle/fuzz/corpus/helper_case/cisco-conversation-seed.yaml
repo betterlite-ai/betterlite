@@ -1,0 +1,9 @@
+kind: helper
+name: cisco-conversation-seed
+call:
+  cisco_conversation:
+    function: flatten
+    input: [{type: input_text, text: seed}]
+env: {}
+compare:
+  ignore: []

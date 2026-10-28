@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Langfuse logger lifecycle and credential selection
 status: todo
 depends_on: [B3900, B3903, B3904, B3905, B3906, B173, B188, B2204]
-file: null
+file: tasks/B3907-langfuse-logger.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse.py"
   - "litellm/integrations/langfuse/langfuse_handler.py"

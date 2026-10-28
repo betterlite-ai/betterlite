@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Authorized MCP search and tool invocation handlers
 status: todo
 depends_on: [B4684, B864, B732]
-file: null
+file: tasks/B4686-mcp-search-handlers.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/tool_search.py"
 parent: B138

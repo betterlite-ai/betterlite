@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-guardrails-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-guardrails = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "bedrock_messages"
+path = "fuzz_targets/bedrock_messages.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

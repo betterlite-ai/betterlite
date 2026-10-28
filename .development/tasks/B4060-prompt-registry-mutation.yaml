@@ -1,0 +1,142 @@
+id: B4060
+title: Prompt backend registration and registry mutation
+description: >-
+  Build supported backend initializer selection and ordered registration, replacement,
+  database synchronization and deletion. Implement get_prompt_initializer_from_integrations:
+  a function that discovers and collects prompt initializer callables (from dotprompt,
+  gitlab, bitbucket, generic_prompt_management) into a registry keyed by integration name.
+  Use a closed native enum of supported integrations (compile-time known) instead of scanning
+  directories at runtime, so the available backends are static and adding a new integration
+  requires code changes and recompilation.
+
+  Extend InMemoryPromptRegistry with initialize_prompt: store the parsed prompt and callback
+  in both maps (by registry_key_for_prompt result), look up the initializer by integration
+  name, call it with (litellm_params, prompt), validate the result is a PromptManagementClient,
+  and register the callback with betterlite-logging's add_litellm_callback. Implement
+  _build_prompt_callback: extract and parse litellm_params, validate prompt_integration
+  presence, call the initializer, and return both the parsed PromptSpec and callback.
+  Implement reload_prompt: build a new callback, remove the stale callback from all lists,
+  build and register the new one, update both maps. Implement sync_prompt_from_db: compare
+  a database-loaded prompt to the in-memory version; skip reload if litellm_params and
+  prompt_info are equal (using value equality, not identity), otherwise call reload_prompt.
+
+  Implement remove_prompt by registry_key: pop both maps and call remove_callback_from_all_lists
+  if a callback exists. Implement delete_prompts_by_base_id: find all keys matching the
+  base_prompt_id (scoped to optional environment), delete each one via remove_prompt, and
+  return the list of deleted registry keys. Declare the module-level IN_MEMORY_PROMPT_REGISTRY
+  singleton as InMemoryPromptRegistry().
+
+  Preserve: the equality test in sync_prompt_from_db (skip reload if litellm_params and
+  prompt_info are equal), callback removal ordering (pop dict entry, then call remove_callback_from_all_lists),
+  construction of replacement callback before removing the stale one, and ValueError for
+  missing integration/unsupported type (endpoint code maps these to HTTP 400).
+scope:
+  paths:
+    - crates/betterlite-prompts/src/registry/mutation.rs
+    - crates/betterlite-prompts/src/registry/mutation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L99-L169
+    why: "get_prompt_initializer_from_integrations function (lines 99-163) that discovers integrations by scanning directories; betterlite replaces scanning with a compile-time enum. Lines 166-169 declare prompt_initializer_registry and its mutation."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L185-L208
+    why: "initialize_prompt method with early-return on existing registry_key (198-200) and _build_prompt_callback call (202), add_litellm_callback registration (203), and both-map updates (205-206)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L210-L243
+    why: "_build_prompt_callback method extracting litellm_params (211-217), validating prompt_integration (219-221), looking up initializer (223-225), calling it (227), validating result type (228-231), and constructing PromptSpec (233-242)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L245-L257
+    why: "reload_prompt method building new callback (248), popping maps (250-251), calling remove_callback_from_all_lists (253), calling add_litellm_callback (254), and updating both maps (255-256)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L259-L265
+    why: "sync_prompt_from_db method getting existing (260), early-returning (261-262), comparing litellm_params and prompt_info for equality (263), and calling reload_prompt on difference (265)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L310-L335
+    why: "remove_prompt method (310-316) popping maps and calling remove_callback_from_all_lists; delete_prompts_by_base_id method (318-335) finding, deleting, and returning deleted keys."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L338
+    why: "IN_MEMORY_PROMPT_REGISTRY global singleton instantiation."
+dod:
+  - text: get_prompt_initializer_from_integrations returns a map of integration names to initializer callables (or similar) for dotprompt, gitlab, bitbucket, and generic_prompt_management, without scanning directories at runtime.
+    proof: [initializer-discovery-tests]
+  - text: A module-level prompt_initializer_registry constant holds the initializers, keyed by integration name, and is populated once on module load (not lazily).
+    proof: [registry-population-tests]
+  - text: initialize_prompt stores the parsed PromptSpec and callback in both IN_MEMORY_PROMPTS and prompt_id_to_custom_prompt by registry_key_for_prompt result, calls add_litellm_callback, and returns the PromptSpec.
+    proof: [initialize-prompt-tests]
+  - text: initialize_prompt returns early and unchanged on repeat call with the same registry key, without rebuilding the callback.
+    proof: [initialize-idempotent-tests]
+  - text: _build_prompt_callback extracts litellm_params, validates prompt_integration presence, looks up the initializer, calls it with (litellm_params, prompt), validates result type, and returns (PromptSpec, PromptManagementClient) tuple.
+    proof: [callback-build-tests]
+  - text: reload_prompt constructs the replacement callback first, then removes the stale one; if construction fails, the stale callback remains registered.
+    proof: [reload-safety-tests]
+  - text: reload_prompt updates both maps in place and calls remove_callback_from_all_lists before adding the new callback.
+    proof: [reload-order-tests]
+  - text: sync_prompt_from_db uses value equality (==) to compare litellm_params and prompt_info; if both equal the existing values, skip reload.
+    proof: [sync-equality-tests]
+  - text: sync_prompt_from_db initializes a not-yet-registered prompt and reloads if either litellm_params or prompt_info differs.
+    proof: [sync-init-and-reload-tests]
+  - text: remove_prompt by registry_key pops both maps and calls remove_callback_from_all_lists if a callback was found; absent prompts are handled gracefully.
+    proof: [remove-prompt-tests]
+  - text: delete_prompts_by_base_id finds all registry keys with matching base_prompt_id (filtered by environment if given), calls remove_prompt for each, and returns the list of deleted keys.
+    proof: [delete-by-base-id-tests]
+  - text: IN_MEMORY_PROMPT_REGISTRY is instantiated once at module level as InMemoryPromptRegistry().
+    proof: [module-singleton-tests]
+checks:
+  optional: []
+  commands:
+    - id: initializer-discovery-tests
+      why: get_prompt_initializer_from_integrations fails or returns incomplete initializers
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::initializer_discovery::/)'
+    - id: registry-population-tests
+      why: prompt_initializer_registry is not populated at module load or missing
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::registry_population::/)'
+    - id: initialize-prompt-tests
+      why: initialize_prompt fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::initialize_prompt::/)'
+    - id: initialize-idempotent-tests
+      why: initialize_prompt is not idempotent on repeat calls with same registry key
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::initialize_idempotent::/)'
+    - id: callback-build-tests
+      why: _build_prompt_callback fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::build_prompt_callback::/)'
+    - id: reload-safety-tests
+      why: reload_prompt does not construct new callback before removing stale one
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::reload_safety::/)'
+    - id: reload-order-tests
+      why: reload_prompt does not maintain proper callback registration/unregistration order
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::reload_order::/)'
+    - id: sync-equality-tests
+      why: sync_prompt_from_db does not use value equality for comparison
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::sync_equality::/)'
+    - id: sync-init-and-reload-tests
+      why: sync_prompt_from_db does not initialize new or reload changed prompts
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::sync_init_reload::/)'
+    - id: remove-prompt-tests
+      why: remove_prompt fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::remove_prompt::/)'
+    - id: delete-by-base-id-tests
+      why: delete_prompts_by_base_id fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::delete_by_base_id::/)'
+    - id: module-singleton-tests
+      why: IN_MEMORY_PROMPT_REGISTRY singleton is not declared at module level
+      run: grep -qE 'const|static.*IN_MEMORY_PROMPT_REGISTRY' crates/betterlite-prompts/src/registry/mutation.rs
+oracle_cases: []
+deviations:
+  - what: betterlite uses a compile-time known set of supported integrations instead of scanning directories at runtime; the available backends are static and adding a new integration requires code changes and recompilation.
+    why: Runtime module discovery via importlib and dynamic registry updates are not idiomatic in Rust; static composition is safer and decouples startup from filesystem state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L99-L163
+out_of_scope:
+  - litellm/proxy/prompts/prompt_registry.py:21-96 (get_base_prompt_id, get_version_number, prompt_environment_or_default, registry_key_for_prompt, parse_prompt_version, _spec_version, _default_serve_environment); owned by B4059 for registry selection.
+  - litellm/proxy/prompts/prompt_registry.py:171-183 (InMemoryPromptRegistry.__init__); owned by B4059.
+  - litellm/proxy/prompts/prompt_registry.py:267-308 (resolve_prompt_spec, get_prompt_callback_for_prompt, has_config_prompt); owned by B4059 for lookups.
+  - Langfuse and Arize Phoenix prompt initializers; question 3 in the outline notes these are unresolved owners and must be assigned separately.
+  - The B4058 completion-hook adapters (get_chat_completion_prompt, async_get_chat_completion_prompt); registration stores compiler identity but does not invoke those hooks.
+  - Custom Python extension execution through prompt management hooks; this task builds the registration machinery only.
+pitfalls:
+  - initialize_prompt returns early without rebuilding the callback when registry_key is already in IN_MEMORY_PROMPTS (LiteLLM lines 198-200); tests must verify that the cached PromptSpec is returned unchanged on repeat calls.
+  - The equality check in sync_prompt_from_db compares litellm_params and prompt_info using ==, not reference equality; if PromptLiteLLMParams or PromptInfo implements __eq__ in Rust, the comparison must honor that implementation.
+  - reload_prompt constructs a new callback first, then removes the stale one; if callback construction fails, the exception propagates and the old callback remains registered (no automatic rollback).
+  - The supported integrations set must be closed (known at compile time); runtime discovery by scanning directories is not done in betterlite.
+  - The registry key includes the environment (from registry_key_for_prompt); deleting without specifying environment deletes all versions of a prompt across every environment.
+  - Initializer functions return PromptManagementClient; the return type validation (checking isinstance/match in LiteLLM, type checking in Rust) is essential and not optional.
+  - IN_MEMORY_PROMPTS and prompt_id_to_custom_prompt maps are keyed by registry_key_for_prompt result and must stay synchronized; every mutation operation must update both or update neither.
+  - Callback unregistration calls remove_callback_from_all_lists from the logging callback manager (B189, external); this is not a local remove operation and cannot fail silently without losing registered callbacks.
+  - Arize Phoenix is reachable through automatic discovery in LiteLLM; question 3 in the outline notes it requires explicit ownership assignment if betterlite intends to support it.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2
