@@ -2,8 +2,8 @@ id: B3121
 milestone: M4 keys, spend and management
 title: Resolve native cache prediction targets and count prompt boundaries
 status: todo
-depends_on: [B3120, B174, B567, B585, B961, B1696]
-file: null
+depends_on: [B2219, B3120, B174, B567, B585, B961, B1696]
+file: tasks/B3121-prompt-cache-counting.yaml
 covers:
   - "litellm/llms/anthropic/prompt_cache_prediction.py"
 parent: B075

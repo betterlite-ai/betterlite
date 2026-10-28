@@ -1,0 +1,199 @@
+id: B4677
+title: MCP BYOK consent page
+description: >-
+  Implement the BYOK (Bring Your Own Key) OAuth 2.1 authorization endpoint for MCP servers: session validation and authorization code storage for the two-step consent flow where users enter their API key to authorize LiteLLM access to an MCP server. The GET /v1/mcp/oauth/authorize endpoint (unauthenticated) validates OAuth parameters and renders an HTML form. The POST endpoint requires a valid UI session cookie (master-key-signed HS256 JWT), stores a short-lived authorization code (5-minute TTL, 1000-entry capacity limit), and redirects with the code for token exchange (B4678).
+
+  Session identity comes from the UI token cookie with claims: exp (required), login_method ("sso" or "username_password"), and type (rejected if "byok_session"). Session keys starting with sk- are re-resolved against the database to catch revoked sessions from logout or password change, using the session-key DB liveness lookup (get_key_object, hash_token).
+
+  The authorization code store is in-memory with a 300-second TTL per code and a 1000-entry capacity limit; lazy cleanup runs on each request to prevent memory exhaustion. RFC 6749 requirements enforced: response_type must be "code", code_challenge is required, redirect_uri must be a loopback address (127.0.0.1, ::1, localhost over http/https), and client_id is recorded for later verification by B4678. The POST response is a 302 redirect to redirect_uri?code=...&state=... (with & if redirect_uri has existing query string).
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-mcp/**
+    - tools/oracle/helpers/b4677.py
+    - tools/oracle/helpers/b4677/**
+    - tools/oracle/src/helpers/server/b4677.rs
+    - tools/oracle/src/helpers/server/b4677/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L39-L75
+    why: >-
+      Authorization code store definition, TTL constant (300 seconds), capacity limit (1000 entries),
+      and code structure (api_key, server_id, code_challenge, redirect_uri, client_id, user_id, expires_at)
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L85-L88
+    why: >-
+      User ID extraction wrapper (_user_id_from_session_cookie): simple 2-line helper that returns
+      just the user_id from the session cookie, used by B136 (discoverable_endpoints.py lines 425/428, 904/913)
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L131
+    why: >-
+      Session identity extraction from UI token cookie (_session_identity_from_cookie): HS256 decode
+      with master_key, require exp claim, validate login_method in ["sso", "username_password"],
+      reject type="byok_session"
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L134-L171
+    why: >-
+      Session key liveness check (_session_key_is_live): sk- prefixed keys are looked up against DB;
+      non-sk- EXPERIMENTAL_UI_LOGIN tokens bypass DB check and pass through on 10-minute lifetime
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L174-L184
+    why: >-
+      BYOK session auth dependency (_byok_session_auth): validates session identity and liveness,
+      returns 401 login_required on failure
+
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L70-L74
+    why: >-
+      Lazy cleanup of expired authorization codes (_purge_expired_codes): called on each POST to
+      delete entries with expires_at < now
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L704-L768
+    why: >-
+      GET /v1/mcp/oauth/authorize endpoint (unauthenticated): validate response_type=code, require
+      code_challenge, validate loopback redirect_uri, resolve server metadata (name, access items,
+      help URL) from MCP registry, render HTML form
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L771-L826
+    why: >-
+      POST /v1/mcp/oauth/authorize endpoint (requires _byok_session_auth): validate redirect_uri
+      and code_challenge_method=S256, generate UUID for auth code, store code with API key and
+      metadata, return 302 redirect to redirect_uri?code=...&state=...
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py
+    why: >-
+      validate_loopback_redirect_uri utility (allows 127.0.0.1, ::1, localhost over http/https);
+      get_request_base_url to extract host/port from request
+
+dod:
+  - text: The GET /v1/mcp/oauth/authorize endpoint is unauthenticated and returns HTML form with hidden inputs for client_id, redirect_uri, code_challenge, code_challenge_method, state, server_id.
+    proof: [byok-consent-get]
+
+  - text: GET /v1/mcp/oauth/authorize validates response_type=code, requires code_challenge, and validates redirect_uri is a loopback address (127.0.0.1, ::1, localhost over http/https), returning 400 for each violation.
+    proof: [byok-consent-get, oracle]
+
+  - text: GET /v1/mcp/oauth/authorize resolves server metadata (name, description items, help URL) from the MCP registry using server_id; fallback to "MCP Server" when registry lookup fails.
+    proof: [byok-consent-get, mcp-registry]
+
+  - text: The HTML form has two steps (step 1 overview, step 2 API key entry) with progress dots, logos, close button, navigation buttons, access checklist, API key field, save-key toggle with duration pills, and security note.
+    proof: [byok-consent-get, form-structure]
+
+  - text: All user-supplied and externally-derived values in the HTML (server_name, client_id, redirect_uri, state, server_id) are HTML-escaped to prevent injection attacks.
+    proof: [byok-consent-get, xss-test]
+
+  - text: POST /v1/mcp/oauth/authorize requires a valid UI session cookie (HS256 JWT with master_key, exp claim, login_method in [sso, username_password], type != byok_session), returning 401 login_required without a valid cookie.
+    proof: [session-auth, oracle]
+
+  - text: Session keys starting with sk- are re-resolved against the database to validate liveness; non-sk- EXPERIMENTAL_UI_LOGIN tokens bypass the DB check and pass through.
+    proof: [session-auth, session-liveness]
+
+  - text: POST /v1/mcp/oauth/authorize validates redirect_uri matches the request, code_challenge_method is S256, stores auth code with api_key, server_id, code_challenge, redirect_uri, client_id, user_id, and expires_at (now + 300 seconds).
+    proof: [byok-consent-post, oracle]
+
+  - text: POST /v1/mcp/oauth/authorize returns 503 if authorization code store is at capacity (1000 entries), preventing memory exhaustion from burst of abandoned flows.
+    proof: [byok-consent-post, auth-code-limit]
+
+  - text: Authorization codes expire after 300 seconds and are purged lazily on the POST request; expired codes are deleted and cannot be reused.
+    proof: [byok-consent-post, auth-code-ttl]
+
+  - text: POST /v1/mcp/oauth/authorize returns 302 redirect to redirect_uri with Location header containing code and state query parameters (& separator if redirect_uri has existing query string).
+    proof: [byok-consent-post, oracle]
+
+  - text: Every oracle case matches LiteLLM on HTML form rendered, authorization code stored, redirect URL, and all HTTP response headers, status codes and error bodies.
+    proof: [byok-oracle-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: byok-consent-get
+      why: GET /v1/mcp/oauth/authorize does not exist, does not render HTML form, or does not validate parameters
+      run: cargo nextest run --locked -p betterlite-server -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::.*get/)'
+
+    - id: byok-consent-post
+      why: POST /v1/mcp/oauth/authorize does not exist, does not validate session, or does not store auth codes
+      run: cargo nextest run --locked -p betterlite-server -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::.*post/)'
+
+    - id: session-auth
+      why: session cookie parsing, validation or liveness check is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_session_auth::/)' -E 'test(/^session_identity::/)'
+
+    - id: session-liveness
+      why: session key re-resolution against database is missing or does not reject revoked sessions
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^session_key_is_live::/)'
+
+    - id: form-structure
+      why: HTML form does not have two-step layout, navigation, progress dots, or other required elements
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^build_authorize_html::/)'
+
+    - id: xss-test
+      why: HTML form does not escape user-supplied and externally-derived values
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::.*escape/)'
+
+    - id: mcp-registry
+      why: server metadata resolution from MCP registry is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_registry_resolve::/)'
+
+    - id: auth-code-limit
+      why: authorization code capacity limit (1000 entries) is not enforced
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^auth_code_limit::/)'
+
+    - id: auth-code-ttl
+      why: authorization code expiration (300 seconds) or lazy cleanup is missing
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^auth_code_ttl::/)'
+
+    - id: byok-oracle-cases
+      why: oracle cases fail or the GET/POST endpoints do not match LiteLLM on HTML form, auth codes, redirects, headers or error responses
+      run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/mcp/byok-consent/ 2>&1 | grep -q "PASS.*byok-consent"
+
+oracle_cases:
+  - tools/oracle/cases/mcp/byok-consent/get-basic.yaml
+  - tools/oracle/cases/mcp/byok-consent/get-with-server-id.yaml
+  - tools/oracle/cases/mcp/byok-consent/get-no-code-challenge.yaml
+  - tools/oracle/cases/mcp/byok-consent/get-invalid-response-type.yaml
+  - tools/oracle/cases/mcp/byok-consent/get-invalid-redirect-uri.yaml
+  - tools/oracle/cases/mcp/byok-consent/post-basic.yaml
+  - tools/oracle/cases/mcp/byok-consent/post-no-session.yaml
+  - tools/oracle/cases/mcp/byok-consent/post-revoked-session.yaml
+  - tools/oracle/cases/mcp/byok-consent/post-byok-token-rejected.yaml
+  - tools/oracle/cases/mcp/byok-consent/post-auth-code-limit.yaml
+  - tools/oracle/cases/mcp/byok-consent/post-at-capacity.yaml
+
+deviations:
+  - what: "betterlite renders error responses for invalid parameters (missing code_challenge, invalid response_type, invalid redirect_uri) with betterlite's own error format, not LiteLLM's Python library message names."
+    why: "Consistency with betterlite's error responses, and LiteLLM's error messages reference the Python library name."
+
+  - what: "The authorization code store is in-memory HashMap with time-based expiration; no distributed backend is used."
+    why: "Matches LiteLLM's single-proxy design. Multi-proxy support with shared state is deferred to B4658 or later tasks."
+
+out_of_scope:
+  - "HTML form builder (_build_authorize_html, lines 187-644): Split into B4687 per call-graph split rule."
+  - "_user_id_from_session_cookie (lines 85-88): thin wrapper over _session_identity_from_cookie, returns user_id; called from B136's discoverable_endpoints.py lines 425/428, 904/913. Owned by B4678 (shares this file)."
+  - "PKCE verification (_verify_pkce function, checking code_verifier against stored code_challenge). Owned by B4678."
+  - "OAuth error response formatting (_oauth_token_error). Owned by B4678."
+  - "Token endpoint (POST /v1/mcp/oauth/token). Owned by B4678."
+  - "OAuth metadata discovery endpoints (/.well-known/oauth-authorization-server, /.well-known/oauth-authorization-server/.../v1/mcp/oauth, /.well-known/oauth-authorization-server/{root_path:path}/v1/mcp/oauth). Owned by B4678."
+  - "GET /v1/mcp/oauth/protected-resource (byok_protected_resource_metadata). Owned by B4678."
+  - "store_user_credential database write (persisting the credential from the API key field). Owned by B4658."
+  - "global_mcp_server_manager and MCP registry lookup (ServerConfig metadata retrieval). Owned by B136."
+  - "Session-key DB liveness lookup (get_key_object, hash_token utilities). Owned by B738."
+  - "get_request_base_url and validate_loopback_redirect_uri utilities. Owned by B4654."
+  - "master_key global. Owned by proxy core config."
+
+pitfalls:
+  - "The HTML string is 450+ lines with nested CSS and JavaScript; double-braces {{ }} in CSS must escape single braces correctly in Rust string interpolation to avoid format string collisions."
+  - "Session identity extraction requires HS256 decryption with master_key; reject if exp claim is missing (use jwt library's require=[\"exp\"] equivalent) or if payload type equals \"byok_session\"."
+  - "The session_key field is optional; older tokens may not have it. Only sk- prefixed keys are looked up against the database; non-sk- tokens pass through."
+  - "Authorization codes expire after exactly 300 seconds; test timing must account for clock skew (use frozen_time or similar in tests)."
+  - "The capacity limit check for auth code store happens before a new code is generated; at 1000 entries, the next POST is rejected with 503 Service Unavailable."
+  - "redirect_uri query string handling: if redirect_uri already contains a query string, use & instead of ? to append code and state parameters."
+  - "The form parameters (client_id, redirect_uri, code_challenge, state, server_id) are POST form inputs (not from query parameters); they must be validated in the POST request."
+  - "HTML escape function in Rust must match Python's html.escape behavior: escape &, <, >, \", ' characters."
+  - "LiteLLM's MCP registry lookup can fail silently (wrapped in try/except); fallback to defaults (server_name=\"MCP Server\", empty access items, empty help URL) instead of returning an error."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

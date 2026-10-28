@@ -1,0 +1,151 @@
+id: B3272
+title: Search call preparation and execution
+description: >-
+  Build crates/betterlite-core::search with shared native search invocation, preserving string/list query
+  validation, explicit-option precedence over provider kwargs, provider lookup, initial credential/URL validation,
+  logging updates and exception conversion. Both public sync and async semantics use the same operation, including
+  the async None-response error, without copying Python executor mechanics into Rust. B3276 owns the HTTP handler
+  dispatch (BaseLLMHTTPHandler.search and async_search).
+
+  Export from betterlite-core::search: async search function (async_search_impl or similar) that takes query
+  (string or list), provider name, optional parameters (max_results, search_domain_filter, max_tokens_per_page,
+  country), api_key, api_base, timeout, extra_headers and kwargs, and returns SearchResponse on success or raises
+  an exception. The sync search function wraps the async one or invokes it in a context-preserving executor.
+  Both functions build optional parameters from explicit arguments (precedence over kwargs), validate the query
+  type and contents, construct the provider config, validate the environment, resolve the full URL, log the
+  request, call the HTTP handler via B3276, and convert exceptions through the error dispatch layer.
+
+  Query validation: string or list of strings only; reject other types or lists with non-strings.
+  Optional parameter precedence: explicit arguments win over kwargs; kwargs contribute only unset options.
+  Provider lookup: raise ValueError if the provider has no search config; use BaseSearchConfig contract.
+  Credential/URL validation: call validate_environment for headers and resolve api_base trust; call get_complete_url
+  for the full URL. Logging: use Logging.update_from_kwargs with model name, optional_params and litellm_params.
+  Exception conversion: use litellm.exception_type (from betterlite-error) to wrap all exceptions with model,
+  provider, original exception and completion_kwargs, preserving the custom_llm_provider and custom_llm_provider_response_headers.
+  The async path invokes the sync function in a thread context that preserves contextvars, detects
+  synchronous (immediate SearchResponse) vs. asynchronous (Coroutine) returns, and raises ValueError if the
+  response is None.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/search.rs
+    - crates/betterlite-core/src/search/**
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L27-56
+    why: _build_search_optional_params function builds the optional parameters dict from explicit arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L59-159
+    why: asearch function async signature, executor/context preservation, return detection and exception wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L162-320
+    why: search function sync signature, query validation, provider lookup, optional parameter assembly, environment validation, URL building, logging and HTTP handler call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L1-26
+    why: Imports, handler initialization and logging object injection via decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L185-196
+    why: BaseSearchConfig.validate_environment hook returns headers dict with optional auth added by provider overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L221-246
+    why: BaseSearchConfig.get_complete_url hook returns the full endpoint URL from api_base, optional_params and api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L66-78
+    why: SearchResponse type contract returned by both sync and async functions.
+
+dod:
+  - text: Query validation rejects non-string and non-list types, and lists with non-string items.
+    proof: [search-query-validation]
+  - text: Optional parameters build from explicit max_results, search_domain_filter, max_tokens_per_page and country arguments only.
+    proof: [search-optional-params]
+  - text: Kwargs contribute to optional_params only if their key is not already set by explicit arguments.
+    proof: [search-kwargs-precedence]
+  - text: Provider lookup uses ProviderConfigManager to fetch BaseSearchConfig; raises ValueError if not found.
+    proof: [search-provider-lookup]
+  - text: validate_environment is called with api_key, api_base and extra_headers (or empty dict); returns headers.
+    proof: [search-environment-validation]
+  - text: get_complete_url is called with api_base, optional_params and api_key; returns the full URL.
+    proof: [search-url-resolution]
+  - text: Logging.update_from_kwargs is called with kwargs, model name, optional_params, litellm_params (call_id, api_base) and provider.
+    proof: [search-logging]
+  - text: HTTP handler is called with query, optional_params, timeout, logging_obj, api_key, api_base, provider, async flag, headers and provider_config.
+    proof: [search-http-dispatch]
+  - text: Sync search returns a SearchResponse or Coroutine result from the HTTP handler.
+    proof: [search-sync-return]
+  - text: All exceptions in search are caught and re-raised through exception_type with model, provider, original exception and completion_kwargs.
+    proof: [search-exception-handling]
+  - text: Async search invokes sync search in a thread executor with context preservation, detects synchronous vs. asynchronous results and raises ValueError if response is None.
+    proof: [search-async-execution]
+
+checks:
+  optional: []
+  commands:
+    - id: search-query-validation
+      why: query validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(query_validation|search_validation)/)'
+    - id: search-optional-params
+      why: optional parameter building tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(optional_params|search_params)/)'
+    - id: search-kwargs-precedence
+      why: kwargs precedence tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(kwargs_precedence|search_kwargs)/)'
+    - id: search-provider-lookup
+      why: provider lookup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(provider_lookup|search_config)/)'
+    - id: search-environment-validation
+      why: environment validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(environment_validation|search_headers)/)'
+    - id: search-url-resolution
+      why: URL resolution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(url_resolution|search_complete_url)/)'
+    - id: search-logging
+      why: logging tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(logging|search_log)/)'
+    - id: search-http-dispatch
+      why: HTTP dispatch tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(http_dispatch|search_http)/)'
+    - id: search-sync-return
+      why: sync return type tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(sync_return|search_response)/)'
+    - id: search-exception-handling
+      why: exception handling tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(exception_handling|search_error)/)'
+    - id: search-async-execution
+      why: async execution tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(async_execution|search_async)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Rust's type system enforces query string/list validation at compile time; runtime type checks validate list contents only.
+    why: Rust does not have the same dynamic type checking as Python, so validation is static where possible and deferred where not.
+  - what: Optional parameters are merged into a map from explicit arguments and then filtered kwargs, not built separately for each provider.
+    why: A single merged map is simpler and avoids duplicating precedence logic; explicit arguments win by construction.
+  - what: Provider lookup raises ValueError immediately if the search config is not available, not returning None with fallback logic elsewhere.
+    why: betterlite prefers errors to None returns and no-op defaults; the caller decides whether to retry or skip.
+  - what: The async path uses Tokio's spawn_blocking or similar executor, not the Python loop.run_in_executor API.
+    why: Rust async execution is task-based, not loop-based; the native async runtime handles blocking operations.
+  - what: Logging is initialized before the HTTP handler call, not asynchronously after.
+    why: Logging should reflect the request about to be sent, not the response received; it is safer to log before.
+
+out_of_scope:
+  - Provider-specific transforms (validate_environment, get_complete_url, sign_request overrides); each provider implements its own BaseSearchConfig via B3270.
+  - HTTP transport and request dispatch (httpx, headers, streaming); that is B3276.
+  - Router selection, fallback execution and credential override; that is B3273.
+  - Pricing and cost calculation; that is B3274.
+  - Management routes and search tool registry; that is B3271 and B3275.
+  - "ProviderConfigManager.get_provider_search_config factory (litellm/utils.py:9859-9916), filter_out_litellm_params function (L4196-4199) and client decorator (L1674-L2315) are owned by B157; they are dependencies only."
+  - The get_secret_str function and server-credential lookup policy; that is B3270 scope for trust checks only.
+  - Exception alert side effects and async retry orchestration; that is handled by the router fallback executor.
+
+pitfalls:
+  - "Query validation checks isinstance(query, str or list) and rejects list items that are not strings; non-string lists like ['a', 1] are rejected."
+  - "Optional parameters built by explicit arguments only; kwargs are filtered and merged, but explicit arguments always win."
+  - "Provider lookup uses ProviderConfigManager.get_provider_search_config(SearchProviders(provider_name)); failure raises ValueError, not None return."
+  - "Timeout precedence: timeout argument or request_timeout constant; zero timeout selects the default, not a zero-duration operation."
+  - "Async execution detects None response and raises ValueError; None is treated as a fatal error, not an empty result."
+  - "Logging object is obtained before HTTP call and updated with the full URL, not mock-logged or deferred."
+  - "Exception conversion preserves original_exception and completion_kwargs (locals() at function entry); custom_llm_provider and custom_llm_provider_response_headers pass through."
+  - "The sync function returns SearchResponse or Coroutine unchanged from the handler; mixed types (sometimes sync, sometimes async) are allowed."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

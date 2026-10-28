@@ -1,0 +1,197 @@
+id: B3034
+title: Rate-limit descriptor settlement and rollback
+description: >-
+  Build cross-descriptor settlement and atomicity-preserving rollback for rate-limit counter increments.
+  Implement two execution paths: sequential (one Lua call per descriptor on a loop, refunding prior descriptors
+  on OVER_LIMIT or script failure) and pipelined (all descriptors in one batch, refunding all applied
+  descriptors if any fails or returns OVER_LIMIT). Preserve window identity checks, fail-closed behavior,
+  and best-effort refunds using the WINDOW_GUARDED_TOKEN_INCREMENT_SCRIPT from B3037.
+
+  atomic_check_and_increment_by_n is the entry point, dispatching to either _atomic_lua_per_descriptor
+  (two paths: sequential loop with early stop, pipelined gather with rollback) or in-memory fallback
+  when Redis is unavailable. On OVER_LIMIT from any descriptor, all applied increments are refunded
+  (subtracted) so Redis returns to pre-call state. Lua failures mid-loop trigger best-effort refunds,
+  then fall back to in-memory enforcement with locked critical section across all descriptors.
+
+  _counter_refunds_from_atomic_response extracts window_start and increment amounts from successful
+  Lua replies for later refund operations. _counter_refunds_from_batch_values builds refunds from
+  pipelined batch replies for descriptors that incremented before any rejection. _refund_counter_increments
+  applies each refund by calling the window-guarded decrement script, accepting failures (logged as
+  warnings) since the rejection decision already stands. _pipelined_group_response handles individual
+  group replies (success, exception, decode failure) from batch gather; a group's exception is its own
+  failure on that descriptor only.
+
+  Depends on B3031 for _as_counter_values (reply converter), _reject_if_rate_limit_unverifiable (fail-closed
+  helper), and TypedDicts (RateLimitResponse, RateLimitStatus, CounterRefund, AtomicCounterMeta);
+  B3032 for _pipeline_scripts (batch executor); B3033 for _build_descriptor_atomic_payload, _build_atomic_response,
+  _atomic_check_and_increment_in_memory; B3037 for WINDOW_GUARDED_TOKEN_INCREMENT_SCRIPT (token decrement
+  on refund); B393 for log_redis_failure.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/settlement_and_rollback.rs
+    - crates/betterlite-rate-limit/src/settlement_and_rollback/**
+    - tools/oracle/cases/settlement_and_rollback/**
+    - tools/oracle/helpers/b3034.py
+    - tools/oracle/helpers/b3034/**
+    - tools/oracle/src/helpers/rate_limit/b3034.rs
+    - tools/oracle/src/helpers/rate_limit/b3034/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2024-L2092
+    why: atomic_check_and_increment_by_n entry point with descriptor_groups filtering, lock/script dispatch, and in-memory fallback handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2151-L2223
+    why: _atomic_lua_per_descriptor sequential loop with per-descriptor Lua calls, applied tracking, rollback on OVER_LIMIT/exception, and fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2225-L2283
+    why: _settle_pipelined_descriptor_groups batch reply gathering, per-group response building, rollback after first OVER_LIMIT/failure, fallback decision.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2285-L2293
+    why: _pipelined_group_response wraps individual group replies, converting exceptions and decode failures to response type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2295-L2304
+    why: _refund_applied_descriptor_groups flattens applied groups and delegates to _refund_counter_increments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2306-L2319
+    why: _counter_refunds_from_atomic_response extracts CounterRefund tuples (window_key, counter_key, window_start, increment) from Lua reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2321-L2336
+    why: _counter_refunds_from_batch_values builds refunds from key/value pairs, filtering None window_start values and stride-2 iteration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2338-L2353
+    why: _refund_counter_increments applies refund script calls with negative increment, logging failures without raising.
+
+dod:
+  - text: atomic_check_and_increment_by_n validates descriptors/increments lengths match and filters empty groups before dispatch.
+    proof: [entry-point-validation-tests]
+  - text: atomic_check_and_increment_by_n dispatches to _atomic_lua_per_descriptor when check_and_increment_by_n_script is present, else locks and calls _atomic_check_and_increment_in_memory.
+    proof: [script-dispatch-tests]
+  - text: _atomic_lua_per_descriptor calls _pipeline_scripts to batch all descriptor payloads and attempts pipelined settlement if all results are present.
+    proof: [pipelined-settlement-tests]
+  - text: _atomic_lua_per_descriptor loops sequentially on pipelined failure, executing one Lua call per descriptor and tracking applied refunds.
+    proof: [sequential-loop-tests]
+  - text: _atomic_lua_per_descriptor refunds all applied groups on OVER_LIMIT (second+ descriptor) and returns the over-limit response without further increments.
+    proof: [rollback-on-over-limit-tests]
+  - text: _atomic_lua_per_descriptor refunds all applied groups on Lua exception, logs the failure with script name and applied count, calls fail-closed helper, and falls back to in-memory enforcement.
+    proof: [rollback-on-exception-tests]
+  - text: _atomic_lua_per_descriptor returns early for single-descriptor success without waiting for remaining loop iterations.
+    proof: [single-descriptor-optimization-tests]
+  - text: _settle_pipelined_descriptor_groups gathers all batch results with asyncio.gather return_exceptions=True and builds per-group responses.
+    proof: [pipelined-gather-tests]
+  - text: _settle_pipelined_descriptor_groups refunds all applied groups if any group returns OVER_LIMIT and returns that over-limit response.
+    proof: [pipelined-rollback-over-limit-tests]
+  - text: _settle_pipelined_descriptor_groups refunds all applied groups if any group raises an exception, logs the failure, calls fail-closed helper, and falls back to in-memory.
+    proof: [pipelined-rollback-exception-tests]
+  - text: _settle_pipelined_descriptor_groups returns single successful response for len(responses)==1 and aggregated OK for multiple.
+    proof: [pipelined-response-aggregation-tests]
+  - text: _pipelined_group_response converts BaseException replies to the exception itself and catches decode failures from _build_atomic_response.
+    proof: [group-response-exception-tests]
+  - text: _counter_refunds_from_atomic_response extracts (window_key, counter_key, window_start, increment) tuples from Lua raw values with 2*index stride.
+    proof: [refund-extraction-tests]
+  - text: _counter_refunds_from_batch_values builds refunds from alternating window_key/counter_key pairs and window_start values, filtering None.
+    proof: [batch-refund-extraction-tests]
+  - text: _refund_counter_increments iterates refunds and calls window_guarded_token_increment_script with negative increment and window_start.
+    proof: [refund-script-call-tests]
+  - text: _refund_counter_increments logs failures without raising when a refund script call fails (best-effort behavior).
+    proof: [refund-failure-logging-tests]
+  - text: Every default, failure mode, refund strategy, and window identity a user can observe is in a named oracle case with input and outcome.
+    proof: [oracle-cases-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: entry-point-validation-tests
+      why: atomic_check_and_increment_by_n must validate input lengths and filter empty descriptor groups
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::entry_point(::|$)/)'
+    - id: script-dispatch-tests
+      why: Dispatch to _atomic_lua_per_descriptor or in-memory fallback based on script availability
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::dispatch(::|$)/)'
+    - id: pipelined-settlement-tests
+      why: _settle_pipelined_descriptor_groups must batch gather all descriptor results and aggregate responses
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::pipelined_settlement(::|$)/)'
+    - id: sequential-loop-tests
+      why: _atomic_lua_per_descriptor sequential path must execute descriptors one at a time with early stop
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::sequential_loop(::|$)/)'
+    - id: rollback-on-over-limit-tests
+      why: Rollback must refund all applied groups when a descriptor returns OVER_LIMIT and return that response
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::rollback_over_limit(::|$)/)'
+    - id: rollback-on-exception-tests
+      why: Rollback must refund applied groups on script exception, log with fail-closed helper, and fall back to in-memory
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::rollback_exception(::|$)/)'
+    - id: single-descriptor-optimization-tests
+      why: _atomic_lua_per_descriptor must return early for single-descriptor success
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::single_descriptor(::|$)/)'
+    - id: pipelined-gather-tests
+      why: _settle_pipelined_descriptor_groups must gather batch results asynchronously with exception handling
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::pipelined_gather(::|$)/)'
+    - id: pipelined-rollback-over-limit-tests
+      why: Pipelined settlement must refund all applied groups if any group returns OVER_LIMIT
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::pipelined_over_limit(::|$)/)'
+    - id: pipelined-rollback-exception-tests
+      why: Pipelined settlement must refund all applied groups on exception and fall back to in-memory
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::pipelined_exception(::|$)/)'
+    - id: pipelined-response-aggregation-tests
+      why: Pipelined settlement must aggregate OK responses from multiple descriptors and return single response for one
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::pipelined_aggregate(::|$)/)'
+    - id: group-response-exception-tests
+      why: _pipelined_group_response must handle BaseException replies and convert decode failures
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::group_response(::|$)/)'
+    - id: refund-extraction-tests
+      why: _counter_refunds_from_atomic_response must extract tuples from Lua raw values with correct indexing
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::refund_extraction(::|$)/)'
+    - id: batch-refund-extraction-tests
+      why: _counter_refunds_from_batch_values must build refunds from key/value pairs with stride-2 iteration
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::batch_refund(::|$)/)'
+    - id: refund-script-call-tests
+      why: _refund_counter_increments must call window-guarded decrement script with correct arguments
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::refund_script(::|$)/)'
+    - id: refund-failure-logging-tests
+      why: _refund_counter_increments must log failures without raising (best-effort behavior)
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::refund_failure(::|$)/)'
+    - id: oracle-cases-tests
+      why: Oracle cases verify consistent settlement and rollback behavior across sequential, pipelined, and failure paths
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/settlement_and_rollback -k 'b3034'
+
+oracle_cases:
+  - tools/oracle/cases/settlement_and_rollback/sequential-success.yaml
+  - tools/oracle/cases/settlement_and_rollback/sequential-over-limit-second.yaml
+  - tools/oracle/cases/settlement_and_rollback/sequential-exception-mid-loop.yaml
+  - tools/oracle/cases/settlement_and_rollback/pipelined-all-success.yaml
+  - tools/oracle/cases/settlement_and_rollback/pipelined-over-limit-third.yaml
+  - tools/oracle/cases/settlement_and_rollback/pipelined-exception-first-group.yaml
+  - tools/oracle/cases/settlement_and_rollback/refund-window-guarded-decrement.yaml
+  - tools/oracle/cases/settlement_and_rollback/fail-closed-on-script-failure.yaml
+
+deviations:
+  - what: >-
+      Refund failures are logged as WARNING (not ERROR) when the original rejection already decided
+      the request outcome; the caller will not retry based on a failed refund since the OVER_LIMIT
+      or fallback response takes precedence.
+    why: A refund is best-effort cleanup; the caller cares about the admission decision, not refund success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2347-L2353
+  - what: >-
+      In-memory fallback on Lua failure uses the same _atomic_check_and_increment_in_memory implementation
+      that replaces all descriptor processing, not a partial retry. This avoids ambiguity about which
+      counters incremented in Redis before the failure.
+    why: Window and counter state in Redis becomes ambiguous after a Lua timeout/OOM; restarting all descriptors
+      in-memory ensures consistency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2181-L2207
+
+out_of_scope:
+  - atomic_check_and_increment_by_n dispatch to _atomic_check_and_increment_in_memory and its logic belong to B3033 (in-memory fallback path).
+  - Window storage, Redis slot grouping, and cache read/write operations belong to B3032.
+  - Descriptor atomic payload construction and Lua response decoding belong to B3033.
+  - Token counter adjustment scripts and token increment operations belong to B3037.
+  - Fail-closed rate-limit enforcement decision logic (RateLimitUnverifiableError) belongs to B3031.
+  - Redis script registration and the check_and_increment_by_n_script object belong to B3055 (handler construction).
+  - Provider resolution and rate-limit error wrapping belong to B3030.
+  - Cache transport (async_get_cache, async_set_cache) and batch-result settlement callbacks await external ownership.
+
+pitfalls:
+  - Counter indices from Lua are 1-based; per_counter_meta arrays are 0-based; subtract 1 when indexing into metadata.
+  - Window identity (window_key, counter_key, window_start) must be extracted consistently from Lua replies; window_start is serialized as string in responses.
+  - Refund extraction from batch values uses stride-2 iteration over keys (window_key, counter_key) and values (window_start, ...); ensure pair indices align.
+  - Pipelined batch gathering captures exceptions per group; a single group's exception does not prevent other groups from being read.
+  - The fail-closed helper _reject_if_rate_limit_unverifiable raises a 503 error and should only be called after best-effort refunds complete.
+  - Refund script calls must include both window_key and counter_key even though the script uses only one; window_key identifies the window identity for consistency.
+  - Best-effort refunds must not raise; failures are logged and the original rejection response stands.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

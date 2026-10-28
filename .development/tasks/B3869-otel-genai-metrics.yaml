@@ -1,0 +1,253 @@
+id: B3869
+title: OTel V2 GenAI metric recording
+description: >-
+  Build and record V2 token, duration, cost and streaming-latency instruments with bounded allowed
+  attributes. The six histograms are: operation_duration (s), token_usage ({token}, split input/output),
+  token_cost (USD), time_to_first_token (s, streaming only), time_per_output_token (s), and
+  response_duration (s, from api_call_start_time to end). Preserve the no-billing/internal-call
+  exclusions via is_unbilled_non_inference_call_from_params and the different success/failure recording
+  paths: success records all six with bounded attributes and cardinality filtering; failure records
+  only operation_duration with error.type. The attribute cardinality filter is reused from the
+  legacy integration via _build_metric_attribute_filter and _resolve_metric_attribute_filter,
+  capping at METRIC_ATTRIBUTE_CEILING (operation name, provider name, request model, metadata keys
+  from METRIC_METADATA_KEYS, and bounded hidden_params fields like model_id) before the operator's
+  include/exclude list narrows further. Token type attribute (input/output) is added after filtering
+  so it always survives. error.type is stamped after both filters to prevent silent series merges when
+  the operator's list strips the discriminator.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/plumbing/metrics.rs
+    - crates/betterlite-logging/src/otel/plumbing/metrics/**
+    - tools/oracle/cases/helpers/genai-metrics/**
+    - tools/oracle/helpers/b3869.py
+    - tools/oracle/helpers/b3869/**
+    - tools/oracle/src/helpers/logging/b3869.rs
+    - tools/oracle/src/helpers/logging/b3869/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L40-L54
+    why: >-
+      _provider_attributes builds gen_ai.provider.name (semconv-mapped) and gen_ai.system (raw litellm provider);
+      empty provider gets neither label to avoid minting a permanent unbounded series.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L57-L99
+    why: >-
+      GenAIMetrics dataclass holds the six histograms; create_genai_metrics factory builds them from
+      a Meter with semantic names (Metric.* keys), units (s, {token}, USD) and descriptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L106-L152
+    why: >-
+      ERROR_TYPE_FALLBACK sentinel, METRIC_ATTRIBUTE_CEILING (the cardinality cap applied before operator's
+      filter), and BOUNDED_HIDDEN_PARAM_KEYS (only model_id survives, not per-request fields like response_cost
+      or cache_key that would mint one series per request).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L162-L175
+    why: >-
+      _ResponseView and _MetricKwargs protocols describe the caller's view: response.get('usage') returns
+      prompt_tokens/completion_tokens, and kwargs carries call_type, litellm_params, response_cost,
+      completion_start_time, api_call_start_time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L178-L196
+    why: >-
+      resolve_error_type extracts error.type from standard_logging_object.error_information.error_class
+      (mapped provider exception), fallback error_code, exception class name, or ERROR_TYPE_FALLBACK.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L199-L273
+    why: >-
+      GenAIMetricRecorder.record succeeds: operation_duration always; token_usage (split input/output),
+      token_cost, time_to_first_token and time_per_output_token only when usage_is_replayed is false.
+      record_failure records only operation_duration with error.type, no cost or usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L279-L363
+    why: >-
+      _common_attributes builds from litellm_params, standard_logging_object metadata, and hidden_params;
+      _bounded_attributes caps at METRIC_ATTRIBUTE_CEILING; _ensure_filter resolves operator's filter lazily
+      (after proxy populates callback_settings.otel.attributes); _filter_attributes applies include/exclude.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L369-L430
+    why: >-
+      Per-metric recording: token_usage splits on TOKEN_TYPE_ATTRIBUTE after filtering;
+      time_to_first_token from time_to_first_chunk_seconds (None for non-streaming);
+      time_per_output_token divides generation_time by completion_tokens (guarded against division by zero);
+      response_duration from api_call_start_time to end_time in seconds.
+
+dod:
+  - text: >-
+      GenAIMetrics is a frozen dataclass holding six histograms (operation_duration, token_usage, token_cost,
+      time_to_first_token, time_per_output_token, response_duration); create_genai_metrics builds them from
+      a Meter with semantic names, units (s, {token}, USD) and descriptions.
+    proof: [metrics-create-tests]
+  - text: >-
+      GenAIMetricRecorder.record succeeds by recording operation_duration always. It records token_usage (split
+      input/output), token_cost, time_to_first_token and time_per_output_token only when usage_is_replayed is
+      false (checked via is_unbilled_non_inference_call_from_params). Cost is recorded only when response_cost > 0.
+    proof: [metrics-record-success-tests]
+  - text: >-
+      GenAIMetricRecorder.record_failure records only operation_duration (in seconds) with error.type, no token
+      or cost metrics. error.type is stamped after filtering to prevent silent series merges when operator's
+      include/exclude list cannot strip it.
+    proof: [metrics-record-failure-tests]
+  - text: >-
+      _provider_attributes resolves gen_ai.provider.name (semconv-mapped via resolve_provider) and gen_ai.system
+      (raw litellm provider); empty provider returns empty dict to avoid minting a permanent unbounded series.
+    proof: [metrics-provider-attributes-tests]
+  - text: >-
+      resolve_error_type extracts error.type from standard_logging_object.error_information.error_class,
+      fallback error_code, exception class name, or ERROR_TYPE_FALLBACK ("_OTHER"). Exception message is unbounded
+      and never becomes a label.
+    proof: [metrics-error-type-tests]
+  - text: >-
+      Metric attributes are capped at METRIC_ATTRIBUTE_CEILING (operation name, provider name, request model,
+      metadata keys from METRIC_METADATA_KEYS, bounded hidden_params fields like model_id) BEFORE the operator's
+      include/exclude filter. The filter can only narrow the ceiling, never widen it.
+    proof: [metrics-attribute-ceiling-tests]
+  - text: >-
+      The cardinality filter resolves lazily on first record via _ensure_filter, reading callback_settings.otel.attributes
+      after the proxy populates it. Token type and error.type attributes are added after filtering so they always survive.
+      A bad filter (include + exclude both set, or unfilterable names) raises at first record and stays unresolved
+      (_filter_resolved stays False) so corrected config takes effect without reconstructing the recorder.
+    proof: [metrics-cardinality-filter-tests]
+  - text: >-
+      _warn_about_metric_ineligible_names logs once when the filter resolves, naming attributes in the operator's
+      include/exclude lists that fall outside METRIC_ATTRIBUTE_CEILING and listing all allowed attributes. The warning
+      exposes when the operator's filter names an attribute that would be silently ignored, so they can correct
+      the misconfigured include/exclude list.
+    proof: [metrics-ineligible-names-tests]
+  - text: >-
+      Unbilled/internal calls (detected via is_unbilled_non_inference_call_from_params) skip token, cost and
+      time_per_output_token recording; operation_duration is recorded unconditionally.
+    proof: [metrics-unbilled-call-tests]
+  - text: >-
+      time_to_first_token is recorded only for streaming calls (from time_to_first_chunk_seconds, which returns
+      None for non-streaming). time_per_output_token divides generation_time by completion_tokens, guarded against
+      division by zero and negative times.
+    proof: [metrics-time-metrics-tests]
+  - text: >-
+      response_duration is computed from api_call_start_time to end_time (or _end_time from kwargs, fallback
+      datetime.now()). Both timestamps are converted via to_seconds; if either is None, the metric is not recorded.
+      Duration is recorded only when positive.
+    proof: [metrics-response-duration-tests]
+  - text: >-
+      _common_attributes extracts from litellm_params (provider, model), standard_logging_object metadata
+      (team, key, user, org ids/aliases), and hidden_params (only bounded fields). Dict and list metadata values
+      are JSON-serialized via safe_dumps; non-string values are stringified or dropped.
+    proof: [metrics-common-attributes-tests]
+  - text: >-
+      The helper implementation must match production on all timing arithmetic, cardinality checks, attribute
+      filtering and the unbilled-call exclusion logic.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: metrics-create-tests
+      why: GenAIMetrics construction and create_genai_metrics factory must build six histograms with correct names and units.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::create::/)'
+    - id: metrics-record-success-tests
+      why: GenAIMetricRecorder.record must emit all six histograms on success, excluding token/cost/time_per_output for unbilled calls.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::record_success::/)'
+    - id: metrics-record-failure-tests
+      why: GenAIMetricRecorder.record_failure must emit only operation_duration with error.type and no token/cost metrics.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::record_failure::/)'
+    - id: metrics-provider-attributes-tests
+      why: _provider_attributes must resolve gen_ai.provider.name and gen_ai.system correctly, returning empty dict for absent provider.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::provider_attributes::/)'
+    - id: metrics-error-type-tests
+      why: resolve_error_type must extract error.type from error_information, exception class, or fallback to _OTHER.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::error_type::/)'
+    - id: metrics-attribute-ceiling-tests
+      why: METRIC_ATTRIBUTE_CEILING must cap attributes before the operator's filter; the filter narrows but never widens.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::ceiling::/)'
+    - id: metrics-cardinality-filter-tests
+      why: Cardinality filter must resolve lazily on first record, handle bad filters gracefully, and preserve token_type and error.type after filtering.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::filter::/)'
+    - id: metrics-ineligible-names-tests
+      why: _warn_about_metric_ineligible_names must log once when filter resolves, naming attributes outside METRIC_ATTRIBUTE_CEILING and listing all allowed names.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::ineligible::/)'
+    - id: metrics-unbilled-call-tests
+      why: Unbilled/internal calls must skip token, cost and time_per_output metrics while recording operation_duration.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::unbilled::/)'
+    - id: metrics-time-metrics-tests
+      why: >-
+        Time metrics must be recorded correctly: time_to_first_token only for streaming,
+        time_per_output_token guarded against zero/negative values.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::time_metrics::/)'
+    - id: metrics-response-duration-tests
+      why: response_duration must compute from api_call_start_time to end_time, with to_seconds conversion and guard against unparseable timestamps.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::response_duration::/)'
+    - id: metrics-common-attributes-tests
+      why: _common_attributes must build from litellm_params, metadata and hidden_params with correct serialization (safe_dumps for collections, string for scalars).
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::attributes::/)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions on timing arithmetic and cardinality filtering.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3869::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new genai metrics decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/genai-metrics tools/oracle/fuzz/corpus/helper_case/genai-metrics-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/genai-metrics/record-success-all-histograms.yaml
+  - tools/oracle/cases/helpers/genai-metrics/record-failure-operation-duration-only.yaml
+  - tools/oracle/cases/helpers/genai-metrics/unbilled-call-skips-usage.yaml
+  - tools/oracle/cases/helpers/genai-metrics/attribute-ceiling-caps-before-filter.yaml
+  - tools/oracle/cases/helpers/genai-metrics/error-type-from-error-information.yaml
+  - tools/oracle/cases/helpers/genai-metrics/time-to-first-token-streaming-only.yaml
+
+deviations:
+  - what: >-
+      hidden_params are emitted as JSON via safe_dumps only when the dict is non-empty and only for keys
+      in BOUNDED_HIDDEN_PARAM_KEYS (currently just model_id). Response_cost, cache_key, usage_object and
+      rate-limit counters are never included.
+    why: >-
+      Per-request fields like response_cost and cache_key would mint one series per request, breaking cardinality.
+      Only bounded operator-provisioned identifiers like model_id are safe to emit as metric labels.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L141-L152
+
+out_of_scope:
+  - GenAIMetricRecorder construction and lifecycle; owned by the callback or logger that builds it with GenAIMetrics.
+  - Meter or Histogram implementation; supplied by the OpenTelemetry SDK.
+  - Attribute cardinality filter loading and shared validator; both come from B3857 (_build_metric_attribute_filter, _resolve_metric_attribute_filter).
+  - Token type and error type semantic keys; owned by B3840 (resolve_operation, resolve_provider, Metric.* and Error.* keys).
+  - Unbilled call detection logic; owned by B188 (is_unbilled_non_inference_call_from_params).
+  - Callback settings access (callback_settings.otel.attributes); owned by B002 configuration loading.
+  - Clock implementation (injected datetime.now replacement); owned by B198 context injection.
+  - Response/usage payload access and safe JSON serialization; response object read via the _ResponseView protocol (caller-supplied), safe_dumps from B192.
+
+pitfalls:
+  - >-
+      ERROR_TYPE_FALLBACK is "_OTHER", the semconv sentinel for unclassified failures, not an error code.
+      The value is always a string; it is never None even when exception and error_information are both absent.
+  - >-
+      Token type attribute (input/output) is added AFTER filtering so it always survives when the operator's
+      include/exclude list tries to drop it. error.type is also added after filtering for the same reason:
+      preventing silent series merges if the operator's list strips the discriminator.
+  - >-
+      hidden_params emits only BOUNDED_HIDDEN_PARAM_KEYS fields (currently model_id), not the whole object.
+      response_cost, cache_key, usage_object and provider's additional_headers rate-limit counters are never
+      emitted; they move per request and would mint one series per call.
+  - >-
+      METRIC_ATTRIBUTE_CEILING is the hard cap applied BEFORE the operator's include/exclude filter.
+      The filter can narrow the set but never widen it; an operator's include list cannot bring back
+      attributes the ceiling already removed.
+  - >-
+      response_cost is zeroed on failure, so record_failure never records token_cost.
+      Only operation_duration is recorded on the failure path.
+  - >-
+      usage_is_replayed gates token_usage and time_per_output_token recording, not operation_duration.
+      A no-billing or internal call still records operation duration but skips usage-based metrics.
+  - >-
+      time_per_output_token divides generation_time by completion_tokens. The division is guarded:
+      if completion_tokens <= 0 the metric is not recorded. generation_time is also guarded against negative
+      values (only recorded when positive).
+  - >-
+      to_seconds can return None if the timestamp is unparseable (type/format mismatch). Both api_call_start
+      and end_ts must be non-None for response_duration to be recorded. If either is None, the metric is skipped.
+  - >-
+      The cardinality filter is resolved lazily on first record, reading callback_settings.otel.attributes
+      which the proxy populates after the logger is built. If the filter raises an error (both include and exclude
+      set simultaneously), the error bubbles up but the internal state does not mark resolution complete, allowing
+      a corrected configuration to take effect on the next record() call without needing to reconstruct.
+  - >-
+      METRIC_METADATA_KEYS come from the legacy integration via import; this task does not define them.
+      TOKEN_TYPE_ATTRIBUTE is also imported from the legacy integration.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: security

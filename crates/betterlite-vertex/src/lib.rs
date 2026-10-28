@@ -32,6 +32,7 @@ pub mod gemini_thinking;
 pub mod gemini_tools;
 pub mod gemma_call;
 pub mod gemma_envelope;
+pub mod genai;
 pub mod google_count_tokens;
 pub mod google_genai_guardrail;
 pub mod google_native_content;

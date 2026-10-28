@@ -1,0 +1,179 @@
+id: B3691
+title: Built-in pattern catalog and content category discovery
+description: >-
+  Load and expose the 82 named patterns from patterns.json in source order, and
+  discover content categories across multiple data roots. Preserve YAML-first
+  file lookup and JSON category descriptions. Implement bundled-first metadata
+  deduplication: when a category name appears in multiple roots, the entry from
+  the first (bundled) root wins. Expose category metadata for UI display,
+  including name, display_name and description. Root constants and module-level
+  lookup construction belong to this task; consumers in B3692 and later tasks
+  call the discovery functions but do not build the catalogs themselves.
+
+  Owned functions from litellm/proxy/guardrails/content_filter_data/__init__.py:
+  category_dirs (L23-25) returns every categories/ folder that exists under the
+  roots, bundled first. find_category_file (L28-39) returns the first
+  <name>.yaml or <name>.json across category folders, checking bundled roots
+  before legacy, or None if not found. Paths that would escape the folder
+  (../x) never match; symlinks stored in the folder are returned as-is.
+
+  Owned functions from litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py:
+  _load_patterns_from_json (L19-23) loads pattern definitions from patterns.json.
+  get_compiled_pattern (L61-78) compiles a regex pattern by name with
+  re.IGNORECASE; unknown names raise ValueError naming available patterns.
+  get_all_pattern_names (L81-88) returns a list of all pattern names.
+  get_pattern_metadata (L112-127) returns pattern metadata (name, display_name,
+  category, description) for UI display, in source order from patterns.json.
+  _category_entry (L130-168) parses a category YAML or JSON file from a
+  categories_dir and returns a dict with name, display_name, description and
+  default_action, or None on parse error or missing category_name.
+  get_available_content_categories (L171-184) returns category metadata from
+  every root, bundled first, with each name appearing once. _category_files
+  (L187-190) yields (categories_dir, filename) tuples in alphabetical order.
+
+  Owns both modules' imports, root constants (DATA_DIR, CATEGORIES_DIR,
+  POLICY_TEMPLATES_DIR, LEGACY_DATA_DIR, DATA_ROOTS) and the module-level
+  PREBUILT_PATTERNS, PATTERN_CATEGORIES, PATTERN_DISPLAY_NAMES,
+  PATTERN_DESCRIPTIONS, PATTERN_EXTRA_CONFIG lookup dicts built from JSON.
+  get_all_pattern_names has test callers at test_patterns.py:71; it is not
+  dead code.
+
+  Data assets: patterns.json (629 nonblank lines), 32 content_filter_data/categories/*
+  files (11,681 nonblank/non-comment lines), and 28 content_filter_data/policy_templates/*
+  files (2,584 lines). These are immutable category and policy-template definitions
+  loaded by category_file, not executable functions. They are included for
+  reference and inventory; the 14,894 asset lines require explicit resource
+  budgeting outside the normal 400-line logic threshold.
+scope:
+  paths:
+    - "crates/betterlite-config/assets/content_filter/patterns.json"
+    - "crates/betterlite-config/assets/content_filter/categories/**"
+    - "crates/betterlite-config/assets/content_filter/policy_templates/**"
+    - "tools/oracle/cases/helpers/pattern-discovery/**"
+    - "tools/oracle/fuzz/corpus/helper_case/pattern-discovery-*"
+    - crates/betterlite-config/src/sections/content_filter_catalog.rs
+    - crates/betterlite-config/src/sections/content_filter_catalog/**
+    - tools/oracle/helpers/b3691.py
+    - tools/oracle/helpers/b3691/**
+    - tools/oracle/src/helpers/config/b3691.rs
+    - tools/oracle/src/helpers/config/b3691/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/content_filter_data/__init__.py#L23-L25
+    why: Own category_dirs; return every categories/ folder under the roots,
+      bundled first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/content_filter_data/__init__.py#L28-L39
+    why: Own find_category_file; YAML-first lookup with symlink and traversal
+      guards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L1-L59
+    why: Own module structure, imports, root constants and lookup dicts; DATA_ROOTS
+      tuple and module-level construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L19-L23
+    why: Own _load_patterns_from_json; load and parse patterns.json file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L61-L78
+    why: Own get_compiled_pattern; compile regex by name with re.IGNORECASE,
+      raise ValueError on unknown name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L81-L88
+    why: Own get_all_pattern_names; return pattern names in source order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L112-L127
+    why: Own get_pattern_metadata; return pattern name, display_name, category,
+      description for UI.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L130-L168
+    why: Own _category_entry; parse YAML or JSON category file, return metadata
+      dict or None on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L171-L184
+    why: Own get_available_content_categories; bundled-first dedup, sorted by
+      name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.py#L187-L190
+    why: Own _category_files; yield (dir, filename) tuples in alphabetical order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/guardrails/test_content_filter_path_traversal.py#L282-L292
+    why: Test structure and bundled-first dedup requirement; fix vacuous
+      uniqueness assertion by testing with same-named files from two roots.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/guardrails/test_content_filter_path_traversal.py#L294-L304
+    why: Name-clash test verifies bundled root preference; assert display_name
+      comes from the first root.
+dod:
+  - text: Every pattern loads from patterns.json and can be compiled to a regex,
+      preserving case-insensitive matching and raising ValueError on unknown
+      names.
+    proof: [pattern-discovery-tests, pattern-discovery-helper, pattern-discovery-corpus]
+  - text: Pattern metadata returns all 82 patterns in source order with correct
+      name, display_name, category and description fields.
+    proof: [pattern-discovery-tests, pattern-discovery-helper, pattern-discovery-corpus]
+  - text: >-
+      Category discovery lists each category once per name, with bundled root
+      preferred over legacy when the same name appears in both. A category YAML
+      that parses successfully but lacks a category_name is skipped silently.
+      A YAML that fails to parse is skipped with a warning naming the filename
+      and exception. JSON categories have auto-generated display_name from
+      filename, while YAML categories use declared display_name.
+    proof: [pattern-discovery-tests, pattern-discovery-helper, bundled-first-dedup-test, pattern-discovery-corpus]
+  - text: Symlinks in category folders load by name and return the link target,
+      preserving pre-move behavior.
+    proof: [pattern-discovery-tests]
+  - text: Path traversal attempts in category names (../x, /abs/path) are
+      rejected by find_category_file; symlinks stored inside the folder are
+      returned.
+    proof: [pattern-discovery-tests]
+checks:
+  optional: []
+  commands:
+    - id: pattern-discovery-tests
+      why: Pattern loading, compilation, metadata and category discovery
+        functions are absent or behavior is incorrect.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E
+        'test(/^helpers::config::b3691::tests::/) - test(/replays_the_/)'
+    - id: bundled-first-dedup-test
+      why: Bundled-first dedup is vacuous; two roots with same-named categories
+        must exist for the test to prove the behavior.
+      run: "grep -q 'tmp_bundled\\|tmp_legacy' tools/oracle/src/helpers/config/b3691/tests.rs
+        && grep -q 'same-named category' tools/oracle/src/helpers/config/b3691/tests.rs"
+    - id: pattern-discovery-helper
+      why: The oracle helper is missing or the booted proxy does not load
+        patterns and categories correctly.
+      run: test -f tools/oracle/helpers/b3691.py && uv run --locked
+        --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run
+        --locked --project tools/oracle/litellm basedpyright --project
+        tools/oracle/helpers/pyrightconfig.json
+    - id: pattern-discovery-corpus
+      why: The new typed operation has no seed or the existing HelperCase
+        decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+        'tools/oracle/fuzz/corpus/helper_case/pattern-discovery-*')" && grep
+        -rlq "pattern_discovery\|PatternDiscovery" tools/oracle/fuzz/corpus/helper_case/pattern-discovery-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E
+        'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/pattern-discovery/pattern-compilation-by-name.yaml
+  - tools/oracle/cases/helpers/pattern-discovery/unknown-pattern-raises-error.yaml
+  - tools/oracle/cases/helpers/pattern-discovery/all-pattern-names-and-metadata.yaml
+  - tools/oracle/cases/helpers/pattern-discovery/category-yaml-parse-missing-name.yaml
+  - tools/oracle/cases/helpers/pattern-discovery/category-json-auto-display-name.yaml
+  - tools/oracle/cases/helpers/pattern-discovery/bundled-root-shadows-legacy.yaml
+  - tools/oracle/cases/helpers/pattern-discovery/category-warning-on-parse-error.yaml
+deviations: []
+out_of_scope:
+  - B4260 owns join_within and related path utilities in litellm/proxy/common_utils/path_utils.py;
+    find_category_file calls this resolved dependency.
+  - The guardrail_hooks/litellm_content_filter examples, benchmarks and guardrail_benchmarks
+    tests are out of scope; B105's outline notes they are evaluation infrastructure,
+    not production behavior.
+  - llamaguard_prompt.txt has no caller at the pinned commit; B105 owns this file
+    for inventory accounting only and does not implement any loader.
+  - PrebuiltPatternName enum (patterns.py:30-36) has no caller at the pinned commit
+    and is not built.
+pitfalls:
+  - "`reversed()` in get_available_content_categories (L183) deduplicates by building
+    a dict from later entries first, so the first root wins when a name appears in
+    multiple roots. If roots are (bundled, legacy), entries from legacy come first,
+    then reversed() processes them backward, and dict assignment overwrites legacy
+    with bundled."
+  - A JSON category filename without .json extension (e.g., broken symlink) does
+    not become a category entry, and harm_toxic_abuse.json has a hard-coded
+    display_name override on line 154-159.
+  - find_category_file checks both .yaml and .json extensions in order for each
+    root (lines 36-38); YAML is preferred when both exist in the same folder.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

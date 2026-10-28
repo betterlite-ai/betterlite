@@ -1,0 +1,299 @@
+id: B3042
+title: Reserve combined and project input-output token quotas
+description: >-
+  Implement the three token-reservation functions for combining TPM (total tokens per minute)
+  and project-scoped ITPM/OTPM (input/output tokens per minute) quotas. Build reserve_tpm_tokens
+  to allocate tokens against all TPM-bearing descriptors in a single atomic operation before the
+  upstream call; _refund_reserved_tokens to decrement token counters when a later descriptor
+  in the same request fails (e.g., ITPM succeeds but OTPM is over limit); reserve_io_tokens
+  to separately reserve input and output tokens with the same rollback semantics; and
+  enforce_project_io_token_quota_for_frame to charge per-WebSocket-frame quota for Responses
+  API calls where connection-level admission only runs once.
+
+  Port from litellm/proxy/hooks/parallel_request_limiter_v3.py (lines 2536–2739) with no
+  per-frame reconciliation—like the batch rate limiter, frame admission charges the estimate
+  immediately. Preserve exact-once refund semantics: after ITPM succeeds, if OTPM rejects,
+  the ITPM reservation is rolled back; after TPM succeeds, ITPM/OTPM refunds roll back
+  only the amount actually reserved, not guessed amounts.
+
+  Direct dependencies: B732 supplies UserAPIKeyAuth caller auth for WebSocket frame calls; B3030
+  supplies _handle_rate_limit_error error projection; B3031 supplies RateLimitDescriptor,
+  RateLimitResponse, PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY and
+  ReservationWindowIdentity type definitions; B3034 supplies atomic_check_and_increment_by_n;
+  B3037 supplies _build_reservation_aware_tpm_ops, _build_project_reservation_ops,
+  async_increment_tokens_with_ttl_preservation, async_increment_reservation_aware_tokens;
+  B3038 supplies add_project_io_token_rate_limit_descriptors_from_metadata.
+
+  Build tests with named rstest cases for each literal input/outcome: TPM filtering and
+  filtering of project-scoped descriptors, ITPM reservation and OTPM rollback behavior,
+  ITPM refund paths with and without reservation windows, and WebSocket frame admission
+  with missing descriptors/auth.
+
+  Budget 120 Rust impl/tests, 80 route/integration (200 total), 1500 max_changed_lines.
+
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-rate-limit/src/token_reservations.rs
+  - crates/betterlite-rate-limit/src/token_reservations/**
+  - tools/oracle/cases/rate_limit_token_reservations/**
+  - tools/oracle/helpers/b3042.py
+  - tools/oracle/helpers/b3042/**
+  - tools/oracle/src/helpers/rate_limit/b3042.rs
+  - tools/oracle/src/helpers/rate_limit/b3042/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2536-L2578
+  why: reserve_tpm_tokens filters non-project descriptors, builds token increment list and delegates
+    to atomic_check_and_increment_by_n.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2580-L2617
+  why: _refund_reserved_tokens decrements counters by amount for scopes, using either reservation-aware
+    TPM ops or project ops depending on reservation_windows presence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2619-L2702
+  why: reserve_io_tokens separates ITPM and OTPM descriptors, reserves each with different estimates,
+    and rolls back ITPM if OTPM fails, returning both reserved amounts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2704-L2739
+  why: enforce_project_io_token_quota_for_frame reserves per-WebSocket frame tokens without per-frame
+    reconciliation, raising on OVER_LIMIT.
+
+dod:
+- text: reserve_tpm_tokens filters descriptors to exclude PROJECT_ITPM_DESCRIPTOR_KEY and
+    PROJECT_OTPM_DESCRIPTOR_KEY, and to include only descriptors with non-null tokens_per_unit.
+  proof:
+  - tpm-filtering-tests
+  - oracle
+- text: reserve_tpm_tokens builds one token increment per TPM descriptor with the estimated_tokens
+    amount.
+  proof:
+  - tpm-filtering-tests
+- text: reserve_tpm_tokens returns RateLimitResponse with overall_code="OK" and empty statuses
+    when no TPM descriptors remain after filtering.
+  proof:
+  - tpm-filtering-tests
+  - oracle
+- text: reserve_tpm_tokens delegates to atomic_check_and_increment_by_n and returns its response
+    directly.
+  proof:
+  - tpm-filtering-tests
+  - oracle
+- text: _refund_reserved_tokens returns early without action when amount <= 0 or scopes is empty.
+  proof:
+  - refund-early-exit-tests
+  - oracle
+- text: _refund_reserved_tokens with empty reservation_windows builds _build_reservation_aware_tpm_ops
+    with reserved_tokens=amount and calls async_increment_tokens_with_ttl_preservation.
+  proof:
+  - refund-tpm-ops-tests
+  - oracle
+- text: _refund_reserved_tokens with non-empty reservation_windows builds _build_project_reservation_ops
+    with reserved_tokens=amount and calls async_increment_reservation_aware_tokens.
+  proof:
+  - refund-project-ops-tests
+  - oracle
+- text: reserve_io_tokens filters descriptors to separate ITPM (PROJECT_ITPM_DESCRIPTOR_KEY) and
+    OTPM (PROJECT_OTPM_DESCRIPTOR_KEY) descriptors.
+  proof:
+  - io-filtering-tests
+  - oracle
+- text: reserve_io_tokens returns RateLimitResponse with overall_code="OK", empty statuses and
+    empty reservation_windows, plus (0, 0) reserved amounts when no ITPM or OTPM descriptors exist.
+  proof:
+  - io-filtering-tests
+  - oracle
+- text: reserve_io_tokens reserves ITPM descriptors with estimated_input_tokens and returns
+    immediately with (itpm_response, 0, 0) if ITPM is OVER_LIMIT.
+  proof:
+  - itpm-over-limit-tests
+  - oracle
+- text: reserve_io_tokens sets itpm_reserved to estimated_input_tokens when ITPM response is not None
+    and successful, or 0 when ITPM response is None.
+  proof:
+  - itpm-reserved-amount-tests
+  - oracle
+- text: reserve_io_tokens when OTPM descriptors exist reserves with estimated_output_tokens and
+    returns (otpm_response, 0, 0) if OTPM is OVER_LIMIT.
+  proof:
+  - otpm-over-limit-tests
+  - oracle
+- text: reserve_io_tokens when OTPM is OVER_LIMIT and itpm_reserved > 0 calls _refund_reserved_tokens
+    with ITPM scopes, amount=itpm_reserved and reservation_windows from itpm_response (or empty frozenset).
+  proof:
+  - otpm-rollback-tests
+  - oracle
+- text: reserve_io_tokens merges ITPM and OTPM statuses into a combined response when both succeed.
+  proof:
+  - both-succeeded-tests
+  - oracle
+- text: reserve_io_tokens combines ITPM and OTPM reservation_windows with union (|) operator.
+  proof:
+  - both-succeeded-tests
+  - oracle
+- text: reserve_io_tokens returns (response, itpm_reserved, estimated_output_tokens) when OTPM
+    succeeds (not the actual amount OTPM reserved; always the estimate).
+  proof:
+  - both-succeeded-tests
+  - oracle
+- text: reserve_io_tokens asserts itpm_response is not None and returns (itpm_response, itpm_reserved, 0)
+    when OTPM descriptors are empty but ITPM response exists.
+  proof:
+  - itpm-only-tests
+  - oracle
+- text: enforce_project_io_token_quota_for_frame returns early when user_api_key_dict is None.
+  proof:
+  - frame-early-exit-tests
+  - oracle
+- text: enforce_project_io_token_quota_for_frame calls add_project_io_token_rate_limit_descriptors_from_metadata
+    with user_api_key_dict and requested_model.
+  proof:
+  - frame-descriptor-tests
+  - oracle
+- text: enforce_project_io_token_quota_for_frame returns early when descriptors list is empty after
+    building.
+  proof:
+  - frame-no-descriptors-tests
+  - oracle
+- text: enforce_project_io_token_quota_for_frame calls reserve_io_tokens with estimated_input_tokens,
+    estimated_output_tokens and user_api_key_dict.parent_otel_span.
+  proof:
+  - frame-reserve-tests
+  - oracle
+- text: enforce_project_io_token_quota_for_frame calls _handle_rate_limit_error when response["overall_code"]
+    is "OVER_LIMIT".
+  proof:
+  - frame-over-limit-tests
+  - oracle
+- text: Every added function has correct signatures matching LiteLLM's async/await and type annotations.
+  proof:
+  - signature-tests
+  - oracle
+- text: Every default, constant and error path a user can observe is in a named case with literal
+    input and outcome.
+  proof:
+  - cases-tests
+
+checks:
+  optional: []
+  commands:
+  - id: tpm-filtering-tests
+    why: reserve_tpm_tokens must filter non-project descriptors and handle empty result
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::tpm_filtering(::|$)/)'
+  - id: tpm-atomic-delegation-tests
+    why: reserve_tpm_tokens must delegate to atomic_check_and_increment_by_n with correct structure
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::tpm_atomic(::|$)/)'
+  - id: refund-early-exit-tests
+    why: _refund_reserved_tokens must return early on invalid input
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::refund_early(::|$)/)'
+  - id: refund-tpm-ops-tests
+    why: _refund_reserved_tokens with empty windows must use TPM ops and token increment API
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::refund_tpm(::|$)/)'
+  - id: refund-project-ops-tests
+    why: _refund_reserved_tokens with reservation windows must use project ops and reservation-aware API
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::refund_project(::|$)/)'
+  - id: io-filtering-tests
+    why: reserve_io_tokens must separate ITPM and OTPM and handle empty case
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::io_filtering(::|$)/)'
+  - id: itpm-over-limit-tests
+    why: reserve_io_tokens must return early when ITPM is over limit
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::itpm_over_limit(::|$)/)'
+  - id: itpm-reserved-amount-tests
+    why: reserve_io_tokens must compute correct itpm_reserved amount
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::itpm_reserved(::|$)/)'
+  - id: otpm-over-limit-tests
+    why: reserve_io_tokens must return early when OTPM is over limit
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::otpm_over_limit(::|$)/)'
+  - id: otpm-rollback-tests
+    why: reserve_io_tokens must roll back ITPM when OTPM fails after ITPM succeeds
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::otpm_rollback(::|$)/)'
+  - id: both-succeeded-tests
+    why: reserve_io_tokens must merge statuses and windows when both ITPM and OTPM succeed
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::both_succeeded(::|$)/)'
+  - id: itpm-only-tests
+    why: reserve_io_tokens must handle case where only ITPM descriptors exist
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::itpm_only(::|$)/)'
+  - id: frame-early-exit-tests
+    why: enforce_project_io_token_quota_for_frame must return early on None user_api_key_dict
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::frame_early(::|$)/)'
+  - id: frame-descriptor-tests
+    why: enforce_project_io_token_quota_for_frame must call descriptor builder correctly
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::frame_descriptor(::|$)/)'
+  - id: frame-no-descriptors-tests
+    why: enforce_project_io_token_quota_for_frame must return early when no descriptors
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::frame_no_descriptors(::|$)/)'
+  - id: frame-reserve-tests
+    why: enforce_project_io_token_quota_for_frame must call reserve_io_tokens with correct args
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::frame_reserve(::|$)/)'
+  - id: frame-over-limit-tests
+    why: enforce_project_io_token_quota_for_frame must call error handler when OVER_LIMIT
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::frame_over_limit(::|$)/)'
+  - id: signature-tests
+    why: All function signatures must match LiteLLM's async/await and type patterns
+    run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::signatures(::|$)/)'
+  - id: cases-tests
+    why: Oracle cases verify token reservation logic and rollback behavior
+    run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/rate_limit_token_reservations -k 'b3042'
+
+oracle_cases:
+- tools/oracle/cases/rate_limit_token_reservations/tpm-reserve-filtered.yaml
+- tools/oracle/cases/rate_limit_token_reservations/tpm-reserve-empty.yaml
+- tools/oracle/cases/rate_limit_token_reservations/itpm-only-success.yaml
+- tools/oracle/cases/rate_limit_token_reservations/itpm-over-limit.yaml
+- tools/oracle/cases/rate_limit_token_reservations/itpm-otpm-both-success.yaml
+- tools/oracle/cases/rate_limit_token_reservations/itpm-success-otpm-over-limit.yaml
+- tools/oracle/cases/rate_limit_token_reservations/refund-tpm-path.yaml
+- tools/oracle/cases/rate_limit_token_reservations/refund-project-path.yaml
+- tools/oracle/cases/rate_limit_token_reservations/frame-with-auth.yaml
+- tools/oracle/cases/rate_limit_token_reservations/frame-without-auth.yaml
+- tools/oracle/cases/rate_limit_token_reservations/frame-no-descriptors.yaml
+- tools/oracle/cases/rate_limit_token_reservations/frame-over-limit.yaml
+
+deviations:
+- what: _refund_reserved_tokens receives reservation_windows as a frozenset of tuples (key, value, backend_type);
+    when empty, it uses TPM refund logic, when non-empty it uses project refund logic. This matches LiteLLM's
+    conditional dispatch based on the presence of reservation window tracking.
+  why: Project I/O tokens are tracked per-window (distinct ITPM/OTPM windows), requiring different refund paths;
+    simple TPM uses only TTL preservation without window identity.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2594-L2617
+- what: reserve_io_tokens returns (response, itpm_reserved, estimated_output_tokens) when both ITPM and OTPM
+    succeed—the third element is the estimate, not the actual amount reserved. This matches LiteLLM's pattern
+    where only the caller can track actual reconciliation amounts per request.
+  why: The caller (B3043) stashes these amounts for post-call reconciliation; OTPM is always the estimate
+    unless a refund path is triggered, so returning the estimate avoids double-tracking.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2684-L2699
+- what: enforce_project_io_token_quota_for_frame charges the full estimate immediately with no per-frame
+    reconciliation on completion. Like the batch rate limiter, estimates are non-refundable.
+  why: WebSocket connections may send many response.create frames; the connection-level pre-call hook
+    only runs once, so per-frame admission must reserve without later adjustment. Estimates are the only
+    available signal at frame time.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2704-L2720
+
+out_of_scope:
+- Descriptor construction (model, team, project, tag, agent descriptors, identity resolution) is owned by
+  B3038/B3039/B3040; add_project_io_token_rate_limit_descriptors_from_metadata is B3038.
+- Atomic check and increment behavior is owned by B3034; atomic_check_and_increment_by_n is delegated there.
+- Token delta operations and TTL preservation are owned by B3037; async_increment_tokens_with_ttl_preservation,
+  async_increment_reservation_aware_tokens, _build_reservation_aware_tpm_ops, _build_project_reservation_ops
+  are all B3037.
+- Error projection and provider attribution belong to B3030; _handle_rate_limit_error is delegated there.
+- Cache and Redis script registration await concrete owners (external dependency question 1).
+- Per-request state stash management is B3031; claim_request_stash_for_data and get_request_stash_for_call
+  are delegated there.
+
+pitfalls:
+- reserve_io_tokens returns the estimated_output_tokens amount for OTPM, not the actual reserved amount,
+  matching LiteLLM's pattern. The caller must stash this for later reconciliation; do not invent an
+  actual-reserved tracking path here.
+- _refund_reserved_tokens must check reservation_windows.empty() or equivalent; only when truly empty
+  should it use the TPM path (no window guards). When windows exist (ITPM or OTPM specific), use the
+  project path (window-aware refund).
+- ITPM/OTPM descriptors are distinguished by key string matching PROJECT_ITPM_DESCRIPTOR_KEY and
+  PROJECT_OTPM_DESCRIPTOR_KEY constants defined in B3031; do not hardcode the strings.
+- enforce_project_io_token_quota_for_frame only processes if descriptors list is non-empty after calling
+  the descriptor builder. Empty descriptors should return early without calling reserve_io_tokens.
+- The parent_otel_span field comes from user_api_key_dict.parent_otel_span; do not attempt to construct
+  or pass None unless explicitly absent.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

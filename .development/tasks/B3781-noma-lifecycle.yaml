@@ -1,0 +1,91 @@
+id: B3781
+title: Noma legacy lifecycle and buffered streaming
+description: >-
+  Build the legacy pre/during/post hooks and streaming response handling for Noma. The guardrail's lifecycle connects to request processing at three points: pre_call runs checks before the LLM call, during_call runs before tool execution, and post_call runs after receiving a response. Each hook forwards to the shared B3780 scan methods and decides to block, anonymize or allow based on the verdict.
+
+  In monitor_mode, all hooks run checks asynchronously in the background and return immediately without blocking; checks run with the same data as blocking mode but never raise. The `_create_background_noma_check` method wraps a coroutine in `asyncio.create_task` and logs errors if the task fails to start.
+
+  `block_failures` (default true) controls the error response when the Noma API is unreachable or returns an invalid response: if set, the hook raises; otherwise it logs the error and allows the request through.
+
+  Implement streaming response inspection by buffering all stream chunks using `stream_chunk_builder`, assembling them into a complete ModelResponse, running the post-call scan, and replaying the original chunks or yielding chunks from the MockResponseIterator if the response was modified.
+
+  Include the `get_supported_event_hooks` method returning [pre_call, during_call, post_call, pre_mcp_call]. Deprecation warning for the legacy 'noma' name is emitted once per process (not per instance) using a module-level guard, matching LiteLLM's _LEGACY_NOMA_DEPRECATION_WARNED flag.
+
+  Implement the `initialize_guardrail` function in noma/__init__.py to conditionally route requests to v2 if `use_v2` is set; instantiate NomaGuardrail with constructor parameters matching the config model, register with add_litellm_callback, and return the instance. Supply `guardrail_initializer_registry` and `guardrail_class_registry` mappings for both noma and noma_v2, indexed by SupportedGuardrailIntegrations enum values.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/noma_lifecycle.rs
+    - crates/betterlite-guardrails/src/noma_lifecycle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L101-L164
+    why: get_supported_event_hooks, __init__, _create_background_noma_check constructor and background task setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L505-L526
+    why: _check_user_message_background and _check_llm_response_background background check methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L550-L693
+    why: async_pre_call_hook, async_moderation_hook, async_post_call_success_hook lifecycle hooks with monitor/block logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L790-L841
+    why: get_config_model and async_post_call_streaming_iterator_hook for streaming response assembly and scanning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/__init__.py#L12-L68
+    why: initialize_guardrail, initialize_guardrail_v2, and both registry mappings for provider setup.
+dod:
+  - text: get_supported_event_hooks returns a list containing pre_call, during_call, post_call and pre_mcp_call enum values.
+    proof: [noma-lifecycle-tests]
+  - text: __init__ stores get_async_httpx_client, api_key/api_base/application_id from constructor or environment (NOMA_API_KEY, NOMA_API_BASE, NOMA_APPLICATION_ID), and boolean flags from constructor or environment with "true"/"false" defaults (NOMA_MONITOR_MODE, NOMA_BLOCK_FAILURES, NOMA_ANONYMIZE_INPUT).
+    proof: [noma-lifecycle-tests]
+  - text: A one-time deprecation warning for 'noma' is emitted per process using a module-level _LEGACY_NOMA_DEPRECATION_WARNED flag set on first instantiation; subsequent instances do not warn.
+    proof: [noma-lifecycle-tests]
+  - text: _create_background_noma_check calls asyncio.create_task on the coroutine and logs errors if the task fails to start.
+    proof: [noma-lifecycle-tests]
+  - text: _check_user_message_background calls _process_user_message_check with request_data and user_auth; on exception it logs the error without raising.
+    proof: [noma-lifecycle-tests]
+  - text: _check_llm_response_background calls _process_llm_response_check with request_data, response and user_auth; on exception it logs the error without raising.
+    proof: [noma-lifecycle-tests]
+  - text: async_pre_call_hook checks should_run_guardrail with pre_call event type (pre_mcp_call for MCP calls), runs B3780 check in background if monitor_mode, otherwise blocks on check and re-raises NomaBlockedMessage; on non-blocking error, logs and raises if block_failures is set.
+    proof: [noma-lifecycle-tests]
+  - text: async_moderation_hook runs during_call checks with the same background/blocking/error logic as pre_call.
+    proof: [noma-lifecycle-tests]
+  - text: async_post_call_success_hook runs post_call checks on the response, returns modified or original response, and handles the same block_failures logic.
+    proof: [noma-lifecycle-tests]
+  - text: async_post_call_streaming_iterator_hook buffers all chunks from the response AsyncIterable, calls stream_chunk_builder to assemble a complete ModelResponse, runs _check_llm_response on the assembled response, and yields chunks from MockResponseIterator if the response type is ModelResponse (or original chunks on unsupported type or error).
+    proof: [noma-lifecycle-tests]
+  - text: get_config_model returns the NomaGuardrailConfigModel class (from B3780).
+    proof: [noma-lifecycle-tests]
+  - text: initialize_guardrail checks litellm_params.use_v2 (as boolean or string "true"/"false"), routes to initialize_guardrail_v2 if true, otherwise instantiates NomaGuardrail with api_key, api_base, application_id, monitor_mode, block_failures, anonymize_input, event_hook, default_on, timeout parameters from config, registers with add_litellm_callback, and returns the instance.
+    proof: [noma-lifecycle-tests]
+  - text: initialize_guardrail_v2 instantiates NomaV2Guardrail (B3782 class) with api_key, api_base, application_id, gateway_name, monitor_mode, block_failures, event_hook, default_on, timeout, and registers/returns it the same way.
+    proof: [noma-lifecycle-tests]
+  - text: guardrail_initializer_registry maps SupportedGuardrailIntegrations.NOMA.value to initialize_guardrail and NOMA_V2.value to initialize_guardrail_v2.
+    proof: [noma-lifecycle-tests]
+  - text: guardrail_class_registry maps SupportedGuardrailIntegrations.NOMA.value to NomaGuardrail class and NOMA_V2.value to NomaV2Guardrail class.
+    proof: [noma-lifecycle-tests]
+checks:
+  optional: []
+  commands:
+    - id: noma-lifecycle-tests
+      why: the noma lifecycle tests fail, do not exist, or expected behavior is not met
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_lifecycle::/)'
+oracle_cases: []
+deviations:
+  - what: In monitor_mode, background checks are spawned with asyncio.create_task without awaiting; the main request flow never blocks on the check result.
+    why: LiteLLM creates background tasks to allow non-blocking monitoring without affecting latency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L156-L164
+  - what: The streaming hook buffers all chunks before inspection, then yields from MockResponseIterator if the response was checked; this can increase memory use for large responses.
+    why: LiteLLM requires complete response assembly to inspect the full content before deciding to allow or block.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L798-L841
+out_of_scope:
+  - B3780 owns the shared scan methods _process_user_message_check, _process_llm_response_check, _check_user_message, _check_llm_response, and the verdict precedence logic.
+  - B3782 owns NomaV2Guardrail and initialize_guardrail_v2 implementation details.
+  - Framework CustomGuardrail base class, should_run_guardrail and add_standard_logging_guardrail_information_to_request_data are inherited methods.
+pitfalls:
+  - "The deprecation warning is module-level and emitted only once per process, not per NomaGuardrail instance. LiteLLM uses _LEGACY_NOMA_DEPRECATION_WARNED as a global flag set to True after the first warn() call."
+  - "asyncio.create_task can raise RuntimeError if there is no running event loop. The background task creation must be guarded against this and log the error without raising."
+  - "In monitor_mode, _check_user_message_background and _check_llm_response_background must not raise exceptions to the main flow; exceptions are logged only."
+  - "block_failures controls error handling for API failures: when true, raise the exception; when false, log and allow the request to proceed. This is per-call behavior, not per-instance."
+  - "stream_chunk_builder returns ModelResponse or TextCompletionResponse or None depending on the stream content. Only ModelResponse is scanned; other types and None cause the original chunks to be yielded unchanged."
+  - "MockResponseIterator yields the chunks of a ModelResponse; it must be imported from litellm.llms.base_llm.base_model_iterator."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

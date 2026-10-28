@@ -10,3 +10,4 @@ pub mod scim_records;
 pub mod server;
 mod shutdown;
 mod tests;
+pub mod worker_options;
