@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-claude-code
+call: {websearch_tool_records: {function: is_web_search_tool, tool: {type: custom, name: web_search}}}
+env: {}
+compare: {ignore: []}

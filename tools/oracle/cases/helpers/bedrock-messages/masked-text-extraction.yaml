@@ -1,0 +1,7 @@
+kind: helper
+name: masked-text-extraction
+call:
+  b3721:
+    step: {extract: {response: {outputs: [{text: one}, {future: true}, {text: three}]}}}
+env: {}
+compare: {ignore: []}
