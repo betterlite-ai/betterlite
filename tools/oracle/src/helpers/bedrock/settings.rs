@@ -33,16 +33,26 @@ pub(crate) struct SettingsCall {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Deployment {
-    #[serde(rename = "aws_access_key_id")] access_key_id: Option<String>,
-    #[serde(rename = "aws_secret_access_key")] secret_access_key: Option<String>,
-    #[serde(rename = "aws_session_token")] session_token: Option<String>,
-    #[serde(rename = "aws_region_name")] region_name: Option<String>,
-    #[serde(rename = "aws_session_name")] session_name: Option<String>,
-    #[serde(rename = "aws_profile_name")] profile_name: Option<String>,
-    #[serde(rename = "aws_role_name")] role_name: Option<String>,
-    #[serde(rename = "aws_web_identity_token")] web_identity_token: Option<String>,
-    #[serde(rename = "aws_sts_endpoint")] sts_endpoint: Option<String>,
-    #[serde(rename = "aws_external_id")] external_id: Option<String>,
+    #[serde(rename = "aws_access_key_id")]
+    access_key_id: Option<String>,
+    #[serde(rename = "aws_secret_access_key")]
+    secret_access_key: Option<String>,
+    #[serde(rename = "aws_session_token")]
+    session_token: Option<String>,
+    #[serde(rename = "aws_region_name")]
+    region_name: Option<String>,
+    #[serde(rename = "aws_session_name")]
+    session_name: Option<String>,
+    #[serde(rename = "aws_profile_name")]
+    profile_name: Option<String>,
+    #[serde(rename = "aws_role_name")]
+    role_name: Option<String>,
+    #[serde(rename = "aws_web_identity_token")]
+    web_identity_token: Option<String>,
+    #[serde(rename = "aws_sts_endpoint")]
+    sts_endpoint: Option<String>,
+    #[serde(rename = "aws_external_id")]
+    external_id: Option<String>,
     #[serde(rename = "aws_session_tags")]
     session_tags: Option<betterlite_config::sections::bedrock_settings::SessionTagValue>,
 }
@@ -187,7 +197,9 @@ fn error(call: &ErrorCall) -> Result<Value, Failure> {
 }
 
 fn build_error(call: &ErrorCall) -> Result<BedrockError, Failure> {
-    Ok(BedrockError::try_from(error_input(call))?)
+    let input = error_input(call);
+    let built = BedrockError::try_from(input)?;
+    Ok(built)
 }
 
 fn error_input(call: &ErrorCall) -> ErrorInput {
@@ -221,19 +233,15 @@ fn serialize_error(built: &BedrockError) -> Result<Value, Failure> {
         message: &built.error.message,
         headers: built.headers.as_ref(),
         request: &built.error.request,
-        response: response_view(built),
+        response: ResponseView {
+            status_code: built.error.response.status_code,
+            request: &built.error.response.request,
+            headers: &built.response_headers,
+            text: error_response_text(&built.response_body),
+        },
         body: built.error.body.as_ref(),
     };
     Ok(serde_json::to_value(view)?)
-}
-
-fn response_view(built: &BedrockError) -> ResponseView<'_> {
-    ResponseView {
-        status_code: built.error.response.status_code,
-        request: &built.error.response.request,
-        headers: &built.response_headers,
-        text: error_response_text(&built.response_body),
-    }
 }
 
 impl From<Failure> for Box<HelperError> {
