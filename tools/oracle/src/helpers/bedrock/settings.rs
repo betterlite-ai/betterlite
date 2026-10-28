@@ -192,12 +192,7 @@ fn snapshot(aws: &AwsSettings) -> Result<Value, Failure> {
 }
 
 fn error(call: &ErrorCall) -> Result<Value, Failure> {
-    let built = BedrockError::try_from(error_input(call))?;
-    serialize_error(&built)
-}
-
-fn error_input(call: &ErrorCall) -> ErrorInput {
-    ErrorInput {
+    let input = ErrorInput {
         status_code: call.status_code,
         message: call.message.clone(),
         request: call.request.clone(),
@@ -212,7 +207,9 @@ fn error_input(call: &ErrorCall) -> ErrorInput {
             headers: reply.headers.clone(),
             body: reply.body.clone(),
         }),
-    }
+    };
+    let built = BedrockError::try_from(input)?;
+    serialize_error(&built)
 }
 
 fn serialize_error(built: &BedrockError) -> Result<Value, Failure> {
