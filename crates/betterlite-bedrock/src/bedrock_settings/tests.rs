@@ -64,6 +64,15 @@ fn bedrock_settings_secret_safe_failure() {
     let secret_header = ("authorization".to_owned(), text("fixture-header-secret"));
     let headers = Some(ErrorHeaders::Mapping(vec![secret_header]));
     let header = BedrockError::try_from(input(headers, None)).unwrap();
+    let headerless = BedrockError::try_from(input(None, None)).unwrap();
+    assert_eq!(
+        format!("{header:?}"),
+        "BedrockError { headers: [REDACTED; present=true] }"
+    );
+    assert_eq!(
+        format!("{headerless:?}"),
+        "BedrockError { headers: [REDACTED; present=false] }"
+    );
     let rendered = format!("{debug} {failure} {failure:?} {header:?}");
     let secrets = [
         "fixture-env-secret",
