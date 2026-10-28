@@ -7,8 +7,8 @@ mod tests;
 pub mod records;
 
 use records::{
-    AssemblyInput, AssemblyOutput, Choice, Chunk, CustomOutput, FunctionOutput, JsonNumber,
-    JsonValue, ToolCall, ToolOutput,
+    AssemblyInput, AssemblyOutput, Choice, Chunk, CustomOutput, FunctionOutput, JsonValue,
+    ToolCall, ToolOutput,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -249,8 +249,10 @@ impl JsonValue {
         match self {
             Self::Null => false,
             Self::Bool(value) => *value,
-            Self::Number(JsonNumber::Integer(value)) => *value != 0,
-            Self::Number(JsonNumber::Float(value)) => *value != 0.0,
+            Self::Number(value) => {
+                value.as_i64().is_some_and(|number| number != 0)
+                    || value.as_f64().is_some_and(|number| number != 0.0_f64)
+            }
             Self::String(value) => !value.is_empty(),
             Self::Array(value) => !value.is_empty(),
             Self::Object(value) => !value.is_empty(),

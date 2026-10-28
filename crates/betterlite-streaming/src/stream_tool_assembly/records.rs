@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::de::{Deserializer, Error as DeError};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -80,39 +79,7 @@ pub enum JsonValue {
     Object(BTreeMap<String, Self>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum JsonNumber {
-    Integer(i64),
-    Float(f64),
-}
-
-impl Serialize for JsonNumber {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Self::Integer(value) => serializer.serialize_i64(*value),
-            Self::Float(value) => serializer.serialize_f64(*value),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for JsonNumber {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let number = serde_json::Number::deserialize(deserializer)?;
-        if let Some(integer) = number.as_i64() {
-            return Ok(Self::Integer(integer));
-        }
-        if let Some(float) = number.as_f64() {
-            return Ok(Self::Float(float));
-        }
-        Err(DeError::custom("JSON number cannot be represented"))
-    }
-}
+pub type JsonNumber = serde_json::Number;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FunctionOutput {
