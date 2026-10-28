@@ -36,8 +36,8 @@ pub(super) fn resolve_azure(
         lookup,
         "AZURE_CLIENT_SECRET",
     );
-    (token.is_some() || client_id.is_some() || tenant_id.is_some() || client_secret.is_some())
-        .then(|| AzureSettings {
+    (token.is_some() || client_id.is_some() || tenant_id.is_some() || client_secret.is_some()).then(
+        || AzureSettings {
             credential: azure_credential(
                 client_id.as_deref(),
                 tenant_id.as_deref(),
@@ -47,7 +47,8 @@ pub(super) fn resolve_azure(
             client_id: client_id.map(|value| SecretString::new(Box::<str>::from(value))),
             tenant_id: tenant_id.map(|value| SecretString::new(Box::<str>::from(value))),
             client_secret: client_secret.map(|value| SecretString::new(Box::<str>::from(value))),
-        })
+        },
+    )
 }
 
 const fn azure_credential(
