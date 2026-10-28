@@ -1,7 +1,7 @@
 use crate::context::SessionContext;
 use crate::options::{CodexOptions, ReasoningEffort};
 
-use super::config::toml_string;
+use super::config::toml_assignment;
 
 pub(super) fn feature_overrides<S>(
     context: &SessionContext<S>,
@@ -32,10 +32,7 @@ pub(super) fn feature_overrides<S>(
         .as_ref()
         .filter(|text| !text.is_empty())
     {
-        values.push(format!(
-            "developer_instructions={}",
-            toml_string(instructions)
-        ));
+        values.push(toml_assignment("developer_instructions", instructions));
     }
     values
 }

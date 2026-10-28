@@ -127,14 +127,36 @@ pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
             (server.as_deref(), tool.as_deref(), arguments.as_ref()),
             (result.as_ref(), error.as_ref(), status.as_deref()),
         ),
-        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => ToolProjection {
-            name: String::new(),
-            native_name: String::new(),
-            input: JsonObject::new(),
-            builtin: false,
-            output: String::new(),
-            is_error: false,
-        },
+        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => empty_projection(),
+    }
+}
+
+const fn empty_projection() -> ToolProjection {
+    let input = JsonObject::new();
+    ToolProjection {
+        name: String::new(),
+        native_name: String::new(),
+        input,
+        builtin: false,
+        output: String::new(),
+        is_error: false,
+    }
+}
+
+fn builtin_projection(
+    name: &str,
+    native_name: &str,
+    input: JsonObject,
+    output: String,
+    is_error: bool,
+) -> ToolProjection {
+    ToolProjection {
+        name: name.to_owned(),
+        native_name: native_name.to_owned(),
+        input,
+        builtin: true,
+        output,
+        is_error,
     }
 }
 
@@ -144,34 +166,48 @@ fn command_execution_projection(
     exit_code: Option<i64>,
     status: Option<&str>,
 ) -> ToolProjection {
-    let failed = status == Some("failed");
-    let exited_nonzero = exit_code.is_some_and(|code| code != 0);
-    ToolProjection {
-        name: "bash".to_owned(),
-        native_name: "command_execution".to_owned(),
-        input: BTreeMap::from([(
-            "command".to_owned(),
-            Value::String(command.unwrap_or_default().to_owned()),
-        )]),
-        builtin: true,
-        output: aggregated_output.unwrap_or_default().to_owned(),
-        is_error: failed || exited_nonzero,
-    }
+    let failed = status == Some("failed") || exit_code.is_some_and(|code| code != 0);
+    let input = BTreeMap::from([(
+        "command".to_owned(),
+        Value::String(command.unwrap_or_default().to_owned()),
+    )]);
+    builtin_projection(
+        "bash",
+        "command_execution",
+        input,
+        aggregated_output.unwrap_or_default().to_owned(),
+        failed,
+    )
 }
 
 fn file_change_projection(changes: Option<&[Value]>, status: Option<&str>) -> ToolProjection {
-    let output = file_change_summary(changes);
-    ToolProjection {
-        name: "edit".to_owned(),
-        native_name: "apply_patch".to_owned(),
-        input: BTreeMap::from([(
-            "changes".to_owned(),
-            Value::Array(changes.unwrap_or_default().to_vec()),
-        )]),
-        builtin: true,
+    let output = changes
+        .unwrap_or_default()
+        .iter()
+        .map(|change| {
+            let kind = change
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let path = change
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            format!("{kind} {path}").trim().to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let input = BTreeMap::from([(
+        "changes".to_owned(),
+        Value::Array(changes.unwrap_or_default().to_vec()),
+    )]);
+    builtin_projection(
+        "edit",
+        "apply_patch",
+        input,
         output,
-        is_error: status == Some("failed"),
-    }
+        status == Some("failed"),
+    )
 }
 
 fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProjection {
@@ -179,14 +215,13 @@ fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProje
         "query".to_owned(),
         Value::String(query.unwrap_or_default().to_owned()),
     )]);
-    ToolProjection {
-        name: "web_search".to_owned(),
-        native_name: "web_search".to_owned(),
+    builtin_projection(
+        "web_search",
+        "web_search",
         input,
-        builtin: true,
-        output: String::new(),
-        is_error: status == Some("failed"),
-    }
+        String::new(),
+        status == Some("failed"),
+    )
 }
 
 fn mcp_tool_projection(
@@ -237,25 +272,6 @@ fn mcp_tool_output(
         || (mcp_result_text(result), failed),
         |reported| (mcp_error_message(reported), true),
     )
-}
-
-fn file_change_summary(changes: Option<&[Value]>) -> String {
-    changes
-        .unwrap_or_default()
-        .iter()
-        .map(|change| {
-            let kind = change
-                .get("kind")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let path = change
-                .get("path")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            format!("{kind} {path}").trim().to_owned()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn mcp_result_text(result: Option<&Value>) -> String {

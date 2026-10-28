@@ -46,7 +46,7 @@ pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessErr
     match raw {
         Value::Bool(flag) => Ok(flag.to_string()),
         Value::Number(number) => Ok(number.to_string()),
-        Value::String(text) => Ok(toml_string(text)),
+        Value::String(text) => Ok(Value::String(text.clone()).to_string()),
         Value::Array(items) => items
             .iter()
             .map(|item| toml_value(item, depth.saturating_add(1)))
@@ -72,8 +72,9 @@ pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessErr
 }
 
 #[must_use]
-pub(super) fn toml_string(value: &str) -> String {
-    Value::String(value.to_owned()).to_string()
+pub(super) fn toml_assignment(key: &str, value: &str) -> String {
+    let quoted = Value::String(value.to_owned()).to_string();
+    format!("{key}={quoted}")
 }
 
 #[must_use]

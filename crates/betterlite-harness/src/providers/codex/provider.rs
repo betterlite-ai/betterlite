@@ -2,7 +2,7 @@ use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::types::Harness;
 
-use super::config::{CODEX_TOKEN_ENV, toml_string};
+use super::config::{CODEX_TOKEN_ENV, toml_assignment};
 
 pub(super) fn provider_overrides<S>(
     context: &SessionContext<S>,
@@ -20,7 +20,7 @@ pub(super) fn provider_overrides<S>(
     Ok(vec![
         "model_provider=litellm".to_owned(),
         "model_providers.litellm.name=litellm".to_owned(),
-        format!("model_providers.litellm.base_url={}", toml_string(&base)),
+        toml_assignment("model_providers.litellm.base_url", &base),
         format!("model_providers.litellm.env_key={CODEX_TOKEN_ENV}"),
         "model_providers.litellm.wire_api=responses".to_owned(),
         "approval_policy=never".to_owned(),
