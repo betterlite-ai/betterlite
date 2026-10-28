@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
-use betterlite_secrets::secret_codec::secret_map::{SecretMap, decode_secret_map, encrypt_secret_map};
+use betterlite_secrets::secret_codec::secret_map::{
+    SecretMap, decode_secret_map, encrypt_secret_map,
+};
 use betterlite_secrets::secret_codec::{
     CipherSettings, DecryptPolicy, FailureLog, FailureValue, StoredCipher, StoredValue,
     decrypt_if_encrypted_with,

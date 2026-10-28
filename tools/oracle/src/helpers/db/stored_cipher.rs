@@ -26,15 +26,10 @@ impl Helper for Op {
                 general_settings,
                 nonce_hex,
                 steps,
-            } => run_codec(
-                &key_source(
-                    salt_key.as_ref(),
-                    master_key.as_ref(),
-                    general_settings.as_ref(),
-                ),
-                nonce_hex,
-                steps,
-            ),
+            } => {
+                let source = key_source(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref());
+                run_codec(&source, nonce_hex, steps)
+            }
             Input::AppCrypto { key, steps } => run_app_crypto(key, steps),
             Input::CallbackVars {
                 salt_key,
@@ -43,26 +38,19 @@ impl Helper for Op {
                 nonce_hex,
                 extra,
                 steps,
-            } => run_callback_vars(
-                &key_source(
-                    salt_key.as_ref(),
-                    master_key.as_ref(),
-                    general_settings.as_ref(),
-                ),
-                nonce_hex,
-                extra,
-                steps,
-            ),
+            } => {
+                let source = key_source(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref());
+                run_callback_vars(&source, nonce_hex, extra, steps)
+            }
             Input::MasterKeyMatch {
                 presented,
                 master_key,
-            } => Ok(master_key_match(presented.as_deref(), master_key.as_deref())),
+            } => Ok(Value::Bool(matches_raw(
+                presented.as_deref(),
+                master_key.as_deref(),
+            ))),
         }
     }
-}
-
-fn master_key_match(presented: Option<&str>, master_key: Option<&str>) -> Value {
-    Value::Bool(matches_raw(presented, master_key))
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

@@ -118,8 +118,7 @@ where
     }
 }
 
-// Port of callback_utils._decrypt_or_passthrough: a failed open keeps the complete marked value, prefix
-// included, and only logs at debug level (decrypt never generates a nonce, so N stays unconstrained).
+// Port of callback_utils._decrypt_or_passthrough: a failed open keeps the marked value and logs at debug level.
 fn decrypt_or_passthrough<N, D>(key: &str, value: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
     D: SecretDiagnostics,
