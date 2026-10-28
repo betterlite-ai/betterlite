@@ -51,9 +51,8 @@ pub struct BedrockError {
 }
 
 impl fmt::Debug for BedrockError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("BedrockError")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BedrockError")
             .field("error", &RedactedProviderError(&self.error))
             .field("headers", &RedactedHeaders(self.headers.as_ref()))
             .field("response_headers", &RedactedPairs(&self.response_headers))
@@ -65,10 +64,9 @@ impl fmt::Debug for BedrockError {
 struct RedactedProviderError<'error>(&'error ProviderError);
 
 impl fmt::Debug for RedactedProviderError<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let error = self.0;
-        formatter
-            .debug_struct("ProviderError")
+        f.debug_struct("ProviderError")
             .field("status_code", &error.status_code)
             .field(
                 "status_code_is_synthesized",
@@ -89,13 +87,13 @@ impl fmt::Debug for RedactedProviderError<'_> {
 struct RedactedHeaders<'headers>(Option<&'headers ErrorHeaders>);
 
 impl fmt::Debug for RedactedHeaders<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Some(headers) => formatter
+            Some(headers) => f
                 .debug_tuple("Headers")
                 .field(&RedactedHeaderSet(headers))
                 .finish(),
-            None => formatter.write_str("None"),
+            None => f.write_str("None"),
         }
     }
 }
@@ -103,10 +101,10 @@ impl fmt::Debug for RedactedHeaders<'_> {
 struct RedactedHeaderSet<'headers>(&'headers ErrorHeaders);
 
 impl fmt::Debug for RedactedHeaderSet<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            ErrorHeaders::Http(pairs) => RedactedPairs(pairs).fmt(formatter),
-            ErrorHeaders::Mapping(entries) => formatter
+            ErrorHeaders::Http(pairs) => RedactedPairs(pairs).fmt(f),
+            ErrorHeaders::Mapping(entries) => f
                 .debug_list()
                 .entries(entries.iter().map(|(name, _)| (name, "[REDACTED]")))
                 .finish(),
@@ -117,9 +115,8 @@ impl fmt::Debug for RedactedHeaderSet<'_> {
 struct RedactedPairs<'pairs>(&'pairs [(String, String)]);
 
 impl fmt::Debug for RedactedPairs<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_list()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
             .entries(self.0.iter().map(|(name, _)| (name, "[REDACTED]")))
             .finish()
     }
