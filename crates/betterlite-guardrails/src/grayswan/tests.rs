@@ -221,8 +221,12 @@ async fn apply_guardrail_against_a_failing_server(
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let settings = GraySwanSettings {
+        on_flagged_action: OnFlaggedAction::Block,
+        violation_threshold: 0.5,
+        reasoning_mode: None,
+        categories: None,
+        policy_id: None,
         fail_open,
-        ..GraySwanSettings::default()
     };
     let instance = GraySwanGuardrail::with_client(
         SecretString::from("secret"),
