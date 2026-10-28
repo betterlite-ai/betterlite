@@ -100,81 +100,22 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let settings = merge(
-            self.litellm_settings,
-            self.model_list.into_iter().find_map(|item| {
-                let params = item.litellm_params;
-                (params.gcp_service_account.is_some()
-                    || params.azure_redis_ad_token.is_some()
-                    || params.aws_iam_auth.is_some())
-                .then_some(params)
-            }),
-        );
-        let environment_names = [
-            "REDIS_GCP_SERVICE_ACCOUNT",
-            "REDIS_AZURE_AD_TOKEN",
-            "AZURE_CLIENT_ID",
-            "AZURE_TENANT_ID",
-            "AZURE_CLIENT_SECRET",
-            "AWS_REGION",
-            "AWS_DEFAULT_REGION",
-        ];
-        let environment_snapshot = environment_names
-            .into_iter()
-            .map(|name| (name.to_owned(), lookup.lookup(name).is_some()))
-            .collect();
-        let gcp_service_account = choose(
-            settings.gcp_service_account.clone(),
-            lookup,
-            "REDIS_GCP_SERVICE_ACCOUNT",
-        );
-        let azure_token = choose(
-            settings.azure_redis_ad_token.clone(),
-            lookup,
-            "REDIS_AZURE_AD_TOKEN",
-        );
-        let azure_client_id = choose(settings.azure_client_id.clone(), lookup, "AZURE_CLIENT_ID");
-        let azure_tenant_id = choose(settings.azure_tenant_id.clone(), lookup, "AZURE_TENANT_ID");
-        let azure_client_secret = choose(
-            settings.azure_client_secret.clone(),
-            lookup,
-            "AZURE_CLIENT_SECRET",
-        );
-        let aws_enabled = settings.aws_iam_auth.as_ref().is_some_and(coerces_to_true);
-        let gcp = gcp_service_account.map(|service_account| GcpSettings {
-            service_account: SecretString::new(Box::<str>::from(service_account)),
+        let settings = merge(self.litellm_settings, find_deployment_settings(self.model_list));
+        let environment_snapshot = environment_snapshot(lookup);
+        let resolved = resolve_credentials(&settings, lookup);
+        let gcp_service_account = resolved.gcp_service_account.clone();
+        let gcp = gcp_service_account.map(|account| GcpSettings {
+            service_account: SecretString::new(Box::<str>::from(account)),
             ssl_ca_certs: settings.gcp_ssl_ca_certs.clone(),
             token_ttl_seconds: GCP_TOKEN_TTL_SECONDS,
         });
-        let azure = (azure_token.is_some()
-            || azure_client_id.is_some()
-            || azure_tenant_id.is_some()
-            || azure_client_secret.is_some())
-        .then(|| AzureSettings {
-            credential: azure_credential(
-                azure_client_id.as_deref(),
-                azure_tenant_id.as_deref(),
-                azure_client_secret.as_deref(),
-            ),
-            token: azure_token.map(|value| SecretString::new(Box::<str>::from(value))),
-            client_id: azure_client_id.map(|value| SecretString::new(Box::<str>::from(value))),
-            tenant_id: azure_tenant_id.map(|value| SecretString::new(Box::<str>::from(value))),
-            client_secret: azure_client_secret
-                .map(|value| SecretString::new(Box::<str>::from(value))),
-        });
+        let azure = build_azure(resolved);
+        let aws_enabled = settings.aws_iam_auth.as_ref().is_some_and(coerces_to_true);
         let aws = aws_enabled
             .then(|| build_aws(&settings, lookup))
             .transpose()?
             .flatten();
-        let provider = if gcp.is_some() {
-            Some(Provider::Gcp)
-        } else if azure.is_some() {
-            Some(Provider::Azure)
-        } else if aws.is_some() {
-            Some(Provider::Aws)
-        } else {
-            None
-        };
+        let provider = provider_precedence(gcp.as_ref(), azure.as_ref(), aws.as_ref());
         Ok(Settings {
             provider,
             gcp,
@@ -182,6 +123,103 @@ impl Section for Raw {
             aws,
             environment_snapshot,
         })
+    }
+}
+
+fn find_deployment_settings(model_list: Vec<RawDeployment>) -> Option<RawSettings> {
+    model_list.into_iter().find_map(|item| {
+        let params = item.litellm_params;
+        (params.gcp_service_account.is_some()
+            || params.azure_redis_ad_token.is_some()
+            || params.aws_iam_auth.is_some())
+        .then_some(params)
+    })
+}
+
+fn environment_snapshot(lookup: &impl EnvironmentLookup) -> BTreeMap<String, bool> {
+    let environment_names = [
+        "REDIS_GCP_SERVICE_ACCOUNT",
+        "REDIS_AZURE_AD_TOKEN",
+        "AZURE_CLIENT_ID",
+        "AZURE_TENANT_ID",
+        "AZURE_CLIENT_SECRET",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+    ];
+    environment_names
+        .into_iter()
+        .map(|name| (name.to_owned(), lookup.lookup(name).is_some()))
+        .collect()
+}
+
+struct ResolvedCredentials {
+    gcp_service_account: Option<String>,
+    azure_token: Option<String>,
+    azure_client_id: Option<String>,
+    azure_tenant_id: Option<String>,
+    azure_client_secret: Option<String>,
+}
+
+fn resolve_credentials(settings: &RawSettings, lookup: &impl EnvironmentLookup) -> ResolvedCredentials {
+    ResolvedCredentials {
+        gcp_service_account: choose(
+            settings.gcp_service_account.clone(),
+            lookup,
+            "REDIS_GCP_SERVICE_ACCOUNT",
+        ),
+        azure_token: choose(
+            settings.azure_redis_ad_token.clone(),
+            lookup,
+            "REDIS_AZURE_AD_TOKEN",
+        ),
+        azure_client_id: choose(settings.azure_client_id.clone(), lookup, "AZURE_CLIENT_ID"),
+        azure_tenant_id: choose(settings.azure_tenant_id.clone(), lookup, "AZURE_TENANT_ID"),
+        azure_client_secret: choose(
+            settings.azure_client_secret.clone(),
+            lookup,
+            "AZURE_CLIENT_SECRET",
+        ),
+    }
+}
+
+fn build_azure(resolved: ResolvedCredentials) -> Option<AzureSettings> {
+    let ResolvedCredentials {
+        azure_token,
+        azure_client_id,
+        azure_tenant_id,
+        azure_client_secret,
+        ..
+    } = resolved;
+    (azure_token.is_some()
+        || azure_client_id.is_some()
+        || azure_tenant_id.is_some()
+        || azure_client_secret.is_some())
+    .then(|| AzureSettings {
+        credential: azure_credential(
+            azure_client_id.as_deref(),
+            azure_tenant_id.as_deref(),
+            azure_client_secret.as_deref(),
+        ),
+        token: azure_token.map(|value| SecretString::new(Box::<str>::from(value))),
+        client_id: azure_client_id.map(|value| SecretString::new(Box::<str>::from(value))),
+        tenant_id: azure_tenant_id.map(|value| SecretString::new(Box::<str>::from(value))),
+        client_secret: azure_client_secret.map(|value| SecretString::new(Box::<str>::from(value))),
+    })
+}
+
+const fn provider_precedence(
+    gcp: Option<&GcpSettings>,
+    azure: Option<&AzureSettings>,
+    aws: Option<&AwsSettings>,
+) -> Option<Provider> {
+    if gcp.is_some() {
+        Some(Provider::Gcp)
+    } else if azure.is_some() {
+        Some(Provider::Azure)
+    } else if aws.is_some() {
+        Some(Provider::Aws)
+    } else {
+        None
     }
 }
 
