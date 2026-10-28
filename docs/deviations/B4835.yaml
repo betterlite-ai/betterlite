@@ -1,2 +1,14 @@
 task: B4835
-deviations: []
+deviations:
+  - what: "CodexOptions.config keys are passed to `codex -c` as TOML, not as environment variables."
+    why: "Codex uses its own config format and does not read LiteLLM environment variables. Each config
+         value is translated to TOML syntax to pass on the command line."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L150-L171
+  - what: "Bearer token is passed only in LITELLM_HARNESS_TOKEN env var, never in argv or config."
+    why: "Command-line arguments are visible in process listings. The token is a secret and must stay out
+         of argv."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L233
+  - what: "CODEX_HOME is set to the private session directory, isolating the user's Codex config and auth."
+    why: "Codex loads ~/.codex by default. This deployment should use a clean session directory to avoid
+         mixing with the user's own Codex configuration."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L218-L234
