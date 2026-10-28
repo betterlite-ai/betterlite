@@ -54,7 +54,10 @@ where
             value: false,
         });
     }
-    let serverless = settings.aws_iam_serverless.as_ref().is_some_and(coerces_to_true)
+    let serverless = settings
+        .aws_iam_serverless
+        .as_ref()
+        .is_some_and(coerces_to_true)
         || lookup
             .lookup("REDIS_AWS_IAM_SERVERLESS")
             .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)));
@@ -68,16 +71,18 @@ where
 }
 
 fn missing_setting(name: &'static str) -> ConfigError {
+    let path = format!("litellm_settings.cache_params.{name}");
     ConfigError::MissingEnvironment {
         variable: name.to_owned(),
-        path: format!("litellm_settings.cache_params.{name}"),
+        path,
     }
 }
 
 fn uses_tls(url: Option<&str>, ssl_enabled: bool) -> bool {
-    url.map_or(ssl_enabled, |value| {
+    let is_rediss = |value: &str| {
         value
             .split_once("://")
             .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("rediss"))
-    })
+    };
+    url.map_or(ssl_enabled, is_rediss)
 }

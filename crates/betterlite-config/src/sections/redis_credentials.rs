@@ -119,14 +119,23 @@ struct ProviderSelection {
     warnings: Vec<ProviderWarning>,
 }
 
-fn resolve_providers<L>(settings: &RawSettings, lookup: &L) -> Result<ProviderSelection, ConfigError>
+fn resolve_providers<L>(
+    settings: &RawSettings,
+    lookup: &L,
+) -> Result<ProviderSelection, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let mut warnings = Vec::new();
     let gcp = build_gcp(settings, lookup);
     let azure = resolve_azure_provider(settings, lookup, gcp.as_ref(), &mut warnings);
-    let aws = resolve_aws_provider(settings, lookup, gcp.as_ref(), azure.as_ref(), &mut warnings)?;
+    let aws = resolve_aws_provider(
+        settings,
+        lookup,
+        gcp.as_ref(),
+        azure.as_ref(),
+        &mut warnings,
+    )?;
 
     Ok(ProviderSelection {
         gcp,
@@ -211,16 +220,27 @@ where
     L: EnvironmentLookup,
 {
     let configured_url = settings.url.clone().or_else(|| lookup.lookup("REDIS_URL"));
-    let configured_username = settings.username.clone().or_else(|| lookup.lookup("REDIS_USERNAME"));
+    let configured_username = settings
+        .username
+        .clone()
+        .or_else(|| lookup.lookup("REDIS_USERNAME"));
     let configured_password = settings
         .password
         .as_ref()
         .map(|value| value.expose_secret().to_owned())
         .or_else(|| lookup.lookup("REDIS_PASSWORD"));
     if provider_active {
-        (configured_url.map(|value| url_without_userinfo(&value)), None, None)
+        (
+            configured_url.map(|value| url_without_userinfo(&value)),
+            None,
+            None,
+        )
     } else {
-        (configured_url, configured_username, configured_password.map(SecretString::from))
+        (
+            configured_url,
+            configured_username,
+            configured_password.map(SecretString::from),
+        )
     }
 }
 
@@ -260,14 +280,12 @@ fn ssl_enabled<L>(settings: &RawSettings, lookup: &L) -> bool
 where
     L: EnvironmentLookup,
 {
-    settings.ssl.as_ref().map_or_else(
-        || {
-            lookup
-                .lookup("REDIS_SSL")
-                .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)))
-        },
-        coerces_to_true,
-    )
+    let fallback = || {
+        lookup
+            .lookup("REDIS_SSL")
+            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)))
+    };
+    settings.ssl.as_ref().map_or_else(fallback, coerces_to_true)
 }
 
 const fn provider_precedence(
