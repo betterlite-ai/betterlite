@@ -1097,6 +1097,7 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-rate-limit",
+ "betterlite-redact",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
@@ -1188,6 +1189,11 @@ dependencies = [
 [[package]]
 name = "betterlite-redact"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-redis"
