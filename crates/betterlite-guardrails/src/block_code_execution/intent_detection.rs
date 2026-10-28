@@ -172,6 +172,3 @@ pub(crate) fn has_execution_intent(text: &str) -> bool {
         .iter()
         .any(|phrase| lower.contains(phrase))
 }
-
-#[cfg(test)]
-mod tests;

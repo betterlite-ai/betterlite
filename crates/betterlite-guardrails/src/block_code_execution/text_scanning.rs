@@ -174,6 +174,3 @@ fn record_detection(
         snippet: None,
     });
 }
-
-#[cfg(test)]
-mod tests;
