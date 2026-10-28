@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

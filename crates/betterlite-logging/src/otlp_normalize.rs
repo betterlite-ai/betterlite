@@ -4,7 +4,6 @@ use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(test)]
 mod tests;
 
 pub const OTLP_MAX_ATTRIBUTE_VALUE_BYTES: usize = 0x1_0000;
@@ -217,7 +216,8 @@ pub fn span_row(span: &NormalizedSpan) -> SpanRow {
 }
 
 fn exception_message(span: &NormalizedSpan) -> String {
-    span.events
+    let message = span
+        .events
         .iter()
         .find(|event| event.name == "exception")
         .and_then(|event| {
@@ -227,7 +227,8 @@ fn exception_message(span: &NormalizedSpan) -> String {
                 .or_else(|| event.attributes.get("exception.type"))
         })
         .cloned()
-        .unwrap_or_default()
+        .unwrap_or_default();
+    message
 }
 
 pub fn truncate_payload(value: &str) -> String {

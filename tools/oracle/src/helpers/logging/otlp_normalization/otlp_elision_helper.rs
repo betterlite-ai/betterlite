@@ -1,2 +1,2 @@
 #[path = "otlp_elision_helper/tests.rs"]
-mod tests;
+mod otlp_elision_helper;

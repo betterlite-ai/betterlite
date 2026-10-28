@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::message_content::{ChatRole, content_text, role_for};
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,7 +106,7 @@ fn parse_message(value: &serde_json::Value) -> Option<UiMessage> {
 }
 
 fn parse_calls(values: &[serde_json::Value]) -> Vec<ToolCall> {
-    values
+    let calls = values
         .iter()
         .filter_map(|value| {
             let object = value.as_object()?;
@@ -133,12 +132,13 @@ fn parse_calls(values: &[serde_json::Value]) -> Vec<ToolCall> {
                 },
             })
         })
-        .collect()
+        .collect();
+    calls
 }
 
 fn field_value(value: &serde_json::Value) -> String {
-    value
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or_else(|| serde_json::to_string(value).unwrap_or_default())
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        other => serde_json::to_string(other).unwrap_or_default(),
+    }
 }
