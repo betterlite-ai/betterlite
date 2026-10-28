@@ -484,27 +484,27 @@ fn preserves_optional_fields() {
 }
 
 fn replay_folder(corpus: &Path, folder: &str) -> usize {
-    let mut replayed = 0_usize;
-    for entry in fs::read_dir(corpus.join(folder)).unwrap() {
-        let path = entry.unwrap().path();
-        let bytes = fs::read(&path).unwrap();
-        let failed = if folder == "multipart_oracle" {
-            decode_http_body(&bytes).is_err()
-        } else {
-            split_capture_input(&bytes)
-                .and_then(|(content_type, body)| decode_multipart_capture(content_type, body))
-                .is_err()
-        };
-        let rejected = path
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("reject-");
-        assert_eq!(failed, rejected, "{}", path.display());
-        replayed += 1_usize;
-    }
-    replayed
+    fs::read_dir(corpus.join(folder))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let bytes = fs::read(&path).unwrap();
+            let failed = if folder == "multipart_oracle" {
+                decode_http_body(&bytes).is_err()
+            } else {
+                split_capture_input(&bytes)
+                    .and_then(|(content_type, body)| decode_multipart_capture(content_type, body))
+                    .is_err()
+            };
+            let rejected = path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("reject-");
+            assert_eq!(failed, rejected, "{}", path.display());
+        })
+        .count()
 }
 
 #[test]
