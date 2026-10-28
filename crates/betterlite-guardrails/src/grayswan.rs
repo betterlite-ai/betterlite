@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::generic_guardrail_contracts::{
-    GuardrailExtraValue, GuardrailInputType, GuardrailMessage, GuardrailToolParam,
+    GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
 };
+
+pub mod wire;
+pub use wire::{GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult};
 
 pub const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -45,41 +48,6 @@ impl Default for GraySwanSettings {
             fail_open: true,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraySwanInput {
-    pub messages: Vec<GuardrailMessage>,
-    #[serde(default)]
-    pub tools: Vec<GuardrailToolParam>,
-    #[serde(default)]
-    pub metadata: BTreeMap<String, GuardrailExtraValue>,
-    #[serde(default)]
-    pub request_history: Vec<GuardrailMessage>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct GraySwanPayload {
-    pub messages: Vec<GuardrailMessage>,
-    pub tools: Vec<GuardrailToolParam>,
-    pub parameters: BTreeMap<String, GuardrailExtraValue>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GraySwanResponse {
-    #[serde(default)]
-    pub violation_score: f64,
-    #[serde(default)]
-    pub violation_reason: Option<String>,
-    #[serde(default)]
-    pub messages: Option<Vec<GuardrailMessage>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct GraySwanResult {
-    pub flagged: bool,
-    pub messages: Vec<GuardrailMessage>,
-    pub violation_reason: Option<String>,
 }
 
 #[derive(Debug, Error)]
