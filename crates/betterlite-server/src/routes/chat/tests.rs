@@ -293,3 +293,93 @@ async fn answers_failures_in_litellm_shape(
     );
     assert!(header(&answered.headers, "x-ratelimit-reset-requests").is_none());
 }
+
+#[path = "tests/stream/tests.rs"]
+mod stream;
+
+#[tokio::test]
+async fn stream_error_preserves_param() {
+    let answered = exchange(
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[],"stream":true}"#,
+        "stream-error",
+        (429, r#"{"error":{"type":"requests","param":"p"}}"#),
+        NO_DELAY,
+    )
+    .await;
+    assert_eq!(answered.status, 429);
+    let error = serde_json::from_slice::<ErrorReply>(&answered.body)
+        .unwrap()
+        .error;
+    assert_eq!(error.error_type, "throttling_error");
+    assert_eq!(error.param.as_deref(), Some("p"));
+    assert_eq!(error.code, "429");
+}
+
+#[rstest]
+#[case::provider_done("data: [DONE]\n\n")]
+#[case::duplicate_done("data: [DONE]\n\ndata: [DONE]\n\n")]
+#[case::provider_eof("")]
+#[case::partial_event("data: {\"id\":")]
+#[tokio::test]
+async fn stream_finishes_once(#[case] input: &str) {
+    let answered = exchange(
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[],"stream":true}"#,
+        "stream-done",
+        (200, input),
+        NO_DELAY,
+    )
+    .await;
+    assert_eq!(answered.body, b"data: [DONE]\n\n");
+    assert_eq!(
+        header(&answered.headers, "content-type"),
+        Some("text/event-stream; charset=utf-8")
+    );
+    assert_eq!(header(&answered.headers, "cache-control"), Some("no-cache"));
+    assert_eq!(header(&answered.headers, "x-accel-buffering"), Some("no"));
+    assert_eq!(
+        header(&answered.headers, "x-litellm-call-id"),
+        Some("stream-done")
+    );
+}
+
+#[rstest]
+#[case::model_id("x-litellm-model-id", "dep-1")]
+#[case::model_name("x-litellm-model-name", "openai/up")]
+#[case::model_group("x-litellm-model-group", "g")]
+#[case::version("x-litellm-version", env!("CARGO_PKG_VERSION"))]
+#[case::callback("x-litellm-callback-duration-ms", "0.0")]
+#[case::retries("x-litellm-attempted-retries", "0")]
+#[case::fallbacks("x-litellm-attempted-fallbacks", "0")]
+#[tokio::test]
+async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
+    let answered = exchange(
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[],"stream":true}"#,
+        "stream-headers",
+        (200, "data: [DONE]\n\n"),
+        NO_DELAY,
+    )
+    .await;
+    assert_eq!(header(&answered.headers, name), Some(value));
+    assert!(
+        header(&answered.headers, "x-litellm-model-api-base")
+            .unwrap()
+            .ends_with("/v1")
+    );
+    assert!(
+        header(&answered.headers, "x-litellm-response-duration-ms")
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .unwrap()
+            >= rust_decimal::Decimal::ZERO
+    );
+    assert!(
+        header(&answered.headers, "x-litellm-overhead-duration-ms")
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .unwrap()
+            >= rust_decimal::Decimal::ZERO
+    );
+}

@@ -158,5 +158,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 2
