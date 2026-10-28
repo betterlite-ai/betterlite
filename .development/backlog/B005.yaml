@@ -1,7 +1,7 @@
 id: B005
 milestone: M1 openai data plane
 title: Streaming chat completions
-status: todo
+status: done
 depends_on: [B004]
 file: tasks/B005-chat-streaming.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/openai/openai.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 279

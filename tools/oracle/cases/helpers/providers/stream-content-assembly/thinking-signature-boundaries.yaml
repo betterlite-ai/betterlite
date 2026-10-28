@@ -1,0 +1,41 @@
+kind: helper
+name: thinking-signature-boundaries
+call:
+  stream_content_assembly:
+    function: batch
+    cases:
+    - function: thinking_signature_boundaries
+      chunks:
+      - choices:
+        - delta:
+            thinking_blocks:
+            - type: thinking
+              thinking: a
+            - thinking: b
+              signature: s
+            - thinking: tail
+            - type: redacted_thinking
+              data: secret
+            - type: thinking
+              signature: empty
+    - function: thinking_signature_boundaries
+      chunks:
+      - choices:
+        - delta:
+            thinking_blocks: ignored
+        - delta:
+            thinking_blocks:
+            - thinking: lost
+            - type: redacted_thinking
+              data: ''
+            - type: unknown
+              signature: s
+    - function: thinking_signature_boundaries
+      chunks:
+      - choices:
+        - delta:
+            thinking_blocks:
+            - thinking: unsigned
+env: {LITELLM_RUST: 'false'}
+compare:
+  ignore: []
