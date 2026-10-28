@@ -1,6 +1,6 @@
 use crate::loader::{ConfigError, EnvironmentLookup};
 
-use super::{coerces_to_true, RawSettings};
+use super::{RawSettings, coerces_to_true};
 
 const ELASTICACHE_TOKEN_TTL_SECONDS: u64 = 900;
 
@@ -13,7 +13,10 @@ pub struct AwsSettings {
     pub token_ttl_seconds: u64,
 }
 
-pub(super) fn build_aws<L>(settings: &RawSettings, lookup: &L) -> Result<Option<AwsSettings>, ConfigError>
+pub(super) fn build_aws<L>(
+    settings: &RawSettings,
+    lookup: &L,
+) -> Result<Option<AwsSettings>, ConfigError>
 where
     L: EnvironmentLookup,
 {

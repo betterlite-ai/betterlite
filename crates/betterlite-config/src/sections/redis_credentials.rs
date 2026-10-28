@@ -90,7 +90,10 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let settings = merge(self.litellm_settings, find_deployment_settings(self.model_list));
+        let settings = merge(
+            self.litellm_settings,
+            find_deployment_settings(self.model_list),
+        );
         let environment_snapshot = environment_snapshot(lookup);
         let resolved = resolve_credentials(&settings, lookup);
         let gcp_service_account = resolved.gcp_service_account.clone();
@@ -153,7 +156,10 @@ struct ResolvedCredentials {
     azure_client_secret: Option<String>,
 }
 
-fn resolve_credentials(settings: &RawSettings, lookup: &impl EnvironmentLookup) -> ResolvedCredentials {
+fn resolve_credentials(
+    settings: &RawSettings,
+    lookup: &impl EnvironmentLookup,
+) -> ResolvedCredentials {
     let gcp_service_account = choose(
         settings.gcp_service_account.clone(),
         lookup,
@@ -292,7 +298,7 @@ const fn azure_credential(
 
 #[path = "redis_credentials/aws.rs"]
 pub mod aws;
-use aws::{build_aws, AwsSettings};
+use aws::{AwsSettings, build_aws};
 
 #[path = "redis_credentials/tests.rs"]
 mod tests;
