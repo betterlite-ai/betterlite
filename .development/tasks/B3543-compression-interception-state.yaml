@@ -1,0 +1,189 @@
+id: B3543
+title: Compression interception settings and request cache
+description: >-
+  Load interception configuration and implement the deployment pre-call hook with
+  its per-call 900-second original-content cache, generated call IDs and validated
+  savings metadata. Mutate messages/tools only when compression produced a nonempty
+  cache, preserving untouched no-op requests and the existing litellm_metadata object
+  semantics.
+
+  The handler validates token counts are non-negative ints (zero allowed): both
+  original=0 and compressed=0 are valid inputs that produce tokens_saved=0. Savings
+  attach to the request's litellm_metadata dict so they land in the SpendLog row's
+  compression_savings key. Cache entries store (original_content_dict, creation_timestamp)
+  and are pruned when their age exceeds 900 seconds (exactly 900 survives); access alone
+  does not refresh creation time. Call IDs are generated when first used, preferring an
+  existing litellm_call_id over a new uuid. Tool detection recognizes OpenAI function
+  tools (type: function with a name in the function object) and native custom tools
+  (type: custom with a name at the top level), not every bare dict. When an existing
+  retrieval tool is present, _merge_tools returns the tool list unchanged without
+  appending compressed_tools; otherwise it appends compressed_tools and returns the
+  merged list. Compression is skipped when below trigger, invalid Anthropic exchanges
+  exist, or an existing retrieval tool is detected; no empty tools list is injected
+  into requests that originally had none.
+
+  Top-level interception parameters win over callback-specific parameters. Defaults
+  are enabled=true, compression_trigger=200000, compression_target=None, embedding_model=None
+  and embedding_model_params=None. The hook skips positive _agentic_loop_depth values
+  and waits for _has_retrieval_tool to return false.
+
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/**
+  - crates/betterlite-core/src/api/compression_interception.rs
+  - crates/betterlite-core/src/api/compression_interception/**
+  - crates/betterlite-config/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/compression_interception.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/compression_interception.py
+  - tools/oracle/cases/sdk-http/compression-interception/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/compression-interception-*
+  - docs/deviations/B3543.yaml
+  - crates/betterlite-config/src/sections/compression_interception_state.rs
+  - crates/betterlite-config/src/sections/compression_interception_state/**
+  - tools/oracle/helpers/b3543.py
+  - tools/oracle/helpers/b3543/**
+  - tools/oracle/src/helpers/core_ops/b3543.rs
+  - tools/oracle/src/helpers/core_ops/b3543/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L29-L30
+  why: LITELLM_CONTENT_RETRIEVE_TOOL_NAME and cache TTL constant.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L46-L60
+  why: _compression_savings_from_counts validates non-negative int tokens and builds CompressionSavingsMetadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L63-L78
+  why: _record_compression_savings attaches savings to litellm_metadata for spend-log recording.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L81-L92
+  why: CompressionInterceptionLogger class declaration, server_fulfilled_tool_names frozenset and docstring.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L94-L108
+  why: __init__ with enabled, compression_trigger, compression_target, embedding_model, embedding_model_params and internal cache dict.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L110-L118
+  why: from_config_yaml loads CompressionInterceptionConfig and returns a new logger instance.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L120-L135
+  why: initialize_from_proxy_config merges top-level compression_interception_params and callback-specific params, top-level wins.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L137-L209
+  why: async_pre_call_deployment_hook calls compress, injects cache by call_id, merges tools when needed, records savings and logs skips.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L309-L318
+  why: _prune_expired_cache removes entries older than 900 seconds using time.time().
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L320-L326
+  why: _get_cache retrieves (cache_dict, timestamp) tuple from _compression_cache_by_call_id by call_id.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L328-L334
+  why: _resolve_call_id prefers logging_obj.litellm_call_id then kwargs litellm_call_id string over None.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L412-L424
+  why: _has_retrieval_tool detects OpenAI function tools and native custom tools by type and name, returns bool.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L426-L435
+  why: _merge_tools returns existing list unchanged if retrieval tool present, otherwise appends compressed_tools and returns merged list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/compression_interception.py#L8-L39
+  why: CompressionInterceptionConfig and CompressionSavingsMetadata TypedDict definitions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/__init__.py#L1-L14
+  why: Package re-exports of CompressionInterceptionLogger and module docstring.
+dod:
+- text: >-
+    compression_savings_validation sends original=0,compressed=0,1,both positive and
+    both negative to _compression_savings_from_counts: zero-zero returns tokens_saved=0,
+    valid positive returns tokens_saved=original-compressed, negative/bool/float cases
+    return None. Negative compressed or original < compressed also return None. Savings
+    attach unmodified to both existing and newly created litellm_metadata dicts, with
+    source="compression_interception" in both cases.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    configuration_loading exercises compression_interception_params from litellm_settings
+    and fallback to callback_specific_params["compression_interception"]. Each parameter
+    (enabled bool, trigger int, target int|null, embedding_model str|null, embedding_model_params dict|null)
+    loads with its documented default when missing. from_config_yaml returns a logger with
+    those values; initialize_from_proxy_config chooses top-level over callback-specific.
+  proof: [config-tests, oracle, sdk-python]
+- text: >-
+    pre_call_hook_dispatch checks enabled, call_type=anthropic_messages, _agentic_loop_depth,
+    messages list presence, model string and _has_retrieval_tool. Skips and returns None
+    when any condition fails. Enabled true but other conditions false leaves messages/tools
+    untouched. When all pass, calls asyncify(compress) with the configured trigger/target/embedding
+    parameters.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    compression_cache_lifecycle creates empty _compression_cache_by_call_id on init,
+    stores (cache_dict, time.time()) when cache is nonempty, prunes entries older than 900
+    seconds (>900 pruned, ==900 kept, <900 kept) every pre-call, and _get_cache retrieves
+    by call_id or returns empty dict. Cache entries are never refreshed on access. Call ID
+    either exists as litellm_call_id in kwargs or logging_obj.litellm_call_id string, or a
+    new uuid.uuid4() string is generated and stored.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    tool_detection and merging with existing_tools=none/[],retrieved_tools=[],both with
+    retrieval tool present/absent. _has_retrieval_tool(None/non-list) returns false. Type:function
+    with function.name==litellm_content_retrieve and type:custom with name==litellm_content_retrieve
+    return true. _merge_tools with retrieval tool already present returns existing unchanged.
+    _merge_tools without retrieval tool appends compressed_tools and returns merged. No empty
+    tools list is injected when original request had none.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    messages_and_tools_mutation mutates both when cache is nonempty and compression_tools nonempty,
+    mutates messages only when cache nonempty and no tools, leaves both untouched when cache empty,
+    and records savings only when cache nonempty (savings can be zero when tokens_saved=0).
+    logging includes call_id, original/compressed token counts and cache key count on success and
+    compression_skipped_reason on skip.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Settings and SDK seeds reach the existing parsers and every new capture comes from an actual provider HTTP exchange.
+  proof: [config-tests, corpora, new-cases, oracle, sdk-python]
+checks:
+  optional: [mutants]
+  commands:
+  - id: behavior-tests
+    why: Configuration loading, cache lifecycle, compression savings validation and tool detection/merging require behavior assertions.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^(api::compression_interception|sections::compression_interception_state)::/) - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: All compression_interception parameters and fallback chains must load through the production configuration loader.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::compression_interception_state::tests::loads_settings($|::)/)'
+  - id: sdk-python
+    why: Provider comparisons must use the SDK HTTP driver with a typed operation adapter.
+    run: test -f tools/oracle/sdk_http/compression_interception.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpora
+    why: New settings and SDK operation tags must have parser seeds.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/compression-interception-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/compression-interception-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'
+  - id: new-cases
+    why: Compression interception requires its own mock-provider HTTP cases.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/compression-interception)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/compression-interception/compression-savings-validation.yaml
+- tools/oracle/cases/sdk-http/compression-interception/configuration-loading.yaml
+- tools/oracle/cases/sdk-http/compression-interception/pre-call-hook-dispatch.yaml
+- tools/oracle/cases/sdk-http/compression-interception/compression-cache-lifecycle.yaml
+- tools/oracle/cases/sdk-http/compression-interception/tool-detection-and-merging.yaml
+- tools/oracle/cases/sdk-http/compression-interception/messages-and-tools-mutation.yaml
+deviations: []
+out_of_scope:
+- B3542 owns compress() and its return dict. B3541 owns embedding_score_messages. B3540 owns get_protected_indices and related message normalization.
+- B3544 owns async_should_run_agentic_loop, async_build_agentic_loop_plan, _resolve_retrieval_content, _extract_retrieval_tool_calls and _prepare_followup_kwargs.
+- B189 owns the native CustomLogger initialization contract; this task inherits it via super().__init__().
+- B198 owns the asyncify() decorator and the context injection for time/uuid/compression execution.
+- B2401 owns sdk_http cases and oracle HTTP transport. B012 owns logging call details. B011 owns exception projection.
+pitfalls:
+- >-
+  Cache entries are stored with creation timestamps via time.time() and pruned by age,
+  never by access count. A cache entry exactly at 900 seconds old survives; only entries
+  older than 900 seconds are removed. Access does not refresh the creation timestamp.
+- >-
+  Tool detection recognizes two patterns: type="function" with a function object containing
+  name=litellm_content_retrieve, and type="custom" with a name field at the top level.
+  A bare dict without type/name is not considered a tool and does not trigger retrieval.
+- >-
+  _merge_tools returns the existing tool list unchanged when a retrieval tool is already
+  present; it never appends compressed_tools in that case. This prevents duplicates from
+  being added when compression detects a pre-existing retrieval tool.
+- >-
+  Compression savings are only recorded when the cache is nonempty; skipped requests do
+  not record zero-token savings even if compression ran and found nothing to drop.
+- >-
+  litellm_metadata is mutated in place when it exists (preserving references held by
+  proxy and logging object); when it does not exist, a new dict is created and assigned
+  to kwargs.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

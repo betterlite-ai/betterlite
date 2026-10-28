@@ -1,0 +1,136 @@
+id: B3768
+title: DynamoAI moderation transport and decisions
+description: >-
+  Implement DynamoAI guardrail's request/response contracts, constructor initialization with api_key (required,
+  reads DYNAMOAI_API_KEY), api_base (optional, default https://api.dynamo.ai, reads DYNAMOAI_API_BASE), policy_ids
+  (optional comma-separated, reads DYNAMOAI_POLICY_IDS), and model_id (optional, reads DYNAMOAI_MODEL_ID). HTTP POST
+  transport to /v1/moderation/analyze/ with Bearer token authorization. Policy decision extraction from finalAction
+  field (BLOCK, WARN, REDACT, SANITIZE, NONE) and formatted violation details from appliedPolicies list. Pre-call
+  and during-call hooks forward the raw messages list unchanged into the DynamoAI request payload; post-call output
+  inspection extracts role and content from response.choices, skipping non-string content silently. Determine guardrail
+  status by classifying the response into success (finalAction is NONE), guardrail_intervened (finalAction is BLOCK)
+  or guardrail_failed_to_respond (API error or malformed response). A final BLOCK action without an explicit BLOCK
+  policy in appliedPolicies produces no violations (an empty violation list); WARN/REDACT/SANITIZE actions do not
+  become new local request-blocking actions (they are logged only). Configuration api_key reads DYNAMOAI_API_KEY
+  environment variable and is required; missing key raises ValueError. Request/response contracts model the DynamoAI
+  API schema with messages, policyIds, modelId, textType and appliedPolicies. Supported event hooks are pre_call,
+  during_call and post_call.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/dynamoai.rs
+    - crates/betterlite-guardrails/src/dynamoai/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/guardrails/dynamoai/**
+    - crates/betterlite-config/src/sections/dynamoai_moderation.rs
+    - crates/betterlite-config/src/sections/dynamoai_moderation/**
+    - tools/oracle/helpers/b3768.py
+    - tools/oracle/helpers/b3768/**
+    - tools/oracle/src/helpers/guardrails/b3768.rs
+    - tools/oracle/src/helpers/guardrails/b3768/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L1-L477
+    why: The complete DynamoAIGuardrails class with __init__, hook implementations and helper methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L289-L334
+    why: The async_pre_call_hook forwarding messages verbatim to the DynamoAI request payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L336-L379
+    why: The async_moderation_hook forwarding messages verbatim to the DynamoAI request payload during the LLM call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L381-L445
+    why: The async_post_call_success_hook extracting role and content from response.choices and checking for text content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L224-L253
+    why: The _determine_guardrail_status method classifying responses into success, guardrail_intervened, or guardrail_failed_to_respond.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L178-L222
+    why: The _process_dynamoai_guardrails_response method extracting violations and violation details from applied policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L255-L287
+    why: The _create_error_message method formatting violation details into a detailed error message for blocking actions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/dynamoai.py
+    why: The DynamoAIGuardrailConfigModel with api_key, api_base, policy_ids and model_id fields; DynamoAIRequest, DynamoAIResponse
+      and DynamoAIProcessedResult type definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+    why: The CustomGuardrail base class with initialization, standard logging and applied-guardrails header helpers.
+dod:
+  - text: Constructor initializes with api_key (required, DYNAMOAI_API_KEY env), api_base (optional, default https://api.dynamo.ai,
+      DYNAMOAI_API_BASE env), policy_ids (optional comma-separated, DYNAMOAI_POLICY_IDS env), and model_id (optional, DYNAMOAI_MODEL_ID env).
+    proof: [config-load]
+  - text: Missing api_key raises ValueError with a clear message.
+    proof: [dynamoai-tests]
+  - text: Pre-call hook forwards the raw messages list unchanged from data["messages"] into the DynamoAI request payload.
+    proof: [dynamoai-tests]
+  - text: During-call hook forwards the raw messages list unchanged from data["messages"] into the DynamoAI request payload for inspection.
+    proof: [dynamoai-tests]
+  - text: Post-call hook extracts role and content from response.choices[].message, skipping non-string content silently.
+    proof: [dynamoai-tests]
+  - text: '_determine_guardrail_status classifies the response into success (finalAction=NONE), guardrail_intervened (finalAction=BLOCK),
+      or guardrail_failed_to_respond (non-dict response, error key present, or exception during processing).'
+    proof: [oracle]
+  - text: Policy decisions are extracted from finalAction field (BLOCK, WARN, REDACT, SANITIZE, NONE).
+    proof: [oracle]
+  - text: Applied policies are extracted from appliedPolicies list with policy name, id, method, description, message and action.
+    proof: [dynamoai-tests]
+  - text: A BLOCK action without an explicit BLOCK policy in appliedPolicies produces an empty violation list (no violations).
+    proof: [dynamoai-tests]
+  - text: WARN, REDACT and SANITIZE actions do not become new local blocking actions; they are logged only.
+    proof: [dynamoai-tests]
+  - text: HTTP requests include Authorization header with Bearer token.
+    proof: [oracle]
+  - text: Configuration loads api_key (required, DYNAMOAI_API_KEY env), api_base (optional, DYNAMOAI_API_BASE env, default https://api.dynamo.ai),
+      policy_ids (optional, DYNAMOAI_POLICY_IDS env, comma-separated), and model_id (optional, DYNAMOAI_MODEL_ID env).
+    proof: [dynamoai-tests, config-load]
+checks:
+  optional: []
+  commands:
+    - id: dynamoai-tests
+      why: the dynamoai guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/dynamoai_guardrail/)'
+    - id: config-load
+      why: the DynamoAI configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/dynamoai.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/dynamoai/pre-call-analysis-success.yaml
+  - tools/oracle/cases/guardrails/dynamoai/pre-call-block-action.yaml
+  - tools/oracle/cases/guardrails/dynamoai/during-call-analysis-success.yaml
+  - tools/oracle/cases/guardrails/dynamoai/during-call-block-action.yaml
+  - tools/oracle/cases/guardrails/dynamoai/post-call-analysis-success.yaml
+  - tools/oracle/cases/guardrails/dynamoai/post-call-block-action.yaml
+  - tools/oracle/cases/guardrails/dynamoai/policy-decision-extraction.yaml
+  - tools/oracle/cases/guardrails/dynamoai/applied-policies-extraction.yaml
+  - tools/oracle/cases/guardrails/dynamoai/block-without-block-policy.yaml
+  - tools/oracle/cases/guardrails/dynamoai/warn-action-not-blocking.yaml
+  - tools/oracle/cases/guardrails/dynamoai/missing-api-key.yaml
+deviations:
+  - what: DynamoAI error messages use betterlite's own wording in failure scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L255-L287
+out_of_scope:
+  - The should_run_guardrail gate (true/false decision based on call type and event filters); CustomGuardrail base class guard logic is owned by a concrete framework task.
+  - add_guardrail_to_applied_guardrails_header call; a shared callback header helper is owned by a dedicated task.
+  - Framework hook dispatch and event-hook registration; CustomGuardrail base class orchestration of hook invocation is owned by B164 (litellm/integrations/custom_guardrail.py).
+  - Other guardrail providers (AIM, Akto, Cisco, etc.); each gets its own task.
+pitfalls:
+  - >-
+    api_key is assigned at __init__ line 55 from the DYNAMOAI_API_KEY environment variable and used only in the
+    Authorization header at line 119; mark the field as SecretString to prevent accidental logging in Debug output.
+  - >-
+    Pre-call and during-call hooks forward data.get("messages") unchanged into the DynamoAI request, not extracting
+    or filtering individual message fields; post-call hook alone builds a new list by extracting role and content
+    from response.choices[].message.
+  - >-
+    Non-string content in post-call response messages must be skipped silently, not raising an error.
+  - >-
+    A BLOCK finalAction without an explicit BLOCK policy in appliedPolicies must return an empty violation
+    list, not raise an error.
+  - >-
+    WARN/REDACT/SANITIZE actions are informational only and must not cause the request to be rejected
+    locally; only BLOCK causes rejection.
+  - >-
+    HTTP Authorization header must use the format Bearer <token>, not Bearer: <token> or other variations.
+  - >-
+    Policy ID defaults must match LiteLLM's: empty list if not specified, not a computed default.
+  - >-
+    api_base URL must support both http and https prefixes when constructing the /v1/moderation/analyze/
+    endpoint.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

@@ -1,0 +1,222 @@
+id: B3041
+title: Request token estimates and implicit output caps
+description: >-
+  Implement combined and precise project-input token estimation across chat,
+  completion, Responses, embeddings, rerank, audio and native Google requests.
+  Build token estimates for reservation and reconciliation with accurate multimodal
+  and audio content handling, and apply implicit output-token caps to prevent
+  unbounded generation from overshooting quota before post-call reconciliation.
+
+  Estimate combined tokens (input + output budget) for request-level TPM reservation
+  using cheap char-count approximation (characters divided by 4, floor 1). Estimate
+  precise project input tokens using litellm.token_counter for model-aware counting
+  that includes image/tool/audio content, since the deployment-level ITPM check uses
+  the same approach. For audio blocks, derive estimates from base64 payload size
+  assuming the lowest reasonable bitrate (1600 bytes per token) so multimodal
+  audio-heavy requests reserve proportionally more before post-call reconciliation.
+  Preserve explicit-zero output caps (a legitimate zero-output request), candidate
+  multiplication for n/best_of/candidateCount fields, Responses API minimum output
+  (16 tokens), configured per-tenant output estimates and endpoint-specific
+  implicit-cap exclusions (embeddings, Decisions). When no max_tokens field is
+  present and the calculated output floor does not already exceed the configured
+  TPM budget fraction, apply a conservative output floor (4096 divided by 4 = 1024
+  tokens, capped to 1/4 of the smallest configured TPM limit per tenant) to every
+  non-embedding request. Skip the cap when the floor already meets or exceeds the
+  baseline (no additional constraint to enforce) or when the request has an explicit
+  cap or is an embedding.
+
+  Parse output-cap values defensively: accept int/float/str, reject bool,
+  catch ValueError/OverflowError and return None. Translate Google GenAI native
+  requests to chat-completion format via GoogleGenAIAdapter so native contents
+  blocks count correctly. Detect request type via call_type (chat, completion,
+  embedding, Responses, rerank, audio) and apply the correct field precedence
+  and content-block handling for each. Strip input_audio content blocks before
+  passing messages to token_counter (which raises on them), then add audio
+  estimates back on top so the rest of the message still gets counted accurately.
+  Detect Responses API input via call_type disambiguator and transform it to
+  chat messages first so its multimodal content blocks get counted like messages.
+  Count pretokenized embedding input (flat list of ints or nested lists of ints)
+  directly without passing to token_counter. Convert rerank documents and query
+  to text for the char-count estimate. Fall back to cheap char-count estimate if
+  token_counter raises (unrecognized model, missing tokenizer), and add audio
+  estimates on top of the fallback.
+
+  Direct dependencies: B196 supplies litellm.token_counter; B218 supplies
+  get_str_from_messages for char counting; B909 supplies
+  LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages;
+  B3031 supplies call-family constants, estimate defaults and descriptor records;
+  B3484 supplies GoogleGenAIAdapter.translate_generate_content_to_completion.
+  offload_token_count is imported but not called in the owned ranges.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/token_estimation.rs
+    - crates/betterlite-core/src/token_estimation/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L742-L748
+    why: _parse_output_cap_value defensive parsing of int/float/str cap values with exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L860-L874
+    why: no_max_tokens_output_floor baseline and fraction-of-limit cap for small TPM budgets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L875-L885
+    why: _is_embedding_request detection via call_type and data.get("input") fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L887-L911
+    why: _translate_google_genai_native_request to chat-completion format with config/generationConfig fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L913-L942
+    why: _get_explicit_output_cap field precedence, Responses 16-token minimum, embedding zero return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L944-L951
+    why: _has_explicit_output_cap explicit-zero guard (is not None, not truthiness).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L953-L974
+    why: get_output_candidate_count n/best_of/candidateCount field aliases and max() accumulation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L976-L1027
+    why: _apply_implicit_output_cap field selection per call type, Google and Responses-specific handling, Decisions endpoint exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1029-L1072
+    why: _estimate_tokens_for_request combined input+output budget via _estimate_input_and_output_tokens and candidate multiplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1074-L1157
+    why: _estimate_input_and_output_tokens char-count input estimation, field precedence per call type, output floor and explicit cap selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3539-L3559
+    why: _estimate_audio_block_tokens base64 payload decoding and lowest-bitrate assumption (1600 bytes/token).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3561-L3578
+    why: _estimate_audio_content_tokens per-block summation across message input_audio blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3580-L3605
+    why: _strip_audio_content_blocks removal before token_counter to avoid ValueError, with filtered-content reconstruction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3607-L3626
+    why: _responses_input_to_chat_messages transformation via LiteLLMCompletionResponsesConfig for multimodal content counting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3628-L3638
+    why: _count_pretokenized_embedding_input flat and nested list detection without token_counter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3640-L3652
+    why: _rerank_input_to_text query and documents concatenation with newlines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3654-L3738
+    why: _estimate_precise_input_tokens model-aware token_counter with audio/content-block handling, fallback to cheap estimate on exception.
+
+dod:
+  - text: _parse_output_cap_value returns int for int/float/str numeric values (e.g., "4096" → 4096, 4.5 → 4), returns None for bool, non-numeric types, or ValueError/OverflowError.
+    proof: [parse-output-cap]
+  - text: no_max_tokens_output_floor returns baseline (DEFAULT_MAX_TOKENS_ESTIMATE / 4 = 1024) when no limit provided, returns min(baseline, max(1, limit / 4)) when limit provided, ensuring small TPM caps stay usable.
+    proof: [no-max-tokens-floor]
+  - text: _is_embedding_request returns true for call_type in (aembedding, embedding), false for call_type in (aresponses, responses), false for other call_types, and checks data.get("input") only when call_type is None or absent.
+    proof: [embedding-detect]
+  - text: _translate_google_genai_native_request returns None when data is not a dict or call_type not in Google native types, calls GoogleGenAIAdapter.translate_generate_content_to_completion with config/generationConfig field selection and returns the result.
+    proof: [google-native-translate]
+  - text: _get_explicit_output_cap returns None for non-dict data, returns max of Google maxOutputTokens/max_output_tokens for Google types, returns max(16, parsed) for Responses types, returns None for embeddings, handles max_tokens/max_completion_tokens/max_output_tokens fields per call type.
+    proof: [explicit-output-cap]
+  - text: _has_explicit_output_cap returns true when _get_explicit_output_cap is not None (explicit-zero counts as explicit).
+    proof: [has-explicit-cap]
+  - text: get_output_candidate_count returns 1 for non-Mapping data, returns max(1, n, best_of, candidateCount, candidate_count) across aliases with int() coercion and exception fallback, returns 1 on TypeError/ValueError/OverflowError.
+    proof: [candidate-count]
+  - text: _apply_implicit_output_cap modifies data in place, applies cap to max_tokens (or max_output_tokens for Responses, or maxOutputTokens for Google) when no explicit cap and the calculated floor is below the baseline, skips when floor >= baseline or has explicit cap or is embedding or Decisions endpoint, uses effective_cap = max(floor, configured_output_tokens or 0).
+    proof: [apply-implicit-cap, apply-implicit-cap-skip]
+  - text: _estimate_tokens_for_request returns input + (max_tokens * candidate_count), using _estimate_input_and_output_tokens for separate input and output budget.
+    proof: [combined-tokens]
+  - text: _estimate_input_and_output_tokens translates Google requests, selects field per call type (messages or prompt or input), returns (input_char_count / 4, output_floor or explicit_max_tokens or configured_output_tokens or max(input_estimate, floor)).
+    proof: [input-output-tokens]
+  - text: _estimate_audio_block_tokens returns DEFAULT_AUDIO_TOKEN_ESTIMATE (300) for missing data or no base64 input_audio.data, returns max(decoded_bytes / 1600, 300) for base64 data (length * 3 / 4 decoded).
+    proof: [audio-block-tokens]
+  - text: _estimate_audio_content_tokens returns 0 for non-list messages, returns sum of per-block audio estimates across all input_audio blocks in message content.
+    proof: [audio-content-tokens]
+  - text: _strip_audio_content_blocks returns messages unchanged for non-list or when audio_token_estimate is 0, reconstructs messages with input_audio blocks filtered out.
+    proof: [strip-audio-blocks]
+  - text: _responses_input_to_chat_messages returns empty sequence for non-dict, calls LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages with input field (or "").
+    proof: [responses-to-chat]
+  - text: _count_pretokenized_embedding_input returns None for non-list, returns len(value) for flat int list, returns sum(len(token_ids) for token_ids in value) for nested list of ints, returns None for mixed/non-int elements.
+    proof: [pretokenized-embedding]
+  - text: _rerank_input_to_text returns query plus documents joined by newlines, handles documents as list or missing, converts non-str/non-dict parts to str().
+    proof: [rerank-text]
+  - text: _estimate_precise_input_tokens returns 0 for non-dict, detects Responses/embedding/rerank/completion types, handles pretokenized embeddings directly, strips audio blocks and adds audio estimate back, calls token_counter(model, messages, text, tools, tool_choice), falls back to cheap estimate on exception with audio added back.
+    proof: [precise-input-tokens]
+  - text: _estimate_input_and_output_tokens multiplies max_tokens_estimate by candidate count from get_output_candidate_count.
+    proof: [candidate-multiplication]
+
+pitfalls:
+  - "_parse_output_cap_value rejects bool input even if it is 0 or 1; bool is checked before int/float/str type check, so all booleans return None."
+  - "_estimate_tokens_for_request does not distinguish between zero input, zero output and zero budget; a call with zero total estimates still reserves zero tokens."
+  - "_apply_implicit_output_cap modifies the request dict in place (rebind-ok in comments); callers that need immutability must copy first or use the return value concept differently."
+  - "_responses_input_to_chat_messages returns empty sequence when input is absent, not a single empty-string message, so callers must check return length or it counts as zero input."
+  - "no_max_tokens_output_floor uses integer division (// 4) and max(1, ...) so the floor never goes below 1 token even for very small limits."
+  - "call_type parameter determines field selection: when absent or None, the function searches messages/prompt/input in order; when set, it picks only the matching field so a Responses call with messages field is ignored."
+  - "Google GenAI requests may have config or generationConfig field; the function tries config first and falls back to generationConfig only if config is absent, so a request with both uses config."
+  - "Responses API minimum output is 16 tokens and applies in _get_explicit_output_cap, but _apply_implicit_output_cap applies it again when computing the floor, so Responses requests get at least 16 either way."
+  - "Audio estimates use a fixed 1600 bytes-per-token rate; this assumes the lowest reasonable bitrate and may over-estimate for highly compressed audio but ensures reservation never undercuts high-quality recordings."
+  - "token_counter may raise ValueError, AssertionError or other exceptions; the fallback catches all exceptions (BLE001 noqa) and degrades to char-count estimate, so caller never sees the exception."
+  - "_apply_implicit_output_cap skips the cap when capped_floor >= baseline_floor (i.e., when min_configured_tpm_limit is None or >= 4096), even if no max_tokens field is present, because the floor already provides no additional constraint."
+
+out_of_scope:
+  - get_str_from_messages in litellm/litellm_core_utils/prompt_templates/common_utils.py is called by _estimate_input_and_output_tokens; owned by B218, this task uses it as a black box for char counting.
+  - GoogleGenAIAdapter.translate_generate_content_to_completion in litellm/google_genai/adapters/transformation.py is called by _translate_google_genai_native_request; owned by B3484.
+  - offload_token_count in litellm/litellm_core_utils/token_counter.py is imported but not called in the owned ranges; its owner remains open and it may be a fallback for token_counter.
+  - Call-family constants (EMBEDDING_API_CALL_TYPES, RESPONSES_API_CALL_TYPES, etc.) are defined in B3031 or supplied as imports; this task uses them for dispatch.
+
+deviations:
+  - what: Failed token_counter calls fall back to cheap char-count estimation instead of propagating the exception or returning None.
+    why: LiteLLM degrades to char-count estimate on any token_counter error so small model name mismatches or missing tokenizers don't block the request; betterlite preserves this behavior to avoid rate-limit rejections from estimation failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3734-L3738
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+checks:
+  optional: []
+  commands:
+    - id: parse-output-cap
+      why: _parse_output_cap_value does not reject bool, does not handle ValueError, or returns wrong type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::parse_output_cap/)'
+    - id: no-max-tokens-floor
+      why: no_max_tokens_output_floor does not apply fraction or clamp to 1
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::no_max_tokens_floor/)'
+    - id: embedding-detect
+      why: _is_embedding_request does not detect call_type correctly or falls back wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(embedding_detect|is_embedding)/)'
+    - id: google-native-translate
+      why: _translate_google_genai_native_request does not call GoogleGenAIAdapter or returns wrong type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(google_native|translate)/)'
+    - id: explicit-output-cap
+      why: _get_explicit_output_cap does not handle field precedence, Responses minimum or embedding zero
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::explicit_output_cap/)'
+    - id: has-explicit-cap
+      why: _has_explicit_output_cap does not check is not None or treats 0 as implicit
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(has_explicit|explicit_zero)/)'
+    - id: candidate-count
+      why: get_output_candidate_count does not accumulate max over aliases or does not fall back
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::candidate_count/)'
+    - id: apply-implicit-cap
+      why: _apply_implicit_output_cap does not modify data, does not skip embeddings, or does not clamp to floor
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::apply_implicit_cap/)'
+    - id: apply-implicit-cap-skip
+      why: _apply_implicit_output_cap does not skip when capped_floor >= baseline_floor or when configured TPM limit is unconstrained
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::apply_implicit_cap_skip/)'
+    - id: combined-tokens
+      why: _estimate_tokens_for_request does not multiply by candidate count or does not add input+output
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(combined_tokens|estimate_tokens)/)'
+    - id: input-output-tokens
+      why: _estimate_input_and_output_tokens does not select field per call type or does not handle Google translation
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(input_output|estimate_input_and_output)/)'
+    - id: audio-block-tokens
+      why: _estimate_audio_block_tokens does not decode base64 or does not use 1600 bytes-per-token
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(audio_block|audio_estimate)/)'
+    - id: audio-content-tokens
+      why: _estimate_audio_content_tokens does not sum per-block or does not find input_audio blocks
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::audio_content/)'
+    - id: strip-audio-blocks
+      why: _strip_audio_content_blocks does not remove input_audio or does not preserve other content
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(strip_audio|audio_strip)/)'
+    - id: responses-to-chat
+      why: _responses_input_to_chat_messages does not call LiteLLMCompletionResponsesConfig or returns wrong type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(responses_to_chat|responses_input)/)'
+    - id: pretokenized-embedding
+      why: _count_pretokenized_embedding_input does not detect flat/nested int lists or returns None wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(pretokenized|embedding_input)/)'
+    - id: rerank-text
+      why: _rerank_input_to_text does not join query and documents or does not handle missing fields
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(rerank_text|rerank_input)/)'
+    - id: precise-input-tokens
+      why: _estimate_precise_input_tokens does not call token_counter, does not strip audio or falls back wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::precise_input/)'
+    - id: candidate-multiplication
+      why: _estimate_input_and_output_tokens does not multiply output by candidate count
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(candidate_multiply|candidate_mult)/)'
+
+oracle_cases: []

@@ -3,7 +3,7 @@ milestone: M11 distribution
 title: Container installation from a published Python package
 status: todo
 depends_on: [B5070]
-file: null
+file: tasks/B5074-package-container-image.yaml
 covers:
   - "docker/build_from_pip/**"
 parent: B151

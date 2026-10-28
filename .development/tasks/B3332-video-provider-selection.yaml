@@ -1,0 +1,133 @@
+id: B3332
+title: Video provider selection
+description: >-
+  Implement the video-specific closed provider selection in betterlite-provider, retaining
+  the model-sensitive hosted-vLLM selection seam and the unsupported-provider None outcome.
+  Build a function in the ProviderConfigManager that maps each provider enum member to its
+  corresponding video operation contract, returning None for providers without a video
+  implementation at this pin. This task owns the whole selector function but its missing
+  provider-leaf prerequisites must be resolved by the architect before implementation; do
+  not silently replace supported providers with errors or stub returns.
+
+
+  Owned function: litellm/utils.py:9690-9725, ProviderConfigManager.get_provider_video_config.
+  This function selects among OPENAI, AZURE, GEMINI, VERTEX_AI, RUNWAYML, FAL_AI, HOSTED_VLLM
+  and EDENAI, returning their typed video operation contracts or None.
+
+
+  Direct dependencies with existing task files: B3331 supplies the selected BaseVideoConfig
+  type and async fallback trait; B525 owns OpenAI video config and is the concrete
+  provider constructor/operation owner; B547 owns Azure video config constructor and URL
+  generation; B1361 owns Vertex video config constructor; B1363 owns Gemini video config
+  constructor. These are concrete constructor owners, not provider umbrellas. The remaining
+  four constructor branches (RunwayML, Fal, HostedVLLM, EdenAI) have no admissible concrete
+  task IDs at this outline; see architect questions.
+
+
+scope:
+  paths:
+    - crates/betterlite-provider/src/video_selection.rs
+    - crates/betterlite-provider/src/video_selection/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9690-L9725
+    why: Video provider selector. Own this function exactly; match all eight branches and
+      the None fallback, preserving the call pattern for hosted-vLLM's model parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L1-L30
+    why: BaseVideoConfig base type that concrete selectors return; imported and re-exported
+      by B3331.
+
+dod:
+  - text: "get_provider_video_config takes a model name (String or None) and a Provider enum
+      member, and returns the correct typed video operation contract or None."
+    proof: [selector-function-exists]
+  - text: "Selecting OPENAI returns OpenAI's video config from B525; the call is delegated
+      to that concrete constructor."
+    proof: [openai-branch]
+  - text: "Selecting AZURE returns Azure's video config from B547; the call is delegated
+      to that concrete constructor."
+    proof: [azure-branch]
+  - text: "Selecting GEMINI returns Gemini's video config from B1363; the call is delegated
+      to that concrete constructor."
+    proof: [gemini-branch]
+  - text: "Selecting VERTEX_AI returns Vertex's video config from B1361; the call is delegated
+      to that concrete constructor."
+    proof: [vertex-branch]
+  - text: "Selecting RUNWAYML, FAL_AI, HOSTED_VLLM or EDENAI returns an error indicating
+      the provider is not yet implemented, not a stub or silent None."
+    proof: [unimplemented-branch]
+  - text: "The function signature matches LiteLLM's contract: it takes an optional model
+      parameter (used only for HOSTED_VLLM) and a provider identifier."
+    proof: [signature-match]
+  - text: "All eight provider branches, the None fallback and error cases are reachable."
+    proof: [branch-coverage]
+
+checks:
+  optional: []
+  commands:
+    - id: selector-function-exists
+      why: The provider selector function is not defined or does not match the signature
+      run: grep -q 'fn get_provider_video_config' crates/betterlite-provider/src/video_selection.rs
+    - id: openai-branch
+      why: OpenAI branch is missing or does not delegate to B525
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::(openai|provider_selection)/)'
+    - id: azure-branch
+      why: Azure branch is missing or does not delegate to B547
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::(azure|provider_selection)/)'
+    - id: gemini-branch
+      why: Gemini branch is missing or does not delegate to B1363
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::(gemini|provider_selection)/)'
+    - id: vertex-branch
+      why: Vertex branch is missing or does not delegate to B1361
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::(vertex|provider_selection)/)'
+    - id: unimplemented-branch
+      why: Unimplemented providers do not return errors or return silent None
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::(unimplemented|unsupported)/)'
+    - id: signature-match
+      why: Function signature does not match LiteLLM contract
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::signature/)'
+    - id: branch-coverage
+      why: Not all eight provider branches and fallback are reachable
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^video_selection::branch_coverage/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "RunwayML, Fal, hosted-vLLM and EdenAI video configs return NotImplemented or
+      Unsupported errors instead of None or panicking, since the architect needs to
+      resolve which concrete task IDs will own them."
+    why: These four providers lack concrete task IDs at this outline. The outline explicitly
+      lists them as unresolved prerequisites (architect questions 1). betterlite preserves
+      LiteLLM's option matrix but cannot route to implementations that don't exist yet.
+      An error is clearer than a silent None, since a caller relying on fallback logic
+      would silently do wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9711-L9724
+
+out_of_scope:
+  - "B525 owns OpenAI video config constructor (__init__) and all OpenAI video operation
+    transforms; reuse its public implementation."
+  - "B547 owns Azure video config constructor and URL generation; reuse its public
+    implementation."
+  - "B1361 owns Vertex video config constructor; reuse its public implementation."
+  - "B1363 owns Gemini video config constructor; reuse its public implementation."
+  - "B3331 defines BaseVideoConfig and the trait this selector returns; do not duplicate
+    the type."
+  - "Provider dispatches and routing logic at higher layers remain outside this selector;
+    the selector only maps names to constructors."
+
+pitfalls:
+  - "The hosted-vLLM branch passes the model parameter to get_hosted_vllm_video_config;
+    other branches ignore it."
+  - "LiteLLM's EDENAI branch constructs litellm.EdenAIVideoConfig() directly; the Rust
+    equivalent must invoke the matching concrete constructor when its task arrives."
+  - "The None fallback in LiteLLM is reached when no branch matches; preserve this
+    behavior for truly unknown providers, distinct from unimplemented known ones."
+  - "Matching on the Provider enum must be exhaustive; the Rust compiler will reject
+    any unreachable pattern."
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

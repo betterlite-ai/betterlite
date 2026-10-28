@@ -1,0 +1,165 @@
+id: B3702
+title: Code execution guardrail lifecycle and registration
+description: >-
+  Build the BlockCodeExecutionGuardrail class, its initialization, event-hook registration and apply_guardrail entry point that orchestrates detection and enforcement.
+
+  The guardrail integrates the fenced-code detection from B3701 into a configurable, registerable guardrail. Owns the complete object lifecycle: construction with parameter validation, configuration model exposure for HTTP routes, event hook enumeration, request/response scanning orchestration, and error handling with distinct paths for request-side passthrough exceptions vs response-side HTTP 400.
+
+  Build crates/betterlite-guardrails/src/block_code_execution/:
+  - lifecycle.rs: BlockCodeExecutionGuardrail constructor (L331-L364 LiteLLM) accepting guardrail_name, blocked_languages (list[str] | None), action (Literal["block"|"mask"], default "block"), confidence_threshold (float, default 0.5, clamped to [0.0, 1.0]), detect_execution_intent (bool, default true), event_hook (Literal["pre_call"|"post_call"|"during_call"] | list[str] | None), and default_on (bool, default false). Normalize event_hook string or list to GuardrailEventHooks list; default to [pre_call, post_call] when None. Compute block_all = blocked_languages is None or empty. Call parent CustomGuardrail.__init__ with guardrail_name="block_code_execution" (or override), supported_event_hooks=[pre_call, post_call, during_call], event_hook (normalized list), and default_on. Store blocked_languages, block_all, action, confidence_threshold, detect_execution_intent as instance fields.
+  - error_handling.rs: _raise_block_error (L496-L514 LiteLLM) accepting language (str), is_output (bool), request_data (dict). Generate message: "Content blocked: execution request detected" if language=="execution_request", else "Content blocked: executable code block detected (language: {language})". When is_output=true, raise HTTPException(status_code=400, detail={"error": msg, "guardrail": self.guardrail_name, "language": language}). When is_output=false, call self.raise_passthrough_exception(violation_message=msg, request_data=request_data, detection_info={"language": language}).
+  - registration.rs: get_config_model (L366-L372 LiteLLM) static method returning type[BlockCodeExecutionGuardrailConfigModel]. get_supported_event_hooks (L374-L380 LiteLLM) returning [GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call, GuardrailEventHooks.during_call]. apply_guardrail (L516-L588 LiteLLM) async decorated method: extract texts from inputs.get("texts", []), return inputs unchanged if empty. For each text, call self._scan_text(text, detections, input_type) from B3701, append modified text to processed. If should_raise, determine language from first detection with action_taken=="block" (default "unknown"), call self._raise_block_error(lang, is_output, request_data). Set inputs["texts"]=processed, return inputs. Try/except HTTPException/ModifyResponseException (status="guardrail_intervened"), other Exception (status="guardrail_failed_to_respond"), finally: build detection_dicts from detections, compute max_confidence (None if empty), call self.add_standard_logging_guardrail_information_to_request_data with guardrail_provider="block_code_execution", guardrail_json_response=detection_dicts or exception_str, status, start_time, end_time, duration, event_type (pre_call for request, post_call for response), tracing_detail (guardrail_id, detection_method="fenced_code_block", match_details, confidence_score if not None).
+  - initializer.rs: _get_param (L19-L32 CODE_INIT) accepting litellm_params (LitellmParams), guardrail (Guardrail), key (str), default (object). Read getattr(litellm_params, key, default); if found and not None return it. Otherwise read guardrail.get("litellm_params") and access dict[key] if present. Return default if not found. initialize_guardrail (L35-L77 CODE_INIT) accepting litellm_params and guardrail, extracting guardrail_name (required, raise ValueError("Block Code Execution guardrail requires a guardrail_name") if missing/empty). Use _get_param to read: blocked_languages (list[str] | None, default None), action ("block"|"mask", default "block"), confidence_threshold (float, default 0.5, cast and clamp), detect_execution_intent (bool, default true), mode (str|None override for event_hook, default None). Compute event_hook = mode or DEFAULT_EVENT_HOOKS. Construct BlockCodeExecutionGuardrail with all parameters. Call litellm.logging_callback_manager.add_litellm_callback(instance). Return instance. Expose guardrail_initializer_registry (dict keyed by SupportedGuardrailIntegrations.BLOCK_CODE_EXECUTION.value) mapping to initialize_guardrail. Expose guardrail_class_registry mapping to BlockCodeExecutionGuardrail.
+
+  Depend on B3690 (BlockCodeExecutionGuardrailConfigModel, CodeBlockDetection, CodeBlockActionTaken), B3701 (_scan_text), B189 (LoggingCallbackManager.add_litellm_callback), B002 (config loader). Unresolved B104: CustomGuardrail.__init__, raise_passthrough_exception, add_standard_logging_guardrail_information_to_request_data, ModifyResponseException, HTTPException.
+
+  Default mode is pre_call plus post_call, action is "block", confidence_threshold is 0.5, detect_execution_intent is true, default_on is false.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/block_code_execution/lifecycle.rs
+    - crates/betterlite-guardrails/src/block_code_execution/error_handling.rs
+    - crates/betterlite-guardrails/src/block_code_execution/registration.rs
+    - crates/betterlite-guardrails/src/block_code_execution/initializer.rs
+    - crates/betterlite-guardrails/src/block_code_execution/lifecycle/**
+    - crates/betterlite-guardrails/src/block_code_execution/error_handling/**
+    - crates/betterlite-guardrails/src/block_code_execution/registration/**
+    - crates/betterlite-guardrails/src/block_code_execution/initializer/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L322-L365
+    why: "BlockCodeExecutionGuardrail constructor with parameter normalization, event hook handling and parent init call."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L366-L372
+    why: "get_config_model static method returning BlockCodeExecutionGuardrailConfigModel."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L374-L380
+    why: "get_supported_event_hooks classmethod returning pre_call, post_call and during_call."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L496-L514
+    why: "_raise_block_error with message generation for execution_request vs language and dual-path exception raising."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L516-L588
+    why: "apply_guardrail async entry point decorated with log_guardrail_information, exception handling, detection accumulation and tracing."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L19-L32
+    why: "_get_param helper reading from litellm_params and raw guardrail dicts with fallback."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L35-L77
+    why: "initialize_guardrail function extracting config, constructing BlockCodeExecutionGuardrail and registering with logging callback manager."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L13-L16
+    why: "DEFAULT_EVENT_HOOKS tuple with pre_call and post_call values."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L80-L86
+    why: "guardrail_initializer_registry and guardrail_class_registry registries mapping SupportedGuardrailIntegrations.BLOCK_CODE_EXECUTION."
+
+dod:
+  - text: BlockCodeExecutionGuardrail constructor accepts guardrail_name (required), blocked_languages (list[str] | None), action (Literal["block"|"mask"], default "block"), confidence_threshold (float, default 0.5), detect_execution_intent (bool, default true), event_hook (Literal|list|None), and default_on (bool, default false).
+    proof: [guardrail-constructor-tests]
+  - text: "Constructor normalizes event_hook (single Literal, list of strings, or None) to list of GuardrailEventHooks enum variants, defaulting to [pre_call, post_call] when None."
+    proof: [guardrail-constructor-tests]
+  - text: "Constructor clamps confidence_threshold to [0.0, 1.0] and stores all parameters in instance fields; computes block_all = (blocked_languages is None or len == 0)."
+    proof: [guardrail-constructor-tests]
+  - text: "Constructor calls parent CustomGuardrail.__init__ with guardrail_name='block_code_execution', supported_event_hooks=[pre_call, post_call, during_call], event_hook (normalized list), and default_on."
+    proof: [guardrail-constructor-tests]
+  - text: get_config_model static method returns type[BlockCodeExecutionGuardrailConfigModel].
+    proof: [config-model-tests]
+  - text: get_supported_event_hooks class method returns list of [GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call, GuardrailEventHooks.during_call].
+    proof: [event-hooks-tests]
+  - text: "_raise_block_error generates message 'Content blocked: execution request detected' when language=='execution_request', else 'Content blocked: executable code block detected (language: {language})'."
+    proof: [error-handling-tests]
+  - text: "_raise_block_error raises HTTPException(status_code: 400, detail: {error: msg, guardrail: name, language: lang}) when is_output=true."
+    proof: [error-handling-tests]
+  - text: "_raise_block_error calls raise_passthrough_exception(violation_message: msg, request_data: request_data, detection_info: {language: lang}) when is_output=false."
+    proof: [error-handling-tests]
+  - text: "apply_guardrail extracts texts from inputs.get('texts', []), returns inputs unchanged if texts is empty/missing."
+    proof: [apply-guardrail-tests]
+  - text: "apply_guardrail processes each text via self._scan_text(text, detections, input_type) from B3701, accumulating CodeBlockDetection dicts in detections list, appending modified text to processed list."
+    proof: [apply-guardrail-tests]
+  - text: "apply_guardrail raises HTTPException or ModifyResponseException on first should_raise=true, extracting language from first detection with action_taken=='block' (default 'unknown')."
+    proof: [apply-guardrail-tests]
+  - text: "apply_guardrail sets inputs['texts']=processed and returns inputs on success."
+    proof: [apply-guardrail-tests]
+  - text: "apply_guardrail catches HTTPException/ModifyResponseException (status='guardrail_intervened') and other exceptions (status='guardrail_failed_to_respond')."
+    proof: [apply-guardrail-exception-tests]
+  - text: "apply_guardrail always executes finally-block that calls add_standard_logging_guardrail_information_to_request_data with guardrail_provider='block_code_execution', detection_method='fenced_code_block', tracing_detail with confidence_score (max from detections, None if empty), event_type (pre_call for request, post_call for response)."
+    proof: [apply-guardrail-logging-tests]
+  - text: "_get_param reads from litellm_params via getattr(litellm_params, key, default), falls back to guardrail.get('litellm_params')[key] if dict, returns default if not found."
+    proof: [param-extraction-tests]
+  - text: "initialize_guardrail extracts guardrail_name (required, raises ValueError if missing/empty), blocked_languages (list[str] | None, default None), action (str, default 'block'), confidence_threshold (float, default 0.5, clamped)."
+    proof: [initialization-tests]
+  - text: "initialize_guardrail extracts detect_execution_intent (bool, default true), mode (str|None override), defaulting event_hook to DEFAULT_EVENT_HOOKS=[pre_call, post_call] when mode is None."
+    proof: [initialization-tests]
+  - text: "initialize_guardrail constructs BlockCodeExecutionGuardrail with extracted parameters and default_on (bool, default false, read via _get_param)."
+    proof: [initialization-tests]
+  - text: "initialize_guardrail calls litellm.logging_callback_manager.add_litellm_callback(instance) and returns instance."
+    proof: [initialization-tests]
+  - text: "guardrail_initializer_registry dict maps SupportedGuardrailIntegrations.BLOCK_CODE_EXECUTION.value to initialize_guardrail function."
+    proof: [registry-tests]
+  - text: "guardrail_class_registry dict maps SupportedGuardrailIntegrations.BLOCK_CODE_EXECUTION.value to BlockCodeExecutionGuardrail class."
+    proof: [registry-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: guardrail-constructor-tests
+      why: BlockCodeExecutionGuardrail constructor parameter parsing, event hook normalization, confidence clamping or field storage fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::guardrail_constructor/)'
+    - id: config-model-tests
+      why: get_config_model method missing or does not return BlockCodeExecutionGuardrailConfigModel type
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::config_model/)'
+    - id: event-hooks-tests
+      why: get_supported_event_hooks method does not return [pre_call, post_call, during_call]
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::event_hooks/)'
+    - id: error-handling-tests
+      why: _raise_block_error message generation, status code, exception type or detection_info mapping fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::error_handling/)'
+    - id: apply-guardrail-tests
+      why: apply_guardrail text extraction, input/output dict handling or detection accumulation fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::apply_guardrail/)'
+    - id: apply-guardrail-exception-tests
+      why: apply_guardrail exception catching, status assignment or language extraction from detections fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::apply_guardrail_exceptions/)'
+    - id: apply-guardrail-logging-tests
+      why: apply_guardrail finally-block logging, tracing_detail, confidence_score or event_type computation fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::apply_guardrail_logging/)'
+    - id: param-extraction-tests
+      why: _get_param attribute lookup, dict fallback, default value handling or None comparison fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::param_extraction/)'
+    - id: initialization-tests
+      why: initialize_guardrail config extraction, guardrail_name validation, parameter defaults, instance construction or callback registration fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::initialization/)'
+    - id: registry-tests
+      why: guardrail_initializer_registry or guardrail_class_registry missing, incorrectly keyed or does not map to block_code_execution
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::registry/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "The DEFAULT_EVENT_HOOKS values are stored as strings (pre_call, post_call) in LiteLLM; betterlite uses GuardrailEventHooks enum variants. The constructor accepts both Literal strings and enum variants, normalizing to enum before passing to parent."
+    why: "Rust uses enums for type safety and clarity; the wire format and config remain unchanged."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/__init__.py#L13-L16"
+  - what: "The apply_guardrail method is decorated with @log_guardrail_information in LiteLLM; in Rust, logging is called explicitly in the finally block instead, since decorators do not have equivalent semantics."
+    why: "Both achieve the same goal: logging happens always, even on exceptions. The Rust implementation is more explicit about when and how logging occurs."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L516-L588"
+
+out_of_scope:
+  - "CustomGuardrail base class and init (belongs to B104)"
+  - "raise_passthrough_exception implementation (belongs to B104)"
+  - "add_standard_logging_guardrail_information_to_request_data implementation (belongs to B104)"
+  - "GuardrailConfigModel base schema (belongs to B104)"
+  - "Text scanning and detection logic (_scan_text, _find_blocks, execution intent checking) (belongs to B3701)"
+  - "Configuration loading from YAML/environment (belongs to B002)"
+  - "Logging callback manager and request tracing infrastructure (belongs to B189)"
+
+pitfalls:
+  - "event_hook parameter normalization must handle three cases: None (default to [pre_call, post_call]), single string Literal (convert to enum and wrap in list), list of strings (convert each to enum). Typos in hook names raise ValueError from GuardrailEventHooks constructor."
+  - "confidence_threshold clamping happens in the constructor via max(0.0, min(1.0, value)), not in apply_guardrail. Panics happen if clamping is not done; use saturating/checked arithmetic to ensure [0.0, 1.0] bounds."
+  - "blocked_languages None and empty list have different meanings: None enables block_all mode (block everything), empty list also enables block_all (per LiteLLM logic). Set block_all = blocked_languages is None or len(blocked_languages) == 0. Store the original list in self.blocked_languages."
+  - "apply_guardrail processes all texts before raising on should_raise=true. The exception is raised only after processing is complete and detections are accumulated. Early return on first raise breaks accumulation, so loop through all texts first, then raise if needed."
+  - "When should_raise is true from _scan_text, determine the language from the first CodeBlockDetection with action_taken=='block'. Iterate detections in source order and break on first matching detection. Default language to 'unknown' if no match is found."
+  - "HTTPException for responses (is_output=true) needs status_code=400 and detail as dict (not string). Detail dict keys are 'error' (message), 'guardrail' (name), 'language'. Raise before returning inputs."
+  - "raise_passthrough_exception for requests (is_output=false) takes violation_message, request_data, detection_info dict. This raises an exception that the proxy converts to a response; it does not return a value."
+  - "Max confidence from detections must handle None values in CodeBlockDetection['confidence']. Use: max_conf = max((d['confidence'] for d in detections if d.get('confidence') is not None), default=None)."
+  - "event_type in tracing_detail is GuardrailEventHooks.pre_call for request input_type, GuardrailEventHooks.post_call for response. Do not use during_call even though it is in get_supported_event_hooks; during_call is supported but not logged."
+  - "The finally block in apply_guardrail runs on normal completion, HTTPException, ModifyResponseException, and other exceptions. Status assignment happens inside the try/except, then logging happens in finally. Do not skip finally on any path."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

@@ -4,3 +4,4 @@ pub mod loop_eligibility;
 pub mod records;
 mod tests;
 pub mod tools;
+pub mod websearch_request_hooks;

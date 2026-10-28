@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Configure search interception and rewrite outgoing tools
 status: todo
 depends_on: [B4110, B4111, B568, B174]
-file: null
+file: tasks/B4116-websearch-request-hooks.yaml
 covers:
   - "litellm/integrations/websearch_interception/handler.py"
 parent: B119
