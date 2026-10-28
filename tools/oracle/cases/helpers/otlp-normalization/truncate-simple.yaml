@@ -2,7 +2,7 @@ kind: helper
 name: otlp-truncate-simple
 call:
   otlp_normalization:
-    otlp_truncate: {value: "short value"}
+    truncate: {value: ["short value"]}
 env: {}
 compare:
   ignore: []

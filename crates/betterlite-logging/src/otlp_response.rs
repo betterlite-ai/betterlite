@@ -1,51 +1,50 @@
-use serde::{Deserialize, Serialize};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use prost::Message as _;
+
+use crate::python_json::dumps_object;
 
 mod tests;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OtlpError {
-    pub message: String,
+const JSON: &str = "application/json";
+const PROTOBUF: &str = "application/x-protobuf";
+
+// OTLP answers a rejected export with google.rpc.Status; the code stays at its zero default
+#[derive(Clone, PartialEq, prost::Message)]
+struct Status {
+    #[prost(int32, tag = "1")]
+    code: i32,
+    #[prost(string, tag = "2")]
+    message: String,
 }
 
-pub fn encode_otlp_response(content_type: Option<&str>, error: Option<&str>) -> (Vec<u8>, String) {
-    let media_type = content_type
-        .unwrap_or("application/x-protobuf")
+#[must_use]
+pub fn encode_otlp_response(
+    content_type: Option<&str>,
+    error: Option<&str>,
+) -> (Vec<u8>, &'static str) {
+    let requested = content_type
+        .filter(|requested| !requested.is_empty())
+        .unwrap_or(PROTOBUF);
+    let media_type = requested
         .split(';')
         .next()
-        .unwrap_or("")
+        .unwrap_or_default()
         .trim()
-        .to_ascii_lowercase();
-    if media_type == "application/json" {
-        return match error {
-            Some(message) => (
-                serde_json::to_vec(&OtlpError {
-                    message: message.to_owned(),
-                })
-                .unwrap_or_default(),
-                "application/json".to_owned(),
-            ),
-            None => (b"{}".to_vec(), "application/json".to_owned()),
-        };
+        .to_lowercase();
+    match (media_type == JSON, error) {
+        (true, Some(message)) if !message.is_empty() => {
+            let body = IndexMap::from([("message".to_owned(), Json::Text(message.to_owned()))]);
+            (dumps_object(&body).into_bytes(), JSON)
+        }
+        (true, None | Some(_)) => (b"{}".to_vec(), JSON),
+        (false, None) => (Vec::new(), PROTOBUF),
+        (false, Some(message)) => {
+            let status = Status {
+                code: 0,
+                message: message.to_owned(),
+            };
+            (status.encode_to_vec(), PROTOBUF)
+        }
     }
-    match error {
-        Some(message) => (encode_error(message), "application/x-protobuf".to_owned()),
-        None => (Vec::new(), "application/x-protobuf".to_owned()),
-    }
-}
-
-fn encode_error(message: &str) -> Vec<u8> {
-    let bytes = message.as_bytes();
-    let mut output = Vec::with_capacity(bytes.len() + 2);
-    output.push(0x0a);
-    encode_varint(bytes.len(), &mut output);
-    output.extend_from_slice(bytes);
-    output
-}
-
-fn encode_varint(mut value: usize, output: &mut Vec<u8>) {
-    while value >= 128 {
-        output.push(u8::try_from(value & 127).unwrap_or(127) | 128);
-        value >>= 7;
-    }
-    output.push(u8::try_from(value).unwrap_or(0));
 }

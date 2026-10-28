@@ -1,6 +1,8 @@
 kind: helper
-name: otlp-truncate-invalid
+name: otlp-truncate-invalid-utf8
 call:
-  otlp_normalization: {otlp_truncate: {value: "invalid"}}
+  otlp_normalization:
+    truncate: {value: ["a", {text: "é", times: 32768}]}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

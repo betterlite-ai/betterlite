@@ -1,99 +1,45 @@
 import json
-from typing import TypeAlias, cast
+from typing import TypeAlias, TypedDict, cast
+
+from litellm.tracing import messages, ui_format
+from litellm.tracing.decode import (
+    _truncate,  # pyright: ignore[reportPrivateUsage]
+    _truncate_payload,  # pyright: ignore[reportPrivateUsage]
+    encode_otlp_response,
+)
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-MAX = 65536
 
 
-def truncate(value: str) -> str:
-    encoded = value.encode()
-    if len(encoded) <= MAX:
-        return value
-    kept = encoded[:MAX].decode("utf-8", "ignore")
-    return f"{kept}…[truncated {len(encoded) - len(kept.encode())} bytes]"
+class Repeat(TypedDict):
+    text: str
+    times: int
 
 
-def content_text(value: Json) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if not isinstance(value, list):
-        return json.dumps(value, separators=(",", ":"))
-    text: list[str] = []
-    for block in value:
-        if not isinstance(block, dict):
-            return json.dumps(value, separators=(",", ":"))
-        if isinstance(block.get("text"), str):
-            text.append(cast(str, block["text"]))
-        elif block.get("type") not in {
-            "reasoning", "thinking", "redacted_thinking", "function_call", "tool_use", "tool_call"
-        }:
-            return json.dumps(value, separators=(",", ":"))
-    return "\n\n".join(text)
+Piece: TypeAlias = str | Repeat
 
 
-def ui_content(raw: str) -> Json:
-    try:
-        value = cast(Json, json.loads(raw))
-    except json.JSONDecodeError:
-        return {"kind": "text", "text": raw}
-    values = value if isinstance(value, list) else [value] if isinstance(value, dict) else None
-    if values:
-        messages: list[Json] = []
-        valid = True
-        for raw_item in values:
-            if not isinstance(raw_item, dict):
-                valid = False
-                break
-            item = cast(dict[str, Json], raw_item)
-            calls_value = item.get("tool_calls")
-            calls = cast(list[Json], calls_value) if isinstance(calls_value, list) else []
-            if "content" not in item and not calls:
-                valid = False
-                break
-            role_name = str(item.get("role") or item.get("type") or "")
-            role = {
-                "system": "system", "user": "user", "human": "user", "assistant": "assistant",
-                "ai": "assistant", "tool": "tool",
-            }.get(role_name, "assistant" if calls else "user")
-            message: dict[str, Json] = {"role": role, "content": content_text(item.get("content"))}
-            if item.get("name") is not None:
-                message["name"] = item["name"]
-            if calls:
-                message["tool_calls"] = calls
-            messages.append(cast(Json, message))
-        if valid:
-            return {"kind": "messages", "messages": messages}
-    if isinstance(value, dict):
-        fields: list[Json] = [
-            cast(Json, {"key": key, "value": field_value(item)})
-            for key, item in value.items()
-        ]
-        return {"kind": "fields", "fields": fields}
-    return {"kind": "text", "text": value if isinstance(value, str) else raw}
+class Response(TypedDict):
+    content_type: str | None
+    error: str | None
 
 
-def field_value(item: Json) -> str:
-    return item if isinstance(item, str) else json.dumps(item, separators=(",", ":"))
+def joined(pieces: list[Piece]) -> str:
+    # Cases repeat a piece so a 64 KiB value stays a short line in the case file
+    return "".join(p if isinstance(p, str) else p["text"] * p["times"] for p in pieces)
 
 
-def run(value: dict[str, Json]) -> Json:
-    operation, body = next(iter(value.items()))
-    if not isinstance(body, dict):
-        raise ValueError("operation body must be an object")
-    if operation == "otlp_truncate":
-        return truncate(str(body.get("value", "")))
-    if operation == "otlp_content_text":
-        return content_text(body.get("content"))
-    if operation == "otlp_elision":
-        return truncate(str(body.get("value", "")))
-    if operation == "otlp_ui_content":
-        return ui_content(str(body.get("value", "")))
-    if operation == "otlp_response_encoding":
-        error = body.get("error")
-        if body.get("content_type") == "application/json":
-            body_text = json.dumps({"message": error or ""}).encode() if error else b"{}"
-            return {"body": list(body_text), "content_type": "application/json"}
-        return {"body": [], "content_type": "application/x-protobuf"}
-    raise ValueError("unsupported OTLP helper operation")
+def run(input_value: dict[str, dict[str, Json]]) -> Json:
+    operation, body = next(iter(input_value.items()))
+    if operation == "response_encoding":
+        response = cast(Response, cast(object, body))
+        encoded, media_type = encode_otlp_response(response["content_type"], response["error"])
+        return {"body": list(encoded), "content_type": media_type}
+    if operation == "content_text":
+        return messages.content_text(cast(Json, json.loads(cast(str, body["content"]))))
+    value = joined(cast(list[Piece], body["value"]))
+    if operation == "truncate":
+        return _truncate(value)
+    if operation == "elision":
+        return _truncate_payload(value)
+    return cast(Json, json.loads(json.dumps(ui_format.to_ui_content(value))))

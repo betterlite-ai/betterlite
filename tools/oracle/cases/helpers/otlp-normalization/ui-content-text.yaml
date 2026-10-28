@@ -1,6 +1,10 @@
 kind: helper
-name: otlp-ui-text
+name: otlp-ui-content-text
 call:
-  otlp_normalization: {otlp_ui_content: {value: plain}}
+  otlp_normalization:
+    ui_content:
+      value:
+        - '[{"role": "user", "content": "x"}, 2]'
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

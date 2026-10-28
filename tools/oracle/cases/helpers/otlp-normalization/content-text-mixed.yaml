@@ -1,6 +1,8 @@
 kind: helper
-name: otlp-content-mixed
+name: otlp-content-text-mixed
 call:
-  otlp_normalization: {otlp_content_text: {content: [{type: text, text: hello}]}}
+  otlp_normalization:
+    content_text: {content: '[{"type": "text", "text": "a"}, {"type": "image_url", "image_url": {"url": "u", "detail": "é"}}, {"type": "text", "text": null}]'}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

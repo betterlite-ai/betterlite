@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-logging-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-logging = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "otlp_decode"
+path = "fuzz_targets/otlp_decode.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -1,85 +1,89 @@
-use serde_json::{Value, json};
+use betterlite_logging::message_content::content_text;
+use betterlite_logging::otlp_normalize::truncate;
+use betterlite_logging::otlp_payload::truncate_payload;
+use betterlite_logging::otlp_response::encode_otlp_response;
+use betterlite_logging::ui_content::to_ui_content;
+use betterlite_models::decisions::Json;
+use serde::Deserialize;
+use serde_json::json;
 
-mod tests;
+use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = Value;
+// Cases repeat a piece so a 64 KiB value stays a short line in the case file
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Piece {
+    Text(String),
+    Repeat { text: String, times: usize },
+}
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let object = input.as_object().ok_or_else(invalid_input)?;
-        let (operation, body) = object.iter().next().ok_or_else(invalid_input)?;
-        dispatch(operation, body)
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    Truncate {
+        value: Vec<Piece>,
+    },
+    Elision {
+        value: Vec<Piece>,
+    },
+    // JSON text rather than a value, so object keys reach both sides in the order the case wrote them
+    ContentText {
+        content: String,
+    },
+    UiContent {
+        value: Vec<Piece>,
+    },
+    ResponseEncoding {
+        content_type: Option<String>,
+        error: Option<String>,
+    },
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::Truncate { value } => Ok(json!(truncate(&joined(value)))),
+            Input::Elision { value } => Ok(json!(truncate_payload(&joined(value)))),
+            Input::ContentText { content } => {
+                let parsed: Json = serde_json::from_str(content).map_err(|error| invalid(&error))?;
+                Ok(json!(content_text(&parsed)))
+            }
+            Input::UiContent { value } => serde_json::to_value(to_ui_content(&joined(value)))
+                .map_err(|error| invalid(&error)),
+            Input::ResponseEncoding {
+                content_type,
+                error,
+            } => {
+                let (body, media_type) =
+                    encode_otlp_response(content_type.as_deref(), error.as_deref());
+                Ok(json!({"body": body, "content_type": media_type}))
+            }
+        }
     }
 }
 
-fn invalid_input() -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn joined(pieces: &[Piece]) -> String {
+    let mut value = String::new();
+    for piece in pieces {
+        match piece {
+            Piece::Text(text) => value.push_str(text),
+            Piece::Repeat { text, times } => value.push_str(&text.repeat(*times)),
+        }
+    }
+    value
+}
+
+fn invalid(error: &serde_json::Error) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: "input must name one operation object".to_owned(),
-    };
-    Box::new(error)
-}
-
-fn dispatch(operation: &str, body: &Value) -> crate::helpers::HelperResult {
-    match operation {
-        "otlp_truncate" => Ok(json!(betterlite_logging::otlp_normalize::truncate(
-            body.get("value")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-        ))),
-        "otlp_elision" => Ok(json!(betterlite_logging::otlp_payload::truncate_payload(
-            body.get("value")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-        ))),
-        "otlp_content_text" => Ok(json!(betterlite_logging::message_content::content_text(
-            body.get("content").unwrap_or(&Value::Null)
-        ))),
-        "otlp_ui_content" => ui_content(body),
-        "otlp_response_encoding" => Ok(response_encoding(body)),
-        _ => <Op as crate::helpers::Helper>::not_built("otlp_normalization"),
-    }
-}
-
-fn ui_content(body: &Value) -> crate::helpers::HelperResult {
-    let content = betterlite_logging::ui_content::to_ui_content(
-        body.get("value")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    );
-    serde_json::to_value(content).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
-            class: "Json".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
+        message: error.to_string(),
     })
-}
-
-fn response_encoding(body: &Value) -> Value {
-    let content_type = body.get("content_type").and_then(Value::as_str);
-    let error = body.get("error").and_then(Value::as_str);
-    let (encoded, media_type) =
-        betterlite_logging::otlp_response::encode_otlp_response(content_type, error);
-    let bytes = if media_type == "application/json" {
-        error.map_or(encoded, |message| {
-            format!(
-                "{{\"message\": {}}}",
-                serde_json::to_string(message).unwrap_or_default()
-            )
-            .into_bytes()
-        })
-    } else {
-        Vec::new()
-    };
-    json!({"body": bytes, "content_type": media_type})
 }

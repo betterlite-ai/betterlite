@@ -1,11 +1,3 @@
-#![expect(
-    clippy::pedantic,
-    clippy::restriction,
-    clippy::style,
-    clippy::nursery,
-    reason = "OTLP wire compatibility uses serde JSON passthrough and bounded codec adapters until the native trace codec lands"
-)]
-
 pub mod alert_batching;
 pub mod alert_digest;
 pub mod alert_dispatch;
@@ -95,6 +87,7 @@ pub mod prometheus_helpers;
 pub mod prometheus_label_projection;
 pub mod prometheus_label_schema;
 pub mod prometheus_query;
+pub mod python_json;
 pub mod registry;
 pub mod rubrik;
 pub mod rubrik_delivery;

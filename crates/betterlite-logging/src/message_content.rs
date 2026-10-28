@@ -1,8 +1,11 @@
+use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
+
+use crate::python_json::dumps;
 
 mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatRole {
     System,
@@ -11,50 +14,65 @@ pub enum ChatRole {
     Tool,
 }
 
-pub fn role_for(value: &str, has_tool_calls: bool) -> ChatRole {
-    match value {
-        "system" => ChatRole::System,
-        "tool" => ChatRole::Tool,
-        "assistant" | "ai" => ChatRole::Assistant,
-        "user" | "human" => ChatRole::User,
-        _ if has_tool_calls => ChatRole::Assistant,
-        _ => ChatRole::User,
-    }
-}
-
-pub fn content_text(content: &serde_json::Value) -> String {
-    match content {
-        serde_json::Value::Null => String::new(),
-        serde_json::Value::String(text) => text.clone(),
-        serde_json::Value::Array(blocks) => text_blocks(blocks),
-        other => serde_json::to_string(other).unwrap_or_default(),
-    }
-}
-
-fn text_blocks(blocks: &[serde_json::Value]) -> String {
-    let mut texts = Vec::new();
-    for block in blocks {
-        let Some(object) = block.as_object() else {
-            return serde_json::to_string(blocks).unwrap_or_default();
-        };
-        let kind = object
-            .get("type")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        match object.get("text") {
-            Some(serde_json::Value::String(text)) => texts.push(text.clone()),
-            Some(_) => return serde_json::to_string(blocks).unwrap_or_default(),
-            None if matches!(
-                kind,
-                "reasoning"
-                    | "thinking"
-                    | "redacted_thinking"
-                    | "function_call"
-                    | "tool_use"
-                    | "tool_call"
-            ) => {}
-            None => return serde_json::to_string(blocks).unwrap_or_default(),
+impl ChatRole {
+    // LiteLLM's MESSAGE_ROLES: the OpenAI roles plus LangChain's human and ai message types
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "human" | "user" => Some(Self::User),
+            "ai" | "assistant" => Some(Self::Assistant),
+            "system" => Some(Self::System),
+            "tool" => Some(Self::Tool),
+            _ => None,
         }
     }
-    texts.join("\n\n")
+}
+
+const NON_TEXT_BLOCKS: [&str; 6] = [
+    "reasoning",
+    "thinking",
+    "redacted_thinking",
+    "function_call",
+    "tool_use",
+    "tool_call",
+];
+
+#[must_use]
+pub fn content_text(content: &Json) -> String {
+    match content {
+        Json::Null => String::new(),
+        Json::Text(text) => text.clone(),
+        Json::List(blocks) => {
+            block_texts(blocks).map_or_else(|| dumps(content), |texts| texts.join("\n\n"))
+        }
+        Json::Bool(_) | Json::Number(_) | Json::Object(_) => dumps(content),
+    }
+}
+
+// A block is an object whose type is a string and text a string or null; any other block shows the raw JSON
+fn block_texts(blocks: &[Json]) -> Option<Vec<&str>> {
+    let mut texts = Vec::new();
+    for block in blocks {
+        let Json::Object(fields) = block else {
+            return None;
+        };
+        let kind = match fields.get("type") {
+            None => "",
+            Some(Json::Text(kind)) => kind.as_str(),
+            Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            ) => return None,
+        };
+        match fields.get("text") {
+            Some(Json::Text(text)) => texts.push(text.as_str()),
+            None | Some(Json::Null) if NON_TEXT_BLOCKS.contains(&kind) => {}
+            None
+            | Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            ) => {
+                return None;
+            }
+        }
+    }
+    Some(texts)
 }

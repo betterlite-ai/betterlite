@@ -1,32 +1,37 @@
+use std::slice;
+
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::message_content::{ChatRole, content_text, role_for};
+use crate::message_content::{ChatRole, content_text};
+use crate::python_json::dumps;
 
 mod tests;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolCall {
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct UiToolCall {
     pub name: String,
     pub arguments: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UiMessage {
     pub role: ChatRole,
     pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<UiToolCall>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UiField {
     pub key: String,
     pub value: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum UiContent {
     Messages { messages: Vec<UiMessage> },
@@ -34,123 +39,190 @@ pub enum UiContent {
     Text { text: String },
 }
 
+// A message as LiteLLM's _RawMessage validates it, with a LangChain kwargs wrapper not yet unwrapped
+struct RawMessage<'json> {
+    role: Option<&'json str>,
+    kind: Option<&'json str>,
+    content: Option<&'json Json>,
+    name: Option<&'json str>,
+    tool_calls: Vec<UiToolCall>,
+    kwargs: Option<Box<Self>>,
+}
+
+#[must_use]
 pub fn to_ui_content(raw: &str) -> UiContent {
-    if raw.is_empty() {
-        return UiContent::Text {
-            text: String::new(),
-        };
-    }
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+    let Ok(parsed) = serde_json::from_str::<Json>(raw) else {
         return UiContent::Text {
             text: raw.to_owned(),
         };
     };
-    if let Some(messages) = parse_messages(&value) {
-        return UiContent::Messages { messages };
-    }
-    if let Some(object) = value.as_object() {
-        let fields = object
-            .iter()
-            .map(|(key, value)| UiField {
-                key: key.clone(),
-                value: field_value(value),
-            })
-            .collect();
-        return UiContent::Fields { fields };
-    }
-    UiContent::Text {
-        text: value.as_str().unwrap_or(raw).to_owned(),
+    let converted = match &parsed {
+        Json::List(items) => ui_messages(items),
+        Json::Object(_) => ui_messages(slice::from_ref(&parsed)),
+        Json::Text(text) => return UiContent::Text { text: text.clone() },
+        Json::Null | Json::Bool(_) | Json::Number(_) => {
+            return UiContent::Text {
+                text: raw.to_owned(),
+            };
+        }
+    };
+    match (converted, parsed) {
+        (Some(messages), _) => UiContent::Messages { messages },
+        (None, Json::Object(fields)) => UiContent::Fields {
+            fields: fields
+                .into_iter()
+                .map(|(key, value)| UiField {
+                    value: if let Json::Text(text) = value {
+                        text
+                    } else {
+                        dumps(&value)
+                    },
+                    key,
+                })
+                .collect(),
+        },
+        (None, Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            UiContent::Text {
+                text: raw.to_owned(),
+            }
+        }
     }
 }
 
-fn parse_messages(value: &serde_json::Value) -> Option<Vec<UiMessage>> {
-    let values = value
-        .as_array()
-        .cloned()
-        .or_else(|| value.as_object().map(|_| vec![value.clone()]))?;
-    if values.is_empty() {
+fn ui_messages(items: &[Json]) -> Option<Vec<UiMessage>> {
+    let validated: Vec<RawMessage<'_>> = items
+        .iter()
+        .map(raw_message)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let unwrapped: Vec<RawMessage<'_>> = validated
+        .into_iter()
+        .map(|message| match message.kwargs {
+            Some(inner) => *inner,
+            None => message,
+        })
+        .collect();
+    if unwrapped.is_empty() || !unwrapped.iter().all(is_message) {
         return None;
     }
-    values.iter().map(parse_message).collect()
+    Some(unwrapped.into_iter().map(ui_message).collect())
 }
 
-fn parse_message(value: &serde_json::Value) -> Option<UiMessage> {
-    let object = value.as_object()?;
-    let wrapped = object
-        .get("kwargs")
-        .and_then(serde_json::Value::as_object)
-        .unwrap_or(object);
-    let calls = wrapped
-        .get("tool_calls")
-        .and_then(serde_json::Value::as_array)
-        .map(|values| parse_calls(values))
-        .unwrap_or_default();
-    let explicit_role = wrapped.get("role").and_then(serde_json::Value::as_str);
-    let typed_role = wrapped
-        .get("type")
-        .and_then(serde_json::Value::as_str)
-        .filter(|role| {
-            matches!(
-                *role,
-                "system" | "user" | "assistant" | "tool" | "human" | "ai"
-            )
-        });
-    let role_name = explicit_role.or(typed_role);
-    if role_name.is_none() && calls.is_empty() {
-        return None;
-    }
-    if !wrapped.contains_key("content") && calls.is_empty() {
-        return None;
-    }
-    let role = role_for(role_name.unwrap_or_default(), !calls.is_empty());
-    Some(UiMessage {
-        role,
-        content: content_text(wrapped.get("content").unwrap_or(&serde_json::Value::Null)),
-        name: wrapped
-            .get("name")
-            .and_then(serde_json::Value::as_str)
+fn is_message(message: &RawMessage<'_>) -> bool {
+    let has_role = message.role.is_some() || message.kind.and_then(ChatRole::from_name).is_some();
+    has_role && (message.content.is_some() || !message.tool_calls.is_empty())
+}
+
+fn ui_message(message: RawMessage<'_>) -> UiMessage {
+    // An empty role falls through to the type, and an unknown one means the assistant only when it calls tools
+    let known = [message.role, message.kind]
+        .into_iter()
+        .flatten()
+        .find(|name| !name.is_empty())
+        .and_then(ChatRole::from_name);
+    let fallback = if message.tool_calls.is_empty() {
+        ChatRole::User
+    } else {
+        ChatRole::Assistant
+    };
+    UiMessage {
+        role: known.unwrap_or(fallback),
+        content: content_text(message.content.unwrap_or(&Json::Null)),
+        name: message
+            .name
+            .filter(|name| !name.is_empty())
             .map(str::to_owned),
-        tool_calls: (!calls.is_empty()).then_some(calls),
+        tool_calls: message.tool_calls,
+    }
+}
+
+// Pydantic rejected the value, so the input is not a message list
+struct Invalid;
+
+fn raw_message(value: &Json) -> Result<RawMessage<'_>, Invalid> {
+    let Json::Object(fields) = value else {
+        return Err(Invalid);
+    };
+    let tool_calls = match fields.get("tool_calls") {
+        None | Some(Json::Null) => Vec::new(),
+        Some(Json::List(calls)) => calls.iter().map(tool_call).collect::<Result<_, _>>()?,
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            return Err(Invalid);
+        }
+    };
+    let kwargs = match fields.get("kwargs") {
+        None | Some(Json::Null) => None,
+        Some(inner) => Some(Box::new(raw_message(inner)?)),
+    };
+    Ok(RawMessage {
+        role: optional_text(fields, "role")?,
+        kind: optional_text(fields, "type")?,
+        content: fields.get("content"),
+        name: optional_text(fields, "name")?,
+        tool_calls,
+        kwargs,
     })
 }
 
-fn parse_calls(values: &[serde_json::Value]) -> Vec<ToolCall> {
-    let calls = values
-        .iter()
-        .filter_map(|value| {
-            let object = value.as_object()?;
-            let function = object
-                .get("function")
-                .and_then(serde_json::Value::as_object);
-            let function_name = function
-                .and_then(|source| source.get("name"))
-                .and_then(serde_json::Value::as_str)
-                .filter(|name| !name.is_empty());
-            let name = function_name
-                .or_else(|| object.get("name").and_then(serde_json::Value::as_str))
-                .unwrap_or_default()
-                .to_owned();
-            let arguments = function
-                .and_then(|source| source.get("arguments"))
-                .or_else(|| object.get("args"))
-                .or_else(|| object.get("arguments"))
-                .unwrap_or(&serde_json::Value::Null);
-            Some(ToolCall {
-                name,
-                arguments: match arguments {
-                    serde_json::Value::String(text) => text.clone(),
-                    serde_json::Value::Null => "{}".to_owned(),
-                    other => serde_json::to_string(other).unwrap_or_default(),
-                },
-            })
-        })
-        .collect();
-    calls
+fn tool_call(value: &Json) -> Result<UiToolCall, Invalid> {
+    let Json::Object(fields) = value else {
+        return Err(Invalid);
+    };
+    let call_name = required_text(fields, "name")?;
+    let (name, arguments) = match fields.get("function") {
+        None | Some(Json::Null) => match fields.get("args") {
+            None | Some(Json::Null) => (call_name, fields.get("arguments")),
+            args @ Some(
+                Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
+            ) => (call_name, args),
+        },
+        Some(Json::Object(function)) => {
+            let function_name = required_text(function, "name")?;
+            let chosen = if function_name.is_empty() {
+                call_name
+            } else {
+                function_name
+            };
+            (chosen, function.get("arguments"))
+        }
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(Invalid);
+        }
+    };
+    Ok(UiToolCall {
+        name: name.to_owned(),
+        arguments: match arguments {
+            None | Some(Json::Null) => "{}".to_owned(),
+            Some(Json::Text(text)) => text.clone(),
+            Some(other @ (Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))) => {
+                dumps(other)
+            }
+        },
+    })
 }
 
-fn field_value(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => text.clone(),
-        other => serde_json::to_string(other).unwrap_or_default(),
+// Pydantic's str | None: a missing key and null are None, any other non-string fails validation
+fn optional_text<'json>(
+    fields: &'json IndexMap<String, Json>,
+    key: &str,
+) -> Result<Option<&'json str>, Invalid> {
+    match fields.get(key) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text.as_str())),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => Err(Invalid),
+    }
+}
+
+// Pydantic's str with an empty default: only a missing key takes the default, so null fails validation
+fn required_text<'json>(
+    fields: &'json IndexMap<String, Json>,
+    key: &str,
+) -> Result<&'json str, Invalid> {
+    match fields.get(key) {
+        None => Ok(""),
+        Some(Json::Text(text)) => Ok(text.as_str()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(Invalid)
+        }
     }
 }

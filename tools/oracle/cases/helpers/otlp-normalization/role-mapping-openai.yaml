@@ -1,6 +1,10 @@
 kind: helper
-name: otlp-role-openai
+name: otlp-role-mapping-openai
 call:
-  otlp_normalization: {otlp_ui_content: {value: '[{"role":"user","content":"hello"}]'}}
+  otlp_normalization:
+    ui_content:
+      value:
+        - '[{"role": "system", "content": "s"}, {"role": "user", "content": "u", "name": ""}, {"role": "assistant", "content": null, "tool_calls": [{"name": "f", "function": {"name": "g", "arguments": "{}"}}]}, {"role": "tool", "content": "t", "name": "g"}, {"role": "bot", "content": "b"}, {"role": "bot", "tool_calls": [{"name": "h"}]}]'
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

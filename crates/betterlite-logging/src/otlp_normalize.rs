@@ -1,87 +1,70 @@
-use std::io::Read;
+use std::borrow::Cow;
+use std::io::Read as _;
 
-use flate2::read::GzDecoder;
+use flate2::bufread::GzDecoder;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+
+use crate::otlp_errors::{CodecError, OtlpError};
+use crate::otlp_payload::truncate_payload;
+use crate::trace_types::SpanType;
 
 mod tests;
 
+// The litellm.constants defaults, 64 KiB per stored attribute and 16 MiB per request body
 pub const OTLP_MAX_ATTRIBUTE_VALUE_BYTES: usize = 0x1_0000;
-pub const OTLP_MAX_BODY_BYTES: usize = 0x0040_0000;
+pub const OTLP_MAX_BODY_BYTES: usize = 0x0100_0000;
 
-#[derive(Debug, Error)]
-pub enum OtlpError {
-    #[error("OTLP body exceeds {limit} bytes")]
-    TooLarge { limit: usize },
-    #[error("Unsupported OTLP content encoding")]
-    UnsupportedEncoding,
-    #[error("Invalid OTLP gzip body")]
-    InvalidGzip(#[source] std::io::Error),
-    #[error("Invalid OTLP payload: {0}")]
-    InvalidPayload(String),
+// LiteLLM's native bridge parses OTLP protobuf and JSON into spans; ingest only normalizes what it returns
+pub trait SpanCodec {
+    fn decode(
+        &self,
+        payload: &[u8],
+        content_type: Option<&str>,
+    ) -> Result<Vec<DecodedSpan>, CodecError>;
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DecodedEvent {
+    pub name: String,
+    pub attributes: IndexMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NormalizedSpan {
-    #[serde(default)]
-    pub start_ns: i64,
-    #[serde(default)]
-    pub end_ns: i64,
-    #[serde(default)]
-    pub trace_id: String,
-    #[serde(default)]
-    pub span_id: String,
-    #[serde(default)]
-    pub parent_span_id: String,
-    #[serde(default)]
-    pub trace_state: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub kind: String,
-    #[serde(default)]
-    pub resource_attributes: std::collections::BTreeMap<String, String>,
-    #[serde(default)]
-    pub scope_name: String,
-    #[serde(default)]
-    pub scope_version: String,
-    #[serde(default)]
-    pub attributes: std::collections::BTreeMap<String, String>,
-    #[serde(default)]
-    pub consumed_attributes: Vec<String>,
-    #[serde(default)]
-    pub status_code: String,
-    #[serde(default)]
-    pub status_message: String,
-    #[serde(default)]
-    pub observation_type: String,
-    #[serde(default)]
+    pub observation_type: SpanType,
     pub agent_name: String,
-    #[serde(default)]
-    pub model: String,
-    #[serde(default)]
     pub litellm_request_id: String,
-    #[serde(default)]
-    pub input_tokens: i64,
-    #[serde(default)]
-    pub output_tokens: i64,
-    #[serde(default)]
+    pub model: String,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
     pub input: String,
-    #[serde(default)]
     pub output: String,
-    #[serde(default)]
-    pub events: Vec<SpanEvent>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct SpanEvent {
-    #[serde(default)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DecodedSpan {
+    pub trace_id: String,
+    pub span_id: String,
+    pub parent_span_id: String,
+    pub trace_state: String,
     pub name: String,
-    #[serde(default)]
-    pub attributes: std::collections::BTreeMap<String, String>,
+    pub kind: String,
+    pub resource_attributes: IndexMap<String, String>,
+    pub scope_name: String,
+    pub scope_version: String,
+    pub attributes: IndexMap<String, String>,
+    pub start_ns: i64,
+    pub end_ns: i64,
+    pub status_code: String,
+    pub status_message: String,
+    pub events: Vec<DecodedEvent>,
+    pub normalized: NormalizedSpan,
+    pub consumed_attributes: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct SpanRow {
     pub timestamp: i64,
     pub trace_id: String,
@@ -91,100 +74,103 @@ pub struct SpanRow {
     pub span_name: String,
     pub span_kind: String,
     pub service_name: String,
-    pub resource_attributes: std::collections::BTreeMap<String, String>,
+    pub resource_attributes: IndexMap<String, String>,
     pub scope_name: String,
     pub scope_version: String,
-    pub span_attributes: std::collections::BTreeMap<String, String>,
+    pub span_attributes: IndexMap<String, String>,
     pub duration: i64,
     pub status_code: String,
     pub status_message: String,
     pub team_id: String,
     pub api_key_hash: String,
-    pub observation_type: String,
+    pub observation_type: SpanType,
     pub agent_name: String,
     pub model: String,
+    #[serde(rename = "LiteLLMRequestId")]
     pub litellm_request_id: String,
-    pub input_tokens: i64,
-    pub output_tokens: i64,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
     pub input: String,
     pub output: String,
 }
 
-pub fn decode_content_encoding(body: &[u8], encoding: Option<&str>) -> Result<Vec<u8>, OtlpError> {
+pub fn decode_otlp<Codec>(
+    codec: &Codec,
+    body: &[u8],
+    content_type: Option<&str>,
+    content_encoding: Option<&str>,
+) -> Result<Vec<SpanRow>, OtlpError>
+where
+    Codec: SpanCodec,
+{
+    let payload = decode_content_encoding(body, content_encoding)?;
+    let spans = codec
+        .decode(&payload, content_type)
+        .map_err(|error| match error {
+            CodecError::Overflow(message) => OtlpError::SpansTooLarge(message),
+            CodecError::Malformed(message) => OtlpError::InvalidSpans(message),
+        })?;
+    Ok(spans.iter().map(span_row).collect())
+}
+
+pub fn decode_content_encoding<'body>(
+    body: &'body [u8],
+    content_encoding: Option<&str>,
+) -> Result<Cow<'body, [u8]>, OtlpError> {
     if body.len() > OTLP_MAX_BODY_BYTES {
-        return Err(OtlpError::TooLarge {
-            limit: OTLP_MAX_BODY_BYTES,
-        });
+        return Err(OtlpError::BodyTooLarge);
     }
-    match encoding.map(str::to_ascii_lowercase).as_deref() {
-        None | Some("identity") => Ok(body.to_vec()),
-        Some("gzip") => decode_gzip(body),
+    match content_encoding.map(str::to_lowercase).as_deref() {
+        None | Some("identity") => Ok(Cow::Borrowed(body)),
+        Some("gzip") => decode_gzip(body).map(Cow::Owned),
         Some(_) => Err(OtlpError::UnsupportedEncoding),
     }
 }
 
-pub fn decode_otlp(
-    body: &[u8],
-    _content_type: Option<&str>,
-    encoding: Option<&str>,
-) -> Result<Vec<SpanRow>, OtlpError> {
-    let payload = decode_content_encoding(body, encoding)?;
-    let spans: Vec<NormalizedSpan> = serde_json::from_slice(&payload)
-        .map_err(|error| OtlpError::InvalidPayload(error.to_string()))?;
-    Ok(spans.iter().map(span_row).collect())
-}
-
+// Python's gzip module reads members until the body ends and skips zero padding after each one
 fn decode_gzip(body: &[u8]) -> Result<Vec<u8>, OtlpError> {
-    let mut gzip_reader = GzDecoder::new(body);
-    let limit = u64::try_from(OTLP_MAX_BODY_BYTES)
-        .unwrap_or(u64::MAX)
-        .saturating_add(1);
-    let mut limited = gzip_reader.by_ref().take(limit);
+    // One byte past the limit is enough to tell an oversized body without inflating all of it
+    let limit = OTLP_MAX_BODY_BYTES.saturating_add(1);
     let mut payload = Vec::new();
-    limited
-        .read_to_end(&mut payload)
-        .map_err(OtlpError::InvalidGzip)?;
+    let mut rest = body;
+    while !rest.is_empty() && payload.len() < limit {
+        let budget = u64::try_from(limit.saturating_sub(payload.len())).unwrap_or(u64::MAX);
+        let mut member = GzDecoder::new(rest);
+        (&mut member)
+            .take(budget)
+            .read_to_end(&mut payload)
+            .map_err(OtlpError::InvalidGzip)?;
+        rest = member.into_inner();
+        let padding = rest.iter().take_while(|&&byte| byte == 0).count();
+        rest = rest.get(padding..).unwrap_or_default();
+    }
     if payload.len() > OTLP_MAX_BODY_BYTES {
-        return Err(OtlpError::TooLarge {
-            limit: OTLP_MAX_BODY_BYTES,
-        });
+        return Err(OtlpError::BodyTooLarge);
     }
     Ok(payload)
 }
 
+#[must_use]
 pub fn truncate(value: &str) -> String {
-    let encoded = value.as_bytes();
-    if encoded.len() <= OTLP_MAX_ATTRIBUTE_VALUE_BYTES {
+    if value.len() <= OTLP_MAX_ATTRIBUTE_VALUE_BYTES {
         return value.to_owned();
     }
-    let kept = valid_utf8_prefix(encoded, OTLP_MAX_ATTRIBUTE_VALUE_BYTES);
-    let kept_bytes = kept.len();
+    let boundary = value.floor_char_boundary(OTLP_MAX_ATTRIBUTE_VALUE_BYTES);
+    let kept = value.get(..boundary).unwrap_or_default();
     format!(
-        "{kept}…[truncated {} bytes]",
-        encoded.len().saturating_sub(kept_bytes)
+        "{kept}\u{2026}[truncated {} bytes]",
+        value.len().saturating_sub(kept.len())
     )
 }
 
-fn valid_utf8_prefix(value: &[u8], limit: usize) -> &str {
-    let mut boundary = limit.min(value.len());
-    while boundary > 0 && std::str::from_utf8(value.get(..boundary).unwrap_or_default()).is_err() {
-        boundary -= 1;
-    }
-    std::str::from_utf8(value.get(..boundary).unwrap_or_default()).unwrap_or_default()
-}
-
-pub fn span_row(span: &NormalizedSpan) -> SpanRow {
-    let attributes = span
+#[must_use]
+pub fn span_row(span: &DecodedSpan) -> SpanRow {
+    let normalized = &span.normalized;
+    let request_id = span
         .attributes
-        .iter()
-        .filter(|(key, _)| !span.consumed_attributes.contains(key))
-        .map(|(key, value)| (key.clone(), truncate(value)))
-        .collect();
-    let status_message = if span.status_message.is_empty() {
-        exception_message(span)
-    } else {
-        span.status_message.clone()
-    };
+        .get("gen_ai.response.id")
+        .filter(|id| !id.is_empty())
+        .unwrap_or(&normalized.litellm_request_id);
     SpanRow {
         timestamp: span.start_ns,
         trace_id: span.trace_id.clone(),
@@ -201,40 +187,44 @@ pub fn span_row(span: &NormalizedSpan) -> SpanRow {
         resource_attributes: span.resource_attributes.clone(),
         scope_name: span.scope_name.clone(),
         scope_version: span.scope_version.clone(),
-        span_attributes: attributes,
+        span_attributes: stored_attributes(span),
         duration: span.end_ns.saturating_sub(span.start_ns),
         status_code: span.status_code.clone(),
-        status_message,
+        status_message: status_message(span),
         team_id: String::new(),
         api_key_hash: String::new(),
-        observation_type: span.observation_type.clone(),
-        agent_name: span.agent_name.clone(),
-        model: span.model.clone(),
-        litellm_request_id: span
-            .attributes
-            .get("gen_ai.response.id")
-            .cloned()
-            .filter(|id| !id.is_empty())
-            .unwrap_or_else(|| span.litellm_request_id.clone()),
-        input_tokens: span.input_tokens,
-        output_tokens: span.output_tokens,
-        input: crate::otlp_payload::truncate_payload(&span.input),
-        output: truncate(&span.output),
+        observation_type: normalized.observation_type,
+        agent_name: normalized.agent_name.clone(),
+        model: normalized.model.clone(),
+        litellm_request_id: request_id.clone(),
+        input_tokens: normalized.input_tokens,
+        output_tokens: normalized.output_tokens,
+        input: truncate_payload(&normalized.input),
+        output: truncate(&normalized.output),
     }
 }
 
-fn exception_message(span: &NormalizedSpan) -> String {
-    let message = span
-        .events
+// The codec already moved the consumed attributes into normalized fields, so only the rest is stored
+fn stored_attributes(span: &DecodedSpan) -> IndexMap<String, String> {
+    span.attributes
         .iter()
-        .find(|event| event.name == "exception")
-        .and_then(|event| {
-            event
-                .attributes
-                .get("exception.message")
-                .or_else(|| event.attributes.get("exception.type"))
-        })
+        .filter(|&(key, _)| !span.consumed_attributes.contains(key))
+        .map(|(key, value)| (key.clone(), truncate(value)))
+        .collect()
+}
+
+fn status_message(span: &DecodedSpan) -> String {
+    if !span.status_message.is_empty() {
+        return span.status_message.clone();
+    }
+    let Some(event) = span.events.iter().find(|event| event.name == "exception") else {
+        return String::new();
+    };
+    event
+        .attributes
+        .get("exception.message")
+        .filter(|message| !message.is_empty())
+        .or_else(|| event.attributes.get("exception.type"))
         .cloned()
-        .unwrap_or_default();
-    message
+        .unwrap_or_default()
 }

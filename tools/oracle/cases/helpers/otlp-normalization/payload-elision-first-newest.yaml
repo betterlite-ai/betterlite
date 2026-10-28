@@ -1,6 +1,13 @@
 kind: helper
-name: otlp-elision
+name: otlp-payload-elision-first-newest
 call:
-  otlp_normalization: {otlp_elision: {value: "[]"}}
+  otlp_normalization:
+    elision:
+      value:
+        - '[{"role": "system", "content": "be brief"}'
+        - text: ', {"role": "user", "content": "0123456789012345678901234567890123456789012345678901234567890123"}'
+          times: 800
+        - ', {"role": "assistant", "content": "newest"}]'
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

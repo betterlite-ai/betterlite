@@ -1,6 +1,8 @@
 kind: helper
-name: otlp-truncate-boundary
+name: otlp-truncate-64kb-boundary
 call:
-  otlp_normalization: {otlp_truncate: {value: "boundary"}}
+  otlp_normalization:
+    truncate: {value: [{text: "x", times: 65536}, "y"]}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

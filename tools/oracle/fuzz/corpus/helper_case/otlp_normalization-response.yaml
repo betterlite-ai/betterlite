@@ -1,6 +1,8 @@
 kind: helper
-name: otlp-response-corpus
+name: otlp_response_encoding_protobuf_with_error
 call:
-  otlp_normalization: {otlp_response_encoding: {content_type: application/json}}
+  otlp_normalization:
+    response_encoding: {content_type: "application/x-protobuf", error: "OTLP body exceeds 16777216 bytes; the collector should batch spans into smaller export requests before sending them to this proxy endpoint"}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []
