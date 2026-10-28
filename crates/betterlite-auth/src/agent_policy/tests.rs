@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::caller::{CALLER_TEAM_ID_HEADER, CALLER_USER_ID_HEADER};
+use super::caller::{AgentCaller, CALLER_TEAM_ID_HEADER, CALLER_USER_ID_HEADER};
 use super::*;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
@@ -215,8 +215,15 @@ fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
 #[case::managed_mode_both_rejected("managed_both", r#"{"agent_id":"a","mode":"both"}"#)]
 fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
     match kind {
-        "auth" | "extras" => {
+        "auth" => {
             serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap_err();
+        }
+        "extras" => {
+            serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap_err();
+            serde_json::from_str::<AgentKillSwitchConfig>(
+                r#"{"url":"https://example.com","extra":1}"#,
+            )
+            .unwrap_err();
         }
         "empty" => {
             let auth: AgentKillSwitchAuth = serde_json::from_str(input).unwrap();
@@ -284,6 +291,81 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
         }
         _ => panic!("unknown behavior case"),
     }
+}
+
+const BINDING_JSON: &str = r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#;
+
+#[rstest]
+#[case::kill_config_field_url("config", r#"{"url":"https://example.com"}"#, "url")]
+#[case::kill_auth_field_type("auth", r#"{"type":"bearer","token":"s"}"#, "type")]
+#[case::kill_auth_field_token("auth", r#"{"type":"bearer","token":"s"}"#, "token")]
+#[case::kill_auth_field_api_key("auth", r#"{"type":"api_key","api_key":"s"}"#, "api_key")]
+#[case::kill_auth_field_username(
+    "auth",
+    r#"{"type":"basic","username":"u","password":"p"}"#,
+    "username"
+)]
+#[case::kill_auth_field_password(
+    "auth",
+    r#"{"type":"basic","username":"u","password":"p"}"#,
+    "password"
+)]
+#[case::binding_field_agent_id("binding", BINDING_JSON, "agent_id")]
+#[case::binding_field_provider("binding", BINDING_JSON, "provider")]
+#[case::binding_field_tenant_id("binding", BINDING_JSON, "tenant_id")]
+#[case::binding_field_client_id("binding", BINDING_JSON, "client_id")]
+#[case::binding_field_issuer("binding", BINDING_JSON, "issuer")]
+#[case::binding_field_revision("binding", BINDING_JSON, "revision")]
+#[case::managed_context_field_agent_id(
+    "managed",
+    r#"{"agent_id":"a","mode":"autonomous"}"#,
+    "agent_id"
+)]
+#[case::managed_context_field_mode("managed", r#"{"agent_id":"a","mode":"autonomous"}"#, "mode")]
+fn required_field_omission_and_null_rejected(
+    #[case] kind: &str,
+    #[case] input: &str,
+    #[case] field: &str,
+    #[values(false, true)] explicit_null: bool,
+) {
+    let mut fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input).unwrap();
+    if explicit_null {
+        fields.insert(field.to_owned(), serde_json::from_str("null").unwrap());
+    } else {
+        fields.remove(field);
+    }
+    let bytes = serde_json::to_vec(&fields).unwrap();
+    match kind {
+        "config" => {
+            serde_json::from_slice::<AgentKillSwitchConfig>(&bytes).unwrap_err();
+        }
+        "auth" => {
+            serde_json::from_slice::<AgentKillSwitchAuth>(&bytes).unwrap_err();
+        }
+        "binding" => {
+            serde_json::from_slice::<AgentIdentityBinding>(&bytes).unwrap_err();
+        }
+        "managed" => {
+            serde_json::from_slice::<ManagedAgentContext>(&bytes).unwrap_err();
+        }
+        _ => panic!("unknown kind"),
+    }
+}
+
+#[test]
+fn caller_defaults_and_extras_ignored() {
+    let caller: AgentCaller = serde_json::from_str(r#"{"extra":1}"#).unwrap();
+    assert!(caller.user_id.is_none());
+    assert!(caller.team_id.is_none());
+}
+
+#[test]
+fn key_summary_requires_token_and_defaults() {
+    let summary: AgentKeySummary = serde_json::from_str(r#"{"token":"s","extra":1}"#).unwrap();
+    assert_eq!(summary.token, "s");
+    assert!(summary.key_alias.is_none());
+    assert!(summary.key_name.is_none());
+    serde_json::from_str::<AgentKeySummary>("{}").unwrap_err();
 }
 
 #[rstest]

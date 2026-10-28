@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use crate::agent_policy::AgentResponse;
 use rstest::rstest;
 
 fn raw(value: &str) -> Box<RawValue> {
@@ -256,4 +257,15 @@ fn metadata_date_serialization(#[case] date: &str) {
         snapshot.metadata_entries().unwrap().as_ref()["user_api_key_budget_reset_at"].get(),
         format!("{date:?}")
     );
+}
+
+#[rstest]
+#[case::policy_nonfinite_or_out_of_range_rejected(
+    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{},"spend":1e+1000}"#
+)]
+#[case::policy_nonfinite_or_out_of_range_rejected(
+    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{},"search_score":1e+1000}"#
+)]
+fn agent_response_rejects_nonfinite_numbers(#[case] input: &str) {
+    serde_json::from_str::<AgentResponse>(input).unwrap_err();
 }
