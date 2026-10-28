@@ -103,7 +103,8 @@ fn case_1_audio_base64_decoder() {
             }),
         }],
     }];
-    assert!(get_combined_audio_content(&chunks, 0).is_ok());
+    let result = get_combined_audio_content(&chunks, 0);
+    assert_eq!(result.map(|_| ()), Ok(()));
 }
 
 #[test]
