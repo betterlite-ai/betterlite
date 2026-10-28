@@ -191,24 +191,28 @@ fn snapshot(aws: &AwsSettings) -> Result<Value, Failure> {
     Ok(Value::Object(object))
 }
 
-fn error(call: &ErrorCall) -> Result<Value, Failure> {
-    let input = ErrorInput {
+fn error_input(call: &ErrorCall) -> ErrorInput {
+    let response = call.response.as_ref().map(|reply| ErrorReply {
+        response: ErrorResponse {
+            status_code: reply.status_code,
+            request: reply.request.clone(),
+        },
+        headers: reply.headers.clone(),
+        body: reply.body.clone(),
+    });
+    ErrorInput {
         status_code: call.status_code,
         message: call.message.clone(),
         request: call.request.clone(),
         body: call.body.clone(),
         status_code_is_synthesized: call.status_code_is_synthesized,
         headers: call.headers.clone(),
-        response: call.response.as_ref().map(|reply| ErrorReply {
-            response: ErrorResponse {
-                status_code: reply.status_code,
-                request: reply.request.clone(),
-            },
-            headers: reply.headers.clone(),
-            body: reply.body.clone(),
-        }),
-    };
-    let built = BedrockError::try_from(input)?;
+        response,
+    }
+}
+
+fn error(call: &ErrorCall) -> Result<Value, Failure> {
+    let built = BedrockError::try_from(error_input(call))?;
     serialize_error(&built)
 }
 

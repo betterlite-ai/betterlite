@@ -1,11 +1,7 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "the error body is a provider-addressed JSON payload that betterlite forwards unchanged"
-)]
-
 use std::{fmt, str};
 
 use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderError, ProviderErrorParts};
+use betterlite_openai::openai_base_config::Object;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -45,7 +41,7 @@ pub struct ErrorInput {
     pub status_code: u16,
     pub message: String,
     pub request: Option<ErrorRequest>,
-    pub body: Option<serde_json::Map<String, serde_json::Value>>,
+    pub body: Option<Object>,
     pub status_code_is_synthesized: bool,
     pub headers: Option<ErrorHeaders>,
     pub response: Option<ErrorReply>,
