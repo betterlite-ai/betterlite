@@ -1,6 +1,5 @@
 use crate::otlp_normalize::{OTLP_MAX_ATTRIBUTE_VALUE_BYTES, truncate};
 
-#[cfg(test)]
 mod tests;
 
 pub fn truncate_payload(value: &str) -> String {

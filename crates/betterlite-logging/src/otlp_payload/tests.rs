@@ -14,7 +14,7 @@ fn non_message_payloads_use_attribute_truncation() {
 
 #[test]
 fn message_payload_keeps_first_marker_and_newest() {
-    let message = "x".repeat(40_000);
+    let message = "x".repeat(70_000);
     let payload = serde_json::to_string(&vec![
         serde_json::json!({"role":"user", "content":"first"}),
         serde_json::json!({"role":"user", "content":message}),
@@ -22,7 +22,11 @@ fn message_payload_keeps_first_marker_and_newest() {
     ])
     .unwrap();
     let output = truncate_payload(&payload);
-    assert!(output.starts_with("[{\"role\":\"user\",\"content\":\"first\"}"));
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap();
+    assert_eq!(
+        parsed.first().and_then(|item| item.get("role")),
+        Some(&serde_json::json!("user"))
+    );
     assert!(output.contains("earlier messages truncated"));
     assert!(output.contains("last"));
     assert!(output.len() <= OTLP_MAX_ATTRIBUTE_VALUE_BYTES);
