@@ -1,0 +1,137 @@
+id: B3867
+title: Authenticated trace ingestion and query routes
+description: >-
+  Register seven authenticated HTTP routes for trace ingestion and query: POST /v1/traces (OTLP/HTTP export in protobuf or JSON),
+  GET /v1/traces (page of traces), POST /v1/traces/query (SQL query with scope filtering), GET /v1/traces/query/help (available tables),
+  GET /v1/traces/{trace_id} (single trace), GET /v1/traces/{trace_id}/spans/{span_id} (span detail), and
+  GET /v1/traces/{trace_id}/spans/{span_id}/error (span diagnostics page). Routes authenticate through the existing auth system
+  (B732 Principal/AuthContext), extract their scopes and tenants, and invoke TraceReceiver/TraceStore methods.
+
+  POST /v1/traces accepts OTLP payloads (protobuf or JSON, see B1100) and returns either an OTLP-formatted error or a 200 success.
+  Ingest bounds are max_body_bytes and max_concurrent_ingests from constants; TracingPayloadTooLargeError (413),
+  InvalidOTLPPayloadError (400), and overload/timeout RuntimeError (503 with Retry-After) each produce OTLP-encoded responses
+  with the exact HTTP status and error message. Auth failure (missing write_tenant) is 403 detail "Not allowed to ingest agent traces".
+  Tracing unavailable (require_receiver when tracing is None) is 501 detail "Agent tracing is not enabled. Set `tracing:` in general_settings and CLICKHOUSE_URL."
+
+  GET /v1/traces lists traces in a time window (start_ms, end_ms, cursor), returning TracePage. Requires read_scope;
+  auth failure is 403 detail "Not allowed to view agent traces". Tracing unavailable is 501 as above. ValueError from store is 400.
+
+  POST /v1/traces/query and GET /v1/traces/query/help require the proxy master_key (general_settings.master_key, read from proxy_server.master_key).
+  No master_key is 503 detail "Trace SQL queries require a configured proxy master key". trace_query_scope handles authorization:
+  PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY receive {"kind": "admin"}, auth.team_id receives {"kind": "team", "team_id": ...},
+  auth.token receives {"kind": "key", "team_id": "", "api_key_hash": ...}. With auth.project_id and auth.token both present,
+  return {"kind": "key", "team_id": auth.team_id or "", "api_key_hash": auth.token}. auth.project_id without auth.token raises
+  403 detail "Project trace SQL queries require a project key". No matching scope raises 403 detail
+  "Trace SQL queries require an authenticated trace scope". RuntimeError from storage is 503 with appropriate message.
+
+  GET /v1/traces/{trace_id}, GET /v1/traces/{trace_id}/spans/{span_id}, and GET /v1/traces/{trace_id}/spans/{span_id}/error
+  each require read_scope and read from TraceReceiver. Not found is 404 with trace_id/span_id in message. ValueError is 400;
+  RuntimeError is 503 (query help only).
+
+  Every route except health checks first calls provide_trace_access (B732 auth + provide_receiver dependency), which stamps a Tenant
+  and derives TraceScope and write-access from the authenticated Principal. otlp_error_response calls is_otlp_trace_request
+  (B1100 boundary) to determine OTLP or JSON error encoding. The seven routes are the only registrations by this file; B110 composes them.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/tracing_routes.rs
+    - crates/betterlite-server/src/tracing_routes/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/traces/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/helpers/b3867.py
+    - tools/oracle/helpers/b3867/**
+    - tools/oracle/src/helpers/server/b3867.rs
+    - tools/oracle/src/helpers/server/b3867/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L35-L256
+    why: The seven route registrations, access control records, and scope/secret dependency injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_runtime.py#L14-L32
+    why: Receiver and availability handling; the 501 message on require_receiver.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/receiver.py#L43-L189
+    why: Tenant stamping and TraceReceiver public methods called by routes (ingest, list_traces, get_trace, get_span, get_span_error).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L76-L84
+    why: otlp_error_response and its use of is_otlp_trace_request for media type selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L163-L174
+    why: trace_query_scope dispatches on auth.project_id, auth.team_id, auth.token, and admin roles, including 403 cases.
+
+dod:
+  - text: All seven routes register and respond to their paths with status 200/404 on success or not found.
+    proof: [trace-routes-oracle]
+  - text: >-
+      POST /v1/traces and GET /v1/traces with missing tracing receiver return 501 with exact message
+      "Agent tracing is not enabled. Set `tracing:` in general_settings and CLICKHOUSE_URL."
+    proof: [trace-routes-oracle]
+  - text: >-
+      POST /v1/traces/query and GET /v1/traces/query/help with missing proxy master_key return 503 with exact message
+      "Trace SQL queries require a configured proxy master key"
+    proof: [trace-routes-oracle]
+  - text: trace_query_scope accepts auth with project_id and token, auth with project_id only (403), and each admin/team/key role branch.
+    proof: [trace-routes-oracle]
+  - text: >-
+      POST /v1/traces with OTLP content-type returns OTLP-encoded responses (otlp_error_response);
+      InvalidOTLPPayloadError, TracingPayloadTooLargeError and RuntimeError produce correct status and message.
+    proof: [trace-routes-oracle]
+  - text: Auth 403 on missing write_tenant and read_scope carry the exact detail messages for ingest and list.
+    proof: [trace-routes-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: trace-routes-oracle
+      why: Route auth, status codes, response format and scope dispatch are not exercised or do not match LiteLLM.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^trace_routes::/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/cases/traces/**")"
+
+oracle_cases:
+  - tools/oracle/cases/traces/post-ingest-otlp-success.yaml
+  - tools/oracle/cases/traces/post-ingest-tracing-disabled-501.yaml
+  - tools/oracle/cases/traces/post-ingest-payload-too-large-413.yaml
+  - tools/oracle/cases/traces/post-ingest-invalid-otlp-400.yaml
+  - tools/oracle/cases/traces/post-ingest-overload-503.yaml
+  - tools/oracle/cases/traces/post-ingest-no-write-scope-403.yaml
+  - tools/oracle/cases/traces/get-list-traces-success.yaml
+  - tools/oracle/cases/traces/get-list-traces-tracing-disabled-501.yaml
+  - tools/oracle/cases/traces/get-list-traces-no-read-scope-403.yaml
+  - tools/oracle/cases/traces/get-list-traces-invalid-window-400.yaml
+  - tools/oracle/cases/traces/post-query-no-master-key-503.yaml
+  - tools/oracle/cases/traces/post-query-admin-scope.yaml
+  - tools/oracle/cases/traces/post-query-team-scope.yaml
+  - tools/oracle/cases/traces/post-query-key-scope.yaml
+  - tools/oracle/cases/traces/post-query-project-with-key-scope.yaml
+  - tools/oracle/cases/traces/post-query-project-without-key-403.yaml
+  - tools/oracle/cases/traces/post-query-no-scope-403.yaml
+  - tools/oracle/cases/traces/get-query-help-no-master-key-503.yaml
+  - tools/oracle/cases/traces/get-query-help-admin-scope.yaml
+  - tools/oracle/cases/traces/get-trace-found-200.yaml
+  - tools/oracle/cases/traces/get-trace-not-found-404.yaml
+  - tools/oracle/cases/traces/get-trace-no-read-scope-403.yaml
+  - tools/oracle/cases/traces/get-trace-tracing-disabled-501.yaml
+  - tools/oracle/cases/traces/get-span-found-200.yaml
+  - tools/oracle/cases/traces/get-span-not-found-404.yaml
+  - tools/oracle/cases/traces/get-span-error-page-200.yaml
+  - tools/oracle/cases/traces/get-span-error-not-found-404.yaml
+
+deviations:
+  - what: betterlite returns its own error messages (not copied from LiteLLM) for HTTPException detail fields like "Not allowed to ingest agent traces".
+    why: Error messages are treated the same as in B003 (auth) and other management routes; oracle cases filter /error/detail/message in compare.ignore.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L45-L74
+
+out_of_scope:
+  - 'litellm/proxy/common_utils/http_parsing_utils.py: is_otlp_trace_request (imported at line 24, called in otlp_error_response at line 79) is covered by B1100.'
+  - 'Storage/schema/ClickHouse initialization and query methods (TraceStore, ClickHouseStorage, ensure_schema). These are owned by later tasks in the native codec/storage/schema assignments (G2).'
+  - 'Master key resolution and Proxy initialization (proxy_server.master_key comes from proxy initialization). Route reads it through provide_trace_query_secret; that function itself is in scope, but the source config is not.'
+
+pitfalls:
+  - 'require_receiver is called from context.reader() and context.writer(); every route through provide_trace_access implicitly depends on it. Test both 501 cases (POST /v1/traces and GET /v1/traces) and verify the exact message.'
+  - 'otlp_error_response returns None when the request is not OTLP (is_otlp_trace_request returns false); non-OTLP requests fall through to different error handling. Keep the dependency on B1100.'
+  - 'trace_query_scope has five branches: admin roles, project_id with token, project_id without token (403), team_id, key-only. Project_id branches are easy to miss; test all paths.'
+  - 'POST /v1/traces/query and GET /v1/traces/query/help both depend on provide_trace_query_access, which stacks provide_trace_query_secret; test both routes.'
+  - 'HTTP oracle cases go through the booted proxy, unlike helper-only cases; they exercise real auth, status, headers and OTLP encoding, not just pure functions.'
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

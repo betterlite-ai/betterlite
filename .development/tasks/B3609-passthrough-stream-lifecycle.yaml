@@ -1,0 +1,241 @@
+id: B3609
+title: Pass-through stream lifecycle and failure logging
+description: >-
+  Drive chunk iteration, first-token timestamps, cancellation and exactly-once
+  terminal accounting. Preserve partial-usage recording and failure scheduling when
+  reading or transforming an upstream chunk fails. Implement the stream-failure
+  protocol that schedules deferred logging when a stream disconnects mid-transfer
+  or a chunk-reading exception bubbles up, including partial usage preservation
+  for spend tracking when the upstream response status is successful (< 400).
+
+  Build PassThroughStreamContext as a frozen dataclass holding the success handler,
+  route URL and stream start time; use it to wire request metadata to failure
+  logging without carrying full state through nested scopes. Implement
+  _stamp_first_chunk_if_needed to set completion_start_time on the first chunk
+  received, matching LiteLLM's timestamp anchor. Build schedule_failure_logging
+  to skip TinyFish streams already tracked by an active poller, record partial usage
+  from collected chunks (Anthropic via dedicated handler, others via reconstruction),
+  and dispatch failure handlers with the accumulated exception traceback.
+
+  Implement record_partial_usage_failure to extract a Usage object from
+  collected bytes using the shared provider reconstruction path, then call
+  litellm_logging_obj.record_partial_usage_for_failure with the extracted usage and
+  response cost. On Anthropic, call the Anthropic-specific partial-usage handler
+  instead. Catch and log any exception from reconstruction so a formatting error
+  in the response does not prevent the logging request from completing.
+
+  Build chunk_processor as an async generator that yields chunks from the upstream
+  response and buffers them for end-of-stream logging, stamping first-token time on
+  the first chunk and optionally injecting costs into complete SSE frames. Resolve
+  the cost-injection flag once at stream start (reading include_cost_in_streaming_usage,
+  model availability, and endpoint-type restrictions) so per-chunk branching stays
+  minimal. In the no-injection hot path, iterate chunks, buffer them, stamp first
+  token, and for TinyFish only, scan for run_id in complete frames and spawn billing
+  on first match. In the cost-injection path, collect complete frames via
+  split_complete_sse_frames and pass them to _process_chunk_with_cost_injection
+  (gap D), yielding the transformed chunk. On GeneratorExit (client disconnect) or
+  upstream Exception, call schedule_failure_logging with the exception and
+  partial raw_bytes before re-raising. On clean completion (all chunks iterated,
+  status < 400), schedule deferred logging if the success handler armed it, or
+  enqueue immediate logging in the finally block if deferred was not scheduled. Bind
+  budget-reservation callbacks after successful enqueue to attach spend-tracking
+  callbacks to the request. Never double-log via deferred and immediate paths.
+
+  Preserve the ordered semantics of the finally block: GeneratorExit and Exception
+  paths skip logging, success paths schedule deferred (if armed) or immediate (if not),
+  and the finally block ensures exactly-once enqueue of the chosen path. Document
+  the LIT-2642 and LIT-3798 behaviors and the partial-billing preservation across
+  disconnect and exception paths.
+
+scope:
+  paths:
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle.rs
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle/**
+  - tools/oracle/cases/passthrough/stream-lifecycle/**
+  - tools/oracle/helpers/b3609.py
+  - tools/oracle/helpers/b3609/**
+  - tools/oracle/src/helpers/logging/b3609.rs
+  - tools/oracle/src/helpers/logging/b3609/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L41-L61
+    why: RouteStreamingLogging protocol and PassThroughStreamContext dataclass define the async logging contract and failure-context shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L65-L67
+    why: _stamp_first_chunk_if_needed sets completion_start_time on first chunk if not yet set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L70-L95
+    why: schedule_stream_failure_logging skips TinyFish with active poller, records partial usage, and dispatches failure handlers with exception and traceback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L98-L136
+    why: _record_partial_usage_for_failure reconstructs usage from collected bytes, handles Anthropic via handler, and calls litellm_logging_obj.record_partial_usage_for_failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L139-L275
+    why: chunk_processor is the async generator managing stream iteration, cost injection, first-token stamping, failure scheduling, and exactly-once logging dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L167-L189
+    why: Cost-injection flag resolution reads include_cost_in_streaming_usage, model availability, and endpoint-type restrictions once per stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L193-L275
+    why: Hot path (no injection), cost-injection path, exception handling, and finally-block logging semantics including GeneratorExit, partial-billing preservation and deferred-dispatch wiring.
+
+dod:
+  - text: PassThroughStreamContext is a frozen dataclass with success_handler, url_route, and start_time fields.
+    proof: [stream-context-tests]
+  - text: _stamp_first_chunk_if_needed sets completion_start_time on the first call per stream and idempotently returns on subsequent calls.
+    proof: [first-token-stamp-tests]
+  - text: schedule_failure_logging skips TinyFish streams with active pollers, reconstructs partial usage from collected bytes, and dispatches failure handlers with exception and traceback.
+    proof: [stream-failure-scheduling-tests, oracle]
+  - text: record_partial_usage_failure extracts Usage objects via shared reconstruction or Anthropic handler, records the usage with response cost, and logs exceptions without crashing.
+    proof: [partial-usage-recording-tests, oracle]
+  - text: chunk_processor buffers all chunks, stamps first token on the first chunk, and iterates complete frames without modifying chunks in the no-injection path.
+    proof: [chunk-iteration-hot-path-tests, oracle]
+  - text: Cost-injection flag is resolved once at stream start using include_cost_in_streaming_usage, model availability, and endpoint-type restrictions; cost injection applies only to Anthropic, OpenAI and Vertex rawPredict/streamRawPredict.
+    proof: [cost-injection-flag-tests]
+  - text: In the cost-injection path, chunk_processor collects complete SSE frames and passes them to _process_chunk_with_cost_injection, yielding the transformed chunk without buffering incomplete frames.
+    proof: [cost-injection-frame-handling-tests, oracle]
+  - text: On stream completion with status < 400, deferred logging is scheduled if the success handler armed it, or immediate logging is enqueued in the finally block if not.
+    proof: [exactly-once-logging-completion-tests, oracle]
+  - text: GeneratorExit and upstream Exception paths call schedule_failure_logging with partial raw_bytes and re-raise; deferred and immediate scheduling never happen on error paths.
+    proof: [stream-failure-exception-handling-tests, oracle]
+  - text: Budget-reservation callbacks are bound after successful logging enqueue only, and never when failure scheduling occurs.
+    proof: [budget-reservation-binding-tests, oracle]
+  - text: TinyFish run_id detection in the hot path scans frames on first match and halts scanning after poller spawns; late run_ids found at logging time are passed to the poller instead of reconstructing.
+    proof: [tinyfish-run-id-detection-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+  - id: stream-context-tests
+    why: PassThroughStreamContext is missing, incomplete, or has wrong field names.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::context/)'
+  - id: first-token-stamp-tests
+    why: _stamp_first_chunk_if_needed does not set completion_start_time on the first call or re-sets it on subsequent calls.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::first_token/)'
+  - id: stream-failure-scheduling-tests
+    why: schedule_failure_logging fails to skip TinyFish, record partial usage, or dispatch failure handlers with exception and traceback.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::failure_scheduling/)'
+  - id: partial-usage-recording-tests
+    why: record_partial_usage_failure does not extract Usage, record it with response cost, or handle exceptions safely.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::partial_usage/)'
+  - id: chunk-iteration-hot-path-tests
+    why: chunk_processor does not buffer chunks, stamp first token, or pass through chunks unchanged in the no-injection path.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::chunk_iteration/)'
+  - id: cost-injection-flag-tests
+    why: Cost-injection flag resolution does not read include_cost_in_streaming_usage, model availability, or endpoint-type restrictions, or applies to unsupported endpoint types.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::cost_injection_flag/)'
+  - id: cost-injection-frame-handling-tests
+    why: chunk_processor does not collect complete SSE frames, pass them to _process_chunk_with_cost_injection, or yield transformed chunks correctly.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::cost_injection_frames/)'
+  - id: exactly-once-logging-completion-tests
+    why: chunk_processor schedules both deferred and immediate logging, misses deferred when armed, or fails to enqueue on clean completion.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::exactly_once_logging/)'
+  - id: stream-failure-exception-handling-tests
+    why: chunk_processor does not schedule failure logging on GeneratorExit or Exception, or schedules logging on error paths.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::exception_handling/)'
+  - id: budget-reservation-binding-tests
+    why: Budget-reservation callbacks are not bound after successful enqueue, or are bound on error paths.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::budget_binding/)'
+  - id: tinyfish-run-id-detection-tests
+    why: TinyFish run_id detection fails to scan frames on first match, halt scanning after poller spawn, or handle late run_ids at logging time.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::tinyfish_run_id/)'
+
+oracle_cases:
+  - tools/oracle/cases/passthrough/stream-lifecycle/chunk-processor-hot-path-no-injection.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/chunk-processor-cost-injection.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/chunk-processor-first-token-stamp.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/stream-failure-exception-on-read.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/stream-failure-generator-exit-on-disconnect.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/stream-failure-partial-usage-recovery.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/stream-failure-tinyfish-with-poller.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/stream-failure-tinyfish-late-run-id.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/deferred-logging-armed-on-completion.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/immediate-logging-fallback-on-completion.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/cost-injection-anthropic.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/cost-injection-openai.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/cost-injection-vertex-raw-predict.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/tinyfish-run-id-on-first-frame.yaml
+  - tools/oracle/cases/passthrough/stream-lifecycle/tinyfish-run-id-late-discovery.yaml
+
+deviations:
+  - what: >-
+      PassThroughStreamContext field is named success_handler (29 characters) instead of
+      passthrough_success_handler_obj (31 characters), keeping identifier names under the
+      30-character limit enforced by clippy clear-names rules.
+    why: >-
+      Rust identifier names must not exceed 30 characters per rules.yaml clear-names enforcement;
+      the shorter name preserves semantic clarity while conforming to project standards.
+  - what: >-
+      Function is named schedule_failure_logging (24 characters) instead of schedule_stream_failure_logging
+      (31 characters), and record_partial_usage_failure (29 characters) instead of _record_partial_usage_for_failure
+      (33 characters), keeping identifiers under the 30-character limit.
+    why: >-
+      Rust identifier names must not exceed 30 characters per rules.yaml clear-names enforcement;
+      shorter names preserve semantic clarity and follow domain-based naming conventions.
+  - what: >-
+      record_partial_usage_failure uses the shared provider reconstruction path
+      (_build_passthrough_logging_result) to extract Usage, except for Anthropic which
+      has a dedicated handler (AnthropicPassthroughLoggingHandler.record_partial_usage_for_failure).
+    why: >-
+      LiteLLM lines 98-136 show the Anthropic handler is called directly (line 106-108) while
+      other endpoints reconstruct via _build_passthrough_logging_result (line 113-123). This
+      task implements the Anthropic delegation and the reconstruction wrapper; provider-leaf
+      owners implement the _handle_logging_*_collected_chunks handlers (gap A).
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L105-L128
+  - what: >-
+      TinyFish streams with an active poller (detected via sse_poller_spawned) skip failure
+      logging entirely because the poller owns the authoritative billing row and would collide
+      on request_id if this task logged a failure row.
+    why: >-
+      LiteLLM lines 79-80 and 318-319 check sse_poller_spawned and return early. The poller
+      is started on the first run_id frame and tracks stream status independently; betterlite
+      preserves this exclusive-billing model to avoid double-logging.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L79-L80
+  - what: >-
+      Deferred-logging wiring checks _on_deferred_stream_complete on the logging object; if
+      set and the stream completed cleanly (status < 400), the logging coroutine is parked
+      on litellm_logging_obj._deferred_stream_complete_args instead of being enqueued
+      immediately.
+    why: >-
+      LiteLLM lines 236-242 show the deferred-dispatch path is armed by post-call guardrails;
+      this task wires the condition without building the guardrail mechanism itself (gap D).
+      The finally block ensures exactly-once logging regardless of which path runs.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L235-L242
+  - what: >-
+      Cost injection reads _process_chunk_with_cost_injection from ProxyBaseLLMRequestProcessing
+      (B124/gap D); this task routes complete SSE frames to it and yields the transformed
+      chunk without buffering incomplete trailing frames.
+    why: >-
+      LiteLLM lines 222-223 call _process_chunk_with_cost_injection on split_complete_sse_frames;
+      betterlite defers the transformer implementation to gap D and focuses this task on the
+      stream-lifecycle mechanics and logging dispatch.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L220-L226
+
+out_of_scope:
+  - "B3600 owns PassthroughStandardLoggingPayload and EndpointType enum."
+  - "B3605 owns PassThroughEndpointLogging state and success-dispatch helpers."
+  - "B3608 owns _route_streaming_logging_to_handler, _build_passthrough_logging_result, and _extract_model_for_cost_injection; they are called by chunk_processor but built by B3608."
+  - "B191 owns GLOBAL_LOGGING_WORKER.ensure_initialized_and_enqueue for logging dispatch."
+  - "B247 owns Logging._update_completion_start_time for first-token timestamp."
+  - "B251 owns record_partial_usage_for_failure and dispatch_failure_handlers for failure accounting."
+  - "B1719 owns bind_budget_reservation_to_callbacks for spend-tracking attachment."
+  - "B005 owns split_complete_sse_frames for SSE frame reassembly."
+  - "ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection (gap D) owns cost injection into SSE frames; this task routes frames to it."
+  - "Provider-leaf tasks (gap A) own handle_logging_tinyfish_collected_chunks, start_sse_run_billing, run_id_from_sse_frames, sse_poller_spawned, and AnthropicPassthroughLoggingHandler.record_partial_usage_for_failure."
+
+pitfalls:
+  - "GeneratorExit is not caught by `except Exception`; the finally block must ensure partial usage is logged even on client disconnect (LIT-2642)."
+  - "Upstream 4xx/5xx responses are already logged as failure before chunk_processor starts; do not re-log them as success in the finally block."
+  - "The logging_scheduled flag tracks whether deferred logging was armed or immediate logging was enqueued; the finally block only enqueues if this flag is still False."
+  - "Cost-injection flag is resolved once at stream start; reading include_cost_in_streaming_usage per-chunk creates unnecessary branching."
+  - "TinyFish scanning halts after the first run_id is found and the poller spawns; do not re-scan frames after that point."
+  - "Incomplete SSE frames at stream end are yielded as-is without padding or reassembly; split_complete_sse_frames handles the split and incomplete_tail goes through."
+  - "Exception traceback is captured with traceback.format_exc() at the point of the exception; pass it to dispatch_failure_handlers for logging."
+  - "Budget reservation binding (bind_budget_reservation_to_callbacks) happens only after successful logging enqueue, not on error paths or when logging_scheduled is False."
+  - "Deferred logging wiring requires litellm_logging_obj._deferred_stream_complete_args to be a tuple containing the coroutine; the finally block reads _on_deferred_stream_complete to check if deferred dispatch is armed."
+  - "Response status code < 400 is the gate for logging decisions; 400+ responses are already logged as failure elsewhere and must not be double-logged here."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

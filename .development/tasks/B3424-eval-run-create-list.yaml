@@ -1,0 +1,111 @@
+id: B3424
+title: Eval run creation and listing operations
+description: >-
+  Build eval run creation and listing orchestration in `betterlite-core::api::eval_run_create_list`. Implement `create_run`, `acreate_run`, `list_runs`, and `alist_runs` with native sync/async semantics, preserving run creation's special timeout and the distinction between an arbitrary run data_source object and routing-only completion/model fields.
+
+  In `create_run`: accept `eval_id` (required), `data_source` (required dict), `name` (optional), `metadata` (optional, not forwarded unless overridden by `extra_body`), `extra_headers`, `extra_query`, `extra_body`, `timeout`, and `custom_llm_provider`. Select provider: `custom_llm_provider` becomes `"openai"` if `None`. Construct `CreateRunRequest` with required `eval_id` and `data_source` fields, optional `name`, apply `extra_body` updates, validate environment through the config, transform the request, call the logging updater with the full request body as optional params, and dispatch to the transport handler with resolved timeout (`timeout or httpx.Timeout(timeout=600.0, connect=5.0)` — the 600-second run creation timeout, not the standard request timeout).
+
+  In `list_runs`: accept `eval_id` (required), pagination parameters `limit`, `after`, `before`, `order` (all optional), `extra_headers`, `extra_query`, `timeout`, and `custom_llm_provider`. Build `ListRunsParams` from non-None explicit parameters only, apply `extra_query` overrides afterward, validate environment, transform request, log with query params and eval_id as optional params, dispatch with resolved timeout (`timeout or request_timeout`).
+
+  Async wrappers `acreate_run` and `alist_runs` run their sync counterparts in a thread pool via `loop.run_in_executor`, copy context with `contextvars.copy_context`, and await the result. If the result is a coroutine, await it; otherwise return it.
+
+  Unsupported providers are rejected with `ValueError` after `ProviderConfigManager.get_provider_evals_api_config` returns `None`. Exception mapping uses the same `litellm.exception_type` dispatch as the provider transforms: OpenAI errors through B185, other or unmapped errors through B186. Store `local_vars = locals()` before the try block to capture arguments and defaults.
+
+  Metadata is not included in CreateRunRequest by default; it can only be supplied through `extra_body`, preserving LiteLLM's behavior. Run data_source is an opaque dict; do not model the unused inline, dataset, or sample-set data-source variants that belong to evaluation definitions.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_run_create_list.rs
+    - crates/betterlite-core/src/api/eval_run_create_list/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1094-1160
+    why: "acreate_run: async wrapper calling create_run via executor and contextvars"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1163-1275
+    why: "create_run: build request with data_source and optional name, apply extra_body, validate, transform, log, dispatch with 600-second timeout"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1278-1344
+    why: "alist_runs: async wrapper parallel to acreate_run"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1347-1460
+    why: "list_runs: pagination param handling from eval_id, request building, transform, log with eval_id, dispatch with standard timeout"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-577
+    why: "request_timeout: default timeout constant when user does not supply one"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-519
+    why: "GenericLiteLLMParams: wrapper over kwargs, resolved to extract litellm_params"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9262-9279
+    why: "ProviderConfigManager.get_provider_evals_api_config: provider factory lookup"
+
+dod:
+  - text: "create_run constructs CreateRunRequest from required eval_id and data_source, optional name, applies extra_body updates, and returns a Run contract validated through B3420's model."
+    proof: [eval-run-create-list-tests]
+  - text: "acreate_run runs create_run in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-run-create-list-tests]
+  - text: "list_runs builds ListRunsParams from non-None pagination parameters only, applies extra_query overrides afterward, and returns ListRunsResponse contract validated through B3420's model."
+    proof: [eval-run-create-list-tests]
+  - text: "alist_runs runs list_runs in a thread pool with context copy and awaits the result, handling both direct returns and coroutines."
+    proof: [eval-run-create-list-tests]
+  - text: "Both create and list operations call validate_environment on the provider config and pass resolved headers to the transform."
+    proof: [eval-run-create-list-tests]
+  - text: "Both create and list operations call the logging updater with operation kwargs and optional_params (request body for create, query params plus eval_id for list) before dispatching."
+    proof: [eval-run-create-list-tests]
+  - text: "custom_llm_provider=None selects openai; missing provider config raises ValueError before transport."
+    proof: [eval-run-create-list-tests]
+  - text: "create_run timeout resolves to supplied timeout or httpx.Timeout(timeout=600.0, connect=5.0); list_runs timeout resolves to supplied timeout or request_timeout constant."
+    proof: [eval-run-create-list-tests]
+  - text: "Exception mapping uses litellm.exception_type for both operation families; exceptions include local_vars (all parameters at entry)."
+    proof: [eval-run-create-list-tests]
+  - text: "Metadata supplied to create_run is captured in local_vars for error reporting but not added to the outgoing request unless extra_body includes it."
+    proof: [eval-run-create-list-tests]
+  - text: "list_runs merges extra_query after explicit non-None pagination values, so extra_query can overwrite pagination keys."
+    proof: [eval-run-create-list-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: eval-run-create-list-tests
+      why: creation and listing run operation tests fail, do not exist, or cannot reach B3420 contracts and B523 provider transforms
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_run_create_list::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Async wrappers call sync counterparts via thread pool and contextvars copy, matching the @client decorator in LiteLLM but betterlite has its own context/logging mechanism."
+    why: "The pattern (sync function, async wrapper running it in executor with context) is preserved; logging and context types come from betterlite's observability layer."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1094-1106
+  - what: "create_run uses a 600-second default timeout for long-running eval operations, not the standard request_timeout constant."
+    why: "Evaluation runs can take longer than standard API requests; LiteLLM specifies timeout=600.0 as the explicit default with a 5-second connect timeout."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1261
+  - what: "Metadata supplied to create_run is captured in local_vars for error reporting but not added to the outgoing request unless extra_body includes it."
+    why: "LiteLLM accepts and documents metadata but does not forward it; only extra_body can override the behavior, matching the pinned behavior exactly."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1220-1222
+  - what: "list_runs merges extra_query after explicit pagination parameters, so extra_query can overwrite pagination keys."
+    why: "Pagination precedence is explicit parameters < extra_query overwrites; this order matches LiteLLM's implementation and is load-bearing for requests that override defaults."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1410-1412
+
+out_of_scope:
+  - "Provider factory owned by B157 (ProviderConfigManager.get_provider_evals_api_config, litellm/utils.py:9262-9279)."
+  - "HTTP handler implementation and transport dispatch for create_run_handler/list_runs_handler: no task currently owns these in base_llm_http_handler.py; flagged as unresolved, same as B3425."
+  - Request/response transformation for OpenAI (owned by B523).
+  - Logging infrastructure and observability (B247).
+  - Exception type mapping from provider errors to OpenAI vs. other/fallback (B185, B186).
+  - Async runtime, context variables and request tracing beyond what local operations require.
+  - Client-wrapper decorator or its side effects on operation selection (betterlite's routing replaces this).
+  - Unused data-source variants (dataset, sample-set, inline) that belong to evaluation definitions, not runs.
+
+pitfalls:
+  - "create_run timeout defaults to httpx.Timeout(timeout=600.0, connect=5.0), not the standard request_timeout. This 600-second limit is specific to run creation and must not be changed to the standard timeout."
+  - "CreateRunRequest initializes with only data_source as a required field, optionally adds name if not None, and explicitly excludes metadata (see the commented-out lines 1221–1222 in litellm). Metadata can only reach the request through extra_body updates. Do not add metadata to CreateRunRequest directly; the omission is intentional and security-sensitive."
+  - "ListRunsParams starts with only the fields explicitly passed: limit, after, before, and order, each added only when not None. The extra_query merge (line 1412) then applies with .update(), so extra_query can overwrite any of these four keys plus add new ones. Build from explicit params first, then apply extra_query as a second pass."
+  - "Timeout resolution uses: supplied timeout if not None, otherwise the hardcoded timeout (600s for create_run via httpx.Timeout(timeout=600.0, connect=5.0) on line 1261; request_timeout for list_runs on line 1446). On None inputs, the default applies, not a per-request timeout."
+  - "acreate_run dispatches to create_run with the 600-second timeout path (line 1261), while alist_runs dispatches to list_runs with request_timeout (line 1446). The async wrapper must preserve this distinction: do not normalize both to the same timeout resolution."
+  - "create_run raises ValueError(f\"CREATE run is not supported for {custom_llm_provider}\") and list_runs raises ValueError(f\"LIST runs is not supported for {custom_llm_provider}\") when ProviderConfigManager returns None; do not mask this error or silently fall back to openai."
+  - "CreateRunRequest requires eval_id and data_source; data_source is an opaque dict, not a modeled union of the unused inline/dataset/sample-set variants. Do not confuse the evaluation definition's data-source variants with run data-source handling."
+  - "Both acreate_run and alist_runs check if the result is a coroutine before awaiting; this handles cases where the sync function might return a coroutine directly."
+  - "list_runs logging includes both query_params and eval_id in optional_params, so the eval_id is present for tracing even when pagination parameters are omitted."
+  - "local_vars = locals() must be called at the entry of create_run and list_runs before the try block to capture eval_id, data_source (create only), pagination params (list only), and all extra_* arguments for error reporting."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

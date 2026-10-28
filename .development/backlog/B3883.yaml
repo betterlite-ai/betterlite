@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prometheus request budget lookups
 status: todo
 depends_on: [B3870, B3882, B3890, B732, B733, B736, B737, B738, B879, B725, B700]
-file: null
+file: tasks/B3883-prometheus-budget-lookups.yaml
 covers:
   - "litellm/integrations/prometheus.py"
 parent: B111

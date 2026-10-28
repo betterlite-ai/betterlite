@@ -97,6 +97,11 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
+        "one_at_a_time": {
+          "description": "Run while holding a lock in the git common directory, so gates in other worktrees of this clone wait their turn instead of running it at the same time. For tools such as cargo deny that lock a cache in the home directory and give up after a short wait.",
+          "type": "boolean",
+          "default": false
+        },
         "run": {
           "type": "string",
           "minLength": 1

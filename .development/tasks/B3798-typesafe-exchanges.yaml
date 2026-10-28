@@ -1,0 +1,182 @@
+id: B3798
+title: TypeSafe tool exchange checks
+description: >-
+  Build the TypeSafe (Jev) relevance-based compaction guardrail's core logic: state construction for
+  completed tool exchanges and their evaluation through the `/v1/systemone` API. Preserve protected
+  exchanges (system, last-user, last-assistant, prompt-cache breakpoints), middle truncation of long
+  results, and the fail-open/fail-closed behavior when TypeSafe is unreachable.
+
+  Implement the helpers: _as_str_object_dict and _as_object_list validate object structures without
+  parsing; _safe_response_text extracts readable error messages from httpx responses; _truncate_for_state
+  keeps the head and tail of long results within a character budget while preserving code structure;
+  _question_instructions formats the yes/no question about task relevance; _tool_call_entry and
+  _tool_call_entries extract function names and arguments from Anthropic tool_calls; _protected_indices
+  expands LiteLLM's protected-message list by entire tool exchanges (so the most recent exchange is never
+  evaluated).
+
+  Implement the orchestration: _handle_failure logs or raises based on unreachable_fallback ("fail_open"
+  or "fail_closed"); _candidate_exchanges filters tool exchanges by protection, minimum length and
+  exchange completeness, capping evaluation to 200 exchanges; _exchange_tool_text concatenates tool
+  and function message content for scoring; _build_state assembles the Jev input with the last-user
+  task, system instructions, and indexed tool exchanges; _call_systemone posts to the API, handles
+  connection errors and malformed responses, and returns the parsed relevance scores or None.
+
+  Configuration types model api_base, api_key, model, unreachable_fallback, relevance_threshold,
+  min_chars_to_evaluate, and max_result_chars_in_state, with defaults matching LiteLLM
+  (api_base: https://api.typesafe.ai, model: "jev-latest", threshold: 0.2, min_chars: 200, max_chars: 4000).
+  The ui_friendly_name method returns "TypeSafe (Jev) Compaction".
+
+  Do not implement __init__, apply_guardrail or get_config_model; those stay in the final assembly.
+  Call get_protected_indices from compression and group_tool_exchanges from B224; both are injected
+  dependencies, never called indirectly through a framework. Preserve the exact text "[Tool result removed
+  by TypeSafe compaction: judged no longer relevant to the current task]" as the dropped-result marker
+  and the "\n... [middle truncated] ...\n" elision in truncation.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/typesafe.rs
+    - crates/betterlite-guardrails/src/typesafe/**
+    - tools/oracle/cases/guardrails/typesafe/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L1-150
+    why: Module-level imports, constants, type adapters and configuration defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L63-147
+    why: _as_str_object_dict, _as_object_list, _safe_response_text, _truncate_for_state, _question_instructions, _tool_call_entry, _tool_call_entries, _protected_indices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L195-317
+    why: _handle_failure, _candidate_exchanges, _exchange_tool_text, _build_state, _call_systemone.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/typesafe.py
+    why: The config model, optional-params type and ui_friendly_name.
+
+dod:
+  - text: _as_str_object_dict and _as_object_list parse objects through Pydantic TypeAdapter without
+      panicking, returning None on validation failure.
+    proof: [message-parsing-tests]
+  - text: _safe_response_text extracts decoded response text, handles httpx.DecodingError, and truncates
+      to the specified limit (default 500 chars).
+    proof: [message-parsing-tests]
+  - text: _protected_indices returns the union of compression's protected indices and entire tool-exchange
+      groups that contain any protected message.
+    proof: [protection-tests]
+  - text: _truncate_for_state preserves the head and tail of long results within max_chars, using middle
+      ellipsis "\n... [middle truncated] ...\n" as the separator.
+    proof: [truncation-tests]
+  - text: _question_instructions formats the Jev yes/no question with the exchange id and task context
+      as LiteLLM does.
+    proof: [instruction-tests]
+  - text: "_tool_call_entry extracts {\"name\", \"arguments\"} from a tool_call, handling both OpenAI {\"function\": {}} and direct name/arguments layouts."
+    proof: [tool-extraction-tests]
+  - text: _tool_call_entries returns a tuple of all valid entries from assistant message tool_calls,
+      ignoring malformed entries.
+    proof: [tool-extraction-tests]
+  - text: _candidate_exchanges filters tool exchanges to unprotected, complete (2+ messages), long enough
+      (>= min_chars_to_evaluate), and caps results to 200.
+    proof: [candidate-selection-tests]
+  - text: _exchange_tool_text concatenates content from all tool/function messages in an exchange,
+      using content_to_text on each.
+    proof: [text-extraction-tests]
+  - text: _build_state constructs the Jev input with task (last user message), system (joined system
+      messages), and indexed tool_exchanges keyed e0, e1, etc.
+    proof: [state-building-tests]
+  - text: _call_systemone posts the state and questions to {api_base}/v1/systemone, parses the response
+      shape _JevSystemOneResponse, and returns None on connection/parse/validation failure.
+    proof: [api-call-tests]
+  - text: _handle_failure logs warnings on fail_open or raises HTTPException with 502 status on fail_closed,
+      preserving the error detail for logging.
+    proof: [failure-handling-tests]
+  - text: Configuration models serialize the seven configuration parameters (api_base, api_key, model,
+      unreachable_fallback, relevance_threshold, min_chars_to_evaluate, max_result_chars_in_state)
+      with correct defaults and validation.
+    proof: [config-tests]
+  - text: ui_friendly_name returns "TypeSafe (Jev) Compaction".
+    proof: [config-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: message-parsing-tests
+      why: _as_str_object_dict, _as_object_list and _safe_response_text tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_message_parsing::/)'
+    - id: protection-tests
+      why: _protected_indices tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_protected_indices::/)'
+    - id: truncation-tests
+      why: _truncate_for_state tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_truncation::/)'
+    - id: instruction-tests
+      why: _question_instructions tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_instructions::/)'
+    - id: tool-extraction-tests
+      why: _tool_call_entry and _tool_call_entries tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_tool_extraction::/)'
+    - id: candidate-selection-tests
+      why: _candidate_exchanges tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_candidate_exchanges::/)'
+    - id: text-extraction-tests
+      why: _exchange_tool_text tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_text_extraction::/)'
+    - id: state-building-tests
+      why: _build_state tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_state_building::/)'
+    - id: api-call-tests
+      why: _call_systemone tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_api_call::/)'
+    - id: failure-handling-tests
+      why: _handle_failure tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_failure_handling::/)'
+    - id: config-tests
+      why: TypeSafeGuardrailConfigModel and ui_friendly_name tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_config::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      TypeSafe integration does not implement __init__, apply_guardrail or get_config_model in this task.
+      Those functions remain in the final assembly (B108) which may depend on this task's helpers. The
+      separation preserves modularity: helpers and orchestration are independent, while the orchestrator
+      method depends on both.
+    why: >-
+      The outline allocates __init__, apply_guardrail and get_config_model to the final assembly to avoid
+      a circular dependency: apply_guardrail calls the helpers owned here, but gets registered as a guardian
+      hook by the initializer owned in B108. Rust forces this split more sharply than Python.
+  - what: >-
+      The protected-indices expansion is computed from LiteLLM's get_protected_indices, which will be provided by
+      B005 (compression module). Until that task is merged, protected_indices calls a stub that returns empty.
+    why: >-
+      TypeSafe's core logic (truncation, state building, API calls) does not depend on protected indices for
+      correctness; skipping protected exchanges is an optimization. The stub allows tests to run before B005
+      merges, and the full implementation integrates once get_protected_indices is available.
+  - what: >-
+      Dropped tool results use the exact marker "[Tool result removed by TypeSafe compaction: judged no longer
+      relevant to the current task]" and truncation uses "\n... [middle truncated] ...\n" as the elision marker.
+    why: >-
+      These strings are visible to users in model responses; they must match LiteLLM for compatibility with
+      existing behaviors and monitoring that keys on these exact strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L53-56
+
+out_of_scope:
+  - __init__, apply_guardrail and get_config_model, owned by the final assembly B108.
+  - Configuration resolution and environment variable lookup, owned by B002.
+  - HTTP client provisioning and pooling, owned by B173.
+  - Tool-exchange grouping, owned by B224 (group_tool_exchanges is injected).
+  - Protected-index computation, owned by B005 (get_protected_indices is injected).
+  - Content-to-text extraction, supplied by the guardrail framework (content_to_text is injected).
+  - Guardrail registration, lifecycle and callback logging, owned by B104.
+  - Streaming response iteration and reassembly, owned by B2227.
+
+pitfalls:
+  - "_as_str_object_dict and _as_object_list must return None on validation failure, not panic. A malformed input is not a bug in the guardrail; it is a reason to skip evaluation and return the unmodified request."
+  - "_protected_indices must deduplicate and preserve order when expanding tool-exchange groups. The same message index can be protected by multiple criteria (e.g., system role and cache control)."
+  - "_truncate_for_state results land exactly at max_chars (never over): head + marker + (budget - head) = budget + marker = max_chars - marker + marker = max_chars. Tests should assert exact equality, not overflow cases."
+  - "_candidate_exchanges caps evaluation to 200 exchanges to avoid quadratic evaluation cost. Tests must verify that when more than 200 exchanges exist, only the last 200 are kept."
+  - "_question_instructions formats the question from the exchange id; if an exchange is dropped by the cap (not in candidates), it has no question and receives no relevance score."
+  - "_handle_failure's fail_open path logs a warning without throwing, allowing the request to proceed uncompacted. fail_closed raises an HTTPException, but does not include the upstream error body in the response (only in logs) to avoid leaking TypeSafe's error details to clients."
+  - "_build_state iterates messages forward to accumulate task/system, then iterates backward to find the last user message. Reversed iteration finds the most recent task context without redundant scans."
+  - "_call_systemone must handle httpx.HTTPStatusError (status errors), invalid UTF-8 decoding errors and validation errors separately. Connection timeouts, DNS failures and other asyncio exceptions are caught as generic Exception and logged without crashing."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

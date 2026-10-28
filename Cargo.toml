@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
+deadpool-postgres = "0.14.2"
 hex = "0.4.3"
 hyper-util = "0.1.21"
 percent-encoding = "2.3.2"

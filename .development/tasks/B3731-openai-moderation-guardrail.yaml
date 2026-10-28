@@ -1,0 +1,172 @@
+id: B3731
+title: OpenAI moderation guardrail
+description: >-
+  Build the OpenAI Moderation guardrail with client initialization, structured-message
+  and text extraction, first-result blocking and full-response telemetry with category labels.
+  Preserve environment/global key precedence (OPENAI_API_KEY env, then litellm.api_key,
+  then litellm.openai_key), the omni-moderation-latest default model, and unified stream
+  sampling settings (streaming_end_of_stream_only default false, streaming_sampling_rate
+  default 5).
+
+  The guardrail makes async requests to the OpenAI Moderation API, checks the first result
+  for flagged content, and raises HTTPException with 400 status if any category is violated.
+  Stash the full moderation response in request_data["metadata"]["_openai_moderation_response"]
+  for per-request telemetry, using pop() to avoid race conditions with concurrent requests.
+  Extract flagged category names for GuardrailTracingDetail to keep category_scores map out
+  of indexed fields that hit backend length limits.
+
+  apply_guardrail accepts GenericGuardrailAPIInputs, prefers structured_messages over texts,
+  extracts text via get_user_prompt or joins texts, returns inputs unchanged (moderation
+  does not modify), and delegates to the framework's decorator for exception dispatch.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/openai_moderation.rs
+    - crates/betterlite-guardrails/src/openai_moderation/**
+    - tools/oracle/cases/guardrails/openai-moderation-*.yaml
+    - tools/oracle/helpers/b3731.py
+    - tools/oracle/helpers/b3731/**
+    - tools/oracle/src/helpers/guardrails/b3731.rs
+    - tools/oracle/src/helpers/guardrails/b3731/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/base.py#L1-L28
+    why: OpenAIGuardrailBase.get_user_prompt delegates to get_last_user_message(messages).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L50-L88
+    why: "__init__: api_key fallback chain (env, litellm.api_key, litellm.openai_key), api_base default, model default omni-moderation-latest, streaming sampling defaults, validation."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L90-L102
+    why: "_get_api_key: OPENAI_API_KEY env, litellm.api_key, litellm.openai_key, get_secret_str fallback chain."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L104-L135
+    why: "async_make_request: POST /moderations with model and input, Bearer auth, timeout, response parsing, non-200 raises HTTPException."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L137-L169
+    why: "_check_moderation_result: check results[0].flagged, extract violated_categories from categories dict, raise HTTPException 400 with details."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L171-L235
+    why: "apply_guardrail: prefer structured_messages via get_user_prompt, fall back to join texts, stash response in metadata, add_guardrail_scan_id, check result, return inputs unchanged."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L237-L274
+    why: "_process_response: pop stashed response, add_standard_logging_guardrail_information_to_request_data with tracing detail, return response."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L276-L312
+    why: "_process_error: classify error as guardrail_intervened or guardrail_failed_to_respond, pop stashed response, add standard logging, re-raise."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L314-L338
+    why: "_build_tracing_detail: iterates every entry in results, extracts flagged category names from each result's categories dict, return GuardrailTracingDetail or None."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L340-L349
+    why: "get_config_model: return OpenAIModerationGuardrailConfigModel."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L351-L357
+    why: "get_supported_event_hooks: return [GuardrailEventHooks.pre_call, during_call, post_call]."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/openai/openai_moderation.py#L1-L42
+    why: "Config models: BaseOpenAIModerationGuardrailConfigModel with model field, OpenAIModerationGuardrailConfigModel with api_key, api_base, streaming flags, ui_friendly_name."
+dod:
+  - text: >-
+      OpenAIModerationGuardrail.__init__ accepts guardrail_name, api_key, api_base, model,
+      streaming_end_of_stream_only, streaming_sampling_rate, and kwargs; validates api_key is not empty;
+      stores api_key (env -> litellm.api_key -> litellm.openai_key), api_base (default https://api.openai.com/v1),
+      model (default omni-moderation-latest), streaming_end_of_stream_only (default false),
+      streaming_sampling_rate (default 5), and chains parent __init__.
+    proof: [openai-moderation-tests]
+  - text: >-
+      _get_api_key returns OPENAI_API_KEY env var, litellm.api_key, litellm.openai_key
+      in that precedence, and falls back to get_secret_str("OPENAI_API_KEY") placeholder.
+    proof: [openai-moderation-tests]
+  - text: >-
+      async_make_request POSTs to {api_base}/moderations with {"model": model, "input": text},
+      Bearer {api_key} authorization, application/json content-type, request timeout applied,
+      parses response.json() into OpenAIModerationResponse, and raises HTTPException with the upstream response's status_code on non-200 status.
+    proof: [openai-moderation-tests, openai-moderation-oracle]
+  - text: >-
+      _check_moderation_result iterates all results entries, checks each result.flagged,
+      extracts category names where categories[name] is true from each result, raises HTTPException 400 with
+      violated_categories and category_scores if any category across all results is flagged.
+    proof: [openai-moderation-tests]
+  - text: >-
+      apply_guardrail prefers structured_messages (calls get_user_prompt), falls back to texts
+      (joins with newline), returns inputs unchanged if no text to moderate, stashes full moderation
+      response in request_data["metadata"]["_openai_moderation_response"], calls add_guardrail_scan_id,
+      checks result and raises if blocked.
+    proof: [openai-moderation-tests]
+  - text: >-
+      _process_response pops "_openai_moderation_response" from request_data["metadata"],
+      falls back to "allow" if no response stashed, calls add_standard_logging_guardrail_information_to_request_data
+      with status "success", tracing_detail from _build_tracing_detail, returns response unchanged.
+    proof: [openai-moderation-tests]
+  - text: >-
+      _process_error classifies exception as guardrail_intervened or guardrail_failed_to_respond,
+      pops stashed response from metadata, falls back to exception, calls add_standard_logging_guardrail_information_to_request_data
+      with appropriate status and tracing detail, re-raises exception.
+    proof: [openai-moderation-tests]
+  - text: >-
+      _build_tracing_detail iterates every entry in results, extracts flagged category names from each
+      result's categories dict, returns GuardrailTracingDetail(violation_categories=[...]) with all flagged
+      categories across all results, or None if no categories are flagged.
+    proof: [openai-moderation-tests]
+  - text: >-
+      get_config_model returns OpenAIModerationGuardrailConfigModel class.
+    proof: [openai-moderation-tests]
+  - text: >-
+      get_supported_event_hooks returns list with pre_call, during_call, and post_call hooks.
+    proof: [openai-moderation-tests]
+  - text: >-
+      OpenAIModerationGuardrailConfigModel holds api_key (default None), api_base
+      (default https://api.openai.com/v1), model (default omni-moderation-latest),
+      streaming_end_of_stream_only (default false), streaming_sampling_rate (default 5),
+      and ui_friendly_name() returns "OpenAI Moderation".
+    proof: [openai-moderation-tests]
+  - text: >-
+      BaseOpenAIModerationGuardrailConfigModel holds model field with default omni-moderation-latest.
+    proof: [openai-moderation-tests]
+  - text: >-
+      OpenAIGuardrailBase.get_user_prompt delegates to get_last_user_message(messages) from B219.
+    proof: [openai-moderation-tests]
+checks:
+  optional: []
+  commands:
+    - id: openai-moderation-tests
+      why: OpenAI Moderation guardrail tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^openai_moderation::/)'
+    - id: openai-moderation-oracle
+      why: OpenAI Moderation cases do not match LiteLLM on client response or provider requests
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/
+oracle_cases:
+  - tools/oracle/cases/guardrails/openai-moderation-init.yaml
+  - tools/oracle/cases/guardrails/openai-moderation-request.yaml
+  - tools/oracle/cases/guardrails/openai-moderation-blocked.yaml
+  - tools/oracle/cases/guardrails/openai-moderation-categories.yaml
+deviations:
+  - what: >-
+      When OPENAI_API_KEY is missing from environment and litellm.api_key and litellm.openai_key are not set,
+      betterlite raises ValueError, whereas LiteLLM calls get_secret_str("OPENAI_API_KEY") to consult
+      its configured secret manager.
+    why: Full secret-manager dispatch is unresolved (U4); betterlite uses only the env var lookup supplied by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L90-L102
+  - what: >-
+      When apply_guardrail raises an HTTPException for a policy block, betterlite does not invoke
+      add_guardrail_scan_id for the failed call, whereas LiteLLM logs scan_id through the decorator
+      even on violations.
+    why: add_guardrail_scan_id registration and invocation is unresolved (U3); the full response is
+      available for logging through _process_error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L223-L229
+out_of_scope:
+  - Guardrail decorator registration and CustomGuardrail.__init__; those are owned by B104 (U1).
+  - add_guardrail_scan_id, add_guardrail_to_applied_guardrails_header and logging-object helpers; owned by B104 (U3).
+  - get_secret_str and full secret-manager dispatch; owned by B129 (U4).
+  - OpenAIModerationResponse constructor and wire format; owned by B004 (OpenAI chat completions without streaming).
+  - Request/response routing and framework dispatch; those come from the guardrail lifecycle in B104.
+pitfalls:
+  - >-
+      Moderation does not fail closed on network error; _process_error logs the exception and re-raises,
+      so the caller decides fail_on_error behavior. Do not swallow exceptions or return a default "allow".
+  - >-
+      The response stash uses a dict key "_openai_moderation_response" in request_data["metadata"],
+      which must exist before stashing. Initialize metadata = {} if request_data["metadata"] is missing.
+  - >-
+      apply_guardrail returns inputs unchanged; moderation only blocks, never masks or modifies content.
+      Confirm that the returned inputs object is the same instance passed in, not a copy.
+  - >-
+      get_user_prompt returns None if no last user message exists; apply_guardrail checks for this and
+      falls back to texts, then returns early if both are empty. Do not raise on missing text.
+  - >-
+      The category names in OpenAI's response are the keys of the categories dict; extract them by iterating
+      the dict, not by assuming a fixed set of names.
+  - >-
+      HTTPException detail must be a dict, not a string, for proper JSON serialization. Include error and details keys.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

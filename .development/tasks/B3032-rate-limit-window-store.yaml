@@ -1,0 +1,120 @@
+id: B3032
+title: Rate-limit window storage and Redis grouping
+description: >-
+  Implement local window reset and counter increment, Redis hash-tag grouping for cluster
+  compatibility, and read-only counter snapshots with the source local-mirror fallback.
+  Build the Lua scripts that increment window/counter pairs atomically, reset expired windows
+  and return both new and current values. Compute Redis Cluster slot numbers for hash-tag
+  grouping, execute grouped counter reads, and preserve sibling request/token resets
+  (a window-and-counter pair shares an expiry and TTL). Distinguish absent cache entries
+  (missing keys return nil) from zero counters in read results. When Redis storage fails,
+  fall back to the in-memory sliding-window implementation or call the fail-closed rejection
+  helper from B3031 if rate-limit verification is required.
+
+scope:
+  paths:
+    - crates/betterlite-core/**
+    - Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L168-L207
+    why: BATCH_RATE_LIMITER_SCRIPT and BATCH_COUNTER_READ_SCRIPT Lua operations that reset windows, increment counters atomically and read values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L428-L429
+    why: REDIS_CLUSTER_SLOTS (16384) and REDIS_NODE_HASHTAG_NAME ("all_keys") constants used in cluster slot grouping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1159-L1251
+    why: _is_redis_cluster, in_memory_cache_sliding_window, and _in_memory_cache_sliding_window implementation for local fallback and cluster detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1321-L1346
+    why: keyslot_for_redis_cluster to compute CRC16-based slot numbers and handle hash tags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1348-L1361
+    why: _pipeline_scripts to batch Lua calls by hash tag on the request batch (external caller active_request_redis_batch).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1363-L1385
+    why: _group_keys_by_hash_tag to partition keys by slot for cluster compatibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1387-L1398
+    why: _batch_get_counter_values as a typed view over dual-cache batch reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1412-L1426
+    why: _read_counter_values_from_redis executes grouped BATCH_COUNTER_READ_SCRIPT calls and reassembles values by key order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1428-L1442
+    why: _read_counter_values_without_incrementing tries Redis read-only snapshot, falls back to local cache on any error, and calls fail-closed rejection if needed.
+
+dod:
+  - text: BATCH_RATE_LIMITER_SCRIPT resets each window/counter pair when the window expires (now - window_start >= window_size), clears sibling keys (requests/tokens under the same prefix) and resets TTL. Within a valid window, INCR increments the counter and fixes missing TTL.
+    proof: [lua-batch-script]
+  - text: BATCH_COUNTER_READ_SCRIPT returns counter values via MGET, preserving nil for missing keys.
+    proof: [lua-read-script]
+  - text: _is_redis_cluster returns true when cluster mode is enabled, false for standalone Redis.
+    proof: [cluster-detect]
+  - text: in_memory_cache_sliding_window resets local in-memory window/counter pairs, increments counters and returns both values (window_start, counter) per input key.
+    proof: [in-memory-window]
+  - text: keyslot_for_redis_cluster computes CRC16 hash of the hash-tag substring (content between { and } if present, else the full key) modulo 16384.
+    proof: [slot-compute]
+  - text: _group_keys_by_hash_tag partitions keys by slot for clusters, or groups all keys under "all_keys" for standalone Redis.
+    proof: [hash-tag-group]
+  - text: _batch_get_counter_values returns a typed CacheCounterValues sequence from the dual cache, or None on error.
+    proof: [batch-get]
+  - text: _read_counter_values_from_redis executes BATCH_COUNTER_READ_SCRIPT grouped by hash tag and returns values in the same order as the input keys list.
+    proof: [redis-read-order]
+  - text: _read_counter_values_without_incrementing attempts BATCH_COUNTER_READ_SCRIPT first, calls _reject_if_rate_limit_unverifiable on error if fail-closed is set, logs the Redis failure with WARNING level and falls back to local cache with local_only=true.
+    proof: [read-fallback]
+  - text: Failed window resets are not retried; if a Redis batch call fails, the caller (B3036) refunds already-applied groups and falls back to in-memory checking.
+    proof: [no-retry-policy]
+
+pitfalls:
+  - CRC16 hash-tag computation uses binascii.crc_hqx; the constant 16384 divides the hash space and is not configurable per instance or version.
+  - "Hash tags: when a key contains {substring}, the slot is computed from substring alone, not the full key. Keys without tags use the full key. A {}-delimited region with only whitespace is treated as if the hash tag is absent."
+  - "Window reset clears sibling keys (requests and tokens) under the same prefix so a stale window does not orphan a counter. A window :window key expiration does not automatically clear the counter; the Lua script does it on visibility."
+  - "nil from Redis MGET is distinct from zero; the sequence preserves both, so callers check None (Python) / nil (Lua) separately from integer 0."
+  - "Standalone Redis uses a single logical all_keys group so all keys execute in one Lua call. A cluster partitions them by slot, which can fail partway through if a slot becomes unavailable mid-call; the caller (B3036) refunds applied groups before falling back."
+  - "The in-memory sliding window does not persist to Redis; it is a degraded in-memory replica when Redis fails, not a source of truth. In-memory increments can race if concurrent requests hit the same counter during the failure window."
+  - "The storage functions call the B3031-owned _reject_if_rate_limit_unverifiable rejection helper inline when a Redis failure occurs and fail-closed is enabled; the helper raises directly without returning, so callers cannot decide anything after catching the exception."
+  - "When _pipeline_scripts returns None (no batch open), the caller (B3036) runs the Lua script directly with batch_rate_limiter_script.script(...) or batch_counter_read_script(...). The return type and error handling must be identical to the batch case."
+
+out_of_scope:
+  - "_pipeline_scripts (parallel_request_limiter_v3.py:1348-1361) calls active_request_redis_batch from litellm/caching/redis_batch.py, owned by B4331 (not a B3032 dependency, since B3032 only consumes its None-batch fallback path). _pipeline_scripts is built here and returns None when no batch is open, allowing callers to run scripts directly."
+  - "_execute_redis_batch_rate_limiter_script (parallel_request_limiter_v3.py:1456-1510) is owned by B3036 (the windowed admission task). It calls _pipeline_scripts, _group_keys_by_hash_tag and in_memory_cache_sliding_window from this task, binds together the batch increment and fallback behavior, and returns the combined counter values for a descriptor group check."
+
+deviations:
+  - what: Failed Redis window resets and counter reads are not retried; on any Redis/Lua error, _read_counter_values_without_incrementing falls back to the local mirror immediately or rejects the request if fail-closed is enabled.
+    why: LiteLLM falls back to in-memory cache without retrying the Redis operation. betterlite preserves this behavior to avoid unbounded retry loops in high-load scenarios.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+checks:
+  optional: []
+  commands:
+    - id: lua-batch-script
+      why: BATCH_RATE_LIMITER_SCRIPT does not reset windows or fix TTL on INCR
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(batch_rate_limiter_script|window_reset|ttl_fix)/)'
+    - id: lua-read-script
+      why: BATCH_COUNTER_READ_SCRIPT does not exist or returns wrong type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::batch_counter_read_script/)'
+    - id: cluster-detect
+      why: _is_redis_cluster detection is missing or contradicts the enabled flag
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::cluster_detect/)'
+    - id: in-memory-window
+      why: in_memory_cache_sliding_window does not reset or increment correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(in_memory_window|sliding_window)/)'
+    - id: slot-compute
+      why: keyslot_for_redis_cluster CRC16 computation is missing or wrong, or hash tags are not extracted
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(slot_compute|hash_tag|crc16)/)'
+    - id: hash-tag-group
+      why: _group_keys_by_hash_tag does not partition keys by slot or fails for standalone Redis
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(hash_tag_group|key_grouping)/)'
+    - id: batch-get
+      why: _batch_get_counter_values does not return a typed sequence or handles errors wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::batch_get/)'
+    - id: redis-read-order
+      why: _read_counter_values_from_redis does not return values in key order or groups are scrambled
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::redis_read_order/)'
+    - id: read-fallback
+      why: _read_counter_values_without_incrementing does not fall back to local cache on error or does not call fail-closed
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(read_fallback|fail_closed)/)'
+    - id: no-retry-policy
+      why: Failed window resets are retried, or caller does not handle refunds
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::no_retry/)'
+
+oracle_cases: []

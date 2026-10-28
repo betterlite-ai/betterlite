@@ -5,6 +5,8 @@ description: >-
 
   Support the feature flag env var LITELLM_OTEL_V2 (read-only, cached) and implement the mode-agnostic exporter specification with optional HTTP headers, certificate paths and factory-specific options. Define the OtelDestination record: immutable, frozen, with header-string serialization for wire forms and cache-key generation for processor deduplication.
 
+  The callback_settings.otel keys go in the otel_settings section of betterlite-config, registered as a stub, and otel::config reads config.sections.otel_settings.
+
   Load setting values through the existing betterlite-config B002 environment/YAML resolution, including comma-separated list parsing for env vars (e.g., LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS=litellm.team.id,litellm.api_key.hash). Handle service exclusion normalization through B3840's db_system classifier, accept both ServiceTypes names and db.system spellings, and drop malformed exclusions with a warn log instead of panicking.
 
   Resolve OTLP HTTP TLS certificate policy through the existing B172 get_ssl_verify path: when SSL_VERIFY is disabled, return a no-verify HTTP session; when a certificate file is present, return its path; else return the default verified context. Implement settings_customise_sources to filter the bare "excluded_services" field from environment parsing so repeated YAML updates do not accumulate stale values.
@@ -14,6 +16,8 @@ scope:
   paths:
     - crates/betterlite-logging/src/otel/config.rs
     - crates/betterlite-logging/src/otel/config/**
+    - crates/betterlite-config/src/sections/otel_settings.rs
+    - crates/betterlite-config/src/sections/otel_settings/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/config.py#L21-L382
@@ -58,7 +62,7 @@ checks:
   commands:
     - id: otel-config-tests
       why: The config tests fail, do not exist, or snapshots were not accepted
-      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/::otel.*config.*($|::)/)'
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/^(otel::config|sections::otel_settings)::/)'
 oracle_cases: []
 deviations:
   - what: >-

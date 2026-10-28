@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel V2 callback construction and proxy hooks
 status: todo
 depends_on: [B189, B253, B3840, B3841, B3842, B3843, B3846, B3847, B3848, B3852, B3868, B3869]
-file: null
+file: tasks/B3853-otel-v2-callbacks.yaml
 covers:
   - "litellm/integrations/otel/logger.py"
 parent: B110

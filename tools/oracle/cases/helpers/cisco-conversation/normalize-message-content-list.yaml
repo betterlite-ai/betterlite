@@ -1,0 +1,20 @@
+kind: helper
+name: cisco-normalize-list
+call:
+  cisco_conversation:
+    function: normalize_content
+    content:
+      - {type: text, text: a}
+      - {type: input_text, text: b}
+      - {type: output_text, text: c}
+      - {type: summary_text, text: d}
+      - {type: reasoning_text, text: e}
+      - {type: text, text: 7}
+      - {type: text, text: "", content: [{type: input_text, text: nested}]}
+      - {type: function_call, arguments: '{"x": 1}', output: [{type: image}]}
+      - {type: image_url, text: hidden}
+      - plain string
+      - 3
+env: {}
+compare:
+  ignore: []

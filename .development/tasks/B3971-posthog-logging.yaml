@@ -1,0 +1,283 @@
+id: B3971
+title: PostHog analytics and credential grouped batches
+description: >-
+  Build PostHog event/property projection, distinct-ID selection and per-credential batch
+  delivery. Support sync immediate sends, lazy async setup and shutdown draining without
+  mixing events belonging to different credential/URL pairs.
+
+  Read POSTHOG_API_KEY and POSTHOG_API_URL (default https://us.i.posthog.com) from B002;
+  use B173 for sync/async POST to /batch/; use B192 for safe_dumps serialization; build
+  on B189's CustomLogger initialization contract and B256's batch base, periodic flush and
+  flush_queue. Construct PostHog payloads with event type (calling type embedding selects
+  $ai_embedding, others $ai_generation), built-in properties ($ai_model, $ai_provider,
+  $ai_input, $ai_output_choices, $ai_input_tokens, $ai_output_tokens, $ai_total_cost_usd,
+  $ai_latency, $ai_is_error, $ai_error, $ai_trace_id, $ai_span_id, $ai_parent_id if
+  present) and user-provided metadata filtered to exclude internal fields.
+
+  Distinct ID selection: prefer user_id from metadata, then end_user from standard logging
+  object, then trace_id, fallback to UUID. Get credentials per-request from
+  standard_callback_dynamic_params.posthog_api_key/posthog_api_url, falling back to
+  initialized POSTHOG_API_KEY and POSTHOG_API_URL.
+
+  Sync log_success_event: resolve credentials, create event payload, POST immediately with
+  /batch/ endpoint constructed from api_url, swallow errors in verbose_logger.exception.
+  Async async_log_success_event and async_log_failure_event: lazy-initialize flush_lock
+  and call periodic_flush (from B256) on first async entry, then call _log_async_event to
+  queue the event. On batch-size threshold (100 by default from
+  POSTHOG_MAX_BATCH_SIZE), call flush_queue from B256.
+
+  Batch delivery: group log_queue by (api_key, api_url) tuple, building separate batches
+  for each unique pair. Send each batch to its own /batch/ endpoint (constructed from
+  api_url). Queue structure: [{event: PostHogEventPayload, api_key, api_url}, ...]. Async
+  async_send_batch groups by credentials and POSTs all batches, clearing log_queue on
+  success (after raise_for_status). Metadata is applied after built-in properties and can
+  overwrite them unless explicitly in litellm_internal_fields.
+
+  Register atexit handler in __init__ to call _flush_on_exit, which synchronously groups
+  the remaining queue by credentials and POSTs each batch using sync_client. The queue
+  is cleared only when all batches in the flush send successfully; on any send failure
+  it is left untouched, and the error is logged via verbose_logger.error without raising.
+
+  Preserve the batch size (100); only call type embedding selects $ai_embedding. Mock mode
+  enabled via should_use_posthog_mock() passes to create_mock_posthog_client() in __init__.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/posthog_logging.rs
+    - crates/betterlite-logging/src/posthog_logging/**
+    - tools/oracle/cases/logging/posthog/**
+    - tools/oracle/helpers/b3971.py
+    - tools/oracle/helpers/b3971/**
+    - tools/oracle/src/helpers/logging/b3971.rs
+    - tools/oracle/src/helpers/logging/b3971/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L56-L94
+    why: "PostHogLogger.__init__ initializes API key, URL, HTTP clients, mock mode, atexit handler and batch size."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L96-L128
+    why: "log_success_event resolves credentials, creates event payload, POSTs to /batch/ endpoint."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L130-L144
+    why: "async_log_success_event and async_log_failure_event lazy-initialize async and call _log_async_event."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L146-L156
+    why: "_log_async_event queues event with credentials, triggers flush_queue on batch threshold."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L158-L187
+    why: "create_posthog_event_payload constructs event with event name, properties and distinct_id."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L189-L237
+    why: "_create_posthog_properties builds $ai_* properties, adds trace/span properties and custom metadata."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L239-L254
+    why: "_add_trace_properties adds $ai_trace_id, $ai_span_id, $ai_parent_id from standard logging and metadata."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L256-L299
+    why: "_add_custom_metadata_properties filters metadata to exclude litellm_internal_fields."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L301-L313
+    why: "_get_distinct_id selects user_id, end_user, trace_id or UUID in order."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
+    why: "_get_credentials_for_request resolves per-request credentials from standard_callback_dynamic_params, falling back to instance defaults."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L341-L391
+    why: "async_send_batch groups log_queue by (api_key, api_url), POSTs each batch to its own /batch/ endpoint, clears queue on success."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L393-L402
+    why: "_ensure_async_setup lazy-initializes flush_lock and calls periodic_flush."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L404-L418
+    why: "_extract_metadata, _safe_uuid, _create_posthog_payload and _safe_get helper functions."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L420-L470
+    why: "_flush_on_exit groups remaining log_queue by credentials, POSTs each batch using sync_client, logs errors without raising."
+
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/posthog.py#L1-18
+    why: "PostHogEventPayload, POSTHOG_MAX_BATCH_SIZE constant and helper TypedDicts."
+
+dod:
+  - text: "PostHogLogger initializes with POSTHOG_API_KEY from B002, HTTP clients for sync/async, atexit handler for shutdown flush and batch size 100."
+    proof: [posthog-init-test, posthog-init-oracle]
+
+  - text: "Event type is $ai_embedding for call_type==embedding, $ai_generation for all others."
+    proof: [posthog-event-type-test, posthog-event-type-oracle]
+
+  - text: "Built-in properties include $ai_model, $ai_provider, $ai_input, $ai_output_choices, $ai_input_tokens, $ai_output_tokens, $ai_total_cost_usd, $ai_latency, $ai_is_error, $ai_error, $ai_trace_id, $ai_span_id, $ai_parent_id."
+    proof: [posthog-properties-test, posthog-properties-oracle]
+
+  - text: "Distinct ID prefers user_id from metadata, then end_user from standard logging object, then trace_id, fallback to UUID."
+    proof: [posthog-distinct-id-test, posthog-distinct-id-oracle]
+
+  - text: "Credentials per-request resolved from standard_callback_dynamic_params.posthog_api_key/posthog_api_url, falling back to initialized values."
+    proof: [posthog-credentials-test, posthog-credentials-oracle]
+
+  - text: "Sync log_success_event resolves credentials, creates event payload, POSTs to /batch/ endpoint immediately and swallows errors."
+    proof: [posthog-sync-send-test, posthog-sync-send-oracle]
+
+  - text: "Async async_log_success_event and async_log_failure_event lazy-initialize flush_lock and periodic_flush on first call."
+    proof: [posthog-async-init-test, posthog-async-init-oracle]
+
+  - text: "Async _log_async_event queues events with their credentials, triggering flush_queue on batch threshold (100 events)."
+    proof: [posthog-async-queue-test, posthog-async-queue-oracle]
+
+  - text: "Async async_send_batch groups log_queue by (api_key, api_url), POSTs each batch to its own /batch/ endpoint and clears queue on success."
+    proof: [posthog-async-batch-test, posthog-async-batch-oracle]
+
+  - text: "Custom metadata fields are added after built-in properties and can overwrite them unless in litellm_internal_fields."
+    proof: [posthog-metadata-test, posthog-metadata-oracle]
+
+  - text: "_flush_on_exit groups remaining log_queue by credentials and POSTs each batch using sync_client; on any send failure the queue is left untouched, on complete success the queue is cleared, errors are logged without raising."
+    proof: [posthog-exit-flush-test, posthog-exit-flush-oracle]
+
+  - text: "PostHogLogger.__init__ raises Exception with message \"POSTHOG_API_KEY is not set, set 'POSTHOG_API_KEY=<>'\" when POSTHOG_API_KEY environment variable is absent."
+    proof: [posthog-init-missing-key-test, posthog-init-missing-key-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: posthog-init-test
+      why: Initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-event-type-test
+      why: Event type selection tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*event.*type($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-properties-test
+      why: Properties creation tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*properties($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-distinct-id-test
+      why: Distinct ID selection tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*distinct.*id($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-credentials-test
+      why: Credential resolution tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*credentials($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-sync-send-test
+      why: Sync send tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*sync($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-async-init-test
+      why: Async initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*async.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-async-queue-test
+      why: Async queue tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*async.*queue($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-async-batch-test
+      why: Async batch tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*async.*batch($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-metadata-test
+      why: Custom metadata filtering tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*metadata($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-exit-flush-test
+      why: Exit flush tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*exit($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-init-oracle
+      why: Missing initialization oracle cases
+      run: grep -rlq 'POSTHOG_API_KEY\|batch.*size\|atexit\|posthog.*init' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-event-type-oracle
+      why: Missing event type oracle cases
+      run: grep -rlq '\$ai_embedding\|\$ai_generation\|call_type.*embedding' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-properties-oracle
+      why: Missing properties oracle cases
+      run: grep -rlq '\$ai_model\|\$ai_provider\|\$ai_trace_id\|built.*in.*properties' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-distinct-id-oracle
+      why: Missing distinct ID oracle cases
+      run: grep -rlq 'distinct.*id\|user_id\|end_user\|trace_id' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-credentials-oracle
+      why: Missing credential resolution oracle cases
+      run: grep -rlq 'POSTHOG_API_URL\|posthog_api_key\|posthog_api_url\|standard_callback_dynamic_params' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-sync-send-oracle
+      why: Missing sync send oracle cases
+      run: grep -rlq 'log_success_event\|sync.*send\|/batch/' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-async-init-oracle
+      why: Missing async initialization oracle cases
+      run: grep -rlq 'async.*log.*event\|lazy.*init\|periodic_flush' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-async-queue-oracle
+      why: Missing async queue oracle cases
+      run: grep -rlq '_log_async_event\|queue.*event\|batch.*threshold' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-async-batch-oracle
+      why: Missing async batch oracle cases
+      run: grep -rlq 'async_send_batch\|group.*credentials\|api_url.*api_key' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-metadata-oracle
+      why: Missing metadata oracle cases
+      run: grep -rlq 'custom.*metadata\|litellm_internal_fields\|metadata.*filter' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-exit-flush-oracle
+      why: Missing exit flush oracle cases
+      run: grep -rlq '_flush_on_exit\|atexit.*handler\|shutdown.*flush' tools/oracle/cases/logging/posthog/ || exit 1
+
+    - id: posthog-init-missing-key-test
+      why: Missing POSTHOG_API_KEY failure tests
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*missing.*key($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: posthog-init-missing-key-oracle
+      why: Missing POSTHOG_API_KEY initialization failure oracle cases
+      run: grep -rlq 'POSTHOG_API_KEY.*not.*set\|is not set\|Exception' tools/oracle/cases/logging/posthog/ || exit 1
+
+oracle_cases:
+  - tools/oracle/cases/logging/posthog/initialization-with-atexit-handler.yaml
+  - tools/oracle/cases/logging/posthog/initialization-missing-api-key.yaml
+  - tools/oracle/cases/logging/posthog/event-type-by-call-type.yaml
+  - tools/oracle/cases/logging/posthog/builtin-properties-projection.yaml
+  - tools/oracle/cases/logging/posthog/distinct-id-selection.yaml
+  - tools/oracle/cases/logging/posthog/credential-resolution-per-request.yaml
+  - tools/oracle/cases/logging/posthog/sync-event-send.yaml
+  - tools/oracle/cases/logging/posthog/async-lazy-initialization.yaml
+  - tools/oracle/cases/logging/posthog/async-event-queueing-by-credentials.yaml
+  - tools/oracle/cases/logging/posthog/async-batch-grouped-send.yaml
+  - tools/oracle/cases/logging/posthog/custom-metadata-filtering.yaml
+  - tools/oracle/cases/logging/posthog/exit-flush-grouped-by-credentials.yaml
+
+deviations:
+  - what: >-
+      Dynamic posthog_api_url from standard_callback_dynamic_params allows per-request endpoint
+      override, conflicting with B188's prohibition on request-selected export destinations.
+    why: >-
+      The source implements _get_credentials_for_request (lines 315-339) which checks
+      standard_callback_dynamic_params.posthog_api_url before falling back to self.posthog_host.
+      This decision point affects where credentials and events are routed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
+
+out_of_scope:
+  - B002 owns environment variable lookup and default value injection.
+  - B173 owns HTTP pool and sync/async request execution (sync_client.post and async_client.post).
+  - B189 owns CustomLogger initialization contract and callback registry.
+  - B192 owns safe_dumps serialization for payloads.
+  - B256 owns CustomBatchLogger base class, batch_size defaults, periodic_flush task setup and flush_queue implementation.
+  - Mock client creation via should_use_posthog_mock() and create_mock_posthog_client() is from posthog_mock_client module and not rewritten.
+  - The litellm._uuid module and verbose_logger are external dependencies not owned by this task.
+
+pitfalls:
+  - Batch size is 100; override via POSTHOG_MAX_BATCH_SIZE constant (only checked in types).
+  - Queue structure stores {event, api_key, api_url} dicts to group by credentials during batch send.
+  - Async setup via _ensure_async_setup is idempotent; first call creates flush_lock and starts periodic_flush.
+  - Sync and async event creation both call create_posthog_event_payload; async queues it while sync POSTs it immediately.
+  - Metadata filtering preserves user-provided keys outside litellm_internal_fields, which include endpoint, caching_groups, API key fields, budgets and spans.
+  - _flush_on_exit is registered via atexit.register in __init__ and runs after other callbacks; it must not raise to prevent process hang.
+  - Per-request credentials (posthog_api_key and posthog_api_url) override initialized values if present in standard_callback_dynamic_params.
+  - Distinct ID selection falls back to UUID if all preferred sources are absent.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

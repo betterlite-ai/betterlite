@@ -1,0 +1,7 @@
+kind: helper
+name: fallback-disabled
+call:
+  b3721:
+    step: {"grounding": {"messages": [{"role": "system", "content": "source"}, {"role": "user", "content": "question"}], "contextual_fallback": false}}
+env: {}
+compare: {ignore: []}

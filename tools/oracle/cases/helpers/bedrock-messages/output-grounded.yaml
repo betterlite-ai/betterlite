@@ -1,0 +1,7 @@
+kind: helper
+name: output-grounded
+call:
+  b3721:
+    step: {"format": {"source": "OUTPUT", "messages": [{"role": "system", "content": [{"type": "grounding_source", "text": "evidence"}]}, {"role": "user", "content": [{"type": "query", "text": "question"}]}], "response": {"choices": [{"message": {"content": "answer"}}]}}}
+env: {}
+compare: {ignore: []}

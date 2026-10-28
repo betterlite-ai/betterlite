@@ -1,0 +1,10 @@
+kind: helper
+name: structured-excluded-key
+call:
+  structured_redaction:
+    function: mask_sensitive_keys
+    data: {token: short, other: short}
+    sensitive_fields: [token]
+env: {}
+compare:
+  ignore: []

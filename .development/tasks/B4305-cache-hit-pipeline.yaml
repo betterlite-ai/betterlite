@@ -1,0 +1,131 @@
+id: B4305
+title: Execute synchronous and asynchronous response cache lookup
+description: >-
+  Compose cache eligibility, lookup, hit conversion and logging into the sync/async request paths.
+  Implement _async_get_cache and _sync_get_cache to perform complete cache retrieval pipelines,
+  including no-cache control checks, per-request cache state initialization, and cache-hit
+  recording. Both methods check call-type eligibility, retrieve results from the cache, validate
+  freshness, convert cached responses to the proper output format, update logging context,
+  and stamp the cache key into hidden parameters. The async path defers stream callbacks and
+  handles partial embedding hits; the sync path preserves error detail and dispatches success
+  callbacks through the logging object. Both methods avoid expensive operations until caching
+  eligibility is confirmed and return CachingHandlerResponse with null when caching is disabled.
+  The OTel parent span is extracted once at the start using B110's helper and stored in kwargs
+  for all descendant calls.
+scope:
+  paths:
+    - crates/betterlite-core/src/caching/lookup.rs
+    - crates/betterlite-core/src/caching/lookup/**
+    - tools/oracle/cases/caching/async-cache-lookup.yaml
+    - tools/oracle/cases/caching/sync-cache-lookup.yaml
+    - tools/oracle/cases/caching/cache-error-detail.yaml
+    - tools/oracle/cases/caching/partial-embedding-hits.yaml
+    - tools/oracle/helpers/b4305.py
+    - tools/oracle/helpers/b4305/**
+    - tools/oracle/src/helpers/core_ops/b4305.rs
+    - tools/oracle/src/helpers/core_ops/b4305/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L228-L366
+    why: _async_get_cache; compose cache checks, retrieval, full-hit conversion, logging and partial embedding path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L368-L452
+    why: _sync_get_cache; preserve error detail and sync callback dispatch path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L275
+    why: Calls B110's _get_parent_otel_span_from_kwargs to extract OTel parent span once at entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L258-L263
+    why: Cache eligibility checks no-cache controls and caching parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L287-L335
+    why: Full cache hit path; convert result and invoke logging/callback dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L336-L358
+    why: Partial embedding hit path; process per-input cache hits and return uncached indices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L360-L366
+    why: No-hit and disabled-caching returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L398-L412
+    why: Sync path error detail preservation (cached_result with "detail" key).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L437-L450
+    why: Cache key stamping into _hidden_params for both paths.
+dod:
+  - text: >-
+      Async cache lookup eligibility is checked before expensive operations; caching=null or true
+      and no-cache=false enables the async path, and async no-cache controls are preserved.
+    proof: [cache-lookup-eligibility]
+  - text: >-
+      Sync cache lookup eligibility is checked for call type support only; cache hits invoke result
+      conversion regardless of caching parameter, and sync error detail (any cached_result with
+      "detail" key) is preserved without further processing.
+    proof: [cache-lookup-eligibility]
+  - text: >-
+      Cache hits are converted to appropriate response types and logging context is updated with
+      cache duration, original provider and model; cache key is computed from preset key, request
+      parameter or computed from kwargs, then stamped into _hidden_params.
+    proof: [cache-lookup-context]
+  - text: >-
+      For full cache hits, async_success_handler is enqueued through B191 and sync_success_callbacks
+      are dispatched through the logging object; stream callback deferral to callers is preserved.
+    proof: [cache-lookup-callbacks]
+  - text: >-
+      For async partial embedding hits, per-input cached entries are validated and merged, embedding
+      count does not include the full-hit path, and CachingHandlerResponse carries embedding_uncached_input
+      for fresh lookups.
+    proof: [cache-lookup-embedding]
+  - text: >-
+      Cache lookup returns CachingHandlerResponse with null cached_result when caching is disabled or
+      no eligible hit is found, and S3Cache is excluded from partial embedding writes.
+    proof: [cache-lookup-absence]
+checks:
+  optional: []
+  commands:
+    - id: cache-lookup-eligibility
+      why: Cache eligibility checks, async/sync dispatch selection, or preserved controls fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::lookup_eligibility(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: cache-lookup-context
+      why: Cache-hit context recording, response conversion, or cache key stamping fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::lookup_context(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: cache-lookup-callbacks
+      why: Async callback enqueueing, sync callback dispatch, or stream deferral fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::lookup_callbacks(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: cache-lookup-embedding
+      why: Partial embedding hit merging, validation, or uncached index tracking fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::lookup_embedding(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: cache-lookup-absence
+      why: No-hit or disabled-caching return paths, or S3Cache exclusion fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::lookup_absence(::|$)/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+  - tools/oracle/cases/caching/async-cache-lookup.yaml
+  - tools/oracle/cases/caching/sync-cache-lookup.yaml
+  - tools/oracle/cases/caching/cache-error-detail.yaml
+  - tools/oracle/cases/caching/partial-embedding-hits.yaml
+deviations: []
+out_of_scope:
+  - B4300 implements cache eligibility filtering, kwarg normalization and per-input embedding retrieval; this task only calls it.
+  - B4301 implements cache-hit context recording and both callback paths; this task only calls them.
+  - B4302 implements cached result conversion to all supported response types; this task only calls it.
+  - B4303 implements partial embedding hit merging and token aggregation; this task only calls it.
+  - B4296 computes cache keys from request parameters; this task only calls get_cache_key.
+  - B4297 implements cache get/async_get semantics; this task only calls them.
+  - B174 implements get_llm_provider; this task only calls it with cache-hit metadata.
+  - B250 implements async_success_handler and sync success callback dispatch; this task only calls them.
+  - B110 implements _get_parent_otel_span_from_kwargs; this task calls it once at the entry to _async_get_cache to extract the OTel parent span.
+pitfalls:
+  - >-
+    Async no-cache control is checked via kwargs.get("cache", {}).get("no-cache", False) is not True;
+    the nested dict access with False default differs from the sync path which has no such check and relies only on call-type eligibility.
+  - >-
+    Cache-hit timing is measured from cache_check_start_time to cache_check_end_time; cache_duration_ms must use
+    these same perf_counter values, not the datetime.now() values used for logging context timestamps.
+  - >-
+    Sync path preserves cached error detail by checking if "detail" key is present in cached_result before attempting
+    conversion; a conversion attempt on an error dict would corrupt the error message.
+  - >-
+    Partial embedding hits check isinstance(cached_result, list) only after confirming not a full hit; the list
+    indicates multiple per-input results rather than a single response, and S3Cache is excluded from bulk embedding writes.
+  - >-
+    Cache key stamping must preserve None in the preset_cache_key path (preset_cache_key or self.request_kwargs.get("cache_key")),
+    not mistakenly compute one when all three sources are absent; the key may legitimately be None for cache stamping purposes.
+  - >-
+    Stream callback deferral is checked via _should_defer_streaming_cache_hit_callbacks before dispatching;
+    streaming results and some response types defer callbacks to the caller, not to the hit path.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

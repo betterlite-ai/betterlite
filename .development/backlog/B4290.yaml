@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Cache contracts and remaining local operations
 status: todo
 depends_on: [B2226, B390]
-file: null
+file: tasks/B4290-cache-contracts.yaml
 covers:
   - "litellm/caching/{base_cache,in_memory_cache}.py"
   - "litellm/types/caching.py"

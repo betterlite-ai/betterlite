@@ -2,8 +2,8 @@ id: B4650
 milestone: M9 agents and mcp
 title: MCP credential contracts, header carriers and BYOK cache
 status: todo
-depends_on: [B733]
-file: null
+depends_on: [B2226, B2305]
+file: tasks/B4650-mcp-credential-contracts.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{types,result,httpx_auth}.py"
   - "litellm/proxy/_experimental/mcp_server/auth/token_endpoint_auth.py"

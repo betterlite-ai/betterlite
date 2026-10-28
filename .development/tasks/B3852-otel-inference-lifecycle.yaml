@@ -1,0 +1,272 @@
+id: B3852
+title: OTel V2 inference lifecycle and tenant tracer cache
+description: >-
+  Open and close exactly one inference/MCP span for each call, including error and
+  cancellation paths, and release each provider lease after span closure. Route per-request
+  credentials/projects through a bounded tenant tracer cache while preserving detached-trace
+  links and destination overrides.
+
+  The inference lifecycle routes calls through a bounded LRU tenant cache (256 cached providers,
+  64 retained drained providers), opening an LLM-call span at the pre_call boundary when an
+  ambient parent exists, or deferring creation to async close when the context is unavailable
+  (thread-pool workers). The open-call map (10k entries) holds carriers from pre_call to close;
+  eviction happens on overflow and does not prevent deferred emission. MCP tool calls and
+  list-tools reach the callbacks with no pre_call carrier, so they are emitted whole (not
+  opened/closed separately). Success/failure paths both close any open carrier (dedup on
+  call id), and metric recording runs guarded against ValueError from bad otel.attributes
+  filters — a once-only ERROR log followed by silent suppression on later calls.
+
+  TenantTracerCache keyed by (credential_headers, project_headers, endpoint, service_name)
+  builds and reuses per-request providers, applying dynamic OTLP headers from request
+  params or key/team config, project-routing headers (Phoenix), and per-request service-name
+  overrides. Detached routes (credential/project-scoped) root their own traces with a link
+  back to the request root; service-name-only routing stays parented to the default backend.
+  Credentials REPLACE the exporter's static headers; project headers APPEND to preserve
+  backend auth. Owned exporters (spec.owner == callback_name) receive routing; others pass
+  through unchanged. Evicted providers with open spans are drained (retired) until all spans
+  close, then shut down; a quarter-cache cap on retirees bounds thread accumulation.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/logger.rs
+    - crates/betterlite-logging/src/otel/logger/**
+    - crates/betterlite-logging/src/otel/plumbing/routing.rs
+    - crates/betterlite-logging/src/otel/plumbing/routing/**
+    - tools/oracle/cases/helpers/inference-lifecycle/**
+    - tools/oracle/helpers/b3852.py
+    - tools/oracle/helpers/b3852/**
+    - tools/oracle/src/helpers/logging/b3852.rs
+    - tools/oracle/src/helpers/logging/b3852/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L136-L142
+    why: Open-call capacity limit (_OPEN_CALLS_MAX) and detached-trace link construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L149-L175
+    why: "_LLMCallSpan carrier structure holding open span, start time, and routed provider."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L277-L338
+    why: log_pre_api_call opens span at boundary or defers, stores carrier, applies routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L339-L380
+    why: "async_log_success_event, _record_metrics, _record_failure_metrics, _guarded_record and async_log_failure_event dispatch."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L389-L401
+    why: "_seed_identity_baggage filters and promotes request-identity onto context."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L403-L447
+    why: "_emit_mcp_tool_call deferred whole-span emission for MCP tool calls."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L449-L488
+    why: "_emit_mcp_list_tools deferred whole-span emission for MCP list-tools discovery."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L490-L519
+    why: "_close_llm_call span close via carrier dedup, emission on no carrier with payload/upstream_started signal."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L521-L534
+    why: "_store_open_call evicts oldest on _OPEN_CALLS_MAX overflow."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L536-L597
+    why: "_release_carrier drops provider lease, _finish_carrier stamps attributes on deferred or opened spans."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L42-L94
+    why: "Tenant cache constants (_MAX_CACHED_PROVIDERS, _MAX_RETIRED_PROVIDERS) and tenant_service_name resolver."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L97-L119
+    why: "_shutdown_provider, _plain_header_string, _encoded_header_string helper functions."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L122-L156
+    why: "TenantRoute dataclass with tracer, detached flag, and provider lease."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L158-L213
+    why: "TenantTracerCache.__init__ with transport checks and release method."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L214-L270
+    why: "route_for main entry with LRU acquisition and overflow eviction."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L272-L310
+    why: "Provider caching and LRU eviction with drain retirement on open spans."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L312-L349
+    why: "Credential and project header resolution with unroutable exporter warnings."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L351-L400
+    why: "Config and exporter routing with credential-replace and project-append behavior."
+dod:
+  - text: >-
+      log_pre_api_call opens an LLM-call span at the pre_call boundary when the ambient parent
+      is recordable, storing the routed provider in the carrier. When no recordable parent exists
+      (thread-pool worker), only start_time_ns is recorded and the async callback creates the span deferred.
+      Synthetic proxy-gate logs (is_no_upstream_call) skip span creation entirely.
+    proof: [lifecycle-pre-call-tests]
+  - text: >-
+      The open-call map uses call_id for idempotent storage; retried calls keep the first span.
+      Overflow eviction (past _OPEN_CALLS_MAX) drops the oldest carrier and releases its provider,
+      but does not prevent deferred emission of that call if it later closes with a payload.
+    proof: [lifecycle-open-calls-tests]
+  - text: >-
+      async_log_success_event and async_log_failure_event dispatch to MCP handlers (_emit_mcp_tool_call,
+      _emit_mcp_list_tools) which return true to skip the LLM-call path, or fall through to _close_llm_call
+      for LLM-only calls. Success records metrics; failure records failure metrics.
+    proof: [lifecycle-dispatch-tests]
+  - text: >-
+      _record_metrics calls _guarded_record which runs the recorder.record(). A ValueError from
+      otel.attributes filter is logged once at ERROR and then suppressed on all later calls.
+      Other exceptions are logged at debug. _record_failure_metrics skips synthetic proxy-gate logs.
+    proof: [lifecycle-metrics-tests]
+  - text: >-
+      _close_llm_call pops the carrier (dedup), and when no carrier exists, checks (is_no_upstream_call
+      or not upstream_started or no payload) to decide whether to emit via deferred path. A no-carrier
+      call with (upstream_started + payload) emits deferred; otherwise nothing.
+    proof: [lifecycle-llm-close-tests]
+  - text: >-
+      _finish_carrier on a live opened span stamps attributes and ends the span. On a deferred
+      (no opened span), _finish_carrier routes afresh, seeds identity baggage, emits the span,
+      and releases the new routed provider.
+    proof: [lifecycle-finish-tests]
+  - text: >-
+      _emit_mcp_tool_call pops any stray LLM carrier for the call id, routes, seeds baggage,
+      and emits a CLIENT span once (deduped). Links to the MCP transport span context and
+      to the request root (if detached). Releases the provider.
+    proof: [lifecycle-mcp-tool-tests]
+  - text: >-
+      _emit_mcp_list_tools emits an MCP list-tools CLIENT span once, with the same routing,
+      baggage, and linking behavior as tool calls.
+    proof: [lifecycle-mcp-list-tests]
+  - text: >-
+      _seed_identity_baggage uses promoted_baggage to filter identity values and metadata to
+      allowlists (baggage_promoted_keys, baggage_metadata_keys, baggage_team_metadata_keys),
+      then sets the baggage on the context via set_request_baggage.
+    proof: [lifecycle-baggage-tests]
+  - text: >-
+      TenantTracerCache routes by (credential_headers, project_headers, endpoint, service_name)
+      with an LRU ordered dict, capping at _MAX_CACHED_PROVIDERS. A routed provider increments
+      open_span_counts atomically in the lock and is held until release.
+    proof: [cache-routing-tests]
+  - text: >-
+      Evicted providers with open_span_counts > 0 are retired (added to _retired OrderedDict).
+      On release when counts hit 0, retired providers are shut down (force-flush + stop).
+      Retired is capped at _MAX_RETIRED_PROVIDERS; overflow shuts down the oldest.
+    proof: [cache-eviction-tests]
+  - text: >-
+      TenantRoute.detached is true when routed provider exports to a DIFFERENT backend
+      (credential or project routing), false for service-name-only routing (same backend).
+      A callback with destination_backends() returns unrouted regardless of credential/project.
+    proof: [cache-detach-tests]
+  - text: >-
+      _credential_headers returns dynamic_otlp_headers when the cache's owned exporter
+      is OTLP/HTTP or gRPC (_credential_routable). Otherwise warns once and returns no headers.
+      _project_headers returns project_routing_headers only for OTLP/HTTP exporters.
+    proof: [cache-transport-tests]
+  - text: >-
+      _routed_config copies the config, rewriting owned exporters' headers. Credential headers
+      REPLACE the exporter's static headers. Project headers APPEND (comma-separated, percent-encoded
+      on the value) except for gRPC exporters (project headers HTTP-only).
+    proof: [cache-header-tests]
+checks:
+  optional: []
+  commands:
+    - id: lifecycle-pre-call-tests
+      why: log_pre_api_call must open spans at boundary when parent is recordable and defer when not.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::pre_call::/)'
+    - id: lifecycle-open-calls-tests
+      why: Open-call storage must be idempotent, evict on overflow, and allow deferred emission after eviction.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::open_calls::/)'
+    - id: lifecycle-dispatch-tests
+      why: Success/failure events must dispatch to MCP or LLM paths, with MCP returning true to skip LLM.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::dispatch::/)'
+    - id: lifecycle-metrics-tests
+      why: Metrics must record on success/failure with guarded error handling (once-only ERROR on ValueError).
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::metrics::/)'
+    - id: lifecycle-llm-close-tests
+      why: LLM close must dedup on call id and emit deferred only when upstream_started + payload signal.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::llm_close::/)'
+    - id: lifecycle-finish-tests
+      why: Finish must stamp attributes on opened spans and emit deferred spans with baggage seeding.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::finish::/)'
+    - id: lifecycle-mcp-tool-tests
+      why: MCP tool calls must emit whole (deduped), pop stray carriers, and release routed providers.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::mcp_tool::/)'
+    - id: lifecycle-mcp-list-tests
+      why: MCP list-tools must emit whole with same routing and baggage behavior as tool calls.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::mcp_list::/)'
+    - id: lifecycle-baggage-tests
+      why: Identity baggage must be filtered to allowlists and seeded on context before emission.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::baggage::/)'
+    - id: cache-routing-tests
+      why: TenantTracerCache must route by (headers, endpoint, service) and hold providers atomically.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::tenant_cache::routing::/)'
+    - id: cache-eviction-tests
+      why: Cache must evict LRU on overflow, retire drained providers, and shut down overflow retirees.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::tenant_cache::eviction::/)'
+    - id: cache-detach-tests
+      why: Detached flag must be true for credential/project routes and false for service-name-only or destination_backends.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::tenant_cache::detach::/)'
+    - id: cache-transport-tests
+      why: Transport checks must allow credentials on OTLP/HTTP and gRPC, project headers on HTTP only.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::tenant_cache::transport::/)'
+    - id: cache-header-tests
+      why: Header rewriting must replace credentials and append project headers (percent-encoded), except gRPC.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::tenant_cache::headers::/)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3852::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new inference lifecycle decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/inference-lifecycle)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/inference-lifecycle/pre-call-spans-routed-and-deferred.yaml
+  - tools/oracle/cases/helpers/inference-lifecycle/mcp-tool-call-dispatch-returns-true.yaml
+  - tools/oracle/cases/helpers/inference-lifecycle/metric-error-once-then-silent.yaml
+  - tools/oracle/cases/helpers/inference-lifecycle/close-dedup-on-call-id.yaml
+  - tools/oracle/cases/helpers/inference-lifecycle/cache-lru-eviction-sheds-oldest.yaml
+  - tools/oracle/cases/helpers/inference-lifecycle/project-headers-append-percent-encoded.yaml
+deviations:
+  - what: >-
+      Metric recording guarded against ValueError with once-only ERROR log follows LiteLLM exactly,
+      including the _metric_filter_error_logged flag to suppress repeated logging of the same filter error.
+    why: >-
+      Operator-fixable configuration errors should surface once, not spam logs while the request
+      continues (guarded in try/except). Other recording failures are debug-only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L362-L379
+  - what: >-
+      Detached spans on credential or project routes root their own traces with a link back to the request
+      trace instead of parenting into it. Service-name-only routes stay parented to the default backend.
+    why: >-
+      Credential or project rerouting to a different backend would fragment the trace across
+      accounts (tenant missing parent, operator holding child). Detaching and linking preserves
+      correlation without fragmentation. Service-name changes only the Resource on the same backend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L122-L147
+
+out_of_scope:
+  - RequestIdentity parsing and baggage promotion; owned by B3841.
+  - Span emitter, dedup cache, attribute mapping, and error stamping; owned by B3847.
+  - OTel config, exporter construction, and destination contracts; owned by B3842 and B3848.
+  - GenAIMetricRecorder construction and lifecycle; owned by B3869 (the callback that builds it calls _guarded_record here).
+  - Provider assembly and legacy initialization; owned by B3868.
+  - Span role definitions and semantic vocabulary; owned by B3840.
+pitfalls:
+  - >-
+      MCP tool-call and list-tools have no pre_call carrier — they open and close in the
+      success/failure callbacks, not in async_log_success_event. The _emit_mcp_* methods pop
+      any stray LLM carrier for the same call id (from a mis-fired pre_call) so it's not closed
+      as a phantom LLM span.
+  - >-
+      The open-call map evicts the oldest carrier on overflow, but the call itself may still
+      reach _close_llm_call later with a payload — the deferred emission path handles it.
+      Only calls that evict and never close go unexported.
+  - >-
+      route_for holds the provider atomically in the lock (increments open_span_counts), so
+      a concurrent eviction can't shut it down between selection and the caller's span start.
+      The provider must be released exactly once when the span closes.
+  - >-
+      Credential headers REPLACE the exporter's static headers; project headers APPEND
+      (with comma separators and percent-encoding on values). Mixing a typo'd or unavailable
+      exporter kind (falling back to console) with credential headers would strand the span
+      on the operator's console, never reaching the tenant backend — only detach if the
+      exporter is genuinely OTLP-capable.
+  - >-
+      Retired drained providers are kept open until all their spans close (tracked in
+      open_span_counts). A release that drops the count to 0 must check _retired and shut
+      the provider down OUTSIDE the lock (shutdown may block on network flush).
+  - >-
+      tenant_service_name reads only from auth_metadata (key/team config), never from
+      client-supplied dynamic_params. The service name determines the dataset/service traces
+      land in (e.g. Honeycomb routes datasets by it), so routing it to caller-controlled
+      values would violate isolation.
+  - >-
+      Both success and failure async callbacks call _close_llm_call via their _emit_* paths.
+      The pop(call_id) in _close_llm_call dedups: whichever fires first removes the carrier
+      and closes the span; the second sees None and returns.
+  - >-
+      start_time_ns is None for deferred spans; _finish_carrier uses carrier.start_time_ns
+      if the carrier exists, falling back to the param start_time. Deferred spans opened by
+      close use the true pre_call time, not the async callback's wall time.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

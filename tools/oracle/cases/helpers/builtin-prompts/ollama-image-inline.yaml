@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "ollama-image-inline", "call": {"builtin_prompts": {"family": "ollama_image", "model": "data:image/png;base64,QQ==", "messages": []}}, "env": {}, "compare": {"ignore": []}}

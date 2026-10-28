@@ -1,0 +1,88 @@
+id: B3180
+title: Provider form catalog from AIML through AWS Textract
+description: >-
+  Extract and bundle the first six provider credential definitions from LiteLLM's
+  provider_create_fields.json: AIML, AI21, AI21_CHAT, AIOHTTP_OPENAI, Bedrock, and AWS_Textract.
+  Preserve every credential field exactly as LiteLLM defines them. Bedrock holds ten AWS fields
+  including aws_access_key_id, aws_secret_access_key, aws_session_token, aws_region_name,
+  aws_session_name, aws_profile_name, aws_role_name, aws_web_identity_token, api_key, and
+  aws_bedrock_runtime_endpoint. AWS_Textract holds eight AWS fields: aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_region_name, aws_session_name,
+  aws_profile_name, aws_role_name, and aws_web_identity_token; it lacks api_key and
+  aws_bedrock_runtime_endpoint. Store this fragment in crates/betterlite-server/assets/
+  so B3190 assembles the full catalog from all ten parts without rewriting shared files.
+scope:
+  paths:
+    - crates/betterlite-server/assets/provider_create_fields_aiml_textract.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L2-L299
+    why: The first six complete provider records with all credential fields and placeholders
+dod:
+  - text: The six provider records are extracted from LiteLLM verbatim, in source order.
+    proof: [records-extracted]
+  - text: Bedrock has all ten credential fields in the correct order.
+    proof: [bedrock-all-ten-fields]
+  - text: >-
+      AWS_Textract has all eight credential fields in the correct order: aws_access_key_id,
+      aws_secret_access_key, aws_session_token, aws_region_name, aws_session_name,
+      aws_profile_name, aws_role_name, aws_web_identity_token.
+    proof: [textract-fields-and-order]
+  - text: AIML's model placeholder is exactly "aiml/flux-pro/v1.1".
+    proof: [aiml-model-placeholder]
+  - text: The JSON file parses as a valid array of six provider objects.
+    proof: [provider-json-parses]
+checks:
+  optional: []
+  commands:
+    - id: records-extracted
+      why: The six provider records are missing or not byte-for-byte from LiteLLM
+      run: jq -e 'length == 6 and .[0].provider == "AIML" and .[5].provider == "AWS_Textract"' crates/betterlite-server/assets/provider_create_fields_aiml_textract.json
+    - id: bedrock-all-ten-fields
+      why: Bedrock is missing fields or they are in the wrong order
+      run: |
+        jq -e '.[4] | select(.provider == "Bedrock") |
+          .credential_fields | length == 10 and
+          .[0].key == "aws_access_key_id" and
+          .[1].key == "aws_secret_access_key" and
+          .[2].key == "api_key" and
+          .[3].key == "aws_session_token" and
+          .[4].key == "aws_region_name" and
+          .[5].key == "aws_session_name" and
+          .[6].key == "aws_profile_name" and
+          .[7].key == "aws_role_name" and
+          .[8].key == "aws_web_identity_token" and
+          .[9].key == "aws_bedrock_runtime_endpoint"' crates/betterlite-server/assets/provider_create_fields_aiml_textract.json
+    - id: textract-fields-and-order
+      why: AWS_Textract is missing fields, has them out of order, or lacks aws_web_identity_token
+      run: |
+        jq -e '.[5] | select(.provider == "AWS_Textract") |
+          .credential_fields | length == 8 and
+          .[0].key == "aws_access_key_id" and
+          .[1].key == "aws_secret_access_key" and
+          .[2].key == "aws_session_token" and
+          .[3].key == "aws_region_name" and
+          .[4].key == "aws_session_name" and
+          .[5].key == "aws_profile_name" and
+          .[6].key == "aws_role_name" and
+          .[7].key == "aws_web_identity_token"' crates/betterlite-server/assets/provider_create_fields_aiml_textract.json
+    - id: aiml-model-placeholder
+      why: AIML default_model_placeholder is not exactly "aiml/flux-pro/v1.1"
+      run: jq -e '.[0] | select(.provider == "AIML") | .default_model_placeholder == "aiml/flux-pro/v1.1"' crates/betterlite-server/assets/provider_create_fields_aiml_textract.json
+    - id: provider-json-parses
+      why: The file is not valid JSON or not an array of six providers
+      run: jq -e 'type == "array" and length == 6' crates/betterlite-server/assets/provider_create_fields_aiml_textract.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Any provider credential validation or network behavior.
+  - Displaying form fields to a user; this task only preserves LiteLLM's structured data.
+  - Any callable function; this is a data asset read by B3190's provider catalog loader.
+pitfalls:
+  - AWS_Textract's aws_web_identity_token field is present with label "AWS Web Identity Token", field_type "password", and tooltip about OIDC, exactly like Bedrock; this distinguishes it from Bedrock's extra api_key and aws_bedrock_runtime_endpoint fields.
+  - The six records must be an exact JSON array, not wrapped or prefixed, so B3190 can assemble fragments from all ten tasks without re-parsing or filtering each one.
+  - Preserve null placeholders and empty option lists exactly; missing fields in the JSON are not equivalent to fields with null values.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

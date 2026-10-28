@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-chat-exact-name
+call: {websearch_tool_records: {function: is_web_search_tool_chat_completion, tool: {name: litellm_web_search}}}
+env: {}
+compare: {ignore: []}

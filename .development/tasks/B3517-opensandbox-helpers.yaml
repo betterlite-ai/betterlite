@@ -1,0 +1,186 @@
+id: B3517
+title: OpenSandbox request helpers readiness and execution output
+description: >-
+  Build the lower OpenSandbox sandbox provider helpers independently of lifecycle orchestration in crates/betterlite-provider:
+  readiness polling with separate deadlines, endpoint recovery with 404/value-error retries, execution output limits,
+  and SSE/JSON result decoding. Preserve per-line SSE/JSON behavior rather than changing it into a different event
+  assembly policy. The _create_body function constructs the creation POST body with all metadata/env/resource fields
+  supported by the OpenSandbox API, conditionally adding network policy defaults and secure-access flags. Settings and
+  defaults come from injected config and environment lookups; full secret-manager dispatch is unresolved. Polling clocks
+  are injected native dependencies. Polling deadlines are separate for readiness-to-Running and execd-endpoint readiness,
+  with default values readiness 30 seconds, poll 0.2 seconds. Execution uses connect/write 30 seconds and no read/pool
+  timeout. Defaults: template opensandbox/code-interpreter:v1.1.0, entrypoint /opt/code-interpreter/code-interpreter.sh,
+  language python, CPU 1, memory 2Gi, execd port 44772, lifetime 300 seconds. API base is required; API key can be empty.
+  Default egress is deny unless allow_internet_access is exactly true. Output limit is 10 MiB per execution, counted as
+  UTF-8 line bytes excluding separators.
+scope:
+  paths:
+    - crates/betterlite-provider/src/opensandbox.rs
+    - crates/betterlite-provider/src/opensandbox/helpers.rs
+    - crates/betterlite-provider/src/opensandbox/helpers/**
+    - crates/betterlite-provider/fuzz/fuzz_targets/opensandbox_sse.rs
+    - crates/betterlite-provider/fuzz/corpus/opensandbox_sse/**
+    - tools/oracle/cases/sandbox/**
+    - tools/oracle/helpers/b3517.py
+    - tools/oracle/helpers/b3517/**
+    - tools/oracle/src/helpers/provider/b3517.rs
+    - tools/oracle/src/helpers/provider/b3517/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L41-L530
+    why: >-
+      Helper methods: _http (41-44), validate_environment (46-49), _wait_until_running (230-254),
+      _wait_for_execd_endpoint (256-289), _get_execd_endpoint (291-309), _post_code (311-327),
+      _api_key (329-334), _create_body (336-368), _default_resource_limits (370-375), _sandbox_state (377-385),
+      _as_str_dict (387-391), _api_base (393-398), _lifecycle_headers (400-405), _endpoint_base_url (407-413),
+      _as_handle (415-425), _parse_lines (427-455), _parse_sse_line (457-487), _normalize_result (489-494),
+      _normalize_error (496-512), _as_int (514-523), _first_non_none_value (525-530).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L270-L281
+    why: >-
+      The twelve OpenSandbox configuration and default constants: OPEN_SANDBOX_DEFAULT_TEMPLATE,
+      OPEN_SANDBOX_DEFAULT_ENTRYPOINT, OPEN_SANDBOX_DEFAULT_LANGUAGE, OPEN_SANDBOX_DEFAULT_TIMEOUT,
+      OPEN_SANDBOX_DEFAULT_CPU_LIMIT, OPEN_SANDBOX_DEFAULT_MEMORY_LIMIT, OPEN_SANDBOX_EXECD_PORT,
+      OPEN_SANDBOX_READY_TIMEOUT, OPEN_SANDBOX_POLL_INTERVAL, and related environment variable names.
+dod:
+  - text: >-
+      _http returns the supplied client if not None, otherwise constructs a new AsyncHTTPHandler through
+      get_async_httpx_client with llm_provider set to Sandbox.
+    proof: [opensandbox-tests]
+  - text: >-
+      validate_environment returns the supplied api_key if not None, otherwise resolves OPEN_SANDBOX_API_KEY_ENV_VAR
+      through the injected config lookup, and returns empty string if the variable is not set.
+    proof: [opensandbox-tests]
+  - text: >-
+      _api_base requires an api_base and raises with the OPEN_SANDBOX_API_BASE_ENV_VAR name if missing from both the parameter
+      and the config lookup, and removes trailing slashes from the result.
+    proof: [opensandbox-tests]
+  - text: >-
+      _lifecycle_headers returns a dict with Content-Type application/json, and conditionally includes OPEN-SANDBOX-API-KEY
+      header only when api_key is truthy.
+    proof: [opensandbox-tests]
+  - text: >-
+      _create_body constructs a dict with image.uri (template or default), entrypoint (parameter list or default),
+      timeout (parameter or 300), resourceLimits with cpu and memory defaults, and conditionally adds metadata, env,
+      resourceRequests, networkPolicy. Network policy defaults to {"defaultAction": "deny", "egress": []} when
+      allow_internet_access is not exactly true. When secure_access is true, sets secureAccess field to true.
+    proof: [opensandbox-tests, opensandbox-oracle]
+  - text: >-
+      _default_resource_limits returns cpu "1" and memory "2Gi".
+    proof: [opensandbox-tests]
+  - text: >-
+      _sandbox_state extracts the state field from status.state in the returned JSON dict and returns it as string,
+      or None if data is not a dict or status is not a dict.
+    proof: [opensandbox-tests]
+  - text: >-
+      _as_str_dict converts a value to a string-keyed dict with all values as strings, returning empty dict if input is
+      not a dict.
+    proof: [opensandbox-tests]
+  - text: >-
+      _endpoint_base_url normalizes endpoint by removing trailing slash, returns it as-is if it starts with http:// or https://,
+      otherwise prepends the protocol from api_base followed by :// .
+    proof: [opensandbox-tests]
+  - text: >-
+      _as_handle converts a container parameter to ContainerHandle, returning it as-is if already a ContainerHandle,
+      otherwise constructing a new handle with the string as id, provider opensandbox, domain from _api_base, and empty hidden_params.
+    proof: [opensandbox-tests]
+  - text: >-
+      _api_key returns the supplied api_key if not None, otherwise returns api_key from handle._hidden_params if present,
+      otherwise calls validate_environment.
+    proof: [opensandbox-tests]
+  - text: >-
+      _wait_until_running polls {api_base}/sandboxes/{sandbox_id} with supplied headers, extracts state from each response,
+      returns when state becomes "Running", raises TimeoutError with the timeout value if deadline passes, and raises ValueError
+      if state enters {"Failed", "Stopping", "Terminated"}.
+    proof: [opensandbox-tests, opensandbox-oracle]
+  - text: >-
+      _wait_for_execd_endpoint polls _get_execd_endpoint, retrying on 404 HTTPStatusError or ValueError, returns the tuple
+      (endpoint, headers) when successful, and raises TimeoutError with the timeout value if deadline passes without success.
+    proof: [opensandbox-tests, opensandbox-oracle]
+  - text: >-
+      _get_execd_endpoint GET {api_base}/sandboxes/{sandbox_id}/endpoints/{execd_port} with supplied headers and use_server_proxy param,
+      extracts endpoint and headers from the response, raises ValueError with sandbox_id if endpoint is missing or falsy.
+    proof: [opensandbox-tests, opensandbox-oracle]
+  - text: >-
+      _post_code POSTs to the supplied url with headers, body dict, timeout connect 30 and write 30 (no read/pool timeout),
+      streams the response, and returns lines from _read_capped_lines (supplied by B3516).
+    proof: [opensandbox-tests, opensandbox-oracle]
+  - text: >-
+      _parse_sse_line parses one SSE line: strips whitespace, ignores lines starting with :, event:, id:, retry:; extracts data
+      after data: prefix if present; returns None for empty, malformed JSON, or non-dict JSON; converts error responses with code/message
+      fields to error-type messages with normalized structure.
+    proof: [opensandbox-tests, opensandbox-fuzz-corpus]
+  - text: >-
+      _parse_lines calls _parse_sse_line on each line from the list, collects non-None messages, extracts first error-type and
+      first execution_count from their respective message types, concatenates stdout/stderr from text fields in type-tagged messages,
+      and collects results from result-type messages, returning CodeExecutionResult.
+    proof: [opensandbox-tests, opensandbox-fuzz-corpus]
+  - text: >-
+      _normalize_result extracts the results field if it's a dict, otherwise returns all message fields except type/timestamp/execution_count.
+    proof: [opensandbox-tests]
+  - text: >-
+      _normalize_error extracts error.ename/name, error.evalue/value, error.traceback from nested or top-level fields,
+      returning a dict with normalized name/value/traceback keys.
+    proof: [opensandbox-tests]
+  - text: >-
+      _as_int converts int values as-is, parses string integers, returns None for other types or unparseable strings.
+    proof: [opensandbox-tests]
+  - text: >-
+      _first_non_none_value returns the first non-None value from the supplied dict keys in order, defaulting to the supplied default.
+    proof: [opensandbox-tests]
+  - text: >-
+      The SSE/JSON decoders have cargo-fuzz targets at crates/betterlite-provider/fuzz/fuzz_targets/opensandbox_sse.rs,
+      seeded with oracle case response bodies, and replays_the_opensandbox_sse_corpus parses every file without a panic.
+    proof: [opensandbox-fuzz-corpus]
+  - text: Every mutant in endpoint parsing, error extraction, state checking and timeout calculation is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: opensandbox-tests
+      why: the OpenSandbox helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^opensandbox::helpers/)'
+    - id: opensandbox-fuzz-corpus
+      why: the opensandbox SSE fuzz target or its corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/opensandbox_sse.rs && test -n "$(ls -A crates/betterlite-provider/fuzz/corpus/opensandbox_sse)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_opensandbox_sse_corpus)'
+    - id: opensandbox-oracle
+      why: OpenSandbox sandbox cases do not match LiteLLM on readiness polling, endpoint discovery or execution output
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/
+oracle_cases:
+  - tools/oracle/cases/sandbox/opensandbox-create-running.yaml
+  - tools/oracle/cases/sandbox/opensandbox-create-waiting.yaml
+  - tools/oracle/cases/sandbox/opensandbox-create-with-secure-access.yaml
+  - tools/oracle/cases/sandbox/opensandbox-create-with-network-policy.yaml
+  - tools/oracle/cases/sandbox/opensandbox-endpoint-ready.yaml
+  - tools/oracle/cases/sandbox/opensandbox-endpoint-404-retry.yaml
+  - tools/oracle/cases/sandbox/opensandbox-endpoint-timeout.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-sse-output.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-sse-error.yaml
+  - tools/oracle/cases/sandbox/opensandbox-run-json-error.yaml
+deviations:
+  - what: >-
+      When OPEN_SANDBOX_API_KEY_ENV_VAR is missing and not available from os.environ, betterlite returns empty string,
+      whereas LiteLLM attempts get_secret_str to consult its configured secret manager.
+    why: Full secret-manager dispatch is unresolved; betterlite uses only the env var lookup supplied by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L46-L49
+  - what: >-
+      When metadata is supplied to acreate_sandbox, betterlite forwards it in the creation body, whereas some deployments
+      may not support or return this field.
+    why: The metadata field is conditionally passed through to match the underlying API; it does not affect sandbox execution.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L356-L357
+out_of_scope:
+  - OpenSandbox metadata beyond conditional pass-through to the API.
+  - Environment variable expansion or secret-manager full dispatch (get_secret_str beyond os.environ/); needs the unresolved B129 leaf.
+  - Retries, timeouts and connection pooling for HTTP operations; those come from AsyncHTTPHandler in betterlite-http (B173).
+  - The lifecycle methods acreate_sandbox, arun_code, adelete_sandbox and _ensure_handle; those belong to B3518.
+pitfalls:
+  - SSE parsing uses Python's strip() which removes all leading/trailing whitespace. A line with only whitespace becomes empty and is ignored.
+  - Nested functions of_type and nested error/count extraction operate on the messages tuple after filtering; do not introduce separate passes.
+  - The error-type message conversion (lines 478-486) happens when code and message fields are present but type is missing; this is a fallback for direct API error responses.
+  - Endpoint base URL construction checks the endpoint string first before consulting api_base's protocol; a fully qualified endpoint always wins.
+  - Deadline calculations use time.monotonic() for wall-clock immunity; never use time.time() or compare against actual clock values in tests.
+  - The SSE parser filters by stripping and checking line prefixes before calling json.loads, and must handle empty lines and comment-only lines gracefully.
+  - The 10 MiB limit is per execution, not per line; it counts cumulative UTF-8 bytes from _read_capped_lines (B3516).
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

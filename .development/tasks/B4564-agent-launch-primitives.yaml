@@ -1,0 +1,117 @@
+id: B4564
+title: Agent environment profiles and process handoff primitives
+description: >-
+  Build environment profiles, Codex provider arguments, credential verification and portable
+  process handoff. Preserve stdin reattachment, Windows batch quoting, exit-code propagation,
+  and the distinction between rejected keys and tolerated non-auth HTTP errors.
+
+  Each agent (Claude, Codex, OpenCode, pi) reads credentials from environment variables or
+  sync files; agent_profile maps a command to its display name and env-var families it
+  understands. build_agent_env wires base_url and api_key into the environment: ANTHROPIC_BASE_URL
+  and ANTHROPIC_AUTH_TOKEN for Claude Code, OPENAI_BASE_URL and OPENAI_API_KEY for Codex and
+  OpenCode, and LITELLM_PROXY_API_KEY for pi. ANTHROPIC_API_KEY is dropped so a stray key
+  cannot win over the bearer token. ENABLE_TOOL_SEARCH and CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY
+  default to true/1 only when not already set.
+
+  codex_proxy_provider returns a frozen mapping of the Codex provider config; _codex_proxy_args
+  emits the -c CLI overrides Codex needs since it ignores the env vars and instead dials
+  api.openai.com. agent_launch_args returns extra CLI args for an agent; only Codex needs them.
+
+  verify_proxy_key probes /v1/models with the key, distinguishing 401/403 rejections from
+  other HTTP errors and connection failures. AgentRunError is raised for unreachable proxies
+  and rejected keys only; other non-2xx responses are tolerated since the agent's own call
+  is the real test.
+
+  _windows_command routes batch shims (.cmd, .bat) through cmd.exe with proper quoting
+  (quote_for_cmd from B4560), since Windows' CreateProcess will not run shims directly.
+  AgentRunError is raised for arguments holding line breaks, which cmd would silently truncate.
+
+  _hand_off replaces this process with the agent on Unix (os.execvpe) and spawns a child
+  on Windows (subprocess.run), waiting on its exit code since exec has no replacement semantics
+  there. _restore_controlling_terminal reopens /dev/tty onto stdin before handoff if stdin
+  was detached during browser SSO login, so TUI agents like Claude Code get a live terminal.
+  _is_interactive returns whether stdin is a tty.
+
+  Own the shared LITELLM_PROXY_API_KEY_ENV constant at pi.py:24 so environment construction
+  and pi settings synchronization both reference it without a reverse data dependency.
+scope:
+  paths:
+    - tools/management-cli/src/agent_launch.rs
+    - tools/management-cli/src/agent_launch/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L79-L88
+    why: Own agent_profile; preserve the known-agent table and profile fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L91-L126
+    why: Own build_agent_env; preserve env-var precedence (left-alone when set), key removal and per-profile routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L129-L138
+    why: Own codex_proxy_provider; return a frozen mapping describing the Codex provider config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L141-L163
+    why: Own _codex_proxy_args; preserve the provider override pattern and http_headers field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L200-L201
+    why: Own _warn; echo diagnostic messages to stderr.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L210-L211
+    why: Own codex_config_path; return the Codex home/config.toml path with CODEX_HOME precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L214-L220
+    why: Own codex_declares_stop_hooks; detect hooks.Stop in config without failing on read/decode errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L247-L254
+    why: Own agent_launch_args; return the extra CLI args an agent needs via _PROXY_ARGS lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L653-L676
+    why: Own verify_proxy_key; distinguish 401/403 rejections from other HTTP errors and connection failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L683-L710
+    why: Own _windows_command; preserve batch shim routing through cmd.exe and line-break rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L713-L714
+    why: Own _spawn_and_wait; run a process as a child on Windows and return its exit code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L717-L724
+    why: Own _replace_process; execute the agent with os.execvpe on Unix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L727-L745
+    why: Own _hand_off; replace process on Unix, spawn and exit on Windows with its status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L748-L765
+    why: Own _restore_controlling_terminal; reopen /dev/tty onto stdin if detached after SSO login.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L824-L825
+    why: Own _is_interactive; return sys.stdin.isatty().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L24-L24
+    why: Own LITELLM_PROXY_API_KEY_ENV constant at the source; both environment construction and pi settings sync reference it.
+dod:
+  - text: >-
+      Cases agent_profile_known, agent_profile_unknown, anthropic_env_routing, anthropic_key_dropped,
+      anthropic_discovery_defaults, anthropic_discovery_preserved, openai_env_routing, litellm_env_routing,
+      codex_config_path_default, codex_config_path_home_override, codex_stop_hooks_detected,
+      codex_stop_hooks_absent, codex_stop_hooks_unreadable_config_returns_false, codex_provider_frozen_mapping,
+      codex_args_provider_override, proxy_401_rejected, proxy_403_rejected, proxy_other_tolerated,
+      proxy_unreachable_error, windows_shim_routed_through_cmd, windows_non_shim_direct, argument_with_linebreak_rejected,
+      unix_exec_process, windows_spawn_child, windows_exit_status_propagated, tty_undetached_and_attached,
+      tty_already_attached_unchanged and interactive_true_on_tty verify environment routing, key verification,
+      process handoff and terminal reattachment without network calls or subprocess invocation during setup.
+    proof: [behavior-tests]
+  - text: >-
+      The Rust implementation in tools/management-cli/src/agent_launch.rs preserves LiteLLM's env-var precedence
+      (ENABLE_TOOL_SEARCH and CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY left untouched when already set,
+      including empty strings), provider config structure (codex_proxy_provider returns immutable metadata with
+      correct field values), error classification (401/403 rejected vs other HTTP errors tolerated in verify_proxy_key),
+      Windows quoting integration (batch shims routed through cmd.exe with quote_for_cmd), and process-replacement
+      semantics (os.execvpe on Unix, subprocess.run on Windows with exit code propagation).
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The environment routing, key verification, quoting and terminal reattachment behavior is absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_launch::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B4565 owns prepare_pi and the pi-specific model discovery and sync at agents.py:171-197; it calls _hand_off to invoke the agent after preparation.
+  - B4566 owns the OpenCode model listing and provider config projection at agents.py:256-392; it consumes the env routing and profiles from this task but owns the chat-mode filtering and schema.
+  - B4568 owns Codex model catalog preparation, stop-hook installation and the orchestration at agents.py:223-239, 508-650, 768-821; it calls _hand_off and consumes the profiles and process primitives.
+  - B134 (the final shell and command registration) calls run_agent indirectly through B4568 and B4585; it never calls the environment or process functions directly.
+pitfalls:
+  - verify_proxy_key returns successfully for any HTTP response except 401 or 403, so other server errors (5xx, timeouts, DNS failures) do not block handoff.
+  - build_agent_env copies ENABLE_TOOL_SEARCH and CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY only when not already present, so an empty string in the environment (env var set to "") still counts as present.
+  - _windows_command checks only batch shim suffixes (.cmd, .bat), not whether the path actually exists or is executable.
+  - On Unix, _hand_off calls os.execvpe with the env dict, which replaces the entire environment; any env vars set locally after build_agent_env returns and before _hand_off is called will be lost.
+  - _restore_controlling_terminal silently returns when /dev/tty cannot be opened (e.g., in a container or headless environment), leaving stdin detached; callers should not assume success.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

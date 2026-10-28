@@ -1,0 +1,122 @@
+id: B4321
+title: Resolve Redis targets and coerce connection settings
+description: >-
+  Build typed connection settings with LiteLLM's explicit-target versus environment precedence, URL/Cluster/Sentinel
+  selection and numeric/boolean coercion. Parse startup_nodes, sentinel_nodes and service_name from environment and
+  JSON-encoded config; preserve URL-based direct connections when an explicit host/startup_nodes/sentinel_nodes is
+  not set; resolve the configuration path (URL, Cluster, Sentinel or direct), strip userinfo from URLs when a
+  credential_provider is used, and coerce numeric and boolean environment values to match their parameter types.
+  Keep IAM precedence (GCP before Azure before AWS) and TLS checks in the resolution path. Preserve distinct
+  sync/async constructor allowlists instead of forwarding unsupported client options to a connection.
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_connection_settings.rs
+    - crates/betterlite-redis/src/redis_connection_settings/**
+    - tools/oracle/cases/redis/**
+    - tools/oracle/helpers/b4321.py
+    - tools/oracle/helpers/b4321/**
+    - tools/oracle/src/helpers/redis/b4321.rs
+    - tools/oracle/src/helpers/redis/b4321/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L51-L196
+    why: Parameter allowlist functions that distinguish sync, async, URL and Cluster clients.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L203-L269
+    why: Type coercion for numeric and boolean parameters; every signature-recognized parameter with failed conversion is dropped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L509-L676
+    why: The main resolution logic that assembles kwargs from environment and config, resolves targets and applies credential precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L503-L507
+    why: URL userinfo stripping when credential_provider is used.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: Redis constants for timeouts and pool settings.
+dod:
+  - text: Every connection parameter that differs between sync and async clients is handled correctly; URL parameters do
+      not reach Cluster clients and Cluster-only parameters are filtered away from URL and direct connections.
+    proof:
+      - redis-target-tests
+  - text: Environment variables REDIS_CLUSTER_NODES and REDIS_SENTINEL_NODES are parsed as JSON when present.
+    proof:
+      - redis-target-tests
+  - text: When host, startup_nodes and sentinel_nodes are all absent from config and defaults, a ValueError with
+      the message "Either 'host' or 'url' must be specified for redis." is raised during settings resolution.
+    proof:
+      - redis-target-tests
+  - text: String values from environment (or Helm-set config) are coerced to int, float or bool according to their
+      parameter's type signature in the client's __init__, with failed conversions silently dropped for all signature-recognized
+      numeric/boolean parameters.
+    proof:
+      - redis-coercion-tests
+  - text: When an explicit config target (host, startup_nodes, sentinel_nodes) is set, REDIS_URL from environment is
+      not used.
+    proof:
+      - redis-precedence-tests
+  - text: When credential_provider is present, url userinfo is stripped; username and password are removed from kwargs.
+    proof:
+      - redis-credential-tests
+  - text: TLS is detected as true when startup_nodes present and ssl=true, or when url scheme is rediss://.
+    proof:
+      - redis-tls-tests
+  - text: The settings/URL/node-list boundary is fuzzed with valid and invalid input.
+    proof:
+      - redis-fuzz-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: redis-target-tests
+      why: target resolution (URL/Cluster/Sentinel/direct) fails or does not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(redis_target_resolution)'
+    - id: redis-coercion-tests
+      why: type coercion for numeric/boolean parameters fails or does not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(redis_coerce)'
+    - id: redis-precedence-tests
+      why: environment/config precedence is not respected
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(redis_precedence)'
+    - id: redis-credential-tests
+      why: credential_provider path handling is incorrect
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(redis_credential)'
+    - id: redis-tls-tests
+      why: TLS detection is incorrect
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(redis_tls)'
+    - id: redis-fuzz-corpus
+      why: the settings fuzz target or corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-redis/fuzz/fuzz_targets/redis_settings.rs && test -n "$(ls -A crates/betterlite-redis/fuzz/corpus/redis_settings)"
+        && cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(replays_the_redis_settings_corpus)'
+oracle_cases:
+  - tools/oracle/cases/redis/settings-direct.yaml
+  - tools/oracle/cases/redis/settings-url.yaml
+  - tools/oracle/cases/redis/settings-cluster.yaml
+  - tools/oracle/cases/redis/settings-sentinel.yaml
+  - tools/oracle/cases/redis/settings-env-precedence.yaml
+  - tools/oracle/cases/redis/settings-credential-provider.yaml
+  - tools/oracle/cases/redis/settings-coercion-numeric.yaml
+  - tools/oracle/cases/redis/settings-coercion-boolean.yaml
+  - tools/oracle/cases/redis/settings-missing-target.yaml
+  - tools/oracle/cases/redis/settings-tls-url-scheme.yaml
+  - tools/oracle/cases/redis/settings-tls-explicit.yaml
+deviations: []
+out_of_scope:
+  - Client construction (B4323 builds the clients; this task only resolves what arguments to pass).
+  - Credential provider construction (B4320 supplies credential functions; this task only routes to them).
+  - Secret manager lookups beyond environment and get_secret (G4 owns that contract).
+  - HTTP/WebSocket batching (B4331).
+  - Health probing and administration (B4326).
+pitfalls:
+  - Environment variables override explicit config only when the explicit config does not name a target; the logic
+    checks caller_named_a_target before preferring environment's REDIS_URL.
+  - Cluster and Sentinel resolution happen before URL resolution; a startup_nodes presence is checked before url is
+    processed.
+  - JSON parsing of REDIS_CLUSTER_NODES and REDIS_SENTINEL_NODES fails the whole config load with a specific error,
+    not silently missing defaults.
+  - The json library can parse both a list of dicts (Cluster nodes) and a list of tuples (Sentinel nodes); preserve
+    both paths and error messages.
+  - Type coercion silently drops invalid values for any signature-recognized numeric or boolean parameter on a failed
+    int()/float()/bool conversion; parameters absent from every client's __init__ signature pass through untouched.
+    The explicit_param_types table (max_connections, socket_timeout, socket_connect_timeout, socket_keepalive) only
+    picks which type to coerce to, overriding type inference from the parameter's default value.
+  - URL userinfo stripping happens only when credential_provider is not None, and after it is removed, password and
+    username kwargs are also deleted.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2
