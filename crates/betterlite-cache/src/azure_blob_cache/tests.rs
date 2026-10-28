@@ -14,6 +14,7 @@ use azure_core::http::request::Body;
 use azure_core::http::{AsyncRawResponse, HttpClient, Method, Request, StatusCode, Transport};
 use azure_core::time::{Duration as AzureDuration, OffsetDateTime};
 use betterlite_config::sections::azure_blob_cache::AzureBlobSettings;
+use futures_util::future::join_all;
 use tokio::runtime::Handle;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -311,14 +312,9 @@ async fn pipeline_awaits_every_write() {
     )
     .await
     .unwrap();
-    for index in 0_u32..20 {
-        assert!(
-            cache
-                .async_get_cache(&format!("key{index}"))
-                .await
-                .is_some()
-        );
-    }
+    let keys: Vec<String> = (0_u32..20).map(|index| format!("key{index}")).collect();
+    let results = join_all(keys.iter().map(|key| cache.async_get_cache(key))).await;
+    assert!(results.into_iter().all(|value| value.is_some()));
 }
 
 #[tokio::test]

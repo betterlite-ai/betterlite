@@ -852,6 +852,7 @@ dependencies = [
  "azure_core",
  "azure_storage_blob",
  "betterlite-config",
+ "futures-util",
  "rstest",
  "secrecy",
  "serde",

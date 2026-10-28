@@ -57,7 +57,8 @@ impl AzureBlobCache {
     }
 
     pub async fn async_set_cache(&self, key: &str, value: &CachedEntry) {
-        self.put(key, value, true).await;
+        let overwrite = true;
+        self.put(key, value, overwrite).await;
     }
 
     async fn put(&self, key: &str, value: &CachedEntry, overwrite: bool) {
@@ -154,26 +155,29 @@ impl AzureBlobCache {
 }
 
 fn is_container_already_exists(error: &AzureError) -> bool {
-    is_error(
-        error,
-        StatusCode::Conflict,
-        &StorageErrorCode::ContainerAlreadyExists,
+    if error.http_status() != Some(StatusCode::Conflict) {
+        return false;
+    }
+    matches!(
+        error.kind(),
+        ErrorKind::HttpResponse {
+            error_code: Some(code),
+            ..
+        } if code == StorageErrorCode::ContainerAlreadyExists.as_ref()
     )
 }
 
 fn is_blob_not_found(error: &AzureError) -> bool {
-    is_error(error, StatusCode::NotFound, &StorageErrorCode::BlobNotFound)
-}
-
-fn is_error(error: &AzureError, status: StatusCode, storage_code: &StorageErrorCode) -> bool {
-    error.http_status() == Some(status)
-        && matches!(
-            error.kind(),
-            ErrorKind::HttpResponse {
-                error_code: Some(code),
-                ..
-            } if code == storage_code.as_ref()
-        )
+    if error.http_status() != Some(StatusCode::NotFound) {
+        return false;
+    }
+    matches!(
+        error.kind(),
+        ErrorKind::HttpResponse {
+            error_code: Some(code),
+            ..
+        } if code == StorageErrorCode::BlobNotFound.as_ref()
+    )
 }
 
 #[derive(Debug, thiserror::Error)]

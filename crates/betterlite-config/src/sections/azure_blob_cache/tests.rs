@@ -12,7 +12,10 @@ fn loads_required_account_url_and_container() {
     .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: azure-blob\n    azure_account_url: https://example.blob.core.windows.net\n    azure_blob_container: responses\n")
     .expect("valid Azure Blob settings");
     let settings = config.sections.azure_blob_cache.unwrap();
-    assert_eq!(settings.account_url, "https://example.blob.core.windows.net");
+    assert_eq!(
+        settings.account_url,
+        "https://example.blob.core.windows.net"
+    );
     assert_eq!(settings.container, "responses");
 }
 
@@ -28,7 +31,10 @@ fn resolves_values_from_environment() {
         .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: azure-blob\n    azure_account_url: os.environ/ACCOUNT_URL\n    azure_blob_container: os.environ/CONTAINER\n")
         .expect("environment-backed settings");
     let settings = config.sections.azure_blob_cache.unwrap();
-    assert_eq!(settings.account_url, "https://example.blob.core.windows.net");
+    assert_eq!(
+        settings.account_url,
+        "https://example.blob.core.windows.net"
+    );
     assert_eq!(settings.container, "responses");
 }
 

@@ -58,23 +58,25 @@ fn convert_params<L>(params: CacheParams, lookup: &L) -> Result<AzureBlobSetting
 where
     L: EnvironmentLookup,
 {
-    let raw_account_url = params
-        .azure_account_url
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: "azure_account_url".to_owned(),
-            path: "litellm_settings.cache_params.azure_account_url".to_owned(),
-        })?;
+    let raw_account_url =
+        params
+            .azure_account_url
+            .ok_or_else(|| ConfigError::MissingEnvironment {
+                variable: "azure_account_url".to_owned(),
+                path: "litellm_settings.cache_params.azure_account_url".to_owned(),
+            })?;
     let account_url = resolve_string(
         raw_account_url,
         "litellm_settings.cache_params.azure_account_url",
         lookup,
     )?;
-    let raw_container = params
-        .azure_blob_container
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: "azure_blob_container".to_owned(),
-            path: "litellm_settings.cache_params.azure_blob_container".to_owned(),
-        })?;
+    let raw_container =
+        params
+            .azure_blob_container
+            .ok_or_else(|| ConfigError::MissingEnvironment {
+                variable: "azure_blob_container".to_owned(),
+                path: "litellm_settings.cache_params.azure_blob_container".to_owned(),
+            })?;
     let container = resolve_string(
         raw_container,
         "litellm_settings.cache_params.azure_blob_container",

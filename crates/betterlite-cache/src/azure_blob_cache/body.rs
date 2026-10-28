@@ -1,7 +1,10 @@
 use crate::s3_cache::entry::CachedEntry;
 
 pub fn decode_body(bytes: &[u8]) -> Result<CachedEntry, DecodeError> {
-    serde_json::from_slice(bytes).map_err(|source| DecodeError::Json { source })
+    match serde_json::from_slice(bytes) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(DecodeError::Json { source }),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
