@@ -83,6 +83,7 @@ pub mod otel;
 pub mod otel_provider_assembly;
 pub mod otlp_errors;
 pub mod otlp_normalize;
+pub mod otlp_payload;
 pub mod otlp_response;
 pub mod passthrough_handler;
 pub mod passthrough_stream_lifecycle;

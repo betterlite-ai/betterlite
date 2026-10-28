@@ -33,7 +33,7 @@ fn dispatch(operation: &str, body: &Value) -> crate::helpers::HelperResult {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
         ))),
-        "otlp_elision" => Ok(json!(betterlite_logging::otlp_normalize::truncate_payload(
+        "otlp_elision" => Ok(json!(betterlite_logging::otlp_payload::truncate_payload(
             body.get("value")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
