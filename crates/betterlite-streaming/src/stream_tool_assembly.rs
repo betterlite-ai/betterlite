@@ -7,17 +7,21 @@ mod tests;
 pub mod records;
 
 use records::{
-    AssemblyInput, AssemblyOutput, Choice, Chunk, CustomOutput, FunctionOutput, JsonValue,
-    ToolCall, ToolOutput,
+    AssemblyInput, AssemblyOutput, Choice, Chunk, CustomOutput, FunctionOutput, JsonNumber,
+    JsonValue, ToolCall, ToolOutput,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AssemblyError {
+    #[error("the function call input is empty")]
+    EmptyFunctionInput,
+    #[error("the first choice is missing")]
+    MissingFirstChoice,
     #[error("the first choice has no function call")]
     MissingFirstFunction,
     #[error("the first function call has no name")]
     MissingFirstFunctionName,
-    #[error("function call arguments are not a string")]
+    #[error("function call arguments cannot be joined")]
     InvalidArguments,
 }
 
@@ -115,7 +119,7 @@ fn append_fragments(
         ),
     ];
     for (candidate, field) in fragments_to_add {
-        if let Some(fragment) = candidate {
+        if let Some(fragment) = candidate.filter(|value| value.is_truthy()) {
             append_string(fragments, (key, field), fragment)?;
         }
     }
@@ -127,16 +131,20 @@ fn append_string(
     key: ((u32, u32), FragmentField),
     value: &JsonValue,
 ) -> Result<(), AssemblyError> {
+    if !value.is_truthy() {
+        return Ok(());
+    }
     match value {
+        JsonValue::Null => Ok(()),
         JsonValue::String(text) => {
             fragments.entry(key).or_default().push_str(text);
             Ok(())
         }
-        JsonValue::Null
-        | JsonValue::Bool(_)
+        JsonValue::Bool(true)
         | JsonValue::Number(_)
         | JsonValue::Array(_)
         | JsonValue::Object(_) => Err(AssemblyError::InvalidArguments),
+        _ => Ok(()),
     }
 }
 
@@ -187,13 +195,14 @@ impl ToolState {
         let candidate = tool
             .provider_specific_fields
             .as_ref()
-            .and_then(JsonValue::as_object)
-            .or_else(|| {
-                tool.function
-                    .as_ref()
-                    .and_then(|function| function.provider_specific_fields.as_ref())
-                    .and_then(JsonValue::as_object)
-            });
+            .filter(|value| value.is_truthy());
+        let candidate = candidate.or_else(|| {
+            tool.function
+                .as_ref()
+                .and_then(|function| function.provider_specific_fields.as_ref())
+                .filter(|value| value.is_truthy())
+        });
+        let candidate = candidate.and_then(JsonValue::as_object);
         if let Some(fields) = candidate.filter(|fields| !fields.is_empty()) {
             self.provider_fields
                 .get_or_insert_with(BTreeMap::new)
@@ -203,11 +212,11 @@ impl ToolState {
 }
 
 fn assemble_function(chunks: &[Chunk]) -> Result<AssemblyOutput, AssemblyError> {
-    let first = chunks.first().ok_or(AssemblyError::MissingFirstFunction)?;
+    let first = chunks.first().ok_or(AssemblyError::EmptyFunctionInput)?;
     let choice = first
         .choices
         .first()
-        .ok_or(AssemblyError::MissingFirstFunction)?;
+        .ok_or(AssemblyError::MissingFirstChoice)?;
     let call = choice
         .delta
         .function_call
@@ -242,6 +251,18 @@ fn append_function_arguments(arguments: &mut String, choice: &Choice) -> Result<
 }
 
 impl JsonValue {
+    fn is_truthy(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::Bool(value) => *value,
+            Self::Number(JsonNumber::Integer(value)) => *value != 0,
+            Self::Number(JsonNumber::Float(value)) => *value != 0.0,
+            Self::String(value) => !value.is_empty(),
+            Self::Array(value) => !value.is_empty(),
+            Self::Object(value) => !value.is_empty(),
+        }
+    }
+
     const fn as_object(&self) -> Option<&BTreeMap<String, Self>> {
         if let Self::Object(fields) = self {
             Some(fields)
