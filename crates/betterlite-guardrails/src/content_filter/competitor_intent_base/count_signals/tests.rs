@@ -16,5 +16,8 @@ fn signals(#[case] text: &str, #[case] patterns: Vec<String>, #[case] expected: 
 #[test]
 fn invalid_pattern() {
     let error = count_signals("better", &["[".to_owned()]).unwrap_err();
-    assert!(matches!(error, super::Error::Pattern { .. }));
+    assert!(matches!(
+        error,
+        super::CompetitorIntentError::Pattern { .. }
+    ));
 }

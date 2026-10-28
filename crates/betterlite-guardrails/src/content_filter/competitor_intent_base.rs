@@ -97,7 +97,7 @@ fn word_boundary_match(text: &str, token: &str) -> bool {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum CompetitorIntentError {
     #[error("competitor {competitor:?} uses token {token:?} already mapped to {existing:?}")]
     TokenCollision {
         competitor: String,
@@ -111,11 +111,11 @@ pub enum Error {
     },
 }
 
-fn count_signals(text: &str, patterns: &[String]) -> Result<usize, Error> {
+fn count_signals(text: &str, patterns: &[String]) -> Result<usize, CompetitorIntentError> {
     let matches = patterns.iter().map(|pattern| {
         Regex::new(&format!("(?i){pattern}"))
             .map(|regex| usize::from(regex.is_match(text)))
-            .map_err(|source| Error::Pattern { source })
+            .map_err(|source| CompetitorIntentError::Pattern { source })
     });
     matches.sum()
 }

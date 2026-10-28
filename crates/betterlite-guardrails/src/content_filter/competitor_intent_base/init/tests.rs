@@ -2,6 +2,7 @@
 
 use super::BaseCompetitorIntentChecker;
 use super::tests::config;
+use std::collections::BTreeMap;
 
 #[rstest::rstest]
 #[case::shared_alias("shared", " SHARED ", "shared")]
@@ -14,7 +15,7 @@ fn init_token_collision(
 ) {
     let mut settings = config();
     settings.competitors = vec!["Alpha".to_owned(), "Beta".to_owned()];
-    settings.competitor_aliases = std::collections::BTreeMap::from([
+    settings.competitor_aliases = BTreeMap::from([
         ("alpha".to_owned(), vec![first_alias.to_owned()]),
         ("beta".to_owned(), vec![second_alias.to_owned()]),
     ]);
@@ -24,7 +25,7 @@ fn init_token_collision(
         format!("competitor \"beta\" uses token {expected_token:?} already mapped to \"alpha\"")
     );
     assert!(
-        matches!(error, super::Error::TokenCollision { competitor, token, existing }
+        matches!(error, super::CompetitorIntentError::TokenCollision { competitor, token, existing }
         if competitor == "beta" && token == expected_token && existing == "alpha")
     );
 }

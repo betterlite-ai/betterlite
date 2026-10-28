@@ -1,7 +1,8 @@
 use super::configuration::Settings;
 use super::matching::{build_competitor_maps, find_matches, normalized_set, resolve_matches};
 use super::{
-    BaseCompetitorIntentChecker, Error, Meaning, has_words, normalize, word_boundary_match,
+    BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, has_words, normalize,
+    word_boundary_match,
 };
 use betterlite_config::sections::content_filter_records::overrides::{
     CompetitorIntentEvidenceEntry, CompetitorIntentResult,
@@ -9,7 +10,7 @@ use betterlite_config::sections::content_filter_records::overrides::{
 use std::collections::BTreeMap;
 
 impl BaseCompetitorIntentChecker {
-    pub fn new(config: &Settings) -> Result<Self, Error> {
+    pub fn new(config: &Settings) -> Result<Self, CompetitorIntentError> {
         let brand_self = config
             .brand_self
             .iter()

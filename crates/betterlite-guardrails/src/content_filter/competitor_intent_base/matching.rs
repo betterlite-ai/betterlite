@@ -1,7 +1,7 @@
 use super::configuration::Settings;
 use super::{
-    BaseCompetitorIntentChecker, Error, Meaning, OTHER_MEANING_THRESHOLD, normalize,
-    word_boundary_match,
+    BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, OTHER_MEANING_THRESHOLD,
+    normalize, word_boundary_match,
 };
 use betterlite_config::sections::content_filter_records::overrides::CompetitorIntentEvidenceEntry;
 use std::collections::btree_map::Entry;
@@ -79,7 +79,7 @@ pub(super) fn normalized_set(values: &[String]) -> BTreeSet<String> {
 
 pub(super) fn build_competitor_maps(
     config: &Settings,
-) -> Result<(BTreeMap<String, String>, BTreeSet<String>), Error> {
+) -> Result<(BTreeMap<String, String>, BTreeSet<String>), CompetitorIntentError> {
     let mut canonical_map = BTreeMap::new();
     let mut tokens = BTreeSet::new();
     for competitor in &config.competitors {
@@ -109,11 +109,11 @@ fn insert_canonical(
     canonical_map: &mut BTreeMap<String, String>,
     token: String,
     canonical: &str,
-) -> Result<(), Error> {
+) -> Result<(), CompetitorIntentError> {
     match canonical_map.entry(token) {
         Entry::Occupied(entry) => {
             if entry.get() != canonical {
-                return Err(Error::TokenCollision {
+                return Err(CompetitorIntentError::TokenCollision {
                     competitor: canonical.to_owned(),
                     token: entry.key().clone(),
                     existing: entry.get().clone(),
