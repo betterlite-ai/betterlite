@@ -56,11 +56,11 @@ env:
   LITELLM_RUST: 'false'
 compare:
   ignore:
-  - pointer: /3/error
+  - pointer: /value/3/error
     why: betterlite uses its own error wording
-  - pointer: /1/id
+  - pointer: /value/1/id
     why: 'Documented B2234 deviation: absent audio ID remains null as required by the task instead of
       an SDK-generated UUID'
-  - pointer: /2/id
+  - pointer: /value/2/id
     why: 'Documented B2234 deviation: absent audio ID remains null as required by the task instead of
       an SDK-generated UUID'

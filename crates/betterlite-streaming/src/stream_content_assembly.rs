@@ -79,22 +79,21 @@ pub enum ContentField {
 pub fn get_combined_thinking_content(
     chunks: &[Chunk],
 ) -> Result<Option<Vec<ThinkingBlock>>, AssemblyError> {
-    let mut state = ThinkingState::default();
-    for chunk in chunks {
-        for choice in &chunk.choices {
-            let Some(Some(ThinkingBlocks::List(blocks))) = choice
-                .delta
-                .as_ref()
-                .map(|delta| delta.thinking_blocks.as_ref())
-            else {
-                continue;
-            };
-            for block in blocks {
-                state.consume(block)?;
-            }
-        }
-    }
-    Ok(state.finish())
+    let mut blocks = chunks
+        .iter()
+        .flat_map(|chunk| &chunk.choices)
+        .filter_map(|choice| choice.delta.as_ref())
+        .filter_map(|delta| match delta.thinking_blocks.as_ref() {
+            Some(ThinkingBlocks::List(items)) => Some(items),
+            Some(ThinkingBlocks::Other(_)) | None => None,
+        })
+        .flatten();
+    blocks
+        .try_fold(ThinkingState::default(), |mut state, block| {
+            state.consume(block)?;
+            Ok(state)
+        })
+        .map(ThinkingState::finish)
 }
 
 #[derive(Default)]

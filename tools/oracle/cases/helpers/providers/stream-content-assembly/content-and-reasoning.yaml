@@ -36,7 +36,7 @@ call:
 env: {LITELLM_RUST: 'false'}
 compare:
   ignore:
-  - pointer: /2/error
+  - pointer: /value/2/error
     why: betterlite uses its own error wording
-  - pointer: /3/error
+  - pointer: /value/3/error
     why: betterlite uses its own error wording

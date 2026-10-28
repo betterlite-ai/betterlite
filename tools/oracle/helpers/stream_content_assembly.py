@@ -3,6 +3,8 @@ import binascii
 import time
 from collections.abc import Mapping, Sequence
 from typing import TypeAlias, TypedDict, cast
+from unittest.mock import patch
+from uuid import UUID
 
 from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 from litellm.types.llms.openai import ChatCompletionAudioDelta
@@ -63,7 +65,8 @@ def assemble_audio(chunks: list[AudioChunk], fixed_time: int) -> Json:
     original_time = time.time
     time.time = lambda: fixed_time
     try:
-        response = processor.get_combined_audio_content(chunks)
+        with patch("litellm.types.utils.uuid.uuid4", return_value=UUID(int=0)):
+            response = processor.get_combined_audio_content(chunks)
         return cast(Json, response.model_dump())
     except (TypeError, ValueError, binascii.Error) as error:
         return {"ok": False, "error_type": type(error).__name__, "error": str(error)}
