@@ -31,55 +31,74 @@ fn object_fields(
     value: &RawValue,
     path: &str,
 ) -> Result<BTreeMap<String, Box<RawValue>>, PriceFieldError> {
-    serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotObject {
-        path: path.to_owned(),
-        source,
-    })
-}
-
-fn optional_decimal(
-    object: &BTreeMap<String, Box<RawValue>>,
-    name: &str,
-    path: &str,
-) -> Result<Option<Decimal>, PriceFieldError> {
-    object
-        .get(name)
-        .map(|raw_value| decimal_at(path, raw_value))
-        .transpose()
+    let object =
+        serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotObject {
+            path: path.to_owned(),
+            source,
+        })?;
+    Ok(object)
 }
 
 fn provider_specific(value: &RawValue) -> Result<ProviderSpecificPricing, PriceFieldError> {
     let object = object_fields(value, "provider_specific_entry")?;
     Ok(ProviderSpecificPricing {
-        us: optional_decimal(&object, "us", "provider_specific_entry.us")?,
-        fast: optional_decimal(&object, "fast", "provider_specific_entry.fast")?,
+        us: object
+            .get("us")
+            .map(|raw_value| decimal_at("provider_specific_entry.us", raw_value))
+            .transpose()?,
+        fast: object
+            .get("fast")
+            .map(|raw_value| decimal_at("provider_specific_entry.fast", raw_value))
+            .transpose()?,
     })
 }
 
 fn metadata(value: &RawValue) -> Result<MetadataPricing, PriceFieldError> {
     let object = object_fields(value, "metadata")?;
     Ok(MetadataPricing {
-        per_hour: optional_decimal(
-            &object,
-            "original_pricing_per_hour",
-            "metadata.original_pricing_per_hour",
-        )?,
-        per_minute: optional_decimal(
-            &object,
-            "original_pricing_per_minute",
-            "metadata.original_pricing_per_minute",
-        )?,
+        per_hour: object
+            .get("original_pricing_per_hour")
+            .map(|raw_value| decimal_at("metadata.original_pricing_per_hour", raw_value))
+            .transpose()?,
+        per_minute: object
+            .get("original_pricing_per_minute")
+            .map(|raw_value| decimal_at("metadata.original_pricing_per_minute", raw_value))
+            .transpose()?,
     })
 }
 
 fn sample(value: &RawValue) -> Result<SamplePricing, PriceFieldError> {
     let object = object_fields(value, "sample_spec")?;
-    let get = |name: &str| optional_decimal(&object, name, &format!("sample_spec.{name}"));
-    let computer_use_input = get("computer_use_input_cost_per_1k_tokens")?;
-    let computer_use_output = get("computer_use_output_cost_per_1k_tokens")?;
-    let file_search_calls = get("file_search_cost_per_1k_calls")?;
-    let file_search_storage = get("file_search_cost_per_gb_per_day")?;
-    let vector_store_storage = get("vector_store_cost_per_gb_per_day")?;
+    let computer_use_input = object
+        .get("computer_use_input_cost_per_1k_tokens")
+        .map(|raw_value| {
+            decimal_at(
+                "sample_spec.computer_use_input_cost_per_1k_tokens",
+                raw_value,
+            )
+        })
+        .transpose()?;
+    let computer_use_output = object
+        .get("computer_use_output_cost_per_1k_tokens")
+        .map(|raw_value| {
+            decimal_at(
+                "sample_spec.computer_use_output_cost_per_1k_tokens",
+                raw_value,
+            )
+        })
+        .transpose()?;
+    let file_search_calls = object
+        .get("file_search_cost_per_1k_calls")
+        .map(|raw_value| decimal_at("sample_spec.file_search_cost_per_1k_calls", raw_value))
+        .transpose()?;
+    let file_search_storage = object
+        .get("file_search_cost_per_gb_per_day")
+        .map(|raw_value| decimal_at("sample_spec.file_search_cost_per_gb_per_day", raw_value))
+        .transpose()?;
+    let vector_store_storage = object
+        .get("vector_store_cost_per_gb_per_day")
+        .map(|raw_value| decimal_at("sample_spec.vector_store_cost_per_gb_per_day", raw_value))
+        .transpose()?;
     Ok(SamplePricing {
         computer_use_input,
         computer_use_output,

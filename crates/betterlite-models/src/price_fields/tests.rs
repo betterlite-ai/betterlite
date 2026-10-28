@@ -56,7 +56,7 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
     }
 }
 
-#[test]
+#[rstest]
 fn replays_the_price_fields_corpus() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/price_fields");
     for entry in fs::read_dir(directory).unwrap() {
