@@ -1,0 +1,111 @@
+id: B4565
+title: Proxy model discovery and pi settings synchronization
+description: >-
+  Build the pi module for betterlite-management-cli, translating LiteLLM's typed model
+  discovery and pi provider synchronization. Discover available models and optional limits
+  from the proxy's /v1/models and /model_group/info endpoints, then replace only the litellm
+  provider entry in pi's models.json file. Store the proxy API key as a $LITELLM_PROXY_API_KEY
+  reference instead of the key value itself, so a login token never lands on disk. Preserve
+  duplicate-mapping detection across model IDs and source models, keep limit-discovery failures
+  nonfatal (pi has built-in defaults), and validate the models.json file structure before
+  updating it. Atomically write the file via a temporary file to guard against torn writes.
+  The prepare_pi function orchestrates the sync and returns the --model arguments for agent
+  launch; it lives in the pi module and raises AgentRunError from B4564's error handling.
+scope:
+  paths:
+    - tools/management-cli/src/pi.rs
+    - tools/management-cli/src/pi/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L1-L259
+    why: The complete pi.py module implementation, covering model listing, limits discovery, file sync and provider block generation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L28-L73
+    why: ListingFailure enum, PiSyncError and ModelLimits data classes, ListedModel and _ModelList validation with unique_id_mappings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L86-L127
+    why: fetch_model_listing, fetch_model_ids and request exception handling with ListingFailure classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L132-L160
+    why: fetch_model_limits best-effort retrieval with nonfatal errors and model_group mapping to context windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L163-L197
+    why: models_json_path, _model_entry generation, provider_block with $LITELLM_PROXY_API_KEY_ENV reference and openai-completions API shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L203-L242
+    why: sync_models_json selective provider update with validation, atomic temp-file write and error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L171-L197
+    why: prepare_pi orchestration, model ID fetch, limit discovery and agent launch arguments; moved into the pi module for Rust.
+dod:
+  - text: >-
+      Model listing fetches GET /v1/models with Authorization Bearer header, parses a JSON response
+      with data array of {id, source_model?}, validates unique mappings, and returns a tuple of
+      deduped ListedModel objects or PiSyncError with status code and ListingFailure kind.
+    proof: [fetch-models]
+  - text: >-
+      Listing failures classify as unreachable (no response), rejected (401/403), bad_body (parse error),
+      empty (no models), or other (other HTTP status), and limits fetch does not fail even on 5xx or network error.
+    proof: [failure-classification]
+  - text: >-
+      models_json_path resolves pi's models.json from PI_CODING_AGENT_DIR or ~/.pi/agent/models.json,
+      and sync_models_json validates the file as a JSON object before updating the providers.litellm entry.
+    proof: [json-path]
+  - text: >-
+      The litellm provider entry includes baseUrl, api (openai-completions), apiKey ($LITELLM_PROXY_API_KEY),
+      and a models array with id, contextWindow and maxTokens from limits; the key is referenced, not stored.
+    proof: [provider-block]
+  - text: >-
+      sync_models_json atomically writes via a temporary file in the same directory and os.replace,
+      cleans up the temp file on write failure, and leaves the file intact if reading fails.
+    proof: [atomic-write]
+  - text: >-
+      prepare_pi fetches model IDs and limits, syncs models.json, returns (--model, provider/first-id) arguments,
+      and raises AgentRunError on empty listing or write failure.
+    proof: [prepare-pi]
+  - text: >-
+      Duplicate model IDs mapping to different source models are rejected with ValueError; a model without
+      source_model uses its id as the mapping target.
+    proof: [unique-mappings]
+checks:
+  optional: []
+  commands:
+    - id: pi-module-tests
+      why: pi module tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^pi::tests::/)'
+    - id: fetch-models
+      why: model listing does not fetch /v1/models with Bearer auth or validate unique mappings
+      run: grep -qF '/v1/models' tools/management-cli/src/pi.rs && grep -qF 'Authorization' tools/management-cli/src/pi.rs && grep -qF 'unique_id_mappings' tools/management-cli/src/pi.rs
+    - id: failure-classification
+      why: ListingFailure does not distinguish unreachable, rejected, bad_body, empty and other
+      run: grep -qE 'Unreachable|Rejected|BadBody|Empty|Other' tools/management-cli/src/pi.rs && grep -qF 'fetch_model_limits' tools/management-cli/src/pi.rs
+    - id: json-path
+      why: models_json_path does not resolve PI_CODING_AGENT_DIR or ~/.pi/agent, or sync does not validate file structure
+      run: grep -qF 'PI_CODING_AGENT_DIR' tools/management-cli/src/pi.rs && grep -qF '.pi/agent' tools/management-cli/src/pi.rs && grep -qF 'models.json' tools/management-cli/src/pi.rs
+    - id: provider-block
+      why: provider block does not include baseUrl, openai-completions API, $LITELLM_PROXY_API_KEY reference, or model limits
+      run: grep -qF 'baseUrl' tools/management-cli/src/pi.rs && grep -qF 'openai-completions' tools/management-cli/src/pi.rs && grep -qF 'LITELLM_PROXY_API_KEY_ENV' tools/management-cli/src/pi.rs
+    - id: atomic-write
+      why: sync does not use tempfile and atomic operations for writes or does not clean up on failure
+      run: grep -qF 'tempfile' tools/management-cli/src/pi.rs && grep -qE 'fs::rename|std::fs::rename' tools/management-cli/src/pi.rs
+    - id: prepare-pi
+      why: prepare_pi does not fetch IDs and limits, sync models.json, return model arguments or raise AgentRunError
+      run: grep -qF 'fn prepare_pi' tools/management-cli/src/pi.rs && grep -qF 'fetch_model_ids' tools/management-cli/src/pi.rs && grep -qF 'AgentRunError' tools/management-cli/src/pi.rs
+    - id: unique-mappings
+      why: unique_id_mappings validator does not reject duplicate IDs with different source models
+      run: grep -qF 'unique_id_mappings' tools/management-cli/src/pi.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Model sync in opencode and codex, owned by B4566 and B4567.
+  - The _PREPARERS mapping and dispatch, owned by B4568.
+  - Agent launch environment construction (build_agent_env), owned by B4564.
+  - AgentRunError definition and error categorization, owned by B4564.
+  - HTTP client implementation. Fetch is injected so tests provide a mock; the real implementation comes from the dependency crate.
+pitfalls:
+  - Pi has no built-in base-URL env vars (unlike Claude); the models.json file is the only way to point it at the proxy.
+  - The $LITELLM_PROXY_API_KEY reference is a pi convention, not a betterlite-invented syntax; pi expands it from build_agent_env's export.
+  - The source_model field in ListedModel is optional and defaults to the id for mapping purposes; duplicate detection checks both together.
+  - fetch_model_limits is best-effort and silently returns empty on any error (5xx, network, parsing); pi uses its built-in limits when absent.
+  - models_json_path resolves based on PI_CODING_AGENT_DIR env var or ~/.pi/agent; test fixtures must override the env to avoid using the real user's file.
+  - sync_models_json reads the entire JSON file and updates only the providers.litellm entry, leaving the rest intact; the file is assumed to be a JSON object.
+  - fs::rename is atomic on both POSIX and Windows; temporary file cleanup must happen in error paths to avoid orphaned files.
+  - prepare_pi is called by B4568 (via _PREPARERS dispatch) before agent handoff; it raises AgentRunError which B4568's caller handles.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

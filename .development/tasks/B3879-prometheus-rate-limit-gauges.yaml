@@ -1,0 +1,96 @@
+id: B3879
+title: Prometheus remaining rate limit gauges
+description: >-
+  Project legacy metadata and v3 rate-limit headers into remaining/allowed/used gauges and remove obsolete series when a configured limit disappears.
+  Fill only missing provider remaining values from the router's existing usage service.
+
+  Implement functions that track rate limit state across three scales: per-key-model limits (legacy metadata and v3 headers), per-key and per-team limits (v3 headers from rate limiters),
+  and deployment TPM/RPM limits (static model_info). When an upstream provider returns x-ratelimit-remaining headers, export those values as gauges. When headers are missing,
+  compute remaining = limit - used from the router's internal model-group usage cache, preserving the single-attempt constraint on router calls.
+
+  Extract integer values from v3 headers (reject booleans and non-integers), fall back to legacy per-key-model metadata variables (litellm-key-remaining-requests/tokens-{model_group}),
+  and default to sys.maxsize when neither source provides a value. When a limit disappears from configuration, remove the gauge series rather than leaving it at a stale value.
+  Use BoundedPrometheusSeriesTracker.remove_series for cleanup.
+
+  Scope paths include crates/betterlite-logging/src/prometheus_rate_limits.rs for rate-limit metric emission,
+  building on B3874's native collector interface, B3873's label factory and context, B3876's series removal and B254's StandardLoggingPayload records.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_rate_limits.rs
+    - crates/betterlite-logging/src/prometheus_rate_limits/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2049-L2221
+    why: "_get_remaining_from_v3_rate_limit_headers, _get_int_from_v3_rate_limit_headers, _set_key_and_team_rate_limit_metrics, _set_rate_limit_allowed_and_used_gauges, _set_virtual_key_rate_limit_metrics"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2938-L3064
+    why: "_set_deployment_tpm_rpm_limit_metrics, _async_set_router_remaining_metrics"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1079-L1127
+    why: "UserAPIKeyLabelValues construction and serialization"
+
+dod:
+  - text: "Implement get_remaining_from_v3_rate_limit_headers that extracts remaining value from x-ratelimit-model_per_key-remaining-{requests,tokens} headers, returning None if the header is missing or the payload is None."
+    proof: [behavior-tests]
+  - text: "Implement get_int_from_v3_rate_limit_headers that reads an integer value from additional_headers, explicitly rejecting booleans (isinstance check before int check) and non-integer types, returning None for any rejected or missing value."
+    proof: [behavior-tests]
+  - text: "Implement set_key_and_team_rate_limit_metrics that iterates over (api_key, team) descriptor pairs and both (requests, tokens) rate limit types, calling set_rate_limit_allowed_and_used_gauges for each combination."
+    proof: [behavior-tests]
+  - text: "Implement set_rate_limit_allowed_and_used_gauges that reads limit and remaining from v3 headers, constructs labels with rate_limit_type applied, and either sets allowed/used gauges or removes series when limit is missing."
+    proof: [behavior-tests]
+  - text: "Implement set_virtual_key_rate_limit_metrics that reads per-key-model remaining values from legacy metadata variables (litellm-key-remaining-requests/tokens-{model_group}), falls back to v3 headers, defaults to sys::MAX when both are None, and sets two gauges: one for requests, one for tokens."
+    proof: [behavior-tests]
+  - text: "Implement set_deployment_tpm_rpm_limit_metrics that reads tpm and rpm from model_info (with fallback to litellm_params), constructs UserAPIKeyLabelValues with deployment-level labels, and sets separate TPM and RPM gauges only when values are present."
+    proof: [behavior-tests]
+  - text: "Implement async_set_router_remaining_metrics that checks if x_ratelimit_remaining_tokens and x_ratelimit_remaining_requests are already present, fetches model-group usage from Router::get_remaining_model_group_usage if both are missing, and sets the two gauges with no error propagation (log and return on exception)."
+    proof: [behavior-tests]
+  - text: "Series removal for rate limits uses BoundedPrometheusSeriesTracker.remove_series when limit becomes None, passing the gauge and constructed label tuple."
+    proof: [behavior-tests]
+  - text: "v3 header extraction rejects both boolean True and False (not just falsy values); a header value that is a bool is treated as missing."
+    proof: [behavior-tests]
+  - text: "Virtual key rate limits default to sys::MAX, preserving LiteLLM's behavior for unlimited scenarios."
+    proof: [behavior-tests]
+  - text: "Deployment tpm/rpm metrics are constructed with litellm_model_name, model_id, api_base and api_provider labels from the deployment model_info and litellm_params."
+    proof: [behavior-tests]
+  - text: "Router-remaining fallback returns early without error propagation if llm_router is unavailable, Router::get_remaining_model_group_usage raises, or model_group is missing."
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: the rate-limit gauge functions do not exist, do not match LiteLLM behavior, or their tests fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_rate_limits::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Header value type checking explicitly rejects bool values before checking isinstance(int), since bool is a subclass of int in Rust/Python."
+    why: "LiteLLM rejects booleans first with explicit isinstance(value, bool) check; betterlite matches this by checking is_bool before type-checking as integer."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2084"
+
+out_of_scope:
+  - "Label construction and validation; B3873 provides the factory and context."
+  - "Gauge collector operations (labels, set, remove); B3874 provides the collector interface."
+  - "Series TTL and removal tracking; B3876 implements BoundedPrometheusSeriesTracker."
+  - "Router instantiation or caching; Router.get_remaining_model_group_usage is called with standard error handling."
+  - "Model group resolution; B3891 provides get_model_group_from_litellm_kwargs."
+  - "StandardLoggingPayload construction and typing; B254 provides the records."
+  - "UserAPIKeyLabelValues construction beyond what's needed for these metrics; B3870 owns the type."
+  - "Registering or initializing metrics; B3875 creates the PrometheusLogger instance with all metrics."
+
+pitfalls:
+  - "v3 header type checking must reject bool (using isinstance(value, bool)) before checking isinstance(value, int), since bool is a subclass of int."
+  - "Legacy metadata variables are model-group-specific (litellm-key-remaining-{requests,tokens}-{model_group}); always format the variable name with the resolved model_group."
+  - "When both limit and remaining are present, compute used = limit - remaining and set both allowed and used gauges; omit them only when limit is None."
+  - "Router.get_remaining_model_group_usage is async; _async_set_router_remaining_metrics must await it and never propagate exceptions (log and return instead)."
+  - "Deployment TPM/RPM limits are independent; only set the gauge if the value is Some (not None), so missing tpm does not prevent setting rpm."
+  - "Series removal passes a tuple of label values constructed from labelnames, not the dict of labels; use (labels.get(label) for label in labelnames)."
+  - "v3 headers for per-model limits use x-ratelimit-model_per_key-remaining-*, while per-key/team limits use x-ratelimit-{api_key,team}-{limit,remaining}-*; do not conflate."
+  - "sys::MAX (or sys.maxsize in Python) is the fallback when no limit is configured, not zero or an error."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

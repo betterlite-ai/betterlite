@@ -2,8 +2,8 @@ id: B4293
 milestone: M8 platform
 title: Compose memory and Redis cache reads and mutations
 status: todo
-depends_on: [B002, B2226, B390, B360, B393, B4290]
-file: null
+depends_on: [B002, B2226, B390, B360, B393, B4290, B4330, B4331]
+file: tasks/B4293-dual-cache-operations.yaml
 covers:
   - "litellm/caching/dual_cache.py"
 parent: B125

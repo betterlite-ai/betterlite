@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Rate-limit descriptor settlement and rollback
 status: todo
 depends_on: [B393, B3031, B3032, B3033, B3037]
-file: null
+file: tasks/B3034-rate-limit-settlement.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072

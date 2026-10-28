@@ -1,0 +1,140 @@
+id: B3341
+title: Video character calls
+description: >-
+  Build character create/get orchestration in betterlite-core::api, defaulting to OpenAI and
+  accepting a 600-second timeout. Implement four functions: avideo_create_character (async),
+  video_create_character (sync), avideo_get_character (async), and video_get_character (sync).
+
+  For create operations, accept name (required string) and video (required uploaded file).
+  For get operations, accept character_id (required string). Both sets accept optional
+  timeout (default 600s, fallback to B198's REQUEST_TIMEOUT when falsey), custom_llm_provider
+  (default "openai"), extra_headers, extra_query and extra_body. Accept mock_response
+  for testing: parse JSON strings and construct CharacterObject directly, skipping the provider.
+
+  Update logging with update_environment_variables per operation: request_params dict contains
+  only the primary arguments (name for create, character_id for get), litellm_call_id from kwargs,
+  and the provider. Set call_type to video_create_character or video_get_character. Both default
+  to OpenAI without decoding a character provider in this layer. Forward timeout and is_async
+  state to B3335's handlers via video_create_character_handler and video_get_character_handler.
+
+  Capture local_vars at function entry and use it in all exception paths. Wrap provider lookups:
+  when get_provider_video_config returns None, raise ValueError. Async functions run their sync
+  counterpart through loop.run_in_executor with context propagation (contextvars.copy_context
+  and ctx.run); handle both direct returns and coroutines. All exceptions map through
+  litellm.exception_type with model="", the custom_llm_provider, the original exception and
+  both completion and extra kwargs.
+
+  Build production code in betterlite-core; separate tests in tests.rs modules by domain
+  (character_creation_behaviors, character_get_behaviors). Consume B3330's CharacterObject
+  validation, B3332's get_provider_video_config selector, and B3335's multipart/GET handlers.
+  Reuse B198's DEFAULT_REQUEST_TIMEOUT constant, B247's update_environment_variables logging,
+  and B185/B186's exception_type dispatch.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_character_calls.rs
+    - crates/betterlite-core/src/api/video_character_calls/**
+    - crates/betterlite-core/src/lib.rs
+    - crates/betterlite-core/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/video-character-calls/**
+    - tools/oracle/fuzz/corpus/helper_case/video-character-calls-*
+    - tools/oracle/helpers/b3341.py
+    - tools/oracle/helpers/b3341/**
+    - tools/oracle/src/helpers/core_ops/b3341.rs
+    - tools/oracle/src/helpers/core_ops/b3341/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1085-L1137
+    why: Own avideo_create_character; preserve async context propagation and mock decoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1140-L1213
+    why: Own video_create_character; preserve logging, provider defaults and timeout fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1216-L1263
+    why: Own avideo_get_character; preserve async context propagation and mock decoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1266-L1337
+    why: Own video_get_character; preserve logging, provider defaults and timeout fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L107-L129
+    why: B3330 supplies CharacterObject record; validate responses through it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9690-L9725
+    why: B3332 supplies get_provider_video_config; use it for provider selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7736-L8017
+    why: B3335 supplies video_create_character_handler and video_get_character_handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: DEFAULT_REQUEST_TIMEOUT is 6000 seconds; fallback when timeout is falsey.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py
+    why: B247 supplies update_environment_variables; log after provider validation.
+
+dod:
+  - text: >-
+      Pure cases avideo_create_character_defaults_and_openai, video_create_character_mock_string_and_object,
+      video_create_character_openai_fallback, avideo_create_character_context_propagation,
+      avideo_get_character_defaults_and_openai, video_get_character_mock_string_and_object,
+      video_get_character_openai_fallback and avideo_get_character_context_propagation compare
+      exact signature, defaults, mock decoding and provider selection. Native cases
+      create_character_request_params, create_character_logging_updates, get_character_request_params
+      and get_character_logging_updates exercise all request preparation and logging paths.
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
+  - text: >-
+      Provider ValueError and handler invocation without decoding a character provider;
+      exception_type mapping with empty model, custom_llm_provider and all kwargs.
+    proof: [behavior-tests]
+  - text: >-
+      Falsey timeout uses DEFAULT_REQUEST_TIMEOUT, truthy timeout passes through; async
+      coroutines are awaited, direct responses are returned.
+    proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_character_calls::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3341.py && uv run --locked --project
+        tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+        tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/video-character-calls-*")"
+        && grep -rlq "video_character_calls" tools/oracle/fuzz/corpus/helper_case/video-character-calls-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/video-character-calls/create-character-signature.yaml
+  - tools/oracle/cases/helpers/video-character-calls/get-character-signature.yaml
+  - tools/oracle/cases/helpers/video-character-calls/create-openai-default.yaml
+  - tools/oracle/cases/helpers/video-character-calls/get-openai-default.yaml
+
+deviations: []
+
+out_of_scope:
+  - B3330 owns CharacterObject validation and optional request field declarations.
+  - B3332 owns video provider selection and ProviderConfigManager.get_provider_video_config.
+  - B3335 owns video_create_character_handler, video_get_character_handler and the multipart/GET
+    character transport implementation.
+  - B198 owns CoreSettings, DEFAULT_REQUEST_TIMEOUT and context propagation equivalents.
+  - B247 owns Logging.update_environment_variables and Logging.update_from_kwargs.
+  - B185 and B186 own exception_type dispatch and error mapping.
+  - Character provider decoding and proxy ID-based routing are owned separately (B3345).
+
+pitfalls:
+  - >-
+    The oracle helper for this task is pre-registered as b3341 in the core group.
+    Replace the stub Op in tools/oracle/src/helpers/core_ops/b3341.rs with an impl
+    Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3341.py.
+    The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task's to edit.
+  - Mock responses parse JSON strings on demand; construct CharacterObject before returning
+    to skip all provider calls when mock_response is present.
+  - Falsey timeout (zero or None) falls back to DEFAULT_REQUEST_TIMEOUT; the condition is
+    (timeout or DEFAULT_REQUEST_TIMEOUT), not an explicit None check.
+  - Both create and get default custom_llm_provider to "openai" and never decode it from
+    character_id; proxy-side ID decoding routes requests independently.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Lasso masking and Lakera PII primitives
 status: todo
 depends_on: [B3778]
-file: null
+file: tasks/B3779-lasso-lakera-masking.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py"
   - "litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py"
