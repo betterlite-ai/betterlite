@@ -49,6 +49,26 @@ uuid = { version = "1.28.0", default-features = false }
 [dev-dependencies]
 rstest = "=0.27.0"
 
+[[test]]
+name = "otlp_truncate_helper"
+path = "src/helpers/logging/otlp_normalization/otlp_truncate_helper.rs"
+
+[[test]]
+name = "otlp_elision_helper"
+path = "src/helpers/logging/otlp_normalization/otlp_elision_helper.rs"
+
+[[test]]
+name = "otlp_content_text_helper"
+path = "src/helpers/logging/otlp_normalization/otlp_content_text_helper.rs"
+
+[[test]]
+name = "otlp_ui_content_helper"
+path = "src/helpers/logging/otlp_normalization/otlp_ui_content_helper.rs"
+
+[[test]]
+name = "otlp_response_encoding_helper"
+path = "src/helpers/logging/otlp_normalization/otlp_response_encoding_helper.rs"
+
 [lints]
 workspace = true
 

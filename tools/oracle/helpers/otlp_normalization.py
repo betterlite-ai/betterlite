@@ -33,6 +33,51 @@ def content_text(value: Json) -> str:
     return "\n\n".join(text)
 
 
+def ui_content(raw: str) -> Json:
+    try:
+        value = cast(Json, json.loads(raw))
+    except json.JSONDecodeError:
+        return {"kind": "text", "text": raw}
+    values = value if isinstance(value, list) else [value] if isinstance(value, dict) else None
+    if values:
+        messages: list[Json] = []
+        valid = True
+        for raw_item in values:
+            if not isinstance(raw_item, dict):
+                valid = False
+                break
+            item = cast(dict[str, Json], raw_item)
+            calls_value = item.get("tool_calls")
+            calls = cast(list[Json], calls_value) if isinstance(calls_value, list) else []
+            if "content" not in item and not calls:
+                valid = False
+                break
+            role_name = str(item.get("role") or item.get("type") or "")
+            role = {
+                "system": "system", "user": "user", "human": "user", "assistant": "assistant",
+                "ai": "assistant", "tool": "tool",
+            }.get(role_name, "assistant" if calls else "user")
+            message: dict[str, Json] = {"role": role, "content": content_text(item.get("content"))}
+            if item.get("name") is not None:
+                message["name"] = item["name"]
+            if calls:
+                message["tool_calls"] = calls
+            messages.append(cast(Json, message))
+        if valid:
+            return {"kind": "messages", "messages": messages}
+    if isinstance(value, dict):
+        fields: list[Json] = [
+            cast(Json, {"key": key, "value": field_value(item)})
+            for key, item in value.items()
+        ]
+        return {"kind": "fields", "fields": fields}
+    return {"kind": "text", "text": value if isinstance(value, str) else raw}
+
+
+def field_value(item: Json) -> str:
+    return item if isinstance(item, str) else json.dumps(item, separators=(",", ":"))
+
+
 def run(value: dict[str, Json]) -> Json:
     operation, body = next(iter(value.items()))
     if not isinstance(body, dict):
@@ -41,10 +86,14 @@ def run(value: dict[str, Json]) -> Json:
         return truncate(str(body.get("value", "")))
     if operation == "otlp_content_text":
         return content_text(body.get("content"))
+    if operation == "otlp_elision":
+        return truncate(str(body.get("value", "")))
+    if operation == "otlp_ui_content":
+        return ui_content(str(body.get("value", "")))
     if operation == "otlp_response_encoding":
         error = body.get("error")
         if body.get("content_type") == "application/json":
-            body = json.dumps({"message": error or ""}) if error else "{}"
-            return {"body": body, "content_type": "application/json"}
-        return {"body": "", "content_type": "application/x-protobuf"}
+            body_text = json.dumps({"message": error or ""}).encode() if error else b"{}"
+            return {"body": list(body_text), "content_type": "application/json"}
+        return {"body": [], "content_type": "application/x-protobuf"}
     raise ValueError("unsupported OTLP helper operation")
