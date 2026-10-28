@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Coordinate interaction cancellation and settled deletion
 status: todo
 depends_on: [B3490, B3494, B3496, B185, B186, B198, B247]
-file: null
+file: tasks/B3500-interaction-lifecycle-calls.yaml
 covers:
   - "litellm/interactions/main.py"
 parent: B098

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Resolve encrypted SSO settings and field provenance
 status: todo
 depends_on: [B4140, B1600, B1608]
-file: null
+file: tasks/B4141-sso-config-resolution.yaml
 covers:
   - "litellm/proxy/config_resolvers/sso.py"
 parent: B120

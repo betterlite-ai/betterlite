@@ -1,0 +1,203 @@
+id: B3697
+title: Competitor intent classification and airline policy
+description: >-
+  Add competitor intent classification to betterlite-guardrails: implement the
+  run() method for generic classification with ambiguous token resolution,
+  and build the airline-specific AirlineCompetitorIntentChecker with travel/
+  location versus airline context disambiguation. Load major airlines from
+  competitor_intent/major_airlines.json, excluding the customer's brand_self
+  from the competitors list.
+
+  Extend crates/betterlite-guardrails/src/content_filter/mod.rs to export
+  both implementations and create crates/betterlite-guardrails/src/
+  content_filter/competitor_intent_airline.rs.
+
+  Implement the following from litellm/proxy/guardrails/guardrail_hooks/
+  litellm_content_filter/competitor_intent/:
+
+  - BaseCompetitorIntentChecker::_classify_ambiguous() method: returns
+  ("OTHER_MEANING", 0.5) for any token in the base implementation. Subclasses
+  override for industry-specific logic.
+
+  - BaseCompetitorIntentChecker::_find_matches(text) method: find normalized
+  competitor and alias tokens using word-boundary matching, mark ambiguous
+  tokens (in both competitor and location sets), return list of
+  (token, canonical, is_ambiguous) tuples with deduplication on
+  (token, canonical).
+
+  - BaseCompetitorIntentChecker::run(text) method: main entry point that
+  normalizes input, finds competitor matches, classifies ambiguous tokens,
+  detects comparison and domain language, applies confidence thresholds, and
+  returns CompetitorIntentResult with intent, confidence, entities,
+  signals, action_hint and evidence list. When no competitors found: check for
+  category_ranking (comparison + domain language, confidence 0.65) or return
+  non-competitor. When competitors found but below OTHER_MEANING_THRESHOLD
+  (0.65), treat as non-competitor. Otherwise classify intent: competitor_comparison
+  at >= threshold_high (0.70), possible_competitor_comparison at >=
+  threshold_medium (0.45), log_only at >= threshold_low (0.30), other below
+  that. Confidence is 0.75 with comparison language, 0.55 without, 0.65 for
+  category_ranking.
+
+  - AirlineCompetitorIntentChecker class: subclass that configures airline-
+  specific signals if not provided in config, loads major airlines dictionary
+  excluding brand_self, adds airline domain_words (airline, airlines, carrier),
+  and overrides _classify_ambiguous with airline context detection.
+
+  - load_competitors_excl_brand(brand_self) function: load major_airlines.json
+  from competitor_intent folder, parse match variants (pipe-separated), exclude
+  airlines whose id or match variants overlap with brand_self, return flat list
+  of match variants as competitor tokens. Return empty list if file missing or
+  parse fails.
+
+  - AirlineCompetitorIntentChecker::_classify_ambiguous(text, token) method:
+  check explicit competitor/other-meaning markers first (confidence 0.85 if
+  match). Treat operational-only signals (baggage/lounge/check-in/refund) with
+  no comparison as OTHER_MEANING (0.85). Score travel/location context signals
+  vs airline signals; return OTHER_MEANING when ratio >= 0.6 with confidence
+  min(0.9, 0.5 + 0.4 * ratio), COMPETITOR when ratio >= 0.6 with same formula,
+  else OTHER_MEANING (0.5). Operational-only signals plus comparison language
+  skip the OTHER_MEANING shortcut and fall through to ratio-based scoring.
+
+  - competitor_intent/__init__.py module: add AirlineCompetitorIntentChecker and
+  BaseCompetitorIntentChecker to the re-exports B3696 already made public
+  (normalize, text_for_entity_matching); keep exports-only, no logic.
+
+  Include crates/betterlite-guardrails/src/content_filter/
+  competitor_intent/major_airlines.json with 351 airline entries from LiteLLM
+  major_airlines.json.
+
+  Depend on betterlite-guardrails::content_filter::competitor_intent_base
+  (B3696) for BaseCompetitorIntentChecker::__init__, normalize(),
+  text_for_entity_matching(), _word_boundary_match(), _count_signals() and
+  _compile_marker(). Depend on betterlite-config for CompetitorIntentResult
+  and evidence types (B3690). Regex patterns must match LiteLLM's behavior
+  exactly: case-insensitive matching, word boundaries, overlapping matches
+  preserved. The module exports AirlineCompetitorIntentChecker and
+  BaseCompetitorIntentChecker alongside B3696's normalize and text_for_entity_matching.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_filter.rs
+    - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs
+    - crates/betterlite-guardrails/src/content_filter/competitor_intent/major_airlines.json
+    - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L108-L246
+    why: "BaseCompetitorIntentChecker._classify_ambiguous, _find_matches and run method implementations"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/airline.py#L116-L206
+    why: "load_competitors_excl_brand, AirlineCompetitorIntentChecker.__init__ and _classify_ambiguous implementations"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/airline.py#L25-L106
+    why: "Airline-specific signal patterns for other_meaning and competitor contexts"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/major_airlines.json
+    why: "Major airlines dictionary with id, match variants and tags"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/__init__.py
+    why: "Module exports for AirlineCompetitorIntentChecker and BaseCompetitorIntentChecker"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L11-L38
+    why: "CompetitorIntentResult, CompetitorIntentEvidenceEntry and CompetitorIntentType definitions"
+
+dod:
+  - text: "BaseCompetitorIntentChecker::_classify_ambiguous returns ('OTHER_MEANING', 0.5) for any token in the base implementation."
+    proof: [classify-ambiguous-base-tests]
+  - text: "_find_matches returns competitor and alias tokens as (token, canonical, is_ambiguous) tuples with deduplication on (token, canonical)."
+    proof: [find-matches-tests]
+  - text: "run() classifies text as competitor_comparison (confidence >= threshold_high), possible_competitor_comparison (>= threshold_medium), log_only (>= threshold_low), category_ranking (comparison + domain without competitors), or other."
+    proof: [run-method-tests]
+  - text: "Confidence is 0.75 when competitors are found and comparison language is present, 0.55 without comparison, and 0.65 for category_ranking."
+    proof: [run-confidence-tests]
+  - text: "Ambiguous tokens (in both competitor and location sets) are passed to _classify_ambiguous and classified as COMPETITOR or OTHER_MEANING."
+    proof: [run-ambiguous-tests]
+  - text: "Evidence entries are built with type (entity or signal), key (competitor, brand_self, comparison, category_ranking, other_meaning, other_meaning_default), match (matched substring) and value (resolved canonical form for entities)."
+    proof: [evidence-building-tests]
+  - text: "action_hint is resolved from policy or defaults (allow for non-competitor, reframe for category_ranking, log_only for intent=='log_only')."
+    proof: [action-hint-tests]
+  - text: "load_competitors_excl_brand loads major_airlines.json, parses match variants and excludes airlines overlapping with brand_self."
+    proof: [load-airlines-tests]
+  - text: "AirlineCompetitorIntentChecker initializes with airline-specific signals and domain_words if not provided in config."
+    proof: [airline-init-tests]
+  - text: "AirlineCompetitorIntentChecker::_classify_ambiguous detects explicit markers (confidence 0.85), operational-only signals (confidence 0.85), and scores location/airline context signals."
+    proof: [airline-classify-tests]
+  - text: "Airline context scoring: ratio >= 0.6 returns confidence min(0.9, 0.5 + 0.4 * ratio); total==0 returns OTHER_MEANING 0.5."
+    proof: [airline-scoring-tests]
+  - text: "All signal patterns (airline-specific OTHER_MEANING_SIGNALS, COMPETITOR_SIGNALS, OPERATIONAL_SIGNALS, COMPARISON_SIGNALS, explicit markers) match LiteLLM's patterns exactly."
+    proof: [signal-patterns-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: classify-ambiguous-base-tests
+      why: "BaseCompetitorIntentChecker::_classify_ambiguous tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(classify_ambiguous_base)/)'
+    - id: find-matches-tests
+      why: "_find_matches tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(find_matches)/)'
+    - id: run-method-tests
+      why: "run() method tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(run_non_competitor|run_competitor_comparison|run_possible_competitor|run_log_only|run_category_ranking)/)'
+    - id: run-confidence-tests
+      why: "Confidence calculation tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(confidence_with_comparison|confidence_without_comparison|category_ranking_confidence)/)'
+    - id: run-ambiguous-tests
+      why: "Ambiguous token classification tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(ambiguous_token)/)'
+    - id: evidence-building-tests
+      why: "Evidence entry building tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(evidence)/)'
+    - id: action-hint-tests
+      why: "action_hint resolution tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(action_hint)/)'
+    - id: load-airlines-tests
+      why: "load_competitors_excl_brand tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(load_competitors|exclude_brand)/)'
+    - id: airline-init-tests
+      why: "AirlineCompetitorIntentChecker initialization tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(airline_init)/)'
+    - id: airline-classify-tests
+      why: "AirlineCompetitorIntentChecker::_classify_ambiguous tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(airline_classify)/)'
+    - id: airline-scoring-tests
+      why: "Airline context signal scoring tests fail or do not exist"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter::competitor_intent_airline::(signal_scoring|operational_only)/)'
+    - id: signal-patterns-tests
+      why: "Airline signal patterns match LiteLLM exactly"
+      run: test -f crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs && grep -q "AIRLINE_OTHER_MEANING_SIGNALS\|AIRLINE_COMPETITOR_SIGNALS" crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs
+
+oracle_cases: []
+
+deviations:
+  - what: "The base _classify_ambiguous implementation returns ('OTHER_MEANING', 0.5) for any ambiguous token, treating all ambiguities as non-competitor by default. This conservative behavior is preserved from LiteLLM and prioritizes not blocking legitimate content."
+    why: "The base implementation provides a safe default; subclasses like AirlineCompetitorIntentChecker override with context-specific logic. Task description explicitly says 'do not correct that behavior based on the examples' description'."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L108-L112"
+  - what: "The OTHER_MEANING_THRESHOLD constant (0.65) is checked after _classify_ambiguous returns COMPETITOR with low confidence, allowing a competitor to be downgraded to non-competitor if its confidence is below the threshold."
+    why: "This two-stage classification (first by _classify_ambiguous, then by threshold check) matches LiteLLM's logic and prevents high-confidence ambiguities from being silently promoted."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L197-L206"
+
+out_of_scope:
+  - "Base text normalization and helper functions (belong to B3696)"
+  - "CompetitorIntentResult and detection type definitions (belong to B3690)"
+  - "Configuration loading and parsing from YAML (belongs to betterlite-config)"
+  - "Integration with the content filter executor (belongs to B105)"
+  - "Caching or performance optimization of competitor matching"
+  - "HTTP routes for competitor intent configuration updates"
+  - "Logging of competitor intent classification results (belongs to B3698)"
+
+pitfalls:
+  - "The normalize() call is from the base module (B3696), not repeated here; ensure the text passed to _classify_ambiguous is already normalized."
+  - "Evidence entries for OTHER_MEANING have match but no value field; CompetitorIntentEvidenceEntry from B3690 must handle this with Option<String> or serde skip."
+  - "Confidence values are rounded to 2 decimal places; use round(confidence * 100.0) / 100.0 or equivalent Rust method."
+  - "The other_meaning_default signal carries confidence as a formatted string (e.g. 'confidence 0.45'); store this in evidence.match, not as a separate field."
+  - "A token in both _competitor_tokens and _other_meaning_tokens is ambiguous (is_ambig=true); check the set intersection when populating the return list."
+  - "Major airlines JSON parsing must handle pipe-separated match variants; 'air arabia|g9' expands to ['air arabia', 'g9']; words in each variant must be split for exclusion checking."
+  - "Brand exclusion checks both the whole variant AND individual words within it; 'qatar airways' must exclude 'qatar' if brand_self contains 'qatar'."
+  - "Explicit markers (EXPLICIT_COMPETITOR_MARKER, EXPLICIT_OTHER_MEANING_MARKER) are compiled as regex patterns; compile_marker returns None on error, requiring proper null handling."
+  - "Operational-only signals (baggage, lounge, check-in, refund) only return OTHER_MEANING when comparison signals are absent; if comparison signals are present, fall through to ratio-based scoring."
+  - "Ratio-based scoring computes other_count / (other_count + comp_count); division by zero is prevented by checking total == 0 first."
+  - "The policy dict values are cast to CompetitorActionHint ('allow', 'reframe', 'refuse', 'log_only'); cast must be safe or use explicit enum conversion."
+  - "OTHER_MEANING_THRESHOLD is 0.65; EXPLICIT_COMPETITOR_MARKER and EXPLICIT_OTHER_MEANING_MARKER are regex constants; load_competitors_excl_brand loads the airline dictionary."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

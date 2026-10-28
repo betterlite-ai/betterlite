@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prometheus remaining rate limit gauges
 status: todo
 depends_on: [B3870, B3873, B3874, B3876, B3891, B847, B254]
-file: null
+file: tasks/B3879-prometheus-rate-limit-gauges.yaml
 covers:
   - "litellm/integrations/prometheus.py"
 parent: B111

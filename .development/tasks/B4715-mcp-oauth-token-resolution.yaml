@@ -1,0 +1,105 @@
+id: B4715
+title: MCP OAuth token refresh, resolution and invalidation
+description: >-
+  Build refresh and cache-aware access-token resolution above credential persistence and
+  identity-binding validation. Store and refresh per-user OAuth2 tokens, compare decrypted
+  mint-relevant server identity before purging stale tokens, retain BYOK rows when server
+  configuration changes, and preserve refresh/cache failure fallbacks. Implement seven
+  token-lifecycle functions. _decrypted_credential_field extracts a single decrypted field
+  from a credential dict. mcp_oauth_token_identity extracts the tuple of server fields
+  determining a minted token's validity. purge_user_oauth_credentials_for_server deletes
+  stored per-user tokens after a server's OAuth configuration changes, comparing decrypted
+  identity and filtering OAuth rows only while retaining BYOK. refresh_user_oauth_token POSTs to
+  the server's token_url with grant_type=refresh_token and stores the new credential. resolve_valid_user_oauth_token
+  checks expiry and refreshes if needed. resolve_user_oauth_access_token combines Redis
+  cache for non-binding enforced servers, DB lookup and refresh. _remaining_token_seconds
+  parses an expires_at ISO 8601 string and returns seconds-until-expiry or None.
+  The purge uses _decode_oauth_payload to distinguish OAuth rows from BYOK, so purged rows
+  share a single delete_many by (user_id, server_id) pair rather than blanket server_id.
+  Purging enumerated users while a concurrent write targets a new user survives as expected;
+  a re-auth completing for an already-enumerated user gets deleted with the stale row. The
+  refresh builds a token_request via build_upstream_oauth2_token_request (Q2), enforces
+  identity binding through enforce_oauth_identity_binding (Q3), stores via store_user_oauth_credential
+  with skip_byok_guard=True to skip the redundant find_unique, reads back via get_user_oauth_credential,
+  and retries on failure (returning None to signal re-auth). Resolve_valid_user_oauth_token
+  checks binding before testing grant state and refresh, using oauth_grant_state to detect
+  expiry within MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS (Q2). Resolve_user_oauth_access_token
+  reads the Redis cache only when binding is not enforced (Q3), calls get_token for binding-enforced
+  servers and credential_binding_matches to validate before returning (Q3), warms the cache with
+  _compute_per_user_token_ttl (Q2), and swallows all errors to None. Preserve the two refresh paths:
+  one inline from resolve_user_oauth_access_token when binding is enforced and the token is stale,
+  and one from resolve_valid_user_oauth_token when no binding is enforced. When a refresh fails or
+  the token is expired with no refresh_token, delete the Redis entry and return None.
+
+scope:
+  paths:
+  - crates/betterlite-db/src/oauth_token_resolution.rs
+  - crates/betterlite-db/src/oauth_token_resolution/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1737-L1833
+  why: >-
+    _decrypted_credential_field, mcp_oauth_token_identity and purge_user_oauth_credentials_for_server functions and decrypted identity comparison.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1836-L2098
+  why: >-
+    refresh_user_oauth_token, resolve_valid_user_oauth_token, resolve_user_oauth_access_token and _remaining_token_seconds functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1751-L1785
+  why: >-
+    The 12-field tuple defining token identity: url, spec_path, auth_type, oauth2_flow, issuer, authorization_url, token_url, registration_url, client_id (decrypted), client_secret (decrypted), scopes and upstream_resource.
+
+dod:
+- text: _decrypted_credential_field returns a field unchanged when non-string and decrypts string values with the global salt key, returning original on failure.
+  proof: [token-resolution-tests]
+- text: mcp_oauth_token_identity extracts the 12-field tuple correctly from server objects, comparing client_id and client_secret decrypted.
+  proof: [token-resolution-tests]
+- text: purge_user_oauth_credentials_for_server enumerates and filters OAuth rows only, deletes by (user_id, server_id) pair, retains BYOK rows, and invalidates each user's token cache.
+  proof: [token-resolution-tests]
+- text: refresh_user_oauth_token POSTs to token_url with grant_type=refresh_token, stores the new credential, and returns it on success or None on network/binding/validation failure.
+  proof: [token-resolution-tests]
+- text: resolve_valid_user_oauth_token checks binding before testing expiry and refreshing, and fetches prisma_client lazily only when refresh is needed.
+  proof: [token-resolution-tests]
+- text: resolve_user_oauth_access_token reads Redis cache (non-binding only), calls credential_binding_matches for binding-enforced servers, warms cache with computed TTL, and deletes stale entries.
+  proof: [token-resolution-tests]
+- text: _remaining_token_seconds parses expires_at ISO 8601 strings and returns seconds-until-expiry or None when absent/past/unparseable.
+  proof: [token-resolution-tests]
+
+checks:
+  optional: []
+  commands:
+  - id: token-resolution-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^oauth_token_resolution::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+- what: >-
+    On purge, a row inserted while the purge runs for a user not yet enumerated survives. A re-auth completing for an already-enumerated user is deleted along with the stale row.
+  why: The purge enumerates rows once, then deletes by (user_id, server_id) pair, creating a race window. Treating this as acceptable.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1809-L1832
+
+out_of_scope:
+- credential_binding_matches validates a credential against a binding proof. Its implementation is a missing callees Q3.
+- enforce_oauth_identity_binding verifies token response and binding proof construction. Its implementation is a missing callees Q3.
+- RefreshTokenPresented is the refresh-token proof type passed to enforce_oauth_identity_binding. Definition is a missing types Q1.
+- build_upstream_oauth2_token_request constructs token request headers/body given server and client auth method. Its implementation is a missing callees Q2.
+- mcp_per_user_token_cache.get, get_token, set and delete operations belong to Q3's token-store adapter.
+- _compute_per_user_token_ttl computes the per-server expiry buffer. Its implementation is a missing callees Q2.
+- manager invalidate_user_oauth_token_cache invalidates per-user tokens everywhere. Its implementation is a missing callees Q2.
+- proxy.utils.get_prisma_client_or_throw is the generic DB accessor. Its implementation is a missing callees Q6.
+- _load_stored_refresh_token loads a refresh token for identity binding validation. Implementation belongs to B4713, not this task.
+
+pitfalls:
+- mcp_oauth_token_identity must compare client_id and client_secret decrypted, since NaCl encryption uses a fresh nonce on every write.
+- purge_user_oauth_credentials_for_server filters by _decode_oauth_payload result, not by a credential type field; only OAuth rows are deleted.
+- refresh_user_oauth_token must skip the find_unique BYOK guard when storing, since the row is already OAuth2.
+- resolve_valid_user_oauth_token returns None on binding enforcement failure, signaling caller to clear and re-auth.
+- resolve_user_oauth_access_token must delete the Redis entry when refresh fails or token expires with no refresh_token, so next request does not reuse stale data.
+- When prefetched_creds is supplied to resolve_user_oauth_access_token, the Redis cache is bypassed entirely; never warm it from a DB read when prefetch is provided.
+- _remaining_token_seconds returns None for past/unparseable expires_at; a token with no expiry is treated as valid indefinitely.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
