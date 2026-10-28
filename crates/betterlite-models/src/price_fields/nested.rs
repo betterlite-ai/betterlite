@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as DeserializeError;
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -65,12 +66,15 @@ pub struct OffPeakPricing {
     pub windows: Option<Vec<PriceWindow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hours_utc: Option<HoursUtc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weekday_timezone: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PriceWindow {
     pub hours_utc: HoursUtc,
-    pub weekdays: Vec<Weekday>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekdays: Option<Vec<Weekday>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -80,11 +84,81 @@ pub enum HoursUtc {
     Many(Vec<String>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Weekday {
-    Name(String),
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+impl Weekday {
+    const fn number(self) -> u8 {
+        match self {
+            Self::Monday => 1,
+            Self::Tuesday => 2,
+            Self::Wednesday => 3,
+            Self::Thursday => 4,
+            Self::Friday => 5,
+            Self::Saturday => 6,
+            Self::Sunday => 7,
+        }
+    }
+
+    fn named(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "mon" | "monday" => Some(Self::Monday),
+            "tue" | "tues" | "tuesday" => Some(Self::Tuesday),
+            "wed" | "wednesday" => Some(Self::Wednesday),
+            "thu" | "thur" | "thurs" | "thursday" => Some(Self::Thursday),
+            "fri" | "friday" => Some(Self::Friday),
+            "sat" | "saturday" => Some(Self::Saturday),
+            "sun" | "sunday" => Some(Self::Sunday),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for Weekday {
+    fn serialize<Output>(&self, serializer: Output) -> Result<Output::Ok, Output::Error>
+    where
+        Output: Serializer,
+    {
+        serializer.serialize_u8(self.number())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WeekdayWire {
     Number(u8),
+    Name(String),
+}
+
+impl<'de> Deserialize<'de> for Weekday {
+    fn deserialize<Input>(deserializer: Input) -> Result<Self, Input::Error>
+    where
+        Input: serde::Deserializer<'de>,
+    {
+        match WeekdayWire::deserialize(deserializer)? {
+            WeekdayWire::Number(1) => Ok(Self::Monday),
+            WeekdayWire::Number(2) => Ok(Self::Tuesday),
+            WeekdayWire::Number(3) => Ok(Self::Wednesday),
+            WeekdayWire::Number(4) => Ok(Self::Thursday),
+            WeekdayWire::Number(5) => Ok(Self::Friday),
+            WeekdayWire::Number(6) => Ok(Self::Saturday),
+            WeekdayWire::Number(7) => Ok(Self::Sunday),
+            WeekdayWire::Number(number) => Err(DeserializeError::custom(format_args!(
+                "weekday {number} is not between 1 and 7"
+            ))),
+            WeekdayWire::Name(name) => Self::named(&name).ok_or_else(|| {
+                DeserializeError::custom(format_args!("{name:?} is not a recognized weekday name"))
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

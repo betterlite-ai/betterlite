@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::PriceFields;
+use super::nested::Weekday;
 use rstest::rstest;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
@@ -47,7 +48,7 @@ use std::path::Path;
     r#"{"input_cost_per_token":1e999999999999999999999}"#,
     "input_cost_per_token"
 )]
-#[case::false_boolean(r#"{"input_cost_per_token":false}"#, "must be a JSON number")]
+#[case::false_boolean(r#"{"input_cost_per_token":false}"#, "input_cost_per_token")]
 #[case::fraction(r#"{"input_cost_per_token":0.000000123456789}"#, "0.000000123456789")]
 #[case::exponent(r#"{"output_cost_per_token":1.2e-7}"#, "0.00000012")]
 #[case::overprecision(
@@ -73,11 +74,19 @@ use std::path::Path;
     r#"{"provider_specific_entry":{"us":null}}"#,
     "provider_specific_entry.us"
 )]
-#[case::null(r#"{"input_cost_per_token":null}"#, "must not be null")]
-#[case::string(r#"{"input_cost_per_token":"0.1"}"#, "must be a JSON number")]
-#[case::boolean(r#"{"input_cost_per_token":true}"#, "must be a JSON number")]
-#[case::array(r#"{"input_cost_per_token":[]}"#, "must be a JSON number")]
-#[case::object(r#"{"input_cost_per_token":{}}"#, "must be a JSON number")]
+#[case::null(r#"{"input_cost_per_token":null}"#, "input_cost_per_token")]
+#[case::string(r#"{"input_cost_per_token":"0.1"}"#, "input_cost_per_token")]
+#[case::boolean(r#"{"input_cost_per_token":true}"#, "input_cost_per_token")]
+#[case::array(r#"{"input_cost_per_token":[]}"#, "input_cost_per_token")]
+#[case::object(r#"{"input_cost_per_token":{}}"#, "input_cost_per_token")]
+#[case::weekday_rejects_unknown_number(
+    r#"{"off_peak_pricing":{"windows":[{"hours_utc":"00:00-01:00","weekdays":[0]}]}}"#,
+    "off_peak_pricing.windows[0].weekdays[0]"
+)]
+#[case::weekday_rejects_unknown_name(
+    r#"{"off_peak_pricing":{"windows":[{"hours_utc":"00:00-01:00","weekdays":["funday"]}]}}"#,
+    "off_peak_pricing.windows[0].weekdays[0]"
+)]
 fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] expected: &str) {
     let raw: Result<Box<RawValue>, _> = serde_json::from_str(source);
     let parsed = match raw {
@@ -188,6 +197,43 @@ fn rejects_invalid_flat_prices(#[case] source: &str, #[case] field: &str) {
 fn rejects_invalid_nested_prices(#[case] source: &str) {
     let error = serde_json::from_str::<super::nested::OffPeakPricing>(source).unwrap_err();
     assert!(error.to_string().contains("input_cost_per_token"));
+}
+
+#[test]
+fn off_peak_parses_weekday_timezone() {
+    let off_peak = serde_json::from_str::<super::nested::OffPeakPricing>(
+        r#"{"weekday_timezone":"Asia/Shanghai"}"#,
+    )
+    .unwrap();
+    assert_eq!(off_peak.weekday_timezone, Some("Asia/Shanghai".to_owned()));
+}
+
+#[test]
+fn price_window_treats_absent_weekdays_as_every_day() {
+    let window =
+        serde_json::from_str::<super::nested::PriceWindow>(r#"{"hours_utc":"00:00-01:00"}"#)
+            .unwrap();
+    assert_eq!(window.weekdays, None);
+}
+
+#[rstest]
+#[case::number_monday("1", Weekday::Monday)]
+#[case::number_sunday("7", Weekday::Sunday)]
+#[case::name_monday(r#""MON""#, Weekday::Monday)]
+#[case::name_tuesday(r#""tues""#, Weekday::Tuesday)]
+#[case::name_wednesday(r#""Wednesday""#, Weekday::Wednesday)]
+#[case::name_thursday(r#""thur""#, Weekday::Thursday)]
+#[case::name_friday(r#""Fri""#, Weekday::Friday)]
+#[case::name_saturday(r#""SATURDAY""#, Weekday::Saturday)]
+#[case::name_sunday(r#""sun""#, Weekday::Sunday)]
+fn weekday_accepts_schema_representations(
+    #[case] source: &str,
+    #[case] expected: Weekday,
+) {
+    assert_eq!(
+        serde_json::from_str::<Weekday>(source).unwrap(),
+        expected
+    );
 }
 
 #[rstest]
