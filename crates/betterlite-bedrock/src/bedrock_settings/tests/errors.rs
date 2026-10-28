@@ -1,4 +1,4 @@
-use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderErrorParts};
+use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 
 use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, HeaderValue, ResponseBody,
@@ -45,17 +45,12 @@ fn reply(headers: &[(&str, &str)], body: ResponseBody) -> ErrorReply {
 }
 
 pub(super) fn input(headers: Option<ErrorHeaders>, response: Option<ErrorReply>) -> ErrorInput {
-    let base = ProviderErrorParts {
+    ErrorInput {
         status_code: 413,
         message: "too large".to_owned(),
-        headers: None,
         request: None,
-        response: None,
         body: Some(serde_json::from_str(r#"{"Message": "too large", "count": 7}"#).unwrap()),
         status_code_is_synthesized: false,
-    };
-    ErrorInput {
-        base,
         headers,
         response,
     }
@@ -91,7 +86,7 @@ fn synthesizes_safe_mapping_headers() {
     assert_eq!(error.error.response.status_code, 413);
     assert!(!error.error.status_code_is_synthesized);
     assert_eq!(error.error.message, "too large");
-    assert_eq!(error.error.body, input(None, None).base.body);
+    assert_eq!(error.error.body, input(None, None).body);
     let latin_headers = mapping(vec![
         ("x", HeaderValue::Bytes(vec![0xff])),
         ("y", HeaderValue::Bytes(vec![0xc3, 0xa9])),
@@ -110,7 +105,7 @@ fn keeps_inputs_unchanged() {
     assert!(only_count.response_headers.is_empty());
     let http = pairs(&[("X-A", "1"), ("x-a", "2")]);
     let mut supplied = input(Some(ErrorHeaders::Http(http.clone())), None);
-    supplied.base.request = Some(request("https://request.example"));
+    supplied.request = Some(request("https://request.example"));
     let kept = BedrockError::try_from(supplied).unwrap();
     assert_eq!(
         (&kept.response_headers, kept.error.headers.as_ref()),

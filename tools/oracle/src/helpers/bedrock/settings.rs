@@ -6,7 +6,7 @@ use betterlite_bedrock::bedrock_settings::{
 };
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
-use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderErrorParts};
+use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -192,28 +192,17 @@ fn snapshot(aws: &AwsSettings) -> Result<Value, Failure> {
 }
 
 fn error(call: &ErrorCall) -> Result<Value, Failure> {
-    let built = build_error(call)?;
+    let built = BedrockError::try_from(error_input(call))?;
     serialize_error(&built)
 }
 
-fn build_error(call: &ErrorCall) -> Result<BedrockError, Failure> {
-    let input = error_input(call);
-    let built = BedrockError::try_from(input)?;
-    Ok(built)
-}
-
 fn error_input(call: &ErrorCall) -> ErrorInput {
-    let base = ProviderErrorParts {
+    ErrorInput {
         status_code: call.status_code,
         message: call.message.clone(),
-        headers: None,
         request: call.request.clone(),
-        response: None,
         body: call.body.clone(),
         status_code_is_synthesized: call.status_code_is_synthesized,
-    };
-    ErrorInput {
-        base,
         headers: call.headers.clone(),
         response: call.response.as_ref().map(|reply| ErrorReply {
             response: ErrorResponse {

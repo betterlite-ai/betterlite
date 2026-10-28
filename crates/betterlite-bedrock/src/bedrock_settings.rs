@@ -1,6 +1,11 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "the error body is a provider-addressed JSON payload that betterlite forwards unchanged"
+)]
+
 use std::{fmt, str};
 
-use betterlite_openai::error::{ErrorResponse, ProviderError, ProviderErrorParts};
+use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderError, ProviderErrorParts};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -37,7 +42,11 @@ pub struct ErrorReply {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ErrorInput {
-    pub base: ProviderErrorParts,
+    pub status_code: u16,
+    pub message: String,
+    pub request: Option<ErrorRequest>,
+    pub body: Option<serde_json::Map<String, serde_json::Value>>,
+    pub status_code_is_synthesized: bool,
     pub headers: Option<ErrorHeaders>,
     pub response: Option<ErrorReply>,
 }
@@ -88,11 +97,14 @@ impl TryFrom<ErrorInput> for BedrockError {
             };
             (None, headers, ResponseBody::Read(String::new()))
         };
-        // base.headers and base.response are replaced by the Bedrock views of the same inputs
         let parts = ProviderErrorParts {
+            status_code: input.status_code,
+            message: input.message,
             headers: input.headers.as_ref().map(text_headers),
+            request: input.request,
             response,
-            ..input.base
+            body: input.body,
+            status_code_is_synthesized: input.status_code_is_synthesized,
         };
         Ok(Self {
             error: ProviderError::from(parts),

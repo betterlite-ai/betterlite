@@ -51,7 +51,7 @@ pub enum SessionTagValue {
     Boolean(bool),
     Integer(i64),
     Unsigned(u64),
-    Decimal(f64),
+    Float(f64),
     Text(String),
     List(Vec<Self>),
     Mapping(IndexMap<String, Self>),

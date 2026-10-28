@@ -119,7 +119,7 @@ fn bedrock_settings_config_cases(
                         ("Key", SessionTagValue::Text("a".to_owned())),
                         ("Key2", SessionTagValue::Null),
                     ]),
-                    SessionTagValue::Decimal(2.5),
+                    SessionTagValue::Float(2.5),
                 ]))
             );
         }
