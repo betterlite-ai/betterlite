@@ -36,7 +36,11 @@ fn load(params: &str, environment: &[(&str, &str)]) -> Result<Vec<AwsSettings>, 
 fn check(read: Read, params: &str, environment: &[(&str, &str)], expected: [Option<&str>; 2]) {
     let settings = load(params, environment).unwrap();
     let actual = [read(&settings[0]), read(&settings[1])];
-    assert_eq!(actual.each_ref().map(Option::as_deref), expected, "{params}");
+    assert_eq!(
+        actual.each_ref().map(Option::as_deref),
+        expected,
+        "{params}"
+    );
 }
 
 fn entry(pairs: Vec<(&str, SessionTagValue)>) -> SessionTagValue {
@@ -75,12 +79,22 @@ fn bedrock_settings_config_cases(
     let environment = [(variable, "from-env"), ("CUSTOM", "referenced")];
     match source {
         Source::Deployment => {
-            check(read, &configured, &environment, [Some("configured"), Some("from-env")]);
+            check(
+                read,
+                &configured,
+                &environment,
+                [Some("configured"), Some("from-env")],
+            );
             check(read, &configured, &[], [Some("configured"), None]);
             let empty = format!(", {key}: ''");
             check(read, &empty, &environment, [Some(""), Some("from-env")]);
             let reference = format!(", {key}: os.environ/CUSTOM");
-            check(read, &reference, &environment, [Some("referenced"), Some("from-env")]);
+            check(
+                read,
+                &reference,
+                &environment,
+                [Some("referenced"), Some("from-env")],
+            );
         }
         Source::Environment => {
             check(read, "", &environment, [Some("from-env"), Some("from-env")]);
@@ -88,7 +102,12 @@ fn bedrock_settings_config_cases(
             check(read, "", &[(variable, "")], [Some(""), Some("")]);
         }
         Source::DeploymentOnly => {
-            check(read, &configured, &environment, [Some("Text(\"configured\")"), None]);
+            check(
+                read,
+                &configured,
+                &environment,
+                [Some("Text(\"configured\")"), None],
+            );
             check(read, ", aws_session_tags: null", &[], [None, None]);
             let invalid = ", aws_session_tags: [{Key: 1}, {Value: false}, {Key: a, Key2: ~}, 2.5]";
             assert_eq!(

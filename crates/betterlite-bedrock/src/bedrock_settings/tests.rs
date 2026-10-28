@@ -73,8 +73,10 @@ fn bedrock_settings_secret_safe_failure() {
         "fixture-web",
         "s\u{e9}cret",
     ];
-    for secret in secrets {
-        assert!(!rendered.contains(secret), "{secret} leaked: {rendered}");
-    }
+    let leaked: Vec<&str> = secrets
+        .into_iter()
+        .filter(|secret| rendered.contains(secret))
+        .collect();
+    assert!(leaked.is_empty(), "{leaked:?} leaked");
     assert!(rendered.contains("MISSING_SECRET"));
 }

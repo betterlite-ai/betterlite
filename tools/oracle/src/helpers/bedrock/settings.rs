@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 
 use betterlite_bedrock::bedrock_settings::{
-    BedrockError, ErrorHeaders, ErrorInput, ErrorReply, ResponseBody, error_response_text,
+    BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
+    error_response_text,
 };
-use betterlite_config::loader::ConfigLoader;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderErrorParts};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use thiserror::Error;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -49,6 +51,34 @@ pub(crate) struct Reply {
     body: ResponseBody,
 }
 
+#[derive(Debug, Error)]
+enum Failure {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
+    Header(#[from] HeaderError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+}
+
+#[derive(Serialize)]
+struct Config<'call> {
+    model_list: Vec<Deployment<'call>>,
+}
+
+#[derive(Serialize)]
+struct Deployment<'call> {
+    model_name: &'static str,
+    litellm_params: Params<'call>,
+}
+
+#[derive(Serialize)]
+struct Params<'call> {
+    model: &'static str,
+    #[serde(flatten)]
+    params: &'call Map<String, Value>,
+}
+
 #[derive(Serialize)]
 struct ErrorView<'error> {
     status_code: u16,
@@ -72,76 +102,65 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input {
+        let output = match input {
             Input::Settings(call) => settings(call),
             Input::Error(call) => error(call),
-        }
+        };
+        Ok(output?)
     }
 }
 
-fn failure(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
-fn settings(call: &SettingsCall) -> HelperResult {
-    let model_list = call
-        .deployments
-        .iter()
-        .map(|params| {
-            let mut litellm_params = params.clone();
-            litellm_params.insert("model".to_owned(), Value::from("bedrock/oracle"));
-            let mut deployment = Map::new();
-            deployment.insert("model_name".to_owned(), Value::from("oracle"));
-            deployment.insert("litellm_params".to_owned(), Value::Object(litellm_params));
-            Value::Object(deployment)
-        })
-        .collect();
-    let mut config = Map::new();
-    config.insert("model_list".to_owned(), Value::Array(model_list));
+fn settings(call: &SettingsCall) -> Result<Value, Failure> {
+    let model_list = call.deployments.iter().map(|params| Deployment {
+        model_name: "oracle",
+        litellm_params: Params {
+            model: "bedrock/oracle",
+            params,
+        },
+    });
+    let config = serde_json::to_string(&Config {
+        model_list: model_list.collect(),
+    })?;
     let lookup = call.environment.clone();
-    let loaded = ConfigLoader { lookup }.load(&Value::Object(config).to_string())?;
+    let loaded = ConfigLoader { lookup }.load(&config)?;
     let deployments = &loaded.sections.bedrock_settings.deployments;
     deployments.iter().map(snapshot).collect()
 }
 
-fn exposed(secret: Option<&SecretString>) -> Option<&str> {
-    secret.map(ExposeSecret::expose_secret)
-}
-
-fn snapshot(aws: &AwsSettings) -> HelperResult {
-    let fields = [
-        ("aws_access_key_id", exposed(aws.access_key_id.as_ref())),
-        ("aws_secret_access_key", exposed(aws.secret_access_key.as_ref())),
-        ("aws_session_token", exposed(aws.session_token.as_ref())),
-        ("aws_region_name", aws.region_name.as_deref()),
-        ("aws_session_name", aws.session_name.as_deref()),
-        ("aws_profile_name", aws.profile_name.as_deref()),
-        ("aws_role_name", aws.role_name.as_deref()),
-        ("aws_web_identity_token", exposed(aws.web_identity_token.as_ref())),
-        ("aws_sts_endpoint", aws.sts_endpoint.as_deref()),
-        ("aws_external_id", aws.external_id.as_deref()),
-        ("aws_role_arn", aws.role_arn.as_deref()),
-        ("aws_web_identity_token_file", aws.web_identity_token_file.as_deref()),
-        ("aws_bearer_token_bedrock", exposed(aws.bearer_token.as_ref())),
+fn snapshot(aws: &AwsSettings) -> Result<Value, Failure> {
+    let secrets = [
+        ("aws_access_key_id", &aws.access_key_id),
+        ("aws_secret_access_key", &aws.secret_access_key),
+        ("aws_session_token", &aws.session_token),
+        ("aws_web_identity_token", &aws.web_identity_token),
+        ("aws_bearer_token_bedrock", &aws.bearer_token),
     ];
-    let mut object = fields
+    let texts = [
+        ("aws_region_name", &aws.region_name),
+        ("aws_session_name", &aws.session_name),
+        ("aws_profile_name", &aws.profile_name),
+        ("aws_role_name", &aws.role_name),
+        ("aws_sts_endpoint", &aws.sts_endpoint),
+        ("aws_external_id", &aws.external_id),
+        ("aws_role_arn", &aws.role_arn),
+        ("aws_web_identity_token_file", &aws.web_identity_token_file),
+    ];
+    let mut object = secrets
         .into_iter()
+        .map(|(name, value)| (name, value.as_ref().map(ExposeSecret::expose_secret)))
+        .chain(
+            texts
+                .into_iter()
+                .map(|(name, value)| (name, value.as_deref())),
+        )
         .map(|(name, value)| (name.to_owned(), value.map_or(Value::Null, Value::from)))
         .collect::<Map<_, _>>();
-    let tags = serde_json::to_value(&aws.session_tags)
-        .map_err(|error| failure("TypeError", error.to_string()))?;
+    let tags = serde_json::to_value(&aws.session_tags)?;
     object.insert("aws_session_tags".to_owned(), tags);
     Ok(Value::Object(object))
 }
 
-fn error(call: &ErrorCall) -> HelperResult {
+fn error(call: &ErrorCall) -> Result<Value, Failure> {
     let base = ProviderErrorParts {
         status_code: call.status_code,
         message: call.message.clone(),
@@ -154,10 +173,16 @@ fn error(call: &ErrorCall) -> HelperResult {
     let input = ErrorInput {
         base,
         headers: call.headers.clone(),
-        response: call.response.as_ref().map(Reply::error_reply),
+        response: call.response.as_ref().map(|reply| ErrorReply {
+            response: ErrorResponse {
+                status_code: reply.status_code,
+                request: reply.request.clone(),
+            },
+            headers: reply.headers.clone(),
+            body: reply.body.clone(),
+        }),
     };
-    let built = BedrockError::try_from(input)
-        .map_err(|error| failure("UnicodeEncodeError", error.to_string()))?;
+    let built = BedrockError::try_from(input)?;
     let view = ErrorView {
         status_code: built.error.status_code,
         status_code_is_synthesized: built.error.status_code_is_synthesized,
@@ -172,19 +197,24 @@ fn error(call: &ErrorCall) -> HelperResult {
         },
         body: built.error.body.as_ref(),
     };
-    serde_json::to_value(view).map_err(|error| failure("TypeError", error.to_string()))
+    Ok(serde_json::to_value(view)?)
 }
 
-impl Reply {
-    fn error_reply(&self) -> ErrorReply {
-        ErrorReply {
-            response: ErrorResponse {
-                status_code: self.status_code,
-                request: self.request.clone(),
-            },
-            headers: self.headers.clone(),
-            body: self.body.clone(),
-        }
+impl From<Failure> for Box<HelperError> {
+    fn from(failure: Failure) -> Self {
+        let class = match &failure {
+            Failure::Config(_) => "ConfigError",
+            Failure::Header(_) => "UnicodeEncodeError",
+            Failure::Json(_) => "TypeError",
+        };
+        Self::new(HelperError {
+            class: class.to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: failure.to_string(),
+        })
     }
 }
 
