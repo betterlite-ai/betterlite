@@ -1,6 +1,5 @@
 use rust_decimal::Decimal;
-use serde::de::Error as DeserializeError;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -84,30 +83,20 @@ pub enum HoursUtc {
     Many(Vec<String>),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, serde_repr::Serialize_repr)]
+#[serde(try_from = "WeekdayWire")]
+#[repr(u8)]
 pub enum Weekday {
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
+    Monday = 1,
+    Tuesday = 2,
+    Wednesday = 3,
+    Thursday = 4,
+    Friday = 5,
+    Saturday = 6,
+    Sunday = 7,
 }
 
 impl Weekday {
-    const fn number(self) -> u8 {
-        match self {
-            Self::Monday => 1,
-            Self::Tuesday => 2,
-            Self::Wednesday => 3,
-            Self::Thursday => 4,
-            Self::Friday => 5,
-            Self::Saturday => 6,
-            Self::Sunday => 7,
-        }
-    }
-
     fn named(name: &str) -> Option<Self> {
         match name.to_ascii_lowercase().as_str() {
             "mon" | "monday" => Some(Self::Monday),
@@ -122,15 +111,6 @@ impl Weekday {
     }
 }
 
-impl Serialize for Weekday {
-    fn serialize<Output>(&self, serializer: Output) -> Result<Output::Ok, Output::Error>
-    where
-        Output: Serializer,
-    {
-        serializer.serialize_u8(self.number())
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum WeekdayWire {
@@ -138,12 +118,19 @@ enum WeekdayWire {
     Name(String),
 }
 
-impl<'de> Deserialize<'de> for Weekday {
-    fn deserialize<Input>(deserializer: Input) -> Result<Self, Input::Error>
-    where
-        Input: serde::Deserializer<'de>,
-    {
-        match WeekdayWire::deserialize(deserializer)? {
+#[derive(Debug, thiserror::Error)]
+pub enum WeekdayError {
+    #[error("weekday {0} is not between 1 and 7")]
+    OutOfRange(u8),
+    #[error("{0:?} is not a recognized weekday name")]
+    UnknownName(String),
+}
+
+impl TryFrom<WeekdayWire> for Weekday {
+    type Error = WeekdayError;
+
+    fn try_from(wire: WeekdayWire) -> Result<Self, Self::Error> {
+        match wire {
             WeekdayWire::Number(1) => Ok(Self::Monday),
             WeekdayWire::Number(2) => Ok(Self::Tuesday),
             WeekdayWire::Number(3) => Ok(Self::Wednesday),
@@ -151,12 +138,11 @@ impl<'de> Deserialize<'de> for Weekday {
             WeekdayWire::Number(5) => Ok(Self::Friday),
             WeekdayWire::Number(6) => Ok(Self::Saturday),
             WeekdayWire::Number(7) => Ok(Self::Sunday),
-            WeekdayWire::Number(number) => Err(DeserializeError::custom(format_args!(
-                "weekday {number} is not between 1 and 7"
-            ))),
-            WeekdayWire::Name(name) => Self::named(&name).ok_or_else(|| {
-                DeserializeError::custom(format_args!("{name:?} is not a recognized weekday name"))
-            }),
+            WeekdayWire::Number(number) => Err(WeekdayError::OutOfRange(number)),
+            WeekdayWire::Name(name) => {
+                let day = Self::named(&name);
+                day.ok_or(WeekdayError::UnknownName(name))
+            }
         }
     }
 }
