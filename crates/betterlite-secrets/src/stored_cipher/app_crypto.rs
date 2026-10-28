@@ -1,15 +1,10 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "AppCrypto's envelope carries an arbitrary caller JSON payload (the SQS integration), with no app-specific shape of its own"
-)]
-
-use aes_gcm::aead::{Aead as _, Payload};
+use aes_gcm::aead::{Aead as _, Payload as AeadPayload};
 use aes_gcm::{Aes256Gcm, KeyInit as _};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_redact::structured::Payload as Json;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use thiserror::Error;
 
 const KEY_LEN: usize = 32;
@@ -87,7 +82,7 @@ impl AppCrypto {
 
     pub fn encrypt_json(
         &self,
-        data: &Value,
+        data: &Json,
         aad: Option<&[u8]>,
     ) -> Result<Envelope, AppCryptoError> {
         let mut nonce = [0_u8; NONCE_LEN];
@@ -102,7 +97,7 @@ impl AppCrypto {
         &self,
         envelope: &Envelope,
         aad: Option<&[u8]>,
-    ) -> Result<Value, AppCryptoError> {
+    ) -> Result<Json, AppCryptoError> {
         let (nonce, sealed) = decode_envelope(envelope)?;
         let plaintext = self.transcode(nonce, &sealed, aad, Direction::Decrypt)?;
         serde_json::from_slice(&plaintext).map_err(|source| AppCryptoError::JsonDecode { source })
@@ -116,7 +111,7 @@ impl AppCrypto {
         direction: Direction,
     ) -> Result<Vec<u8>, AppCryptoError> {
         let aes_nonce = aes_gcm::Nonce::from(nonce);
-        let payload = aad_payload(msg, aad);
+        let payload = aead_payload(msg, aad);
         let sealed = match direction {
             Direction::Encrypt => self.cipher.encrypt(&aes_nonce, payload),
             Direction::Decrypt => self.cipher.decrypt(&aes_nonce, payload),
@@ -125,9 +120,12 @@ impl AppCrypto {
     }
 }
 
-fn aad_payload<'input>(msg: &'input [u8], aad: Option<&'input [u8]>) -> Payload<'input, 'input> {
+fn aead_payload<'input>(
+    msg: &'input [u8],
+    aad: Option<&'input [u8]>,
+) -> AeadPayload<'input, 'input> {
     let aad_bytes = aad.unwrap_or(b"");
-    Payload {
+    AeadPayload {
         msg,
         aad: aad_bytes,
     }
