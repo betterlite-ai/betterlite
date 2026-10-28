@@ -1,16 +1,13 @@
-use std::collections::BTreeMap;
-
-use serde_json::Value;
-
 use crate::case::{Compare, Ignore};
 use crate::http::Response;
 use crate::mock::ProviderRequest;
-use crate::multipart_oracle;
 
 pub(crate) mod helper;
+pub(crate) mod multipart;
 mod value;
 
-use value::{first_difference, remove_pointer, value_bytes};
+use multipart::{captured_parts, first_part_difference, masked_boundary};
+use value::{first_difference, remove_pointer};
 
 use helper::HelperOutput;
 
@@ -205,17 +202,19 @@ fn compare_provider_request(
             "provider request targets differ",
         ));
     }
-    if left.body != right.body {
-        let pointer = multipart_difference(&left.headers, &left.body, &right.headers, &right.body)
-            .map_or_else(
-                || format!("/upstream/{index}/body"),
-                |part| format!("/upstream/{index}{part}"),
-            );
+    // two decoded captures compare part by part, so only their random boundaries may differ
+    let body_pointer = match (captured_parts(left), captured_parts(right)) {
+        (Some(left_parts), Some(right_parts)) => first_part_difference(&left_parts, &right_parts)
+            .map(|part| format!("/upstream/{index}{part}")),
+        (Some(_) | None, _) => (left.body != right.body).then(|| format!("/upstream/{index}/body")),
+    };
+    if let Some(pointer) = body_pointer {
         return Err(difference(&pointer, "provider request bodies differ"));
     }
     for header in &compare.upstream_headers {
         let name = header.to_ascii_lowercase();
-        if left.headers.get(&name) != right.headers.get(&name) {
+        let left_value = left.headers.get(&name).map(|value| masked_boundary(value));
+        if left_value != right.headers.get(&name).map(|value| masked_boundary(value)) {
             return Err(difference(
                 &format!("/upstream/{index}/headers/{name}"),
                 "provider header values differ",
@@ -223,48 +222,4 @@ fn compare_provider_request(
         }
     }
     Ok(())
-}
-
-fn multipart_difference(
-    left_headers: &BTreeMap<String, String>,
-    left: &Value,
-    right_headers: &BTreeMap<String, String>,
-    right: &Value,
-) -> Option<String> {
-    let left_content_type = left_headers.get("content-type")?;
-    let right_content_type = right_headers.get("content-type")?;
-    if !left_content_type.starts_with("multipart/form-data")
-        || !right_content_type.starts_with("multipart/form-data")
-    {
-        return None;
-    }
-    let left_bytes = value_bytes(left)?;
-    let right_bytes = value_bytes(right)?;
-    let left_parts =
-        multipart_oracle::capture::decode_multipart_capture(left_content_type, &left_bytes).ok()?;
-    let right_parts =
-        multipart_oracle::capture::decode_multipart_capture(right_content_type, &right_bytes)
-            .ok()?;
-    let count = left_parts.len().max(right_parts.len());
-    for index in 0..count {
-        let Some(left_part) = left_parts.get(index) else {
-            return Some(format!("/parts/{index}"));
-        };
-        let Some(right_part) = right_parts.get(index) else {
-            return Some(format!("/parts/{index}"));
-        };
-        if left_part.name != right_part.name {
-            return Some(format!("/parts/{index}/name"));
-        }
-        if left_part.filename != right_part.filename {
-            return Some(format!("/parts/{index}/filename"));
-        }
-        if left_part.content_type != right_part.content_type {
-            return Some(format!("/parts/{index}/content_type"));
-        }
-        if left_part.body != right_part.body {
-            return Some(format!("/parts/{index}/body"));
-        }
-    }
-    None
 }

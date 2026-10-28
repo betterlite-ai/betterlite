@@ -2,21 +2,6 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-pub(super) fn value_bytes(value: &Value) -> Option<Vec<u8>> {
-    match value {
-        Value::String(text) => Some(text.as_bytes().to_vec()),
-        Value::Array(bytes) => bytes
-            .iter()
-            .map(Value::as_u64)
-            .collect::<Option<Vec<_>>>()?
-            .into_iter()
-            .map(u8::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .ok(),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => None,
-    }
-}
-
 pub(super) fn remove_pointer(value: &mut Value, pointer: &str) {
     if pointer.is_empty() {
         *value = Value::Null;
