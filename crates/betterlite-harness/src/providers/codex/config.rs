@@ -25,9 +25,10 @@ const MANAGED_CONFIG_KEYS: [&str; 8] = [
 ];
 
 pub(super) const fn mismatch() -> HarnessError {
+    let harness = Harness::Codex;
     HarnessError::OptionsMismatch {
         given: "CodexOptions.config",
-        harness: Harness::Codex,
+        harness,
         expected: "valid Codex configuration",
     }
 }
@@ -74,36 +75,36 @@ pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessErr
 }
 
 pub(super) fn toml_string(value: &str) -> Result<String, HarnessError> {
-    serde_json::to_string(value).map_err(|_encode_err| mismatch())
+    let encoded = serde_json::to_string(value);
+    encoded.map_err(|_encode_err| mismatch())
 }
 
 pub(super) fn schema_value(schema: &JsonObject) -> Value {
-    Value::Object(
-        schema
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
-    )
+    let entries = schema
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()));
+    Value::Object(entries.collect())
 }
 
 pub(super) fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError> {
-    config
-        .iter()
-        .map(|(key, value)| {
-            let first = key.split('.').next().unwrap_or_default();
-            if key.is_empty() || key.contains('=') || MANAGED_CONFIG_KEYS.contains(&first) {
-                return Err(mismatch());
-            }
-            Ok(format!("{}={}", key, toml_value(value, 0)?))
-        })
-        .collect()
+    let mut overrides = Vec::with_capacity(config.len());
+    for (key, value) in config {
+        let first = key.split('.').next().unwrap_or_default();
+        if key.is_empty() || key.contains('=') || MANAGED_CONFIG_KEYS.contains(&first) {
+            return Err(mismatch());
+        }
+        overrides.push(format!("{}={}", key, toml_value(value, 0)?));
+    }
+    Ok(overrides)
 }
 
 pub(super) fn pairs(flag: &str, values: &[String]) -> Vec<String> {
-    values
-        .iter()
-        .flat_map(|value| [flag.to_owned(), value.clone()])
-        .collect()
+    let mut flagged = Vec::with_capacity(values.len().saturating_mul(2));
+    for value in values {
+        flagged.push(flag.to_owned());
+        flagged.push(value.clone());
+    }
+    flagged
 }
 
 pub(super) fn permission_args<S>(context: &SessionContext<S>, resumed: bool) -> Vec<String>

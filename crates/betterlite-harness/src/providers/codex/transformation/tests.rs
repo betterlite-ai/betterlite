@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{CodexHarnessConfig, CodexStreamState};
 use crate::context::{GatewayTarget, SessionContext, SessionSettings, TurnOutcome};
@@ -10,7 +10,7 @@ use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, ReasoningE
 use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
 use crate::sandbox::local::LocalSandbox;
 use crate::transformation::BaseCLIHarnessConfig as _;
-use crate::types::{Harness, JsonObject};
+use crate::types::{Harness, JsonObject, PermissionMode};
 
 #[test]
 fn empty_toml_key_is_quoted() {
@@ -149,7 +149,18 @@ fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
             api_base: "http://localhost:1234/".to_owned(),
             api_key: secrecy::SecretString::from("private-token"),
         }),
-        ..SessionSettings::default()
+        api_key: None,
+        api_base: None,
+        instructions: None,
+        skills: Vec::new(),
+        disable_tools: Vec::new(),
+        permissions: PermissionMode::Full,
+        on_approval: None,
+        output_schema: None,
+        max_turns: None,
+        timeout: None,
+        metadata: JsonObject::new(),
+        options: None,
     };
     let context = SessionContext {
         harness: Harness::Codex,
@@ -257,8 +268,11 @@ fn structured_output_and_failures() {
         .unwrap();
     assert!(setup.files.contains_key("output_schema.json"));
     let mut state = CodexStreamState {
+        thread_id: None,
         final_text: r#"{"answer":"yes"}"#.to_owned(),
-        ..CodexStreamState::default()
+        error: None,
+        failed: false,
+        started: BTreeSet::new(),
     };
     let response = CodexHarnessConfig
         .transform_turn_response(&context, &state, 0, &[])
