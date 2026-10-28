@@ -16,6 +16,17 @@ fn stream_tool_assembly_cases(#[case] input: &str, #[case] expected: &str) {
 }
 
 #[test]
+fn legacy_function_join_null_first_name_succeeds() {
+    let input: AssemblyInput = serde_json::from_str(
+        r#"{"function":{"chunks":[{"choices":[{"delta":{"function_call":{"name":null,"arguments":"a"}}}]}]}}"#,
+    )
+    .unwrap();
+
+    let actual = serde_json::to_string(&assemble(&input).unwrap()).unwrap();
+    assert_eq!(actual, r#"{"name":null,"arguments":"a"}"#);
+}
+
+#[test]
 fn legacy_function_join_missing_arguments_is_attribute_error() {
     let input: AssemblyInput = serde_json::from_str(
         r#"{"function":{"chunks":[{"choices":[{"delta":{"function_call":{"name":"first"}}}]}]}}"#,

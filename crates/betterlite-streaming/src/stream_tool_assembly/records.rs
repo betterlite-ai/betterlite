@@ -83,7 +83,7 @@ pub type JsonNumber = serde_json::Number;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FunctionOutput {
-    pub name: String,
+    pub name: Option<String>,
     pub arguments: String,
 }
 

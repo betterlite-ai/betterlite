@@ -19,8 +19,6 @@ pub enum AssemblyError {
     MissingFirstChoice,
     #[error("the first choice has no function call")]
     MissingFirstFunction,
-    #[error("the first function call has no name")]
-    MissingFirstFunctionName,
     #[error("the function call has no arguments")]
     MissingFunctionArguments,
     #[error("function call arguments cannot be joined")]
@@ -95,7 +93,10 @@ fn tool_output(
     Some(ToolOutput {
         id,
         kind: state.kind.unwrap_or_else(|| "function".to_owned()),
-        function: Some(FunctionOutput { name, arguments }),
+        function: Some(FunctionOutput {
+            name: Some(name),
+            arguments,
+        }),
         custom: None,
         provider_specific_fields: state.provider_fields.filter(|fields| !fields.is_empty()),
     })
@@ -216,10 +217,7 @@ fn assemble_function(chunks: &[Chunk]) -> Result<AssemblyOutput, AssemblyError> 
         .function_call
         .as_ref()
         .ok_or(AssemblyError::MissingFirstFunction)?;
-    let name = call
-        .name
-        .clone()
-        .ok_or(AssemblyError::MissingFirstFunctionName)?;
+    let name = call.name.clone();
     let mut arguments = String::new();
     for chunk in chunks {
         for current_choice in &chunk.choices {

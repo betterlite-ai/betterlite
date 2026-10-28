@@ -35,9 +35,9 @@ impl crate::helpers::Helper for Op {
 const fn error_class(error: &AssemblyError) -> &str {
     match error {
         AssemblyError::EmptyFunctionInput | AssemblyError::MissingFirstChoice => "IndexError",
-        AssemblyError::MissingFirstFunction
-        | AssemblyError::MissingFirstFunctionName
-        | AssemblyError::MissingFunctionArguments => "AttributeError",
+        AssemblyError::MissingFirstFunction | AssemblyError::MissingFunctionArguments => {
+            "AttributeError"
+        }
         AssemblyError::InvalidArguments => "TypeError",
     }
 }
