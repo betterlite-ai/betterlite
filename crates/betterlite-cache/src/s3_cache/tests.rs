@@ -34,7 +34,7 @@ fn replays_the_s3_cache_body_corpus() {
 fn configured_cache(listener: &TcpListener, prefix: &str, limit: usize) -> S3Cache {
     let address = listener.local_addr().unwrap();
     let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_region_name: us-east-1\n    s3_endpoint_url: http://{address}\n    s3_path: '{prefix}'\n    s3_aws_access_key_id: test-key\n    s3_aws_secret_access_key: test-secret\n    s3_config:\n      read_timeout: 1\n      retries:\n        max_attempts: 0\n      s3:\n        addressing_style: path\n"
+        "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    s3_region_name: us-east-1\n    s3_endpoint_url: http://{address}\n    s3_path: '{prefix}'\n    s3_aws_access_key_id: test-key\n    s3_aws_secret_access_key: test-secret\n    s3_config:\n      read_timeout: 1\n      retries:\n        max_attempts: 0\n      s3:\n        addressing_style: path\n"
     );
     cache_from(&yaml, limit, Duration::from_secs(5))
 }
@@ -323,7 +323,7 @@ async fn operation_cap_bounds_stalled_calls() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_endpoint_url: http://{address}\n    s3_aws_access_key_id: test-key\n    s3_aws_secret_access_key: test-secret\n    s3_config:\n      retries:\n        max_attempts: 0\n      s3:\n        addressing_style: path\n"
+        "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    s3_endpoint_url: http://{address}\n    s3_aws_access_key_id: test-key\n    s3_aws_secret_access_key: test-secret\n    s3_config:\n      retries:\n        max_attempts: 0\n      s3:\n        addressing_style: path\n"
     );
     let cache = cache_from(&yaml, 4096, Duration::from_millis(500));
     let value = decode_body(b"{}").unwrap();
@@ -345,7 +345,7 @@ async fn absent_credentials_do_not_use_default_chain() {
     let mut settings = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load("litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n")
+    .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n")
     .unwrap()
     .sections
     .s3_response_cache
