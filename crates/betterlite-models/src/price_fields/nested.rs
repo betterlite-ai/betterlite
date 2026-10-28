@@ -39,31 +39,38 @@ fn object_fields(
     Ok(object)
 }
 
+fn optional_field(
+    object: &BTreeMap<String, Box<RawValue>>,
+    name: &str,
+    path: &str,
+) -> Result<Option<Decimal>, PriceFieldError> {
+    let Some(raw_value) = object.get(name) else {
+        return Ok(None);
+    };
+    decimal_at(path, raw_value).map(Some)
+}
+
 fn provider_specific(value: &RawValue) -> Result<ProviderSpecificPricing, PriceFieldError> {
     let object = object_fields(value, "provider_specific_entry")?;
     Ok(ProviderSpecificPricing {
-        us: object
-            .get("us")
-            .map(|raw_value| decimal_at("provider_specific_entry.us", raw_value))
-            .transpose()?,
-        fast: object
-            .get("fast")
-            .map(|raw_value| decimal_at("provider_specific_entry.fast", raw_value))
-            .transpose()?,
+        us: optional_field(&object, "us", "provider_specific_entry.us")?,
+        fast: optional_field(&object, "fast", "provider_specific_entry.fast")?,
     })
 }
 
 fn metadata(value: &RawValue) -> Result<MetadataPricing, PriceFieldError> {
     let object = object_fields(value, "metadata")?;
     Ok(MetadataPricing {
-        per_hour: object
-            .get("original_pricing_per_hour")
-            .map(|raw_value| decimal_at("metadata.original_pricing_per_hour", raw_value))
-            .transpose()?,
-        per_minute: object
-            .get("original_pricing_per_minute")
-            .map(|raw_value| decimal_at("metadata.original_pricing_per_minute", raw_value))
-            .transpose()?,
+        per_hour: optional_field(
+            &object,
+            "original_pricing_per_hour",
+            "metadata.original_pricing_per_hour",
+        )?,
+        per_minute: optional_field(
+            &object,
+            "original_pricing_per_minute",
+            "metadata.original_pricing_per_minute",
+        )?,
     })
 }
 
