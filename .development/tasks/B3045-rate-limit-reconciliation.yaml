@@ -1,0 +1,214 @@
+id: B3045
+title: Build successful token reconciliation operations
+description: >-
+  Implement token reconciliation for successful rate-limit calls: select scope targets
+  and compute actual-minus-reserved deltas for TPM and project I/O quotas. Build two
+  orthogonal helper families — scope enumeration for listing possible targets and
+  reservation awareness for computing deltas across the collected scopes.
+
+  _build_io_token_reservation_ops reconciles project ITPM/OTPM reservations to billable
+  input and completion tokens on success. Fetch the request stash (returning empty if missing),
+  read itpm/otpm reserved counts, and resolve actual usage from response, combined_usage_object,
+  or aggregate fallback; when usage is unavailable, return empty ops (no reconciliation).
+  Build two separate operation sequences (one for ITPM targets with billable input, one for
+  OTPM targets with completion output) reusing the delta-calculation pattern from B3037:
+  for each scope, emit increment(actual - reserved) for reserved scopes (which got pre-call
+  increments) and increment(actual) for unreserved scopes. Release-guarded scopes skip the
+  reserved tracking. Response usage via _resolve_io_token_reconcile_usage takes precedence
+  over combined_usage_object, then aggregate (total when no input/output split), then fall
+  back to reserved counts if usage is missing. Flag the stash's reservation_released state
+  when writing ops so later callbacks know to emit zero-refund deltas.
+
+  _collect_tpm_scope_targets enumerates every (scope_key, scope_value) pair from logging metadata
+  that *might* carry a TPM counter, independent of which scopes had configured TPM limits at
+  pre-call — the caller (e.g., _build_success_event_pipeline_operations) later filters to
+  reserved or charged scopes. Enumerate in a stable order: key (by hash), user, team, team_member
+  (concat team:user), end_user, organization, then if model_group exists add model_per_key,
+  model_per_team, model_per_organization, model_per_project, then agent and agent_session (concat
+  agent:session). Add all tpm_limited_tags from the stash in sorted order. Model group is passed
+  separately so callers can select its value based on reservation state (reserved_model vs
+  router's model_group).
+
+  _build_success_event_pipeline_operations builds pipeline increment ops for TPM counters:
+  check origin field (internal calls outside autorouter_compaction are exempt); resolve
+  actual tokens via _get_total_tokens_from_usage, defaulting to aggregate-only total; select
+  reconcile_model (reserved_model from stash if available, else router's model_group); collect
+  all TPM scope targets; filter out model_per_team scopes if the key owns the model limit (from
+  request metadata); emit reservation-aware TPM ops on all (filtered) charged targets; log
+  release of unused budget when actual < reserved. Return the built pipeline operations list.
+
+  Depends on B206 for get_litellm_metadata_from_kwargs; B3031 for get_request_stash_for_call,
+  _call_id_from_callback_kwargs; B3037 for _build_reservation_aware_tpm_ops, _build_project_reservation_ops;
+  B3038 for _rate_limited_model, _key_owns_model_tpm_limit_from_request_metadata; B3044 for
+  _resolve_io_token_reconcile_usage, _aggregate_only_total_tokens, _response_usage, _get_total_tokens_from_usage.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/reconciliation_operations.rs
+    - crates/betterlite-rate-limit/src/reconciliation_operations/**
+    - tools/oracle/cases/reconciliation_operations/**
+    - tools/oracle/helpers/b3045.py
+    - tools/oracle/helpers/b3045/**
+    - tools/oracle/src/helpers/rate_limit/b3045.rs
+    - tools/oracle/src/helpers/rate_limit/b3045/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4640-L4720
+    why: _build_io_token_reservation_ops reconciles project ITPM/OTPM reservations with actual usage, handling missing usage and release-guarded scopes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4722-L4784
+    why: _collect_tpm_scope_targets enumerates scope pairs in stable order from logging metadata and stash tags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4882-L4987
+    why: _build_success_event_pipeline_operations orchestrates scope collection, filtering, and TPM reconciliation ops on success.
+
+dod:
+  - text: _build_io_token_reservation_ops returns empty tuple when kwargs is not a dict or stash is missing.
+    proof: [io-token-ops-input-validation]
+  - text: _build_io_token_reservation_ops returns empty tuple when both itpm and otpm reserved counts are <= 0.
+    proof: [io-token-ops-early-exit]
+  - text: _build_io_token_reservation_ops resolves usage from response_obj via _resolve_io_token_reconcile_usage, falling back to combined_usage_object, then aggregate-only total, then reserved counts.
+    proof: [io-token-usage-resolution]
+  - text: _build_io_token_reservation_ops returns empty tuple when resolved usage has zero tokens and stash.reservation_released is false.
+    proof: [io-token-ops-zero-usage]
+  - text: "_build_io_token_reservation_ops returns ITPM ops using billable_input tokens for ITPM reserved scopes (actual - reserved delta) and OTPM ops using completion_tokens for OTPM scopes."
+    proof: [io-token-itpm-otpm-split]
+  - text: "_build_io_token_reservation_ops emits zero-delta ops for release-guarded scopes (actual - 0 for released, else actual - reserved)."
+    proof: [io-token-release-guarded]
+  - text: "_collect_tpm_scope_targets enumerates scope pairs in order: api_key, user, team, team_member, end_user, organization, then if model_group is present model_per_key/model_per_team/model_per_organization/model_per_project, then agent and agent_session, then all tpm_limited_tags in sorted order."
+    proof: [scope-enumeration-order]
+  - text: "_collect_tpm_scope_targets omits scopes when their values are missing or falsy (user_api_key, user_id, team_id, etc)."
+    proof: [scope-enumeration-presence-check]
+  - text: "_collect_tpm_scope_targets formats team_member as \"team_id:user_id\", agent_session as \"agent_id:session_id\", and model scopes with \":\" separators matching the scope key pattern."
+    proof: [scope-enumeration-formatting]
+  - text: "_build_success_event_pipeline_operations returns empty list when origin metadata is present and not \"autorouter_compaction\"."
+    proof: [success-ops-origin-exemption]
+  - text: _build_success_event_pipeline_operations resolves total_tokens via _get_total_tokens_from_usage with the configured rate_limit_type, defaulting to aggregate-only total when zero.
+    proof: [success-ops-token-resolution]
+  - text: "_build_success_event_pipeline_operations selects reconcile_model as reserved_model from stash if available, else _rate_limited_model(model_group) from the router."
+    proof: [success-ops-model-selection]
+  - text: _build_success_event_pipeline_operations collects TPM scope targets and extends with reserved agent/agent_session scopes not already in targets.
+    proof: [success-ops-scope-collection]
+  - text: _build_success_event_pipeline_operations filters charged_targets to exclude model_per_team when _key_owns_model_tpm_limit_from_request_metadata is true.
+    proof: [success-ops-key-owned-filtering]
+  - text: "_build_success_event_pipeline_operations logs debug message when reserved_tokens > actual_tokens, showing release amount."
+    proof: [success-ops-budget-release-logging]
+  - text: _build_success_event_pipeline_operations emits reservation-aware TPM ops on charged_targets and returns the pipeline operations list.
+    proof: [success-ops-emission]
+  - text: Every default, token resolution fallback, exemption origin value and scope format a user can observe is in a named oracle case with input and outcome.
+    proof: [oracle-cases-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: io-token-ops-input-validation
+      why: _build_io_token_reservation_ops must validate kwargs type and stash presence
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::io_token_ops_input(::|$)/)'"
+    - id: io-token-ops-early-exit
+      why: _build_io_token_reservation_ops must return empty when reserved counts are zero
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::io_token_ops_early(::|$)/)'"
+    - id: io-token-usage-resolution
+      why: Usage resolution must try response, combined_usage, aggregate, and reserved in order
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::io_token_usage(::|$)/)'"
+    - id: io-token-ops-zero-usage
+      why: _build_io_token_reservation_ops returns empty when usage is zero and reservation not released
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::io_token_zero(::|$)/)'"
+    - id: io-token-itpm-otpm-split
+      why: ITPM ops use billable input; OTPM ops use completion tokens
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::io_token_split(::|$)/)'"
+    - id: io-token-release-guarded
+      why: "Release-guarded scopes emit zero delta (actual - 0) when released"
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::io_token_released(::|$)/)'"
+    - id: scope-enumeration-order
+      why: "Scope enumeration must follow stable order: api_key, user, team, team_member, end_user, org, model scopes, agent, agent_session, tags"
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::scope_order(::|$)/)'"
+    - id: scope-enumeration-presence-check
+      why: Scope enumeration omits scopes with falsy values
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::scope_presence(::|$)/)'"
+    - id: scope-enumeration-formatting
+      why: "Scope values format team_member as \"team:user\", agent_session as \"agent:session\", and model scopes with \":\" separators"
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::scope_format(::|$)/)'"
+    - id: success-ops-origin-exemption
+      why: "Success ops return empty when origin is present and not \"autorouter_compaction\""
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_exempt(::|$)/)'"
+    - id: success-ops-token-resolution
+      why: Total tokens resolved via rate-limit-type filter, defaulting to aggregate-only when zero
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_tokens(::|$)/)'"
+    - id: success-ops-model-selection
+      why: "Reconcile model selected as reserved_model or router's model_group"
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_model(::|$)/)'"
+    - id: success-ops-scope-collection
+      why: Scope collection includes all targets plus reserved agent/agent_session scopes
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_scopes(::|$)/)'"
+    - id: success-ops-key-owned-filtering
+      why: model_per_team filtered when key owns model limit
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_filtering(::|$)/)'"
+    - id: success-ops-budget-release-logging
+      why: Debug log emitted when reserved > actual showing release amount
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_logging(::|$)/)'"
+    - id: success-ops-emission
+      why: Pipeline ops built and returned from success event function
+      run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_emission(::|$)/)'"
+    - id: oracle-cases-tests
+      why: Oracle cases verify reconciliation across missing usage, aggregate-only, release-guarded, and reserved-vs-actual paths
+      run: "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/reconciliation_operations -k 'b3045'"
+
+oracle_cases:
+  - tools/oracle/cases/reconciliation_operations/io-token-missing-usage.yaml
+  - tools/oracle/cases/reconciliation_operations/io-token-aggregate-only.yaml
+  - tools/oracle/cases/reconciliation_operations/io-token-released.yaml
+  - tools/oracle/cases/reconciliation_operations/io-token-reserved-vs-actual.yaml
+  - tools/oracle/cases/reconciliation_operations/scope-collection-all-fields.yaml
+  - tools/oracle/cases/reconciliation_operations/scope-collection-missing-fields.yaml
+  - tools/oracle/cases/reconciliation_operations/scope-collection-tags.yaml
+  - tools/oracle/cases/reconciliation_operations/success-ops-internal-exempt.yaml
+  - tools/oracle/cases/reconciliation_operations/success-ops-model-alias.yaml
+  - tools/oracle/cases/reconciliation_operations/success-ops-key-owned-filter.yaml
+  - tools/oracle/cases/reconciliation_operations/success-ops-release-logging.yaml
+
+deviations:
+  - what: >-
+      When reconciling ITPM/OTPM usage, if the response carries no usage and combined_usage_object
+      also carries none, aggregate-only total (from _aggregate_only_total_tokens) is attempted; if
+      no aggregate exists, the reconciliation falls back to using reserved counts as a placeholder.
+      This ensures that release-guarded scopes emit zero delta even when usage information is missing.
+    why: >-
+      When providers return responses without usage data (especially pass-through deployments),
+      betterlite must still emit reconciliation ops to settle reserved counts at a reasonable value.
+      The fallback to reserved counts represents "assume worst case" and avoids silent under-counting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4670-L4680
+  - what: >-
+      Scope enumeration includes tpm_limited_tags from the stash in sorted order; tags that are
+      not present in the stash are not included, even if configured globally. This matches the
+      admission-time set of limited tags and ensures the reconciliation targets are consistent
+      with what was reserved at pre-call.
+    why: >-
+      Tag limits and their scopes are determined at admission time when the request enters; reconciliation
+      must target the same scopes to settle the reserved counts accurately. Tags without limits at
+      admission should not appear in reconciliation targets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4958-L4959
+
+out_of_scope:
+  - Scope enumeration (model_group selection, conditional scope construction, tag handling) is consumed by the caller and delegated to higher-level admission logic.
+  - IO token reconciliation scope filtering and reservation state tracking belong to the admission/reservation builders in B3037/B3042.
+  - Usage resolution and aggregate-total extraction belong to B3044.
+  - Rate-limit-type filtering and cache-token exclusion belong to B3044.
+  - Metadata extraction from litellm_params (litellm_metadata vs metadata fields) belongs to B206.
+  - Request stash claim/access and call-ID filtering belong to B3031.
+  - Descriptor type conversions and operation emission belong to the later callback assembly in B3046.
+  - Pipeline submission and batch result settlement belong to B3046 and the batch limiter (B1044).
+  - Model group/alias resolution from router belongs to B3038.
+  - Provider resolution and error wrapping belong to B3030.
+
+pitfalls:
+  - "Reconciliation targets for ITPM use billable_input_tokens, and OTPM targets use completion_tokens; ensure the token type matches the scope dimension (input vs output)."
+  - "Release-guarded reconciliation (when stash.reservation_released is true) emits zero-delta operations (actual - 0); ensure refund-on-failure paths in B3046 match this expectation."
+  - "Scope enumeration must preserve order and format: team_member as \"team_id:user_id\" (colon-separated, no spaces), agent_session as \"agent_id:session_id\"; inconsistent formatting breaks matching with pre-call scopes."
+  - "Model group is resolved at admission time; reconciliation must use reserved_model (from stash) to settle the counter that was actually incremented, not a re-resolved model that may differ if alias maps changed mid-flight."
+  - "Origin metadata field filters internal calls; \"autorouter_compaction\" is the only internal origin that consumes caller limits; other origins (background evaluations, etc.) are exempt from reconciliation."
+  - "Aggregate-only total is a fallback when input/output split is unavailable; ensure _aggregate_only_total_tokens is consulted before falling back to reserved counts."
+  - "Tag enumeration includes sorted tag strings from the stash's tpm_limited_tags; unsorted enumeration breaks matching with admission-time reserved scopes."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,171 @@
+id: B4292
+title: Retire evicted clients and reuse logging clients safely
+description: >-
+  Build client lifecycle management for HTTP/SDK clients that the LLM client cache evicts.
+  Implement deferred closing with loop-scoped cache keys to prevent event loop errors and
+  reuse logging clients safely by credential set.
+
+  Evicted clients are never closed immediately: a request holding the client just before
+  eviction is still using it, and closing underneath that request raises an error. Instead,
+  schedule closing once two conditions hold: a 900-second grace window has passed since eviction
+  (default EVICTED_LLM_CLIENT_CLOSE_GRACE_SECONDS), and the client reports no connection in flight.
+
+  Clients supplied by the caller are left alone; only clients litellm created are closed.
+  Queued clients are bucketed by closure capability (sync anywhere, async on-loop, or a specific loop)
+  and ordered by deadline, so a reap operation walks only entries that are due.
+  The queue holds clients weakly, so grace windows never keep alive anything garbage collection would have reclaimed.
+  Queue capacity is capped at 10000 pending closes (default EVICTED_LLM_CLIENT_CLOSE_MAX_PENDING).
+
+  LLMClientCache wraps InMemoryCache with event-loop-aware key decoration: the running event loop ID
+  is appended to cache keys to prevent "event loop closed" errors when clients are reused across event loops.
+  On eviction, clients are scheduled for deferred closing and a reap is triggered.
+
+  DynamicLoggingCache reuses logging clients (e.g., LangfuseLogger) by credential set and service name,
+  avoiding memory leaks from initializing new logging clients on each request. Entries are cached
+  with a default TTL matching HTTPX client TTL (3600 seconds). Evicted loggers that have a stop() method
+  are called to release resource slots and end periodic tasks.
+
+  ServiceTraceIDCache associates service trace IDs with call IDs and service names, keyed as "service_name:call_id".
+scope:
+  paths:
+    - crates/betterlite-cache/src/evicted_client_closer.rs
+    - crates/betterlite-cache/src/evicted_client_closer/**
+    - crates/betterlite-cache/src/llm_client_cache.rs
+    - crates/betterlite-cache/src/llm_client_cache/**
+    - crates/betterlite-context/src/dynamic_logging_cache.rs
+    - crates/betterlite-context/src/dynamic_logging_cache/**
+    - crates/betterlite-context/src/service_trace_id_cache.rs
+    - crates/betterlite-context/src/service_trace_id_cache/**
+    - crates/betterlite-cache/Cargo.toml
+    - crates/betterlite-context/Cargo.toml
+    - tools/oracle/cases/client_lifecycle/**
+    - tools/oracle/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/evicted_client_closer.py#L58-L73
+    why: "_PendingClose dataclass definition: client_ref (weak), loop_id, needs_loop, close_after fields."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/evicted_client_closer.py#L76-L149
+    why: "Helper functions for bucket keys, running loop ID detection, client property inspection and idle/inflight connection checking."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/evicted_client_closer.py#L156-L231
+    why: "EvictedClientCloser class: initialization, mark_owned, schedule, reap, pending_count property."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/evicted_client_closer.py#L232-L275
+    why: "Enqueueing, draining, and close execution: _enqueue, _take_due, _drain_locked, _close methods."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/llm_caching_handler.py#L12-L81
+    why: "LLMClientCache class: wraps InMemoryCache with event loop scoping, mark_owned tracking, set/get/async variants with key decoration and grace reaping."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py
+    why: "DynamicLoggingCache and LangfuseInMemoryCache: logging client reuse, credential-keyed caching, logger stop() invocation on eviction."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/service_trace_id_cache.py
+    why: "ServiceTraceIDCache: simple key-value cache for service trace IDs keyed as service_name:call_id."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L298-L308
+    why: "_DEFAULT_TTL_FOR_HTTPX_CLIENTS (3600 seconds), EVICTED_LLM_CLIENT_CLOSE_GRACE_SECONDS (900), EVICTED_LLM_CLIENT_CLOSE_MAX_PENDING (10000)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L269
+    why: "The InMemoryCache surface this task wraps, owned by B2226: functions __init__, check_value_size, _is_key_expired, _remove_key, allow_ttl_override, set_cache, evict_element_if_expired, get_cache, delete_cache."
+dod:
+  - text: Evicted clients are scheduled for closing only if owned (marked via litellm-created flag); caller-supplied clients are never touched.
+    proof: [client-ownership-tests]
+  - text: >-
+      A client is closed only after a 900-second grace window has passed AND the client reports no connection in flight.
+      A client with a connection in flight is re-enqueued with a new deadline. Idleness is checked via httpcore pool
+      busy-connection detection, aiohttp _acquired connector state, or direct lease accounting; clients that cannot report
+      state are treated as idle, falling back to the grace window alone.
+    proof: [client-grace-and-idle-tests]
+  - text: >-
+      Clients that close synchronously are closed from the cache's read path. Clients that close asynchronously are closed
+      only from an event loop, captured when the client is scheduled. Buckets are organized by closure capability
+      (sync anywhere, async on-loop, specific loop) and ordered by deadline for efficient reaping.
+    proof: [client-loop-scoping-tests]
+  - text: >-
+      The pending queue never grows beyond 10000 pending closes. Cache keys are decorated with the running event loop ID
+      to prevent event loop closed errors. On eviction, the client is scheduled for deferred closing and a reap is triggered.
+    proof: [queue-capacity-and-llm-cache-tests]
+  - text: >-
+      Logging clients are cached by credential set and service name (credentials + service_name SHA256 key).
+      On eviction, if the logger has a stop() method, it is called; exceptions are logged but do not block eviction.
+      Default TTL matches the HTTPX client TTL (3600 seconds).
+    proof: [logging-client-reuse-tests]
+  - text: >-
+      Service trace IDs are cached with keys formatted as "service_name:call_id". Lookups return the cached trace ID
+      or None if not found or expired.
+    proof: [service-trace-id-tests]
+checks:
+  optional: []
+  commands:
+    - id: client-ownership-tests
+      why: client ownership tracking and eviction filtering is incorrect
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/evicted_client.*ownership|owned_client/)'
+    - id: client-grace-and-idle-tests
+      why: grace period or idle connection detection is broken
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/evicted_client.*grace|idle_connection|in_flight/)'
+    - id: client-loop-scoping-tests
+      why: loop-scoped closing or bucket organization is broken
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/evicted_client.*loop|async_close|bucket/)'
+    - id: queue-capacity-and-llm-cache-tests
+      why: queue capacity enforcement or LLMClientCache event loop scoping is broken
+      run: cargo nextest run --locked -p betterlite-cache -p betterlite-context --no-tests=fail -E 'test(/evicted_client.*pending|queue_capacity|llm_cache|event_loop_key/)'
+    - id: logging-client-reuse-tests
+      why: logging client caching by credential set or stop() invocation is broken
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/dynamic_logging_cache|logging_client/)'
+    - id: service-trace-id-tests
+      why: service trace ID caching is broken
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/service_trace_id|trace_id_cache/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      betterlite uses Rust async/await and Arc/Weak for reference handling instead of Python's reference cycles and
+      weakref module. Loop IDs are obtained via task-local context rather than asyncio.get_running_loop().
+    why: "Rust has no reference cycles; Arc/Weak provides the needed ownership semantics. Task-local context is the idiomatic Rust equivalent to Python's get_running_loop()."
+  - what: >-
+      Connection idleness is checked via trait-based inspection of httpx transport and async runtime state rather than
+      direct attribute access to untyped transport objects.
+    why: "Rust requires typed inspection; we encapsulate transport type inspection in a trait method."
+  - what: >-
+      Logging client reuse uses credential hashing and string concatenation for keys instead of arbitrary JSON sort/SHA256.
+      The service_trace_id cache uses simple string keys instead of Python string formatting.
+    why: "Rust uses typed keys and serde serialization for hashing; string concatenation is simpler and deterministic for fixed format."
+out_of_scope:
+  - >-
+    B2226 owns InMemoryCache.__init__, check_value_size, _is_key_expired, _remove_key, allow_ttl_override,
+    set_cache, evict_element_if_expired, get_cache, delete_cache, and the cache_dict/ttl_dict state that
+    LLMClientCache, DynamicLoggingCache (via LangfuseInMemoryCache), and ServiceTraceIDCache wrap
+    as dependencies. They are reused as-is, not reimplemented. This task wraps these methods and extends
+    their behavior with event loop scoping, client lifecycle management and credential-keyed logging-client reuse.
+  - >-
+    B390 owns async_set_cache, async_set_cache_pipeline, async_set_cache_sadd, batch_get_cache and
+    increment_cache in InMemoryCache; specialty cache classes inherit or delegate to these async adapters.
+  - >-
+    Concrete logger stop() implementations (LangFuseLogger.stop(), NewRelicMetricsLogger.stop(), others)
+    belong to their respective observability integrations. This task calls stop() on evicted loggers but
+    does not implement the logger lifecycle itself.
+  - >-
+    Python SDK internals: the inspection of OpenAI/Azure SDK internals (aclose/close methods, _client/_transport
+    attributes) is abstracted behind a typed trait interface injected at initialization.
+pitfalls:
+  - >-
+    A weak reference to a client is used to avoid keeping it alive while grace passes. When the client is collected,
+    dead refs at the front of each bucket are dropped during enqueue to amortize cleanup cost and keep pending_count accurate.
+  - >-
+    Grace deadlines always move forward; appending re-enqueued clients to their bucket keeps each bucket ordered by deadline
+    without needing to sort. A client re-enqueued with a new deadline due to inflight connections goes to the back.
+  - >-
+    Loop ID bucketing: if loop_id is None, the client cannot be closed on any loop; _CLOSABLE_ON_ANY_LOOP is used only
+    for async clients captured on no loop (impossible in practice but handled for safety). A specific loop ID bucket is used
+    for clients captured on a particular loop.
+  - >-
+    LLMClientCache appends the stringified loop ID to cache keys as "{key}-{loop_id}". This must match exactly; different
+    loops produce different keys. If the running loop changes, the key changes, and a miss is correct.
+  - >-
+    DynamicLoggingCache keys credentials and service_name together; changing either produces a new key and a new logger.
+    The cache does not merge entries with the same logger; credential immutability is assumed.
+  - >-
+    Logging client stop() is called without arguments and exceptions are suppressed; it must not raise or the logger is
+    leaked. Typifying logger stop() as a simple Fn(&mut self) avoids Option/callback overhead.
+  - >-
+    ServiceTraceIDCache is backed by a simple InMemoryCache with no customization. TTL and size limits inherit from the
+    underlying cache; no special handling is needed.
+  - >-
+    Async clients queued on a loop that closes before reap is called will be dropped by weak-ref GC; the weak ref returns
+    None and the entry is cleaned up. No panic or blocking occurs.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,209 @@
+id: B3340
+title: Video remix and listing calls
+description: >-
+  Build the synchronous and asynchronous video remix and listing call functions in
+  betterlite-core::api. Implement video_remix and avideo_remix for remixing completed
+  videos with updated prompts, and video_list and avideo_list for paginating and filtering
+  video collections.
+
+  For remix operations, attempt to decode custom_llm_provider from the video_id using
+  B672's decode_video_id_with_provider when not explicitly provided, falling back to
+  OpenAI if decoding returns None or empty string. Default timeout to 600 seconds.
+  Support mock response decoding from JSON string. Set logging call type to
+  CallTypes.video_remix. Overload declarations provide type checking for both sync and
+  async dispatch paths (avideo_remix=True returns Coroutine, avideo_remix=False returns
+  VideoObject). The runtime video_remix implementation uses a dispatch flag to return
+  either a Coroutine or a direct VideoObject.
+
+  For list operations, preserve the asymmetry between sync and async: sync list defaults
+  directly to OpenAI without provider inference, while async list attempts provider
+  inference using B174's get_llm_provider with an empty model string before dispatch
+  when custom_llm_provider is not explicitly provided. Default timeout to 600 seconds.
+  Support mock response decoding as a list of JSON-decodable items. Set logging call type
+  to CallTypes.video_list. Do not treat after, limit and order parameters as video-ID
+  lookup keys; pass them directly to the list handler. Overload declarations provide type
+  checking for both sync and async dispatch paths (avideo_list=True returns Coroutine,
+  avideo_list=False returns list[VideoObject]). The runtime video_list implementation
+  uses a dispatch flag to return either a Coroutine or a direct list.
+
+  Both async wrappers (avideo_remix and avideo_list) use partial, contextvars.copy_context,
+  and loop.run_in_executor to wrap their sync counterparts, preserving the context-run
+  pattern and awaiting the coroutine result if needed.
+
+  Add oracle cases covering remix provider decoding with fallback, remix timeout default,
+  remix mock response decoding, list provider defaults (sync vs async asymmetry), list
+  timeout default, list mock response decoding as list of objects, list pagination
+  parameters, and async wrapper execution for both operations.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_remix_call.rs
+    - crates/betterlite-core/src/api/video_remix_call/**
+    - crates/betterlite-core/src/api/video_list_call.rs
+    - crates/betterlite-core/src/api/video_list_call/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/core/video-remix-list/**
+    - tools/oracle/helpers/b3340.py
+    - tools/oracle/helpers/b3340/**
+    - tools/oracle/src/helpers/core_ops/b3340.rs
+    - tools/oracle/src/helpers/core_ops/b3340/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L453-L516
+    why: avideo_remix async wrapper with partial, context copy, and executor-based call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L522-L535
+    why: video_remix overload declaration for avideo_remix=True returning Coroutine.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L538-L551
+    why: video_remix overload declaration for avideo_remix=False returning VideoObject.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L556-L651
+    why: video_remix runtime implementation with provider decoding, timeout default, mock decoding, dispatch to handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L655-L728
+    why: avideo_list async wrapper with get_llm_provider inference for empty model, partial, context copy, and executor-based call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L734-L748
+    why: video_list overload declaration for avideo_list=True returning Coroutine[object, object, list[VideoObject]].
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L751-L765
+    why: video_list overload declaration for avideo_list=False returning list[VideoObject].
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L770-L865
+    why: video_list runtime implementation with direct openai default (no inference), timeout default, mock list handling, pagination parameters preserved.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
+    why: DEFAULT_REQUEST_TIMEOUT constant defined at L568, default 6000 seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
+    why: CallTypes.video_remix and CallTypes.video_list logging call types.
+dod:
+  - text: "video_remix defaults timeout to 600 seconds; falsey timeout (0, None) uses B198's DEFAULT_REQUEST_TIMEOUT."
+    proof: [remix-timeout-default]
+  - text: "video_remix decodes custom_llm_provider from video_id using B672's decode_video_id_with_provider when not provided, falling back to OpenAI if None or empty."
+    proof: [remix-provider-fallback]
+  - text: "video_remix handles mock_response by JSON-decoding string values and constructing VideoObject from the decoded dict."
+    proof: [remix-mock-response]
+  - text: "video_remix sets logging call type to CallTypes.video_remix before dispatch."
+    proof: [remix-call-type]
+  - text: "avideo_remix wraps video_remix in partial, copies context, runs in event loop executor, awaits coroutine result if needed."
+    proof: [async-remix-wrapper]
+  - text: "video_remix overload declarations exist for avideo_remix=True (returns Coroutine) and avideo_remix=False (returns VideoObject)."
+    proof: [remix-overload-declarations]
+  - text: "video_remix raises ValueError when provider config is None (unsupported provider)."
+    proof: [remix-unsupported-provider]
+  - text: "video_list sync defaults custom_llm_provider directly to OpenAI without provider inference when not provided."
+    proof: [list-sync-default-openai]
+  - text: "avideo_list attempts provider inference using B174's get_llm_provider with empty model when custom_llm_provider is not provided."
+    proof: [list-async-inference]
+  - text: "video_list defaults timeout to 600 seconds; falsey timeout (0, None) uses B198's DEFAULT_REQUEST_TIMEOUT."
+    proof: [list-timeout-default]
+  - text: "video_list handles mock_response by JSON-decoding string, constructing list of VideoObject from each decoded item."
+    proof: [list-mock-response]
+  - text: "video_list preserves after, limit and order parameters as pagination query parameters, not as video-ID lookup keys."
+    proof: [list-pagination-preserved]
+  - text: "video_list sets logging call type to CallTypes.video_list before dispatch."
+    proof: [list-call-type]
+  - text: "avideo_list wraps video_list in partial, copies context, runs in event loop executor, awaits coroutine result if needed."
+    proof: [async-list-wrapper]
+  - text: "video_list overload declarations exist for avideo_list=True (returns Coroutine) and avideo_list=False (returns list[VideoObject])."
+    proof: [list-overload-declarations]
+  - text: "video_list raises ValueError when provider config is None (unsupported provider)."
+    proof: [list-unsupported-provider]
+checks:
+  optional: []
+  commands:
+    - id: remix-timeout-default
+      why: video_remix does not default timeout to 600 or does not fall back to DEFAULT_REQUEST_TIMEOUT when falsey
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_call::remix_timeout/)'
+    - id: remix-provider-fallback
+      why: video_remix does not decode provider from video_id or does not fall back to OpenAI
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_call::remix_provider/)'
+    - id: remix-mock-response
+      why: video_remix does not handle mock_response or does not JSON-decode string values
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_call::mock_response/)'
+    - id: remix-call-type
+      why: video_remix does not set logging call type to CallTypes.video_remix
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_call::call_type/)'
+    - id: async-remix-wrapper
+      why: avideo_remix does not wrap, copy context, or execute in event loop correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_call::async_wrapper/)'
+    - id: remix-overload-declarations
+      why: overload declarations for avideo_remix=True/False do not exist or have wrong types
+      run: cargo build --locked -p betterlite-core
+    - id: remix-unsupported-provider
+      why: video_remix does not raise ValueError for unsupported provider or message is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_call::unsupported_provider/)'
+    - id: list-sync-default-openai
+      why: video_list sync does not default custom_llm_provider directly to openai
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::sync_default_openai/)'
+    - id: list-async-inference
+      why: avideo_list does not attempt provider inference using get_llm_provider with empty model
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::async_inference/)'
+    - id: list-timeout-default
+      why: video_list does not default timeout to 600 or does not fall back to DEFAULT_REQUEST_TIMEOUT when falsey
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::list_timeout/)'
+    - id: list-mock-response
+      why: video_list does not handle mock_response or does not construct list[VideoObject] from decoded items
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::mock_response/)'
+    - id: list-pagination-preserved
+      why: video_list does not preserve after, limit and order as pagination parameters
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::pagination_params/)'
+    - id: list-call-type
+      why: video_list does not set logging call type to CallTypes.video_list
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::call_type/)'
+    - id: async-list-wrapper
+      why: avideo_list does not wrap, copy context, or execute in event loop correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::async_wrapper/)'
+    - id: list-overload-declarations
+      why: overload declarations for avideo_list=True/False do not exist or have wrong types
+      run: cargo build --locked -p betterlite-core
+    - id: list-unsupported-provider
+      why: video_list does not raise ValueError for unsupported provider or message is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_list_call::unsupported_provider/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-timeout-default-600.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-timeout-none-fallback.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-provider-decode-fallback.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-provider-explicit-override.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-mock-response-json-string.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-call-type-video-remix.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/remix-unsupported-provider-error.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-sync-defaults-openai.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-async-inference-empty-model.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-timeout-default-600.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-timeout-none-fallback.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-mock-response-json-list.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-pagination-after-limit-order.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-call-type-video-list.yaml
+  - tools/oracle/cases/helpers/core/video-remix-list/list-unsupported-provider-error.yaml
+deviations:
+  - what: "video_remix timeout defaults to 600 seconds instead of the constant DEFAULT_REQUEST_TIMEOUT; when timeout is falsey (0, None, empty), DEFAULT_REQUEST_TIMEOUT is used as fallback."
+    why: "LiteLLM's video_remix has an explicit default of 600 in the function signature and checks for falsey timeout before using the constant."
+  - what: "video_list has asymmetric provider defaults: sync list defaults directly to openai, while async list attempts provider inference with empty model using get_llm_provider."
+    why: "LiteLLM preserves this asymmetry intentionally; async list calls get_llm_provider to infer provider from context when not explicitly provided, while sync defaults without inference."
+  - what: "video_list mock response is a list that is JSON-decoded to a list of dicts, each of which constructs a VideoObject."
+    why: "LiteLLM's video_list returns a list[VideoObject] and handles mock responses by decoding and constructing per item."
+  - what: "video_list pagination parameters after, limit and order are passed directly to the handler as query parameters, not treated as video-ID lookup keys."
+    why: "LiteLLM video_list preserves these as standard paginated-list query parameters sent to the API."
+  - what: "video_remix and video_list both use CallTypes.video_remix and CallTypes.video_list for logging call type."
+    why: "These distinct call types allow logging and monitoring systems to differentiate remix and list operations from other video operations."
+out_of_scope:
+  - "litellm/llms/base_llm/videos/transformation.py: video operation contract implementations and provider selection, owned by B3331 and B3332."
+  - "litellm/llms/custom_httpx/llm_http_handler.py: HTTP transport and handlers, owned by B3334."
+  - "litellm/proxy/video_endpoints/endpoints.py: route registration and proxy middleware, owned by B3344."
+  - "OpenAI video transformations and validation, owned by B525."
+  - "Provider selection logic, owned by B3332."
+  - "Exception type mapping for video calls, owned by B185 and B186."
+  - "Timeout context propagation, owned by B198."
+  - "Logging aggregation and environment updates, owned by B247."
+  - "Provider lookup logic, owned by B174."
+  - "Video ID decoding and encoding, owned by B672."
+pitfalls:
+  - "video_remix timeout defaults to 600 seconds (not empty string or None); defaulting happens before handler call."
+  - "video_remix decodes provider from video_id only when not explicitly provided; decode_video_id_with_provider returns a dict with custom_llm_provider key that may be None or empty, requiring fallback to OpenAI."
+  - "video_remix mock response is a dict that must be JSON-decoded if provided as a string; handle JSON decode errors gracefully."
+  - "video_list has asymmetric provider handling: sync list defaults directly to openai without calling get_llm_provider, while async list calls get_llm_provider(model='') before wrapping."
+  - "video_list mock response is a list of dicts, not a single dict; each item becomes a VideoObject."
+  - "video_list pagination parameters after, limit and order are not video-ID lookups; they are standard query parameters preserved as-is to the handler."
+  - "Both functions raise ValueError when provider config is None (unsupported provider); the error message must include the operation name (remix or list) and provider name."
+  - "avideo_remix and avideo_list wrap the sync function with partial, copy contextvars.copy_context, and run in the event loop executor; preserve the context-run pattern."
+  - "video_remix has overload declarations for type checking (avideo_remix=True returns Coroutine, avideo_remix=False returns VideoObject) but a single runtime implementation."
+  - "video_list has overload declarations for type checking (avideo_list=True returns Coroutine, avideo_list=False returns list[VideoObject]) but a single runtime implementation."
+  - "CallTypes.video_remix and CallTypes.video_list are the correct logging call types; logging_obj.call_type must be set after optional params are prepared but before dispatch."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

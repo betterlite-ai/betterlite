@@ -1,0 +1,14 @@
+id: B3276
+milestone: M5 api families
+title: Search HTTP execution
+status: todo
+depends_on: [B3270, B173, B2402, B012]
+file: null
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"
+parent: B091
+split_from: B091
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

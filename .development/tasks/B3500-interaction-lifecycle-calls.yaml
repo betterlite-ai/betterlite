@@ -1,0 +1,106 @@
+id: B3500
+title: Coordinate interaction cancellation and settled deletion
+description: >-
+  Implement sync and async interaction deletion and cancellation, performing background
+  settlement only in the async deletion path. Build the public delete() and cancel() entry points
+  accepting all OpenAPI parameters (interaction_id, extra_headers, timeout, custom_llm_provider
+  and **kwargs), and their async variants adelete() and acancel() that delegate to the sync
+  versions via a thread executor with context propagation.
+
+  Apply lifecycle routing logic: if custom_llm_provider is absent or empty, default to 'gemini'.
+  Call B3490's get_provider_interactions_api_config to select provider
+  (GoogleAIStudioInteractionsConfig, VertexAIInteractionsConfig, or None); if config is None,
+  raise ValueError with the message "Interactions API not supported for: {provider}".
+  Extract GenericLiteLLMParams from kwargs.
+
+  For delete operations only, call B3496's maybe_settle_background_interaction_before_delete
+  in the async path only (adelete) to poll and settle queued/in-progress interactions before
+  deletion; sync delete and both cancel operations skip settlement.
+  For all operations, update logging metadata via B247's update_from_kwargs with
+  interaction_id in optional_params and litellm_call_id in litellm_params.
+
+  Then call B3494's delete_interaction or cancel_interaction with the provider config,
+  custom_llm_provider, litellm_params, logging_obj, extra_headers, timeout, and _is_async flag.
+  Preserve the _is_async delegation pattern: delete sets adelete_interaction=True, cancel sets
+  acancel_interaction=True, then both extract the flag and pass it to dispatch sync/async paths.
+  Wrap exceptions via B185/B186's exception_type, propagating context via B198 in the async path
+  using contextvars.copy_context() and asyncio.get_event_loop().run_in_executor().
+scope:
+  paths:
+    - crates/betterlite-core/src/api/interactions/lifecycle.rs
+    - crates/betterlite-core/src/api/interactions/lifecycle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L461-504
+    why: adelete async function with background settlement call, executor delegation with context propagation and exception wrapping
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L506-558
+    why: delete sync function with provider defaulting, config selection, logging setup, settlement handling and HTTP deletion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L565-606
+    why: acancel async function (no settlement) with executor delegation and context propagation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L608-659
+    why: cancel sync function with provider defaulting, config selection, logging setup and HTTP cancellation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L460-575
+    why: delete_interaction and async_delete_interaction HTTP handlers for native deletion with auth, request transform and response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L581-696
+    why: cancel_interaction and async_cancel_interaction HTTP handlers for native cancellation with auth, request transform and response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L235-311
+    why: maybe_settle_background_interaction_before_delete contract called only by adelete to poll and settle background interactions
+dod:
+  - text: "delete() accepts interaction_id, optional extra_headers, timeout, custom_llm_provider and **kwargs; defaults custom_llm_provider to 'gemini', selects provider via B3490, logs metadata, and returns B3494's delete_interaction result."
+    proof: [behavior-tests]
+  - text: "adelete() accepts the same parameters, calls maybe_settle_background_interaction_before_delete before delegating to delete() via executor with context propagation, and returns DeleteInteractionResult."
+    proof: [behavior-tests]
+  - text: "cancel() accepts interaction_id, optional extra_headers, timeout, custom_llm_provider and **kwargs; defaults custom_llm_provider to 'gemini', selects provider via B3490, logs metadata, and returns B3494's cancel_interaction result (no settlement)."
+    proof: [behavior-tests]
+  - text: "acancel() accepts the same parameters, delegates to cancel() via executor with context propagation, and returns CancelInteractionResult (no settlement)."
+    proof: [behavior-tests]
+  - text: "When get_provider_interactions_api_config returns None, delete/cancel raise ValueError with message 'Interactions API not supported for: {provider}', which exception_type converts to the appropriate exception class."
+    proof: [behavior-tests]
+  - text: "Logging metadata is updated via B247's update_from_kwargs with interaction_id in optional_params and litellm_call_id in litellm_params before calling HTTP operations."
+    proof: [behavior-tests]
+  - text: "The _is_async flag is set by adelete/acancel before delegating (adelete_interaction=True for adelete, acancel_interaction=True for acancel), extracted (pop) in delete/cancel, and passed to HTTP handler."
+    proof: [behavior-tests]
+  - text: "Exceptions are wrapped via B185/B186's exception_type with model=None, custom_llm_provider, original_exception, completion_kwargs (locals()) and extra_kwargs, preserving the original exception chain."
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Delete/cancel entry points, logging setup, provider validation, settlement coordination or context propagation fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::lifecycle::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Delete/cancel operations preserve the un-settled synchronous path. The delete() function executes directly
+      without calling maybe_settle_background_interaction_before_delete, while adelete() settles before delegating to delete().
+    why: >-
+      LiteLLM's sync path does not perform settlement. The async deletion path runs settlement to ensure usage is finalized
+      before the interaction is removed. Betterlite preserves this distinction for consistency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L461-503
+  - what: >-
+      Context propagation in async delete and cancel uses contextvars.copy_context() and loop.run_in_executor
+      to delegate to the sync path, preserving request-scoped state across the async boundary.
+    why: >-
+      This pattern preserves LiteLLM's context propagation without duplicating sync logic. B198 supplies resolved request_timeout
+      and context injection; betterlite reuses that infrastructure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L566-605
+out_of_scope:
+  - B3494 owns the HTTP delete_interaction and cancel_interaction handlers; this task calls them.
+  - B3496 owns maybe_settle_background_interaction_before_delete; adelete calls it.
+  - B3490 owns get_provider_interactions_api_config; all four functions call it.
+  - B247 owns Logging.update_from_kwargs; delete and cancel call it.
+  - "B185/B186 own exception_type; all four functions call it for exception wrapping."
+  - Response result types (DeleteInteractionResult, CancelInteractionResult) are owned by B3481.
+pitfalls:
+  - "The adelete function must call maybe_settle_background_interaction_before_delete before delegating to delete(). Only async deletion is settled; sync delete() and both cancel operations (cancel/acancel) skip settlement."
+  - "Default custom_llm_provider to 'gemini' when absent or empty; do not use None or empty string. The error message names the literal 'gemini' if settlement or provider config fails."
+  - "When get_provider_interactions_api_config returns None, raise ValueError with the exact message 'Interactions API not supported for: {provider}'. Do not call a get_error_class method; litellm.exception_type will convert the ValueError to the appropriate exception class."
+  - "The _is_async flag is set by adelete/acancel as adelete_interaction=True or acancel_interaction=True (not False), then extracted (pop) in the sync function so it does not leak into litellm_params."
+  - "Context variables must be copied with contextvars.copy_context() before loop.run_in_executor to preserve request-scoped state (litellm_logging_obj, litellm_call_id, GenericLiteLLMParams) across the async boundary."
+  - "Logging metadata is updated via update_from_kwargs with interaction_id in optional_params and litellm_call_id in litellm_params, model always None."
+  - "Logging object is extracted from kwargs.get('litellm_logging_obj') before building GenericLiteLLMParams; missing litellm_logging_obj will fail at the update_from_kwargs call."
+  - "If the delegated result from delete/cancel (returned from sync path) is a coroutine, await it; otherwise return directly (sync path execution inside executor returns a non-async result)."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

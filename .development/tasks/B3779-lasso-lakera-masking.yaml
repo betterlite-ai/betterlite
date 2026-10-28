@@ -1,0 +1,221 @@
+id: B3779
+title: Lasso masking and Lakera PII primitives
+description: >-
+  Implement Lasso message expansion and masking while preserving tool-call shape and positional safeguards.
+  For Lasso: async_pre_call_hook, async_moderation_hook, async_post_call_success_hook dispatch to
+  _run_lasso_guardrail which selects /classify (classification only) or /classifix (classification with
+  masking response). When mask=True and no multimodal content, _handle_masking applies Lasso's returned
+  masked messages back to the request via _map_masked_messages_back, including tool-call argument redaction
+  through _update_tool_calls_from_masked. Message expansion (_expand_messages_for_classification) flattens
+  tool_use/tool_result blocks for inspection; post-call wraps response.choices[].message tool calls and
+  content into inspection messages, then applies Lasso's masked output back via _apply_masking_to_model_response.
+
+  For Lakera: build independent PII span masking, PII-only classification and block-error constructor.
+  Lakera's lifecycle hooks validate requests and responses through call_v2_guard, routing PII-only violations
+  to _mask_pii_in_messages when safe (no multimodal, no combined messages+input, no unmaskable fields), or
+  to block/inject_system_message per on_flagged setting. PII masking handles both instructions (Responses-API)
+  and messages, with scope filtering per skip_system_message_in_guardrail and skip_tool_message_in_guardrail flags.
+  Lakera's lifecycle and advisory policy remain in B107; this task owns only the pure masking and classification
+  helpers. Depends on B3778 for Lasso constructor, API call, helper functions, and config model.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/lasso_masking.rs
+    - crates/betterlite-guardrails/src/lasso_masking/**
+    - crates/betterlite-guardrails/src/lakera_pii.rs
+    - crates/betterlite-guardrails/src/lakera_pii/**
+    - tools/oracle/cases/helpers/lasso-masking/**
+    - tools/oracle/cases/helpers/lakera-pii/**
+    - tools/oracle/helpers/b3779.py
+    - tools/oracle/helpers/b3779/**
+    - tools/oracle/src/helpers/guardrails/b3779.rs
+    - tools/oracle/src/helpers/guardrails/b3779/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L366-L414
+    why: _run_lasso_guardrail orchestrates classify vs classifix endpoint selection based on mask flag and multimodal detection
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L416-L432
+    why: _handle_classification calls classify endpoint without masking application
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L434-L475
+    why: _handle_masking calls classifix, applies masked messages back to request via _map_masked_messages_back and data["input"] handling
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L477-L563
+    why: _map_masked_messages_back maps Lasso-format masked response back onto OpenAI-format messages, preserving structure and handling tool_use/tool_result ordering
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L565-L587
+    why: _update_tool_calls_from_masked rewrites tool_calls array with sanitized argument strings from masked_tool_calls dict keyed by call_id
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L642-L721
+    why: _expand_messages_for_classification flattens tool_use and tool_result blocks for Lasso inspection while preserving original message count tracking
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L918-L972
+    why: _apply_masking_to_model_response copies masked text/messages from Lasso back into response.choices and removes reasoning fields on fallback to block
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L435-L492
+    why: _mask_pii_in_messages applies [MASKED TYPE] tokens based on detector_type and start/end indices, working backward to preserve validity
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L821-L842
+    why: _is_only_pii_violation returns true when breakdown contains only pii/* detectors, enabling auto-mask without blocking or advisory
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L844-L854
+    why: _get_http_exception_for_blocked_guardrail builds HTTPException with 400 status and guardrail response detail
+
+dod:
+  - text: >-
+      Lasso async_pre_call_hook expands messages via _expand_messages_for_classification,
+      calls _run_lasso_guardrail with message_type=PROMPT, and applies masked messages back
+      to request via _map_masked_messages_back when mask=True and violations are detected.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      Lasso async_moderation_hook calls _run_lasso_guardrail with message_type=PROMPT for
+      during-call inspection and applies masking to current request state via _map_masked_messages_back.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      Lasso async_post_call_success_hook extracts response.choices[].message content and tool_calls,
+      builds inspection_messages, calls _run_lasso_guardrail with message_type=COMPLETION,
+      and applies masked output to response via _apply_masking_to_model_response.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      _run_lasso_guardrail selects /classify (default) or /classifix (when mask=True and
+      not has_non_string_content), expands messages for inspection via _expand_messages_for_classification,
+      and delegates to _handle_classification or _handle_masking based on self.mask and multimodal detection.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      _map_masked_messages_back preserves original message structure while applying masked content,
+      tracking tool_use by id and tool_result by tool_use_id, and rewrites text positionally only when
+      text message counts match; falls back to no rewrite on count mismatch.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      _update_tool_calls_from_masked rewrites msg.tool_calls[].function.arguments from a
+      dict keyed by call_id (from masked_tool_calls), preserving call order and other fields.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      _expand_messages_for_classification flattens tool_use (with id, name, input) and tool_result
+      (with tool_use_id, content) blocks into Lasso-format dicts, preserves original message count for
+      Responses-API input routing, and handles role precedence (model > user).
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      _apply_masking_to_model_response writes masked content back to response.choices[],
+      handling model-response (text/assistant role) and text-completion (text field) shapes,
+      removing reasoning_content/thinking_blocks/reasoning_items on fallback to block.
+    proof: [lasso-masking-behaviors, lasso-masking-oracle]
+  - text: >-
+      Lakera _mask_pii_in_messages applies [MASKED TYPE] tokens by detector_type, working backward through
+      indices to preserve validity, and counting entity detections by type.
+    proof: [lakera-pii-behaviors, lakera-pii-oracle]
+  - text: >-
+      Lakera _is_only_pii_violation returns true when breakdown contains only pii/* detectors,
+      triggering auto-mask without blocking or advisory.
+    proof: [lakera-pii-behaviors, lakera-pii-oracle]
+  - text: >-
+      Lakera _get_http_exception_for_blocked_guardrail builds HTTPException with 400 status and
+      renders guardrail response violations in detail.
+    proof: [lakera-pii-behaviors, lakera-pii-oracle]
+  - text: >-
+      Python adapters for lasso_masking and lakera_pii invoke production logic from covered functions,
+      pass strict ruff/basedpyright without Any or broad suppressions, and register helper operations
+      in tools/oracle/src/helpers.
+    proof: [helper-python, helper-registration]
+  - text: No oracle HTTP cases; masking operations are pure functions only.
+    proof: []
+
+checks:
+  optional: []
+  commands:
+    - id: lasso-masking-behaviors
+      why: Lasso masking and lifecycle tests are absent or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::lasso_masking_behaviors(::|$)/ or test(/::lasso_masking_lifecycle(::|$)/)'
+    - id: lasso-masking-oracle
+      why: Oracle cases for Lasso masking are missing or fail
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/lasso-masking)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/lasso-masking/
+    - id: lakera-pii-behaviors
+      why: Lakera PII detection and masking tests are absent or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::lakera_pii_behaviors(::|$)/ or test(/::lakera_pii_masking(::|$)/)'
+    - id: lakera-pii-oracle
+      why: Oracle cases for Lakera PII are missing or fail
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/lakera-pii)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/lakera-pii/
+    - id: helper-python
+      why: Python adapters are missing, unregistered, untyped or fail lint
+      run: test -f tools/oracle/helpers/b3779.py && test -f tools/oracle/helpers/b3779.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/helpers
+    - id: helper-registration
+      why: Helper operations are unregistered
+      run: grep -q 'LassoMasking' tools/oracle/src/helpers/guardrails/*.rs && grep -q 'LakeraProcessing' tools/oracle/src/helpers/guardrails/*.rs
+
+oracle_cases:
+  - tools/oracle/cases/helpers/lasso-masking/expand-messages-for-classification.yaml
+  - tools/oracle/cases/helpers/lasso-masking/map-masked-messages-back.yaml
+  - tools/oracle/cases/helpers/lasso-masking/apply-masking-to-model-response.yaml
+  - tools/oracle/cases/helpers/lasso-masking/lifecycle-pre-call-hook.yaml
+  - tools/oracle/cases/helpers/lasso-masking/lifecycle-post-call-hook.yaml
+  - tools/oracle/cases/helpers/lakera-pii/mask-pii-in-messages.yaml
+  - tools/oracle/cases/helpers/lakera-pii/is-only-pii-violation.yaml
+  - tools/oracle/cases/helpers/lakera-pii/get-http-exception-for-blocked.yaml
+
+deviations:
+  - what: >-
+      Lasso message expansion for classification creates synthetic Lasso-format dicts from tool_use and
+      tool_result blocks, losing some OpenAI field information (tool_calls array, tool_call_id). These
+      fields are preserved in the original request and restored after masking via _map_masked_messages_back
+      and _update_tool_calls_from_masked, not by passing them through Lasso's inspection.
+    why: >-
+      Lasso's API expects a flattened message list for inspection; the original OpenAI structure is
+      required by downstream providers but not meaningful for PII/safety analysis.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L642-L721
+  - what: >-
+      Lasso masking of Responses-API input field writes back to data["input"] as a newline-joined
+      string of masked_for_input text parts, not as a list or structured object.
+    why: >-
+      Responses-API input is always a string in the request; joining masked text parts preserves
+      that format while avoiding silent data loss on mixed text/media input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L434-L475
+  - what: >-
+      Lasso _map_masked_messages_back skips positional text rewrite when text message counts between
+      original and masked do not match, avoiding wrong-message corruption; returns original messages
+      in that case and logs the mismatch.
+    why: >-
+      Message count mismatch indicates Lasso dropped or synthesized messages; applying masked content
+      at wrong positions corrupts the request, so fallback to no rewrite is safer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L477-L563
+  - what: >-
+      Lasso _apply_masking_to_model_response removes reasoning_content, thinking_blocks, reasoning_items
+      fields by catching exceptions on immutable response shapes; fallback is to set field to None if
+      deletion fails.
+    why: >-
+      Reasoning fields are present on some model responses (Claude with extended thinking) but not on
+      all response shapes; exception handling allows graceful degradation when fields are read-only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L918-L973
+  - what: >-
+      Lakera PII-only violations are auto-masked in place regardless of on_flagged setting, overriding
+      block/advisory policies for safety.
+    why: >-
+      Exposing raw PII to satisfy an advisory note or block message is strictly less safe than masking it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L821-L842
+
+out_of_scope:
+  - >-
+    B3778 owns Lasso constructor, helper functions, _prepare_headers, _prepare_payload, _call_lasso_api,
+    _process_lasso_response, error handling, and config model; this task calls those as public exports.
+  - >-
+    B107 owns Lakera lifecycle hooks (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook,
+    async_post_call_streaming_iterator_hook) and Lakera advisory policy (inject_system_message,
+    update_in_memory_litellm_params). This task owns pure masking and classification primitives only.
+  - >-
+    Framework logging decorators, dynamic request params, transport primitives (F, H, E framework owners);
+    this task calls logging_guardrail_information and standard logging helpers only.
+  - >-
+    call_v2_guard is owned by B107 as part of Lakera's lifecycle entry points; this task does not
+    directly call or own it. The _mask_pii_in_messages, _is_only_pii_violation, and
+    _get_http_exception_for_blocked_guardrail functions are pure helpers that receive the violation
+    results from call_v2_guard through B107's orchestration.
+
+pitfalls:
+  - Lasso message expansion creates synthetic Lasso-format messages for inspection but loses OpenAI field
+    information; those fields must be preserved in the original request and restored after masking.
+  - Lasso _map_masked_messages_back skips positional text rewrite on count mismatch; logging the mismatch
+    helps debug why content wasn't masked.
+  - Lasso tool_calls rewrite uses call_id as key and preserves call order; _update_tool_calls_from_masked
+    must iterate choices[].message.tool_calls and match by id.
+  - Lasso Responses-API input rewrite joins masked_for_input text parts with newlines, not as a list.
+  - Lasso reasoning field removal catches exceptions because some response shapes are immutable; fallback
+    is setattr(..., None).
+  - Lakera _mask_pii_in_messages works backward through indices to preserve string validity after each replacement.
+  - Lakera PII-only violations are auto-masked before on_flagged routing checks, overriding other policies.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
