@@ -139,10 +139,17 @@ fn ui_message(message: RawMessage<'_>) -> UiMessage {
 // Pydantic rejected the value, so the input is not a message list
 struct Invalid;
 
+const fn as_object(value: &Json) -> Result<&IndexMap<String, Json>, Invalid> {
+    match value {
+        Json::Object(fields) => Ok(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(Invalid)
+        }
+    }
+}
+
 fn raw_message(value: &Json) -> Result<RawMessage<'_>, Invalid> {
-    let Json::Object(fields) = value else {
-        return Err(Invalid);
-    };
+    let fields = as_object(value)?;
     let tool_calls = match fields.get("tool_calls") {
         None | Some(Json::Null) => Vec::new(),
         Some(Json::List(calls)) => calls.iter().map(tool_call).collect::<Result<_, _>>()?,
@@ -164,41 +171,66 @@ fn raw_message(value: &Json) -> Result<RawMessage<'_>, Invalid> {
     })
 }
 
-fn tool_call(value: &Json) -> Result<UiToolCall, Invalid> {
-    let Json::Object(fields) = value else {
-        return Err(Invalid);
+// A LangChain call nests the real name and arguments under "function"; OpenAI's "args" is the fallback.
+fn tool_name_and_arguments<'json>(
+    fields: &'json IndexMap<String, Json>,
+    call_name: &'json str,
+) -> Result<(&'json str, Option<&'json Json>), Invalid> {
+    let Some(function) = fields.get("function") else {
+        return Ok(fallback_arguments(fields, call_name));
     };
-    let call_name = required_text(fields, "name")?;
-    let (name, arguments) = match fields.get("function") {
-        None | Some(Json::Null) => match fields.get("args") {
-            None | Some(Json::Null) => (call_name, fields.get("arguments")),
-            args @ Some(
-                Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
-            ) => (call_name, args),
-        },
-        Some(Json::Object(function)) => {
-            let function_name = required_text(function, "name")?;
-            let chosen = if function_name.is_empty() {
+    match function {
+        Json::Null => Ok(fallback_arguments(fields, call_name)),
+        Json::Object(inner) => {
+            let function_name = required_text(inner, "name")?;
+            let name = if function_name.is_empty() {
                 call_name
             } else {
                 function_name
             };
-            (chosen, function.get("arguments"))
+            Ok((name, inner.get("arguments")))
         }
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(Invalid);
+        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Err(Invalid),
+    }
+}
+
+fn fallback_arguments<'json>(
+    fields: &'json IndexMap<String, Json>,
+    call_name: &'json str,
+) -> (&'json str, Option<&'json Json>) {
+    match fields.get("args") {
+        None | Some(Json::Null) => (call_name, fields.get("arguments")),
+        args => (call_name, args),
+    }
+}
+
+fn argument_text(value: Option<&Json>) -> String {
+    match value {
+        None | Some(Json::Null) => "{}".to_owned(),
+        Some(Json::Text(text)) => text.clone(),
+        Some(other @ (Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))) => {
+            dumps(other)
         }
-    };
+    }
+}
+
+fn tool_call(value: &Json) -> Result<UiToolCall, Invalid> {
+    let fields = as_object(value)?;
+    let call_name = required_text(fields, "name")?;
+    let (name, arguments) = tool_name_and_arguments(fields, call_name)?;
     Ok(UiToolCall {
         name: name.to_owned(),
-        arguments: match arguments {
-            None | Some(Json::Null) => "{}".to_owned(),
-            Some(Json::Text(text)) => text.clone(),
-            Some(other @ (Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))) => {
-                dumps(other)
-            }
-        },
+        arguments: argument_text(arguments),
     })
+}
+
+const fn as_text(value: &Json) -> Result<&str, Invalid> {
+    match value {
+        Json::Text(text) => Ok(text.as_str()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(Invalid)
+        }
+    }
 }
 
 // Pydantic's str | None: a missing key and null are None, any other non-string fails validation
@@ -208,8 +240,7 @@ fn optional_text<'json>(
 ) -> Result<Option<&'json str>, Invalid> {
     match fields.get(key) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.as_str())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => Err(Invalid),
+        Some(other) => as_text(other).map(Some),
     }
 }
 
@@ -218,11 +249,5 @@ fn required_text<'json>(
     fields: &'json IndexMap<String, Json>,
     key: &str,
 ) -> Result<&'json str, Invalid> {
-    match fields.get(key) {
-        None => Ok(""),
-        Some(Json::Text(text)) => Ok(text.as_str()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(Invalid)
-        }
-    }
+    fields.get(key).map_or(Ok(""), as_text)
 }
