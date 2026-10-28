@@ -110,5 +110,6 @@ fn decode_and_scrub_event(
     let typed = decode_event(event, event_json)?;
     let scrubbed = scrub_event(&typed, send_default_pii)
         .map_err(|error| as_helper_error("PatternError", error.to_string()))?;
-    serde_json::to_value(scrubbed).map_err(|error| as_helper_error("InvalidEvent", error.to_string()))
+    serde_json::to_value(scrubbed)
+        .map_err(|error| as_helper_error("InvalidEvent", error.to_string()))
 }
