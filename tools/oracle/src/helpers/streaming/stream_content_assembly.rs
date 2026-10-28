@@ -38,8 +38,8 @@ impl crate::helpers::Helper for Op {
                 let content = get_combined_content(chunks, ContentField::Content);
                 let reasoning = get_combined_content(chunks, ContentField::Reasoning);
                 match (content, reasoning) {
-                    (Ok(content), Ok(reasoning)) => {
-                        json!({"content": content, "reasoning": reasoning})
+                    (Ok(content_value), Ok(reasoning_value)) => {
+                        json!({"content": content_value, "reasoning": reasoning_value})
                     }
                     (Err(error), _) | (_, Err(error)) => {
                         json!({"ok": false, "error": error.to_string()})
