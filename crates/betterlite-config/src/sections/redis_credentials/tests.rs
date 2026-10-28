@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use super::{AzureCredential, Provider};
+use super::Provider;
+use super::azure::AzureCredential;
 use crate::{loader::ConfigLoader, loader::EnvironmentLookup as _};
 
 #[test]

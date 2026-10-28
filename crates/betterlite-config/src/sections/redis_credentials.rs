@@ -67,22 +67,6 @@ pub struct GcpSettings {
     pub token_ttl_seconds: u64,
 }
 
-#[derive(Debug, Clone)]
-pub struct AzureSettings {
-    pub token: Option<SecretString>,
-    pub client_id: Option<SecretString>,
-    pub tenant_id: Option<SecretString>,
-    pub client_secret: Option<SecretString>,
-    pub credential: AzureCredential,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AzureCredential {
-    Default,
-    ManagedIdentity,
-    ClientSecret,
-}
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -95,14 +79,17 @@ impl Section for Raw {
             find_deployment_settings(self.model_list),
         );
         let environment_snapshot = environment_snapshot(lookup);
-        let resolved = resolve_credentials(&settings, lookup);
-        let gcp_service_account = resolved.gcp_service_account.clone();
+        let gcp_service_account = choose(
+            settings.gcp_service_account.clone(),
+            lookup,
+            "REDIS_GCP_SERVICE_ACCOUNT",
+        );
         let gcp = gcp_service_account.map(|account| GcpSettings {
             service_account: SecretString::new(Box::<str>::from(account)),
             ssl_ca_certs: settings.gcp_ssl_ca_certs.clone(),
             token_ttl_seconds: GCP_TOKEN_TTL_SECONDS,
         });
-        let azure = build_azure(resolved);
+        let azure = resolve_azure(&settings, lookup);
         let aws_enabled = settings.aws_iam_auth.as_ref().is_some_and(coerces_to_true);
         let aws = aws_enabled
             .then(|| build_aws(&settings, lookup))
@@ -146,69 +133,6 @@ fn environment_snapshot(lookup: &impl EnvironmentLookup) -> BTreeMap<String, boo
         .into_iter()
         .map(|name| (name.to_owned(), lookup.lookup(name).is_some()))
         .collect()
-}
-
-struct ResolvedCredentials {
-    gcp_service_account: Option<String>,
-    azure_token: Option<String>,
-    azure_client_id: Option<String>,
-    azure_tenant_id: Option<String>,
-    azure_client_secret: Option<String>,
-}
-
-fn resolve_credentials(
-    settings: &RawSettings,
-    lookup: &impl EnvironmentLookup,
-) -> ResolvedCredentials {
-    let gcp_service_account = choose(
-        settings.gcp_service_account.clone(),
-        lookup,
-        "REDIS_GCP_SERVICE_ACCOUNT",
-    );
-    let azure_token = choose(
-        settings.azure_redis_ad_token.clone(),
-        lookup,
-        "REDIS_AZURE_AD_TOKEN",
-    );
-    let azure_client_id = choose(settings.azure_client_id.clone(), lookup, "AZURE_CLIENT_ID");
-    let azure_tenant_id = choose(settings.azure_tenant_id.clone(), lookup, "AZURE_TENANT_ID");
-    let azure_client_secret = choose(
-        settings.azure_client_secret.clone(),
-        lookup,
-        "AZURE_CLIENT_SECRET",
-    );
-    ResolvedCredentials {
-        gcp_service_account,
-        azure_token,
-        azure_client_id,
-        azure_tenant_id,
-        azure_client_secret,
-    }
-}
-
-fn build_azure(resolved: ResolvedCredentials) -> Option<AzureSettings> {
-    let ResolvedCredentials {
-        azure_token,
-        azure_client_id,
-        azure_tenant_id,
-        azure_client_secret,
-        ..
-    } = resolved;
-    (azure_token.is_some()
-        || azure_client_id.is_some()
-        || azure_tenant_id.is_some()
-        || azure_client_secret.is_some())
-    .then(|| AzureSettings {
-        credential: azure_credential(
-            azure_client_id.as_deref(),
-            azure_tenant_id.as_deref(),
-            azure_client_secret.as_deref(),
-        ),
-        token: azure_token.map(|value| SecretString::new(Box::<str>::from(value))),
-        client_id: azure_client_id.map(|value| SecretString::new(Box::<str>::from(value))),
-        tenant_id: azure_tenant_id.map(|value| SecretString::new(Box::<str>::from(value))),
-        client_secret: azure_client_secret.map(|value| SecretString::new(Box::<str>::from(value))),
-    })
 }
 
 const fn provider_precedence(
@@ -282,23 +206,13 @@ fn coerces_to_true(setting: &ScalarBool) -> bool {
     }
 }
 
-const fn azure_credential(
-    client_id: Option<&str>,
-    tenant_id: Option<&str>,
-    secret: Option<&str>,
-) -> AzureCredential {
-    if client_id.is_some() && tenant_id.is_some() && secret.is_some() {
-        AzureCredential::ClientSecret
-    } else if client_id.is_some() {
-        AzureCredential::ManagedIdentity
-    } else {
-        AzureCredential::Default
-    }
-}
-
 #[path = "redis_credentials/aws.rs"]
 pub mod aws;
 use aws::{AwsSettings, build_aws};
+
+#[path = "redis_credentials/azure.rs"]
+pub mod azure;
+use azure::{AzureSettings, resolve_azure};
 
 #[path = "redis_credentials/tests.rs"]
 mod tests;
