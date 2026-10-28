@@ -1,10 +1,6 @@
 use super::AssemblyError;
 
-// betterlite-secrets::secret_codec::python_base64::decode_lenient filters the same alphabet and
-// checks the same trailing-pad rule, but it is pub(crate) and bounds only input length, not a
-// running decoded-size limit; its crate also pulls in encryption dependencies unrelated to
-// streaming. Out of this task's scope.paths, so the check is reimplemented here against the
-// running `limit` instead of exporting or relocating that helper.
+// python_base64::decode_lenient in betterlite-secrets is pub(crate) and has no running decoded-size limit.
 pub(super) fn normalize(fragment: &str, limit: usize) -> Result<Vec<u8>, AssemblyError> {
     if !fragment.is_ascii() {
         return Err(AssemblyError::NonAsciiAudio);
