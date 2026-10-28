@@ -33,17 +33,28 @@ pub(crate) struct SettingsCall {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Deployment {
-    aws_access_key_id: Option<String>,
-    aws_secret_access_key: Option<String>,
-    aws_session_token: Option<String>,
-    aws_region_name: Option<String>,
-    aws_session_name: Option<String>,
-    aws_profile_name: Option<String>,
-    aws_role_name: Option<String>,
-    aws_web_identity_token: Option<String>,
-    aws_sts_endpoint: Option<String>,
-    aws_external_id: Option<String>,
-    aws_session_tags: Option<betterlite_config::sections::bedrock_settings::SessionTagValue>,
+    #[serde(rename = "aws_access_key_id")]
+    access_key_id: Option<String>,
+    #[serde(rename = "aws_secret_access_key")]
+    secret_access_key: Option<String>,
+    #[serde(rename = "aws_session_token")]
+    session_token: Option<String>,
+    #[serde(rename = "aws_region_name")]
+    region_name: Option<String>,
+    #[serde(rename = "aws_session_name")]
+    session_name: Option<String>,
+    #[serde(rename = "aws_profile_name")]
+    profile_name: Option<String>,
+    #[serde(rename = "aws_role_name")]
+    role_name: Option<String>,
+    #[serde(rename = "aws_web_identity_token")]
+    web_identity_token: Option<String>,
+    #[serde(rename = "aws_sts_endpoint")]
+    sts_endpoint: Option<String>,
+    #[serde(rename = "aws_external_id")]
+    external_id: Option<String>,
+    #[serde(rename = "aws_session_tags")]
+    session_tags: Option<betterlite_config::sections::bedrock_settings::SessionTagValue>,
 }
 
 #[derive(Debug, Deserialize)]
