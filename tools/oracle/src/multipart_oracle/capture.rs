@@ -2,9 +2,14 @@ use std::str;
 
 use crate::OracleError;
 
-use super::{MAX_PARTS, Part};
+use super::{MAX_CAPTURED_BODY_BYTES, MAX_PARTS, Part};
 
 pub fn decode_multipart_capture(content_type: &str, body: &[u8]) -> Result<Vec<Part>, OracleError> {
+    if body.len() > MAX_CAPTURED_BODY_BYTES {
+        return Err(OracleError::Multipart(
+            "captured body exceeds 16777216 bytes",
+        ));
+    }
     let boundary = boundary(content_type).ok_or(OracleError::Multipart(
         "multipart capture has no valid boundary",
     ))?;
@@ -179,9 +184,14 @@ pub fn decode_capture_input(input: &[u8]) -> Result<Vec<Part>, OracleError> {
 }
 
 fn boundary(content_type: &str) -> Option<String> {
-    let prefix = "multipart/form-data;";
-    let rest = content_type.strip_prefix(prefix)?;
-    let boundary_value = rest
+    let (media_type, parameters) = content_type.split_once(';')?;
+    if !media_type
+        .trim()
+        .eq_ignore_ascii_case("multipart/form-data")
+    {
+        return None;
+    }
+    let boundary_value = parameters
         .split(';')
         .find_map(|item| item.trim().strip_prefix("boundary="))?
         .trim();

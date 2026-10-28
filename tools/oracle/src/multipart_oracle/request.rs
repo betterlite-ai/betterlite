@@ -37,6 +37,15 @@ pub(crate) fn request_body(body: &Value, kind: BodyKind) -> Result<RequestBody, 
             serde_json::to_vec(body).map_err(OracleError::HttpBody)?,
         )),
         BodyKind::Multipart => {
+            reject_unknown_fields(body, &["parts"])?;
+            if let Some(parts) = body.get("parts").and_then(Value::as_array) {
+                for part in parts {
+                    reject_unknown_fields(
+                        part,
+                        &["name", "filename", "content_type", "text", "fixture"],
+                    )?;
+                }
+            }
             let spec: MultipartSpec = serde_json::from_value(body.clone())
                 .map_err(|error| OracleError::MultipartOwned(error.to_string()))?;
             encode_parts(&spec.parts).map(|(content_type, bytes)| RequestBody::Raw {
@@ -45,6 +54,7 @@ pub(crate) fn request_body(body: &Value, kind: BodyKind) -> Result<RequestBody, 
             })
         }
         BodyKind::Bytes => {
+            reject_unknown_fields(body, &["body_kind", "fixture", "content_type"])?;
             let spec: BytesSpec = serde_json::from_value(body.clone())
                 .map_err(|error| OracleError::MultipartOwned(error.to_string()))?;
             Ok(RequestBody::Raw {
@@ -55,6 +65,21 @@ pub(crate) fn request_body(body: &Value, kind: BodyKind) -> Result<RequestBody, 
     }
 }
 
+fn reject_unknown_fields(body: &Value, allowed: &[&str]) -> Result<(), OracleError> {
+    let Some(fields) = body.as_object() else {
+        return Ok(());
+    };
+    if let Some(field) = fields
+        .keys()
+        .find(|field| !allowed.iter().any(|allowed| allowed == field))
+    {
+        return Err(OracleError::MultipartOwned(format!(
+            "field \"{field}\" is not allowed"
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn answer_body(answer: &UpstreamAnswer) -> Result<Option<Vec<u8>>, OracleError> {
     if answer
         .headers
@@ -63,6 +88,11 @@ pub(crate) fn answer_body(answer: &UpstreamAnswer) -> Result<Option<Vec<u8>>, Or
     {
         let spec: BytesSpec = serde_json::from_value(answer.body.clone().unwrap_or(Value::Null))
             .map_err(|error| OracleError::MultipartOwned(error.to_string()))?;
+        if spec.body_kind.is_some_and(|kind| kind != BodyKind::Bytes) {
+            return Err(OracleError::Multipart(
+                "binary answer body_kind must be bytes",
+            ));
+        }
         Ok(Some(fixture(&spec.fixture)?))
     } else {
         Ok(None)

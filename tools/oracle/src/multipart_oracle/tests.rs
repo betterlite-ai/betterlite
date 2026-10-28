@@ -113,6 +113,24 @@ fn binary_answer_exact() {
 }
 
 #[test]
+fn binary_answer_accepts_body_kind() {
+    let body: Value = serde_json::from_str(
+        r#"{"body_kind":"bytes","fixture":"binary-response.bin","content_type":"application/octet-stream"}"#,
+    )
+    .unwrap();
+    let answer = UpstreamAnswer {
+        status: 200,
+        headers: BTreeMap::from([(
+            "content-type".to_owned(),
+            "application/octet-stream".to_owned(),
+        )]),
+        body: Some(body),
+        events: None,
+    };
+    assert!(answer_body(&answer).unwrap().is_some());
+}
+
+#[test]
 fn rejects_text_binary_mismatch() {
     let invalid = vec![u8::MAX];
     str::from_utf8(&invalid).unwrap_err();
@@ -129,7 +147,12 @@ fn fixture_root_escape_rejected() {
 #[test]
 fn rejects_unknown_field() {
     let value: Value = serde_json::from_str(r#"{"parts":[],"bogus":true}"#).unwrap();
-    request_body(&value, BodyKind::Multipart).unwrap_err();
+    assert_eq!(
+        request_body(&value, BodyKind::Multipart)
+            .unwrap_err()
+            .to_string(),
+        "field \"bogus\" is not allowed"
+    );
 }
 
 #[test]
@@ -150,6 +173,14 @@ fn rejects_limits() {
     assert_eq!(
         encode_parts(&parts).unwrap_err().to_string(),
         "multipart contains more than 128 parts"
+    );
+
+    let captured = vec![0; 16 * 1024 * 1024 + 1];
+    assert_eq!(
+        decode_multipart_capture("multipart/form-data; boundary=a", &captured)
+            .unwrap_err()
+            .to_string(),
+        "captured body exceeds 16777216 bytes"
     );
 }
 
