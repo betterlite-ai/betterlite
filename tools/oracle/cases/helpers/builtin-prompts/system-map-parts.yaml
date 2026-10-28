@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "system-map-parts", "call": {"builtin_prompts": {"family": "system_map", "messages": [{"role": "system", "content": []}, {"role": "user", "content": "u"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": [{"pointer": "/error/message", "why": "betterlite writes its own message"}]}}

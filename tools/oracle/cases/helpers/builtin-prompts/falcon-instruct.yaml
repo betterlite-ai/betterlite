@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "falcon-instruct", "call": {"builtin_prompts": {"family": "falcon_instruct", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}
