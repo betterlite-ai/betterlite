@@ -155,7 +155,7 @@ fn openai_mock_transport_cases(#[case] source: &str) {
 #[test]
 fn replays_the_openai_mock_transport_corpus() {
     let entries = fs::read_dir("fuzz/corpus/openai_mock_transport").unwrap();
-    let mut seen = 0;
+    let mut seen = 0_usize;
     for entry in entries {
         let path = entry.unwrap().path();
         let content = fs::read(&path).unwrap();
@@ -167,5 +167,5 @@ fn replays_the_openai_mock_transport_corpus() {
         }
         seen += 1;
     }
-    assert!(seen > 0);
+    assert!(seen > 0_usize);
 }
