@@ -1,2 +1,8 @@
 task: B3701
-deviations: []
+deviations:
+  - what: "Block detection uses character indices for start/end positions instead of byte offsets. LiteLLM's regex.finditer returns byte positions; Rust str methods use character indexing. Masking and text reassembly use character slicing to preserve UTF-8 safety."
+    why: "Rust strings are UTF-8 and indexing requires character boundaries. Character positions are consistent with betterlite's content filter span handling (B3698)."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L387-L402"
+  - what: "The fully qualified module scopes are block_code_execution, language_normalization, intent_detection, etc., named after domains, not the task id. Rust module names do not include task ids per the naming convention in rules.yaml."
+    why: "Module naming follows betterlite conventions; task ids are tracked in backlog entries, not code."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L322-L328"
