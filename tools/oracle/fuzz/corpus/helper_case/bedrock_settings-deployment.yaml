@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-settings-deployment
+call:
+  bedrock_settings:
+    settings:
+      deployments:
+        - aws_region_name: deployment-region
+        - {}
+      environment:
+        AWS_REGION_NAME: environment-region
+        AWS_BEARER_TOKEN_BEDROCK: ""
+env:
+  AWS_REGION_NAME: environment-region
+  AWS_BEARER_TOKEN_BEDROCK: ""
+compare:
+  ignore: []

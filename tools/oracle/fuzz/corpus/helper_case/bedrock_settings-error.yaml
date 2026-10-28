@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-settings-error
+call:
+  bedrock_settings:
+    error:
+      status_code: 429
+      message: throttled
+      headers:
+        http:
+          - [Retry-After, "1"]
+          - [retry-after, "2"]
+      request: {method: POST, url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/converse"}
+      response: null
+      body: null
+      status_code_is_synthesized: false
+env: {}
+compare:
+  ignore: []
