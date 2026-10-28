@@ -12,9 +12,9 @@ description: >-
   - escaped_newlines.rs: _normalize_escaped_newlines (L251-L274 LiteLLM) replacing literal \\n/\\r (two-character sequences) with real newlines only when text has NO real newlines present. Heuristic: if \n or \r exist, return unchanged (assume payload is already normalized). Order matters: replace \\r\\n first to avoid producing extra \\n.
   - text_scanning.rs: Async _scan_text (L405-L494 LiteLLM) analyzing one text for code blocks and applying block/mask logic. Signature: fn _scan_text(&self, text: &str, detections: &mut Vec<CodeBlockDetection>, input_type: RequestOrResponse) -> (String, bool). Find blocks via _find_blocks, check execution intent only for requests when detect_execution_intent is true. For requests with no-execution intent and no execution intent, return (text, false) early. For each block, determine effective_block: action_taken=="block" AND (is_response OR NOT detect_execution_intent OR has_execution_intent). Record detection dict with type/language/confidence/action_taken. If effective_block and self.action=="block", set should_raise=true. Build output by concatenating parts: unchanged text before block, MASK_PLACEHOLDER if effective_block else original block, unchanged text after. Return (modified_text, should_raise).
 
-  Depend on betterlite-config for BlockCodeExecGuardrailConfig, CodeBlockDetection, CodeBlockActionTaken (from B3690); fastapi::HTTPException, asyncio traits and serde for typed payloads.
+  Depend on betterlite-config for BlockCodeExecGuardrailConfig, CodeBlockDetection and CodeBlockActionTaken (from B3690).
 
-  Integration: Export async fn apply_guardrail as the public entry point called by the proxy guardrail dispatcher. The apply_guardrail method is decorated with @log_guardrail_information in LiteLLM but in Rust the logging logic lives in finally-block, so no separate decorator is needed.
+  The constructor, apply_guardrail, _raise_block_error and registration belong to B3702, which builds on these five modules. Each module's tests live in that module, so each check's filter starts with its module path.
 
 scope:
   paths:
@@ -53,26 +53,18 @@ references:
     why: _find_blocks method iterating regex matches, computing confidence and action_taken.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L405-L494
     why: _scan_text method with execution-intent checking, block/mask/allow logic and output assembly.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L496-L514
-    why: _raise_block_error method with dual-path exception raising for responses vs requests.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L517-L588
-    why: apply_guardrail async entry point with try/except/finally structure, detection accumulation and tracing.
-  - url: https://docs.rs/fastapi/latest/fastapi/
-    why: HTTPException type and exception raising patterns for response blocking.
   - url: https://docs.rs/regex/latest/regex/
     why: Regex compilation with DOTALL flag and finditer iteration pattern.
 
 dod:
-  - text: BlockCodeExecutionGuardrail constructor accepts guardrail_name, blocked_languages, action, confidence_threshold, detect_execution_intent, event_hook and default_on; normalizes event_hook to GuardrailEventHooks list and clamps confidence_threshold to [0.0, 1.0].
-    proof: [guardrail-init-tests]
   - text: FENCED_BLOCK_RE regex correctly matches markdown fenced code blocks with optional language tag and multiline content between triple backticks.
-    proof: [regex-tests]
+    proof: [block-detection-tests]
   - text: _find_blocks returns list of block tuples with (start_char, end_char, language_tag, body, confidence, action_taken) in order, with language_tag = "(none)" when no tag present.
-    proof: [block-finding-tests]
+    proof: [block-detection-tests]
   - text: Language normalization resolves aliases (js → javascript, py → python, sh → bash, ts → typescript) and compares case-insensitively.
     proof: [language-tests]
   - text: Confidence scoring returns 1.0 for tags in blocked list, 0.5 for non-executable tags in block-all mode, 1.0 for executable tags in block-all, 0.0 otherwise.
-    proof: [confidence-tests]
+    proof: [language-tests]
   - text: Blocked language detection returns true when tag is in blocked_languages list, or true when block_all is set (unless confidence disqualifies action).
     proof: [language-tests]
   - text: _has_no_execution_intent returns true only when text contains a no-execution phrase and no execution-request phrase.
@@ -92,57 +84,28 @@ dod:
   - text: _scan_text returns (modified_text, true) when any block triggers effective_block with self.action=="block".
     proof: [text-scanning-tests]
   - text: _normalize_escaped_newlines replaces \\n and \\r (literal two-character sequences) with real newlines only when text contains no real newlines.
-    proof: [text-scanning-tests]
-  - text: apply_guardrail extracts texts from inputs, processes each via _scan_text, and raises HTTPException with language on first should_raise block.
-    proof: [apply-guardrail-tests]
-  - text: apply_guardrail logs GuardrailStatus "success" on clean processing, "guardrail_intervened" on HTTPException or ModifyResponseException, "guardrail_failed_to_respond" on other errors, via finally-block always.
-    proof: [apply-guardrail-tests]
-  - text: apply_guardrail calls add_standard_logging_guardrail_information_to_request_data with guardrail_provider "block_code_execution", tracing_detail with detection_method "fenced_code_block", and max confidence from detections.
-    proof: [apply-guardrail-tests]
-  - text: apply_guardrail raises ModifyResponseException for request-side blocks, setting status "guardrail_intervened" with empty exception_str.
-    proof: [apply-guardrail-tests]
-  - text: _raise_block_error raises HTTPException with status 400 for responses, or calls raise_passthrough_exception for requests.
-    proof: [error-handling-tests]
-  - text: |-
-      _raise_block_error generates message "Content blocked: execution request detected" for language=="execution_request",
-      or "Content blocked: executable code block detected (language: {language})".
-    proof: [error-handling-tests]
+    proof: [escaped-newlines-tests]
   - text: Phrase lists are non-overlapping subsets (no phrase subsumes another via substring containment), as documented.
-    proof: [phrase-list-validation]
+    proof: [intent-detection-tests]
 
 checks:
   optional: []
   commands:
-    - id: guardrail-init-tests
-      why: BlockCodeExecutionGuardrail constructor, parameter normalization or validation fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::guardrail_init/)'
-    - id: regex-tests
-      why: FENCED_BLOCK_RE regex pattern matching or compilation fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::regex/)'
-    - id: block-finding-tests
-      why: _find_blocks block detection, tuple construction or ordering fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::block_finding/)'
+    - id: block-detection-tests
+      why: FENCED_BLOCK_RE matching, _find_blocks tuple construction, ordering or action_taken assignment fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::block_detection::/)'
     - id: language-tests
-      why: Language normalization, alias resolution or blocked list checking fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::language/)'
-    - id: confidence-tests
-      why: Confidence scoring or action_taken assignment fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::confidence/)'
+      why: Language normalization, alias resolution, blocked list checking or confidence scoring fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::language_normalization::/)'
     - id: intent-detection-tests
-      why: Execution intent or no-execution intent detection fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::intent_detection/)'
+      why: Execution intent or no-execution intent detection fails, or one phrase subsumes another
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::intent_detection::/)'
+    - id: escaped-newlines-tests
+      why: Literal \n and \r sequences are not normalized, or text that already has real newlines changes
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::escaped_newlines::/)'
     - id: text-scanning-tests
       why: _scan_text block/mask logic, early return or text assembly fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::text_scanning/)'
-    - id: apply-guardrail-tests
-      why: apply_guardrail exception handling, detection accumulation or logging fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::apply_guardrail/)'
-    - id: error-handling-tests
-      why: _raise_block_error message generation or exception type selection fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::error_handling/)'
-    - id: phrase-list-validation
-      why: Phrase list constants are not defined or contain subsuming overlaps
-      run: grep -q "_NO_EXECUTION_PHRASES" crates/betterlite-guardrails/src/block_code_execution/*.rs && grep -q "_EXECUTION_REQUEST_PHRASES" crates/betterlite-guardrails/src/block_code_execution/*.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^block_code_execution::text_scanning::/)'
 
 oracle_cases: []
 
