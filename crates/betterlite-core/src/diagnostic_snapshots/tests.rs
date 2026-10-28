@@ -1,17 +1,19 @@
 #![cfg(test)]
 
+use super::cache::{CacheComponent, CacheMemoryInput, CacheMemorySnapshot, CacheSectionError};
+use super::gc_config::gc_thresholds;
 use super::process::{
     MemoryStatus, ProcessMemoryError, health_status, parse_proc_memory, process_memory_snapshot,
     snapshot_process_memory,
 };
-use super::runtime::{
-    CacheComponent, CacheMemoryInput, CacheMemorySnapshot, RouterMemoryInput, RouterMemorySnapshot,
-    UnsupportedSnapshot,
-};
+use super::router::{RouterMemoryInput, RouterMemorySnapshot};
+use super::unsupported::UnsupportedSnapshot;
 use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::fs;
+use std::io;
 use std::path::Path;
 
 #[test]
@@ -55,7 +57,9 @@ fn live_process_snapshot_has_real_memory_values() {
 #[test]
 fn cache_sections_are_independent() {
     let input = CacheMemoryInput {
-        user_api_key_cache: Err("cache unavailable".to_owned()),
+        user_api_key_cache: Err(CacheSectionError::Unavailable {
+            source: io::Error::other("cache unavailable"),
+        }),
         llm_router_cache: Ok(CacheComponent {
             item_count: 2,
             cache_dict_bytes: 10,
@@ -65,10 +69,12 @@ fn cache_sections_are_independent() {
         redis_usage_cache: Ok(CacheComponent::default()),
     };
     let snapshot = CacheMemorySnapshot::from_input(input);
+    let cache_error = snapshot.user_api_key_cache.unwrap_err();
     assert_eq!(
-        snapshot.user_api_key_cache.unwrap_err(),
-        "cache unavailable"
+        cache_error.to_string(),
+        "cache section unavailable: cache unavailable"
     );
+    assert!(cache_error.source().is_some());
     assert_eq!(snapshot.llm_router_cache.unwrap().item_count, 2);
 }
 
@@ -101,10 +107,7 @@ fn gc_threshold_uses_config_lookup_boundary() {
         String::from("700,10,10"),
     )]);
     let config = ConfigLoader { lookup: values };
-    assert_eq!(
-        super::runtime::gc_thresholds(&config.lookup),
-        Some([700, 10, 10])
-    );
+    assert_eq!(gc_thresholds(&config.lookup), Some([700, 10, 10]));
 }
 
 #[rstest]
