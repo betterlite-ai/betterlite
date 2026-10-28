@@ -1,3 +1,4 @@
+pub mod aws;
 pub mod aws_secrets;
 pub mod custom_interface;
 pub mod custom_loader;

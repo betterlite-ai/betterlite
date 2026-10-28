@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Serve interaction create retrieve delete and cancel routes
 status: todo
 depends_on: [B3495, B3499, B3500, B014, B052, B1100]
-file: null
+file: tasks/B3507-interaction-routes.yaml
 covers:
   - "litellm/proxy/google_endpoints/endpoints.py"
 parent: B098

@@ -1,0 +1,107 @@
+id: B4725
+title: MCP toolset management and gateway session controls
+description: >-
+  Build five toolset routes and two session routes to manage MCP tool collections and report/terminate gateway sessions.
+
+  The two gateway session routes are read/write: GET `/v1/mcp/sessions` returns `MCPGatewaySessionsResponse` with a report of live sessions on this proxy worker, grouped by AI client and by user, and DELETE `/v1/mcp/sessions` with optional session_id_prefix and user_id query params returns `MCPGatewaySessionsTerminateResponse`. GET requires PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY role; DELETE requires full proxy admin and at least one selector (status 400 if both null). GET calls `get_mcp_gateway_sessions_report()` with no arguments; DELETE validates session_id_prefix with min_length=8 (MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH), returns 422 if too short, calls `terminate_mcp_gateway_sessions(session_id_prefix=..., user_id=...)` and uses `_user_is_full_admin` for authorization.
+
+  The five toolset routes build CRUD around a toolset entity (server_id, tool_name pairs with a name, optional description and created/updated metadata). POST `/v1/mcp/toolset` (201 Created) requires PROXY_ADMIN role, accepts `NewMCPToolsetRequest`, calls `create_mcp_toolset(prisma_client, payload, touched_by)`, returns the created toolset, catches `UniqueViolationError` as 409 with detail.error "A toolset named '{name}' already exists.", then invalidates the cache. PUT `/v1/mcp/toolset` requires PROXY_ADMIN role, accepts `UpdateMCPToolsetRequest` with partial updates (omitted fields retain stored values, explicit null clears fields except toolset_name and tools which must always exist), calls `update_mcp_toolset(prisma_client, payload, touched_by)`, returns 202 Accepted, catches `UniqueViolationError` as 409, returns 404 if not found, invalidates cache. GET `/v1/mcp/toolset` lists toolsets: full admins see all via `list_mcp_toolsets(prisma_client)`, admin-viewers with object_permission see their granted IDs via `list_mcp_toolsets(prisma_client, toolset_ids=op.mcp_toolsets)`, other keys see granted-toolset-ids only via `granted_toolset_ids(user_api_key_dict)` then `list_mcp_toolsets(prisma_client, toolset_ids=sorted(granted))`. GET `/v1/mcp/toolset/{toolset_id}` fetches one: check authorization via `_user_has_admin_view` or `granted_toolset_ids`, return 403 if denied, call `get_mcp_toolset(prisma_client, toolset_id)`, return 404 if None. DELETE `/v1/mcp/toolset/{toolset_id}` (202 Accepted, empty body) requires PROXY_ADMIN role, calls `delete_mcp_toolset(prisma_client, toolset_id)`, returns 404 if not found, invalidates cache. All four mutation routes capture `litellm_changed_by` header and call `get_audit_log_changed_by(litellm_changed_by=..., user_api_key_dict=..., litellm_proxy_admin_name=...)` or LITELLM_PROXY_ADMIN_NAME fallback, passing touched_by to the DB function. All routes get DB via `get_prisma_client_or_throw("Database not connected...")`. Wrap all routes with `@management_endpoint_wrapper`. Preserve duplicate-name 409 responses, cache invalidation after committed writes, and the mandatory session selector for termination.
+
+  Direct dependencies: B4711 for `get_prisma_client_or_throw` generic DB accessor; B4717 for `_user_is_full_admin` and `_user_has_admin_view`; B065 for `get_audit_log_changed_by`; B865 for `management_endpoint_wrapper` route wrapping; B732 for `AuthContext`, `UserAPIKeyAuth` types and auth dependency registration.
+
+  Missing (Q1/Q2/Q3/Q4/Q6): `get_mcp_gateway_sessions_report`, `terminate_mcp_gateway_sessions`, `create_mcp_toolset`, `list_mcp_toolsets`, `get_mcp_toolset`, `update_mcp_toolset`, `delete_mcp_toolset`, `granted_toolset_ids` callables; manager `invalidate_toolset_cache(toolset_id?)` and admin-view predicate `_user_has_admin_view`; `NewMCPToolsetRequest`, `UpdateMCPToolsetRequest`, `MCPGatewaySessionsResponse`, `MCPGatewaySessionsTerminateResponse` and toolset response model types.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp_toolsets_and_sessions.rs
+    - crates/betterlite-server/src/mcp_toolsets_and_sessions/**
+    - tools/oracle/cases/http/sessions/**
+    - tools/oracle/cases/http/toolset/**
+    - tools/oracle/helpers/b4725.py
+    - tools/oracle/helpers/b4725/**
+    - tools/oracle/src/helpers/server/b4725.rs
+    - tools/oracle/src/helpers/server/b4725/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1449-L1506
+    why: GET and DELETE session routes; preserve admin role gates, parameter validation and error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3270-L3450
+    why: POST create, GET list, GET fetch, PUT update, DELETE remove toolset routes; preserve admin-only mutations,
+      grant-filtered GET visibility, duplicate-name 409, not-found 404 and cache invalidation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L206
+    why: MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH = 8; DELETE session uses Query(min_length=MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1461-L1467
+    why: GET /v1/mcp/sessions requires PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY; returns 403 otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1483-L1485
+    why: DELETE /v1/mcp/sessions validates both session_id_prefix and user_id null, returns 400 if both absent.
+dod:
+  - text: >-
+      Cases session_get_requires_admin_view, session_delete_requires_full_admin, session_delete_no_selectors_400,
+      session_delete_prefix_too_short_422, toolset_post_admin_only_403, toolset_post_duplicate_409,
+      toolset_get_grant_filtered, toolset_detail_not_found_404, toolset_detail_access_denied_403,
+      toolset_put_admin_only_403, toolset_put_not_found_404, toolset_put_duplicate_409,
+      toolset_delete_admin_only_403 and toolset_delete_not_found_404 verify every permission gate
+      and named HTTP status/error message via oracle cases.
+    proof:
+      - oracle
+  - text: Toolset CRUD routes preserve grant-filtered reads per object_permission.mcp_toolsets, duplicate-name
+      409 responses and cache invalidation after committed writes.
+    proof:
+      - oracle
+  - text: Session termination requires an explicit session_id_prefix (min_length=8) and/or user_id (min_length=1) selector,
+      returns 400 if both are null, 422 if prefix is too short.
+    proof:
+      - oracle
+  - text: Audit logging captures the litellm_changed_by header or caller principal for toolset POST and PUT mutations.
+    proof:
+      - oracle
+checks:
+  optional: []
+  commands: []
+
+oracle_cases:
+  - tools/oracle/cases/http/sessions/get-requires-admin-or-view-only.yaml
+  - tools/oracle/cases/http/sessions/delete-requires-full-admin.yaml
+  - tools/oracle/cases/http/sessions/delete-missing-both-selectors-400.yaml
+  - tools/oracle/cases/http/sessions/delete-session-id-prefix-too-short-422.yaml
+  - tools/oracle/cases/http/toolset/post-create-admin-only-403.yaml
+  - tools/oracle/cases/http/toolset/post-duplicate-name-409.yaml
+  - tools/oracle/cases/http/toolset/get-list-grant-filtered.yaml
+  - tools/oracle/cases/http/toolset/get-detail-not-found-404.yaml
+  - tools/oracle/cases/http/toolset/get-detail-access-denied-403.yaml
+  - tools/oracle/cases/http/toolset/put-update-admin-only-403.yaml
+  - tools/oracle/cases/http/toolset/put-not-found-404.yaml
+  - tools/oracle/cases/http/toolset/put-duplicate-name-409.yaml
+  - tools/oracle/cases/http/toolset/delete-admin-only-403.yaml
+  - tools/oracle/cases/http/toolset/delete-not-found-404.yaml
+deviations: []
+
+out_of_scope:
+  - 'litellm/proxy/management_endpoints/mcp_management_endpoints.py: B4711 owns generic DB accessor `get_prisma_client_or_throw` (L982-990); this task calls it.'
+  - 'litellm/proxy/management_endpoints/mcp_management_endpoints.py: B4717 owns `_user_is_full_admin` (L709-...) and missing `_user_has_admin_view`, `granted_toolset_ids` predicates; this task calls them.'
+  - 'litellm/proxy/management_endpoints/mcp_management_endpoints.py: B865 owns `management_endpoint_wrapper` route decoration (used on all routes).'
+  - 'litellm/proxy/management_endpoints/mcp_management_endpoints.py: B065 owns `get_audit_log_changed_by` (used in POST/PUT for touched_by).'
+  - 'litellm/types/mcp_server/mcp_toolset.py: Q1 owns NewMCPToolsetRequest, UpdateMCPToolsetRequest, toolset list/detail response models.'
+  - 'litellm/proxy/_experimental/mcp_server/server.py: Q2 owns get_mcp_gateway_sessions_report, terminate_mcp_gateway_sessions.'
+  - 'litellm/proxy/_experimental/mcp_server/toolset_db.py: Q3 owns create_mcp_toolset, list_mcp_toolsets, get_mcp_toolset, update_mcp_toolset, delete_mcp_toolset.'
+  - 'litellm/proxy/_experimental/mcp_server/mcp_server_manager.py: Q5 owns manager.invalidate_toolset_cache (called after mutations).'
+  - 'litellm/types/mcp_server/mcp_gateway_sessions.py: Q1 owns MCPGatewaySessionsResponse, MCPGatewaySessionsTerminateResponse.'
+
+pitfalls:
+  - 'DELETE /v1/mcp/sessions validates session_id_prefix with Query(min_length=MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH) where MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH is 8 characters; a shorter prefix returns HTTP 422 Unprocessable Entity. Both parameters null returns HTTP 400 with message "Provide session_id_prefix and/or user_id to select the sessions to terminate."'
+  - 'GET /v1/mcp/sessions requires PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY role; other roles return HTTP 403 "Admin access required to view MCP gateway sessions."'
+  - 'DELETE /v1/mcp/sessions requires full admin (PROXY_ADMIN); PROXY_ADMIN_VIEW_ONLY returns HTTP 403 "Proxy admin access required to terminate MCP gateway sessions."'
+  - 'Toolset mutations (POST, PUT, DELETE) require PROXY_ADMIN role; other roles return HTTP 403.'
+  - 'GET /v1/mcp/toolset applies grant filtering: non-admin users see only toolsets in their object_permission.mcp_toolsets list (when present), else all toolsets (admin-view behavior).'
+  - 'GET /v1/mcp/toolset/{toolset_id} denies access (403) unless _user_has_admin_view or toolset_id in granted_toolset_ids.'
+  - >-
+    Duplicate toolset names return HTTP 409; the error message varies for PUT: if toolset_name field is omitted,
+    message is "A toolset with that name already exists."; otherwise "A toolset named '{name}' already exists."
+  - 'Toolset cache invalidation is called after DB commit via manager.invalidate_toolset_cache(); POST/PUT/DELETE pass the toolset_id when available for targeted invalidation.'
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: security

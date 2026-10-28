@@ -1,0 +1,155 @@
+id: B3857
+title: OTel content events and legacy metric recording
+description: >-
+  Record legacy GenAI histograms and inference-detail events with the configured metric-attribute filter. Supply the request/response/stream content projections used when Langfuse captures root-span input and output.
+
+  Implement metric recording for operation duration, token usage, cost and streaming latency (TTFT, TPOT, response duration) with the metric-attribute filter: include/exclude lists read from config.attributes or callback_settings.otel.attributes, validated against VALID_METRIC_ATTRIBUTE_NAMES. Never include gen_ai.token.type (the structural token-usage discriminator). Filter resolution is lazy, reading callback_settings only when config.attributes is None and callback_name is None/"otel". Unbilled calls (per is_unbilled_non_inference_call_from_params) skip token-usage and TPOT recording, a user-visible metric drop that preserves spend accuracy. Time-to-first-token measures streaming requests (api_call_start_time to completion_start_time). Time-per-output-token divides generation time by completion_tokens (completion_start_time to end_time for streaming, api_call_start_time to end_time for non-streaming). Response duration measures api_call_start_time to end_time (pure LLM API latency). Timestamp converters handle datetime, float/int seconds, and ISO strings; missing times fall back to now() or duration_s as applicable.
+
+  Emit both semantic log events depending on semconv opt-in state. When OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental is active (the opt-in path, lines 1906-1914), emit a single consolidated gen_ai.client.inference.operation.details event with operation name, provider, and input/output messages (when _capture_in_event() is true). When the opt-in is false (the default path, lines 1916-1975), emit legacy per-message gen_ai.content.prompt and per-choice gen_ai.content.completion events with role/id/finish_reason attributes and content inclusion gated on _capture_in_event(). Both paths serialize messages/choices to JSON and bind to the inference span via parent context. Log events use OTel SDK's LogRecord type (location varies across SDK versions: opentelemetry.sdk._logs before 1.39.0, opentelemetry.sdk._logs._internal after 1.39.0).
+
+  Supply four content projection functions for Langfuse root-span input/output: request_input (user/system messages as JSON turns), response_output (ModelResponse/ResponsesAPIResponse/Anthropic message choices), stream_output (streaming chunks dispatched by is_raw_sse_stream and assemble_anthropic_sse_stream, stream_chunk_builder, or final ResponseCompletedEvent), and helpers _system_turns/_user_turns. Anthropic SSE assembly is a runtime dependency on guardrail code (B3669 supplies the functions); on parse failure, projections return None and are dropped from event content.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/legacy_metrics.rs
+    - crates/betterlite-logging/src/otel/legacy_metrics/**
+    - crates/betterlite-logging/src/otel/content_projections.rs
+    - crates/betterlite-logging/src/otel/content_projections/**
+    - tools/oracle/cases/helpers/metric-recording/**
+    - tools/oracle/fuzz/corpus/helper_case/metric-recording-*
+    - tools/oracle/helpers/b3857.py
+    - tools/oracle/helpers/b3857/**
+    - tools/oracle/src/helpers/logging/b3857.rs
+    - tools/oracle/src/helpers/logging/b3857/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L90-L95
+    why: "Response/usage view TypedDicts for projection and metric recording"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L137-L226
+    why: "Metric metadata keys, allowlist names, OTELMetricAttributeFilter dataclass, _build_metric_attribute_filter and _resolve_metric_attribute_filter"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1628-L1709
+    why: "_ensure_metric_attribute_filter with proxy callback_settings fallback, _filter_metric_attributes, _metric_attribute_allowed, _record_metrics with histogram recording, unbilled-call skip for TPOT"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1731-L1975
+    why: "_record_time_to_first_token_metric (TTFT streaming only), _record_time_per_output_token_metric (TPOT with unbilled skip), _record_response_duration_metric (API latency), _to_timestamp converters, _otel_log_types SDK version bridge, _emit_semantic_logs with both opt-in (line 1906-1914) and default legacy per-message/per-choice paths (lines 1916-1975)"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/gen_ai_semconv.py#L78-L78
+    why: "_INFERENCE_DETAILS_EVENT_NAME consolidated event constant"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/gen_ai_semconv.py#L199-L248
+    why: "_build_inference_details_attrs and _emit_inference_details_event for the opt-in consolidated event"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/request_io.py#L13-L90
+    why: "request_input, _system_turns, _user_turns, response_output, _anthropic_message_output, stream_output with SSE/stream/completion dispatch, _assembled_chat_stream, _completed_response"
+dod:
+  - text: Metric metadata keys METRIC_METADATA_KEYS and VALID_METRIC_ATTRIBUTE_NAMES (gen_ai.operation.name, provider.name, system, request.model, framework, hidden_params plus metadata.<key> variants) are defined.
+    proof: [metric-recording-tests]
+  - text: OTELMetricAttributeFilter dataclass with include_list/exclude_list is defined; _build_metric_attribute_filter accepts Filter/dict/invalid and returns Filter; _resolve_metric_attribute_filter returns (include, exclude) tuples.
+    proof: [metric-recording-tests]
+  - text: _ensure_metric_attribute_filter resolves config.attributes once per handler, with fallback to proxy callback_settings.otel.attributes when callback_name is None/"otel" and attributes is None; caches result.
+    proof: [metric-recording-tests]
+  - text: _filter_metric_attributes calls _metric_attribute_allowed for each key; unknown names are silently dropped, not errored (source behavior).
+    proof: [metric-recording-tests]
+  - text: _record_metrics records operation_duration_histogram (common_attrs from operation/provider/model/framework and filtered metadata), token_usage_histogram (input/output type attributes per usage if response_obj and not unbilled), cost_histogram (if cost present).
+    proof: [metric-recording-tests]
+  - text: _record_metrics calls record_ttft_metric, record_tpot_metric, record_api_latency_metric with common_attrs and skips token-usage and TPOT recording when is_unbilled_non_inference_call_from_params returns true.
+    proof: [metric-recording-tests]
+  - text: record_ttft_metric (was _record_time_to_first_token_metric, renamed for 30-char limit) records streaming requests only (stream==true) from api_call_start_time to completion_start_time; skips on missing/unparseable times.
+    proof: [metric-recording-tests]
+  - text: record_tpot_metric (was _record_time_per_output_token_metric, renamed for 30-char limit) divides generation time (completion_start_time to end_time for streaming, api_call_start_time to end_time for non-streaming) by completion_tokens; skips if unbilled.
+    proof: [metric-recording-tests]
+  - text: record_api_latency_metric (was _record_response_duration_metric, renamed for 30-char limit) records api_call_start_time to end_time; returns early if api_call_start_time is missing.
+    proof: [metric-recording-tests]
+  - text: _to_timestamp static method converts datetime.timestamp(), int/float to float, parses ISO strings with or without microseconds; returns None on parse failure.
+    proof: [metric-recording-tests]
+  - text: _otel_log_types() imports SeverityNumber and resolves LogRecord from opentelemetry.sdk._logs (OTEL < 1.39.0) or opentelemetry.sdk._logs._internal (OTEL >= 1.39.0).
+    proof: [metric-recording-tests]
+  - text: _emit_semantic_logs emits the consolidated inference-details event when _gen_ai_semconv_latest_experimental is true; returns early if enable_events is false.
+    proof: [inference-details-events-tests]
+  - text: _emit_inference_details_event emits a single gen_ai.client.inference.operation.details event with serialized input/output messages only when _capture_in_event() is true, bound to the inference span.
+    proof: [inference-details-events-tests]
+  - text: The default (non-opt-in) _emit_semantic_logs path emits per-message gen_ai.content.prompt events (one per message, role/id/finish_reason attributes, content gated on _capture_in_event()) and per-choice gen_ai.content.completion events (index/finish_reason, content gated on _capture_in_event()).
+    proof: [legacy-events-tests]
+  - text: request_input normalizes system/instructions keys plus messages/input field into a list of (role, content) turns and returns JSON-serialized or None.
+    proof: [request-io-tests]
+  - text: response_output handles ModelResponse (tuple of choice.message), ResponsesAPIResponse (.output field), and Anthropic messages (validates _AnthropicMessage schema) and returns JSON-serialized or None.
+    proof: [request-io-tests]
+  - text: stream_output dispatches chunks via is_raw_sse_stream (Anthropic SSE, calls assemble_anthropic_sse_stream) or all-ModelResponseStream (calls stream_chunk_builder on messages) or ResponseCompletedEvent (last chunk's .response); returns response_output() or None on failure.
+    proof: [request-io-tests]
+checks:
+  optional: []
+  commands:
+    - id: metric-recording-tests
+      why: Legacy metric recording behavior tests fail, do not exist, or assertions were not accepted
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_metrics::/)'
+    - id: inference-details-events-tests
+      why: Inference-details event tests fail, do not exist, or assertions were not accepted
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^inference_details::/)' && grep -q 'fn _emit_inference_details_event\|fn _build_inference_details_attrs' crates/betterlite-logging/src/otel/legacy_metrics.rs
+    - id: legacy-events-tests
+      why: Legacy per-message/per-choice content event tests fail, do not exist, or assertions were not accepted
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_content_events::/)' && grep -q 'gen_ai.content.prompt\|gen_ai.content.completion' crates/betterlite-logging/src/otel/legacy_metrics.rs
+    - id: request-io-tests
+      why: Request/response/stream content projection tests fail, do not exist, or assertions were not accepted
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^request_io::/)' && grep -q 'fn request_input\|fn response_output\|fn stream_output' crates/betterlite-logging/src/otel/content_projections.rs
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3857::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new metric recording and content projection decoders
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/metric-recording/ "tools/oracle/fuzz/corpus/helper_case/metric-recording-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/metric-recording/metric-allowlist-filter-config.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-filter-request-scope.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-filter-response-scope.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-filter-cost-scope.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-recording-enabled-and-allowed.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-recording-unbilled-exclusion.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-duration-ttft-streaming.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-duration-tpot-streaming.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-duration-tpot-non-streaming.yaml
+  - tools/oracle/cases/helpers/metric-recording/metric-duration-api-latency.yaml
+  - tools/oracle/cases/helpers/metric-recording/semantic-event-inference-details-opt-in.yaml
+  - tools/oracle/cases/helpers/metric-recording/semantic-event-prompt-completion-default.yaml
+  - tools/oracle/cases/helpers/metric-recording/semantic-event-content-capture-gating.yaml
+  - tools/oracle/cases/helpers/metric-recording/request-input-system-turns.yaml
+  - tools/oracle/cases/helpers/metric-recording/request-input-user-turns.yaml
+  - tools/oracle/cases/helpers/metric-recording/request-input-combined-turns.yaml
+  - tools/oracle/cases/helpers/metric-recording/response-output-chat-completion.yaml
+  - tools/oracle/cases/helpers/metric-recording/response-output-responses-api.yaml
+  - tools/oracle/cases/helpers/metric-recording/response-output-anthropic-message.yaml
+  - tools/oracle/cases/helpers/metric-recording/stream-output-anthropic-sse-assembly.yaml
+  - tools/oracle/cases/helpers/metric-recording/stream-output-chunk-builder.yaml
+  - tools/oracle/cases/helpers/metric-recording/stream-output-completion-event.yaml
+  - tools/oracle/cases/helpers/metric-recording/stream-output-parse-failure-fallback.yaml
+deviations:
+  - what: stream_output calls assemble_anthropic_sse_stream and is_raw_sse_stream from B3669 (guardrail/anthropic_sse.py) for Anthropic SSE parsing. If B3669 has not landed, these calls are behind a try-catch fallback that returns None/empty content, so B3857 compiles and degrades gracefully without a depends_on edge.
+    why: Anthropic SSE assembly is a specialized parser owned by the guardrail module; delegating to B3669 avoids duplication and maintains parser ownership. The fallback ensures the task can be scheduled independently and metrics/events continue with empty stream content on B3669 unavailability.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/request_io.py#L70-L90
+  - what: Timestamp parsing handles datetime, float/int seconds, and ISO strings with microsecond fallback; differs from some Python datetime libraries that require strict format.
+    why: Multiple time formats appear in LiteLLM payloads (datetime objects from inference, float seconds from metrics, ISO strings from external sources); unified parsing reduces error handling at call sites.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1711-L1729
+  - what: OTEL LogRecord import location varies by SDK version (opentelemetry.sdk._logs before 1.39.0, opentelemetry.sdk._logs._internal after 1.39.0); _otel_log_types() bridges the difference at runtime.
+    why: The LogRecord class moved as part of SDK reorganization; runtime discovery allows the integration to work with both versions without bumping the minimum OTEL SDK.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1865-L1881
+out_of_scope:
+  - Metric filter configuration loading and environment resolution (B002)
+  - Histogram/meter creation and provider initialization (B3868)
+  - Inference span/parent context acquisition (B3847)
+  - safe_set_attribute and primitive-type casting (B3844)
+  - is_unbilled_non_inference_call_from_params (B188)
+  - safe_dumps JSON serialization (B192)
+  - stream_chunk_builder (B2227)
+  - Anthropic SSE parser (B3669 owns assemble_anthropic_sse_stream and is_raw_sse_stream)
+  - Message/choice transformation and legacy attribute dispatch (B3856)
+  - _capture_in_event predicate (B3854)
+  - drop_none and json_or_none serialization helpers (B3845)
+pitfalls:
+  - "Function names record_ttft_metric (18 chars), record_tpot_metric (18 chars), record_api_latency_metric (24 chars) must stay under 30 characters per rules; the originals _record_time_to_first_token_metric (34) and _record_time_per_output_token_metric (36) were too long."
+  - "Unbilled calls skip token-usage and TPOT recording (is_unbilled_non_inference_call_from_params returns true); the missing metrics are user-visible and intentional (preserve spend accuracy), not a data loss bug."
+  - "Streaming requests measure TTFT from api_call_start_time to completion_start_time (first token arrival); non-streaming requests return early and do not record TTFT (no first-token boundary)."
+  - "Time-per-output-token uses completion_start_time for streaming (time after first token) but api_call_start_time for non-streaming (total time); both divide by completion_tokens."
+  - "Response duration (api_call_start_time to end_time) is the only metric that spans both streaming and non-streaming paths; TTFT is streaming-only."
+  - "LogRecord timestamp must be in nanoseconds (_to_ns); SeverityNumber.INFO is the standard level for semantic log events."
+  - "The _emit_semantic_logs method has two branches: semconv opt-in (lines 1906-1914 calls _emit_inference_details_event, one consolidated event) and default (lines 1916-1975, per-message/per-choice legacy events). The default branch runs by default since OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental is false unless explicitly set."
+  - "Inference-details event name is a single constant _INFERENCE_DETAILS_EVENT_NAME, not a per-message/per-choice template; both branches use one event name and emit once per request."
+  - "Per-message prompt events carry role (from message['role'], default 'user') and conditionally id (from message['id'] if role=='tool'); per-choice completion events carry index (choice index), finish_reason, and role (from message.role, default 'assistant')."
+  - "Content capture (_capture_in_event()) gates both the attrs['gen_ai.prompt'/'message.content'] attribute and the body copy; drop_none removes null/None attributes before emit."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

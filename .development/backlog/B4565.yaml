@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Proxy model discovery and pi settings synchronization
 status: todo
 depends_on: [B4564]
-file: null
+file: tasks/B4565-pi-model-sync.yaml
 covers:
   - "litellm/proxy/client/cli/commands/pi.py"
   - "litellm/proxy/client/cli/commands/agents.py"

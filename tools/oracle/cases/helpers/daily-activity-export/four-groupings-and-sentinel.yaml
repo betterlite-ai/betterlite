@@ -1,0 +1,49 @@
+kind: helper
+name: four-groupings-and-sentinel
+call:
+  daily_activity_export:
+    cases:
+      all_four_export_groupings_daily:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "export"
+        export_type: "daily"
+        after: null
+        batch_size: 2
+      all_four_export_groupings_daily_with_keys:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "export"
+        export_type: "daily_with_keys"
+        after: null
+        batch_size: 2
+      all_four_export_groupings_daily_with_users:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "export"
+        export_type: "daily_with_users"
+        after: null
+        batch_size: 2
+      all_four_export_groupings_daily_with_models:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "export"
+        export_type: "daily_with_models"
+        after: null
+        batch_size: 2
+      daily_alone_keeps_sentinel:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": ["__ptu_flat_cost__"], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "export"
+        export_type: "daily"
+        after: null
+        batch_size: 2
+      entity_null_empty_merge:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": [""], "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "export"
+        export_type: "daily"
+        after: null
+        batch_size: 2
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,192 @@
+id: B4502
+title: Read Lens activity samples and verify stored evidence
+description: >-
+  Build crates/betterlite-lens/src/sources module with the typed storage port,
+  row adapters, and SourceReader that projects activity availability, agents,
+  execution samples, execution content pages and stored evidence verification.
+  The module implements opaque execution ID encoding and decoding (supporting
+  both three-element and four-element tuples for legacy compatibility), stable
+  selection ID derivation, parameter mapping for storage queries, and sample/
+  content pagination with strict validation and constraint enforcement. Preserve
+  100-row sample pages, 40-span content pages, metadata-key hiding (rejection of
+  litellm.api_key_hash attributes), and the offset increment semantics (offset
+  increased only when page continues). Storage trait is an injected port; the
+  concrete lens_availability, lens_agents, lens_sample, lens_content,
+  lens_evidence implementations belong to a different task (G1).
+  ActivityAvailability records default both traces and requests to false.
+  ExecutionRow, PartRow, CountRow, AgentRow are row types decoded from storage
+  responses with strict field validation. Functions execution_id (encode tuple
+  to base64 JSON), parse_execution (decode back with legacy 3-element support),
+  parameters (build storage query mapping from scope and filters), and
+  selection_id (derive stable ID from execution) are pure and testable.
+  SourceReader takes injected Storage and implements availability (select first
+  row or default), agents (project agent_name tuple), sample (apply filters/
+  pagination, validate rows, construct Execution records with filtered metadata,
+  compute next_cursor/offset), content (fetch span pages, construct TracePart
+  records, detect root_seen and truncation), and verify_evidence (quote matching
+  through storage). Byte-string decoders for opaque IDs need corpus-backed fuzz
+  coverage including legacy 3-element forms and malformed inputs.
+scope:
+  paths:
+    - crates/betterlite-lens/src/sources.rs
+    - crates/betterlite-lens/src/sources/**
+    - crates/betterlite-lens/fuzz/fuzz_targets/lens_sources.rs
+    - crates/betterlite-lens/fuzz/corpus/lens_sources/**
+    - tools/oracle/cases/helpers/lens-sources/**
+    - tools/oracle/helpers/b4502.py
+    - tools/oracle/helpers/b4502/**
+    - tools/oracle/src/helpers/lens/b4502.rs
+    - tools/oracle/src/helpers/lens/b4502/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L21-L72
+    why: Row type definitions (ActivityAvailability, ExecutionRow, PartRow, CountRow, AgentRow) and TypeAdapters for JSON validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L26-L31
+    why: Storage protocol with five async methods (lens_availability, lens_agents, lens_sample, lens_content, lens_evidence).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L74-L99
+    why: execution_id encoding, parse_execution decoding with 3-element/4-element support, parameters mapping, selection_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L114-L173
+    why: SourceReader.sample pagination with cursor/offset, metadata filtering and Execution record construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L175-L204
+    why: SourceReader.content 40-span pagination, TracePart construction and partial/truncated detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L206-L219
+    why: SourceReader.verify_evidence quote matching through storage count.
+dod:
+  - text: All row types (ActivityAvailability, ExecutionRow, PartRow, CountRow, AgentRow) decode from JSON with field constraints matching the pinned source; deserialization rejects extra fields and enforces type safety.
+    proof: [row-validation-tests]
+  - text: execution_id encodes 3-tuple or 4-tuple to base64-urlsafe JSON with no padding; parse_execution decodes back with legacy 3-element support, returning empty string for missing trace_ref.
+    proof: [execution-id-tests]
+  - text: parameters builds read-only mapping with all_teams (int), team, key_hash, filter_keys, filter_values from scope and settings filters in the correct order.
+    proof: [parameters-tests]
+  - text: selection_id derives stable ID from execution by joining source, team, and (trace_ref or trace_id) with null bytes, matching the pinned algorithm exactly.
+    proof: [selection-id-tests]
+  - text: SourceReader.availability queries storage and returns first ActivityAvailability row or default (both traces and requests false); agents returns tuple of agent_name strings from all rows.
+    proof: [availability-agents-tests]
+  - text: SourceReader.sample applies scope/filter parameters, validates ExecutionRow items, filters out litellm.api_key_hash metadata, computes next_cursor (last selection_key if exactly 100 rows), computes next_offset (offset+len(rows) only when continuing), and constructs Execution records with filtered metadata.
+    proof: [sample-pagination-tests, sample-boundaries-tests]
+  - text: Sample pagination always returns page_size 100; next_offset is computed only when offset+len(rows) < eligible (if preview) or selected (otherwise), preserving cursor-based continuation.
+    proof: [sample-boundaries-tests]
+  - text: SourceReader.content validates PartRow items, constructs TracePart records with execution_id, span_id, parent_span_id, name, kind, content and truncated flag; next_cursor is last span_id only when exactly 40 rows returned.
+    proof: [content-pagination-tests]
+  - text: ExecutionContent.partial is true when root_seen is false or any row's truncated value is nonzero; computed as logical OR of the conditions.
+    proof: [content-truncation-tests, content-partial-tests]
+  - text: SourceReader.verify_evidence queries storage with execution/evidence parameters and returns true only when storage returns at least one row with count > 0.
+    proof: [evidence-validation-tests]
+  - text: Metadata filtering excludes litellm.api_key_hash by key name and enforces key length 0 < len(k) <= 200 and value length 0 < len(v) <= 500, dropping invalid pairs silently.
+    proof: [sample-metadata-tests]
+  - text: Opaque-ID fuzz target feeds arbitrary bytes to parse_execution and storage-row decoder, validating recovery of valid tuples/rows or correct errors on malformed base64, truncated JSON, and invalid element counts.
+    proof: [lens-sources-fuzz, lens-sources-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: row-validation-tests
+      why: Row types do not decode from JSON or field constraints are missing.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::(activity_availability|execution_row|part_row|count_row|agent_row)::/)'
+    - id: execution-id-tests
+      why: execution_id encoding or parse_execution decoding does not handle 3-element and 4-element tuples or legacy compatibility.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::(execution_id|parse_execution)::/)'
+    - id: parameters-tests
+      why: parameters mapping or read-only dict construction is missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::parameters::/)'
+    - id: selection-id-tests
+      why: selection_id derivation or null-byte joining is incorrect.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::selection_id::/)'
+    - id: availability-agents-tests
+      why: SourceReader.availability or agents methods are missing or do not validate storage responses.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::source_reader::(availability|agents)::/)'
+    - id: sample-pagination-tests
+      why: SourceReader.sample does not apply filters, paginate, validate rows or construct Execution records.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::source_reader_sample::/)'
+    - id: sample-boundaries-tests
+      why: Sample pagination does not correctly compute next_cursor/next_offset at page boundaries or validate 100-row page size.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::sample_boundaries::/)'
+    - id: sample-metadata-tests
+      why: Sample does not filter litellm.api_key_hash or does not enforce metadata key/value length constraints.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::sample_metadata::/)'
+    - id: content-pagination-tests
+      why: SourceReader.content does not fetch span pages, construct TracePart records, or compute pagination cursors.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::source_reader_content::/)'
+    - id: content-truncation-tests
+      why: ExecutionContent.partial detection of root_seen or truncated flags is missing.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::content_truncation::/)'
+    - id: content-partial-tests
+      why: ExecutionContent.partial flag does not use bitwise-or logic for root_seen and truncated detection.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::content_partial::/)'
+    - id: evidence-validation-tests
+      why: SourceReader.verify_evidence does not query storage or validate count > 0.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^sources::verify_evidence::/)'
+    - id: lens-sources-fuzz
+      why: Byte-string decoder for opaque IDs and storage rows lacks implementation or corpus replay.
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(replays_the_lens_sources_corpus)'
+    - id: lens-sources-corpus
+      why: No seed corpus exists for opaque ID or storage row decoding fuzzing.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-lens/fuzz/corpus/lens_sources/lens-*)"
+oracle_cases:
+  - tools/oracle/cases/helpers/lens-sources/execution-id-3-element-legacy.yaml
+  - tools/oracle/cases/helpers/lens-sources/execution-id-4-element-current.yaml
+  - tools/oracle/cases/helpers/lens-sources/execution-id-base64-urlsafe.yaml
+  - tools/oracle/cases/helpers/lens-sources/parse-execution-3-element.yaml
+  - tools/oracle/cases/helpers/lens-sources/parse-execution-4-element.yaml
+  - tools/oracle/cases/helpers/lens-sources/parse-execution-malformed-base64.yaml
+  - tools/oracle/cases/helpers/lens-sources/parse-execution-missing-elements.yaml
+  - tools/oracle/cases/helpers/lens-sources/selection-id-hides-trace-ref.yaml
+  - tools/oracle/cases/helpers/lens-sources/selection-id-uses-trace-id-fallback.yaml
+  - tools/oracle/cases/helpers/lens-sources/parameters-single-team.yaml
+  - tools/oracle/cases/helpers/lens-sources/parameters-all-teams.yaml
+  - tools/oracle/cases/helpers/lens-sources/parameters-with-filters.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-empty-executions.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-partial-page.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-full-page-cursor.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-metadata-filters-api-key.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-metadata-enforces-constraints.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-eligibility-selection-counts.yaml
+  - tools/oracle/cases/helpers/lens-sources/sample-offset-continuation.yaml
+  - tools/oracle/cases/helpers/lens-sources/content-empty-spans.yaml
+  - tools/oracle/cases/helpers/lens-sources/content-partial-page.yaml
+  - tools/oracle/cases/helpers/lens-sources/content-full-page-cursor.yaml
+  - tools/oracle/cases/helpers/lens-sources/content-root-not-seen.yaml
+  - tools/oracle/cases/helpers/lens-sources/content-span-truncated.yaml
+  - tools/oracle/cases/helpers/lens-sources/content-partial-detection.yaml
+  - tools/oracle/cases/helpers/lens-sources/verify-evidence-found.yaml
+  - tools/oracle/cases/helpers/lens-sources/verify-evidence-not-found.yaml
+  - tools/oracle/cases/helpers/lens-sources/verify-evidence-count-zero.yaml
+  - tools/oracle/cases/helpers/lens-sources/availability-with-traces.yaml
+  - tools/oracle/cases/helpers/lens-sources/availability-empty.yaml
+  - tools/oracle/cases/helpers/lens-sources/agents-non-empty.yaml
+  - tools/oracle/cases/helpers/lens-sources/agents-empty.yaml
+deviations:
+  - what: Row types use serde's `#[serde(deny_unknown_fields)]` instead of Pydantic's `extra="forbid"`.
+    why: Serde provides the same strict field validation across both server and worker without accepting unrecognized fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L34-L71
+  - what: Storage is defined as an async Rust trait with method signatures rather than a concrete ClickHouseStorage implementation.
+    why: The trait is an injected port; the concrete storage implementation (G1 in the outline) lives in a separate task not yet assigned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L26-L31
+  - what: Opaque execution IDs use base64-urlsafe encoding without padding, matching Python's urlsafe_b64encode byte-for-byte.
+    why: Deterministic encoding ensures legacy 3-element IDs round-trip correctly and selection IDs are reproducible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L74-L75
+  - what: Metadata filtering is implemented as an iterator filter during execution construction, not as field-level validators.
+    why: Post-deserialization filtering is more testable and allows per-row decisions on validity vs. constraint enforcement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L165-L169
+out_of_scope:
+  - B4500 owns Scope, LensSettings, MetadataFilter, Execution, ExecutionContent, Evidence and TracePart record definitions and validation, and adds `pub mod sources;` to crates/betterlite-lens/src/lib.rs as a parent module declaration.
+  - B4501 owns LensRepository and database persistence; calls SourceReader for content/evidence queries.
+  - Concrete Storage trait implementations (lens_availability, lens_agents, lens_sample, lens_content, lens_evidence methods) are assigned to G1 (outstanding architectural decision).
+  - B4503/B4505 own HTTP routes that wrap SourceReader methods and deserialize request parameters.
+  - B4507, B4508, B4509 own extraction/investigation/analysis stages that consume ExecutionContent and Evidence records.
+  - B132 owns worker executable that calls SourceReader through injected dependencies.
+pitfalls:
+  - "Dependency: crates/betterlite-lens/src/lib.rs must declare `pub mod sources;` before this module compiles; B4500 owns this parent module declaration."
+  - "Dependency: tools/oracle/src/helpers/lens.rs must register `\"lens_sources\" => sources,` and tools/oracle/src/helpers/lens/b4502.rs must exist as a stub before the oracle helper can compile; this registration is outside this task's scope."
+  - 'Opaque execution IDs encode 3-element or 4-element tuples as JSON arrays with base64-urlsafe no-padding encoding; parse_execution decodes without padding and interprets missing fourth element as empty string for trace_ref, enabling legacy 3-element compatibility.'
+  - 'Selection ID joins source, team, and (trace_ref if present else trace_id) with null bytes (`\\0` / chr(0)); never use space, underscore or other separators, as the result must be a stable, opaque identifier.'
+  - 'SourceReader.sample computes next_offset only when offset+len(rows) < eligible (if preview mode) or selected (normal mode); pages returning fewer rows than page_size (100) signal the end and have next_offset=None.'
+  - 'Metadata filtering during sample construction: skip litellm.api_key_hash by exact key match, enforce key length 0 < len(k) <= 200 and value length 0 < len(v) <= 500, dropping oversized pairs silently without error.'
+  - 'SourceReader.content returns next_cursor (the last span_id) only when the response contains exactly 40 rows; fewer rows indicate no more pages remain.'
+  - 'ExecutionContent.partial flag is true when root_seen is false OR any PartRow.truncated value is nonzero (i.e., partial |= any(truncated)); both conditions are checked independently.'
+  - 'SourceReader.availability queries storage and returns the first ActivityAvailability from the result, or a default ActivityAvailability(traces=false, requests=false) if storage returns empty.'
+  - 'SourceReader.agents queries storage and returns a tuple of agent_name strings from all AgentRow results; empty storage returns an empty tuple, not None.'
+  - 'The fuzz target for opaque IDs and storage rows must test: base64 decode errors (invalid padding, non-base64 chars), truncated JSON (incomplete tuples), 3-element legacy tuples, 5+ element tuples, and completely malformed input.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

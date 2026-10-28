@@ -1,0 +1,191 @@
+id: B4053
+title: GitLab prompt transport and templates
+description: >-
+  Add GitLab file fetching and template management to crates/betterlite-prompts.
+  Build GitLabClient to authenticate with GitLab (token or OAuth), fetch raw/JSON file content,
+  handle 404 fallback from raw to JSON endpoint, and support tag/branch ref selection.
+  Build GitLabPromptTemplate struct to hold template content, metadata, model override and optional params.
+  Build GitLabTemplateManager to load .prompt files from a named folder within a repository,
+  parse YAML frontmatter, render templates with a sandboxed Jinja2 environment, and provide
+  lookups by template ID.
+  Include encode_prompt_id and decode_prompt_id helpers to map between file paths and scoped IDs
+  (converting "invoice/extract" to "gitlab::invoice::extract" for prefixed storage).
+  Preserve GitLabClient's auth_method selection (Private-Token header vs Bearer), base_url default
+  to "https://gitlab.com/api/v4", branch default to "main", tag-over-branch ref precedence,
+  percent-encoding with empty safe characters, 404 fallback from raw to JSON endpoint,
+  base64 decoding with UTF-8 fallback, and prompts_path/folder scoping for template lookup.
+  Support per-prompt and per-call ref overrides.
+  Keep GitLab's frontmatter and metadata behavior distinct from dotprompt: template metadata
+  is not validated against input schemas by this task.
+  Use Jinja2's ImmutableSandboxedEnvironment for the same RCE protection as dotprompt.
+  Fuzz raw/JSON/base64/frontmatter boundaries to ensure parser robustness.
+scope:
+  paths:
+    - crates/betterlite-prompts/Cargo.toml
+    - crates/betterlite-prompts/src/gitlab_client.rs
+    - crates/betterlite-prompts/src/gitlab_client/**
+    - crates/betterlite-prompts/src/gitlab_templates.rs
+    - crates/betterlite-prompts/src/gitlab_templates/**
+    - crates/betterlite-prompts/fuzz/fuzz_targets/gitlab_templates.rs
+    - crates/betterlite-prompts/fuzz/corpus/gitlab_templates/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L1-L20
+    why: GitLabFilePayload TypedDict and imports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L45-L46
+    why: _FileJsonResponse protocol for JSON API responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L61-L63
+    why: _file_payload helper to extract GitLabFilePayload from JSON response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L81-L155
+    why: GitLabClient class with __init__, _file_raw_url, _file_json_url helpers and auth setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L173-L249
+    why: GitLabClient.set_ref, get_file_content, _get_file_content_via_json with 404 fallback and encoding handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L1-L29
+    why: Imports and GITLAB_PREFIX constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L43-L72
+    why: encode_prompt_id, decode_prompt_id functions and GitLabPromptTemplate.__init__.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L78-L132
+    why: GitLabTemplateManager class with __init__ and _id_to_repo_path helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L147-L157
+    why: _load_prompt_from_gitlab method for fetching and parsing from GitLab.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L173-L232
+    why: _parse_prompt_file, _parse_yaml_basic, render_template, get_template methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/README.md
+    why: GitLab integration documentation and API reference.
+  - url: https://docs.rs/minijinja/latest/minijinja/
+    why: Jinja2-compatible templating engine with sandbox support.
+dod:
+  - text: "GitLabClient.__init__ validates project and access_token are required, raises ValueError if either is missing."
+    proof: [gitlab-client-init-tests]
+  - text: "GitLabClient.__init__ sets branch default to \"main\" and base_url default to \"https://gitlab.com/api/v4\"."
+    proof: [gitlab-client-config-tests]
+  - text: "GitLabClient.__init__ prefers tag over branch when both are present (ref = tag or branch)."
+    proof: [gitlab-client-config-tests]
+  - text: "GitLabClient.__init__ sets auth_method default to \"token\"; when \"oauth\", uses Authorization: Bearer header, else uses Private-Token header."
+    proof: [gitlab-client-auth-tests]
+  - text: "GitLabClient._file_raw_url and _file_json_url percent-encode file paths and refs with empty safe characters."
+    proof: [gitlab-client-url-tests]
+  - text: "GitLabClient.set_ref raises ValueError if ref is empty string."
+    proof: [gitlab-client-auth-tests]
+  - text: "GitLabClient.get_file_content tries raw endpoint first, returns None on 404, falls back to JSON endpoint if raw is 404."
+    proof: [gitlab-client-fetch-tests]
+  - text: "GitLabClient.get_file_content decodes base64 content from JSON fallback with UTF-8 fallback decoding on error."
+    proof: [gitlab-client-fetch-tests]
+  - text: "GitLabClient.get_file_content returns file content as UTF-8 string, or None if 404."
+    proof: [gitlab-client-fetch-tests]
+  - text: "GitLabClient.get_file_content raises with distinct messages for 401 (authentication), 403 (permission denied) and other exceptions."
+    proof: [gitlab-client-fetch-tests]
+  - text: "GitLabPromptTemplate.__init__ extracts model, input, content from metadata into restricted_keys; stores remaining metadata as optional_params."
+    proof: [gitlab-template-tests]
+  - text: "GitLabPromptTemplate.__init__ stores temperature and max_tokens from metadata if present."
+    proof: [gitlab-template-tests]
+  - text: "encode_prompt_id converts \"invoice/extract\" to \"gitlab::invoice::extract\" and idempotent on already-encoded IDs."
+    proof: [gitlab-encoding-tests]
+  - text: "decode_prompt_id converts \"gitlab::invoice::extract\" to \"invoice/extract\" and idempotent on unencoded paths."
+    proof: [gitlab-encoding-tests]
+  - text: "GitLabTemplateManager.__init__ accepts gitlab_config, prompt_id, ref, gitlab_client parameters and initializes Jinja2 sandboxed environment with Handlebars delimiters."
+    proof: [gitlab-manager-init-tests]
+  - text: "GitLabTemplateManager.__init__ scopes prompts_path from config[\"prompts_path\"] or config[\"folder\"], default to empty string."
+    proof: [gitlab-manager-init-tests]
+  - text: "GitLabTemplateManager._id_to_repo_path maps \"chat/greeting\" to \"prompts/chat/greeting.prompt\" when prompts_path is \"prompts\"."
+    proof: [gitlab-manager-path-tests]
+  - text: "_load_prompt_from_gitlab fetches file content via gitlab_client, parses with _parse_prompt_file, stores in self.prompts keyed by prompt_id."
+    proof: [gitlab-load-tests]
+  - text: "_load_prompt_from_gitlab raises Exception with the prompt ID and cause on fetch or parse failure."
+    proof: [gitlab-load-tests]
+  - text: "_parse_prompt_file splits on ^---\\s*\\n(.*?)\\n---\\s*\\n, parses YAML frontmatter, returns GitLabPromptTemplate with content and metadata."
+    proof: [gitlab-parse-tests]
+  - text: "_parse_prompt_file falls back to _parse_yaml_basic if yaml module import fails."
+    proof: [gitlab-parse-tests]
+  - text: "_parse_prompt_file swallows YAML parse errors and returns empty metadata dict."
+    proof: [gitlab-parse-tests]
+  - text: "_parse_yaml_basic parses key: value lines, inferring bool (true/false), int, float and string types, returning a dict."
+    proof: [gitlab-parse-tests]
+  - text: "render_template retrieves template by ID, renders with Jinja2 from_string using the sandboxed environment and supplied variables."
+    proof: [gitlab-render-tests]
+  - text: "render_template raises ValueError with exact message \"Template '<template_id>' not found\" when template_id is not in self.prompts."
+    proof: [gitlab-render-tests]
+  - text: "get_template returns GitLabPromptTemplate or None from self.prompts lookup."
+    proof: [gitlab-render-tests]
+  - text: "GitLabTemplateManager uses ImmutableSandboxedEnvironment with Handlebars delimiters ({{ }}, {% %}, {# #}), select_autoescape for html/xml, and immutable restrictions enforced."
+    proof: [gitlab-sandbox-tests]
+  - text: "The crate has a cargo-fuzz target at crates/betterlite-prompts/fuzz/fuzz_targets/gitlab_templates.rs seeded with raw/JSON/base64/frontmatter fixtures, and replays_the_gitlab_templates_corpus loads every corpus file without panic."
+    proof: [gitlab-fuzz-corpus]
+  - text: "Every mutant in the client and template code is caught by a test."
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gitlab-client-init-tests
+      why: GitLabClient.__init__ validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_client::init/)'
+    - id: gitlab-client-config-tests
+      why: GitLabClient config defaults tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_client::config/)'
+    - id: gitlab-client-auth-tests
+      why: GitLabClient auth method and ref override tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_client::auth/)'
+    - id: gitlab-client-url-tests
+      why: GitLabClient URL building and percent-encoding tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_client::url/)'
+    - id: gitlab-client-fetch-tests
+      why: GitLabClient file fetching and fallback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_client::fetch/)'
+    - id: gitlab-template-tests
+      why: GitLabPromptTemplate struct and metadata extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::template/)'
+    - id: gitlab-encoding-tests
+      why: encode/decode prompt_id tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::encoding/)'
+    - id: gitlab-manager-init-tests
+      why: GitLabTemplateManager.__init__ and environment setup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::manager_init/)'
+    - id: gitlab-manager-path-tests
+      why: GitLabTemplateManager path mapping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::path/)'
+    - id: gitlab-load-tests
+      why: _load_prompt_from_gitlab tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::load/)'
+    - id: gitlab-parse-tests
+      why: frontmatter parsing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::parse/)'
+    - id: gitlab-render-tests
+      why: template rendering and template lookup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::render/)'
+    - id: gitlab-sandbox-tests
+      why: sandbox environment configuration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^gitlab_templates::sandbox/)'
+    - id: gitlab-fuzz-corpus
+      why: the gitlab fuzz target or corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-prompts/fuzz/fuzz_targets/gitlab_templates.rs && test "$(ls crates/betterlite-prompts/fuzz/corpus/gitlab_templates 2>/dev/null | wc -l)" -ge 4 && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_gitlab_templates_corpus)'
+oracle_cases: []
+deviations:
+  - what: "GitLabClient's eager auth header setup (Private-Token vs Bearer) happens in __init__, not on each request; auth_method=\"oauth\" uses Authorization: Bearer, else uses Private-Token."
+    why: LiteLLM behavior at the pinned commit; HTTP handler reuses headers dict on every request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L127-L135
+  - what: "get_file_content falls back to JSON endpoint only on 404 from raw endpoint, not on other errors."
+    why: LiteLLM behavior at the pinned commit; other errors surface to the caller rather than triggering fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L179-L219
+  - what: "_parse_prompt_file swallows invalid YAML with no warning and returns empty metadata rather than raising."
+    why: LiteLLM behavior at the pinned commit; silent fallback preserves repository-supplied templates even with broken metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L187-L195
+out_of_scope:
+  - "GitLabPromptManager class and all its methods (__init__, integration_name, prompt_manager, get_prompt_template, pre_call_hook, post_call_hook, get_available_prompts, reload_prompts, should_run_prompt_management, _compile_prompt_helper, async_compile_prompt_helper, get_chat_completion_prompt, async_get_chat_completion_prompt, _parse_prompt_to_messages): owned by B4054."
+  - "GitLabClient.list_files, get_repository_info, test_connection, get_branches, get_file_metadata, close: no caller at the pin outside tests."
+  - "GitLabTemplateManager.load_all_prompts, list_templates, _repo_path_to_id: no caller at the pin outside the excluded cache chain."
+  - "GitLabPromptCache class and all methods: no caller at the pin outside tests/examples."
+  - Custom Python extension execution through litellm_logging or user hooks; this task is purely about HTTP client and template loading.
+  - Integration with completion hooks and compiler dispatch; B4054 owns the GitLabPromptManager that uses these types.
+pitfalls:
+  - "GitLabClient.__init__ must set self.ref = str(self.tag or self.branch), preferring tag over branch, and must allow None tag (tag defaults to None, not \"main\")."
+  - "GitLabClient.get_file_content only falls back to JSON on 404 from raw endpoint; other HTTP errors (401, 403) raise immediately without fallback."
+  - "percent-encoding uses quote(path, safe=\"\"), encoding slashes and special chars; safe=\"\" is required for GitLab project path encoding."
+  - "_parse_yaml_basic is a fallback parser when the yaml module is not available; it must be simpler than the full YAML spec but must handle the type inference (booleans, numbers, strings)."
+  - "_parse_prompt_file swallows YAML errors and returns empty metadata; there is no warning or error logging."
+  - "Role prefix matching in _parse_prompt_to_messages uses case-insensitive comparison (.lower()), matching only capitalized System:, User: and Assistant: prefixes (after lowercasing)."
+  - "GitLabTemplateManager uses ImmutableSandboxedEnvironment to block attribute access (__class__.__init__.__globals__) and method calls on mutable types; templates cannot assign to context variables."
+  - "Handlebars delimiters {{ }}, {# #}, {% %} and select_autoescape for html/xml must match dotprompt's sandbox configuration."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
