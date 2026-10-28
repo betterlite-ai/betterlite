@@ -1,1 +1,6 @@
-{"otlp_response_encoding":{"content_type":"application/json"}}
+kind: helper
+name: otlp-response-corpus
+call:
+  otlp_normalization: {otlp_response_encoding: {content_type: application/json}}
+env: {}
+compare: {ignore: []}

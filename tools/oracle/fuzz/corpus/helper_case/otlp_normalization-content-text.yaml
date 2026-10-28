@@ -1,1 +1,6 @@
-{"otlp_content_text":{"content":"hello"}}
+kind: helper
+name: otlp-content-text-corpus
+call:
+  otlp_normalization: {otlp_content_text: {content: hello}}
+env: {}
+compare: {ignore: []}
