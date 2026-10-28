@@ -1,0 +1,22 @@
+# AWS_ROLE_ARN AWS_WEB_IDENTITY_TOKEN_FILE AWS_BEARER_TOKEN_BEDROCK are read from the environment only
+model_list:
+  - model_name: explicit
+    litellm_params:
+      model: bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+      aws_session_token: os.environ/AWS_SESSION_TOKEN
+      aws_region_name: os.environ/AWS_REGION_NAME
+      aws_session_name: os.environ/AWS_SESSION_NAME
+      aws_profile_name: os.environ/AWS_PROFILE_NAME
+      aws_role_name: os.environ/AWS_ROLE_NAME
+      aws_web_identity_token: os.environ/AWS_WEB_IDENTITY_TOKEN
+      aws_sts_endpoint: os.environ/AWS_STS_ENDPOINT
+      aws_external_id: os.environ/AWS_EXTERNAL_ID
+      aws_session_tags:
+        - Key: team
+          Value: search
+  - model_name: inherited
+    litellm_params:
+      model: bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      aws_region_name: ""

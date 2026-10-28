@@ -1,0 +1,11 @@
+task: B682
+deviations:
+  - what: A dict header with a non-ASCII text value or name fails response synthesis with HeaderError::NotAscii naming the header, where LiteLLM raises httpx's UnicodeEncodeError.
+    why: The Python error message quotes the offending value, which can be a credential; the typed error names only the header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L66-L75
+  - what: Dict header values are limited to text, bytes, integer, boolean and null; LiteLLM accepts any Python object and drops every non-str, non-bytes value.
+    why: A Rust record holds typed values. Floats, lists and other objects are dropped by LiteLLM the same way integers are, so no kept header is lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L79-L102
+  - what: The shared B2202 ProviderError keeps only the text-valued dict headers; the full lossless headers, integers included, stay on BedrockError.headers beside it.
+    why: ProviderError.headers is a list of string pairs owned by B2202. Keeping the lossless copy on BedrockError preserves what LiteLLM stores without widening that type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L79-L102
