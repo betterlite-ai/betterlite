@@ -127,13 +127,17 @@ impl Helper for Op {
 }
 
 fn settings(call: &SettingsCall) -> Result<Value, Failure> {
-    let model_list = call.deployments.iter().cloned().map(|params| ModelDeployment {
-        model_name: "oracle",
-        litellm_params: Params {
-            model: "bedrock/oracle",
-            settings: params,
-        },
-    });
+    let model_list = call
+        .deployments
+        .iter()
+        .cloned()
+        .map(|params| ModelDeployment {
+            model_name: "oracle",
+            litellm_params: Params {
+                model: "bedrock/oracle",
+                settings: params,
+            },
+        });
     let config = serde_json::to_string(&Config {
         model_list: model_list.collect(),
     })?;
