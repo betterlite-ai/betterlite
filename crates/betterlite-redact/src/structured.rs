@@ -124,7 +124,7 @@ impl Default for SensitiveDataMasker {
 #[must_use]
 pub fn mask_sensitive_structure(data: &Value) -> Value {
     let defaults = SensitiveDataMasker::default();
-    let masker = SensitiveDataMasker {
+    SensitiveDataMasker {
         sensitive_patterns: defaults.sensitive_patterns,
         non_sensitive_overrides: defaults.non_sensitive_overrides,
         visible_prefix: defaults.visible_prefix,
@@ -132,8 +132,8 @@ pub fn mask_sensitive_structure(data: &Value) -> Value {
         mask_char: defaults.mask_char,
         mask_short_values: defaults.mask_short_values,
         max_work: defaults.max_work,
-    };
-    masker.mask(data)
+    }
+    .mask(data)
 }
 
 #[must_use]
