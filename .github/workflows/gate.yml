@@ -37,9 +37,9 @@ jobs:
           POSTGRES_DB: betterlite
         options: >-
           --health-cmd "pg_isready -U betterlite"
-          --health-interval 5s
+          --health-interval 1s
           --health-timeout 5s
-          --health-retries 12
+          --health-retries 60
     env:
       CARGO_TERM_COLOR: never
       SOURCE_TOOLS: |
@@ -50,7 +50,7 @@ jobs:
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
     steps:
       - name: Install system packages
-        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps
+        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,6 +136,11 @@ jobs:
         with:
           path: ${{ env.SOURCE_TOOLS }}
           key: source-tools-cargo-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
+
+      # cargo gate affected reads the package graph offline, and a cold cache lacks the crates no Linux build downloads.
+      - name: Download every crate the lockfile names
+        if: github.event_name != 'pull_request'
+        run: cargo fetch --locked
 
       - name: Run the task's checks on the merged result
         if: steps.find.outputs.task != '' && github.event_name == 'merge_group'

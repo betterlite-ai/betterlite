@@ -1,0 +1,11 @@
+kind: helper
+name: seed-function-null-name
+call:
+  stream_tool_assembly:
+    function:
+      chunks:
+        - choices:
+            - delta:
+                function_call: {name: null, arguments: '{}'}
+env: {}
+compare: {ignore: []}
