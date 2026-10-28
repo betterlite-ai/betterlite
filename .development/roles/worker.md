@@ -15,6 +15,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 
 - Before writing anything that looks like a solved problem, do what rule reuse-before-building says: search, compare the options against every requirement in the task, pick one, and write the comparison into your report.
 - Write the test first and watch it fail for the right reason, then make it pass.
+- Every test or case a DoD item names must exist under that name and check what the name says. A proof filter often covers a whole module, so a missing name still passes the gate. Before you answer, find each name in `cargo nextest list -p <crate>` output and each oracle case in tools/oracle/cases.
 - Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does. The architect may change your task file on your branch (a raised budget, a fixed check, a wider scope); keep those commits and never put the file back.
 - Every Cargo.toml is always in scope, so add the dependencies you need where they belong. Keep each dependency table in name order; the hooks check it.
 - Fuzz targets and corpora (`**/fuzz/fuzz_targets/**`, `**/fuzz/corpus/**`) are always in scope too, so add the seed files your checks ask for.
