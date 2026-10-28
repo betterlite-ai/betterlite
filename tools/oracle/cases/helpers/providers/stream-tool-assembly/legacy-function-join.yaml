@@ -1,0 +1,14 @@
+kind: helper
+name: legacy-function-join
+call:
+  stream_tool_assembly:
+    function:
+      chunks:
+        - choices:
+            - delta:
+                function_call: {name: first, arguments: a}
+        - choices:
+            - delta:
+                function_call: {name: second, arguments: b}
+env: {}
+compare: {ignore: []}

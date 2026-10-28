@@ -1,0 +1,23 @@
+kind: helper
+name: tool-metadata-last-truthy
+call:
+  stream_tool_assembly:
+    tool:
+      chunks:
+        - choices:
+            - delta:
+                tool_calls:
+                  - index: 0
+                    id: a
+                    type: function
+                    function: {name: one, provider_specific_fields: {a: 1}}
+        - choices:
+            - delta:
+                tool_calls:
+                  - index: 0
+                    id: a2
+                    type: custom
+                    function: {name: two, provider_specific_fields: {b: 2}}
+                    provider_specific_fields: {a: 3}
+env: {}
+compare: {ignore: []}

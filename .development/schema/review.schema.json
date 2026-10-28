@@ -15,6 +15,7 @@
       "type": "string"
     },
     "verdict": {
+      "description": "changes when at least one finding has origin ours, approve otherwise.",
       "$ref": "#/$defs/ReviewVerdict"
     }
   },
@@ -36,6 +37,10 @@
           "description": "path:line of the code the finding is about, path relative to the repository root.",
           "type": "string"
         },
+        "origin": {
+          "description": "ours when betterlite introduced the problem; litellm when the code repeats LiteLLM's own behavior and rule owned-behavior-is-built says to fix that bug. Only ours findings go back to the worker; litellm findings go to the architect.",
+          "$ref": "#/$defs/FindingOrigin"
+        },
         "problem": {
           "description": "What breaks the rule, in one or two sentences.",
           "type": "string"
@@ -48,9 +53,17 @@
       "additionalProperties": false,
       "required": [
         "rule",
+        "origin",
         "location",
         "problem",
         "fix"
+      ]
+    },
+    "FindingOrigin": {
+      "type": "string",
+      "enum": [
+        "ours",
+        "litellm"
       ]
     },
     "ReviewVerdict": {
