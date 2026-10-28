@@ -69,19 +69,18 @@ fn reply_literals(model: &str, clock: i64, uuid: &str) -> crate::helpers::Helper
             message: format!("uuid must be a UUID: {error}"),
         })
     })?;
-    let raw =
-        RawValue::from_string(serde_json::to_string(model).unwrap_or_default()).map_err(
-            |error| {
-                Box::new(crate::helpers::HelperError {
-                    class: "ValueError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: format!("model must be JSON: {error}"),
-                })
-            },
-        )?;
+    let raw = RawValue::from_string(serde_json::to_string(model).unwrap_or_default()).map_err(
+        |error| {
+            Box::new(crate::helpers::HelperError {
+                class: "ValueError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: format!("model must be JSON: {error}"),
+            })
+        },
+    )?;
     let clock_fn = || clock;
     let identifier_fn = || identifier;
     let body = mock_chat_completion(MockModel::Raw(raw), &clock_fn, &identifier_fn);
