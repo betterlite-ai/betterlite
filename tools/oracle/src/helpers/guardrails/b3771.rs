@@ -84,7 +84,10 @@ fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
     )
 }
 
-fn stringify_failure<E: std::fmt::Display>(error: E) -> Box<crate::helpers::HelperError> {
+fn stringify_failure<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: std::fmt::Display,
+{
     failure(error.to_string())
 }
 
