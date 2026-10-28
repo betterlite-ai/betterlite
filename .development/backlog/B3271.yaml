@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Search tool database registry
 status: todo
 depends_on: [B3270, B726, B872, B192]
-file: null
+file: tasks/B3271-search-tool-registry.yaml
 covers:
   - "litellm/proxy/search_endpoints/search_tool_registry.py"
   - "litellm/proxy/search_endpoints/__init__.py"

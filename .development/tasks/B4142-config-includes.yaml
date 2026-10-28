@@ -1,0 +1,125 @@
+id: B4142
+title: Resolve recursive config includes in the loader
+description: >-
+  Extend crates/betterlite-config to resolve the `include` directive that LiteLLM config.yaml files use to pull in other configs.
+  The loader already reads config.yaml into typed structs (B002).
+  This task adds the recursive merge that turns a config with `include: [file1.yaml, file2.yaml]` into a single merged result before the loader sees it.
+
+  The `include` key holds a list of file paths relative to the config file that declares them.
+  Each included file is read, merged into its declaring config (lists are extended, other values overridden), then scanned for its own `include` keys.
+  A file already loaded is skipped to break cycles.
+  After all includes are resolved and merged, the final `include` key is dropped, leaving a clean config for the typed loader.
+
+  Build resolve_includes in crates/betterlite-config/src/includes.rs, which takes a config dict and its file path, and returns a dict with all includes resolved and merged.
+  Expose it through the loader's public API so callers can choose when to resolve includes (at load time or as a separate step).
+  For config loading, call resolve_includes before the typed loader to ensure the config is fully merged.
+
+  Use the real test fixtures from LiteLLM at the pinned commit in litellm/tests/unit/proxy/example_config_yaml/:
+  - config_with_include.yaml: one include directive, expects included-model merged into model_list
+  - config_with_missing_include.yaml: a file that does not exist, expects an error
+  - config_with_multiple_includes.yaml: two include files, expects both merged
+  - included_models.yaml, models_file_1.yaml, models_file_2.yaml: the included files
+
+  Add new test fixtures to exercise the file resolution behaviors from resolve_include_file_path:
+  - config_include_fallback.yaml and fallback_models.yaml: when a file declared next to the including config does not exist, the loader falls back to a same-named file next to the root config
+  - config_include_conflict.yaml, conflict_models_declaring.yaml and conflict_models_root.yaml: when both a declaring-relative and root-relative file exist, the declaring-relative one is used
+  - config_include_malformed_string.yaml: include as a string instead of a list
+  - config_include_malformed_list.yaml: include with non-string entries
+
+  Seed the test with the six LiteLLM files and the four new files, and verify all merge, fallback, conflict and validation error behaviors.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/includes.rs
+    - crates/betterlite-config/src/sections/includes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L11-L42
+    why: resolve_include_file_path function that picks the right file when both declaring and root-relative paths exist, with fallback and conflict warnings
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L73-L85
+    why: include_entries validation that ensures include is a list of strings
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L53-L71
+    why: _merged, _merged_entry and _merged_value helpers that handle the merge semantics (lists extended, other values overridden)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L88-L132
+    why: _resolve and _pending_from implement the recursive walker; _resolve skips already-loaded locations, pulls in each file, merges it, and queues any includes from the merged file
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L117-L132
+    why: resolve_includes entry point, which starts the walk from the root config and its location, and returns the merged result with the include key stripped
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/test_proxy_config_unit_test.py#L116-L148
+    why: Tests that verify merge behavior, missing-file errors, and multiple includes
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/example_config_yaml
+    why: The fixture directory containing the real include test fixtures
+
+dod:
+  - text: crates/betterlite-config/src/includes.rs exports resolve_includes and the types it needs.
+    proof: [config-includes-module]
+  - text: The six fixture files from litellm/tests/unit/proxy/example_config_yaml/ are in crates/betterlite-config/tests/fixtures/includes/, byte for byte.
+    proof: [fixtures-pinned]
+  - text: config_with_include.yaml merges included_models.yaml into model_list, preserving litellm_settings.
+    proof: [config-includes-tests]
+  - text: config_with_missing_include.yaml fails with an error that names the missing file.
+    proof: [config-includes-tests]
+  - text: config_with_multiple_includes.yaml merges both models_file_1.yaml and models_file_2.yaml, extending model_list in order.
+    proof: [config-includes-tests]
+  - text: The include key is removed from the final merged config, so the typed loader never sees it.
+    proof: [config-includes-tests]
+  - text: A file already loaded is skipped, breaking cycles.
+    proof: [config-includes-tests]
+  - text: When a file declared next to an including config does not exist, the merge falls back to a same-named file next to the root config and logs a warning.
+    proof: [config-includes-tests]
+  - text: When both a declaring-relative and a root-relative file exist for the same include, the declaring-relative file is merged and the root-relative one is named in a warning.
+    proof: [config-includes-tests]
+  - text: An include directive that is not a list of strings fails with a clear error message.
+    proof: [config-includes-tests]
+  - text: The loader calls resolve_includes before typed validation, so users can include files in their configs.
+    proof: [config-loader-integration]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-includes-module
+      why: includes.rs is missing or does not export resolve_includes
+      run: grep -q "pub.*fn resolve_includes" crates/betterlite-config/src/includes.rs
+    - id: fixtures-pinned
+      why: fixture files are missing or differ from LiteLLM's files at the pinned commit
+      run: |
+        cd crates/betterlite-config/tests/fixtures/includes && test "$(ls -1 | grep -E '^(config_with_|included_|models_file_)' | wc -l)" -eq 6 && sha256sum --check --quiet <<'SUMS'
+        80e912cb3f7ef2590f6200fde0ae7e7bd58544f6816be189bb3a89432e9a1140  config_with_include.yaml
+        86c826201679a5c096822d499ccdbcf62690c948cdc0aa92c819d50be6494232  config_with_missing_include.yaml
+        1eadf80122ecb093fcfa39da662fb35912056b94ff55ec701ae08576bcfb428b  config_with_multiple_includes.yaml
+        974ce87f7ab3573a6664c262b6679d60b3d6ee05bd42dc67dd6daa10f24ac12c  included_models.yaml
+        941ab53564dc753b92c0db46d6bb6c1755fefad800ab5b55ce699909e6daefcd  models_file_1.yaml
+        53a5a237652f033e5a706234e9c5dd4c9027351cbb506d4451e8709894b90b65  models_file_2.yaml
+        SUMS
+    - id: config-includes-tests
+      why: include resolution tests fail, do not exist, or snapshots were not accepted
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::includes::include_resolution::/)' --exact
+    - id: config-loader-integration
+      why: the loader does not call resolve_includes before typed validation
+      run: grep -q "resolve_includes" crates/betterlite-config/src/loader.rs
+
+oracle_cases: []
+
+deviations:
+  - what: When both a file next to the declaring config and a file next to the root config match the include path, the declaring-config file wins and the other is mentioned in a warning.
+    why: LiteLLM supports this for backward compatibility with configs written before nested includes worked. The behavior is in resolve_include_file_path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L11-L42
+
+out_of_scope:
+  - Parsing YAML itself. The caller parses the YAML and passes a dict; this task only merges dicts.
+  - Validation of config content. The typed loader (B002) handles that.
+  - Secret resolution (os.environ/NAME). That happens before includes are resolved, in the config load path.
+  - Include files from non-file sources (buckets, URLs). This task reads from the filesystem only.
+
+pitfalls:
+  - LiteLLM merges by extending lists and overriding everything else, including nested mappings. A merged nested mapping does not merge recursively; it replaces. Make sure the merge helpers do not try to merge nested dicts.
+  - The include key must be removed from the result before it reaches the typed loader, or the loader will reject it as an unsupported key.
+  - 'A cycle (A includes B, B includes A) is broken by the loaded set, not by depth. Make sure every file location is tracked.'
+  - File paths in include are relative to the config file that declares them, not to the current working directory or the root config. Track the location of each include source.
+  - 'resolve_include_file_path must handle three cases: root_relative does not exist (return declared_relative), declared_relative does not exist (return root_relative with warning), both exist (return declared_relative with warning). The resolve logic checks os.path.exists, not the actual file read.'
+  - 'include_entries validates that the include key is a list of strings, not a single string or a list with non-strings. Each ValueError must be clear about what failed.'
+  - "LiteLLM's resolve_includes is async because it reads files through async APIs. In Rust, std::fs is sync, so the Rust version can be sync. Don't add async unless file reading changes."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,146 @@
+id: B4508
+title: Investigate Lens candidates against original evidence
+description: >-
+  Build crates/betterlite-lens module investigation to validate candidates
+  against recorded evidence with supporting-observation pages, run catalogs,
+  dismissal feedback and optional original-content reads. Implement the
+  investigation loop that accepts examined executions and uses an LLM to decide
+  whether to read content, page through observations/catalog/feedback, or
+  submit/dismiss a candidate based on available evidence. Preserve exact evidence
+  and check/kind validation, support-quote requirements, prompt-size exit at
+  100,000 characters, repeated-navigation detection and the Decision/FinalDecision
+  schema switch based on step count. The coordinator function runs concurrent
+  investigations across all candidates, with progress reporting and
+  inconclusive-count tracking.
+  Cover litellm/proxy/lens/analysis.py:373-384 (investigate entry point);
+  litellm/proxy/lens/analysis.py:387-589 (investigate_stored with nested decide
+  function, observation/catalog/feedback page tracking, stalled-request detection,
+  navigation state management and evidence accumulation); litellm/proxy/lens/analysis.py:592-596
+  (investigation_decision schema selection); litellm/proxy/lens/analysis.py:856-879
+  (investigate_candidates coordinator with nested check function, concurrent
+  execution and progress reporting).
+  Direct dependencies: B4500 for settings/coverage/ModelRequest/FindingDraft
+  constructors and analysis_checks; B4506 for TraceStore, TraceStore.add_reads/evidence,
+  feedback_pages, partition_items, partition_content, evidence_valid,
+  structured_response, concurrent_results and shared Candidate/Decision/Investigation
+  records. The coordinator yields Investigations for each candidate; investigate
+  and investigate_stored are internal. Already-examined records arrive as arguments;
+  this stage never calls the extractor and therefore does not depend on B4507.
+  Preserve exact evidence quote matching across all stored span sources (cited,
+  selected, additional, recent), reject findings with evidence that fails
+  evidence_valid or store.evidence checks, and detect repeated read requests by
+  tracking action/execution_id/cursor/offset/page tuples to force final decisions
+  when loops are detected.
+scope:
+  paths:
+    - crates/betterlite-lens/src/investigation.rs
+    - crates/betterlite-lens/src/investigation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L373-L384
+    why: investigate entry point that wraps investigate_stored with ValidationError fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L387-L589
+    why: investigate_stored main loop with nested decide function, observation/catalog/feedback paging, stalled detection and evidence accumulation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L592-L596
+    why: investigation_decision helper that selects Decision or FinalDecision schema based on step count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L856-L879
+    why: investigate_candidates coordinator that runs concurrent investigations with progress reporting.
+dod:
+  - text: investigate() wraps investigate_stored() with ValidationError handling, returning
+      Investigation with finding=None and empty parts on validation failure.
+    proof: [investigate-entrypoint-tests]
+  - text: investigate_stored() implements the full investigation loop with observation_page,
+      catalog_page, feedback_page tracking and stalled state that triggers decision forcing
+      on repeated requests.
+    proof: [investigation-loop-tests]
+  - text: Evidence validation preserves exact quote matching against all available spans
+      (cited, selected, additional, recent), rejecting findings with evidence not in evidence_valid()
+      or store.evidence() results.
+    proof: [evidence-validation-tests]
+  - text: Prompt construction includes candidate details, observation pages, catalog pages,
+      workflow outlines, feedback, evidence and completed reads; prompt over 100,000
+      characters returns Investigation with finding=None.
+    proof: [prompt-size-exit-tests]
+  - text: Decision-action navigation updates observation_page, catalog_page, or feedback_page;
+      read actions check execution membership and call read() with offset handling.
+    proof: [decision-navigation-tests]
+  - text: Repeated request detection checks (action, execution_id, cursor, offset, page)
+      against prior reads and sets stalled=true, forcing final decision.
+    proof: [repeated-request-detection-tests]
+  - text: Decision schema uses Decision for steps>1 and FinalDecision (submit/inconclusive only)
+      for steps=1; final decision converts FinalDecision to Decision.
+    proof: [decision-schema-tests]
+  - text: investigate_candidates() runs check() concurrently with concurrent_results(),
+      tracks inconclusive count, calls progress() with investigated/inconclusive counts
+      and yields each investigation.
+    proof: [investigate-candidates-concurrent-tests]
+checks:
+  optional: []
+  commands:
+    - id: investigate-entrypoint-tests
+      why: investigate function fails to create trace store or handle ValidationError fallback
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::investigate::entrypoint/)'
+    - id: investigation-loop-tests
+      why: investigation_stored main loop, page tracking or stalled detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::investigate_stored::/) and not test(evidence_validation_) and not test(repeated_request_)'
+    - id: evidence-validation-tests
+      why: evidence validation against stored spans or evidence_valid calls are missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::evidence_validation/)'
+    - id: prompt-size-exit-tests
+      why: prompt size limit at 100,000 characters or inconclusive exit is not enforced
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::prompt_size_exit/)'
+    - id: decision-navigation-tests
+      why: Decision-action navigation or page updates are missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::decision_navigation/)'
+    - id: repeated-request-detection-tests
+      why: repeated request detection or stalled state forcing is not working
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::repeated_request/)'
+    - id: decision-schema-tests
+      why: Decision schema selection based on steps or FinalDecision conversion is incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::decision_schema/)'
+    - id: investigate-candidates-concurrent-tests
+      why: investigate_candidates concurrency or progress reporting is missing or incorrect
+      run: cargo nextest run --locked -p betterlite-lens --no-tests=fail -E 'test(/^investigation::investigate_candidates/)'
+oracle_cases: []
+deviations:
+  - what: Investigation is async Rust instead of Python async/await, using tokio for concurrent candidate processing.
+    why: Betterlite is a Rust gateway; async code mirrors the surrounding crate architecture with typed futures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L373-L384
+  - what: Repeated request detection uses explicit tuple tracking instead of mutable state.
+    why: Rust requires explicit mutability; a bounded tuple tracks completed requests to detect cycles without relying on implicit state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L568-L574
+out_of_scope:
+  - Extraction (B4507), grouping and analysis orchestration (B4509).
+  - Storage ports ClickHouseStorage.lens_* and provide_storage (G1), which remain unowned.
+  - Unbound reservation release (G2) and analysis logging marker (G3), which remain unowned
+    per the outline.
+  - The three LiteLLM model-call attempt logic for transport errors/429/502/503/504 (B132 worker).
+pitfalls:
+  - 'Architectural blocker: crates/betterlite-lens/src/lib.rs must declare `pub mod investigation;` before this task runs. This planner''s scope excludes lib.rs (it''s a parent module, not owned by this task), so the architect must add the module declaration. Without it, the investigation.rs file cannot compile.'
+  - investigate_stored filters examined to relevant by candidate.execution_ids; if no matches
+    are found, relevant is empty but the loop continues with empty observations and builds
+    the context normally, not exiting early.
+  - navigation is unconditionally rebound to the new ExecutionContent on every read,
+    including an empty one, which discards the prior navigation value; an empty result
+    also sets stalled=true.
+  - Evidence must match quote text exactly within one of the span's content segments split
+    by "\n[... content omitted ...]\n"; partial quote matching or joining across the
+    omission marker fails evidence_valid.
+  - partition_items groups items by JSON size, not line count; verify the limit against
+    serialized output of test records.
+  - feedback_pages returns only pages for the specific check_id; candidates for other checks
+    find no feedback, not an error.
+  - Decision action validation happens after deciding; requesting an invalid action (not in
+    read/observations/catalog/feedback/submit/inconclusive) is caught by investigation_decision
+    and converted.
+  - The model receives response_schema for both Decision and FinalDecision; FinalDecision
+    omits the page/execution_id/cursor/offset fields; conversion to Decision in the helper
+    supplies only action and finding.
+  - Stalled state persists across the loop; a single repeated request disables all read
+    actions until decision converges on submit/inconclusive.
+  - investigation_candidates passes concurrency explicitly from claim.job.settings, not
+    defaulting to ANALYSIS_CONCURRENCY.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,7 @@
+kind: helper
+name: no-user-skips
+call:
+  b3721:
+    step: {"selection": {"texts": ["tool"], "context": {"latest_only": true, "tool_results_only": true, "messages": [{"role": "tool", "content": "tool"}]}}}
+env: {}
+compare: {ignore: []}

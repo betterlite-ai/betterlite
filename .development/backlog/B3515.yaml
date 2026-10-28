@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Decisions and SystemOne public call entrypoints
 status: todo
 depends_on: [B3510, B3513, B3514, B014]
-file: null
+file: tasks/B3515-decisions-entrypoints.yaml
 covers:
   - "litellm/decisions/{__init__,main}.py"
   - "litellm/systemone/**"

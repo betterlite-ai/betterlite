@@ -2,8 +2,8 @@ id: B4305
 milestone: M8 platform
 title: Execute synchronous and asynchronous response cache lookup
 status: todo
-depends_on: [B174, B250, B4296, B4297, B4300, B4301, B4302, B4303]
-file: null
+depends_on: [B110, B174, B250, B4296, B4297, B4300, B4301, B4302, B4303]
+file: tasks/B4305-cache-hit-pipeline.yaml
 covers:
   - "litellm/caching/caching_handler.py"
 parent: B125

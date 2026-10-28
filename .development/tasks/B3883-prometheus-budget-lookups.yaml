@@ -1,0 +1,276 @@
+id: B3883
+title: Prometheus request budget lookups
+description: >-
+  Resolve per-request budget records from carried snapshots (provided in the auth context)
+  first, and fall back to pinned cache/database lookups second. Preserve cache-only key
+  reads (check_cache_only=true), normal cached user/team reads through the shared
+  UserApiKeyCache interface, organization budget joins through get_org_object, and customer
+  cache misses that emit nothing.
+
+  The four async functions handle per-entity per-request budget metric emission after
+  a deployment call completes:
+
+  _set_team_budget_metrics_after_api_request calls _assemble_team_object to construct
+  a LiteLLM_TeamTable with accumulated spend (prior spend + response_cost) and budget
+  details, then delegates to _set_team_budget_metrics (owned by B3882) to emit the actual
+  gauge updates. When a TeamBudgetSnapshot is carried, use its budget_reset_at directly;
+  otherwise fetch team info via get_team_object and read budget_reset_at, filling max_budget
+  from carried value only if the fetched max_budget is None.
+
+  _set_org_budget_metrics_after_api_request uses the carried OrgBudgetSnapshot when present,
+  reading its spend and max_budget directly with budget_reset_at explicitly set to None
+  (not carried). When no snapshot, call get_org_object with include_budget_table=True and
+  extract max_budget and budget_reset_at from org_info.litellm_budget_table; then delegate
+  to _set_org_budget_metrics (owned by B3882). Skip silently (return) when org_id is None
+  or the database client is None.
+
+  _set_customer_budget_metrics_after_api_request is gated by two litellm config keys: when
+  litellm.enable_end_user_cost_tracking_prometheus_only is not True (default None) OR
+  litellm.disable_end_user_cost_tracking is True (default None), return immediately without
+  any lookup. When enabled, read the cache-only path: call user_api_key_cache.async_get_cache
+  with end_user_cache_key(end_user_id) and type LiteLLM_EndUserTable. On cache miss, return
+  without emitting (cache-miss behavior preserved). On hit, read spend from cached_customer.spend
+  (add response_cost), read max_budget from cached_customer.litellm_budget_table.max_budget,
+  but always pass budget_reset_at=None to _set_customer_budget_metrics (owned by B3882),
+  never reading budget_reset_at from the cached budget table even when present. Also expose
+  _get_default_customer_budget, which looks up the default customer budget by litellm.max_end_user_budget_id,
+  returning None on error or when the id is None.
+
+  _set_api_key_budget_metrics_after_api_request calls _assemble_key_object to construct
+  a UserAPIKeyAuth with accumulated spend and budget details, then delegates to _set_key_budget_metrics
+  (owned by B3882). When a KeyBudgetSnapshot is carried, use its budget_reset_at directly.
+  Otherwise, call get_key_object with check_cache_only=True to read from cache only
+  (skipping database); read budget_reset_at from the fetched key_object if present. Always
+  return a UserAPIKeyAuth object with spend filled and budget_reset_at set (from carried or
+  fetched key, or None).
+
+  _assemble_user_object mirrors _assemble_team_object: construct a LiteLLM_UserTable with
+  accumulated spend and budget details. When a UserBudgetSnapshot is carried, use its
+  budget_reset_at and user_alias directly; fill max_budget from carried value only if
+  the fetched max_budget is None. Otherwise call get_user_object with check_db_only=False
+  (cache-first behavior, not db-only) and user_id_upsert=False. Read budget_reset_at,
+  user_email and user_alias from the fetched user_info when present, always returning a
+  LiteLLM_UserTable object with all fields set or None.
+
+  Each function returns early with silent failures (returning/no-op when gauge metrics
+  are NoOpMetric or required identifiers are None), never raising exceptions from database
+  or cache operations; a debug log records skipped lookups.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus/budget_lookups.rs
+    - crates/betterlite-logging/src/prometheus/budget_lookups/**
+    - tools/oracle/cases/helpers/budget-lookups/**
+    - tools/oracle/helpers/b3883.py
+    - tools/oracle/helpers/b3883/**
+    - tools/oracle/src/helpers/logging/b3883.rs
+    - tools/oracle/src/helpers/logging/b3883/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L161-L162
+    why: _customer_budget_metrics_enabled (module-level function) gates customer budget lookups by two config keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4185-L4217
+    why: _set_customer_budget_metrics_after_api_request gate check at line 4190 and cache-only read behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4230-L4235
+    why: _customer_budget_gauges_are_noop (instance method) gates customer budget lookups; owned by B3882.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3936-L3965
+    why: _set_team_budget_metrics_after_api_request calls _assemble_team_object and delegates to _set_team_budget_metrics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3967-L4015
+    why: _assemble_team_object assembles LiteLLM_TeamTable from carried snapshot or database fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4074-L4134
+    why: _set_org_budget_metrics_after_api_request with carried snapshot path and get_org_object fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4219-L4228
+    why: _get_default_customer_budget reads max_end_user_budget_id and calls BudgetRepository.table.find_unique.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4312-L4333
+    why: _set_api_key_budget_metrics_after_api_request calls _assemble_key_object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4335-L4378
+    why: _assemble_key_object with check_cache_only=True and carried snapshot fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4380-L4409
+    why: _set_user_budget_metrics_after_api_request calls _assemble_user_object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4411-L4467
+    why: _assemble_user_object with check_db_only=False (cache-first) and carried snapshot fallback.
+
+dod:
+  - text: Team budget metrics after request use carried snapshot's budget_reset_at directly when present,
+      otherwise fetch via get_team_object and read from team_info.budget_reset_at, filling max_budget
+      only when the current max_budget is None.
+    proof: [team-budget-lookups]
+  - text: Team object assembly returns a LiteLLM_TeamTable with accumulated spend (prior spend + response_cost)
+      and all budget fields populated from carried snapshot or database fetch.
+    proof: [team-budget-lookups]
+  - text: Org budget metrics after request with carried snapshot set spend to carried.spend + response_cost,
+      max_budget to carried.max_budget, and budget_reset_at to None (not carried).
+    proof: [org-budget-lookups]
+  - text: Org budget metrics after request without carried snapshot fetch via get_org_object with
+      include_budget_table=True and extract max_budget and budget_reset_at from litellm_budget_table,
+      returning early when org_id is None or when prisma_client is None.
+    proof: [org-budget-lookups]
+  - text: Customer budget metrics after request check litellm.enable_end_user_cost_tracking_prometheus_only
+      and litellm.disable_end_user_cost_tracking (defaults None) before any lookup; when either guard fails,
+      return without fetching. When enabled, read only from cache via user_api_key_cache.async_get_cache
+      with end_user_cache_key, skip silently on cache miss (no emission), read max_budget from
+      cached_customer.litellm_budget_table, and add response_cost to cached_customer.spend before delegating
+      to _set_customer_budget_metrics with budget_reset_at=None (never from budget_table).
+    proof: [customer-budget-lookups, customer-config-gate, customer-budget-reset-at-none]
+  - text: _get_default_customer_budget reads litellm.max_end_user_budget_id, returns None when the id
+      is None or on lookup error, and otherwise returns the _JoinedBudgetRow via BudgetRepository.table.find_unique.
+    proof: [customer-default-budget]
+  - text: API key budget metrics after request with carried snapshot use carry.budget_reset_at directly,
+      otherwise call get_key_object with check_cache_only=True and read budget_reset_at from key_object
+      when present, returning a UserAPIKeyAuth with accumulated spend always set.
+    proof: [key-budget-lookups]
+  - text: Key object assembly returns a UserAPIKeyAuth with accumulated spend (prior spend + response_cost)
+      and budget_reset_at populated from carried snapshot or cache-only fetch (never database).
+    proof: [key-budget-lookups]
+  - text: User budget metrics after request with carried snapshot use carried.budget_reset_at and
+      carried.user_alias directly, and fill max_budget only when the fetched max_budget is None.
+    proof: [user-budget-lookups]
+  - text: User object assembly with no carried snapshot calls get_user_object with check_db_only=False
+      (cache-first, not db-only) and user_id_upsert=False, returning a LiteLLM_UserTable with budget_reset_at,
+      user_email and user_alias populated from fetched user_info when present.
+    proof: [user-budget-lookups]
+  - text: >-
+      Each of the four per-request functions returns early (no-op) when the gauge metric is a NoOpMetric,
+      when the required identifier (user_api_team, org_id, end_user_id, user_api_key, user_id) is None,
+      and logs at debug level on cache/database errors without raising.
+    proof: [budget-lookup-early-returns]
+  - text: >-
+      Customer budget metrics are gated by two config keys with AND logic: the lookup is skipped when
+      litellm.enable_end_user_cost_tracking_prometheus_only is not True (default None) OR
+      litellm.disable_end_user_cost_tracking is True (default None). Both default to None, disabling
+      customer budget metrics by default.
+    proof: [customer-config-gate]
+  - text: >-
+      Customer budget cache-hit path always passes budget_reset_at=None to the setter, never reading it
+      from cached_customer.litellm_budget_table even when the value is present. This is distinct from
+      team/user/org paths which read budget_reset_at from the fetched object.
+    proof: [customer-budget-reset-at-none]
+
+checks:
+  optional: []
+  commands:
+    - id: team-budget-lookups
+      why: Team budget metric assembly and snapshot/database fallback must work correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::team_budget::/)'
+    - id: org-budget-lookups
+      why: Org budget metric assembly with carried vs fetched behavior must work correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::org_budget::/)'
+    - id: customer-budget-lookups
+      why: Customer budget cache-only read and miss behavior must work correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::customer_budget::/)'
+    - id: customer-default-budget
+      why: Default customer budget lookup must read max_end_user_budget_id and return None on error
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::customer_default::/)'
+    - id: key-budget-lookups
+      why: Key budget metric assembly with carried snapshot and cache-only fallback must work correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::key_budget::/)'
+    - id: user-budget-lookups
+      why: User budget metric assembly and snapshot/cache-first fallback must work correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::user_budget::/)'
+    - id: budget-lookup-early-returns
+      why: Early returns (no-op metrics, missing identifiers, database errors) must be silent with debug logging
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::early_return::/)'
+    - id: customer-config-gate
+      why: Customer budget metrics must check enable_end_user_cost_tracking_prometheus_only and disable_end_user_cost_tracking config gates.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_lookups::customer_config_gate::/)'
+    - id: customer-budget-reset-at-none
+      why: Customer budget cache-hit path must always pass budget_reset_at=None, never read from budget_table.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(budget_lookups::customer_budget_reset_at_none)'
+    - id: helper-python
+      why: The independently invoked budget lookup helper semantics must match production
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3883::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new budget lookups decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/budget-lookups)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/budget-lookups/team-assembly-with-carried-snapshot.yaml
+  - tools/oracle/cases/helpers/budget-lookups/team-assembly-without-snapshot-fills-from-db.yaml
+  - tools/oracle/cases/helpers/budget-lookups/team-assembly-db-only-when-no-carried-max-budget.yaml
+  - tools/oracle/cases/helpers/budget-lookups/org-assembly-carried-snapshot-path.yaml
+  - tools/oracle/cases/helpers/budget-lookups/org-assembly-database-fallback.yaml
+  - tools/oracle/cases/helpers/budget-lookups/customer-cache-hit.yaml
+  - tools/oracle/cases/helpers/budget-lookups/customer-cache-miss-no-emission.yaml
+  - tools/oracle/cases/helpers/budget-lookups/customer-config-gate-disabled-by-default.yaml
+  - tools/oracle/cases/helpers/budget-lookups/default-customer-budget-lookup.yaml
+  - tools/oracle/cases/helpers/budget-lookups/default-customer-budget-id-none.yaml
+  - tools/oracle/cases/helpers/budget-lookups/key-assembly-carried-snapshot.yaml
+  - tools/oracle/cases/helpers/budget-lookups/key-assembly-cache-only-fallback.yaml
+  - tools/oracle/cases/helpers/budget-lookups/key-assembly-cache-miss-no-budget-reset.yaml
+  - tools/oracle/cases/helpers/budget-lookups/user-assembly-carried-snapshot.yaml
+  - tools/oracle/cases/helpers/budget-lookups/user-assembly-database-fills-missing-fields.yaml
+  - tools/oracle/cases/helpers/budget-lookups/user-assembly-carried-fills-max-budget-when-fetched-none.yaml
+  - tools/oracle/cases/helpers/budget-lookups/all-functions-skip-on-noop-metric.yaml
+  - tools/oracle/cases/helpers/budget-lookups/all-functions-skip-on-missing-identifier.yaml
+
+deviations:
+  - what: Key object assembly calls get_key_object with check_cache_only=True to skip database lookups.
+    why: LiteLLM's key lookup always performs cache-only reads in metrics context to avoid the latency spike
+      documented in _assemble_user_object's comment. Betterlite enforces the same constraint in key assembly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4366-L4372
+  - what: Customer budget metrics read only from cache and skip silently on cache miss, emitting no gauge update.
+    why: LiteLLM implements the same cache-only read with miss behavior for customer/end-user budget metrics,
+      preserving the precondition that end-user identity must be present in the request context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4200-L4209
+  - what: Customer budget metrics are disabled by default when litellm.enable_end_user_cost_tracking_prometheus_only
+      is None (default) or litellm.disable_end_user_cost_tracking is True (default). The lookup is skipped
+      when the compound gate _customer_budget_metrics_enabled() returns false.
+    why: Customer budget metrics require opt-in through cost-tracking settings, with two config keys controlling
+      the behavior. By default, both are falsy (None or False), disabling the entire customer budget path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L161-L162
+  - what: Customer budget cache-hit path always passes budget_reset_at=None to the setter, never reading it
+      from cached_customer.litellm_budget_table. Team/org/user/key paths read budget_reset_at from the
+      fetched object.
+    why: LiteLLM explicitly hardcodes budget_reset_at=None for the customer cache hit path (line 4216),
+      unlike team/user/org which read it from the fetched object. This is not a bug; the customer budget
+      table may not expose reset time from the end-user cache view.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4211-L4217
+  - what: Org budget metrics after request set budget_reset_at to None when using a carried snapshot,
+      not carried.budget_reset_at.
+    why: LiteLLM explicitly passes budget_reset_at=None to _set_org_budget_metrics when the request carries
+      an org snapshot, differentiating org handling from user/team which preserve carried.budget_reset_at.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4093-L4100
+
+out_of_scope:
+  - Gauge metric emission and label construction; that is owned by B3882. The helper
+    functions `_customer_budget_gauges_are_noop()` (prometheus.py:4230) and
+    `_customer_budget_metrics_enabled()` (prometheus.py:161), which gate the per-request
+    lookups at line 4190, are owned by B3882.
+  - Authorization, billing rate calculation or budget enforcement; this task only reads values.
+  - Async orchestration and callback registration; that is in B111.
+  - Configuration loading of cache settings, database retry policies or timeouts.
+
+pitfalls:
+  - >-
+    Customer budget metrics are disabled by default because both litellm.enable_end_user_cost_tracking_prometheus_only
+    (default None) and litellm.disable_end_user_cost_tracking (default None) are falsy. The entire customer lookup
+    is skipped unless both conditions enable it. Most deployments emit no customer budget metrics.
+  - >-
+    Customer budget cache-hit path always passes budget_reset_at=None, never reading it from the cached budget
+    table. Do not assume the customer path mirrors team/user/org behavior; budget_reset_at is explicitly None.
+  - >-
+    Calling get_user_object with check_db_only=True was found to cause huge latency increases and CPU spikes
+    in production. The call must use check_db_only=False for cache-first behavior.
+  - >-
+    Team and user assembly fill max_budget from the database only when the current value is None; this preserves
+    the priority: carried value > database value. Do not overwrite a non-None value.
+  - >-
+    Org budget assembly with carried snapshot explicitly sets budget_reset_at=None (not carried), differentiating
+    it from team/user behavior. The call to _set_org_budget_metrics always passes budget_reset_at=None in the
+    carried path.
+  - >-
+    Customer budget metrics read from cache only; there is no fallback to database/get_end_user_object. A cache miss
+    returns silently without emitting any gauge.
+  - >-
+    Default customer budget lookup reads litellm.max_end_user_budget_id, which may be None or unset. Always check
+    before attempting the lookup.
+  - >-
+    All five functions log at debug level on error, never raising exceptions from cache/database operations.
+    Exceptions are caught, logged, and the function returns with partial/no emission.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

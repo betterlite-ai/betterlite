@@ -1,0 +1,139 @@
+id: B3740
+title: Purview blocking streaming and audit hooks
+description: >-
+  Build blocking request/response/buffered-stream hooks and nonblocking audit hooks for Microsoft Purview DLP guardrail.
+  Scan user prompts synchronously before LLM execution and LLM responses asynchronously after completion, raising 400 on
+  policy blocks. Buffer entire streaming responses before scanning and fail closed if assembly fails. Implement sync
+  logging hook that detects running event loop and either defers to async_logging_hook through the framework or schedules
+  it on a background daemon thread; async_logging_hook audits prompt and response independently without raising
+  exceptions. Reuse B3738 base constructor, B3739 evaluation/text extraction, B2227 stream assembly and B732 authenticated
+  context. Preserve the pinned async-context detection with asyncio.get_running_loop() and Responses API special handling.
+  Each hook returns the original arguments/response unchanged on success or raises HTTPException(400) on policy block.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/microsoft_purview/purview_dlp_hooks.rs
+  - crates/betterlite-guardrails/src/microsoft_purview/purview_dlp_hooks/**
+  - tools/oracle/cases/guardrails/purview-dlp-hooks/**
+  - tools/oracle/helpers/b3740.py
+  - tools/oracle/helpers/b3740/**
+  - tools/oracle/src/helpers/guardrails/b3740.rs
+  - tools/oracle/src/helpers/guardrails/b3740/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L386-L439
+  why: async_pre_call_hook blocking request scan and token-ID completion prompt rejection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L445-L471
+  why: async_post_call_success_hook non-streaming response scan.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L473-L590
+  why: async_post_call_streaming_iterator_hook buffering entire stream, Responses API special handling and fail-closed assembly.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L596-L642
+  why: logging_hook sync/async context detection and background thread scheduling with _log_safe and _run_in_new_loop helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L644-L702
+  why: async_logging_hook independent prompt and response audits without raising exceptions.
+dod:
+- text: async_pre_call_hook routes Responses API calls via _responses_api_input_to_str before the generic messages branch,
+    rejects token-ID completion prompts with HTTP 400 before scanning, scans extracted prompt text with block_on_violation=True,
+    and returns original data on success.
+  proof:
+  - purview-pre-call-hook
+  - purview-dlp-oracle
+- text: async_post_call_success_hook scans non-streaming responses extracted via _completion_response_text_parts, and returns
+    the original response unchanged on success.
+  proof:
+  - purview-post-success-hook
+  - purview-dlp-oracle
+- text: async_post_call_streaming_iterator_hook buffers all chunks, detects Responses API streams and assembles them via
+    _assemble_responses_api_from_chunks, assembles chat/completion streams via stream_chunk_builder, fails closed with HTTP 400
+    on assembly failure or incomplete Responses API stream, and re-yields original chunks after a clean scan.
+  proof:
+  - purview-streaming-hook
+  - purview-dlp-oracle
+- text: logging_hook detects running event loop with asyncio.get_running_loop(), defers to framework's async_logging_hook in
+    async context, and schedules async_logging_hook on background daemon thread with new_event_loop() in sync context.
+  proof:
+  - purview-logging-hook
+  - purview-dlp-oracle
+- text: async_logging_hook audits prompt and response independently, logs errors but never raises exceptions, and handles
+    missing user_id by skipping audit.
+  proof:
+  - purview-async-logging-hook
+  - purview-dlp-oracle
+- text: Oracle cases exercise all code paths including Responses API pre-call routing, streaming assembly failures, and incomplete
+    Responses API streams.
+  proof:
+  - purview-dlp-oracle
+checks:
+  optional: []
+  commands:
+  - id: purview-pre-call-hook
+    why: async_pre_call_hook fails to reject token-ID prompts, scan prompts or preserve data on success
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_pre_call_hook(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: purview-post-success-hook
+    why: async_post_call_success_hook fails to scan responses or preserve response on success
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_post_success_hook(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: purview-streaming-hook
+    why: async_post_call_streaming_iterator_hook fails to buffer, assemble, scan or yield original chunks
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_streaming_hook(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: purview-logging-hook
+    why: logging_hook fails to detect event loop, defer to async context, or schedule background thread
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_logging_hook(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: purview-async-logging-hook
+    why: async_logging_hook fails to audit prompt and response independently or handle missing user_id
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_async_logging_hook(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: purview-dlp-oracle
+    why: oracle cases fail or are missing
+    run: test -n "$(ls -A tools/oracle/cases/guardrails/purview-dlp-hooks)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrails::b3740(::|$)/)'
+oracle_cases:
+- tools/oracle/cases/guardrails/purview-dlp-hooks/chat-pre-call-block.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/chat-pre-call-pass.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/completion-token-id-reject.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/completion-text-block.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/responses-pre-call-block.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/post-success-response-block.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/post-success-response-pass.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/streaming-buffered-block.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/streaming-buffered-pass.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/streaming-assembly-failed.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/responses-stream-incomplete.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/responses-api-stream-block.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/responses-api-stream-pass.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/logging-hook-async-context.yaml
+- tools/oracle/cases/guardrails/purview-dlp-hooks/logging-hook-sync-context.yaml
+deviations:
+- what: Oracle cases do not cover non-content streamed responses (e.g. embeddings, rerank) that pass through with zero DLP scanning.
+  why: Purview's processing is limited to ModelResponse, TextCompletionResponse and ResponsesAPIResponse types; non-content response types are intentionally not scanned, matching LiteLLM's behavior. Oracle cases cover the scannable response paths and failure modes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L569-L573
+- what: betterlite uses the unresolved U6 contract for response iteration in place of MockResponseIterator from litellm.llms.base_llm.base_model_iterator.
+  why: U6 contract is not finalized; the exact location and API are determined by B104.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L1
+- what: betterlite does not decorate hooks with @log_guardrail_information; that decorator is resolved in U1.
+  why: U1 contract for guardrail logging decoration and standard logging object updates is not finalized; determined by B104.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1
+- what: betterlite's logging hook delegates to async_logging_hook when async context is detected, without explicit framework dispatch.
+  why: Framework dispatch and CustomGuardrail callback resolution are determined by B104 (U3).
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L1
+out_of_scope:
+- Bedrock guardrails (B3720–B3727), Azure guardrails (B3728–B3730), OpenAI guardrails (B3731), Model Armor (B3732–B3735), IBM guardrails (B3736–B3737), Agent 365 (B3741–B3742).
+- B3738's Graph authentication, B3739's DLP evaluation and text extraction.
+- B2227's stream assembly and chunk building.
+- B732's auth context and user identity accessors.
+- Framework guardrail registry, initialization and decorator contract (B104, U1, U3).
+- Response/error record construction and wire format (U6).
+- The async-context detection and background-thread scheduling are production behavior; duplicates in logging bridge are acceptable for clarity.
+pitfalls:
+- asyncio.get_running_loop() raises RuntimeError in sync context; catch it to detect the no-loop case for background scheduling.
+- The logging_hook is sync and must return (kwargs, result) immediately even when scheduling background audit; never await or block.
+- Responses API streams emit typed events where the final event carries the full ResponsesAPIResponse; detect them separately from chat/completion delta streams.
+- Both audit_prompt and audit_response calls invoke _check_content with block_on_violation=False; exceptions are logged but not raised.
+- The streaming iterator hook buffers all_chunks before assembly; do not yield any chunk until the scan passes.
+- stream_chunk_builder may return None if chunks cannot be assembled; fail closed with HTTP 400 with message "Unable to assemble streamed response for scanning; blocking response." rather than silently passing through.
+- Incomplete Responses API stream (events seen but no final response.completed/response.failed/response.incomplete carrying a ResponsesAPIResponse) fails closed with HTTP 400 and message "Incomplete Responses API stream — no final response event received for DLP scanning; blocking response."
+- Non-content streamed responses (e.g. embeddings or rerank) that assemble to something other than ModelResponse/TextCompletionResponse/ResponsesAPIResponse pass through unchanged with zero DLP scanning. Purview cannot scan these response types and betterlite follows that limitation.
+- Token-ID prompts (flat list[int] or list[list[int]] or mixed) are rejected before scanning; empty/whitespace-only strings pass through with None from completion_prompt_to_str.
+- async_pre_call_hook routes Responses API calls (call_type in ("responses", "aresponses")) via _responses_api_input_to_str before the generic messages branch; this routing decision applies only to blocking pre-call scan and mirrors async_logging_hook's routing for consistency.
+- async_logging_hook also routes Responses API calls via _responses_api_input_to_str with the same call_type dispatch; audit prompt and response are scanned independently with block_on_violation=False.
+- The replacement response on Responses API is accessed via _completion_response_text_parts on the assembled response body, not from the streamed events.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

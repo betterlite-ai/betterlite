@@ -1,4 +1,5 @@
 pub mod error;
+pub mod passthrough_reconstruction;
 pub mod stream_base_assembly;
 pub mod stream_content_assembly;
 pub mod stream_tool_assembly;
