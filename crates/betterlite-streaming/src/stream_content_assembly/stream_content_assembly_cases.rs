@@ -1,4 +1,5 @@
 use super::*;
+use rstest::rstest;
 use std::fs;
 use std::path::Path;
 
@@ -6,8 +7,8 @@ fn parse_chunks(source: &str) -> Vec<Chunk> {
     serde_json::from_str(source).unwrap()
 }
 
-#[test]
-fn content_and_reasoning() {
+#[rstest]
+fn case_1_content_and_reasoning() {
     let parsed_chunks = parse_chunks(
         r#"[
         {"choices":[{"delta":{"content":"a","reasoning_content":"r"}}]},
@@ -29,8 +30,8 @@ fn content_and_reasoning() {
     );
 }
 
-#[test]
-fn thinking_signature_boundaries() {
+#[rstest]
+fn case_1_thinking_signature_boundaries() {
     let parsed_chunks = parse_chunks(
         r#"[{"choices":[{"delta":{"thinking_blocks":[
         {"type":"thinking","thinking":"a"},{"thinking":"b","signature":"s"},
@@ -56,8 +57,8 @@ fn thinking_signature_boundaries() {
     );
 }
 
-#[test]
-fn audio_fragments_and_expiry() {
+#[rstest]
+fn case_1_audio_fragments_and_expiry() {
     let parsed_chunks = parse_chunks(
         r#"[
         {"choices":[{"delta":{"audio":{"data":"YQ==","transcript":"a","expires_at":0,"id":"one"}}}]},
@@ -75,8 +76,8 @@ fn audio_fragments_and_expiry() {
     );
 }
 
-#[test]
-fn audio_base64_decoder() {
+#[rstest]
+fn case_1_audio_base64_decoder() {
     assert_eq!(decode_stream_audio_fragment("YQ==\n", 1).unwrap(), b"a");
     assert_eq!(decode_stream_audio_fragment("", 1).unwrap(), b"");
     decode_stream_audio_fragment("YQ=", 1).unwrap_err();
