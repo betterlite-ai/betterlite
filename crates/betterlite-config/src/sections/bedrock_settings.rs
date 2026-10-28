@@ -10,6 +10,8 @@ use crate::sections::Section;
 pub struct Raw {
     #[serde(default)]
     model_list: Vec<RawDeployment>,
+    #[serde(default)]
+    litellm_settings: RawParams,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -42,6 +44,12 @@ struct RawParams {
     external_id: Option<String>,
     #[serde(rename = "aws_session_tags")]
     session_tags: Option<SessionTagValue>,
+    #[serde(rename = "aws_role_arn")]
+    role_arn: Option<String>,
+    #[serde(rename = "aws_web_identity_token_file")]
+    web_identity_token_file: Option<String>,
+    #[serde(rename = "aws_bearer_token_bedrock")]
+    bearer_token: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -78,6 +86,7 @@ pub struct AwsSettings {
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub deployments: Vec<AwsSettings>,
+    pub module: AwsSettings,
 }
 
 impl Section for Raw {
@@ -87,16 +96,25 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let module = snapshot(self.litellm_settings, usize::MAX, None, true, lookup)?;
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            deployments.push(snapshot(deployment.litellm_params, index, lookup)?);
+            deployments.push(snapshot(
+                deployment.litellm_params,
+                index,
+                Some(&module),
+                false,
+                lookup,
+            )?);
         }
-        Ok(Settings { deployments })
+        Ok(Settings { deployments, module })
     }
 }
 
 struct Resolver<'lookup, L> {
     index: usize,
+    module: Option<&'lookup AwsSettings>,
+    module_path: bool,
     lookup: &'lookup L,
 }
 
@@ -113,8 +131,23 @@ where
     where
         T: From<String>,
     {
-        let path = format!("model_list.{}.litellm_params.{key}", self.index);
-        let text = value.map_or_else(
+        let module_value = self.module.and_then(|settings| match key {
+            "aws_region_name" => settings.region_name.clone(),
+            "aws_session_name" => settings.session_name.clone(),
+            "aws_profile_name" => settings.profile_name.clone(),
+            "aws_role_name" => settings.role_name.clone(),
+            "aws_sts_endpoint" => settings.sts_endpoint.clone(),
+            "aws_external_id" => settings.external_id.clone(),
+            "aws_role_arn" => settings.role_arn.clone(),
+            "aws_web_identity_token_file" => settings.web_identity_token_file.clone(),
+            _ => None,
+        });
+        let path = if self.module_path {
+            format!("litellm_settings.{key}")
+        } else {
+            format!("model_list.{}.litellm_params.{key}", self.index)
+        };
+        let text = value.or(module_value).map_or_else(
             || Ok(self.lookup.lookup(variable)),
             |text| resolve_string(text, &path, self.lookup).map(Some),
         )?;
@@ -127,8 +160,20 @@ where
         key: &str,
         variable: &str,
     ) -> Result<Option<SecretString>, ConfigError> {
-        let path = format!("model_list.{}.litellm_params.{key}", self.index);
-        value.map_or_else(
+        let module_value = self.module.and_then(|settings| match key {
+            "aws_access_key_id" => settings.access_key_id.clone(),
+            "aws_secret_access_key" => settings.secret_access_key.clone(),
+            "aws_session_token" => settings.session_token.clone(),
+            "aws_web_identity_token" => settings.web_identity_token.clone(),
+            "aws_bearer_token_bedrock" => settings.bearer_token.clone(),
+            _ => None,
+        });
+        let path = if self.module_path {
+            format!("litellm_settings.{key}")
+        } else {
+            format!("model_list.{}.litellm_params.{key}", self.index)
+        };
+        value.or(module_value).map_or_else(
             || Ok(self.lookup.lookup(variable).map(SecretString::from)),
             |secret| {
                 resolve_string(secret.expose_secret().to_owned(), &path, self.lookup)
@@ -139,11 +184,22 @@ where
     }
 }
 
-fn snapshot<L>(raw: RawParams, index: usize, lookup: &L) -> Result<AwsSettings, ConfigError>
+fn snapshot<L>(
+    raw: RawParams,
+    index: usize,
+    module: Option<&AwsSettings>,
+    module_path: bool,
+    lookup: &L,
+) -> Result<AwsSettings, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let resolver = Resolver { index, lookup };
+    let resolver = Resolver {
+        index,
+        module,
+        module_path,
+        lookup,
+    };
     Ok(AwsSettings {
         access_key_id: resolver.secret(
             raw.access_key_id,
@@ -171,12 +227,20 @@ where
         )?,
         sts_endpoint: resolver.value(raw.sts_endpoint, "aws_sts_endpoint", "AWS_STS_ENDPOINT")?,
         external_id: resolver.value(raw.external_id, "aws_external_id", "AWS_EXTERNAL_ID")?,
-        session_tags: raw.session_tags,
-        role_arn: lookup.lookup("AWS_ROLE_ARN"),
-        web_identity_token_file: lookup.lookup("AWS_WEB_IDENTITY_TOKEN_FILE"),
-        bearer_token: lookup
-            .lookup("AWS_BEARER_TOKEN_BEDROCK")
-            .map(SecretString::from),
+        session_tags: raw
+            .session_tags
+            .or_else(|| module.and_then(|settings| settings.session_tags.clone())),
+        role_arn: resolver.value(raw.role_arn, "aws_role_arn", "AWS_ROLE_ARN")?,
+        web_identity_token_file: resolver.value(
+            raw.web_identity_token_file,
+            "aws_web_identity_token_file",
+            "AWS_WEB_IDENTITY_TOKEN_FILE",
+        )?,
+        bearer_token: resolver.secret(
+            raw.bearer_token,
+            "aws_bearer_token_bedrock",
+            "AWS_BEARER_TOKEN_BEDROCK",
+        )?,
     })
 }
 
