@@ -82,6 +82,13 @@ fn case_1_audio_fragments_and_expiry() {
             id: Some(String::new()),
         }
     );
+    let zero_expiry = parse_chunks(r#"[{"choices":[{"delta":{"audio":{"expires_at":0}}}]}]"#);
+    assert_eq!(
+        get_combined_audio_content(&zero_expiry, 100)
+            .unwrap()
+            .expires_at,
+        ExpiryValue::Signed(3700)
+    );
 }
 
 #[rstest]
@@ -105,6 +112,23 @@ fn case_1_audio_base64_decoder() {
     }];
     let result = get_combined_audio_content(&chunks, 0);
     assert_eq!(result.map(|_| ()), Ok(()));
+
+    let medium_fragment = STANDARD.encode(vec![0; 0x0040_0000]);
+    let medium_chunks = vec![Chunk {
+        choices: vec![Choice {
+            delta: Some(Delta {
+                audio: Some(AudioDelta {
+                    data: Some(ChunkText::Text(medium_fragment)),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        }],
+    }];
+    assert_eq!(
+        get_combined_audio_content(&medium_chunks, 0).map(|_| ()),
+        Ok(())
+    );
 }
 
 #[test]
