@@ -107,7 +107,10 @@ impl Section for Raw {
                 lookup,
             )?);
         }
-        Ok(Settings { deployments, module })
+        Ok(Settings {
+            deployments,
+            module,
+        })
     }
 }
 
