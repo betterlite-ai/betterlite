@@ -4,11 +4,9 @@
 )]
 use serde_json::Value;
 
-use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
-use crate::sandbox::Sandbox;
-use crate::types::{Harness, JsonObject, PermissionMode};
+use crate::types::{Harness, JsonObject};
 
 pub(super) const CODEX_TOKEN_ENV: &str = "LITELLM_HARNESS_TOKEN";
 pub(super) const CODEX_SCHEMA_FILENAME: &str = "output_schema.json";
@@ -24,15 +22,6 @@ const MANAGED_CONFIG_KEYS: [&str; 8] = [
     "web_search",
 ];
 
-pub(super) const fn mismatch() -> HarnessError {
-    let harness = Harness::Codex;
-    HarnessError::OptionsMismatch {
-        given: "CodexOptions.config",
-        harness,
-        expected: "valid Codex configuration",
-    }
-}
-
 #[must_use]
 pub(super) fn toml_key(key: &str) -> String {
     if !key.is_empty()
@@ -42,18 +31,22 @@ pub(super) fn toml_key(key: &str) -> String {
     {
         key.to_owned()
     } else {
-        serde_json::to_string(key).unwrap_or_else(|_| "\"\"".to_owned())
+        Value::String(key.to_owned()).to_string()
     }
 }
 
 pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessError> {
     if depth > DEFAULT_MAX_RECURSE_DEPTH {
-        return Err(mismatch());
+        return Err(HarnessError::OptionsMismatch {
+            given: "CodexOptions.config value",
+            harness: Harness::Codex,
+            expected: "a value within the Codex config nesting limit",
+        });
     }
     match raw {
         Value::Bool(flag) => Ok(flag.to_string()),
         Value::Number(number) => Ok(number.to_string()),
-        Value::String(text) => serde_json::to_string(text).map_err(|_encode_err| mismatch()),
+        Value::String(text) => Ok(toml_string(text)),
         Value::Array(items) => items
             .iter()
             .map(|item| toml_value(item, depth.saturating_add(1)))
@@ -70,15 +63,20 @@ pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessErr
             })
             .collect::<Result<Vec<_>, HarnessError>>()
             .map(|encoded| format!("{{{}}}", encoded.join(", "))),
-        Value::Null => Err(mismatch()),
+        Value::Null => Err(HarnessError::OptionsMismatch {
+            given: "CodexOptions.config value",
+            harness: Harness::Codex,
+            expected: "a bool, number, string, array or object",
+        }),
     }
 }
 
-pub(super) fn toml_string(value: &str) -> Result<String, HarnessError> {
-    let encoded = serde_json::to_string(value);
-    encoded.map_err(|_encode_err| mismatch())
+#[must_use]
+pub(super) fn toml_string(value: &str) -> String {
+    Value::String(value.to_owned()).to_string()
 }
 
+#[must_use]
 pub(super) fn schema_value(schema: &JsonObject) -> Value {
     let entries = schema
         .iter()
@@ -90,8 +88,19 @@ pub(super) fn config_overrides(config: &JsonObject) -> Result<Vec<String>, Harne
     let mut overrides = Vec::with_capacity(config.len());
     for (key, value) in config {
         let first = key.split('.').next().unwrap_or_default();
-        if key.is_empty() || key.contains('=') || MANAGED_CONFIG_KEYS.contains(&first) {
-            return Err(mismatch());
+        if key.is_empty() || key.contains('=') {
+            return Err(HarnessError::OptionsMismatch {
+                given: "CodexOptions.config key",
+                harness: Harness::Codex,
+                expected: "a non-empty key without '='",
+            });
+        }
+        if MANAGED_CONFIG_KEYS.contains(&first) {
+            return Err(HarnessError::OptionsMismatch {
+                given: "CodexOptions.config",
+                harness: Harness::Codex,
+                expected: "a key Codex does not manage itself",
+            });
         }
         overrides.push(format!("{}={}", key, toml_value(value, 0)?));
     }
@@ -105,22 +114,4 @@ pub(super) fn pairs(flag: &str, values: &[String]) -> Vec<String> {
         flagged.push(value.clone());
     }
     flagged
-}
-
-pub(super) fn permission_args<S>(context: &SessionContext<S>, resumed: bool) -> Vec<String>
-where
-    S: Sandbox,
-{
-    if context.settings.permissions != PermissionMode::ReadOnly && context.sandbox.is_container() {
-        return vec!["--dangerously-bypass-approvals-and-sandbox".to_owned()];
-    }
-    let mode = match context.settings.permissions {
-        PermissionMode::ReadOnly => "read-only",
-        PermissionMode::Full | PermissionMode::Ask | PermissionMode::Edit => "workspace-write",
-    };
-    if resumed {
-        vec!["-c".to_owned(), format!("sandbox_mode=\"{mode}\"")]
-    } else {
-        vec!["--sandbox".to_owned(), mode.to_owned()]
-    }
 }

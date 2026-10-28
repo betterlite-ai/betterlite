@@ -26,10 +26,16 @@ pub(super) fn feature_overrides<S>(
         values.push("model_reasoning_summary=auto".to_owned());
         values.push("model_supports_reasoning_summaries=true".to_owned());
     }
-    if let Some(instructions) = context.settings.instructions.as_ref()
-        && let Ok(encoded) = toml_string(instructions)
+    if let Some(instructions) = context
+        .settings
+        .instructions
+        .as_ref()
+        .filter(|text| !text.is_empty())
     {
-        values.push(format!("developer_instructions={encoded}"));
+        values.push(format!(
+            "developer_instructions={}",
+            toml_string(instructions)
+        ));
     }
     values
 }

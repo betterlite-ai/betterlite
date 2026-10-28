@@ -1,12 +1,6 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "Codex emits untyped JSONL events; this module is the one place that reads them field by field"
-)]
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use serde_json::Value;
-
-use crate::types::JsonObject;
+use serde::Deserialize;
 
 #[derive(Clone, Debug, Default)]
 pub struct CodexStreamState {
@@ -17,180 +11,281 @@ pub struct CodexStreamState {
     pub started: BTreeSet<String>,
 }
 
-pub(super) fn event_type(line: &JsonObject) -> Option<&str> {
-    let kind = line.get("type");
-    kind.and_then(Value::as_str)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ItemEventKind {
+    Started,
+    Updated,
+    Completed,
 }
 
-pub(super) fn thread_id(line: &JsonObject) -> Option<&str> {
-    let candidate = line.get("thread_id").and_then(Value::as_str);
-    candidate.filter(|value| !value.is_empty())
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(super) enum FailureDetail {
+    Object {
+        #[serde(default)]
+        message: Option<String>,
+    },
+    Text(String),
 }
 
-pub(super) fn error_message(line: &JsonObject) -> Option<&str> {
-    let message = line.get("message");
-    message.and_then(Value::as_str)
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub(super) enum StreamEvent {
+    #[serde(rename = "thread.started")]
+    ThreadStarted {
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    #[serde(rename = "item.started")]
+    ItemStarted { item: Item },
+    #[serde(rename = "item.updated")]
+    ItemUpdated { item: Item },
+    #[serde(rename = "item.completed")]
+    ItemCompleted { item: Item },
+    #[serde(rename = "error")]
+    Error {
+        #[serde(default)]
+        message: Option<String>,
+    },
+    #[serde(rename = "turn.failed")]
+    TurnFailed {
+        #[serde(default)]
+        error: Option<FailureDetail>,
+    },
+    #[serde(other)]
+    Other,
 }
 
-pub(super) fn turn_failed_message(line: &JsonObject) -> Option<&str> {
-    let detail_message = line
-        .get("error")
-        .and_then(Value::as_object)
-        .and_then(|detail| detail.get("message"))
-        .and_then(Value::as_str);
-    detail_message.or_else(|| line.get("error").and_then(Value::as_str))
-}
+pub(super) use wire::{Item, parse, tool_input, tool_output};
 
-pub(super) fn object(value: Option<&Value>) -> Option<JsonObject> {
-    let entries = value.and_then(Value::as_object)?;
-    Some(
-        entries
-            .iter()
-            .map(|(key, entry)| (key.clone(), entry.clone()))
-            .collect(),
-    )
-}
-
-pub(super) fn item_kind(item: &JsonObject) -> &str {
-    let kind = item.get("type").and_then(Value::as_str);
-    kind.unwrap_or_default()
-}
-
-pub(super) fn item_id(item: &JsonObject) -> String {
-    let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
-    id.to_owned()
-}
-
-pub(super) fn item_text(item: &JsonObject) -> Option<&str> {
-    let text = item.get("text");
-    text.and_then(Value::as_str)
-}
-
-pub(super) fn tool_input(item: &JsonObject) -> (String, String, JsonObject, bool) {
-    match item_kind(item) {
-        "command_execution" => (
-            "bash".to_owned(),
-            "command_execution".to_owned(),
-            BTreeMap::from([(
-                "command".to_owned(),
-                item.get("command")
-                    .cloned()
-                    .unwrap_or(Value::String(String::new())),
-            )]),
-            true,
-        ),
-        "file_change" => (
-            "edit".to_owned(),
-            "apply_patch".to_owned(),
-            BTreeMap::from([(
-                "changes".to_owned(),
-                item.get("changes")
-                    .cloned()
-                    .unwrap_or(Value::Array(Vec::new())),
-            )]),
-            true,
-        ),
-        "web_search" => (
-            "web_search".to_owned(),
-            "web_search".to_owned(),
-            BTreeMap::from([(
-                "query".to_owned(),
-                item.get("query")
-                    .cloned()
-                    .unwrap_or(Value::String(String::new())),
-            )]),
-            true,
-        ),
-        _ => mcp_tool_input(item),
+pub(super) fn item_id(item: &Item) -> &str {
+    match item {
+        Item::AgentMessage { id, .. }
+        | Item::Reasoning { id, .. }
+        | Item::CommandExecution { id, .. }
+        | Item::FileChange { id, .. }
+        | Item::WebSearch { id, .. }
+        | Item::McpToolCall { id, .. } => id,
+        Item::Other => "",
     }
 }
 
-fn mcp_tool_input(item: &JsonObject) -> (String, String, JsonObject, bool) {
-    let server = item
-        .get("server")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let native = item.get("tool").and_then(Value::as_str).unwrap_or_default();
-    let input = match item.get("arguments") {
-        Some(Value::Object(map)) => map
-            .iter()
-            .map(|(key, entry)| (key.clone(), entry.clone()))
-            .collect(),
-        Some(value) => BTreeMap::from([("arguments".to_owned(), value.clone())]),
-        None => BTreeMap::from([("arguments".to_owned(), Value::Null)]),
-    };
-    let name = if server.is_empty() {
-        native.to_owned()
-    } else {
-        format!("{server}.{native}")
-    };
-    (name, native.to_owned(), input, false)
-}
+mod wire {
+    #![expect(
+        clippy::disallowed_types,
+        reason = "codex's mcp tool arguments/result/error and the ToolCall.input boundary carry open JSON with no fixed schema"
+    )]
+    use std::collections::BTreeMap;
 
-pub(super) fn tool_output(item: &JsonObject) -> (String, bool) {
-    let status = item.get("status").and_then(Value::as_str);
-    let failed = status == Some("failed");
-    match item_kind(item) {
-        "command_execution" => (aggregated_output_text(item), failed || exited_nonzero(item)),
-        "file_change" => (file_change_summary(item), failed),
-        "web_search" => (String::new(), failed),
-        _ => mcp_tool_result_text(item, failed),
+    use serde::Deserialize;
+    use serde_json::Value;
+
+    use crate::types::JsonObject;
+
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "type")]
+    pub(crate) enum Item {
+        #[serde(rename = "agent_message")]
+        AgentMessage {
+            #[serde(default)]
+            id: String,
+            #[serde(default)]
+            text: Option<String>,
+        },
+        #[serde(rename = "reasoning")]
+        Reasoning {
+            #[serde(default)]
+            id: String,
+            #[serde(default)]
+            text: Option<String>,
+        },
+        #[serde(rename = "command_execution")]
+        CommandExecution {
+            #[serde(default)]
+            id: String,
+            #[serde(default)]
+            command: Option<String>,
+            #[serde(default)]
+            aggregated_output: Option<String>,
+            #[serde(default)]
+            exit_code: Option<i64>,
+            #[serde(default)]
+            status: Option<String>,
+        },
+        #[serde(rename = "file_change")]
+        FileChange {
+            #[serde(default)]
+            id: String,
+            #[serde(default)]
+            changes: Option<Vec<Value>>,
+            #[serde(default)]
+            status: Option<String>,
+        },
+        #[serde(rename = "web_search")]
+        WebSearch {
+            #[serde(default)]
+            id: String,
+            #[serde(default)]
+            query: Option<String>,
+            #[serde(default)]
+            status: Option<String>,
+        },
+        #[serde(rename = "mcp_tool_call")]
+        McpToolCall {
+            #[serde(default)]
+            id: String,
+            #[serde(default)]
+            server: Option<String>,
+            #[serde(default)]
+            tool: Option<String>,
+            #[serde(default)]
+            arguments: Option<Value>,
+            #[serde(default)]
+            result: Option<Value>,
+            #[serde(default)]
+            error: Option<Value>,
+            #[serde(default)]
+            status: Option<String>,
+        },
+        #[serde(other)]
+        Other,
     }
-}
 
-fn mcp_tool_result_text(item: &JsonObject, failed: bool) -> (String, bool) {
-    let Some(error) = item.get("error").filter(|error| !error.is_null()) else {
-        return (mcp_tool_result_value(item), failed);
-    };
-    (mcp_tool_error_message(error), true)
-}
+    pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
+        let object = line.iter().map(|(key, entry)| (key.clone(), entry.clone())).collect();
+        serde_json::from_value(Value::Object(object)).ok()
+    }
 
-fn mcp_tool_result_value(item: &JsonObject) -> String {
-    let Some(value) = item.get("result").filter(|value| !value.is_null()) else {
-        return String::new();
-    };
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned)
-}
+    pub(crate) fn tool_input(item: &Item) -> (String, String, JsonObject, bool) {
+        match item {
+            Item::CommandExecution { command, .. } => (
+                "bash".to_owned(),
+                "command_execution".to_owned(),
+                BTreeMap::from([(
+                    "command".to_owned(),
+                    Value::String(command.clone().unwrap_or_default()),
+                )]),
+                true,
+            ),
+            Item::FileChange { changes, .. } => (
+                "edit".to_owned(),
+                "apply_patch".to_owned(),
+                BTreeMap::from([(
+                    "changes".to_owned(),
+                    Value::Array(changes.clone().unwrap_or_default()),
+                )]),
+                true,
+            ),
+            Item::WebSearch { query, .. } => (
+                "web_search".to_owned(),
+                "web_search".to_owned(),
+                BTreeMap::from([(
+                    "query".to_owned(),
+                    Value::String(query.clone().unwrap_or_default()),
+                )]),
+                true,
+            ),
+            Item::McpToolCall {
+                server,
+                tool,
+                arguments,
+                ..
+            } => {
+                let native = tool.clone().unwrap_or_default();
+                let input = match arguments {
+                    Some(Value::Object(map)) => {
+                        map.iter().map(|(key, entry)| (key.clone(), entry.clone())).collect()
+                    }
+                    Some(value) => BTreeMap::from([("arguments".to_owned(), value.clone())]),
+                    None => BTreeMap::from([("arguments".to_owned(), Value::Null)]),
+                };
+                let name = match server.as_deref().filter(|value| !value.is_empty()) {
+                    Some(server) => format!("{server}.{native}"),
+                    None => native.clone(),
+                };
+                (name, native, input, false)
+            }
+            Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => {
+                (String::new(), String::new(), JsonObject::new(), false)
+            }
+        }
+    }
 
-fn mcp_tool_error_message(error: &Value) -> String {
-    let message = error
-        .get("message")
-        .and_then(Value::as_str)
-        .or_else(|| error.as_str());
-    message.map_or_else(|| error.to_string(), str::to_owned)
-}
+    pub(crate) fn tool_output(item: &Item) -> (String, bool) {
+        match item {
+            Item::CommandExecution {
+                aggregated_output,
+                exit_code,
+                status,
+                ..
+            } => {
+                let failed = status.as_deref() == Some("failed");
+                let exited_nonzero = exit_code.is_some_and(|code| code != 0);
+                (
+                    aggregated_output.clone().unwrap_or_default(),
+                    failed || exited_nonzero,
+                )
+            }
+            Item::FileChange { changes, status, .. } => (
+                change_summary(changes.as_deref()),
+                status.as_deref() == Some("failed"),
+            ),
+            Item::WebSearch { status, .. } => (String::new(), status.as_deref() == Some("failed")),
+            Item::McpToolCall {
+                result,
+                error,
+                status,
+                ..
+            } => {
+                let failed = status.as_deref() == Some("failed");
+                match error.as_ref().filter(|value| is_truthy(value)) {
+                    Some(error) => (mcp_error_message(error), true),
+                    None => (mcp_result_text(result.as_ref()), failed),
+                }
+            }
+            Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => (String::new(), false),
+        }
+    }
 
-fn aggregated_output_text(item: &JsonObject) -> String {
-    let text = item.get("aggregated_output").and_then(Value::as_str);
-    text.unwrap_or_default().to_owned()
-}
+    fn change_summary(changes: Option<&[Value]>) -> String {
+        changes
+            .unwrap_or_default()
+            .iter()
+            .map(|change| {
+                let kind = change.get("kind").and_then(Value::as_str).unwrap_or_default();
+                let path = change.get("path").and_then(Value::as_str).unwrap_or_default();
+                format!("{kind} {path}").trim().to_owned()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
-fn exited_nonzero(item: &JsonObject) -> bool {
-    let exit_code = item.get("exit_code");
-    exit_code.is_some_and(|value| value.as_i64().is_some_and(|code| code != 0))
-}
+    fn mcp_result_text(result: Option<&Value>) -> String {
+        let Some(value) = result.filter(|value| !value.is_null()) else {
+            return String::new();
+        };
+        value.as_str().map_or_else(|| value.to_string(), str::to_owned)
+    }
 
-fn file_change_summary(item: &JsonObject) -> String {
-    let Some(changes) = item.get("changes").and_then(Value::as_array) else {
-        return String::new();
-    };
-    changes
-        .iter()
-        .map(change_summary)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+    fn mcp_error_message(error: &Value) -> String {
+        match error {
+            Value::Object(fields) => fields
+                .get("message")
+                .and_then(Value::as_str)
+                .map_or_else(|| "None".to_owned(), str::to_owned),
+            Value::String(text) => text.clone(),
+            other => other.to_string(),
+        }
+    }
 
-fn change_summary(change: &Value) -> String {
-    let kind = change
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let path = change
-        .get("path")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    format!("{kind} {path}").trim().to_owned()
+    fn is_truthy(value: &Value) -> bool {
+        match value {
+            Value::Null => false,
+            Value::Bool(flag) => *flag,
+            Value::Number(number) => number.as_f64().is_none_or(|parsed| parsed != 0.0),
+            Value::String(text) => !text.is_empty(),
+            Value::Array(items) => !items.is_empty(),
+            Value::Object(fields) => !fields.is_empty(),
+        }
+    }
 }
