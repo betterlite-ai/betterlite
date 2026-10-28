@@ -89,13 +89,27 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let api_base = resolve_api_base(parameters.api_base, &prefix, lookup)?;
-        let violation_threshold =
-            resolve_violation_threshold(parameters.violation_threshold, &prefix, lookup)?;
+        let base = parameters.api_base.filter(|value| !value.is_empty()).map_or_else(
+            || {
+                Ok(lookup
+                    .lookup("GRAYSWAN_API_BASE")
+                    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
+            },
+            |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
+        )?;
+        let violation_threshold = parameters.violation_threshold.map_or_else(
+            || {
+                Ok(lookup
+                    .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
+                    .and_then(|text| text.parse::<f64>().ok())
+                    .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
+            },
+            |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
+        )?;
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
-            api_base,
+            api_base: base.trim_end_matches('/').to_owned(),
             on_flagged_action: resolve_on_flagged_action(parameters.on_flagged_action.as_deref()),
             violation_threshold,
             reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode, lookup),
@@ -127,41 +141,6 @@ where
         &format!("{prefix}.api_key"),
         lookup,
     )?))
-}
-
-fn resolve_api_base<L>(api_base: Option<String>, prefix: &str, lookup: &L) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let base = api_base.filter(|value| !value.is_empty()).map_or_else(
-        || {
-            Ok(lookup
-                .lookup("GRAYSWAN_API_BASE")
-                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
-        },
-        |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
-    )?;
-    Ok(base.trim_end_matches('/').to_owned())
-}
-
-fn resolve_violation_threshold<L>(
-    value: Option<String>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let threshold = value.map_or_else(
-        || {
-            Ok(lookup
-                .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
-                .and_then(|text| text.parse::<f64>().ok())
-                .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
-        },
-        |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
-    )?;
-    Ok(threshold)
 }
 
 fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
