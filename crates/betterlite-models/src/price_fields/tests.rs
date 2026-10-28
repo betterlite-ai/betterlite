@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::PriceFieldError;
 use super::PriceFields;
 use super::nested::Weekday;
 use rstest::rstest;
@@ -156,13 +157,12 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
         .chars()
         .any(|character| character.is_ascii_alphabetic())
     {
-        if expected.contains('.')
-            || expected.contains("duplicate")
-            || expected.contains("unknown field")
-        {
-            assert!(parsed.unwrap_err().to_string().contains(expected));
+        let error = parsed.unwrap_err();
+        if expected.contains("duplicate") || expected.contains("unknown field") {
+            assert!(error.to_string().contains(expected));
         } else {
-            parsed.unwrap_err();
+            let PriceFieldError::Json { path, .. } = error;
+            assert_eq!(path, expected);
         }
     } else {
         let numbers: BTreeMap<String, Box<RawValue>> = serde_json::from_str(source).unwrap();

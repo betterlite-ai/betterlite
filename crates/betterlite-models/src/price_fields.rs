@@ -25,6 +25,12 @@ macro_rules! price_struct {
                 pub $field: Option<rust_decimal::Decimal>,
             )*
         }
+
+        impl $name {
+            // serde_path_to_error cannot see past #[serde(flatten)], so PriceFields::parse
+            // retries each of these wire names on its own to recover the field path.
+            pub(crate) const WIRE_NAMES: &'static [&'static str] = &[$($wire),*];
+        }
     };
 }
 pub(crate) use price_struct;
@@ -61,13 +67,50 @@ pub enum PriceFieldError {
     },
 }
 
+const FLAT_WIRE_NAME_GROUPS: &[&[&str]] = &[
+    values::cache::CachePricing::WIRE_NAMES,
+    values::input::InputPricing::WIRE_NAMES,
+    values::output::OutputPricing::WIRE_NAMES,
+    values::other::OtherPricing::WIRE_NAMES,
+];
+
 impl PriceFields {
     pub fn parse(input: &RawValue) -> Result<Self, PriceFieldError> {
         let mut deserializer = serde_json::Deserializer::from_str(input.get());
-        serde_path_to_error::deserialize(&mut deserializer).map_err(|error| PriceFieldError::Json {
-            path: error.path().to_string(),
-            source: error.into_inner(),
+        serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+            let path = error.path().to_string();
+            if path == "." {
+                if let Some(located) = Self::locate_flat_field_error(input) {
+                    return located;
+                }
+            }
+            PriceFieldError::Json {
+                path,
+                source: error.into_inner(),
+            }
         })
+    }
+
+    // #[serde(flatten)] buffers the map through an untyped Content tree, so
+    // serde_path_to_error reports "." for any error among the flattened price
+    // fields. Re-check each known wire name on its own to recover the real path.
+    fn locate_flat_field_error(input: &RawValue) -> Option<PriceFieldError> {
+        let top_level: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input.get()).ok()?;
+        for wire_name in FLAT_WIRE_NAME_GROUPS.iter().copied().flatten() {
+            let Some(raw) = top_level.get(*wire_name) else {
+                continue;
+            };
+            let mut deserializer = serde_json::Deserializer::from_str(raw.get());
+            if let Err(error) =
+                serde_path_to_error::deserialize::<_, deserialize::ExactDecimal>(&mut deserializer)
+            {
+                return Some(PriceFieldError::Json {
+                    path: (*wire_name).to_owned(),
+                    source: error.into_inner(),
+                });
+            }
+        }
+        None
     }
 }
 
