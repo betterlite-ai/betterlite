@@ -200,5 +200,5 @@ pitfalls:
   - "Web search tool calls have no result field; output is always empty."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 2
