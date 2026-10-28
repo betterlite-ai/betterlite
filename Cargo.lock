@@ -1041,11 +1041,13 @@ dependencies = [
  "reqwest",
  "rstest",
  "secrecy",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
