@@ -28,19 +28,13 @@ pub(super) fn encode(event: &Event, started: &mut BTreeSet<String>) -> HelperRes
             is_error,
         } => {
             if !started.contains(id) {
-                return Err(super::failure(
-                    "EventOrder",
-                    "ToolResult preceded ToolCall",
-                ));
+                return Err(super::failure("EventOrder", "ToolResult preceded ToolCall"));
             }
             Ok(json!({"kind": "tool_result", "id": id, "output": output, "is_error": is_error}))
         }
         Event::FileChange(_)
         | Event::Compaction { .. }
         | Event::Approval(_)
-        | Event::Done { .. } => Err(super::failure(
-            "UnexpectedEvent",
-            "Unexpected Codex event",
-        )),
+        | Event::Done { .. } => Err(super::failure("UnexpectedEvent", "Unexpected Codex event")),
     }
 }
