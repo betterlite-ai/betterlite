@@ -32,7 +32,7 @@ LiteLLM's behavior is the spec; its code isn't. Read it at the pinned commit the
 
 The references mark the LiteLLM code the task owns, and rule owned-behavior-is-built applies: behavior there that the task text skips is still yours. Build it with a named case and say so in notes. When it won't fit the budget, answer blocked with the list.
 
-The oracle in tools/oracle (from B001) runs LiteLLM next to betterlite on the same request. When the task text and the oracle disagree, believe the oracle and say so in a note. When you think LiteLLM itself is wrong, don't copy the bug and don't quietly fix it: report it as a deviation and let the architect decide.
+The oracle in tools/oracle (from B001) runs LiteLLM next to betterlite on the same request. When the task text and the oracle disagree, believe the oracle and say so in a note. When LiteLLM itself is wrong, rule owned-behavior-is-built draws the line: copy what a working LiteLLM setup can rely on, and fix a bug none can rely on without asking. List each fix as a deviation with a link to the LiteLLM line, and prove it with a Rust test, since an oracle case on that input can't match. When you can't tell which side a bug is on, copy LiteLLM and say so in a note.
 
 Everything in LiteLLM's enterprise directory and in the litellm_enterprise package is proprietary. Don't open those files, port them or link them. LiteLLM's litellm-rust folder is MIT and fine to read.
 

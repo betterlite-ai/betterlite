@@ -24,6 +24,7 @@ fn progress() -> Progress {
         blocked_reports: 0,
         last_blocked: 0,
         earlier: None,
+        litellm: Vec::new(),
     }
 }
 

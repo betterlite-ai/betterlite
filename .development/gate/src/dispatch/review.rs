@@ -7,7 +7,7 @@ use crate::facts::Facts;
 use crate::git::git;
 use crate::review_check::review_problems;
 use crate::spec::agents::{Agents, Rung, Runner};
-use crate::spec::review::{Review, ReviewVerdict};
+use crate::spec::review::{FindingOrigin, Review, ReviewVerdict};
 use crate::spec::rules::Rules;
 use crate::spec::task::ReviewLevel;
 use crate::yaml::read_yaml;
@@ -32,28 +32,39 @@ fn reviewer_rung<'agents>(
 }
 
 fn step(attempt: &Attempt<'_>, answer: &Review, commit: String) -> Step {
+    let brief = attempt.brief;
+    let mut ours = Vec::new();
+    let mut litellm = Vec::new();
+    for finding in &answer.findings {
+        let line = format!(
+            "{} at {}: {} Fix: {}",
+            finding.rule, finding.location, finding.problem, finding.fix
+        );
+        match finding.origin {
+            FindingOrigin::Ours => ours.push(line),
+            FindingOrigin::Litellm => litellm.push(format!(
+                "{} repeats a LiteLLM bug, for the architect to decide: {line}",
+                brief.task.id
+            )),
+        }
+    }
     match answer.verdict {
         ReviewVerdict::Approve => {
-            let brief = attempt.brief;
             let place = attempt.places.worktree.display();
-            Step::Ready(vec![format!(
+            let mut lines = vec![format!(
                 "{} is ready to merge: branch {} in {place}",
                 brief.task.id, brief.branch
-            )])
+            )];
+            lines.append(&mut litellm);
+            Step::Ready(lines)
         }
-        ReviewVerdict::Changes => Step::Reviewed(EarlierReview {
-            commit,
-            findings: answer
-                .findings
-                .iter()
-                .map(|finding| {
-                    format!(
-                        "{} at {}: {} Fix: {}",
-                        finding.rule, finding.location, finding.problem, finding.fix
-                    )
-                })
-                .collect(),
-        }),
+        ReviewVerdict::Changes => Step::Reviewed(
+            EarlierReview {
+                commit,
+                findings: ours,
+            },
+            litellm,
+        ),
     }
 }
 
