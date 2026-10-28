@@ -27,8 +27,7 @@ macro_rules! price_struct {
         }
 
         impl $name {
-            // serde_path_to_error cannot see past #[serde(flatten)], so PriceFields::parse
-            // retries each of these wire names on its own to recover the field path.
+            // Lets PriceFields::parse recover a field path lost to #[serde(flatten)].
             pub(crate) const WIRE_NAMES: &'static [&'static str] = &[$($wire),*];
         }
     };
@@ -79,10 +78,10 @@ impl PriceFields {
         let mut deserializer = serde_json::Deserializer::from_str(input.get());
         serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
             let path = error.path().to_string();
-            if path == "." {
-                if let Some(located) = Self::locate_flat_field_error(input) {
-                    return located;
-                }
+            if path == "."
+                && let Some(located) = Self::locate_flat_field_error(input)
+            {
+                return located;
             }
             PriceFieldError::Json {
                 path,
@@ -91,9 +90,7 @@ impl PriceFields {
         })
     }
 
-    // #[serde(flatten)] buffers the map through an untyped Content tree, so
-    // serde_path_to_error reports "." for any error among the flattened price
-    // fields. Re-check each known wire name on its own to recover the real path.
+    // Recovers the path a flattened field lost by re-checking each known wire name alone.
     fn locate_flat_field_error(input: &RawValue) -> Option<PriceFieldError> {
         let top_level: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input.get()).ok()?;
         for wire_name in FLAT_WIRE_NAME_GROUPS.iter().copied().flatten() {
