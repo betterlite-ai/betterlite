@@ -9,7 +9,9 @@ description: >-
   Configuration combines base URL, detector ID, authentication token (from IBM_GUARDRAILS_AUTH_TOKEN
   environment variable when unset), SSL verification flag, score threshold, and detector
   parameters as a dict. Construct API URLs: /api/v1/text/contents for detector server,
-  /api/v2/text/detection/content for FMS Guardrails Orchestrator.
+  /api/v2/text/detection/content for FMS Guardrails Orchestrator. The YAML side lives in the ibm_guardrails
+  section of betterlite-config, registered as a stub. It reads the IBM entries of the guardrails
+  list the way lasso_classification does, and the client config is built from those settings.
 
   Detector-server client batches multiple texts in one request, returning nested lists
   (one list per input text with its detections). Orchestrator client scans individual
@@ -33,6 +35,8 @@ scope:
   paths:
     - crates/betterlite-guardrails/src/ibm_detector_client.rs
     - crates/betterlite-guardrails/src/ibm_detector_client/**
+    - crates/betterlite-config/src/sections/ibm_guardrails.rs
+    - crates/betterlite-config/src/sections/ibm_guardrails/**
     - tools/oracle/cases/helpers/ibm-detector-client/**
     - tools/oracle/fuzz/corpus/helper_case/ibm-detector-client-*
     - tools/oracle/helpers/b3736.py
@@ -78,6 +82,11 @@ dod:
       base_url, or detector_id are missing.
     proof: [missing-required-field-tests, oracle]
   - text: >-
+      The ibm_guardrails section loads each IBM entry of the guardrails list with auth_token, base_url,
+      detector_id, is_detector_server, detector_params, extra_headers, score_threshold, block_on_detection
+      and verify_ssl, using the same defaults as the IBMGuardrailDetector constructor.
+    proof: [ibm-config-section]
+  - text: >-
       Detector server client batches multiple texts in one request and returns
       nested lists; orchestrator client calls once per text and returns flat lists;
       both use bearer token authorization and apply extra header overwrites.
@@ -102,6 +111,9 @@ checks:
     - id: config-tests
       why: Configuration parsing, URL construction, SSL/header application or environment resolution absent or wrong.
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::config::tests::/) - test(/replays_the_/)'
+    - id: ibm-config-section
+      why: the ibm_guardrails section does not load IBM guardrail entries or their defaults differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::ibm_guardrails::/)'
     - id: missing-required-field-tests
       why: ValueError for missing auth_token, base_url or detector_id absent or wrong error type/message.
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_detector_client::initialization::tests::missing_required_field/)'

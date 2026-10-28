@@ -29,6 +29,7 @@ mod auth;
 mod azure;
 mod bedrock;
 mod cache;
+mod cli;
 mod config;
 mod context;
 mod core_ops;
@@ -55,6 +56,7 @@ mod proxy;
 mod rate_limit;
 mod redact;
 mod redis;
+mod reporting;
 mod roi;
 mod router;
 mod sdk;
@@ -122,13 +124,14 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 42] = [
+const GROUPS: [Group; 44] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
     azure::GROUP,
     bedrock::GROUP,
     cache::GROUP,
+    cli::GROUP,
     config::GROUP,
     context::GROUP,
     core_ops::GROUP,
@@ -155,6 +158,7 @@ const GROUPS: [Group; 42] = [
     rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,
+    reporting::GROUP,
     roi::GROUP,
     router::GROUP,
     sdk::GROUP,

@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-litellm-standard
+call: {websearch_tool_records: {function: is_web_search_tool, tool: {name: litellm_web_search}}}
+env: {}
+compare: {ignore: []}

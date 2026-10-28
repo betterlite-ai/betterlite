@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Policy database records and single-version lookup
 status: todo
 depends_on: [B3240, B726]
-file: null
+file: tasks/B3242-policy-records.yaml
 covers:
   - "litellm/types/proxy/policy_engine/resolver_types.py"
   - "litellm/proxy/policy_engine/policy_registry.py"

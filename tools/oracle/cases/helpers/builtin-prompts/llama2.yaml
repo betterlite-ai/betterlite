@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "llama2", "call": {"builtin_prompts": {"family": "llama2", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

@@ -1,0 +1,10 @@
+kind: helper
+name: structured-excluded-dict-key
+call:
+  structured_redaction:
+    function: mask_dict
+    data: {token: short, api_key: secret}
+    excluded_keys: [api_key]
+env: {}
+compare:
+  ignore: []

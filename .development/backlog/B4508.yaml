@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Investigate Lens candidates against original evidence
 status: todo
 depends_on: [B4500, B4506]
-file: null
+file: tasks/B4508-lens-investigation.yaml
 covers:
   - "litellm/proxy/lens/analysis.py"
 parent: B132

@@ -1,0 +1,179 @@
+id: B4081
+title: Extract comparable shadow responses and billed call costs
+description: >-
+  Build response evidence readers and typed shadow/judge outcomes in betterlite-core::shadow_evidence,
+  extracting judgeable text from chat and Responses API surfaces with tool serialization, reading
+  response costs from deployment-stamped values with fallback to the public price map, and
+  assembling typed result records for shadow and judge calls.
+
+  From chat responses, extract the assistant message's prose and any tool calls, serializing each
+  call as `[tool call] name(arguments)`. From Responses API responses, validate and extract the
+  output_text property and tool calls the same way. Both surfaces feed the same signature:
+  read field values from mappings or typed objects (dicts or dataclass-like). Responses with no
+  readable text and no tool calls produce empty string only when the reply is truly empty; any
+  readable message or choice counts. Finish reason comes from the choice; if no choice is
+  readable, return "unknown".
+
+  Cost for a shadow or judge call reads from response._hidden_params.response_cost first (the
+  router client's stamped cost from deployment pricing). If absent or unreadable, fall back to
+  litellm.completion_cost with the response object, returning zero for unmapped models instead
+  of raising an error. Cost must be precise through Decimal. Confidence in judge verdicts is also
+  Decimal and clamped to [0, 1] after parsing. Store failure reasons with exception class, source
+  location and message, capped at 500 characters per attempt, so similar failures group by cause.
+
+  Routing decisions embed cost and tier labels a later stage needs: preserve the routing_decision
+  metadata key (empty when a plain model served the request), extract tier_label or tier field,
+  and extract classifier_cost from the decision. These are separate from the response-level costs.
+
+  Three result records capture what attempt rows will record: _CallFailure (error, cost,
+  classifier_cost), _ShadowResponse (text, model, tier, cost, classifier_cost) and _JudgeVerdict
+  (preference, confidence, cost), all frozen dataclasses. Every zero/default is stored explicitly
+  so attempts never lose a cost or confidence signal due to null coalescing.
+
+  Responses API validation errors and unknown call types are silent skips, never failures: a
+  request the owner cannot judge is forwarded without evaluation, maintaining the original path.
+  Preserve first-fence extraction in JSON parsing (B4080), outermost-brace fallback and
+  non-object rejection.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/shadow_evidence.rs
+    - crates/betterlite-core/src/shadow_evidence/**
+    - tools/oracle/helpers/b4081.py
+    - tools/oracle/helpers/b4081/**
+    - tools/oracle/src/helpers/core_ops/b4081.rs
+    - tools/oracle/src/helpers/core_ops/b4081/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L171-L178
+    why: _chat_choice extracts the first choice from mapping or typed response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L181-L182
+    why: _field_reader returns a callable for dict.get or object attribute access.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L185-L207
+    why: _chat_message_reader, _chat_final_text and _chat_finish_reason extract and serialize response text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L210-L213
+    why: _chat_finish_reason reads the choice's finish_reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L216-L239
+    why: Tool call serialization, including _RESPONSES_TOOL_CALL_TYPES, _tool_calls_list and _tool_call_invocation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L242-L247
+    why: _shadow_empty_reply_error produces a stable sentence with varying details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L250-L277
+    why: _responses_final_text validates ResponsesAPIResponse, reads output_text and tool calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L491-L496
+    why: _failure_detail reads exception type, message and the raising traceback frame.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L499-L510
+    why: _judge_reply_shape describes an unparseable judge reply by finish_reason, content size and model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L513-L521
+    why: _call_cost checks response._hidden_params.response_cost before falling back to completion_cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L524-L531
+    why: _price_map_cost calls litellm.completion_cost, treating unmapped models as zero.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L671-L689
+    why: Routing decision and tier extraction, _routing_decision, _routed_tier and _decision_classifier_cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L704-L731
+    why: Result records _CallFailure, _ShadowResponse and _JudgeVerdict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L72
+    why: _EMPTY_METADATA constant used when routing decision is absent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L216
+    why: _RESPONSES_TOOL_CALL_TYPES frozenset of tool call type strings.
+
+dod:
+  - text: Chat response text extraction reads prose from content and serializes tool calls as `[tool call] name(arguments)`, joining them with prose if both present.
+    proof: [response-text-tests]
+  - text: Responses API object validation rejects unmappable responses and returns empty text for unmappable output; output_text aggregation joins message items without separators.
+    proof: [responses-text-tests]
+  - text: Tool call reading handles tool_calls arrays, function_call singlets and custom_tool_call types with name and arguments/input fields.
+    proof: [response-text-tests, responses-text-tests]
+  - text: Finish reason returns the choice's finish_reason or "unknown" when no readable choice exists.
+    proof: [response-text-tests]
+  - text: Call cost reads response._hidden_params.response_cost first; when absent, calls completion_cost(response) and returns zero for unmapped models instead of raising.
+    proof: [cost-tests, shadow-evidence-oracle]
+  - text: Failure detail includes exception class, source location (filename:line) and message, capped at 500 characters.
+    proof: [failure-tests]
+  - text: Judge reply shape describes finish_reason, content size and model; shape-only output never includes quoted response content.
+    proof: [judge-reply-tests]
+  - text: Routing decision reads metadata, returns empty dict when absent, and extracts tier_label/tier and classifier_cost.
+    proof: [routing-tests]
+  - text: _CallFailure, _ShadowResponse and _JudgeVerdict are frozen dataclasses with Decimal cost/classifier_cost and Decimal confidence [0, 1] in verdicts.
+    proof: [record-tests]
+  - text: Empty chat response (no message or no prose and no tool calls) returns empty string, not an error.
+    proof: [response-text-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: response-text-tests
+      why: chat response text extraction fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::chat_text::/)'
+    - id: responses-text-tests
+      why: Responses API text extraction fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::responses_text::/)'
+    - id: cost-tests
+      why: call cost calculation fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::cost::/)'
+    - id: failure-tests
+      why: failure detail formatting fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::failure::/)'
+    - id: judge-reply-tests
+      why: judge reply shape detection fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::judge_reply::/)'
+    - id: routing-tests
+      why: routing decision extraction fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::routing::/)'
+    - id: record-tests
+      why: result record construction or types fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_evidence::records::/)'
+    - id: shadow-evidence-oracle
+      why: response evidence behavior differs from pinned LiteLLM
+      run: test -f tools/oracle/cases/helpers/shadow-evidence/basic-chat-response.yaml && cargo build --locked -p betterlite-oracle && target/debug/betterlite-oracle tools/oracle/cases/helpers/shadow-evidence
+
+oracle_cases:
+  - tools/oracle/cases/helpers/shadow-evidence/basic-chat-response.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/chat-with-tool-calls.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/empty-chat-response.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/responses-api-output-text.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/responses-api-tool-calls.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/cost-from-stamped.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/cost-from-price-map.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/unmapped-model-zero-cost.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/routing-decision-with-tier.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/routing-decision-absent.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/judge-reply-valid.yaml
+  - tools/oracle/cases/helpers/shadow-evidence/judge-reply-truncated.yaml
+
+deviations:
+  - what: Costs are Decimal throughout instead of float, preserving precision for billing.
+    why: betterlite uses rust_decimal for financial accuracy; LiteLLM uses float but the semantic behavior (stamped cost fallback, unmapped zero) is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L513-L531
+  - what: Confidence in judge verdicts is Decimal and clamped to [0, 1] after parsing.
+    why: Decimal enforces precision and the clamp prevents invalid percentages downstream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L726-L730
+  - what: Field readers use serde_json::Value for dict access and typed objects for duck-typed reads.
+    why: Rust requires explicit type handling; the behavior (try dict.get, fall back to field access) matches the source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L181-L192
+
+out_of_scope:
+  - "Sampling logic and job loading: owned by B4083."
+  - "Judge execution and pairwise verdict generation: owned by B4084."
+  - "Guardrail snapshot capture and request normalization: owned by B4082."
+  - "Judge target resolution and dispatch: owned by B4080."
+  - "Shadow evaluation pipeline orchestration: owned by B4085."
+  - "Funnel event recording and spending: owned by B4083."
+  - "litellm.completion_cost: a native SDK operation this task reads from; owned elsewhere."
+
+pitfalls:
+  - "Field readers must handle both dict-like and typed objects; a dict without a key returns None, not KeyError."
+  - "Tool call invocation names can be None or missing entirely; use \"unnamed\" as the fallback, never panicking on missing fields."
+  - "Empty responses have no message or choice at all; distinguish from no prose+no tools (empty) versus unreadable (different trace)."
+  - "Finish reason is always a string even when read from untyped dicts; unreadable choice gives \"unknown\", not None."
+  - "Responses API output_text is a property, never a serialized field; dict-shaped responses must validate through the owner type to access it."
+  - "Tool type checking for Responses API uses item.type in {function_call, custom_tool_call}; do not match partial strings."
+  - "Deployment-stamped cost in response._hidden_params is read-only visibility; if absent, the price map lookup is the source of truth, never the request metadata."
+  - "Failure details must include the raising frame's filename (basename only) and line number; omit if no traceback exists."
+  - "Judge reply shape is description-only; never quote the response content itself in diagnostics (responses.model, finish_reason and content size only)."
+  - "Routing decisions are optional metadata; absence is not an error, just an empty dict that yields no tier or classifier cost."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

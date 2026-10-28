@@ -1,0 +1,103 @@
+id: B4381
+title: Generate semantic-cache embeddings through routed or direct calls
+description: >-
+  Build embedding generation for the Redis and Qdrant semantic cache backends with injected router/model-list state.
+  Both backends route through the proxy Router when the embedding model is a configured Router deployment, applying per-deployment auth like Bedrock aws_role_name; otherwise embed directly via litellm.
+  Redis returns the first embedding vector; Qdrant returns the full EmbeddingResponse.
+  Reuse the shared embedding helpers from B4310 (resolve_embedding_router, build_router_embedding_metadata, resolve_embedding_max_input_tokens, truncate_embedding_input, resolve_embedding_timeout) and adapt the sync/async embedding calls for the cache timeout, no-cache flags, and exception handling that each backend requires.
+  Router calls receive copied, flagged request metadata; direct calls do not forward metadata.
+  Async calls include an outer asyncio.wait_for timeout; Redis wraps exceptions from awaiting/extracting as ValueError, while Qdrant lets both await and preparation errors propagate as-is.
+  Do not make this service depend on a backend constructor or cache instance: RedisVL's dimension-probe callback must call the embedding service without recursively constructing Redis's index.
+  Write behavior rstest functions with a named case for each embedding path (router vs direct, sync vs async, success vs error), and corpus replay tests for the helper operation semantic_embeddings in the shared helper parser.
+
+scope:
+  paths:
+    - crates/betterlite-router/src/semantic_embeddings.rs
+    - crates/betterlite-router/src/semantic_embeddings/**
+    - tools/oracle/cases/helpers/semantic-embeddings/**
+    - tools/oracle/fuzz/corpus/helper_case/**
+    - tools/oracle/helpers/b4381.py
+    - tools/oracle/helpers/b4381/**
+    - tools/oracle/src/helpers/router/b4381.rs
+    - tools/oracle/src/helpers/router/b4381/**
+
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/_embedding_router.py
+    why: Shared embedding router resolution and metadata/timeout helpers; all five functions live in this file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L331-L375
+    why: Redis embedding input, sync and async embedding methods; _embedding_input reuses logic with Qdrant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L508-L550
+    why: Redis async embedding with asyncio.wait_for timeout wrapper and exception wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L220-L252
+    why: Qdrant embedding input and sync embedding returning full EmbeddingResponse, no vector extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L254-L281
+    why: Qdrant async embedding with the same asyncio.wait_for timeout as Redis but no exception rewrapping.
+
+dod:
+  - text: Every listed helper case compares the native embedding function with the pinned Python function, including router dispatch, metadata copying, and per-backend exception handling.
+    proof: [oracle, helper-python]
+  - text: Behavior tests exercise every embedding path (router vs direct, sync vs async, prepared success and failure states) independently of corpus replay.
+    proof: [behavior-tests]
+  - text: The helper operation semantic_embeddings is seeded with corpus inputs and replayed by the shared helper parser.
+    proof: [helper-case-corpus]
+  - text: Every mutant in the embedding selection and call handling is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: new behavior tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^semantic_embeddings::tests::/)' --no-tests=warn
+    - id: helper-python
+      why: strict adapters fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/semantic_embeddings)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers/semantic_embeddings && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4381/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are missing or fail replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+        grep -rq 'semantic_embeddings' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+        && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+        --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/semantic-embeddings/router-sync-success.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/router-sync-error.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/direct-sync-success.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/direct-sync-error.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/router-async-success.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/router-async-error.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/direct-async-success.yaml
+  - tools/oracle/cases/helpers/semantic-embeddings/direct-async-error.yaml
+
+deviations:
+  - what: >-
+      Async embedding truncation runs synchronously; LiteLLM uses asyncify on the _embedding_input function to yield control.
+    why: The context-injected deadline support (B198) provides explicit async scoping without Python's thread-pool asyncify pattern.
+
+out_of_scope:
+  - The five embedding router helpers (resolve_embedding_router, build_router_embedding_metadata, resolve_embedding_max_input_tokens, truncate_embedding_input, resolve_embedding_timeout); B4310 owns their service contract.
+  - Router.embedding, Router.aembedding, litellm.embedding, litellm.aembedding entry points and their provider dispatch; B006 and the yet-unresolved embedding-dispatch task own the callable implementations.
+  - Backend constructor state, cache read/write operations, and index initialization; B4382 and B4383 own those call sites.
+
+pitfalls:
+  - Redis _get_embedding extracts the vector at index 0 from the response's data array and returns list[float]; Qdrant _get_embedding returns the full EmbeddingResponse unchanged.
+  - >-
+    Both backends pass cache={"no-store": True, "no-cache": True} and num_retries=0 on every embedding call to prevent recursive caching and infinite retries.
+  - >-
+    Router calls receive metadata flagged with semantic-cache-embedding=True copied from the caller's metadata; direct calls do not include this flag.
+  - >-
+    Async embedding timeout wraps the full call duration with asyncio.wait_for; a redis.ValueError wraps any exception from the awaited embedding call or vector extraction, while qdrant exceptions propagate unchanged.
+  - Truncate the embedding input using the helper from B4310, passing the resolved max tokens; do not call truncate_embedding_input directly, reuse the resolved value.
+  - Test names must contain embedding so the behavior-tests filter selects them.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

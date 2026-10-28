@@ -17,6 +17,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 - Write the test first and watch it fail for the right reason, then make it pass.
 - Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does. The architect may change your task file on your branch (a raised budget, a fixed check, a wider scope); keep those commits and never put the file back.
 - Every Cargo.toml is always in scope, so add the dependencies you need where they belong. Keep each dependency table in name order; the hooks check it.
+- Fuzz targets and corpora (`**/fuzz/fuzz_targets/**`, `**/fuzz/corpus/**`) are always in scope too, so add the seed files your checks ask for.
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - Scratch files, extra build dirs such as a second CARGO_TARGET_DIR, and copies go under $TMPDIR or the worktree's target/. Never write to a fixed /tmp path: /tmp is memory, and the dispatcher points $TMPDIR at disk.
 - CI runs the tests as root in a container, so a test can't make a read, a write or a command fail through file permissions (chmod 000 still lets root in). Fail it another way: a fake program on a PATH the test controls, an injected runner, or a missing path.

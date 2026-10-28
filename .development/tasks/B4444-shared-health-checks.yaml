@@ -1,0 +1,166 @@
+id: B4444
+title: Coordinate shared health checks and report Redis status
+description: >-
+  Build shared health coordination in betterlite-server that prevents duplicate health check execution across multiple pods using Redis. When a lock is acquired, this pod runs the full health check and caches results; when the lock is not acquired, other pods poll for cached results up to the lock TTL before falling back to local execution.
+
+  Implement a SharedHealthCheckManager in a new module that:
+  - Accepts a RedisCache, health check TTL (default 300 seconds from environment variable DEFAULT_SHARED_HEALTH_CHECK_TTL), and lock TTL (default 60 seconds from environment variable DEFAULT_SHARED_HEALTH_CHECK_LOCK_TTL).
+  - Constructs a wall-clock pod_id as pod_<milliseconds> at initialization.
+  - Exposes static key builders for lock and cache keys ("health_check_lock" and "health_check_results").
+  - Uses Redis SET NX (set-not-exists) to acquire a lock, storing the pod_id with TTL for ownership tracking.
+  - Releases the lock by first reading it to verify ownership, then deleting; this is a separate read-then-delete, not an atomic compare-delete.
+  - Caches health check results as JSON (via B192's private_json wrapper) with a timestamp; cached results lose the per-model exception map that in-process callers track separately.
+  - Decodes cached results from either a JSON string or a dict, checking strict age > TTL expiration.
+  - Runs perform_shared_health_check, which orchestrates: (1) check for recent cache, (2) try to acquire lock, (3) if acquired, run full check via B4443 and cache it, (4) if not acquired and Redis is configured, poll every five seconds for up to lock_ttl seconds with early exit if lock disappears, (5) fall back to local execution if no cache found or polling times out.
+  - When no Redis is configured, skip polling and execute locally at once.
+  - Never spawn detached tasks; polls and waits must be owned by the caller or tracked in the server shutdown manager.
+  - get_health_check_status returns a dict with pod_id, redis_available, lock/cache TTLs, current lock owner (if any), lock in-progress flag, cache availability, cache age in seconds and last-checked-by pod_id.
+
+  Register GET /health/shared-status, authenticated via B052's user_api_key_auth, which checks a proxy_server flag (e.g., use_shared_health_check) and returns early if shared checks are disabled. If Redis is not configured, report redis_available: false. On error, return HTTP 500 with a descriptive error dict.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_shared.rs
+    - crates/betterlite-server/src/health_shared/**
+    - tools/oracle/cases/health/shared-status-disabled.yaml
+    - tools/oracle/cases/health/shared-status-enabled.yaml
+    - tools/oracle/cases/health/shared-status-no-redis.yaml
+    - tools/oracle/cases/health/shared-status-error.yaml
+    - tools/oracle/helpers/b4444.py
+    - tools/oracle/helpers/b4444/**
+    - tools/oracle/src/helpers/server/b4444.rs
+    - tools/oracle/src/helpers/server/b4444/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L31-L40
+    why: SharedHealthCheckManager.__init__ with redis_cache, health_check_ttl, lock_ttl, and pod_id initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L42-L50
+    why: Key builders get_health_check_lock_key and get_health_check_cache_key (owned; model-specific variants are unused).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L62-L90
+    why: acquire_health_check_lock with Redis SET NX, TTL, and pod_id storage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L92-L105
+    why: release_health_check_lock reads current_owner, deletes only if owned, logs on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L107-L143
+    why: get_cached_health_check_results with JSON decode, timestamp check, and age > TTL expiration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L145-L184
+    why: cache_health_check_results with safe_dumps, TTL, and checked_by field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L186-L320
+    why: perform_shared_health_check orchestration with cache check, lock acquire/release, polling fallback, and local execution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L340-L372
+    why: get_health_check_status with pod_id, redis_available, lock owner, cache status and age.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1369-L1409
+    why: shared_health_check_status_endpoint route, auth requirement, enabled flag check, error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1872-L1876
+    why: DEFAULT_SHARED_HEALTH_CHECK_TTL and DEFAULT_SHARED_HEALTH_CHECK_LOCK_TTL defaults from config.
+
+dod:
+  - text: SharedHealthCheckManager accepts redis_cache (optional), health_check_ttl (default 300 seconds from environment variable DEFAULT_SHARED_HEALTH_CHECK_TTL), and lock_ttl (default 60 seconds from environment variable DEFAULT_SHARED_HEALTH_CHECK_LOCK_TTL).
+    proof: [manager-init-tests]
+  - text: pod_id is constructed as pod_<milliseconds> where milliseconds is wall-clock time in milliseconds at initialization.
+    proof: [pod-id-tests]
+  - text: Static key builders return "health_check_lock" and "health_check_results" as Redis keys.
+    proof: [key-builder-tests]
+  - text: acquire_health_check_lock uses Redis SET NX with TTL, returning true if acquired, false if the lock existed or Redis is None; logs acquisition and failure at info and debug levels.
+    proof: [lock-acquire-tests]
+  - text: release_health_check_lock reads the current lock owner, deletes only if it matches pod_id, and logs on error; returns without error if redis_cache is None.
+    proof: [lock-release-tests]
+  - text: get_cached_health_check_results decodes JSON strings or dicts, checks current_time - cache_timestamp > health_check_ttl strictly, and returns None for expired or missing cache.
+    proof: [cache-get-tests]
+  - text: cache_health_check_results stores healthy_endpoints, unhealthy_endpoints, counts, timestamp, and checked_by via safe_dumps JSON with configured health_check_ttl.
+    proof: [cache-set-tests]
+  - text: perform_shared_health_check checks cache first, tries lock acquire, runs B4443 perform_health_check if lock acquired, caches result, and releases lock in a finally block.
+    proof: [orchestration-tests]
+  - text: When lock is not acquired and Redis is configured, polls every five seconds for cached results up to lock_ttl seconds total, stopping early if lock disappears, then falls back to local execution.
+    proof: [polling-tests]
+  - text: When no Redis is configured, locks always fail and execution proceeds directly to local perform_health_check without polling.
+    proof: [no-redis-tests]
+  - text: get_health_check_status returns a dict with pod_id, redis_available, lock_ttl, cache_ttl, lock_owner (if any), lock_in_progress bool, cache_available bool, and cache_age_seconds (if cached).
+    proof: [status-tests]
+  - text: "GET /health/shared-status is registered with B052's user_api_key_auth dependency, responds with shared_health_check_enabled flag, and returns early if disabled without consulting Redis."
+    proof: [endpoint-auth-tests]
+  - text: Redis errors during lock/cache operations are caught and logged without raising; cache miss and local fallback preserve the source's behavior.
+    proof: [error-handling-tests]
+  - text: Cached results do not include the per-model exception map tracked in-process; exception_status is omitted from cached dicts.
+    proof: [cache-exception-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: manager-init-tests
+      why: Manager initialization with defaults and TTL parameters must be correct
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::manager_init(::|$)/)'
+    - id: pod-id-tests
+      why: pod_id must use wall-clock milliseconds format
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::pod_id(::|$)/)'
+    - id: key-builder-tests
+      why: Static key builders must return correct constants
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::key_builders(::|$)/)'
+    - id: lock-acquire-tests
+      why: Lock acquisition via SET NX must work correctly with ownership tracking
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::lock_acquire(::|$)/)'
+    - id: lock-release-tests
+      why: Lock release must verify ownership before deletion
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::lock_release(::|$)/)'
+    - id: cache-get-tests
+      why: Cache retrieval must decode JSON and check strict age > TTL expiration
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::cache_get(::|$)/)'
+    - id: cache-set-tests
+      why: Cache storage must serialize with timestamp and checked_by fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::cache_set(::|$)/)'
+    - id: orchestration-tests
+      why: perform_shared_health_check must execute lock/cache/execute sequence correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::orchestration(::|$)/)'
+    - id: polling-tests
+      why: Polling behavior when lock not acquired must respect five-second intervals and lock_ttl limit
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::polling(::|$)/)'
+    - id: no-redis-tests
+      why: Behavior without Redis must skip polling and execute locally
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::no_redis(::|$)/)'
+    - id: status-tests
+      why: Status dict must include all required fields with correct values
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::status(::|$)/)'
+    - id: endpoint-auth-tests
+      why: GET /health/shared-status must require authentication and check enabled flag
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::endpoint_auth(::|$)/)'
+    - id: error-handling-tests
+      why: Redis errors must be caught and logged without propagating
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::error_handling(::|$)/)'
+    - id: cache-exception-tests
+      why: Cached results must exclude in-process exception map
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::cache_exceptions(::|$)/)'
+
+oracle_cases:
+  - tools/oracle/cases/health/shared-status-disabled.yaml
+  - tools/oracle/cases/health/shared-status-enabled.yaml
+  - tools/oracle/cases/health/shared-status-no-redis.yaml
+  - tools/oracle/cases/health/shared-status-error.yaml
+
+deviations:
+  - what: "Concurrency default for perform_health_check when None or non-positive is unbounded (matching B4443 LiteLLM behavior), not a constructor-specified cap."
+    why: "The outline question 5 flags this as a decision point; betterlite defaults to unbounded like LiteLLM's asyncio.gather."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L539-L576
+  - what: "Release is a separate read-then-delete operation, not atomic; if the owner changes between read and delete, the lock stays (no race condition causes incorrect release)."
+    why: "LiteLLM implements it this way; atomic compare-delete is not used."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L98-L103
+
+out_of_scope:
+  - "Redis cache methods async_set_cache, async_get_cache, async_delete_cache; their implementation is unresolved (question 3)."
+  - "Proxy server globals use_shared_health_check and redis_usage_cache registration; their initialization is outside this task."
+  - "Model-specific lock/cache key variants (get_model_health_check_lock_key, get_model_health_check_cache_key) have no callers at the pin and are not implemented."
+  - "is_health_check_in_progress method (lines 322-338) has no caller at the pin outside its unit test."
+
+pitfalls:
+  - "pod_id must be constructed with wall-clock milliseconds at init time, not elapsed-time or counter-based IDs; two pods starting in the same second must have different IDs."
+  - "Lock acquisition uses SET NX, not SET with EX only; if a pod crashes, the lock expires by TTL (best-effort coordination, not true mutex)."
+  - "Cache expiration is strict age > TTL; at exactly age == TTL it is not yet expired (common off-by-one in time comparisons)."
+  - "Release must be a read-then-delete, not SET with NX or an atomic compare-delete; if ownership changed between read and delete, keep the new lock (do not delete)."
+  - "Polling loop polls every five seconds; exact timing matters for test predictability (use mocked clocks)."
+  - "When no Redis is configured, skip the polling loop entirely and execute locally at once; do not sleep and then check anyway."
+  - "Exception maps are excluded from cached dicts but remain in in-process returns to callers; the cached result tuple has no exception_status integer field."
+  - "Cached results are decoded from either a JSON string or an already-parsed dict; both forms are valid cache representations."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

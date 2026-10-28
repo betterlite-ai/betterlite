@@ -1,0 +1,119 @@
+id: B3866
+title: Trace storage projections and spend association
+description: >-
+  Add crates/betterlite-tracing with typed projections from ClickHouse rows into trace response structures,
+  and spend log integration to associate costs with traces, spans and agents.
+  Build the TraceStore, a wrapper around ClickHouse that reads and transforms span rows into TraceSummary,
+  Span, Trace, SpanDetail and SpanErrorPage records (from B3865).
+  Implement projection functions that convert database rows into typed structs: span_from_row builds one Span
+  from a row and a trace start time in nanoseconds, using NANOS_PER_MS = 1_000_000 to convert offsets to milliseconds.
+  trace_summary_from_row projects one row from the list_traces query into a TraceSummary, and trace_from_rows
+  builds a complete Trace from many rows, computing span offsets, agent nodes and aggregates.
+  Agent node extraction finds distinct agent names and counts invocations and calls per agent, including parent-agent
+  relationships for nested agents. Support spend association: lookup functions query the spend log for costs that
+  match request_id, team_id and api_key_hash (the hash of the principal that made the request), and return the
+  total spend only when all matched request ids have a spend entry, else None. A missing spend entry or a spend
+  log outage is silent: an agent or span with spend=None shows as unstored or unavailable, never an error.
+  TraceStore.list_traces fetches trace summaries with pagination via cursors (base64-encoded [start_ms, trace_id]).
+  Decode a cursor to (0, "") when absent, and validate the format; invalid cursors raise ValueError with "Invalid trace cursor".
+  Fetch spend rows for the time range [trace_start_ms - SPEND_WINDOW_MS, trace_end_ms + SPEND_WINDOW_MS] where
+  SPEND_WINDOW_MS = 30 * 60 * 1000. Spend window surrounds each trace to catch spend from the same requests recorded
+  earlier or later. TraceStore.list_traces returns TracePage with trace summaries and a next_cursor if there are more.
+  TraceStore.get_trace fetches all spans for a trace_id and scope, computes the trace_start_ns, builds all Spans,
+  extracts agent nodes and returns a Trace. TraceStore.get_span returns span details: input, output, input_ui, output_ui (from B3865's to_ui_content), and attributes (untyped, from the row).
+  TraceStore.get_span_error pages through error messages stored in truncated chunks. Cursors encode [offset, version]
+  as JSON in base64. The offset is the byte position in the full message; when offset + fetched chunk length >= total_chars,
+  there is no next_cursor. Invalid cursors raise ValueError with "Invalid diagnostic cursor".
+  Support TraceScope from B3865: team_ids (tuple of team ids or empty for all teams, admin only) and api_key_hash.
+  Filter all queries by scope. Status codes map: "STATUS_CODE_OK" -> "ok", "STATUS_CODE_ERROR" -> "error", everything else -> "unset".
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-tracing/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py
+    why: The complete projection and spend association logic to build.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/types.py#L19-L136
+    why: The TypedDict types for Span, SpanRow, Trace, TraceSummary, AgentNode and TraceScope that projections must fill.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/ui_format.py
+    why: to_ui_content formats span input and output for display (called by B3865).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L60
+    why: AGENT_TRACING_LIST_PAGE_SIZE default is 50 (may be overridden by env var).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/schema.py
+    why: ClickHouse schema and table names (OTEL_TRACES_TABLE = "otel_traces").
+dod:
+  - text: Span projections convert database rows into Span with correct start_offset_ms and duration_ms relative to trace start.
+    proof: [projections-tests]
+  - text: TraceSummary and Trace projections compute token counts, span counts, agent counts, error counts and models correctly from spans.
+    proof: [projections-tests]
+  - text: Agent node extraction lists one node per distinct agent name, counts invocations and llm/tool calls per agent, and identifies parent agents.
+    proof: [agents-tests]
+  - text: Spend lookup returns the total cost only when all request_ids have a spend entry, else None; a spend log outage is silent.
+    proof: [spend-tests]
+  - text: list_traces pagination encodes and decodes cursors as base64-JSON, validates format and handles the empty case, returns next_cursor when limit is met.
+    proof: [cursor-tests]
+  - text: get_trace fetches spans for a trace_id and scope, computes trace_start_ns, builds Spans with correct offsets, extracts agents and returns Trace.
+    proof: [storage-queries-tests]
+  - text: get_span returns SpanDetail with input, output, input_ui, output_ui and attributes.
+    proof: [storage-queries-tests]
+  - text: get_span_error pages error messages with cursor-based offsets, returns next_cursor when more data exists.
+    proof: [cursor-tests]
+  - text: All queries filter by TraceScope (team_ids and api_key_hash).
+    proof: [storage-queries-tests]
+  - text: Status code mapping converts "STATUS_CODE_OK" to "ok", "STATUS_CODE_ERROR" to "error" and others to "unset".
+    proof: [projections-tests]
+  - text: Spend window surrounds each trace query by ±30 minutes to catch spend from the same requests recorded earlier or later.
+    proof: [spend-tests]
+  - text: Invalid trace cursors and diagnostic cursors raise ValueError with the correct message.
+    proof: [cursor-tests]
+checks:
+  optional: []
+  commands:
+    - id: projections-tests
+      why: span/trace/summary projections, status code mapping or zero-row handling tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-tracing --no-tests=fail -E 'test(/^projections::/) - test(replays_the_trace_store_corpus)'
+    - id: agents-tests
+      why: agent node extraction, invocation counting or parent detection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-tracing --no-tests=fail -E 'test(/^agents::/) - test(replays_the_trace_store_corpus)'
+    - id: spend-tests
+      why: spend lookup, all-or-nothing semantics, or spend window constant tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-tracing --no-tests=fail -E 'test(/^spend::/) - test(replays_the_trace_store_corpus)'
+    - id: cursor-tests
+      why: trace/error cursor encoding, decoding, validation, version hashing or invalid cursor error tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-tracing --no-tests=fail -E 'test(/^cursor::/) - test(replays_the_trace_store_corpus)'
+    - id: storage-queries-tests
+      why: get_trace, get_span, get_span_error or scope filtering tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-tracing --no-tests=fail -E 'test(/^storage::/) - test(replays_the_trace_store_corpus)'
+    - id: span-from-row-offset
+      why: span_from_row converts nanosecond offset to millisecond or start_offset_ms is missing
+      run: grep -qE 'start_offset_ms.*NANOS_PER_MS|start_offset_ms.*(1_000_000|1000000)' crates/betterlite-tracing/src/*.rs
+    - id: spend-window-constant
+      why: SPEND_WINDOW_MS is missing or does not equal 30 minutes in milliseconds
+      run: grep -qE 'SPEND_WINDOW.*30.*60.*1000|SPEND_WINDOW.*1_800_000|SPEND_WINDOW.*1800000' crates/betterlite-tracing/src/*.rs
+    - id: agent-tracing-page-size
+      why: AGENT_TRACING_LIST_PAGE_SIZE default is not used or is wrong
+      run: grep -qE 'AGENT_TRACING_LIST_PAGE_SIZE.*50' crates/betterlite-tracing/src/*.rs
+oracle_cases: []
+deviations:
+  - what: Spend lookups return None (instead of a number) when the spend log is unavailable, with a warning log. Spans and agents show spend=None in that case.
+    why: The spend log is optional for tracing; spans are queryable even when spend is unavailable. LiteLLM does the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py#L306
+out_of_scope:
+  - Writing spans to ClickHouse (B3865 owns the ingest).
+  - The ClickHouseStorage interface itself; it is owned by another task (a Rust bridge or a stub that calls the query methods the test lists).
+  - Admin routes that call TraceStore. Routes come in later tasks.
+  - Filtering by trace_ref outside of get_trace and get_span (used to disambiguate traces with the same id in different environments).
+pitfalls:
+  - Status code "STATUS_CODE_OK" is the only string that maps to "ok"; any other code (including missing or empty) maps to "unset", not "error". Test that explicitly.
+  - The spend window is ±30 minutes centered on the span time range, not a fixed window. It expands both start and end.
+  - Agent parent detection walks up the parent chain but stops if there is no parent, if the parent is missing from the spans, or if the parent has the same name (a self-loop). Test all three stops.
+  - An agent with zero invocations should not appear in agent_nodes. Test that invocation counters are not initialized to zero and then ignored.
+  - Cursor versioning for error messages is a SHA256 hash encoded in the cursor; the database may return a different version later. When versions differ, it is still the same message but the cursor is no longer valid. Return no next_cursor in that case.
+  - The error offset in the cursor is the byte position in the full (possibly truncated) message, not the character position. Strings may have multi-byte UTF-8 sequences.
+  - When a trace has zero rows, trace_from_rows returns None, not an empty Trace. Test that explicitly.
+  - The replay test does not need a corpus file; helper tests just verify the functions work.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,8 +2,8 @@ id: B3573
 milestone: M5 api families
 title: Generic passthrough guardrail translation
 status: todo
-depends_on: [B192]
-file: null
+depends_on: [B192, B3601, B3661, B3664]
+file: tasks/B3573-passthrough-guardrail-translation.yaml
 covers:
   - "litellm/llms/pass_through/guardrail_translation/handler.py"
 parent: B101

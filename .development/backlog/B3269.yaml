@@ -2,8 +2,8 @@ id: B3269
 milestone: M6 guardrails
 title: Reattach policy pipelines on background response retrieval
 status: todo
-depends_on: [B3240, B3241, B903, B844, B302, B1102, B206, B732]
-file: null
+depends_on: [B3240, B3241, B903, B844, B302, B1102, B206, B732, B189]
+file: tasks/B3269-policy-response-retrieval.yaml
 covers:
   - "litellm/proxy/policy_engine/response_retrieval.py"
 parent: B079

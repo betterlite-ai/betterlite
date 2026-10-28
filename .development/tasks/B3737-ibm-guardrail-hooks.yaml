@@ -117,8 +117,8 @@ dod:
       documents detector-server and orchestrator modes.
     proof: [docs-present, example-config-loads]
   - text: >-
-      Example configuration file validates against the guardrail schema and
-      parses into the configuration model.
+      A test in ibm_hooks loads docs/ibm-guardrails/example_config.yaml through the betterlite-config
+      loader with no unsupported keys and reads both modes from config.sections.ibm_guardrails (B3736).
     proof: [example-config-loads]
 
 checks:
@@ -155,8 +155,8 @@ checks:
       why: Configuration documentation or examples missing from docs/ibm-guardrails/
       run: test -f docs/ibm-guardrails/README.md && test -f docs/ibm-guardrails/example_config.yaml
     - id: example-config-loads
-      why: Example YAML does not validate or parse correctly
-      run: test -f docs/ibm-guardrails/example_config.yaml && cargo run --locked -p betterlite-config --quiet -- validate docs/ibm-guardrails/example_config.yaml
+      why: Example YAML does not load through betterlite-config or does not give both IBM modes
+      run: test -f docs/ibm-guardrails/example_config.yaml && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ibm_hooks::.*example_config/)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/ibm-hooks/pre-call-detector-server-batch.yaml

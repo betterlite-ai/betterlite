@@ -1,0 +1,109 @@
+id: B4802
+title: A2A principal sessions, text usage and agent pricing
+description: >-
+  Build A2A utilities for text extraction, token counting, usage calculation, session scoping,
+  and cost pricing. Build pure Rust modules consuming logging state and token counting infrastructure.
+
+  A2ARequestUtils extracts text from A2A message parts (handling both dict and object access patterns),
+  extracts text from A2A response results (detecting message kind explicitly), gets input messages from
+  A2A requests, counts tokens using the tokenizer crate, and calculates usage as a tuple of (prompt_tokens,
+  completion_tokens, total_tokens). Message parts are extracted by iterating parts, checking kind=="text",
+  and joining text fields with space. Response extraction handles direct message format (kind=="message")
+  and nested message format (result.message), using the same extraction logic. Token counting wraps
+  the tokenizer and returns 0 on failure. Usage is calculated by extracting text from both
+  request message and response, counting tokens, and summing them.
+
+  scope_session_to_principal binds a client-supplied A2A contextId to the authenticated principal (hashed
+  token) so two keys authorized for the same agent cannot share backend memory. Principal is hashed with
+  SHA256 and truncated to 16 hex characters (8 bytes), prepended to the original contextId as
+  "{principal_prefix}-{session_id}". If principal is None or empty, the original session_id is returned
+  unchanged.
+
+  A2ACostCalculator calculates A2A call cost with priority order: response_cost (set directly, backward
+  compatibility) > cost_per_query (fixed cost per query) > input_cost_per_token + output_cost_per_token
+  (token-based). Cost parameters come from litellm_params in model_call_details. Token-based cost is
+  calculated as (prompt_tokens * input_cost_per_token) + (completion_tokens * output_cost_per_token), with
+  missing cost values treated as 0.0. Default cost is 0.0 when no parameters match.
+scope:
+  paths:
+    - crates/betterlite-a2a/src/utils.rs
+    - crates/betterlite-a2a/src/utils/**
+    - crates/betterlite-a2a/src/cost_calculator.rs
+    - crates/betterlite-a2a/src/cost_calculator/**
+    - crates/betterlite-context/src/a2a_text.rs
+    - crates/betterlite-cost/src/a2a_cost.rs
+    - crates/betterlite-context/src/a2a_text/**
+    - crates/betterlite-cost/src/a2a_cost/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L19-L48
+    why: A2ARequestUtils.extract_text_from_message handling dict and object patterns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L50-L72
+    why: A2ARequestUtils.extract_text_from_response with direct and nested message detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L74-L90
+    why: A2ARequestUtils.get_input_message_from_request accessing params.message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L92-L109
+    why: A2ARequestUtils.count_tokens wrapping litellm.token_counter with exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L111-L142
+    why: A2ARequestUtils.calculate_usage_from_request_response extracting and counting text from both sides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L145-L165
+    why: get_session_id_from_a2a_params and scope_session_to_principal with SHA256 hashing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L18-L71
+    why: A2ACostCalculator.calculate_a2a_cost with priority order and cost parameter extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L73-L103
+    why: A2ACostCalculator._calculate_token_based_cost with zero defaults.
+dod:
+  - text: A2ARequestUtils extracts text from A2A message parts, handling both dict and object access, joining with space.
+    proof: [a2a-text-tests]
+  - text: A2ARequestUtils extracts text from A2A response results, detecting message kind explicitly and falling back to nested message.
+    proof: [a2a-text-tests]
+  - text: Token counting calls the tokenizer and returns 0 on failure without panicking.
+    proof: [a2a-text-tests]
+  - text: Usage calculation returns (prompt_tokens, completion_tokens, total_tokens) from request and response text.
+    proof: [a2a-text-tests]
+  - text: scope_session_to_principal hashes principal with SHA256 and prepends 16 hex characters to session_id.
+    proof: [a2a-session-tests]
+  - text: scope_session_to_principal returns unchanged session_id when principal is None or empty.
+    proof: [a2a-session-tests]
+  - text: A2ACostCalculator applies cost priority order (response_cost > cost_per_query > token-based).
+    proof: [a2a-cost-tests]
+  - text: A2ACostCalculator token-based cost uses 0.0 for missing input or output cost values.
+    proof: [a2a-cost-tests]
+checks:
+  optional: []
+  commands:
+    - id: a2a-text-tests
+      why: A2A text extraction and token counting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-context -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_text::/)'
+    - id: a2a-session-tests
+      why: Session scoping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^session_scoping::/)'
+    - id: a2a-cost-tests
+      why: A2A cost calculation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-cost --no-tests=fail -E 'test(/^a2a_cost::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Session ID scoping hashes the principal (authenticated token) using SHA256 and truncates to 16 hex characters,
+      so the raw principal is never sent to the agent backend.
+    why: >-
+      betterlite stores scoped session IDs to bind A2A contexts to keys, preventing context confusion across
+      different authorized keys. The principal is already a hashed token (from auth), so hashing again
+      adds a layer of isolation for operator-side correlation.
+out_of_scope:
+  - litellm/a2a_protocol/utils.py:168-174 (backwards compatibility aliases), re-exported as direct functions in Rust.
+  - A2A protocol SDK protobuf conversion and transport, handled by the A2A SDK contracts.
+  - Agent card resolution, owned by B4800.
+  - Completion bridge handler, provider routing and A2A_USER_API_KEY_HASH_PARAM constant, owned by B4809.
+  - Request retries and retry logic, owned by B4801 (native client transport).
+pitfalls:
+  - Text extraction from A2A request-side parts requires calling model_dump(mode="json") first, since A2A SDK Part objects use root models that object attribute access cannot read; response-side extraction works on dicts from model_dump.
+  - get_session_id_from_a2a_params returns None when params have no message, not an empty string; callers must check for None before scoping.
+  - count_tokens catches all exceptions and returns 0 silently; verbose logging of the failure is optional and does not affect behavior.
+  - Message text joining uses space separator, not newline; parts are extracted from a list that may have missing or malformed entries, which are skipped without error.
+  - Token-based cost calculation treats None cost values as 0.0; if input or output cost is not present, it contributes zero to the total.
+  - Principal hashing checks for None or empty with a boolean test, so a falsy string or 0 would bypass scoping and return the original session_id unchanged.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

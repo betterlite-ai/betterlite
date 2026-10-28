@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Share native HTTP clients and retrieve interactions
 status: todo
 depends_on: [B3490, B173, B249, B1369, B1370]
-file: null
+file: tasks/B3492-interaction-http-read.yaml
 covers:
   - "litellm/interactions/http_handler.py"
 parent: B098

@@ -1,0 +1,98 @@
+id: B3635
+title: OpenAI passthrough classification and price helpers
+description: >-
+  Build OpenAI/Azure URL classification, route predicates, provider config accessor, and
+  image, embedding, and Responses API pricing helpers in betterlite-core. Classify hostnames
+  and URLs across OpenAI proper (api.openai.com) and Azure OpenAI domains
+  (openai.azure.com, cognitiveservices.azure.com); require an OpenAI-style path marker
+  (/openai/ or /v1/) on shared Azure Cognitive Services hosts to distinguish Azure OpenAI
+  from Speech/Vision/Language services. Implement five route predicates (is_openai_chat_completions_route,
+  is_openai_image_generation_route, is_openai_image_editing_route, is_openai_responses_route,
+  is_openai_embeddings_route) to identify the respective endpoints; build the provider config
+  accessor get_provider_config that returns a bare OpenAIConfig() instance.
+  Build cost calculators for image generation/editing (using LiteLLM's default_image_cost_calculator),
+  embeddings (via completion_cost with call_type="aembedding"), and Responses API
+  (via OpenAIResponsesAPIConfig.transform_response_api_response plus cost computation).
+  All cost paths warn and return zero cost on failure, preserving spend logs even when
+  pricing is unavailable. Preserve exact domain boundaries: suffixes match any subdomain using
+  suffix tests, not substring search, so look-alikes on attacker domains are rejected.
+  Image n conversion falls back to 1, default size is "1024x1024", edit quality is forced absent
+  and warning/zero-cost fallback on calculator exceptions. Responses API uses its own transformer,
+  not chat completions', because the wire shape differs (output: [...] vs choices: [...]).
+  This task does not call the shared chat handler, which consumes its config selector; they compose at the logging level instead.
+scope:
+  paths:
+    - crates/betterlite-core/src/openai_classification.rs
+    - crates/betterlite-core/src/openai_classification/**
+    - crates/betterlite-core/src/openai_pricing.rs
+    - crates/betterlite-core/src/openai_pricing/**
+    - tools/oracle/cases/openai-classification/**
+    - tools/oracle/cases/openai-pricing/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L48-L55
+    why: OpenAI and Azure hostname tuples and path markers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L58-L98
+    why: _hostname_matches, _is_openai_compatible_host, _is_openai_compatible_url URL classifiers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L147-L191
+    why: get_provider_config and route predicates for chat, image, Responses, embeddings endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L203-L324
+    why: Image generation/editing, embeddings and Responses API cost helpers.
+  - url: https://docs.rs/url/2.5/url/
+    why: URL parsing, replacing urlparse from urllib.parse in Rust.
+dod:
+  - text: Every hostname and path classifier function rejects URLs with look-alike domains, accepts valid OpenAI and Azure OpenAI URLs, and rejects non-OpenAI Azure services on shared domains.
+    proof: [classification-tests]
+  - text: Each route predicate correctly identifies its endpoint type for all valid paths and variants.
+    proof: [route-predicate-tests]
+  - text: get_provider_config returns an OpenAIConfig instance for any model string input, ignoring the argument.
+    proof: [provider-config-tests]
+  - text: Image cost calculation converts numeric strings to integers with fallback, applies default size, clears quality for edits, and returns zero cost with warning on exception.
+    proof: [image-cost-tests]
+  - text: Embedding cost uses completion_cost with "aembedding" call type, catches all exceptions, and logs warnings for unmapped models.
+    proof: [embedding-cost-tests]
+  - text: Responses API transformer uses OpenAIResponsesAPIConfig.transform_response_api_response and cost calculation uses "responses" call type.
+    proof: [responses-api-tests]
+checks:
+  optional: []
+  commands:
+    - id: classification-tests
+      why: URL classification tests fail, do not exist, or have gaps in variant coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_classification::/)'
+    - id: route-predicate-tests
+      why: Route predicate tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_pricing::route_predicates/)'
+    - id: provider-config-tests
+      why: get_provider_config tests fail, do not exist, or do not verify it returns OpenAIConfig for any model input
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_pricing::get_provider_config/)'
+    - id: image-cost-tests
+      why: Image cost calculation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_pricing::image_cost/)'
+    - id: embedding-cost-tests
+      why: Embedding cost calculation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_pricing::embedding_cost/)'
+    - id: responses-api-tests
+      why: Responses API transformer tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_pricing::responses_api/)'
+oracle_cases: []
+deviations:
+  - what: Image and embedding cost calculation returns zero with a warning instead of raising or returning an error when pricing fails.
+    why: LiteLLM preserves the spend log and writes zero cost when costing fails, so spending never stops; this matches that behavior for backward compatibility.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L233-L235"
+  - what: Azure Cognitive Services classification requires a path marker on shared domains; non-OpenAI services are rejected even if the hostname matches.
+    why: Preserves the source's explicit path-marker requirement to distinguish Azure OpenAI from other services on shared Azure domains without needing deployment/resource name hints.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
+out_of_scope:
+  - Calling or composing with the shared chat handler; that composition happens at the logging level in B3637.
+  - Logging behavior beyond warning on cost calculation failure; successful operation logs are in the caller's scope.
+  - Fetch or validation of config data; this task only reads what the caller supplies.
+pitfalls:
+  - URL parsing in Rust requires the url crate, not manual string manipulation; urlparse quirks (like empty hostname for relative URLs) must be preserved.
+  - "Image cost calculation must handle both string and integer `n` values from request parsing; some request bodies carry \"n\" as a string due to form data parsing."
+  - "Azure's two shared domains (\"openai.azure.com\", \"cognitiveservices.azure.com\") are checked independently; only requests on these with \"/openai/\" or \"/v1/\" path segments are classified as Azure OpenAI."
+  - Embedding cost catches bare Exception in LiteLLM, mapping to any exception in Rust; every error returns zero cost with a warning so spend logging never fails.
+  - "The Responses API branch uses a dedicated transformer and \"responses\" call type, not the chat-completions transform, because the wire shape differs (`output: [...]` vs `choices: [...]`)."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

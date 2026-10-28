@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Arize and Phoenix tracing callbacks
 status: todo
 depends_on: [B3847, B3850, B3854, B3855, B3857, B3859, B3861, B3868]
-file: null
+file: tasks/B3862-arize-phoenix-callbacks.yaml
 covers:
   - "litellm/integrations/arize/{arize,arize_phoenix}.py"
 parent: B110

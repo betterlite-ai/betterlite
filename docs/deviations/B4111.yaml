@@ -1,0 +1,5 @@
+task: B4111
+deviations:
+  - what: betterlite exports typed Rust builders instead of Python functions returning dictionaries.
+    why: Rust uses explicit serde wire structs while preserving the identical serialized tool shapes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L59-L123

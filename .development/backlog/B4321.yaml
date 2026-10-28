@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Resolve Redis targets and coerce connection settings
 status: todo
 depends_on: [B002, B4320]
-file: null
+file: tasks/B4321-redis-connection-settings.yaml
 covers:
   - "litellm/_redis.py"
 parent: B126

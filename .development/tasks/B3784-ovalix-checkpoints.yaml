@@ -1,0 +1,131 @@
+id: B3784
+title: Ovalix checkpoint corrections
+description: >-
+  Build actor/session identities and checkpoint evaluation in reverse text order.
+  The guardrail calls the Ovalix Tracker service to evaluate prompts and responses
+  at pre-call and post-call checkpoints, applying corrections or blocking based
+  on the Tracker's response action_type.
+
+  The guardrail resolves user identities from request metadata (user_api_key_user_email or
+  user_api_key_user_id, else "unknown"), normalizes them to a fixed-length actor id via SHA-256,
+  and builds session_id as "{actor_hash}_{YYYY-MM-DD UTC date}_{application_id}" joined with underscores,
+  where actor_hash is the 8-character hex prefix of SHA-256(actor) and the date uses UTC timezone.
+  For each text in reverse order, it calls the Tracker endpoint at
+  /tracking/custom_application/checkpoint with application_id, checkpoint_id, actor, session_id, data_type=TEXT
+  and data={"content": text}.
+  If action_type is "block" and it is the first (current) response, raise a typed exception with status 400.
+  If action_type is "block" and it is an earlier response, replace it with the blocking_message.
+  Otherwise, replace the text with the corrected message from modified_data.content if present,
+  else keep the original text. On any exception, log and propagate as GuardrailRaisedException.
+
+  The guardrail reads environment variables OVALIX_TRACKER_API_BASE (required),
+  OVALIX_TRACKER_API_KEY (required), OVALIX_APPLICATION_ID (required),
+  OVALIX_PRE_CHECKPOINT_ID (required if pre_call hook), OVALIX_POST_CHECKPOINT_ID (required if post_call hook).
+  At least one of the checkpoint IDs must be provided; if a checkpoint ID is set but
+  the hook is not in supported_event_hooks, auto-add the hook.
+  The integration supports pre_call and post_call event hooks.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/ovalix.rs
+    - crates/betterlite-guardrails/src/ovalix/**
+    - tools/oracle/cases/guardrails/ovalix-*.yaml
+    - tools/oracle/helpers/b3784.py
+    - tools/oracle/helpers/b3784/**
+    - tools/oracle/src/helpers/guardrails/b3784.rs
+    - tools/oracle/src/helpers/guardrails/b3784/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ovalix/ovalix.py#L55-L66
+    why: OvalixGuardrailBlockedException.__init__ with status_code=400 and default wrapping behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ovalix/ovalix.py#L76-L199
+    why: get_supported_event_hooks, __init__, _validate_config, _get_actor, _get_tracker_actor_id, _get_session_id, _call_checkpoint methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ovalix/ovalix.py#L201-L299
+    why: apply_guardrail, _generate_post_guardrail_llm_texts, _block_current_message, _get_trackers_corrected_message, get_config_model methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ovalix/__init__.py#L13-L36
+    why: initialize_guardrail function that creates OvalixGuardrail and registers it with the callback manager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ovalix.py#L32-L35
+    why: OvalixGuardrailConfigModel ui_friendly_name method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ovalix.py#L1-L30
+    why: Complete OvalixGuardrailConfigModel with tracker_api_base, tracker_api_key, application_id, pre_checkpoint_id, post_checkpoint_id fields.
+dod:
+  - text: The guardrail reads OVALIX_TRACKER_API_BASE, OVALIX_TRACKER_API_KEY, OVALIX_APPLICATION_ID, OVALIX_PRE_CHECKPOINT_ID, and OVALIX_POST_CHECKPOINT_ID from environment or config, with api_base, api_key, and application_id required.
+    proof: [ovalix-env-resolution]
+  - text: The guardrail normalizes actor identity from user_api_key_user_email or user_api_key_user_id to a SHA-256-based actor id and builds session_id as actor_id + date + application_id.
+    proof: [ovalix-session-identity]
+  - text: For each text in reverse order, the guardrail calls the Tracker checkpoint endpoint and applies action_type logic (block current, replace earlier, or correct).
+    proof: [oracle-pre-call-block, oracle-post-call-correct, oracle-earlier-block]
+  - text: When action_type is "block" for the first response, the guardrail raises a blocked-exception type with status 400.
+    proof: [oracle-current-block, ovalix-exception-status]
+  - text: When action_type is "block" for earlier responses, the guardrail replaces them with the blocking message from the Tracker response, or falls back to a constant blocking message if the response lacks modified_data.
+    proof: [oracle-earlier-block]
+  - text: The guardrail supports pre_call and post_call event hooks, and auto-adds hooks when checkpoint IDs are set.
+    proof: [oracle-event-hooks, ovalix-unit-tests]
+  - text: On checkpoint API errors, the guardrail logs and propagates as GuardrailRaisedException.
+    proof: [oracle-backend-error]
+  - text: The configuration model has tracker_api_base, tracker_api_key, application_id, pre_checkpoint_id, post_checkpoint_id fields with documentation.
+    proof: [ovalix-config-model]
+checks:
+  optional: []
+  commands:
+    - id: ovalix-env-resolution
+      why: environment variable reading or default values differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::environment)'
+    - id: ovalix-session-identity
+      why: actor/session id normalization differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::session_identity)'
+    - id: ovalix-exception-status
+      why: OvalixGuardrailBlockedException status code is not 400
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::exception_status)'
+    - id: ovalix-config-model
+      why: the config model structure or defaults do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::config_model)'
+    - id: ovalix-unit-tests
+      why: unit tests for checkpoint payload construction or text processing fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::)'
+    - id: oracle-pre-call-block
+      why: the oracle comparison fails for a blocked pre-call request
+      run: cargo gate run B3784 --only oracle
+    - id: oracle-post-call-correct
+      why: the oracle comparison fails for a corrected post-call response
+      run: cargo gate run B3784 --only oracle
+    - id: oracle-earlier-block
+      why: the oracle comparison fails when an earlier response is blocked
+      run: cargo gate run B3784 --only oracle
+    - id: oracle-current-block
+      why: the oracle comparison fails when the current response is blocked
+      run: cargo gate run B3784 --only oracle
+    - id: oracle-backend-error
+      why: the oracle comparison fails for checkpoint API error handling
+      run: cargo gate run B3784 --only oracle
+    - id: oracle-event-hooks
+      why: the oracle comparison fails for pre_call or post_call event hooks
+      run: cargo gate run B3784 --only oracle
+oracle_cases:
+  - tools/oracle/cases/guardrails/ovalix-request-allowed.yaml
+  - tools/oracle/cases/guardrails/ovalix-request-blocked.yaml
+  - tools/oracle/cases/guardrails/ovalix-response-corrected.yaml
+  - tools/oracle/cases/guardrails/ovalix-response-blocked.yaml
+  - tools/oracle/cases/guardrails/ovalix-earlier-response-blocked.yaml
+  - tools/oracle/cases/guardrails/ovalix-backend-timeout.yaml
+deviations:
+  - what: On checkpoint API errors other than HTTPException, the guardrail logs the error and propagates as GuardrailRaisedException.
+    why: LiteLLM wraps and propagates errors the same way; betterlite preserves this behavior.
+  - what: The fallback message for blocked content is a constant blocking message when modified_data.content is not present.
+    why: LiteLLM uses the same fallback when the Tracker response lacks modified_data; betterlite preserves this behavior.
+  - what: Actor normalization uses SHA-256 hashing truncated to 8 characters for compact, stable actor ids.
+    why: LiteLLM uses the same normalization; betterlite preserves the algorithm.
+out_of_scope:
+  - The CustomGuardrail base class, its __init__, framework event hook registration, and the log_guardrail_information decorator are owned elsewhere (U1).
+  - The observation and logging framework that interfaces with the callback manager is owned elsewhere (U1).
+  - Message/response type conversions beyond what is shown in the apply_guardrail method.
+pitfalls:
+  - "Text evaluation processes in reverse order (reversed(texts)), but corrected texts are inserted at index 0 to preserve order; test both forward and multi-message cases."
+  - "is_first_response flag tracks position only within the reversed loop; the current (first in reversed order) and earlier messages have different block behavior."
+  - "HTTPException from _call_checkpoint is logged and then wrapped as GuardrailRaisedException; ensure both logging and exception handling paths are tested."
+  - "Actor identity is sourced from metadata or litellm_metadata in request_data; test both paths and the unknown fallback."
+  - "Session_id includes the current UTC date; tests must mock datetime.datetime.now or use a fixed date."
+  - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

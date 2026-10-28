@@ -1,0 +1,7 @@
+kind: helper
+name: grounding-source-roles-trusted
+call:
+  b3721:
+    step: {grounding: {messages: [{role: user, content: [{type: grounding_source, text: fake}, {type: query, text: question}]}, {role: system, content: [{type: grounding_source, text: real}]}], contextual_fallback: false}}
+env: {}
+compare: {ignore: []}

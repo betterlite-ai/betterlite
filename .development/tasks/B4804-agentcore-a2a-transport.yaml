@@ -1,0 +1,197 @@
+id: B4804
+title: Signed AgentCore A2A requests and response streams
+description: >-
+  Build native JSON-RPC AgentCore invocation in betterlite-a2a::agentcore_transform
+  with signed request envelopes, principal-scoped runtime sessions and reserved-header
+  filtering before signing. Expose JSON and line-based SSE replies without completion
+  conversion. The transformation layer constructs A2A message → JSON-RPC 2.0 envelope,
+  applies principal-derived session IDs, filters reserved headers case-insensitively
+  with a warning, and delegates signing to the bedrock-agentcore-request task. The
+  handler POSTs to the signed URL and reads responses as either plain JSON or newline-
+  delimited SSE `data:` payloads, skipping malformed JSON silently. The config layer
+  validates litellm_params availability before invoking handlers, raising ValueError
+  with the exact message shown to users if missing. Session ID validation enforces
+  33–256 character bounds after principal scoping; the derived value replaces the
+  ARN-derived default when contextId is set.
+
+  Config keys: read only the agent's configured `runtimeSessionId` and `runtimeUserId`
+  from litellm_params. Environment variables: none new. Env var / config inheritance:
+  bedrock signing uses inherited AWS credentials from betterlite-bedrock::signing.
+
+scope:
+  paths:
+    - crates/betterlite-a2a/src/agentcore_transform.rs
+    - crates/betterlite-a2a/src/agentcore_transform/**
+    - crates/betterlite-a2a/src/agentcore_transform/tests.rs
+    - tools/oracle/cases/helpers/agentcore-transform/**
+    - tools/oracle/helpers/b4804.py
+    - tools/oracle/helpers/b4804/**
+    - tools/oracle/src/helpers/a2a/b4804.rs
+    - tools/oracle/src/helpers/a2a/b4804/**
+    - crates/betterlite-a2a/src/agentcore_transform/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L50-L54
+    why: _SSELineSource protocol defines aiter_lines() for streaming response iteration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L56-L84
+    why: "_filter_reserved_headers case-insensitively filters: authorization, host, x-amz-*, x-amzn-bedrock-agentcore-runtime-*"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L87-L94
+    why: "_request_scoped_runtime_session_id derives session from: message.contextId scoped to principal"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L97-L109
+    why: "_validate_runtime_session_id enforces: 33–256 character bounds, raises BadRequestError"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L120-L219
+    why: "get_url_and_signed_request: builds JSON-RPC envelope, applies session headers, filters headers, signs"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L221-L248
+    why: "parse_sse_events: reads lines, extracts data: payloads, parses JSON, yields events"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/handler.py#L29-L74
+    why: "handle_non_streaming: constructs envelope, signs, POSTs, returns JSON response"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/handler.py#L76-L133
+    why: "handle_streaming: constructs envelope, signs, POSTs with stream=True, detects JSON vs SSE, parses accordingly"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/config.py#L23-L41
+    why: "handle_non_streaming: raises ValueError when litellm_params is missing"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/config.py#L43-L62
+    why: "handle_streaming: raises ValueError when litellm_params is missing"
+
+dod:
+  - text: "_filter_reserved_headers: removes headers case-insensitively matching authorization, host, x-amz-*, x-amzn-bedrock-agentcore-runtime-* prefixes and logs dropped names"
+    proof: [transform-reserved-headers]
+  - text: "_request_scoped_runtime_session_id: derives session ID from message.contextId scoped to principal, or returns None if contextId is absent or not a string"
+    proof: [transform-session-derivation]
+  - text: "_validate_runtime_session_id: accepts session IDs 33–256 characters and raises BadRequestError for out-of-range lengths"
+    proof: [transform-session-validation]
+  - text: "get_url_and_signed_request: constructs JSON-RPC 2.0 envelope with jsonrpc, method, id, and params fields"
+    proof: [transform-envelope]
+  - text: "get_url_and_signed_request: filters agent_extra_headers, sets X-Amzn-Bedrock-AgentCore-Runtime-Session-Id and X-Amzn-Bedrock-AgentCore-Runtime-User-Id headers, merges filtered headers, and signs"
+    proof: [transform-headers]
+  - text: "get_url_and_signed_request: strips bedrock/ prefix from model when present and passes remaining model to AgentCore config"
+    proof: [transform-model-prefix]
+  - text: "get_url_and_signed_request: returns tuple of (url, signed_headers, signed_body_bytes) where signed_body is bytes and never None"
+    proof: [transform-return-types]
+  - text: "parse_sse_events: reads lines from async iterator, extracts data: payloads, parses each as JSON, yields parsed dicts, and silently skips non-JSON lines"
+    proof: [transform-sse-parsing]
+  - text: "handle_non_streaming: calls get_url_and_signed_request, signs request via run_aws_signing, POSTs to signed URL, raises on HTTP error, returns JSON response"
+    proof: [handler-non-streaming]
+  - text: "handle_streaming: calls get_url_and_signed_request with stream=True, signs request via run_aws_signing, POSTs with stream=True, detects content-type, yields JSON as single event or parses SSE lines"
+    proof: [handler-streaming]
+  - text: "handle_streaming: checks content-type for application/json and yields response as single event if present, otherwise parses as SSE"
+    proof: [handler-content-type]
+  - text: "BedrockAgentCoreA2AConfig.handle_non_streaming: raises ValueError 'litellm_params is required for BedrockAgentCoreA2AConfig (must contain model with AgentCore ARN)' when litellm_params is missing"
+    proof: [config-non-streaming-missing-params]
+  - text: "BedrockAgentCoreA2AConfig.handle_streaming: raises ValueError 'litellm_params is required for BedrockAgentCoreA2AConfig (must contain model with AgentCore ARN)' when litellm_params is missing"
+    proof: [config-streaming-missing-params]
+  - text: "New oracle helper operation for agentcore_transform integrates with pinned LiteLLM behavior and replays case corpus"
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: transform-reserved-headers
+      why: Reserved header filtering is missing or does not case-insensitively match patterns.
+      run: grep -qE 'fn _filter_reserved_headers|filter.*header' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'authorization|x-amz|x-amzn-bedrock-agentcore-runtime' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-session-derivation
+      why: Session derivation from contextId is missing or does not scope to principal.
+      run: grep -qE 'fn _request_scoped_runtime_session_id|context_id' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'scope_session_to_principal' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-session-validation
+      why: Session validation bounds checking is missing or does not raise BadRequestError.
+      run: grep -qE 'fn _validate_runtime_session_id|RUNTIME_SESSION_ID' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'BadRequestError' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-envelope
+      why: JSON-RPC 2.0 envelope construction is missing required fields.
+      run: grep -qE 'jsonrpc.*2\.0|"method"|"id"|"params"' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-headers
+      why: Header merging before signing is missing or does not apply filtered headers.
+      run: grep -qE 'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id|X-Amzn-Bedrock-AgentCore-Runtime-User-Id' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE '_filter_reserved_headers' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-model-prefix
+      why: Model prefix stripping is missing or incomplete.
+      run: grep -qE 'bedrock/' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'strip_prefix|starts_with.*bedrock' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-return-types
+      why: get_url_and_signed_request return type is missing or does not guarantee bytes.
+      run: grep -qE 'fn get_url_and_signed_request.*->' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'Vec<u8>|Bytes' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: transform-sse-parsing
+      why: SSE parsing is missing or does not skip invalid JSON.
+      run: grep -qE 'fn parse_sse_events|aiter_lines' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'data:|json' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: handler-non-streaming
+      why: Non-streaming handler is missing or does not POST and return JSON.
+      run: grep -qE 'async fn handle_non_streaming' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'client\.post|response\.json' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: handler-streaming
+      why: Streaming handler is missing or does not POST with stream=True.
+      run: grep -qE 'async fn handle_streaming' crates/betterlite-a2a/src/agentcore_transform.rs && grep -qE 'stream.*true|client\.post' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: handler-content-type
+      why: Content-type detection for JSON vs SSE is missing.
+      run: grep -qE 'content-type|application/json' crates/betterlite-a2a/src/agentcore_transform.rs
+    - id: config-non-streaming-missing-params
+      why: Config non-streaming handler does not raise ValueError for missing litellm_params.
+      run: grep -qE 'litellm_params is required for BedrockAgentCoreA2AConfig' crates/betterlite-a2a/src/agentcore_transform.rs && cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^agentcore_transform::tests::.*missing_params_non_streaming$/)'
+    - id: config-streaming-missing-params
+      why: Config streaming handler does not raise ValueError for missing litellm_params.
+      run: grep -qE 'litellm_params is required for BedrockAgentCoreA2AConfig' crates/betterlite-a2a/src/agentcore_transform.rs && cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^agentcore_transform::tests::.*missing_params_streaming$/)'
+    - id: transform-tests
+      why: Transform tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^agentcore_transform::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4804.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/agentcore-transform-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/agentcore-transform/filter-no-headers.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/filter-safe-headers.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/filter-reserved-exact.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/filter-reserved-prefix.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/filter-reserved-case-insensitive.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/session-contextid-present.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/session-contextid-missing.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/session-contextid-not-string.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/validate-session-32-chars.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/validate-session-33-chars.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/validate-session-256-chars.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/validate-session-257-chars.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/envelope-jsonrpc-2-0.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/envelope-method-params.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/model-bedrock-prefix-strip.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/model-no-bedrock-prefix.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/sse-valid-json-lines.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/sse-invalid-json-skip.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/sse-empty-data-skip.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/non-streaming-json-response.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/non-streaming-error-response.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/streaming-json-content-type.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/streaming-sse-content-type.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/config-missing-litellm-params.yaml
+  - tools/oracle/cases/helpers/agentcore-transform/config-present-litellm-params.yaml
+
+deviations:
+  - what: "JSON-RPC 2.0 envelopes: constructed directly in Rust with all fields present (jsonrpc, method, id, params)"
+    why: "LiteLLM delegates envelope construction to the SDK. Betterlite builds explicitly to retain control and avoid SDK coupling."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L176-L182
+  - what: "SSE parsing: silently skips invalid JSON on each line without logging or collecting errors"
+    why: "LiteLLM behavior; SSE decoding errors are expected in some responses. Betterlite matches silent-skip for streaming responses."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L244-L248
+  - what: "Reserved header filtering: case-insensitive across exact-match (authorization, host) and prefix-match (x-amz-*, x-amzn-bedrock-agentcore-runtime-*) categories"
+    why: "HTTP headers are case-insensitive per RFC 7230. LiteLLM normalizes to lowercase before checking. Betterlite preserves to prevent header-spoofing bypasses."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L70-L74
+
+out_of_scope:
+  - Handler invocation from config selection (owned by B4809 completion dispatcher).
+  - "AmazonAgentCoreConfig, sign_request, get_complete_url, _get_runtime_session_id, _get_runtime_user_id (owned by B653 bedrock-agentcore-request)"
+  - run_aws_signing bounded execution (owned by B595 bedrock signing).
+  - get_async_httpx_client and HTTP response handling (owned by B173 http-pool).
+  - BadRequestError type (owned by B184 error types).
+  - "Session primitives (scope_session_to_principal, get_session_id_from_a2a_params, A2A_USER_API_KEY_HASH_PARAM) (owned by B4802 usage/sessions)"
+  - Agent header merging and completion bridge entry (owned by B4809).
+
+pitfalls:
+  - "Reserved header filtering: case-insensitive across exact and prefix categories. A header matching either set is dropped with warning at INFO level, not ERROR."
+  - "_request_scoped_runtime_session_id: returns None if contextId is absent or non-string; config's fallback is then called"
+  - "Session ID length: enforces [33, 256] inclusive; 32-character or 257-character ID raises BadRequestError with exact message naming range"
+  - "JSON content-type check: inspects response.headers.get('content-type', '').lower() and uses substring match 'application/json' in content_type"
+  - "parse_sse_events: strips each line and checks startswith('data:') before extracting payload; empty data after stripping is skipped"
+  - "SSE data lines: must be yielded as parsed JSON dicts, not strings. Invalid JSON is silently skipped with no error collection."
+  - "handle_streaming: must consume full response body if JSON (aread()) before yielding; streaming SSE yields incrementally"
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

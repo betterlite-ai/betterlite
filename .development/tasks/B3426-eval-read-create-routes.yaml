@@ -1,0 +1,124 @@
+id: B3426
+title: Eval create list and retrieval routes
+description: >-
+  Register POST and GET `/v1/evals` and GET `/v1/evals/{eval_id}` routes in `betterlite-server::api::eval_read_create_routes`.
+  The module exports a function that registers these three routes with the server and returns a router factory. Decode optional request
+  bodies with orjson and apply model selection precedence: truthy body `model`, then query `model`, then header `x-litellm-model`.
+  For create_eval, accept `metadata` in the request but pass it only when explicitly provided through `extra_body` (create does not
+  forward it from the request itself, matching LiteLLM). For list_evals, read an optional GET body and use query defaults (`limit=20`)
+  only when absent from that body; merge explicit non-None query params with body params, giving body precedence. Path `eval_id`
+  overwrites any body value. A present body `custom_llm_provider`, even when null, is not replaced by the query default `openai`.
+  Decode request bodies before the try/catch block so malformed JSON is a 400 parse error. Hand off to authenticated common processing
+  through `ProxyBaseLLMRequestProcessing.base_process_llm_request` on route_type `acreate_eval`, `alist_evals`, or `aget_eval`, and
+  catch exceptions through `ProxyBaseLLMRequestProcessing._handle_llm_api_exception`. Response models are `Eval` and `ListEvalsResponse`
+  from B3420's contracts.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/eval_read_create_routes.rs
+    - crates/betterlite-server/src/api/eval_read_create_routes/**
+    - tools/oracle/cases/evals/create-list-get/**
+    - tools/oracle/helpers/b3426.py
+    - tools/oracle/helpers/b3426/**
+    - tools/oracle/src/helpers/server/b3426.rs
+    - tools/oracle/src/helpers/server/b3426/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L1-L116
+    why: "POST /v1/evals: the create_eval route, body/query/header model selection, custom_llm_provider handling, delegation to base_process_llm_request and exception handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L118-L216
+    why: "GET /v1/evals: the list_evals route, optional body decoding, query/body param merge order, limit default, custom_llm_provider behavior."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L219-L304
+    why: "GET /v1/evals/{eval_id}: the get_eval route, path parameter override of body value, model selection, custom_llm_provider handling."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2524
+    why: "ProxyBaseLLMRequestProcessing.base_process_llm_request and its signature, including route_type, user_api_key_dict and other parameters passed by every route."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3625-L3774
+    why: "ProxyBaseLLMRequestProcessing._handle_llm_api_exception and the error envelope it produces."
+dod:
+  - text: "The three routes POST /v1/evals (create_eval), GET /v1/evals (list_evals) and GET /v1/evals/{eval_id} (get_eval) are registered with the correct HTTP methods and paths."
+    proof: [http-routes]
+  - text: "Model selection uses body model (truthy) first, then query model, then header x-litellm-model, matching every listed oracle case."
+    proof: [model-selection]
+  - text: "For create_eval: metadata in the request is accepted but not passed to the handler unless provided through extra_body, matching LiteLLM's behavior."
+    proof: [create-metadata]
+  - text: "For list_evals: query params (limit, after, before, order, order_by) are used as defaults only when absent from an optional request body, and limit defaults to 20."
+    proof: [list-query-defaults]
+  - text: "Path eval_id overwrites any eval_id value from the request body."
+    proof: [path-id-override]
+  - text: "A present body custom_llm_provider, even null, is not replaced by the query default openai."
+    proof: [provider-null-handling]
+  - text: "Request body decoding (JSON parse errors) happens before the try/catch block, so malformed bodies return 400 Bad Request with parse error details instead of the handler's 500 Internal Server Error."
+    proof: [malformed-body]
+  - text: "Every route delegates to ProxyBaseLLMRequestProcessing.base_process_llm_request with route_type acreate_eval, alist_evals, or aget_eval."
+    proof: [processor-delegation]
+  - text: "Exceptions are caught and passed to ProxyBaseLLMRequestProcessing._handle_llm_api_exception."
+    proof: [error-handling]
+  - text: "Response models use Eval and ListEvalsResponse from B3420."
+    proof: [response-contracts]
+checks:
+  optional: []
+  commands:
+    - id: http-routes
+      why: the three routes are not registered or use wrong methods/paths
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::http_routes(::|$)/)'
+    - id: model-selection
+      why: model selection precedence (body > query > header) is not correct or cases fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::model_selection(::|$)/)'
+    - id: create-metadata
+      why: metadata handling in create_eval does not match LiteLLM behavior
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::create_metadata(::|$)/)'
+    - id: list-query-defaults
+      why: list_evals query param defaults or body precedence is incorrect
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::list_query_defaults(::|$)/)'
+    - id: path-id-override
+      why: path eval_id does not override body eval_id
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::path_id_override(::|$)/)'
+    - id: provider-null-handling
+      why: body custom_llm_provider null is incorrectly replaced by default
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::provider_null_handling(::|$)/)'
+    - id: malformed-body
+      why: malformed JSON body does not return 400 or the error is caught after the try block instead of before
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::malformed_body(::|$)/)'
+    - id: processor-delegation
+      why: routes do not delegate to base_process_llm_request or use wrong route_type values
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::processor_delegation(::|$)/)'
+    - id: error-handling
+      why: exceptions are not caught or not passed to _handle_llm_api_exception
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::error_handling(::|$)/)'
+    - id: response-contracts
+      why: response models do not use Eval and ListEvalsResponse from B3420
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::response_contracts(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/evals/create-list-get/create-eval-basic.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-model-body.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-model-query.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-model-header.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-basic.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-limit-default.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-body-params.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-query-override.yaml
+  - tools/oracle/cases/evals/create-list-get/get-eval-basic.yaml
+  - tools/oracle/cases/evals/create-list-get/get-eval-path-override.yaml
+  - tools/oracle/cases/evals/create-list-get/get-eval-model-header.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-provider-body.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-provider-null.yaml
+  - tools/oracle/cases/evals/create-list-get/malformed-json-body.yaml
+deviations:
+  - what: "Malformed JSON request bodies return 400 Bad Request with parse error details."
+    why: "LiteLLM returns 500 Internal Server Error for malformed JSON because orjson.loads() raises an exception caught by the global exception handler. Betterlite explicitly decodes before the route handler's try block and returns 400 for malformed JSON, providing more specific error information and failing fast on parse errors."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L76-L77"
+out_of_scope:
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; owned by the handler/transport owner identified by B096's external-calls table."
+  - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; owned by the handler/transport owner identified by B096's external-calls table."
+  - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
+  - "The concrete operation implementations (acreate_eval, alist_evals, aget_eval) owned by B3421 and B3422; routes only dispatch to them."
+pitfalls:
+  - "Model selection must check body (truthy), then query, then header `x-litellm-model` in that exact order, despite any comments in LiteLLM suggesting otherwise. Comments in the LiteLLM code are misleading; the actual line order is the authority."
+  - "For list_evals, query params are used as defaults only when the same key is absent from the body. A body with null pagination fields still counts as present and blocks the query default."
+  - "custom_llm_provider must never default to openai when a body value (including null) is present. Only apply the default when the key is entirely absent from the body."
+  - "create_eval accepts metadata in the request but does not pass it to the handler. The handler receives metadata only via extra_body, which can override the request's value."
+  - "Path eval_id overwrites body eval_id unconditionally; this is not a precedence rule, it is always the source of truth."
+  - "Body parsing with orjson must happen outside the try block so parse errors are visible as 400 responses, not caught by exception handlers."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
