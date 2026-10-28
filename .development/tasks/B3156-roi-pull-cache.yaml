@@ -1,0 +1,221 @@
+id: B3156
+title: ROI cache records and partial-source handling
+description: >-
+  Build cache identities, reusable report-record conversion and source-failure
+  helpers in crates/betterlite-server::roi_cache. Keep successful per-pull
+  writes before final report publication, refresh cached identity evidence,
+  retain the previous report on total source failure, and preserve partial-repository
+  warnings.
+
+  The cache_key function returns a SHA256 hexdigest of a JSON tuple containing
+  "pull-v1", github_api_url rstripped, cache context, repo casefolded, pull
+  number, head SHA, title, body (or empty string), and login casefolded. It
+  returns None when head.sha is absent or empty string, when body is not in
+  model_fields_set, or when login is absent or empty string; these checks catch
+  incomplete metadata before hashing.
+
+  The settings_fingerprint function returns a SHA256 hexdigest of the settings'
+  github_api_url rstripped, repos tuple, estimator_model and estimator_prompt,
+  and backfill_days. Rstrip('/') makes the fingerprint insensitive to trailing
+  slashes.
+
+  The _estimate_with_fallback helper catches SourceError from the estimator and
+  returns a fallback estimate with status "error" and the error message as
+  reasoning, or passes through a successful estimate.
+
+  The _unavailable_record helper builds a complete ROIPullRecord from GitHub
+  pull metadata, profile email lookup and an error message, when evidence
+  collection failed. When user or user.login is absent or falsy (including
+  empty string), login falls back to "deleted-user". The estimate carries
+  status "needs_review", None hours, and a formatted message.
+
+  The _read_repository function calls github.pulls for a single repository and
+  date range. If it raises SourceError, it returns a _RepositoryPulls with
+  unavailable=True and no pulls.
+
+  The _read_repositories function gathers all repository reads in parallel,
+  detects fully unavailable cases (raises SourceError when all repos fail or
+  only unavailable repos + no pulls from accessible ones), and returns a
+  _RepositoryBatch with the flattened queue, unavailable repos and partial-read
+  warning message.
+
+  The _processed_records function validates that at least one PR was processed
+  and at least one estimate succeeded (not all metadata_unavailable, not all
+  estimator errors). It returns an immutable mapping of position to ROIPullRecord.
+
+  The _cache_estimated_pull helper writes an estimated pull to the report
+  repository only when the key is non-None, the estimate succeeded, and either
+  there is no previous record or the profile/commit emails changed.
+
+  The three SyncManager helpers _previous_report, _cached_record and
+  _report_record extract and transform pull records without mutating state.
+  _previous_report reads the cached report, returns None on missing or
+  validation error. _cached_record adds cached=True to the estimate and
+  returns a new ROIPullRecord with the same evidence. _report_record
+  constructs a complete ROIPullRecord from evidence, estimate and cache key.
+
+  Expose cache_key and settings_fingerprint; the helpers and SyncManager methods
+  are private to the runner task B3157.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/roi_cache.rs
+    - crates/betterlite-server/src/roi_cache/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/pull_cache.py#L9-L33
+    why: cache_key function with SHA256 hashing of JSON tuple and None returns for incomplete metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/pull_cache.py#L36-L47
+    why: settings_fingerprint function with rstripped URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L198-L210
+    why: _estimate_with_fallback catching SourceError and returning fallback estimate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L213-L239
+    why: _unavailable_record building ROIPullRecord with deleted-user fallback and needs_review estimate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L261-L265
+    why: _read_repository with single-repo pull fetch and SourceError handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L268-L298
+    why: _read_repositories with parallel gather, full unavailability detection and partial-read warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L301-L313
+    why: _processed_records validating at least one success and returning position-indexed mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L316-L329
+    why: _cache_estimated_pull conditional write with email-change detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L637-L644
+    why: SyncManager._previous_report with cached report read and validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L646-L666
+    why: SyncManager._cached_record and _report_record record transformation helpers.
+
+dod:
+  - text: cache_key returns None when head.sha is absent or empty string, body is not in model_fields_set, or login is absent or empty string.
+    proof: [cache-key-none-cases]
+  - text: cache_key returns a SHA256 hexdigest of a JSON tuple including pull number, title, body, and casefolded login.
+    proof: [cache-key-hash]
+  - text: settings_fingerprint includes github_api_url rstripped, repos, estimator_model, estimator_prompt and backfill_days.
+    proof: [settings-fingerprint-includes]
+  - text: settings_fingerprint makes fingerprints insensitive to URL trailing slashes via rstrip('/').
+    proof: [settings-fingerprint-slash-insensitive]
+  - text: _estimate_with_fallback catches SourceError and returns an estimate with status "error" and error message as reasoning.
+    proof: [fallback-estimate-error]
+  - text: _unavailable_record builds a complete ROIPullRecord when user or user.login is falsy, falling back to "deleted-user".
+    proof: [unavailable-record-deleted-user]
+  - text: _unavailable_record estimate carries status "needs_review", None hours, and a formatted metadata-error message.
+    proof: [unavailable-record-estimate]
+  - text: _read_repository calls github.pulls and returns _RepositoryPulls with unavailable=True on SourceError.
+    proof: [read-repository-error]
+  - text: _read_repositories raises SourceError when all repos are unavailable or only unavailable repos exist with no accessible pulls.
+    proof: [repos-total-failure, repos-no-pulls-failure]
+  - text: _read_repositories returns partial-read warning message when some repos are unavailable but pulls exist.
+    proof: [repos-partial-warning]
+  - text: _processed_records raises SourceError when all processed items have metadata_unavailable=True.
+    proof: [records-all-unavailable]
+  - text: _processed_records raises SourceError when no estimates have status "estimated" and at least one has status "error".
+    proof: [records-estimator-failure]
+  - text: _processed_records returns an immutable mapping of position to ROIPullRecord for valid batches.
+    proof: [records-mapping]
+  - text: _cache_estimated_pull does not write when key is None, estimate status is not "estimated", or profile/commit emails unchanged.
+    proof: [cache-no-write-conditions]
+  - text: _cache_estimated_pull writes the ROIPullRecord when key is non-None, estimate succeeded, and emails changed or no previous.
+    proof: [cache-write-condition]
+  - text: _previous_report reads the cached report and returns None on missing or validation error.
+    proof: [previous-report-read]
+  - text: _cached_record adds cached=True to the estimate and preserves all other fields exactly.
+    proof: [cached-record-transform]
+  - text: _report_record constructs ROIPullRecord from evidence, estimate and cache key with all fields populated.
+    proof: [report-record-construct]
+
+checks:
+  optional: []
+  commands:
+    - id: cache-key-none-cases
+      why: cache_key does not return None for missing/empty head SHA, missing body, or missing/empty login
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_key_none_cases($|::)/)' - test(/replays_the_/)
+    - id: cache-key-hash
+      why: cache_key does not hash the correct JSON tuple or returns wrong format
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_key_hash($|::)/)' - test(/replays_the_/)
+    - id: settings-fingerprint-includes
+      why: settings_fingerprint does not include all required fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::settings_fingerprint_includes($|::)/)' - test(/replays_the_/)
+    - id: settings-fingerprint-slash-insensitive
+      why: settings_fingerprint does not normalize trailing slashes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::settings_fingerprint_slash_insensitive($|::)/)' - test(/replays_the_/)
+    - id: fallback-estimate-error
+      why: _estimate_with_fallback does not catch SourceError or return correct fallback estimate
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::fallback_estimate_error($|::)/)' - test(/replays_the_/)
+    - id: unavailable-record-deleted-user
+      why: _unavailable_record does not fall back to "deleted-user" when user or login is missing/falsy
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::unavailable_record_deleted_user($|::)/)' - test(/replays_the_/)
+    - id: unavailable-record-estimate
+      why: _unavailable_record estimate does not have correct status, hours or reasoning message
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::unavailable_record_estimate($|::)/)' - test(/replays_the_/)
+    - id: read-repository-error
+      why: _read_repository does not call github.pulls or does not catch SourceError
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::read_repository_error($|::)/)' - test(/replays_the_/)
+    - id: repos-total-failure
+      why: _read_repositories does not raise SourceError when all repos are unavailable
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_total_failure($|::)/)' - test(/replays_the_/)
+    - id: repos-no-pulls-failure
+      why: _read_repositories does not raise SourceError when no accessible repos have pulls
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_no_pulls_failure($|::)/)' - test(/replays_the_/)
+    - id: repos-partial-warning
+      why: _read_repositories does not include partial-read warning message for unavailable repos
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_partial_warning($|::)/)' - test(/replays_the_/)
+    - id: records-all-unavailable
+      why: _processed_records does not raise SourceError when all items are metadata_unavailable
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_all_unavailable($|::)/)' - test(/replays_the_/)
+    - id: records-estimator-failure
+      why: _processed_records does not raise SourceError when all estimates fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_estimator_failure($|::)/)' - test(/replays_the_/)
+    - id: records-mapping
+      why: _processed_records does not return immutable mapping of position to ROIPullRecord
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_mapping($|::)/)' - test(/replays_the_/)
+    - id: cache-no-write-conditions
+      why: _cache_estimated_pull writes when it should not (None key, non-estimated status, or unchanged emails)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_no_write_conditions($|::)/)' - test(/replays_the_/)
+    - id: cache-write-condition
+      why: _cache_estimated_pull does not write when key exists, estimate succeeded and emails changed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_write_condition($|::)/)' - test(/replays_the_/)
+    - id: previous-report-read
+      why: _previous_report does not read cached report correctly or does not return None on validation error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::previous_report_read($|::)/)' - test(/replays_the_/)
+    - id: cached-record-transform
+      why: _cached_record does not add cached=True or does not preserve all fields correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cached_record_transform($|::)/)' - test(/replays_the_/)
+    - id: report-record-construct
+      why: _report_record does not construct ROIPullRecord with all fields from evidence, estimate and cache key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::report_record_construct($|::)/)' - test(/replays_the_/)
+    - id: behavior-tests
+      why: the required behavior tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache_behavior($|::)/)' - test(/replays_the_/)
+
+oracle_cases: []
+
+deviations:
+  - what: Head SHA emptiness detection treats empty string and None identically, both returning None from cache_key.
+    why: Missing data and zero-length data cannot be distinguished in the hash; both are incomplete metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/pull_cache.py#L15-L18
+
+out_of_scope:
+  - "B3150 owns the ROI record types, settings validators and email normalization."
+  - "B3152 owns github.pulls, github.profile_email and the GitHub client initialization."
+  - "B3153 owns github.evidence and all pull metadata collection."
+  - "B3154 owns the Estimator and its estimate method."
+  - "B3155 owns read_spend, SyncStore and all database operations."
+  - "B3157 owns SyncManager.__init__, .status, .start, .cancel, .heartbeat and ._run; this task owns only ._previous_report, ._cached_record and ._report_record."
+  - "B725 owns ConfigRepository.get_param and .set_param contracts."
+
+pitfalls:
+  - "cache_key returns None when head.sha is empty string, same as when pull.head is None; both paths represent incomplete metadata."
+  - "login fallback to 'deleted-user' triggers for any falsy login, including empty string, not just missing user."
+  - "settings_fingerprint rstrips('/') from github_api_url, so identical settings with different trailing slashes produce the same fingerprint."
+  - "_estimate_with_fallback converts only SourceError to a fallback estimate; other exceptions propagate."
+  - "_unavailable_record uses the profile email from github.profile_email lookup, which may return empty string; the emails tuple is (profile,) if profile is truthy, else ()."
+  - "_read_repositories flattens (repo, pull) pairs from all group.pulls into a single queue; order is (all pulls from repo1, then all from repo2, ...)."
+  - "_processed_records raises SourceError on total metadata failure or estimator failure; it validates only that at least one PR was processed and at least one succeeded."
+  - "_cache_estimated_pull compares (profile_email, emails) tuples to detect changes; the comparison includes the field itself, not just the set of emails."
+  - "_cached_record creates a new TypeAdapter(ROIEstimate) with cached=True added to the estimate mapping; it preserves all evidence fields from the original pull."
+  - "_report_record and _cached_record both copy all ROIPullRecord fields; they differ in the estimate treatment (fresh vs cached)."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

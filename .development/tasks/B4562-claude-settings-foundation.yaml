@@ -1,0 +1,83 @@
+id: B4562
+title: Claude settings merge, private writes and status installation
+description: >-
+  Build Claude settings paths and merge logic that route Claude Code's traffic through the proxy.
+  When `lite configure claude` or `lite up` runs, it patches ~/.claude/settings.json to inject ANTHROPIC_BASE_URL,
+  ANTHROPIC_AUTH_TOKEN and optional model pins, then removes conflicting credentials (apiKeyHelper, ANTHROPIC_API_KEY)
+  so Claude Code sends only one path. The file is written through symlinks rather than replacing them, keeping
+  symlinked dotfiles repos intact. Status-hook installation is versioned: betterlite only replaces an older installed
+  version and warns when keeping a newer one (from an earlier CLI build). Later tasks (configure, up, autoroute start)
+  call merge_claude_settings, write_claude_settings and install_statusline_script; receipt and undo logic (B4563)
+  imports only the path/merge contracts and type exports, never the higher-level lifecycle functions.
+  Preserve ownership guards (settings files hold both `lite up` and `lite autoroute start` backups), symlink
+  targets, user-owned status lines, credential-slot replacement and optional default/tier model pinning.
+scope:
+  paths:
+    - tools/management-cli/src/claude_settings.rs
+    - tools/management-cli/src/claude_settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L106-L419
+    why: Settings paths, merge rules, private-write guards and status-hook installation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L42-L83
+    why: Path and key constants, default models, owned paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L134-L159
+    why: Model-choice enum types (StaticToken, KeepModel, UnpinModel, StartOn).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L1-L50
+    why: Status-line script shared constants and module signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L85-L97
+    why: SettingsFileOwner contract, backup paths and commands (lite up, lite autoroute start/stop).
+dod:
+  - text: Claude settings paths resolve correctly under CLAUDE_CONFIG_DIR environment variable and default ~/.claude/settings.json.
+    proof: [settings-paths]
+  - text: Settings file ownership guards prevent writes while `lite up` or `lite autoroute start` holds a backup.
+    proof: [settings-paths]
+  - text: Merge rules preserve user-owned settings and drop conflicting credentials while injecting proxy endpoint and token.
+    proof: [merge-behavior]
+  - text: Status-line script installation is versioned; betterlite replaces older versions and warns when keeping a newer one.
+    proof: [statusline-version]
+  - text: Atomic writes through symlinks preserve symlink targets rather than breaking dotfiles repo links.
+    proof: [symlink-writes]
+  - text: Private-byte writes on settings files use B192's helpers with owner-only file modes set before secret bytes land.
+    proof: [private-writes]
+  - text: Every path, key constant, SettingsFileOwner contract and model-choice type the outline names can be imported and used by B4563 and B4575.
+    proof: [export-contracts]
+checks:
+  optional: []
+  commands:
+    - id: settings-paths
+      why: settings paths, environment variable resolution or ownership guards do not match the source
+      run: grep -q "claude_settings_path" tools/management-cli/src/claude_settings.rs && grep -q "settings_file_owners" tools/management-cli/src/claude_settings.rs && grep -q "configure_state_path" tools/management-cli/src/claude_settings.rs && grep -q "refuse_while_owned\|ClaudeSettingsError" tools/management-cli/src/claude_settings.rs
+    - id: merge-behavior
+      why: merge rules fail to preserve or drop the correct keys
+      run: grep -q "merge_claude_settings" tools/management-cli/src/claude_settings.rs && grep -q "ANTHROPIC_BASE_URL" tools/management-cli/src/claude_settings.rs && grep -q "ANTHROPIC_AUTH_TOKEN" tools/management-cli/src/claude_settings.rs && grep -q "apiKeyHelper" tools/management-cli/src/claude_settings.rs && grep -q "ANTHROPIC_API_KEY" tools/management-cli/src/claude_settings.rs
+    - id: statusline-version
+      why: status-line versioning or version comparison is missing
+      run: grep -q "_statusline_version" tools/management-cli/src/claude_settings.rs && grep -q "_installed_statusline_version" tools/management-cli/src/claude_settings.rs && grep -q "install_statusline_script" tools/management-cli/src/claude_settings.rs && grep -qE "bundled_version.*installed_version|installed_version.*bundled_version" tools/management-cli/src/claude_settings.rs
+    - id: symlink-writes
+      why: settings file writing does not preserve symlinks or does not use atomic staging
+      run: grep -q "write_target\|write_claude_settings\|symlink" tools/management-cli/src/claude_settings.rs
+    - id: private-writes
+      why: B192 private-write helpers are not called for settings file I/O
+      run: grep -q "write_private_bytes\|stage_private_json\|commit_staged_json\|ensure_private_dir" tools/management-cli/src/claude_settings.rs
+    - id: export-contracts
+      why: path/key constants, SettingsFileOwner or model-choice types are not exported for later tasks
+      run: grep -q "pub\|export" tools/management-cli/src/claude_settings.rs && grep -q "StaticToken\|KeepModel\|UnpinModel\|StartOn\|SettingsFileOwner" tools/management-cli/src/claude_settings.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Receipt/fingerprint logic, undo behavior and ownership restoration. B4563 owns configure_claude_settings and unconfigure_claude_settings.
+  - Team-specific or PKCE-credential model choices. This task handles the three model-choice enums and merge rules; per-flow behavior stays in B4575/B4577.
+  - Status-line script content itself. B4561 owns the statusline_script module; this task only installs, versions and registers it.
+  - Full credential/token renewal or storage. B4574 owns credential renewal and storage helpers; this task handles the static-token type used by merge.
+pitfalls:
+  - The status-line script is read from B4561's statusline_script module and bundled with a version header. Each LiteLLM release includes the script; when betterlite ships, the script version travels with it.
+  - CLAUDE_CONFIG_DIR may point anywhere; a non-default settings.json gets its own receipt keyed by the resolved path. Never assume settings are under ~/.claude/.
+  - Configure/up/autoroute-start each has its own backup path (BACKUP_PATH vs AUTOROUTE_BACKUP_PATH). Both prevent concurrent writes by checking for backups on entry; the file is only ever held by one owner.
+  - merge_claude_settings removes apiKeyHelper and any ANTHROPIC_API_KEY slot to prevent Claude Code from choosing between credentials. The merge never fails due to missing keys; missing credential slots are simply absent from the output.
+  - Status-line installations must not race. Use file locking or atomic checks when writing; concurrent installers must respect the first one's version choice.
+  - Symlinks are detected with is_symlink(), not by checking Path::parent. The _write_target logic only applies to the final target file, not intermediate directories.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

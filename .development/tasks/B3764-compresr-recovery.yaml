@@ -1,0 +1,150 @@
+id: B3764
+title: Compresr recovery store and retrieval plans
+description: >-
+  Implement authenticated caller/call-scoped recovery storage, byte and TTL eviction,
+  retrieval deduplication and provider-shaped follow-up plans for Compresr's
+  compression-recovery feature. A recovery store in the guardrail instance holds
+  compressed originals keyed by (caller virtual-key hash, call-id), scoped per-tenant
+  for multi-account deployments. Originals are stored in an OrderedDict with per-entry
+  TTL (15 minutes) and pruned when the global byte ceiling (_MAX_TOTAL_STORE_BYTES =
+  256 MiB) is exceeded. Compression hashes are 24-character SHA-256 prefixes; the hash
+  itself is trusted only when paired with a valid (scope, call_id) and not yet expired.
+
+  When the model calls the ``compresr_retrieve`` tool (detected in the agentic loop),
+  this task builds provider-shaped follow-up request patches: for Anthropic's messages
+  API, a new tool_use block paired with tool_result; for the Responses API, a
+  function_call block paired with function_call_output; for standard chat
+  completions, an assistant message with tool_calls plus tool-result messages. Only
+  retrieve tool calls are echoed; other tool calls are re-planned so the model
+  re-executes them against the recovered content. The ``PRE_CALL_EXECUTED_GUARDRAILS_KEY``
+  metadata list is trimmed to keep only Compresr's own pre-call marker, allowing input
+  guardrails to re-inspect the restored originals without skipping due to prior cache
+  hits.
+
+  Retrieval is limited to _MAX_RETRIEVALS_PER_LOOP=8 calls per turn; repeated hashes
+  are deduped. A missing, expired, or out-of-scope hash produces a fallback message
+  (not a 500) so the model can retry or work around the missing content.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/compresr_recovery.rs
+    - crates/betterlite-guardrails/src/compresr_recovery/**
+    - tools/oracle/cases/guardrails/compresr/**
+    - tools/oracle/helpers/b3764.py
+    - tools/oracle/helpers/b3764/**
+    - tools/oracle/src/helpers/guardrails/b3764.rs
+    - tools/oracle/src/helpers/guardrails/b3764/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L249-L275"
+    why: Hash and recovery marker generation (content_hash, entry_bytes, display_hash, recovery_marker).
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L278-L325"
+    why: Retrieve tool definition, detection and tool-call extraction.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L328-L394"
+    why: Caller scope resolution (resolve_call_id, caller_scope, scoped_store_key).
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L397-L480"
+    why: Follow-up message builders for chat, Anthropic and Responses APIs.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L623-L717"
+    why: Recovery store eviction, pruning, storage and retrieval methods.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L1055-L1151"
+    why: "async_should_run_agentic_loop and async_build_agentic_loop_plan methods, including kwargs sanitization."
+dod:
+  - text: Recovery hashes are stable SHA-256 prefixes with display-safe bounds for logging.
+    proof: [recovery-hashes]
+  - text: Recovery store is keyed by (caller virtual-key hash, call-id) and respects per-tenant isolation.
+    proof: [scoped-storage]
+  - text: Originals are stored with 15-minute TTL and pruned by age, entry count and global byte budget.
+    proof: [eviction-ttl]
+  - text: Retrieval dedupes repeated hashes and caps the count to 8 per turn; missing/expired hashes produce fallback text.
+    proof: [retrieval-limits]
+  - text: Agentic loop detects compresr_retrieve calls and builds provider-shaped follow-up request patches.
+    proof: [agentic-loop-dispatch]
+  - text: Follow-up messages for chat completions echo only retrieve calls, omit other tool calls and rebuild assistant text.
+    proof: [chat-followup-format]
+  - text: Follow-up messages for Anthropic messages API pair tool_use with tool_result blocks.
+    proof: [anthropic-followup-format]
+  - text: Follow-up messages for Responses API pair function_call with function_call_output blocks.
+    proof: [responses-followup-format]
+  - text: The PRE_CALL_EXECUTED_GUARDRAILS_KEY is trimmed to keep only Compresr's own marker.
+    proof: [marker-trimming]
+checks:
+  optional: []
+  commands:
+    - id: recovery-hashes
+      why: hash generation or display bounds are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*hash(::|$)/)'
+    - id: scoped-storage
+      why: store keys do not isolate by tenant/call or resolution fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*scoped(::|$)/)'
+    - id: eviction-ttl
+      why: originals are not evicted by age, count or byte budget
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*eviction(::|$)|^compresr_recovery::tests::.*ttl(::|$)/)'
+    - id: retrieval-limits
+      why: retrieval does not dedupe, cap at 8, or produce fallback text for missing hashes
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*retrieval(::|$)/)'
+    - id: agentic-loop-dispatch
+      why: compresr_retrieve calls are not detected or loop dispatch fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*agentic(::|$)/)'
+    - id: chat-followup-format
+      why: chat completion follow-up messages lack correct structure or omit other tool calls
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*chat_followup(::|$)/)'
+    - id: anthropic-followup-format
+      why: Anthropic follow-up lacks tool_use/tool_result pairing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*anthropic_followup(::|$)/)'
+    - id: responses-followup-format
+      why: Responses API follow-up lacks function_call/function_call_output pairing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*responses_followup(::|$)/)'
+    - id: marker-trimming
+      why: PRE_CALL_EXECUTED_GUARDRAILS_KEY is not trimmed to Compresr's marker only
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_recovery::tests::.*marker_trim(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/compresr/recovery-store-scoped.yaml
+  - tools/oracle/cases/guardrails/compresr/retrieval-dedup-and-limits.yaml
+  - tools/oracle/cases/guardrails/compresr/agentic-loop-chat.yaml
+  - tools/oracle/cases/guardrails/compresr/agentic-loop-anthropic.yaml
+  - tools/oracle/cases/guardrails/compresr/agentic-loop-responses.yaml
+  - tools/oracle/cases/guardrails/compresr/marker-trimming.yaml
+deviations:
+  - what: "Hashes are 24-character SHA-256 prefixes, not full 64-character hashes."
+    why: >-
+      This matches LiteLLM's _content_hash implementation to keep markers compact and readable in logs.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L249-L252"
+  - what: >-
+      Recovery store uses OrderedDict with (caller hash, call_id) composite keying for per-tenant isolation.
+    why: >-
+      Multi-account deployments must not allow one tenant to read another's compressed originals; the caller
+      scope is derived from UserAPIKeyAuth.api_key (the unforgeable virtual-key hash set by the proxy).
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L343-L370"
+  - what: "Missing, expired or out-of-scope hashes produce a fallback message in the tool result, not a 502 error."
+    why: >-
+      This allows the model to continue and retry or work around the missing content, matching LiteLLM's fail-open philosophy for retrieval.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L678-L689"
+  - what: >-
+      The agentic loop builds provider-specific message formats; only retrieve tool calls are echoed, other tool calls
+      are omitted so the model re-plans them.
+    why: >-
+      This preserves recovery semantics: the model re-executes other tool calls against the restored content, matching LiteLLM's behavior.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L1072-L1127"
+  - what: >-
+      PRE_CALL_EXECUTED_GUARDRAILS_KEY metadata is trimmed to keep only Compresr's own marker, not all markers.
+    why: >-
+      This allows input guardrails to re-inspect the restored content without skipping due to prior cache decisions;
+      only Compresr's marker is kept to avoid recompressing the just-retrieved originals.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L1129-L1151"
+out_of_scope:
+  - The CompresrGuardrail constructor, configuration, and apply_guardrail compression dispatch (B3765).
+  - The compression request call and parameter passthrough (_call_compress); B3763 owns those.
+  - The compression results application to messages (_apply_compression_results); B3765 owns that.
+  - Tool call extraction from responses beyond the compresr_retrieve filter (get_tool_calls_from_response); B226 owns that.
+  - Text extraction from responses for follow-up message assembly (assistant_text_from_response); B3663 owns that.
+  - Pre-call marker generation and base guardrail hooks (async_pre_call_deployment_hook, _pre_call_marker); the framework owns those.
+pitfalls:
+  - "Store keys use both caller identity (from UserAPIKeyAuth.api_key) and call id; keying on call id alone allows cross-tenant reads."
+  - "Display hashes strip non-printables and cap at 32 characters before logging; a huge or control-character-laden model-supplied hash could poison logs without this."
+  - "Originals use surrogatepass encoding to preserve lone surrogates from JSON \\uXXXX escapes, matching the hash generation; UTF-8 strict mode would raise."
+  - "Per-call byte budget (max_bytes_per_call) drops oldest entries; the global budget (_MAX_TOTAL_STORE_BYTES) keeps the most-recent entry so the current call's originals survive."
+  - "Retrieval dedup is per-turn (within a single agentic loop step); a later turn can retrieve the same hash again (within its TTL)."
+  - "The model can prompt-inject a compresr_retrieve call with a fake hash; fallback text is returned, not a 500, so the model controls the UX."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

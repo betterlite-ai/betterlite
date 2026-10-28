@@ -1,0 +1,121 @@
+id: B4061
+title: Prompt listing and version inspection routes
+description: >-
+  Register GET /prompts/list, GET /prompts/{prompt_id}/versions, GET /prompts/{prompt_id}, and GET /prompts/{prompt_id}/info to return latest prompt metadata, version history, and raw template content. List permits metadata-scoped ordinary keys to see only their allowed prompts, but version history and info require admin-view after exact-ID allowlist checks. Preserve empty-list, 400 missing-info and 404 missing-history outcomes. Return the latest per-environment display records and raw local dotprompt data where available.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes/prompts/read.rs
+    - crates/betterlite-server/src/routes/prompts/read/tests.rs
+    - tools/oracle/cases/prompts/read/**
+    - tools/oracle/helpers/b4061.py
+    - tools/oracle/helpers/b4061/**
+    - tools/oracle/src/helpers/server/b4061.rs
+    - tools/oracle/src/helpers/server/b4061/**
+    - crates/betterlite-server/src/routes/prompts/read/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L219-L313
+    why: "list_prompts route and metadata allowlist logic"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L316-L421
+    why: "get_prompt_versions route and version history retrieval"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L424-L462
+    why: "_get_prompt_template helper resolving raw content"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L465-L590
+    why: "get_prompt_info route and environment-aware lookup"
+dod:
+  - text: "GET /prompts/list returns all latest prompts as ListPromptsResponse when user is admin-view, filtered by metadata prompts list if present, or empty if neither."
+    proof: [list-route-logic]
+  - text: "GET /prompts/{prompt_id}/versions returns 404 if no versions found, 403 if not admin-view, ordered by version descending."
+    proof: [versions-route-errors]
+  - text: "GET /prompts/{prompt_id} and GET /prompts/{prompt_id}/info are both registered and return PromptInfoResponse with content from dotprompt_content or integrated manager."
+    proof: [info-route-aliases, info-template-content]
+  - text: "List permits metadata-scoped ordinary keys after exact-ID allowlist check, but info still requires admin-view."
+    proof: [list-metadata-check, info-admin-check]
+  - text: "Version queries read distinct environments from DB, apply environment filter or select latest, and fetch exact version number if suffix is present. When no database is configured, the in-memory registry serves as fallback."
+    proof: [version-environment-logic, version-suffix-selection, versions-no-database]
+  - text: "Raw prompt template resolves from dotprompt_content via B4051 or from DotpromptManager.prompt_manager via B4052."
+    proof: [template-dotprompt-resolve, template-manager-resolve]
+  - text: "Every route verifies through the booted proxy, including both /info aliases, status/code/type on error, and no helper adapter should invoke these handlers."
+    proof: [oracle-cases-prompts-read]
+checks:
+  optional: []
+  commands:
+    - id: list-route-logic
+      why: "the list route's metadata filtering or admin-view fallback is missing or wrong"
+      run: grep -q "metadata.*prompts" crates/betterlite-server/src/routes/prompts/read.rs && grep -q "admin.*view" crates/betterlite-server/src/routes/prompts/read.rs
+    - id: versions-route-errors
+      why: "the versions route does not reject non-admins with 403 or return 404 when no versions found"
+      run: grep -q "404\|status.*404" crates/betterlite-server/src/routes/prompts/read.rs && grep -q "403\|admin.*view" crates/betterlite-server/src/routes/prompts/read.rs
+    - id: info-route-aliases
+      why: "both /prompts/{prompt_id} and /prompts/{prompt_id}/info routes are not registered"
+      run: grep -qE 'GET\s+/prompts/\{prompt_id\}($|")' crates/betterlite-server/src/routes/prompts/read.rs && grep -q '/prompts/{prompt_id}/info' crates/betterlite-server/src/routes/prompts/read.rs
+    - id: info-template-content
+      why: "the info route does not resolve raw template content from dotprompt or manager"
+      run: grep -q "dotprompt_content\|prompt_manager\|PromptTemplateBase" crates/betterlite-server/src/routes/prompts/read.rs
+    - id: list-metadata-check
+      why: "the list route does not respect metadata prompts allowlist"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*metadata/)'
+    - id: info-admin-check
+      why: "the info route does not require admin-view"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*admin/)'
+    - id: version-environment-logic
+      why: "the versions route does not handle environment filtering or distinction properly"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*environment/)'
+    - id: version-suffix-selection
+      why: "the info route does not extract and use version suffix from prompt_id"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*(suffix|version)/)'
+    - id: versions-no-database
+      why: "the versions route does not handle the case when no database is configured"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*(no_db|fallback)/)'
+    - id: template-dotprompt-resolve
+      why: "templates do not resolve from dotprompt_content"
+      run: grep -q "dotprompt_content" crates/betterlite-server/src/routes/prompts/read.rs
+    - id: template-manager-resolve
+      why: "templates do not resolve from DotpromptManager.prompt_manager"
+      run: grep -q "prompt_manager\|DotpromptManager" crates/betterlite-server/src/routes/prompts/read.rs
+    - id: oracle-cases-prompts-read
+      why: "the oracle cases for these routes fail, are missing, or booted-proxy tests fail"
+      run: test -d tools/oracle/cases/prompts/read && test "$(find tools/oracle/cases/prompts/read -name '*.yaml' | wc -l)" -ge 4 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^oracle::prompts::read::/)'
+pitfalls:
+  - "List allows both `.v` and `_v` version suffixes in base-ID stripping without validating the suffix itself; the route shows base IDs without suffix to users regardless."
+  - "Metadata-scoped prompts have an exact-ID allowlist check before returning 400, but the 400 for missing info happens after admin-view is confirmed, not first; order matters for error priority."
+  - "Version history is admin-only and queries the DB directly; there is no fallback to in-memory prompts for non-admins, unlike list which shows both."
+  - "The _get_prompt_template helper swallows all exceptions and returns None silently instead of propagating errors, preserving LiteLLM's warn-and-drop behavior."
+  - "Template content comes from either dotprompt_content (if present) or the registered manager; these are mutually exclusive lookups, not fallbacks."
+oracle_cases:
+  - tools/oracle/cases/prompts/read/list_prompts_admin.yaml
+  - tools/oracle/cases/prompts/read/list_prompts_metadata_scope.yaml
+  - tools/oracle/cases/prompts/read/list_prompts_no_access.yaml
+  - tools/oracle/cases/prompts/read/versions_admin.yaml
+  - tools/oracle/cases/prompts/read/versions_not_admin.yaml
+  - tools/oracle/cases/prompts/read/versions_not_found.yaml
+  - tools/oracle/cases/prompts/read/versions_no_database.yaml
+  - tools/oracle/cases/prompts/read/info_admin.yaml
+  - tools/oracle/cases/prompts/read/info_with_dotprompt_content.yaml
+  - tools/oracle/cases/prompts/read/info_with_manager_template.yaml
+  - tools/oracle/cases/prompts/read/info_metadata_allowlist_fails.yaml
+  - tools/oracle/cases/prompts/read/info_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/read/info_not_admin.yaml
+  - tools/oracle/cases/prompts/read/info_environment_filter.yaml
+  - tools/oracle/cases/prompts/read/info_version_suffix.yaml
+  - tools/oracle/cases/prompts/read/info_alias_info_endpoint.yaml
+deviations:
+  - what: "List route returns base prompt IDs (stripped of .v and _v suffixes) regardless of internal versioned storage."
+    why: "LiteLLM strips version suffixes for display; betterlite does the same."
+  - what: "Version history is admin-view only, with no fallback to metadata-scoped keys."
+    why: "LiteLLM enforces this permission boundary; only admins see the full version history."
+  - what: "Info route checks metadata-scoped allowlist with exact ID first, before checking admin-view."
+    why: "LiteLLM returns 400 for exact-ID mismatch before attempting authorization for non-existent prompts."
+  - what: "Template extraction returns None silently instead of logging or raising, swallowing dotprompt_content parse failures."
+    why: "LiteLLM does the same to avoid breaking prompt info responses when dotprompt content is malformed."
+out_of_scope:
+  - "The authentication mechanism (user_api_key_auth, user_api_key_has_admin_view) is owned by B052/B124 and called via dependency injection."
+  - "The database table operations (find_many, distinct) are provided by B726's PromptRepository."
+  - "The prompt specification and list response types are owned by B4050."
+  - "The dotprompt content parsing (_get_prompt_data_from_dotprompt_content) is owned by B4051."
+  - "The dotprompt manager (DotpromptManager.prompt_manager, get_all_prompts_as_json) is owned by B4052."
+  - "Registry selection and database row conversion (get_base_prompt_id, get_version_number, get_latest_prompt_versions, create_versioned_prompt_spec, resolve_prompt_spec, get_prompt_callback_for_prompt, IN_MEMORY_PROMPT_REGISTRY) are owned by B4059."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,231 @@
+id: B3911
+title: LangSmith credentials and run payloads
+description: >-
+  Build typed LangSmith credential resolution and run-payload projection in
+  betterlite-logging, isolating explicit-base-URL credentials from environment
+  secrets. Extract and redact metadata including nested requester_metadata,
+  suppress session IDs that duplicate trace IDs, enforce consistent trace and
+  dotted-order values, and serialize run outputs with usage tokens and cost.
+
+  Credential resolution reads LANGSMITH_API_KEY, LANGSMITH_PROJECT (default
+  'litellm-completion'), LANGSMITH_BASE_URL (default
+  'https://api.smith.langchain.com'), and LANGSMITH_TENANT_ID from environment
+  or request-supplied parameters, isolating explicit-base-URL credentials from
+  environment-fallback credentials across deployments. Metadata extraction
+  normalizes run_name (default 'LLMRun' from LANGSMITH_DEFAULT_RUN_NAME env var),
+  run_id, parent_run_id, trace_id, session_id and dotted_order from
+  litellm_params.metadata. Redaction applies recursively to nested
+  requester_metadata so no credentials appear in run bodies. Session ID
+  suppression strips session_id when it equals trace_id. Dotted-order format
+  is UTC timestamp (YYYYMMDDTHHMMSSfZ) concatenated with run ID string. Root-run
+  consistency ensures runs without parent_run_id and dotted_order have trace_id
+  matching the run ID; batches fail on trace_id/dotted_order mismatch in any
+  run. Outputs reshape StandardLoggingPayload response and usage into LangSmith
+  run format with input_tokens, output_tokens, total_tokens and total_cost
+  fields.
+
+  Functions to port: get_credentials_from_env (reads env or parameter values with
+  fallbacks; allow_env_credentials flag isolates explicit-base-URL credentials
+  from environment), _get_credentials_to_use_for_request (selects default or
+  dynamic credentials by key/team), _extract_metadata_fields (normalizes
+  metadata dict keys to run fields), _redact_metadata (applies
+  redact_user_api_key_info to top level and nested requester_metadata),
+  _build_extra_metadata (elevates session/thread/conversation IDs from nested
+  requester_metadata to top level), _build_outputs_with_usage (maps
+  StandardLoggingPayload response and usage to run outputs dict), _ensure_required_ids
+  (generates UUID defaults for missing run_id, enforces trace_id==run_id for root
+  runs, generates dotted_order prefix if missing), _prepare_log_data (orchestrates
+  extraction, redaction, suppression and output building), _get_sampling_rate_to_use_for_request
+  (returns dynamic or default sampling rate as float), make_dot_order (formats UTC
+  timestamp + run ID).
+
+  Direct dependencies: B002 for environment and config resolution; B188 for
+  redact_user_api_key_info; B254 for StandardLoggingPayload, response, usage
+  and error projections, StandardCallbackDynamicParams.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/langsmith_payloads.rs
+    - crates/betterlite-logging/src/langsmith_payloads/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L100-L127
+    why: Credential resolution with environment fallback and allow_env_credentials isolation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L128-L138
+    why: Metadata field extraction from litellm_params
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L139-L157
+    why: Redaction of top-level and nested requester_metadata, extra metadata elevation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L158-L171
+    why: Output building with usage metadata
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L173-L188
+    why: ID consistency enforcement for root runs and dotted_order generation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L189-L250
+    why: Complete run payload preparation orchestrating all projections
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L475-L484
+    why: Sampling rate resolution from dynamic parameters or default
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L486-L507
+    why: Credentials selection by key/team with allow_env_credentials isolation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L543-L546
+    why: Dotted-order format construction as timestamp + run ID
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/langsmith.py#L30-L64
+    why: Credential, queue and batch grouping types
+dod:
+  - text: get_credentials_from_env returns LANGSMITH_API_KEY, PROJECT (default
+      'litellm-completion'), BASE_URL (default 'https://api.smith.langchain.com')
+      and TENANT_ID from parameters or environment.
+    proof: [credentials-env-tests]
+
+  - text: allow_env_credentials false and langsmith_base_url provided isolates
+      explicit-base-URL credentials from environment fallback, blocking env-var
+      lookups for all four credential fields.
+    proof: [credentials-isolation-tests]
+
+  - text: _extract_metadata_fields normalizes metadata dict keys to run_name
+      (default 'LLMRun'), run_id, parent_run_id, trace_id, session_id and
+      dotted_order, reading from litellm_params.metadata.
+    proof: [metadata-extraction-tests]
+
+  - text: _redact_metadata applies redact_user_api_key_info to top-level metadata
+      and recursively to nested requester_metadata dict if present.
+    proof: [metadata-redaction-tests]
+
+  - text: _build_extra_metadata elevates session_id, thread_id and conversation_id
+      from requester_metadata to top-level extra dict if not already present,
+      then redacts the result.
+    proof: [extra-metadata-tests]
+
+  - text: >-
+      _build_outputs_with_usage maps StandardLoggingPayload response to dict
+      outputs or {"output": response} for non-dict, adds usage_metadata with
+      input_tokens, output_tokens, total_tokens and total_cost fields.
+    proof: [outputs-usage-tests]
+
+  - text: _ensure_required_ids generates UUID for missing run_id; sets trace_id
+      to run_id if run has no parent_run_id and no dotted_order (root run);
+      generates dotted_order prefix from timestamp if missing.
+    proof: [id-consistency-tests]
+
+  - text: _prepare_log_data orchestrates credential lookup, metadata extraction,
+      redaction, extra-metadata elevation, session-ID suppression when it equals
+      trace_id, output building, and ID enforcement to produce a complete run
+      object with name, run_type, inputs, outputs, session_name, timestamps,
+      tags, extra fields and optional error/run_id/parent_run_id/trace_id/session_id/dotted_order
+      fields.
+    proof: [log-data-assembly-tests]
+
+  - text: _prepare_log_data raises exception if standard_logging_object is missing
+      from kwargs.
+    proof: [log-data-missing-payload-tests]
+
+  - text: _get_sampling_rate_to_use_for_request returns langsmith_sampling_rate
+      float from standard_callback_dynamic_params if present, otherwise returns
+      default sampling_rate.
+    proof: [sampling-rate-tests]
+
+  - text: _get_credentials_to_use_for_request resolves all four credential fields
+      from standard_callback_dynamic_params if present (with allow_env_credentials
+      true only when langsmith_base_url is None), otherwise returns
+      default_credentials.
+    proof: [credentials-selection-tests]
+
+  - text: make_dot_order formats UTC datetime as YYYYMMDDTHHMMSSfZ concatenated
+      with run_id string.
+    proof: [dot-order-format-tests]
+checks:
+  optional: []
+  commands:
+    - id: credentials-env-tests
+      why: credential resolution tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(api_key_env|api_key_param|project_default|project_env|base_url_default|base_url_env|tenant_id_none|tenant_id_env)$/)'
+
+    - id: credentials-isolation-tests
+      why: allow_env_credentials isolation tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(explicit_base_url_blocks_env|allow_env_true_uses_env)$/)'
+
+    - id: metadata-extraction-tests
+      why: metadata field extraction tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(extract_run_name|extract_run_id|extract_parent_run_id|extract_trace_id|extract_session_id|extract_dotted_order)$/)'
+
+    - id: metadata-redaction-tests
+      why: metadata redaction tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(redact_top_level|redact_nested_requester)$/)'
+
+    - id: extra-metadata-tests
+      why: extra metadata elevation tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(elevate_session_id|elevate_thread_id|elevate_conversation_id|extra_metadata_redacted)$/)'
+
+    - id: outputs-usage-tests
+      why: output building with usage tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(outputs_dict_response|outputs_non_dict_response|usage_metadata_tokens|usage_metadata_cost)$/)'
+
+    - id: id-consistency-tests
+      why: ID consistency enforcement tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(ensure_run_id_generated|ensure_trace_id_root|ensure_dotted_order_root|trace_id_non_root)$/)'
+
+    - id: log-data-assembly-tests
+      why: complete run payload assembly tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(prepare_success_run|prepare_failure_run|prepare_with_all_ids|prepare_with_error_field)$/)'
+
+    - id: log-data-missing-payload-tests
+      why: missing payload error handling tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::prepare_missing_payload_raises$/)'
+
+    - id: sampling-rate-tests
+      why: sampling rate resolution tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(sampling_rate_dynamic|sampling_rate_default)$/)'
+
+    - id: credentials-selection-tests
+      why: credentials selection by key/team tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::(select_dynamic_credentials|select_default_credentials|select_credentials_isolation)$/)'
+
+    - id: dot-order-format-tests
+      why: dotted-order format tests do not exist or fail
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_payloads::dot_order_format$/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Python-specific behavior: LiteLLM resolves environment variables at
+      runtime when allow_env_credentials is true and explicit base URL is
+      missing, isolating explicit credentials from environment fallback. Clock
+      and UUID are injected standard-library/library facilities, not
+      dependencies on a task-owned service.
+    why: >-
+      Betterlite resolves these at credential selection time. Environment
+      isolation is enforced through the allow_env_credentials flag and explicit
+      parameter precedence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L100-L127
+out_of_scope:
+  - Logger lifecycle and batching, owned by B112.
+  - LangSmith HTTP delivery, owned by B112.
+  - Dynamic callback parameters and cache, owned by other tasks.
+pitfalls:
+  - Default run name is 'LLMRun' from LANGSMITH_DEFAULT_RUN_NAME environment
+    variable with 'LLMRun' fallback; metadata dict project_name defaults to
+    LANGSMITH_PROJECT credential, not the run-name default.
+  - Default LangSmith project is 'litellm-completion'; this applies only when
+    neither parameter nor environment variable is set.
+  - Session ID is suppressed when it exactly equals trace_id, preventing
+    LangSmith rejection of a run-body session ID that duplicates the tracer
+    session UUID.
+  - Root-run consistency requires runs with no parent_run_id and no dotted_order
+    to have trace_id matching run_id; LangSmith rejects entire batch if any run
+    violates this rule.
+  - Dotted-order format is timestamp strftime("%Y%m%dT%H%M%S%fZ") concatenated
+    with run_id as string, not separately formatted; no separator between
+    timestamp and ID.
+  - _redact_metadata only redacts requester_metadata if it is a dict; non-dict
+    values are left unchanged.
+  - Extra metadata elevation checks session_id, thread_id and conversation_id
+    only in requester_metadata; if present at top level, values are not
+    overwritten or duplicated.
+  - _build_outputs_with_usage uses payload["prompt_tokens"] / payload["completion_tokens"]
+    defaults, returning 0 if keys missing; total_cost defaults similarly.
+  - allow_env_credentials false with None langsmith_base_url (not just explicit
+    URL) blocks environment fallback; the logic is allow_env_credentials false
+    AND base_url is not None.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

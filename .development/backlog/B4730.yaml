@@ -2,8 +2,8 @@ id: B4730
 milestone: M9 agents and mcp
 title: MCP temporary client execution and connection diagnostics
 status: todo
-depends_on: []
-file: null
+depends_on: [B4652, B136, B4656, B4664, B4667, B4743]
+file: tasks/B4730-mcp-preview-client.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/rest_endpoints.py"
 parent: B139

@@ -1,0 +1,170 @@
+id: B3885
+title: Prometheus service health metrics
+description: >-
+  Port litellm/integrations/prometheus_services.py:1-278 to Rust in
+  crates/betterlite-prometheus to expose a service-specific histogram, counter and gauge
+  registry, consume the existing async service-event phase, reuse registered collectors,
+  and preserve failure labels error_class/function_name and metadata-provided gauge
+  labels/values.
+
+  Build PrometheusServicesLogger, which scans the configured service types and their
+  metrics from B012's DEFAULT_SERVICE_CONFIGS and initializes only those metrics needed
+  for each service. The logger stores collectors in a map from service name to a list of
+  Histogram, Counter, and Gauge objects. The registry lookup via is_metric_registered uses
+  prometheus_client's _names_to_collectors for O(1) lookup; _get_metric retrieves a metric
+  from the registry by name. The factory methods create_histogram, create_gauge and
+  create_counter return existing metrics if already registered, or create new ones with
+  the service name as the only label for histogram/gauge, or service name plus
+  error_class/function_name for the failed_requests counter.
+
+  The emit methods observe_histogram, update_gauge and increment_counter call the
+  underlying metric's labels(), observe(), set() or inc() methods. The latency_buckets
+  are read from B3870's LATENCY_BUCKETS constant, or overridden by
+  litellm.prometheus_latency_buckets if set.
+
+  Implement synchronous hooks service_success_hook and service_failure_hook, which
+  iterate through the service's metric list, check type (isinstance Histogram/Counter),
+  then check metric name to distinguish failed_requests from total_requests counters,
+  and increment or observe with the appropriate labels. These hooks receive no traffic
+  in production at the pin; the dispatcher calls the async versions instead. They are
+  included for backwards-compatibility and dependency closure (tasks B757, B4327, B4328
+  list them as dependencies).
+
+  Implement async_service_success_hook, which receives a ServiceLoggerPayload and calls
+  observe_histogram for any Histogram in the service's metric list and increment_counter
+  for the total_requests Counter by name. If the payload carries event_metadata with
+  gauge_labels and gauge_value, also call update_gauge for any Gauge in the list.
+
+  Implement async_service_failure_hook, which receives a ServiceLoggerPayload and an error,
+  extracts error_class from the exception and function_name from payload.call_type, and
+  calls increment_counter for every Counter in the service's metric list. For the
+  failed_requests counter (identified by name), pass error_class and function_name as
+  additional labels; for the total_requests counter, pass only the service label.
+
+scope:
+  paths:
+    - crates/betterlite-prometheus/src/service_health.rs
+    - crates/betterlite-prometheus/src/service_health/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L1-L88
+    why: PrometheusServicesLogger class, __init__ method, metric registry initialization and constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L90-L151
+    why: _get_service_metrics_initialize, is_metric_registered, _get_metric, create_histogram, create_gauge, create_counter metric factories.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L153-L184
+    why: observe_histogram, update_gauge, increment_counter emit methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L186-L218
+    why: Synchronous service_success_hook and service_failure_hook with metric type and name checking dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L220-L248
+    why: async_service_success_hook with histogram observation, total_requests counter, and gauge metadata handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L250-L278
+    why: async_service_failure_hook with error_class and function_name label extraction and counter name-based dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L14-L110
+    why: ServiceTypes enum, ServiceMetrics enum, ServiceLoggerPayload and DEFAULT_SERVICE_CONFIGS configuration.
+
+dod:
+  - text: PrometheusServicesLogger reads latency_buckets from B3870's LATENCY_BUCKETS or
+      litellm.prometheus_latency_buckets if set, and initializes metrics for every service
+      in ServiceTypes, consulting DEFAULT_SERVICE_CONFIGS for which metrics to create.
+    proof: [service-health-tests]
+  - text: is_metric_registered checks the registry's _names_to_collectors map for O(1) lookup,
+      falling back to collecting all metrics if the attribute is missing.
+    proof: [service-health-tests]
+  - text: create_histogram, create_gauge and create_counter return existing registered metrics,
+      or create new ones with service name as the only label (histogram/gauge), or service name
+      plus error_class/function_name for failed_requests counters.
+    proof: [service-health-tests]
+  - text: observe_histogram, update_gauge and increment_counter call the underlying metric's
+      labels() and then observe(), set() or inc() with the provided amounts.
+    proof: [service-health-tests]
+  - text: Synchronous service_success_hook iterates the service's metrics, observes histograms,
+      and increments only the counter whose name contains "total_requests" (string check).
+    proof: [service-health-tests]
+  - text: Synchronous service_failure_hook iterates the service's metrics and increments all
+      counters, with error_class and function_name additional labels only for counters whose
+      name contains "failed_requests" (string check).
+    proof: [service-health-tests]
+  - text: async_service_success_hook observes histogram, increments the total_requests counter
+      by name check, and updates gauge if event_metadata contains gauge_labels and gauge_value.
+    proof: [service-health-tests]
+  - text: async_service_failure_hook increments the failed_requests counter with error_class
+      and function_name as additional labels (extracted from exception and payload.call_type),
+      and increments all other counters with only the service label.
+    proof: [service-health-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: service-health-tests
+      why: Service health tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^service_health::/) - test(/replays_the_/)'
+    - id: compile
+      why: The crate does not compile
+      run: cargo build --locked -p betterlite-prometheus
+
+oracle_cases: []
+
+deviations:
+  - what: |-
+      PrometheusServicesLogger stores all collectors in a single list per service
+      and dispatches operations by type checking (isinstance) followed by metric name
+      checking ("total_requests" in obj._name or "failed_requests" in obj._name).
+      The failed_requests and total_requests counters are both the Rust Counter type
+      and must be distinguished by their metric name suffix, not by type alone.
+    why: |-
+      LiteLLM creates two counters with different label sets for each service
+      and identifies them by name. Betterlite follows the same pattern: iterate,
+      check type, then check name to apply the correct increment pattern (with or
+      without error_class/function_name labels).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_services.py#L199-L278
+  - what: Betterlite uses ServiceLoggerPayload and ServiceTypes from B012's logging types,
+      not re-defined here.
+    why: These types are the contract between B012's dispatcher and this logger; keeping
+      them in one place avoids duplication and keeps logging types cohesive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L93-L105
+
+out_of_scope:
+  - |-
+    Test-only instrumentation: mock_testing field and mock_testing_success_calls/
+    mock_testing_failure_calls counters have no production caller; they support unit testing
+    of the logger in isolation.
+  - |-
+    Reading config values directly; B012 and B002 supply the service configuration and the
+    prometheus_latency_buckets setting.
+  - |-
+    Callback registration and dispatcher dispatch logic; B012 owns the service-event dispatch contract
+    and invokes this part's hooks.
+  - |-
+    Prometheus collector instantiation and native prometheus_client APIs; B3874 supplies those.
+
+pitfalls:
+  - |-
+    ServiceTypes is an enum with many queue types; DEFAULT_SERVICE_CONFIGS is a dict, not all
+    services are configured (only those in the dict get config). Always check the config dict before
+    defaulting to DEFAULT_METRICS.
+  - |-
+    _names_to_collectors is an internal prometheus_client detail; the fallback to collecting all metrics
+    must work when it is missing.
+  - |-
+    The failed_requests and total_requests counters are both the Counter type and stored in the same
+    list; they must be distinguished by metric name ("total_requests" in obj._name or "failed_requests"
+    in obj._name), not by type. Renaming either metric breaks the dispatch pattern.
+  - |-
+    The failed_requests counter gets additional_labels [error_class, function_name] but total_requests does not;
+    the increment_counter method must handle both cases and pass labels only to the correct counter.
+  - |-
+    event_metadata may be None or missing gauge_labels/gauge_value; the async success hook must check before calling
+    update_gauge, defaulting to empty string and 0 if missing.
+  - |-
+    The latency_buckets tuple must match exactly; a mismatch between declared labelnames and provided
+    values causes runtime errors in prometheus_client.
+  - |-
+    The sync hooks have no caller at the pin; the dispatcher queues an async path that calls the async hooks.
+    Build the sync bodies for backwards-compatibility, but do not expect them to receive traffic in tests.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

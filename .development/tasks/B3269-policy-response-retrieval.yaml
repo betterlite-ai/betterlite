@@ -1,0 +1,158 @@
+id: B3269
+title: Reattach policy pipelines on background response retrieval
+description: >-
+  Reconstruct policy context from an encoded response's deployment and attach
+  missing post-call pipelines and provenance metadata. When a background response
+  is retrieved (e.g. from storage), the policy engine must run post-call pipelines
+  that would have executed during the original request. This task extracts the model
+  group from the response's deployment, checks whether policies apply, and reattaches
+  pipelines with their provenance; it preserves ungoverned-retrieval warnings when
+  submission context cannot be fully reproduced.
+
+  Define PolicyPipelines as a type alias for a tuple of (policy_name, GuardrailPipeline)
+  pairs, with a TypeAdapter for validation. UngovernedRetrieval is a dataclass with a
+  reason field (enum: "no router", "response id names no deployment", "deployment no
+  longer in the router") explaining why post-call pipelines cannot be attached.
+
+  _model_group_for_response_id extracts the model_id from the response_id using
+  B903's ResponsesAPIRequestUtils.get_model_id_from_response_id, looks up the
+  deployment in the router via B844's Router.get_deployment, and returns either
+  the deployment's model_name or an UngovernedRetrieval. If the model_group name
+  is a wildcard deployment (contains "*"), or if it has aliases in the router's
+  model_group_alias map, log a warning via verbose_proxy_logger because a policy
+  attached to the model name at submission time may not run on retrieval.
+  _submit_model_hidden_by checks whether a model group name matches a wildcard
+  pattern or is the target of one or more model_group_alias entries, returning
+  a warning string or None.
+
+  _retrieval_context builds a PolicyMatchContext from the request metadata and
+  model group. Extract team_alias and key_alias from UserAPIKeyAuth (or None if
+  not a string), get the model from the model group name, and get tags via
+  B1102's get_tags_from_request_body on the request data (or None if empty).
+  _post_call_pipelines_for_context gets attached policies via B3241's
+  get_attachment_registry().get_attached_policies_with_reasons with policy_applies
+  predicate, then filters to policies whose conditions apply via
+  PolicyMatcher.get_policies_with_matching_conditions. Extract post-call pipelines
+  only (mode == "post_call") via PolicyResolver.resolve_pipelines_for_context.
+  Return a tuple of (policy_name, pipeline) pairs and a mapping of policy_name
+  to matched_via reasons.
+
+  attach_post_call_pipelines_to_retrieval is the main entry point. If the policy
+  registry is uninitialized, return early. Get the model group; if ungoverned,
+  log a warning and return. Build the retrieval context and get post-call pipelines.
+  Via B206's get_or_create_metadata_bucket, get the metadata dict. Decode any
+  already-attached pipelines from the bucket's "_guardrail_pipelines" key using
+  _POLICY_PIPELINES_ADAPTER.validate_python. Compute the set of policy_names
+  already attached. Filter new pipelines to those not already attached; if none
+  are new, return. Merge already-attached and new pipelines in the bucket. Update
+  "_pipeline_managed_guardrails" to the frozenset of all guardrail names across
+  all pipelines. For each new policy, call add_policy_to_applied_policies_header
+  and add_guardrail_to_applied_guardrails_header for each step. Call
+  add_policy_sources_to_metadata with the matched_via reasons for new policies.
+  Log a debug message listing the attached pipelines and model group.
+
+  Preserve ungoverned-retrieval warnings and alias/wildcard warnings when the
+  original submission-name matching is not fully reproducible. Preserve the
+  distinction between pre-call and post-call pipelines, attaching only post-call.
+  Preserve the already-attached pipeline deduplication: a policy whose pipelines
+  are already in the bucket is not re-attached.
+
+  Build in betterlite-policy/src/response_retrieval.rs. Depend on B3240 for
+  PolicyMatchContext and GuardrailPipeline, B3241 for registry/matcher/resolver,
+  and B189 for the three metadata header functions (add_policy_to_applied_policies_header,
+  add_guardrail_to_applied_guardrails_header, add_policy_sources_to_metadata).
+  Every observable behavior (model_group lookup, alias detection, context reconstruction,
+  pipeline filtering, deduplication, header updates) is tested. The main entry-point
+  function and its helpers are oracle cases preserving exact warning conditions and
+  attachment order.
+scope:
+  paths:
+    - crates/betterlite-policy/src/response_retrieval.rs
+    - crates/betterlite-policy/src/response_retrieval/**
+    - crates/betterlite-policy/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/policy-response-retrieval/**
+    - tools/oracle/fuzz/corpus/helper_case/policy-response-retrieval-*
+    - tools/oracle/helpers/b3269.py
+    - tools/oracle/helpers/b3269/**
+    - tools/oracle/src/helpers/policy/b3269.rs
+    - tools/oracle/src/helpers/policy/b3269/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/response_retrieval.py#L29-L152
+    why: Own the entire response-retrieval module, type alias, dataclass, and all functions through attach_post_call_pipelines_to_retrieval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1-L50
+    why: Reuse ResponsesAPIRequestUtils.get_model_id_from_response_id via B903 for response_id decoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1-L100
+    why: Reuse Router.get_deployment and model_group_alias via B844 for deployment lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L1-L50
+    why: Reuse resolve_model_group_alias via B302 for alias resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L1-L50
+    why: Reuse get_tags_from_request_body via B1102 for request metadata parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L1-L50
+    why: Reuse get_or_create_metadata_bucket via B206 for metadata dict access.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L50
+    why: Reuse UserAPIKeyAuth aliases via B732 for retrieval context building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_matcher.py#L135-L218
+    why: Reuse PolicyMatcher.get_policies_with_matching_conditions for condition filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L129-L260
+    why: Reuse PolicyResolver.resolve_pipelines_for_context for pipeline extraction.
+dod:
+  - text: Model group lookup via response_id succeeds when router and deployment exist, returns UngovernedRetrieval for no-router, non-decodable-response-id, or missing-deployment reasons.
+    proof: [behavior-tests]
+  - text: Uninitialized policy registry early-return prevents post-call pipeline attachment without errors.
+    proof: [behavior-tests]
+  - text: Wildcard deployment and model_group_alias matching log warnings about submission-name hiding.
+    proof: [behavior-tests]
+  - text: Retrieval context is built from UserAPIKeyAuth aliases, model group, and request tags.
+    proof: [behavior-tests]
+  - text: Post-call pipelines are filtered from all matching pipelines, deduplicating against already-attached policies.
+    proof: [behavior-tests]
+  - text: Metadata bucket is updated with merged pipelines, pipeline-managed guardrails, and policy sources.
+    proof: [behavior-tests]
+  - text: The independent helper operation b3269 matches the production implementation in every case.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Response retrieval missing functions or incorrect model lookup, deduplication, or context building.
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^response_retrieval::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: Helper adapter missing or Python checks fail.
+      run: test -f tools/oracle/helpers/b3269.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No seed corpus or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/policy-response-retrieval-*")" && grep -rlq "\"b3269\"" tools/oracle/fuzz/corpus/helper_case/policy-response-retrieval-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-response-retrieval/model-group-lookup.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/deployment-not-found.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/ungoverned-no-router.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/ungoverned-response-id-not-decodable.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/registry-not-initialized.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/wildcard-warning.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/alias-warning.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/context-building.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/pipeline-filtering.yaml
+  - tools/oracle/cases/helpers/policy-response-retrieval/deduplication.yaml
+deviations: []
+out_of_scope:
+  - "B3240 owns policy values (Policy, PolicyAttachment, PolicyScope, PolicyGuardrails, PolicyCondition) and GuardrailPipeline; this task reuses them."
+  - "B3241 owns policy registry, attachment registry, matching and resolution; this task calls get_policy_registry, is_initialized, policy_applies, get_policies_with_matching_conditions, get_attached_policies_with_reasons, and resolve_pipelines_for_context."
+  - "B903 owns ResponsesAPIRequestUtils.get_model_id_from_response_id in betterlite-responses; this task calls it to decode response IDs."
+  - "B844 owns Router.get_deployment and model_group_alias in betterlite-router; this task calls get_deployment and accesses model_group_alias."
+  - "B302 owns resolve_model_group_alias in betterlite-router; this task calls it to detect alias targets."
+  - "B1102 owns get_tags_from_request_body in betterlite-http; this task calls it for retrieval context tags."
+  - "B206 owns get_or_create_metadata_bucket in betterlite-models; this task calls it to access metadata for header updates."
+  - "B732 owns AuthContext in betterlite-auth; this task reuses team_alias and key_alias in retrieval context."
+  - "B189 owns callback registration, discovery in litellm.callbacks, add_guardrail_to_applied_guardrails_header, add_policy_to_applied_policies_header, and add_policy_sources_to_metadata functions in callback_utils.py; this task calls all three metadata header functions."
+pitfalls:
+  - Wildcard deployments ("model*") are detected by string containment of "*", not regex matching. Preserve this literal check.
+  - model_group_alias is a mapping from alias names to model groups, not the reverse. Multiple aliases can target the same model group; the warning lists all of them.
+  - PolicyPipelines adapter must accept serialized tuples of tuples, not a list of objects. Pydantic validation-python accepts the right shape.
+  - Ungoverned retrievals do not prevent metadata updates for other reasons; only post-call pipelines are skipped. Early return preserves this.
+  - The metadata bucket "_guardrail_pipelines" and "_pipeline_managed_guardrails" keys must match the spelling that upstream code expects.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

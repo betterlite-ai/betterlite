@@ -1,0 +1,138 @@
+id: B4290
+title: Cache contracts and remaining local operations
+description: >-
+  Build typed cache backend operation and result vocabulary by porting BaseCache contracts,
+  per-call/backend tag enums, semantic scope and cache control types from litellm/types/caching.py.
+  Implement the memory cache read/write/increment async adapters that wrap synchronous operations
+  with no retry or fallback, reusing B2226's existing cache_dict/ttl_dict state and B390's checked
+  increment machinery. Preserve absolute TTL (not remaining time) from async_get_ttl, permissive
+  key expiry checking, and the fixed default_ttl=600s and max_size=200. Include the oldest-n-keys
+  retrieval ordered by TTL expiration. Backend contracts establish a minimum required-method
+  signature but do not dictate any Redis or object-store implementation; lower tasks provide those
+  as dependencies to higher-level cache orchestration tasks.
+
+  Crate: betterlite-cache.
+
+  Configuration and environment: no new keys or env vars at this level. B4291 introduces disk
+  cache defaults and B4299 settles backend construction precedence and namespace assignment.
+
+scope:
+  paths:
+    - crates/betterlite-cache/src/backend.rs
+    - crates/betterlite-cache/src/backend/**
+    - crates/betterlite-cache/src/types.rs
+    - crates/betterlite-cache/Cargo.toml
+    - crates/betterlite-cache/fuzz/corpus/cache_types-*
+    - tools/oracle/cases/backend/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/helpers/b4290.py
+    - tools/oracle/helpers/b4290/**
+    - tools/oracle/src/helpers/cache/b4290.rs
+    - tools/oracle/src/helpers/cache/b4290/**
+    - crates/betterlite-cache/src/types/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L65
+    why: BaseCache contracts, initialization signature and default_ttl precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L152
+    why: Type declarations for backend operations, cache controls, semantic scope, cache types, embedding records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L238-L283
+    why: Async adapters wrapping sync memory cache without fallback; absolute TTL behavior and oldest-n-keys ordering.
+
+dod:
+  - text: >-
+      Backend trait and cache-control types match LiteLLM operation contracts without
+      adding fallback or retry logic.
+    proof: [backend-contracts-tests]
+
+  - text: >-
+      Memory cache async adapters reuse B2226 state and B390 increment, returning stored
+      absolute expiry timestamps.
+    proof: [backend-contracts-tests]
+
+  - text: >-
+      The oldest-n-keys operation returns cache keys ordered by TTL expiration time
+      (earliest expiry first).
+    proof: [backend-contracts-tests]
+
+  - text: >-
+      Cache type enum (LiteLLMCacheType) with values local, redis, redis-semantic,
+      valkey-semantic, s3, disk, qdrant-semantic, azure-blob, gcs round-trips through
+      Rust serialization.
+    proof: [type-codec-tests, type-corpus]
+
+  - text: >-
+      Ping response and health-check parameter records serialize to/from LiteLLM forms.
+    proof: [type-codec-tests, type-corpus]
+
+  - text: >-
+      Redis pipeline operation records (increment, set, rpush, lpop) serialize to/from
+      valid LiteLLM forms.
+    proof: [type-codec-tests, type-corpus]
+
+  - text: >-
+      New type records (DynamicCacheControl, SemanticCacheScope, CachedEmbedding, supported
+      call types) round-trip through Rust serialization and deserialize from valid LiteLLM
+      input forms.
+    proof: [type-codec-tests, type-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: backend-contracts-tests
+      why: Backend trait methods or async memory adapters have wrong signature or wrong semantics.
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^backend::tests::/)'
+    - id: type-codec-tests
+      why: Cache control types or cache records do not parse or serialize to expected forms.
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^types::tests::/)'
+    - id: type-corpus
+      why: New type seeds do not replay through the betterlite-cache decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-cache/fuzz/corpus/cache_types-*)" && cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(replays_the_cache_types_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/backend/base-cache-contract-get.yaml
+  - tools/oracle/cases/backend/base-cache-contract-set.yaml
+  - tools/oracle/cases/backend/base-cache-test-connection-unsupported.yaml
+  - tools/oracle/cases/backend/memory-async-get-absolute-ttl.yaml
+  - tools/oracle/cases/backend/memory-async-increment-pipeline.yaml
+  - tools/oracle/cases/backend/dynamic-cache-control-ttl.yaml
+  - tools/oracle/cases/backend/semantic-scope-key-and-user.yaml
+  - tools/oracle/cases/backend/cached-embedding-format-version-2.yaml
+  - tools/oracle/cases/backend/supported-call-types.yaml
+  - tools/oracle/cases/backend/cache-type-round-trip.yaml
+  - tools/oracle/cases/backend/ping-response-health-check.yaml
+  - tools/oracle/cases/backend/redis-pipeline-increment.yaml
+  - tools/oracle/cases/backend/redis-pipeline-set.yaml
+  - tools/oracle/cases/backend/redis-pipeline-rpush.yaml
+  - tools/oracle/cases/backend/redis-pipeline-lpop.yaml
+  - tools/oracle/cases/backend/async-get-oldest-n-keys-ordering.yaml
+
+deviations:
+  - what: Rust trait methods use Result<T> for fallible operations; async adapters propagate errors instead of silent fallback.
+    why: Rust does not permit None/missing return value equivalents to LiteLLM's absence-means-success pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L35-L39
+
+out_of_scope:
+  - B2226 owns InMemoryCache.__init__, check_value_size, evict_cache, _is_key_expired, _remove_key,
+    allow_ttl_override, set_cache, evict_element_if_expired, get_cache and delete_cache; they are
+    reused as-is, not reimplemented.
+
+  - B390 owns async_set_cache, async_set_cache_pipeline, async_set_cache_sadd, batch_get_cache
+    and increment_cache in in_memory_cache.py; async adapters call them through dependency injection.
+
+  - Redis backend, disk backend, cluster/semantic/object-store factories and their failing operation
+    handlers belong to later cache orchestration tasks (B4291-B4299, B126-B128).
+
+pitfalls:
+  - The async_get_ttl trait method returns the stored absolute expiration timestamp (seconds since epoch), not the remaining TTL; a user seeking remaining seconds must subtract the current time on their side.
+
+  - Cache controls and semantic scope enums serialize to lowercase string forms in the wire format, but Rust enum variants use SCREAMING_SNAKE_CASE for readability; serde renames must map correctly.
+
+  - The InMemoryCache default_ttl is 600 seconds (10 minutes) and max_size is 200 items; exceeding these limits requires explicit construction parameters, never silent downgrades.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

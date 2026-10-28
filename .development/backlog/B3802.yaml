@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Custom guardrail compilation and execution deadlines
 status: todo
 depends_on: [B3801]
-file: null
+file: tasks/B3802-custom-guardrail-execution.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/custom_code/{sandbox,bounded_execution}.py"
 parent: B108

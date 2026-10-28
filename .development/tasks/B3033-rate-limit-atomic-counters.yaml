@@ -1,0 +1,128 @@
+id: B3033
+title: Atomic rate-limit counter evaluation
+description: >-
+  Build one descriptor's Lua arguments and status decoding, plus the locked local all-or-nothing counter algorithm.
+  Redis uses server time and promises atomicity only within each script invocation; the next part (B3034) owns cross-descriptor rollback.
+  The Lua script CHECK_AND_INCREMENT_BY_N_SCRIPT (owned by B3031) validates all descriptors against their limits before modifying any counter (all-or-nothing semantics).
+  When Redis is unavailable, the in-memory fallback executes the same validation locally using the DualCache mirror, accepting eventual window/counter divergence until TTL expiry.
+  _build_descriptor_atomic_payload constructs the KEYS and ARGV arrays for one descriptor, handling optional requests and tokens limits separately.
+  _build_atomic_response decodes the Lua return value into RateLimitResponse (OK with updated counts and reservation windows, or OVER_LIMIT with the first blocked counter's details).
+
+  Ownership:
+
+  - _build_descriptor_atomic_payload: Construct KEYS (window_key, counter_key pairs), ARGV (limit, increment, ttl, window_size 4-tuples), and per-counter metadata (descriptor key/value, current limit, rate-limit type, window/counter keys, increment amount, TTL, window size). Shared hash-tag keys stay together via {key:value} syntax. Returns DescriptorAtomicGroup tuple of (keys, args, meta).
+
+  - _atomic_check_and_increment_in_memory: In-memory all-or-nothing counter evaluation as fallback after Redis failure. Reads/writes local DualCache (local_only=True). Never panics on cache calls, converting None counter reads to 0 via int(raw_counter or 0). Window expiry short-circuits on None window_start before any int() conversion. When a window expires, iterate _sibling_counter_keys and call async_set_cache(key=sibling, value=0, ttl=window_size, local_only=True) for each (no deletion in in-memory path; Redis Lua handles DEL). Returns OK with new counter and window_start values, or OVER_LIMIT with current counter and limit.
+
+  - _build_atomic_response: Decode CHECK_AND_INCREMENT_BY_N_SCRIPT Lua reply to RateLimitResponse. Over-limit reply {1, counter_index (1-based), current_counter, limit} maps counter_index to per_counter_meta. Success reply {0, new_counter_1, window_start_1, ...} lists alternating counter values and window starts for each counter in KEYS order. Includes reservation_windows as frozenset of (counter_key, window_start_str, "redis") tuples.
+
+  Window size defaults to self.window_size when not specified in the descriptor's rate_limit object.
+  Direct dependency: B3031 supplies create_rate_limit_keys, _sibling_counter_keys, _get_current_time and atomic counter records (AtomicCounterMeta, AtomicCounterState, RateLimitResponse, RateLimitStatus).
+  Local cache read/write calls (async_get_cache/async_set_cache on DualCache) await their external owner.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/atomic_counter.rs
+    - crates/betterlite-rate-limit/src/atomic_counter/**
+    - tools/oracle/cases/atomic_counter/**
+    - tools/oracle/helpers/b3033.py
+    - tools/oracle/helpers/b3033/**
+    - tools/oracle/src/helpers/rate_limit/b3033.rs
+    - tools/oracle/src/helpers/rate_limit/b3033/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L209-L308
+    why: CHECK_AND_INCREMENT_BY_N_SCRIPT Lua implementation with all-or-nothing semantics and Redis server time handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2094-L2149
+    why: _build_descriptor_atomic_payload constructs KEYS and ARGV tuples with window_key, counter_key, and per-rate-limit-type arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2355-L2410
+    why: _build_atomic_response decodes Lua return value with status_code, counter_index and reservation_windows frozenset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2412-L2534
+    why: _atomic_check_and_increment_in_memory reads/writes local cache for window and counter state, handles window expiry and sibling counter reset to 0 via async_set_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L568-L595
+    why: AtomicCounterMeta and AtomicCounterState TypedDicts (owned by B3031).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L502-L515
+    why: RateLimitResponse and RateLimitStatus TypedDicts with overall_code, code, limit_remaining fields.
+
+dod:
+  - text: CHECK_AND_INCREMENT_BY_N_SCRIPT is defined as a Lua script string constant with all-or-nothing validation and per-descriptor 4-tuple ARGV layout (limit, increment, ttl, window_size).
+    proof: [lua-script-tests]
+  - text: _build_descriptor_atomic_payload returns a DescriptorAtomicGroup tuple of (keys, args, meta) with window_key and counter_key pairs for every rate_limit_type that has a positive limit.
+    proof: [payload-building-tests]
+  - text: Each descriptor's window_key uses hash-tag syntax {descriptor_key:descriptor_value}:window for Redis Cluster compatibility.
+    proof: [payload-building-tests]
+  - text: _build_atomic_response decodes status_code==1 (over-limit) to OVER_LIMIT with counter_index, current_counter, and limit from the Lua reply.
+    proof: [response-decoding-tests]
+  - text: _build_atomic_response decodes status_code==0 (success) to OK with new_counter and window_start values for each counter.
+    proof: [response-decoding-tests]
+  - text: RateLimitResponse includes reservation_windows as a frozenset of (counter_key, window_start, backend_source) tuples.
+    proof: [response-decoding-tests]
+  - text: _atomic_check_and_increment_in_memory performs the same validation as the Lua script using the local DualCache mirror (local_only=True).
+    proof: [in-memory-fallback-tests]
+  - text: Window expiry logic matches the Lua script (now - window_start >= window_size), using _get_current_time for consistency.
+    proof: [in-memory-fallback-tests]
+  - text: On window reset, all sibling counter keys (:requests, :tokens) are reset to 0 with the window_size TTL via async_set_cache.
+    proof: [in-memory-fallback-tests]
+  - text: In-memory mode accepts eventual divergence from Redis; divergence is bounded by the counter TTL.
+    proof: [in-memory-fallback-tests]
+  - text: Every default, literal window size, TTL handling, and validation threshold a user can observe is in a named case with input and outcome.
+    proof: [oracle-cases-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: lua-script-tests
+      why: CHECK_AND_INCREMENT_BY_N_SCRIPT must define the atomic validation and return format
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^atomic_counter::lua_script(::|$)/)'
+    - id: payload-building-tests
+      why: _build_descriptor_atomic_payload must construct correct KEYS and ARGV for single/multi-limit descriptors
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^atomic_counter::payload(::|$)/)'
+    - id: response-decoding-tests
+      why: _build_atomic_response must decode OK and OVER_LIMIT statuses with correct indices and values
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^atomic_counter::response(::|$)/)'
+    - id: in-memory-fallback-tests
+      why: _atomic_check_and_increment_in_memory must replicate Lua logic locally and reset sibling counters on window expiry
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^atomic_counter::in_memory(::|$)/)'
+    - id: oracle-cases-tests
+      why: Oracle cases verify consistent behavior across single-counter, multi-counter, over-limit, and window-reset scenarios
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/atomic_counter -k 'b3033'
+
+oracle_cases:
+  - tools/oracle/cases/atomic_counter/single-counter-ok.yaml
+  - tools/oracle/cases/atomic_counter/single-counter-over-limit.yaml
+  - tools/oracle/cases/atomic_counter/dual-counter-requests-tokens.yaml
+  - tools/oracle/cases/atomic_counter/window-reset-sibling-keys.yaml
+  - tools/oracle/cases/atomic_counter/in-memory-window-expiry.yaml
+
+deviations:
+  - what: >-
+      CHECK_AND_INCREMENT_BY_N_SCRIPT uses redis.call('TIME') to obtain server-provided time rather than accepting a client timestamp.
+    why: Prevents TOCTOU races across replicas with skewed clocks; Redis server time is deterministic for window reset decisions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L226
+  - what: >-
+      _atomic_check_and_increment_in_memory uses local DualCache (local_only=True) when Redis is unavailable, accepting window/counter divergence until TTL expiry.
+    why: Fallback ensures admission continues during cache outages; divergence is bounded and recovers when the cache recovers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2430
+
+out_of_scope:
+  - Cross-descriptor rollback and refunds belong to B3034 (settlement and rollback).
+  - Windowed rate-limit checking (should_rate_limit, admission path) belongs to B3036.
+  - Window storage and Redis slot grouping belong to B3032.
+  - Parallel concurrency gauges belong to B3035.
+  - Token increment scripts and operations belong to B3037.
+  - Cache transport (async_get_cache, async_set_cache implementations) awaits external ownership (question 1 in the outline).
+  - Parent OTel span extraction and post-call batch logging belong to B3046.
+
+pitfalls:
+  - The Lua script's counter-index return value (1-based) must be decremented to match per_counter_meta (0-based) array indexing.
+  - Window expiry detection (now - window_start >= window_size) compares integers; ensure window_start is an integer before subtraction.
+  - Sibling counter keys (:requests, :tokens) must be reset as a group when the window expires; _sibling_counter_keys from B3031 derives both from a single :window key.
+  - In-memory mode must use local_only=True on every async_get_cache/async_set_cache call to avoid cross-pollinating with Redis snapshots.
+  - RateLimitStatus.descriptor_value must be populated in every OK/OVER_LIMIT status so upstream handlers can distinguish scopes (e.g., project ITPM vs OTPM).
+  - The 4-tuple ARGV layout is per-descriptor in the Lua script comments but indexed per-counter in the return value; keep per_counter_meta and KEYS parallel at the counter level, not the descriptor level.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

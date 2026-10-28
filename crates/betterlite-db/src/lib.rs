@@ -58,6 +58,7 @@ pub mod ptu;
 pub mod queues;
 pub mod rds_credentials;
 pub mod redis_spend;
+pub mod reload_schedule;
 pub mod request_log_index_catalog;
 pub mod request_log_indexes;
 pub mod request_usage;

@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-client-websearch-schema
+call: {websearch_tool_records: {function: is_web_search_tool, tool: {name: WebSearch, input_schema: {type: object, properties: {query: {type: string, description: q}, objective: {type: string, description: o}, search_queries: {type: array, items: {type: string}, description: s}}, required: [query]}}}}
+env: {}
+compare: {ignore: []}

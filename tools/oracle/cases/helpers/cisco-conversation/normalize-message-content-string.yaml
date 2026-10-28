@@ -1,0 +1,9 @@
+kind: helper
+name: cisco-normalize-string
+call:
+  cisco_conversation:
+    function: normalize_content
+    content: {text: "it's", count: 2, flag: true, missing: null, list: [1.5, "a\nb"]}
+env: {}
+compare:
+  ignore: []

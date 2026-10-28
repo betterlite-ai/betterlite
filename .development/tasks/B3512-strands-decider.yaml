@@ -1,0 +1,136 @@
+id: B3512
+title: Strands Decider HTTP and AgentCore requests
+description: >-
+  Implement the Strands decision adapter for direct HTTP or ARN-addressed AgentCore execution with injected AWS credentials. Build the Strands provider configuration inheriting from B3511's BaseDecisionsConfig, preserving optional bearer authentication, deterministic default session IDs, reserved-header warnings, canonical invocation URL checks and runtime-error status translation.
+
+  The ARN parser validates runtime ARNs (arn:aws(-region-code)*:bedrock-agentcore:region:account:runtime/name), extracts the region, and builds the invocations URL (https://bedrock-agentcore.{region}.{dns-suffix}/runtimes/{encoded-arn}/invocations). The default session ID is deterministic: litellm-decider-{sha256(arn).hex()}. The agentcore_runtime_session_id setting in litellm_params overrides the default sha256 session ID when present; when absent or None, the default is used. Direct HTTP (non-ARN) API bases bypass Strands logic and inherit parent behavior.
+
+  When signing with AWS, the handler injects AWS credentials through BaseAWSLLM, prepares session headers (dropping reserved x-amzn-bedrock-agentcore-runtime-* and x-amz-* headers with a warning), and passes the JSON body through AWS SigV4 signing. A bearer token (non-None api_key) bypasses signing; a missing token requires signed request bytes. Strands configuration has no default api_base and no required key (resolve through STRANDS_DECIDER_API_KEY and STRANDS_DECIDER_API_BASE). The host header is reserved and removed during session-header building.
+
+  Response errors from an AgentCore runtime appear as JSON with code and message fields (bad_request, invalid_request, loading map to 400, 400, 503 respectively; others default to 500). A runtime error stops execution with a BaseLLMException naming the code and message. Non-ARN responses fall through to parent transform_decisions_response.
+
+scope:
+  paths:
+    - crates/betterlite-openai/src/providers/strands_decider.rs
+    - crates/betterlite-openai/src/providers/strands_decider/**
+    - tools/oracle/cases/decisions/strands-**
+    - tools/oracle/helpers/b3512.py
+    - tools/oracle/helpers/b3512/**
+    - tools/oracle/src/helpers/openai/b3512.rs
+    - tools/oracle/src/helpers/openai/b3512/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/strands_decider/decisions/transformation.py
+    why: The complete Strands Decider implementation—ARN/URL parsing, session ID generation, header handling, AWS signing, and error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L309-L394
+    why: BaseDecisionsConfig methods inherited by StrandsDeciderDecisionsConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py
+    why: The get_aws_dns_suffix function that resolves region to domain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py
+    why: BaseAWSLLM initialization and credential resolution through AwsAuthParams.
+
+dod:
+  - text: The ARN regex rejects non-conforming strings and parses valid ARNs to extract region and runtime name.
+    proof: [strands-arn-parsing]
+  - text: The invocations URL builds correctly from an ARN and matches the oracle test cases.
+    proof: [strands-url-building, oracle]
+  - text: The default session ID is deterministic and matches LiteLLM's sha256 hash of the ARN.
+    proof: [strands-session-id]
+  - text: The agentcore_runtime_session_id setting in litellm_params overrides the default session ID when set and is used in the session header.
+    proof: [strands-session-id-override]
+  - text: Direct HTTP (non-ARN) API bases bypass Strands logic and return inherited parent behavior.
+    proof: [strands-http-fallback]
+  - text: Reserved headers (host, x-amzn-bedrock-agentcore-runtime-*, x-amz-*) are dropped with a warning, and other headers pass through.
+    proof: [strands-header-filtering]
+  - text: When signing with AWS, the request is signed with SigV4 on bedrock-agentcore service, and bearer tokens bypass signing.
+    proof: [strands-aws-signing, oracle]
+  - text: Runtime response errors (bad_request, invalid_request, loading) map to 400, 400, 503; other codes default to 500.
+    proof: [strands-error-mapping]
+  - text: A runtime error raises BaseLLMException with the code and message from the response.
+    proof: [strands-error-response, oracle]
+  - text: Non-runtime responses fall through to parent transform_decisions_response behavior.
+    proof: [strands-non-runtime, oracle]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: strands-arn-parsing
+      why: The ARN regex is missing, accepts invalid ARNs, or rejects valid ones like arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_parsing::test_arn/)'
+    - id: strands-url-building
+      why: The invocations URL builder is missing or does not produce the correct bedrock-agentcore endpoint
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_url::/)'
+    - id: strands-session-id
+      why: The default session ID is not deterministic or does not use sha256 of the ARN
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_session::test_default_session_id/)'
+    - id: strands-session-id-override
+      why: The agentcore_runtime_session_id setting in litellm_params does not override the default session ID or is not used in the session header
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_session::test_override_session_id/)'
+    - id: strands-http-fallback
+      why: Non-ARN API bases do not fall through to parent behavior
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_http::test_direct_http_fallback/)'
+    - id: strands-header-filtering
+      why: Reserved headers are not dropped, not warned about, or are dropped from non-reserved headers
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_headers::/)'
+    - id: strands-aws-signing
+      why: AWS signing is not applied when signing_with_aws is true, or bearer tokens do not bypass it
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_signing::test_(?:aws_signing|bearer_bypass)/)'
+    - id: strands-error-mapping
+      why: Runtime error codes bad_request, invalid_request, loading do not map to 400, 400, 503, or unknown codes do not default to 500
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_errors::test_error_status_mapping/)'
+    - id: strands-error-response
+      why: A runtime error does not raise BaseLLMException with the code and message
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_errors::test_runtime_error_response/)'
+    - id: strands-non-runtime
+      why: Non-runtime responses do not fall through to parent transform_decisions_response
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_response::test_non_runtime_fallthrough/)'
+
+oracle_cases:
+  - tools/oracle/cases/decisions/strands-arn.yaml
+  - tools/oracle/cases/decisions/strands-direct-http.yaml
+  - tools/oracle/cases/decisions/strands-missing-key.yaml
+  - tools/oracle/cases/decisions/strands-bearer-token.yaml
+  - tools/oracle/cases/decisions/strands-reserved-headers.yaml
+  - tools/oracle/cases/decisions/strands-configured-session-id.yaml
+  - tools/oracle/cases/decisions/strands-error-bad-request.yaml
+  - tools/oracle/cases/decisions/strands-error-invalid-request.yaml
+  - tools/oracle/cases/decisions/strands-error-loading.yaml
+  - tools/oracle/cases/decisions/strands-error-unknown-code.yaml
+
+deviations: []
+
+out_of_scope:
+  - B3510 owns the DecisionsIRRequest and DecisionsIRResponse records.
+  - B3511 owns the BaseDecisionsConfig base class and its shared methods (get_complete_url, resolve_api_base, resolve_api_key, missing_api_base_message, transform_decisions_request, unwrap_response, parse_response, get_error_class).
+  - B198 provides get_aws_dns_suffix; B590 provides BaseAWSLLM and its credential injection; B594 provides resolve_credentials; B595 provides sign_aws_json_post; B682 provides AwsAuthParams; B2202 provides BaseLLMException.
+  - B3513 and B3514 own decision request preparation and sending; this task only handles the Strands provider transformation.
+  - The Strands provider is registered in a decision factory owned by B3513; this task does not register routes or expose public entrypoints.
+
+pitfalls:
+  - >-
+    The ARN regex is strict: arn:aws(-region-code)*:bedrock-agentcore:region:account:runtime/name, with regions matching
+    [a-z0-9-]+ and accounts exactly 12 digits. Test boundaries: arn:aws (no bedrock), missing account, account with letters,
+    trailing slashes in runtime name.
+  - >-
+    The session header X-Amzn-Bedrock-AgentCore-Runtime-Session-Id is always set, defaulting to sha256(arn).hex() when
+    not configured. The agentcore_runtime_session_id key in litellm_params overrides the default when present; when absent or None,
+    the sha256 default is used. The header name is case-insensitive in HTTP but must match LiteLLM's casing exactly in the oracle.
+  - >-
+    Reserved header filtering drops both the Bedrock prefix and AWS prefix, then adds the session header. Headers like
+    X-Custom-Header pass through; x-amz-anything does not. Test both lowercased and mixed-case reserved headers.
+  - >-
+    When api_key is present (bearer token), sign_request returns the headers unchanged and None as the body, skipping AWS
+    signing entirely. JSON signing only happens when the key is None.
+  - >-
+    The _runtime_error function returns None if the response is not valid JSON or if answers is not None (replies without
+    errors or with answers are not errors). A valid error JSON must have code, message, and answers=None.
+  - >-
+    Status codes: bad_request and invalid_request map to 400 (both), loading maps to 503, unknown codes default to 500.
+    This mapping is case-sensitive on the code string.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
