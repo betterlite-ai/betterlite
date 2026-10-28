@@ -53,13 +53,8 @@ pub struct BedrockError {
 impl fmt::Debug for BedrockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BedrockError")
-            .field(
-                "error_headers",
-                &redacted_pairs(self.error.headers.as_deref().unwrap_or(&[])),
-            )
             .field("headers", &redacted_headers(self.headers.as_ref()))
             .field("response_headers", &redacted_pairs(&self.response_headers))
-            .field("response_body", &self.response_body)
             .finish()
     }
 }
