@@ -117,13 +117,16 @@ impl Section for Raw {
 }
 
 fn find_deployment_settings(model_list: Vec<RawDeployment>) -> Option<RawSettings> {
-    model_list.into_iter().find_map(|item| {
+    for item in model_list {
         let params = item.litellm_params;
-        (params.gcp_service_account.is_some()
+        if params.gcp_service_account.is_some()
             || params.azure_redis_ad_token.is_some()
-            || params.aws_iam_auth.is_some())
-        .then_some(params)
-    })
+            || params.aws_iam_auth.is_some()
+        {
+            return Some(params);
+        }
+    }
+    None
 }
 
 fn environment_snapshot(lookup: &impl EnvironmentLookup) -> BTreeMap<String, bool> {
@@ -151,24 +154,29 @@ struct ResolvedCredentials {
 }
 
 fn resolve_credentials(settings: &RawSettings, lookup: &impl EnvironmentLookup) -> ResolvedCredentials {
+    let gcp_service_account = choose(
+        settings.gcp_service_account.clone(),
+        lookup,
+        "REDIS_GCP_SERVICE_ACCOUNT",
+    );
+    let azure_token = choose(
+        settings.azure_redis_ad_token.clone(),
+        lookup,
+        "REDIS_AZURE_AD_TOKEN",
+    );
+    let azure_client_id = choose(settings.azure_client_id.clone(), lookup, "AZURE_CLIENT_ID");
+    let azure_tenant_id = choose(settings.azure_tenant_id.clone(), lookup, "AZURE_TENANT_ID");
+    let azure_client_secret = choose(
+        settings.azure_client_secret.clone(),
+        lookup,
+        "AZURE_CLIENT_SECRET",
+    );
     ResolvedCredentials {
-        gcp_service_account: choose(
-            settings.gcp_service_account.clone(),
-            lookup,
-            "REDIS_GCP_SERVICE_ACCOUNT",
-        ),
-        azure_token: choose(
-            settings.azure_redis_ad_token.clone(),
-            lookup,
-            "REDIS_AZURE_AD_TOKEN",
-        ),
-        azure_client_id: choose(settings.azure_client_id.clone(), lookup, "AZURE_CLIENT_ID"),
-        azure_tenant_id: choose(settings.azure_tenant_id.clone(), lookup, "AZURE_TENANT_ID"),
-        azure_client_secret: choose(
-            settings.azure_client_secret.clone(),
-            lookup,
-            "AZURE_CLIENT_SECRET",
-        ),
+        gcp_service_account,
+        azure_token,
+        azure_client_id,
+        azure_tenant_id,
+        azure_client_secret,
     }
 }
 
