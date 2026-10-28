@@ -52,21 +52,11 @@ pub struct BedrockError {
 
 impl fmt::Debug for BedrockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let error = &self.error;
         f.debug_struct("BedrockError")
-            .field("error_status_code", &error.status_code)
-            .field(
-                "error_status_code_is_synthesized",
-                &error.status_code_is_synthesized,
-            )
-            .field("error_message", &error.message)
             .field(
                 "error_headers",
-                &redacted_pairs(error.headers.as_deref().unwrap_or(&[])),
+                &redacted_pairs(self.error.headers.as_deref().unwrap_or(&[])),
             )
-            .field("error_request", &error.request)
-            .field("error_response", &error.response)
-            .field("error_body", &error.body)
             .field("headers", &redacted_headers(self.headers.as_ref()))
             .field("response_headers", &redacted_pairs(&self.response_headers))
             .field("response_body", &self.response_body)
