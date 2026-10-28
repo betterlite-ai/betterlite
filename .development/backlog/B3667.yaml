@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Chat guardrail extraction and block framing
 status: todo
 depends_on: [B3661, B3663]
-file: null
+file: tasks/B3667-chat-guardrail-projections.yaml
 covers:
   - "litellm/llms/openai/chat/guardrail_translation/handler.py"
 parent: B104

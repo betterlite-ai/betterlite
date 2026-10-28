@@ -1,0 +1,130 @@
+id: B3161
+title: Connect ROI GitHub discovery and gateway estimation
+description: >-
+  Build GitHub repository discovery, connection testing and the gateway completion/spend callback adapters in crates/betterlite-server::roi_connections.
+  Implement get_github_transport as an optional injection hook for test/mock HTTP transport override (production returns None), _gateway_key to select the estimator key or fallback to master_key, _gateway_http_client to create an AsyncHTTPHandler with cached transport and 180-second timeout, and _gateway_transport as an lru_cache-wrapped httpx.ASGITransport factory.
+  Implement _completion_caller to return a CompletionCaller async closure that calls POST /v1/chat/completions on the gateway via AsyncHTTPHandler with Bearer token auth and handles the response.
+  Implement _test_estimator_access to verify the estimator key can call GET /v1/models and the selected model exists in the response.
+  Implement _spend_reader to return a SpendReader async closure that calls read_spend from B3155.
+  Add HTTP routes: GET /roi-calculator/repositories (requires read-admin) with query and page Query parameters to list repositories from GitHub via get_github_transport injection, and POST /roi-calculator/connections/test (requires write-admin) to validate both estimator and GitHub connectivity.
+  Map SourceError from GitHub to HTTP 502, and HTTPError or ValidationError during estimator-key access to 409. Missing credentials raise 409 Conflict.
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite-server/src/roi_connections.rs
+    - crates/betterlite-server/src/roi_connections/**
+    - tools/oracle/cases/roi-connections/**
+    - tools/oracle/helpers/b3161.py
+    - tools/oracle/helpers/b3161/**
+    - tools/oracle/src/helpers/server/b3161.rs
+    - tools/oracle/src/helpers/server/b3161/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L123-L124
+    why: get_github_transport injection hook signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L248-L254
+    why: _gateway_key selects estimator key with master_key fallback and raises 409 on missing credential.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L257-L265
+    why: _gateway_http_client creates AsyncHTTPHandler with _gateway_transport, 180-second timeout and follow_redirects=False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L268-L270
+    why: _gateway_transport wraps httpx.ASGITransport in lru_cache decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L273-L285
+    why: _completion_caller closure that posts to /v1/chat/completions with Bearer auth and validates response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L296-L309
+    why: _test_estimator_access calls /v1/models with Bearer auth, validates model presence and handles errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L312-L317
+    why: _spend_reader closure that calls read_spend with prisma client and date range.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L391-L416
+    why: GET /roi-calculator/repositories route with query and page parameters returning ROIRepositoriesResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L599-L617
+    why: POST /roi-calculator/connections/test route testing estimator and GitHub connectivity.
+dod:
+  - text: get_github_transport returns None when called without transport injection.
+    proof: [repositories-read-admin]
+  - text: _gateway_key returns estimator_key when set, falls back to master_key, and raises 409 when both are absent.
+    proof: [connections-unit]
+  - text: _gateway_http_client creates client with 180-second timeout, ASGI transport and follow_redirects=false.
+    proof: [connections-unit]
+  - text: _completion_caller posts to /v1/chat/completions with Bearer token, excludes None fields and validates JSON response.
+    proof: [connections-unit]
+  - text: _test_estimator_access calls /v1/models, validates the model exists in response.data and raises 409 on HTTPError or ValidationError.
+    proof: [connections-estimator-409]
+  - text: _spend_reader closure calls read_spend through spend_prisma_client and returns tuple of ROISpendRecord.
+    proof: [connections-unit]
+  - text: GET /roi-calculator/repositories calls GitHub.repositories, paginates results and returns ROIRepositoriesResponse with pagination (page, has_more).
+    proof: [repositories-query]
+  - text: GET /roi-calculator/repositories with query parameter filters repositories and handles SourceError as 502.
+    proof: [repositories-source-error-502]
+  - text: POST /roi-calculator/connections/test calls _test_estimator_access and GitHub.test_repositories, returns ROISettingsResponse on success.
+    proof: [connections-success]
+  - text: GET /roi-calculator/repositories requires read-admin via dependency injection; POST /roi-calculator/connections/test requires write-admin.
+    proof: [repositories-read-admin, connections-write-admin]
+  - text: GET /roi-calculator/repositories with invalid credentials returns 403 Forbidden.
+    proof: [repositories-403]
+  - text: GET /roi-calculator/repositories on SourceError from GitHub returns 502 Bad Gateway with error detail.
+    proof: [repositories-source-error-502]
+  - text: POST /roi-calculator/connections/test with invalid estimator key or missing model raises 409 Conflict ("estimator key cannot access the selected model" or "could not connect to the gateway").
+    proof: [connections-estimator-409]
+  - text: POST /roi-calculator/connections/test with SourceError from GitHub.test_repositories returns 502 Bad Gateway.
+    proof: [connections-github-502]
+checks:
+  optional: []
+  commands:
+    - id: connections-unit
+      why: unit tests for helper functions fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::(gateway_key|gateway_http_client|completion_caller|test_estimator_access|spend_reader)::)'
+    - id: repositories-read-admin
+      why: read-admin auth tests for GET /roi-calculator/repositories fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::repositories::auth::read_admin/)'
+    - id: repositories-403
+      why: 403 Forbidden tests for non-admin access to GET /roi-calculator/repositories fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::repositories::auth::non_admin/)'
+    - id: repositories-query
+      why: query parameter filtering tests for GET /roi-calculator/repositories fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::repositories::(query|pagination)/)'
+    - id: repositories-source-error-502
+      why: SourceError to 502 mapping tests for GET /roi-calculator/repositories fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::repositories::errors::source_error/)'
+    - id: connections-write-admin
+      why: write-admin auth tests for POST /roi-calculator/connections/test fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::connections::auth::write_admin/)'
+    - id: connections-success
+      why: successful POST /roi-calculator/connections/test tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::connections::success/)'
+    - id: connections-estimator-409
+      why: estimator key error to 409 mapping tests for POST /roi-calculator/connections/test fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::connections::errors::estimator/)'
+    - id: connections-github-502
+      why: GitHub SourceError to 502 mapping tests for POST /roi-calculator/connections/test fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::connections::errors::github/)'
+oracle_cases:
+  - tools/oracle/cases/roi_connections/repositories-read-admin-200.yaml
+  - tools/oracle/cases/roi_connections/repositories-non-admin-403.yaml
+  - tools/oracle/cases/roi_connections/repositories-query-parameter-200.yaml
+  - tools/oracle/cases/roi_connections/repositories-source-error-502.yaml
+  - tools/oracle/cases/roi_connections/connections-test-write-admin-200.yaml
+  - tools/oracle/cases/roi_connections/connections-test-estimator-409.yaml
+  - tools/oracle/cases/roi_connections/connections-test-github-502.yaml
+deviations:
+  - what: _gateway_http_client caches the transport for the FastAPI app instance via functools.lru_cache; Rust uses a static OnceCell with the Axum Router reference to achieve the same effect.
+    why: Rust does not have Python's function-level decorator caching and must use a static initializer to avoid recreating the transport on every client call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L268-L270
+out_of_scope:
+  - "Implementation of the /v1/models route; B3161 calls it as an authenticated endpoint. The missing dependency on the concrete route owner is an architect decision per the outline."
+  - Scheduling or persistence of gateway calls beyond the two routes owned here.
+  - Retry logic on gateway failures; both routes fail on the first error.
+  - Custom prompt management or completion logging; the completion_caller is a pure adapter.
+  - Spend aggregation logic; _spend_reader is a pure closure over the B3155 read_spend function.
+pitfalls:
+  - The _gateway_transport function must cache the transport to avoid recreating httpx.ASGITransport on every gateway call, since each transport holds a reference to the app.
+  - The estimator key validation in _test_estimator_access must check the response.data array and raise 409 if the selected model_name is not found, not just validate the response structure.
+  - POST /v1/chat/completions requests must exclude None fields (use exclude_none=True in model_dump_json) to match LiteLLM's behavior on optional completion parameters.
+  - SourceError from GitHub (failed API requests, rate limits, server errors) must map to 502 (bad gateway), not 500, because it represents an external service failure.
+  - HTTPError or ValidationError during _test_estimator_access (missing model, bad token, gateway offline, response validation) must map to 409 Conflict, not 502, because it is a configuration/credential problem for the operator to fix.
+  - GET /roi-calculator/repositories requires read-admin; POST /roi-calculator/connections/test requires write-admin. Never authenticate inline.
+  - The completion_caller closure captures settings; it must use settings.estimator_model exactly as provided when constructing ROICompletionRequest, without reformatting the model name.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

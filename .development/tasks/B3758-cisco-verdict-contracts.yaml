@@ -1,0 +1,178 @@
+id: B3758
+title: Cisco verdict decoding and configuration contracts
+description: >-
+  Build Cisco AI Defense verdict envelope unwrapping, action normalization, sanitized payload
+  extraction, entity-type counting and typed configuration schema. The verdict unwrapper locates
+  decision-bearing dicts at various nesting levels (chat endpoint returns flat verdicts, MCP wraps
+  under result, legacy SDKs may nest under data/inspection/ai_defense/aiDefense) and extracts fields
+  including is_safe, action, rules, classifications, etc. Action normalization maps Cisco vocabulary
+  (deny/denied/block/blocked/reject/rejected/unsafe/malicious to block; redact/redacted/sanitize/sanitized/mask
+  to redact; allow/allowed/safe/ok to allow) with case-insensitive matching, warning and defaulting to block
+  for unrecognized values.
+
+  Sanitized payload extraction pulls text, messages and MCP arguments from multiple key variants
+  (both snake_case and camelCase) and nesting levels (top-level and under result/data containers,
+  plus inside sanitized_payload/modified_payload wrappers). Entity-type counting aggregates per-type
+  detections across rule lists for audit logging. JSON-RPC error detection finds error fields inside
+  HTTP 200 responses (at top level or under result) to trigger fallback_on_error policy. MCP sanitized
+  arguments are extracted early from params.arguments or equivalent nested paths because the verdict
+  engine consumes them before selecting redaction surfaces.
+
+  Configuration provides api_key (required, reads CISCO_AI_DEFENSE_API_KEY), api_base (optional, default
+  https://us.api.inspect.aidefense.security.cisco.com, reads CISCO_AI_DEFENSE_API_BASE), inspection_type
+  (chat or mcp, default chat, selects /api/v1/inspect/chat or /api/v1/inspect/mcp endpoint), inspect_path
+  (optional path override), enabled_rules (optional list of rule names with optional entity_types per rule),
+  on_flagged_action (block or monitor, default block), fallback_on_error (allow or block, default block),
+  timeout (1-60 seconds, default 10.0, clamped with warning on out-of-range values), and integration_profile_id/version/tenant_id/type
+  fields for tenant-aware scanning.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/cisco_verdict.rs
+    - crates/betterlite-guardrails/src/cisco_verdict/**
+    - tools/oracle/cases/guardrails/cisco-verdict/**
+    - crates/betterlite-config/src/sections/cisco_verdict_contracts.rs
+    - crates/betterlite-config/src/sections/cisco_verdict_contracts/**
+    - tools/oracle/helpers/b3758.py
+    - tools/oracle/helpers/b3758/**
+    - tools/oracle/src/helpers/guardrails/b3758.rs
+    - tools/oracle/src/helpers/guardrails/b3758/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L63-L80
+    why: Constants CISCO_DEFAULT_API_BASE, inspection paths, API header name, default timeout, and action vocabulary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1161-L1189
+    why: _DECISION_FIELDS tuple, _has_decision_fields classmethod and decision-field detection logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1192-L1225
+    why: _unwrap_verdict_envelope classmethod that searches multiple nesting levels for decision-bearing dicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1228-L1248
+    why: _extract_jsonrpc_error staticmethod that detects error fields at top level and under result in HTTP 200 responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1251-L1273
+    why: _normalize_action staticmethod with action vocabulary mapping to block/redact/allow and unrecognized-action warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1276-L1290
+    why: _extract_sanitized_text staticmethod that pulls sanitized_text or sanitizedText with top-level and result-nested searches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1293-L1328
+    why: _extract_sanitized_messages staticmethod that searches multiple key variants and container levels for OpenAI-format message arrays.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1742-L1757
+    why: _extract_masked_entity_count staticmethod that aggregates per-entity-type detection counts from rule lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L609-L645
+    why: _extract_sanitized_mcp_arguments staticmethod in mixin that pulls tool-call argument rewrites from multiple nesting paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2115-L2120
+    why: get_config_model classmethod that returns CiscoAIDefenseGuardrailConfigModel for registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py
+    why: CiscoAIDefenseGuardrailConfigModel with all typed fields (api_key, api_base, inspection_type, enabled_rules, on_flagged_action, fallback_on_error, timeout, integration settings).
+
+dod:
+  - text: >-
+      Verdict envelope unwrapping returns the first dict containing any decision field (is_safe, action, rules,
+      classifications, sanitized_text, etc.) from top level or nested under result, data, inspection, ai_defense,
+      or aiDefense; empty dicts do not mask matches at earlier nesting levels.
+    proof: [oracle, verdict-tests]
+  - text: >-
+      Action normalization maps deny/denied/block/blocked/reject/rejected/unsafe/malicious to block, redact/redacted/sanitize/sanitized/mask
+      to redact, and allow/allowed/safe/ok to allow via case-insensitive matching; unknown actions warn
+      with the raw value and default to block.
+    proof: [oracle, verdict-tests]
+  - text: >-
+      JSON-RPC error detection finds error object at top level or nested under result.error in HTTP 200
+      responses and returns it so callers apply fallback_on_error policy.
+    proof: [oracle, verdict-tests]
+  - text: >-
+      Sanitized text extraction returns the first non-empty sanitized_text or sanitizedText value found
+      at top level or under result, or None if absent.
+    proof: [oracle, verdict-tests]
+  - text: >-
+      Sanitized messages extraction returns the first non-empty array found under sanitized_messages, sanitizedMessages,
+      modified_messages, modifiedMessages keys (top-level and under result/data), or under messages field
+      inside sanitized_payload/modified_payload, filtering to dicts only; returns None if absent.
+    proof: [oracle, verdict-tests]
+  - text: >-
+      Sanitized MCP arguments extraction returns a dict copy of params.arguments found at top level or
+      nested under result/data containers, or from nested params inside sanitized_payload/modified_payload,
+      or direct arguments field at payload level; returns None if absent.
+    proof: [oracle, verdict-tests]
+  - text: >-
+      Entity-type count extraction aggregates detections per rule, counting each string-type entity_type
+      value per rule and returning a dict mapping entity type to occurrence count, or None if no counts.
+    proof: [verdict-tests]
+  - text: >-
+      Configuration loads api_key (required, reads CISCO_AI_DEFENSE_API_KEY env, marks as SecretString),
+      api_base (optional, reads CISCO_AI_DEFENSE_API_BASE env, default https://us.api.inspect.aidefense.security.cisco.com),
+      inspection_type (default chat, enum chat/mcp), enabled_rules (optional list of rule names with optional entity_types),
+      on_flagged_action (default block, enum block/monitor), fallback_on_error (default block, enum allow/block),
+      timeout (default 10.0, clamped to 1-60 seconds with warning), and inspect_path plus integration_profile_id/version/tenant_id/type
+      fields.
+    proof: [verdict-tests, config-load]
+
+checks:
+  optional: []
+  commands:
+    - id: verdict-tests
+      why: Cisco verdict and configuration handling tests are missing or do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/cisco_verdict/)'
+    - id: config-load
+      why: Cisco AI Defense configuration does not load correctly from environment or config
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/cisco.*config/)'
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/cisco-verdict/unwrap-verdict-top-level.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/unwrap-verdict-nested-result.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/unwrap-verdict-nested-data.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/unwrap-verdict-nested-inspection.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/unwrap-verdict-nested-payload.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/unwrap-verdict-result-data.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/has-decision-fields.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/normalize-action-allow.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/normalize-action-redact.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/normalize-action-block.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/normalize-action-unknown.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-jsonrpc-error-top-level.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-jsonrpc-error-nested-result.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-jsonrpc-error-not-found.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-text.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-text-camelcase.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-messages-top-level.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-messages-nested-result.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-messages-from-payload.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-messages-modified-variant.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-mcp-arguments-params.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-mcp-arguments-payload.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-sanitized-mcp-arguments-direct.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-masked-entity-count.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-masked-entity-count-multiple.yaml
+  - tools/oracle/cases/guardrails/cisco-verdict/extract-masked-entity-count-empty.yaml
+
+deviations:
+  - what: Cisco configuration returns error messages with betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status and code unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1250-L1273
+out_of_scope:
+  - The configuration schema base class and its schema integration (needs F's concrete contract owner);
+    this task provides the Cisco-specific model extending it.
+  - Shared scan/verdict record definitions (B3759 owns _ScanContext and _CiscoVerdict shared records).
+  - Verdict enforcement and final logging (B3760 owns _finalize_inspection, _apply_redaction and logging).
+  - Redaction helpers that call verdict extraction (B3757 owns _redact_chat_input and _redact_chat_output).
+  - MCP hooks and the verdict engine lifecycle (B3762 owns _inspect_chat, async hooks and B3761 owns MCP envelope projection).
+pitfalls:
+  - >-
+    _unwrap_verdict_envelope checks decision fields in order: top level, then each of (result, data, inspection, ai_defense, aiDefense), then result nesting. The first match containing any decision field wins; empty nested dicts cannot mask a valid top-level verdict.
+  - >-
+    _has_decision_fields must return true on the first matching key, not accumulate or require multiple keys; the decision-field set includes is_safe, action, rules, classifications, sanitized_text and others.
+  - >-
+    Action normalization uses case-insensitive matching (strip and lowercase) before comparing. deny/denied/block/blocked/reject/rejected/unsafe/malicious map to block, redact/redacted/sanitize/sanitized/mask to redact, allow/allowed/safe/ok to allow. Unrecognized values warn with the raw string and default to block.
+  - >-
+    _extract_sanitized_messages searches containers in order (top-level, then under result and data) for sanitized_messages, sanitizedMessages, modified_messages, modifiedMessages keys, filters to dicts only, and checks for messages inside sanitized_payload or modified_payload before moving to the next container.
+  - >-
+    _extract_sanitized_mcp_arguments checks params.arguments at top level and nested containers first, then sanitized_payload or modified_payload nesting, then payload.arguments as fallback. The returned dict must be a copy (not the original reference).
+  - >-
+    Entity-type counting loops through rules, skipping non-dicts, then entity_types per rule (skipping non-strings), initializing the counts dict empty and returning None for zero counts. Do not error on malformed data.
+  - >-
+    CISCO_AI_DEFENSE_API_KEY must be marked as SecretString, never logged or shown in Debug output, and used only to construct the X-Cisco-AI-Defense-API-Key header value.
+  - >-
+    Timeout clamping must log a warning when values fall outside 1-60 seconds, then clamp to the valid range. Do not error or silently ignore misconfiguration.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

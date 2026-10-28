@@ -1,0 +1,97 @@
+id: B4141
+title: Resolve encrypted SSO settings and field provenance
+description: >-
+  Build the SSO resolver in betterlite-auth::sso_resolution, returning a typed
+  SSOConfig and per-field provenance from supplied DB and environment values.
+  Reconcile the sso_config database row (encrypted per-value with lowercase keys)
+  with process environment variables (uppercase env-var names) using B4140's
+  field resolution logic and B1600's decryption. Preserve generic_scope="openid
+  email profile" default, string-only decryption (non-string values pass
+  through), raw structured mappings (role_mappings and team_mappings parsed
+  from dict only), and DB-only fields (user_email and ui_access_mode, never
+  read from environment). Do not write to os.environ during reads. Construct a
+  typed SSOConfig from resolved scalar fields plus structured sub-objects,
+  returning both the config and a provenance dict mapping field names to
+  FieldSource. Descriptor tables for Google, Microsoft, generic OIDC, SAML and
+  proxy endpoint are derived tables (frozenset for secret-field names,
+  dict for field-to-env mappings); exclude role_mappings and team_mappings
+  from descriptor resolution. No HTTP route registration, masking or endpoint
+  handler coupling belongs here; those are the settings-endpoint owner's
+  responsibility. The function is pure and stateless, taking only Mapping types
+  and returning unmasked config values for the login path to consume.
+scope:
+  paths:
+    - crates/betterlite-auth/src/sso_resolution.rs
+    - crates/betterlite-auth/src/sso_resolution/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/sso-resolution/**
+    - tools/oracle/helpers/b4141.py
+    - tools/oracle/helpers/b4141/**
+    - tools/oracle/src/helpers/auth/b4141.rs
+    - tools/oracle/src/helpers/auth/b4141/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/sso.py#L26-L60
+    why: SSO descriptor table, secret-field derivation, structured-key exclusions and ResolvedSSOConfig type
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/sso.py#L63-L99
+    why: _decrypt (string-only), _parse_role_mappings, _parse_team_mappings, resolve_sso_config function and unmasked return values
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1157-L1170
+    why: Caller get_sso_settings invokes resolve_sso_config and passes result unmasked to login path; masking is caller's responsibility
+dod:
+  - text: resolve_sso_config accepts sso_db_settings Mapping or None and env Mapping, returns ResolvedSSOConfig with unmasked config and provenance.
+    proof: [sso-resolution-tests]
+  - text: Decryption handles string values only; non-string values pass through unchanged.
+    proof: [sso-resolution-tests]
+  - text: Role and team mappings are parsed from dict values only; non-dict values return None.
+    proof: [sso-resolution-tests]
+  - text: User_email and ui_access_mode are resolved from DB only (never environment) and excluded from descriptor resolution.
+    proof: [sso-resolution-tests]
+  - text: generic_scope defaults to "openid email profile" and can be overridden by DB or environment.
+    proof: [sso-resolution-tests]
+  - text: SSO_SECRET_FIELDS frozenset and SSO_FIELD_ENV_VARS dict are derived from the descriptor table and remain consistent.
+    proof: [sso-resolution-tests]
+  - text: Provenance dict maps each field name to its FieldSource (config, database, environment, default or unset).
+    proof: [sso-resolution-tests]
+  - text: Helper oracle cases verify descriptor ordering, secret-field classification and db-only field handling.
+    proof: [sso-resolution-oracle, sso-resolution-python, sso-resolution-corpora]
+checks:
+  optional: []
+  commands:
+    - id: sso-resolution-tests
+      why: SSO resolution mishandles decryption, field sources, defaults, structured types or DB-only fields
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^sso_resolution::tests::/)'
+    - id: sso-resolution-oracle
+      why: Helper oracle cases do not exercise descriptor ordering, secret classification or db-only semantics
+      run: test -f tools/oracle/cases/helpers/sso-resolution/generic-scope-default.yaml
+    - id: sso-resolution-python
+      why: The original field resolution and decryption helpers are not available to the oracle
+      run: test -f tools/oracle/helpers/b4141.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: sso-resolution-corpora
+      why: Helper cases do not enter existing decoder replay or config YAML corpus does not include sso-resolution seeds
+      run: grep -rlq 'sso_resolution:' tools/oracle/fuzz/corpus/helper_case/sso-resolution-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-resolution/generic-scope-default.yaml
+  - tools/oracle/cases/helpers/sso-resolution/google-from-environment.yaml
+  - tools/oracle/cases/helpers/sso-resolution/microsoft-from-database.yaml
+  - tools/oracle/cases/helpers/sso-resolution/team-mappings-non-dict.yaml
+  - tools/oracle/cases/helpers/sso-resolution/user-email-db-only.yaml
+deviations:
+  - what: decrypt_value_helper is called with return_original_value=True, passing non-string values unchanged instead of trying to decrypt them.
+    why: LiteLLM's original sso.py only decrypts string values; non-string DB values (numbers, dicts, lists, null) stay as-is for structured fields like role_mappings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/sso.py#L63-L69
+out_of_scope:
+  - B4140 owns resolve_fields and FieldDescriptor/FieldSource types; this task uses them for SSO field resolution.
+  - B1600 owns decrypt_value_helper and decryption policy; this task calls it with return_original_value=True.
+  - B1608 owns SSOConfig, RoleMappings and TeamMappings type constructors and validation; this task constructs them from resolved fields.
+  - HTTP route registration, masking of secret fields in responses and endpoint handler integration belong to the settings-endpoint owner (B4140's dependent).
+  - SAML configuration and provider-specific metadata parsing belong to their respective owner tasks.
+pitfalls:
+  - Role_mappings and team_mappings are never resolved through descriptors; they live on the sso_config row as structured JSON and bypass the field resolution logic entirely.
+  - user_email and ui_access_mode are shadowed from database only (no env-var mapping) and should not appear in SSO_FIELD_ENV_VARS.
+  - generic_scope has a non-empty default ("openid email profile") and is resolved through the descriptor table; DB or environment values override it but absence falls back to default.
+  - A non-dict value for role_mappings or team_mappings returns None (and the field is None in the resulting config) rather than raising an error.
+  - Decryption uses return_original_value=True so that non-string values from the database row pass through unchanged; only strings are decrypted.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

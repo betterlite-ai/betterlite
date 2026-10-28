@@ -1,0 +1,14 @@
+id: B3892
+milestone: M7 observability
+title: OTel trace controls and type coercion utilities
+status: todo
+depends_on: [B3840]
+file: null
+covers:
+  - "litellm/integrations/otel/model/{trace_controls,utils}.py"
+parent: B110
+split_from: B3841
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,173 @@
+id: B5074
+title: Container installation from a published Python package
+description: >-
+  Create a Docker recipe that installs a versioned published betterlite Python package and launches its proxy,
+  with a mock-provider configuration and focused build instructions. The Dockerfile pulls betterlite's published
+  distribution from a Python package index, tests the installed proxy against mock providers, and uses the
+  same entrypoint and Prisma setup as the source-build image. Preserve the distinction between testing
+  a published artifact and building the current checkout.
+
+  The Dockerfile builds from Python 3.13 slim, installs uv for dependency management, copies schema.prisma
+  (needed for Prisma CLI code generation and runtime), and installs the published betterlite package with
+  proxy and proxy-runtime extras alongside the packages that moved from the base proxy distribution
+  (google-cloud-aiplatform, google-genai, anthropic[vertex], opentelemetry, ddtrace, sentry, and others).
+  It generates Prisma binaries into /opt/prisma/binaries and sets PRISMA_BINARY_CACHE_DIR so the runtime
+  reads pre-baked binaries offline.
+
+  prod_entrypoint.sh is copied from the source-build image (B5070) and executes the installed betterlite
+  proxy console script. The mock-provider configuration file (litellm_config.yaml) sets up a single model
+  with a fake OpenAI endpoint and Slack alerting for testing. The README documents why to build from the
+  published package (security/compliance requirements) and how to use the Dockerfile.
+
+  Build arg BETTERLITE_VERSION defaults to the latest published release, independent of the checkout.
+  The recipe does not install Prisma's Node migration subprocess or perform code generation at startup;
+  Prisma CLI and engines are pre-baked into the image for callback use only. No enterprise content or
+  enterprise-only COPY directives appear in this recipe.
+
+scope:
+  paths:
+    - packaging/docker/build_from_pip/Dockerfile.build_from_pip
+    - packaging/docker/build_from_pip/litellm_config.yaml
+    - packaging/docker/build_from_pip/Readme.md
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L1-L64
+    why: >-
+      Complete recipe for installing litellm from PyPI, including uv venv setup, installation of the package and proxy-runtime extras,
+      Prisma code generation and binary baking, and the entrypoint configuration. Lines 27-48 list the packages to install; lines 50-54
+      show the Prisma generation and binary path verification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/litellm_config.yaml#L1-L9
+    why: >-
+      Mock-provider configuration with a single model definition pointing to a fake OpenAI endpoint and Slack alerting setup.
+      The model_list and general_settings structure match the proxy configuration contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Readme.md#L1-L9
+    why: >-
+      User-facing documentation explaining when to build from the published package (compliance/security requirements) and
+      the steps to do so. The Readme serves as the entry point for operators choosing this build path.
+
+dod:
+  - text: >-
+      Build arg BETTERLITE_VERSION defaults to the latest published release, independent of the checkout.
+    proof: [dockerfile-version-arg]
+  - text: >-
+      The Dockerfile installs all proxy-runtime packages (google-cloud-aiplatform, google-genai, anthropic[vertex],
+      opentelemetry-api, opentelemetry-sdk, opentelemetry-exporter-otlp, ddtrace, sentry-sdk and others).
+    proof: [dockerfile-packages]
+  - text: >-
+      Prisma clients are generated at build time with /opt/prisma/binaries as cache and permissions set to a+rX.
+    proof: [dockerfile-prisma]
+  - text: >-
+      prod_entrypoint.sh is copied from B5070 and set as ENTRYPOINT; CMD defaults to --port 4000.
+    proof: [dockerfile-entrypoint]
+  - text: >-
+      The mock-provider configuration defines model gpt-4 with openai/fake endpoint and FAKE_OPENAI_API_BASE environment variable.
+    proof: [config-structure]
+  - text: >-
+      The README documents why to build from the published package and provides usage instructions.
+    proof: [readme-content]
+
+checks:
+  optional: []
+  commands:
+    - id: dockerfile-version-arg
+      why: >-
+        Build arg BETTERLITE_VERSION is missing or does not default to the latest published release.
+      run: grep -q 'ARG BETTERLITE_VERSION' packaging/docker/build_from_pip/Dockerfile.build_from_pip
+    - id: dockerfile-packages
+      why: >-
+        Proxy-runtime packages are not explicitly installed, so moved dependencies (google-cloud-aiplatform,
+        google-genai, anthropic[vertex], opentelemetry-api/sdk/otlp, ddtrace, sentry-sdk) are missing.
+      run: >-
+        grep -q 'google-cloud-aiplatform' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'google-genai' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'anthropic\[vertex\]' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'opentelemetry-api' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'opentelemetry-sdk' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'opentelemetry-exporter-otlp' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'ddtrace' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'sentry-sdk' packaging/docker/build_from_pip/Dockerfile.build_from_pip
+    - id: dockerfile-prisma
+      why: >-
+        Prisma generation, /opt/prisma/binaries cache, or chmod a+rX permissions are missing or incorrect.
+      run: >-
+        grep -q 'prisma generate' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'PRISMA_BINARY_CACHE_DIR=/opt/prisma' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'chmod -R a+rX /opt/prisma' packaging/docker/build_from_pip/Dockerfile.build_from_pip
+    - id: dockerfile-entrypoint
+      why: >-
+        prod_entrypoint.sh is not copied from B5070, not set as ENTRYPOINT, or CMD does not default to --port 4000.
+      run: >-
+        grep -q 'docker/prod_entrypoint.sh' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q 'ENTRYPOINT' packaging/docker/build_from_pip/Dockerfile.build_from_pip &&
+        grep -q '\["--port", "4000"\]' packaging/docker/build_from_pip/Dockerfile.build_from_pip
+    - id: config-structure
+      why: >-
+        The mock-provider configuration does not define model gpt-4 with openai/fake endpoint
+        or does not use FAKE_OPENAI_API_BASE environment variable, breaking the test fixture.
+      run: >-
+        grep -q 'model: openai/fake' packaging/docker/build_from_pip/litellm_config.yaml &&
+        grep -q 'api_base: os.environ/FAKE_OPENAI_API_BASE' packaging/docker/build_from_pip/litellm_config.yaml &&
+        grep -q 'model_name: "gpt-4"' packaging/docker/build_from_pip/litellm_config.yaml &&
+        grep -q 'alerting:' packaging/docker/build_from_pip/litellm_config.yaml &&
+        grep -q 'slack' packaging/docker/build_from_pip/litellm_config.yaml
+    - id: readme-content
+      why: >-
+        The README does not exist, does not explain when to build from the published package,
+        or lacks usage instructions.
+      run: >-
+        test -f packaging/docker/build_from_pip/Readme.md &&
+        grep -q 'published' packaging/docker/build_from_pip/Readme.md &&
+        grep -q 'Dockerfile' packaging/docker/build_from_pip/Readme.md
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      BETTERLITE_VERSION build arg defaults to the latest published release, independent of the checkout version.
+    why: >-
+      This image tests a published artifact, not the current checkout. The version is chosen when the published package
+      contract is established; operators must explicitly set the betterlite version they want to test. There is no automatic
+      version discovery or synchronization with the current branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L6
+  - what: >-
+      The Dockerfile explicitly installs moved proxy-runtime packages (google-cloud-aiplatform, google-genai, anthropic[vertex],
+      opentelemetry-*, ddtrace, sentry-sdk) even before the published package includes them in its extras.
+    why: >-
+      These packages moved out of core litellm[proxy] and the published PyPI artifact may not include them yet. They are listed
+      explicitly to ensure coverage until the released betterlite package distribution catches up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L27-L48
+  - what: >-
+      prod_entrypoint.sh is copied from B5070; there is no Python proxy script invoked.
+    why: >-
+      betterlite's proxy is a native Rust binary, not a Python script. prod_entrypoint.sh bridges container startup to that binary,
+      as B5070 defines it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L58
+
+out_of_scope:
+  - The published betterlite package and its console script; a concrete owner with a task file is pending.
+  - B5070 owns prod_entrypoint.sh; this task copies and executes it, as an artifact dependency.
+  - B003 and the native betterlite binary distribution; this task installs them from the published package.
+  - Prisma code generation and binary baking are performed here, but Prisma itself is an external tool; betterlite's use of Prisma
+    for SQL execution in callbacks is covered by B051.
+  - Enterprise color overrides and enterprise COPY directives; only open-source Python packages are installed.
+
+pitfalls:
+  - BETTERLITE_VERSION build arg is independent of the checkout version. Operators must explicitly set the version
+    to test; there is no automatic version discovery or synchronization with the current branch.
+  - BETTERLITE_VERSION must be a published version on the Python package index with proxy and proxy-runtime extras.
+    Installing a version without these extras fails at the uv pip install step.
+  - Prisma code generation runs at build time into /opt/prisma/binaries. The chmod -R a+rX /opt/prisma step is required
+    for arbitrary-UID runtime support; removing it breaks the non-root image variant (B5073).
+  - litellm_config.yaml uses os.environ/FAKE_OPENAI_API_BASE syntax, which the config loader interprets as a literal string,
+    not as Python's os.environ. The environment variable FAKE_OPENAI_API_BASE must be set at runtime for the endpoint to
+    be reachable; the configuration alone does not provide defaults.
+  - schema.prisma is copied from the build context but is read-only and pinned at the same version across all images.
+    Prisma CLI and engines are pre-baked at build time for callback use; the image does not regenerate Prisma clients at
+    startup.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

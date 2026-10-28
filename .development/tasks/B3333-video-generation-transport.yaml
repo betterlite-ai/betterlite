@@ -1,0 +1,69 @@
+id: B3333
+title: Video generation and content transport
+description: >-
+  Implement video generation and content download handlers in betterlite-core, preserving LiteLLM's three generation request paths
+  (multipart with file, multipart without file, and JSON) and content's adaptive fetch method (POST when provider returns data, GET otherwise).
+  Both generation and content support sync and async variants through a shared handler dispatcher pattern that returns a coroutine when _is_async=True.
+  Generation wraps create response conversion outside the HTTP error handler; content wraps response conversion inside, matching the source exactly.
+  Generation accepts timeout and includes pre_call logging; content omits per-send timeout per LiteLLM's transport, though the public call accepts one.
+  Content invokes async_transform_video_content_response when appropriate, selecting the strategy within the same try block as the HTTP send.
+  Client selection uses _get_httpx_client for sync (with ssl_verify from litellm_params) and get_async_httpx_client for async, falling back to provided clients when given.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/videos_http_transport.rs
+    - crates/betterlite-core/src/api/videos_http_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7154-L7276
+    why: video_generation_handler full sync implementation with three request paths and response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7278-L7383
+    why: async_video_generation_handler with async POST and response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7386-L7474
+    why: video_content_handler with POST/GET selection and sync response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7476-L7552
+    why: async_video_content_handler with async POST/GET and optional async response transform
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7240-L7276
+    why: generation's pre_call logging and three request branches with error handling outside response conversion
+dod:
+  - text: Generation and content handlers are implemented with sync and async variants.
+    proof: [video-transport-tests]
+  - text: Generation supports all three request paths (multipart with file, multipart without file, JSON) and routes correctly based on config.
+    proof: [video-transport-tests]
+  - text: Content selects POST when provider config returns data and GET otherwise, preserving LiteLLM's behavioral difference.
+    proof: [video-transport-tests]
+  - text: Response conversion happens outside error handlers for generation and inside for content, matching source order.
+    proof: [video-transport-tests]
+  - text: Content omits per-send timeout from HTTP calls while generation forwards timeout, despite both public functions accepting a timeout parameter.
+    proof: [video-transport-tests]
+  - text: Async content response transform is invoked when appropriate, using the same try block as the HTTP send.
+    proof: [video-transport-tests]
+  - text: Client selection uses _get_httpx_client (sync) and get_async_httpx_client (async) with ssl_verify from litellm_params when no client is provided.
+    proof: [video-transport-tests]
+  - text: Generation handler forwards both sync and async paths through a dispatcher that returns Coroutine when _is_async=True.
+    proof: [video-transport-tests]
+checks:
+  optional: []
+  commands:
+    - id: video-transport-tests
+      why: generation and content handler tests fail, do not exist, or behavior tests do not cover all three generation paths and content POST/GET selection
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^video_http_transport::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Generation and content call orchestration (owned by B3338 and B3339).
+  - Provider-specific transformations (owned by B525, B526, B547, B1361-B1364).
+  - HTTP client lifecycle and pool policy (owned by B173).
+  - Multipart field serialization beyond its use in the generation paths (owned by B176).
+  - Error conversion from HTTP responses (owned by B2402).
+  - Pre-call logging beyond the call to logging_obj.pre_call (owned by B249).
+pitfalls:
+  - Generation has three mutually exclusive request branches (with files, multipart without files, JSON), so ensure exactly one path runs per call based on provider config.
+  - Content response conversion happens inside the try block in async but not in sync LiteLLM, a behavioral asymmetry that must be preserved exactly.
+  - Content's per-send timeout is explicitly omitted from all three HTTP operations (POST data, POST params, GET params) even though the public function accepts timeout.
+  - Response conversion order differs between generation (outside error catch) and content (inside error catch); reversing this will mask errors in the wrong handler.
+  - The async_video_content_handler must call async_transform_video_content_response, not the sync variant, selected at the point of the HTTP send.
+  - Client types must be checked with isinstance to distinguish HTTPHandler from AsyncHTTPHandler, because both are None-able and fallback clients differ.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

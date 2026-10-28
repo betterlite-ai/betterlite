@@ -2,8 +2,8 @@ id: B3487
 milestone: M5 api families
 title: Preserve native GenAI SSE framing and completion logging
 status: todo
-depends_on: [B3480, B005]
-file: null
+depends_on: [B3480, B005, B3608]
+file: tasks/B3487-genai-native-stream.yaml
 covers:
   - "litellm/google_genai/streaming_iterator.py"
 parent: B098
