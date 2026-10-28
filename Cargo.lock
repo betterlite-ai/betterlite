@@ -1098,9 +1098,11 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-rate-limit",
+ "betterlite-redact",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
+ "betterlite-websearch",
  "chrono",
  "clap",
  "futures-util",
@@ -1188,6 +1190,11 @@ dependencies = [
 [[package]]
 name = "betterlite-redact"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-redis"
@@ -1307,6 +1314,11 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-websearch"
 version = "0.1.0"
+dependencies = [
+ "betterlite-openai",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "bit-set"

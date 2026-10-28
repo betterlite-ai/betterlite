@@ -1,0 +1,7 @@
+kind: helper
+name: message-null-and-metadata
+call:
+  b3721:
+    step: {"mask_messages": {"messages": [{"role": "assistant", "content": null, "name": "keep"}, {"role": "user", "content": [{"text": null}, "old", {"type": "image"}]}], "masked_texts": ["NULL", "MASK"]}}
+env: {}
+compare: {ignore: []}
