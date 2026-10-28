@@ -23,6 +23,7 @@ pub struct Span {
     pub span_id: String,
     pub parent_span_id: Option<String>,
     pub name: String,
+    #[serde(rename = "type")]
     pub span_type: SpanType,
     pub agent: String,
     pub start_offset_ms: f64,

@@ -80,20 +80,22 @@ fn parse_message(value: &serde_json::Value) -> Option<UiMessage> {
         .get("kwargs")
         .and_then(serde_json::Value::as_object)
         .unwrap_or(object);
-    let role_name = wrapped
-        .get("role")
-        .or_else(|| wrapped.get("type"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
     let calls = wrapped
         .get("tool_calls")
         .and_then(serde_json::Value::as_array)
         .map(|values| parse_calls(values))
         .unwrap_or_default();
+    let role_name = wrapped
+        .get("role")
+        .or_else(|| wrapped.get("type"))
+        .and_then(serde_json::Value::as_str);
+    if role_name.is_none() && calls.is_empty() {
+        return None;
+    }
     if !wrapped.contains_key("content") && calls.is_empty() {
         return None;
     }
-    let role = role_for(role_name, !calls.is_empty());
+    let role = role_for(role_name.unwrap_or_default(), !calls.is_empty());
     Some(UiMessage {
         role,
         content: content_text(wrapped.get("content").unwrap_or(&serde_json::Value::Null)),
@@ -113,15 +115,18 @@ fn parse_calls(values: &[serde_json::Value]) -> Vec<ToolCall> {
             let function = object
                 .get("function")
                 .and_then(serde_json::Value::as_object);
-            let source = function.unwrap_or(object);
-            let name = source
-                .get("name")
+            let function_name = function
+                .and_then(|source| source.get("name"))
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
+                .filter(|name| !name.is_empty());
+            let name = function_name
+                .or_else(|| object.get("name").and_then(serde_json::Value::as_str))
+                .unwrap_or_default()
                 .to_owned();
-            let arguments = source
-                .get("arguments")
-                .or_else(|| source.get("args"))
+            let arguments = function
+                .and_then(|source| source.get("arguments"))
+                .or_else(|| object.get("args"))
+                .or_else(|| object.get("arguments"))
                 .unwrap_or(&serde_json::Value::Null);
             Some(ToolCall {
                 name,
