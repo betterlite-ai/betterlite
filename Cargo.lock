@@ -867,12 +867,18 @@ version = "0.1.0"
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
+ "betterlite-postgres-fixture",
  "chrono",
+ "clap",
+ "deadpool-postgres",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]
@@ -907,6 +913,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "indexmap 2.14.2",
+ "regex",
  "reqwest",
  "rstest",
  "secrecy",
@@ -916,6 +924,7 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1089,10 +1098,13 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-prompts",
  "betterlite-rate-limit",
+ "betterlite-redact",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
+ "betterlite-websearch",
  "chrono",
  "clap",
  "futures-util",
@@ -1157,6 +1169,14 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-prompts"
 version = "0.1.0"
+dependencies = [
+ "betterlite-logging",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-provider"
@@ -1180,6 +1200,11 @@ dependencies = [
 [[package]]
 name = "betterlite-redact"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-redis"
@@ -1299,6 +1324,11 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-websearch"
 version = "0.1.0"
+dependencies = [
+ "betterlite-openai",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "bit-set"
@@ -1895,6 +1925,39 @@ checksum = "7227ffd3b4896266bbc100348025cebe51d9aea94ce118a1d68f4a6463963dae"
 dependencies = [
  "dbus-secret-service",
  "keyring-core",
+]
+
+[[package]]
+name = "deadpool"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e98a7e119cd347f4201e1159b19831029e203e2d8b790547708e8157b4acf1e"
+dependencies = [
+ "deadpool-runtime",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-postgres"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65a536565624b97fc19f758cd01b15d12908d3344425066efc8162236fbd3749"
+dependencies = [
+ "async-trait",
+ "deadpool",
+ "getrandom 0.4.3",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2657f61fb1dd8bf37a8d51093cc7cee4e77125b22f7753f49b289f831bec2bae"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

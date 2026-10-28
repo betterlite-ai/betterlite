@@ -1,0 +1,7 @@
+kind: helper
+name: response-legacy-selection
+call:
+  b3721:
+    step: {"selection": {"texts": ["old", "new"], "context": {"latest_only": true, "scan": "response", "messages": [{"role": "user", "content": "old"}]}}}
+env: {}
+compare: {ignore: []}

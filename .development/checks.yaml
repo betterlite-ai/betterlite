@@ -108,6 +108,7 @@ base:
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
       run: cargo deny --locked check
+      one_at_a_time: true
     - id: shear
       why: no unused dependencies
       run: cargo shear

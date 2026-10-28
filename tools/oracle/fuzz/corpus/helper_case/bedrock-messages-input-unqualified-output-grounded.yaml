@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock_messages-input-unqualified-output-grounded
+call:
+  b3721:
+    step: {format: {source: INPUT, messages: [{role: user, content: [{type: grounding_source, text: source}, query]}]}}
+env: {}
+compare: {ignore: []}

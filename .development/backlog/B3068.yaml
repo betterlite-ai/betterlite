@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Catch up Mavvrik daily exports
 status: todo
 depends_on: [B002, B189, B1690, B3060, B3061, B3063, B3065, B3066]
-file: null
+file: tasks/B3068-mavvrik-export-schedule.yaml
 covers:
   - "litellm/integrations/mavvrik_focus/**"
 parent: B073

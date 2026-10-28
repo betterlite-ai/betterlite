@@ -1,0 +1,7 @@
+kind: helper
+name: message-masking-index-tracking
+call:
+  b3721:
+    step: {mask_messages: {messages: [{role: user, content: [{type: text, text: a}, {type: image}, b]}], masked_texts: [A, B]}}
+env: {}
+compare: {ignore: []}

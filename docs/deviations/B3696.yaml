@@ -1,0 +1,17 @@
+task: B3696
+deviations:
+  - what: "Competitor tokens shared by different canonical competitors cause a typed configuration error instead of overwriting an earlier mapping."
+    why: "Rejecting ambiguous configuration prevents aliases and competitor names from silently resolving to the wrong competitor."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L75-L87"
+  - what: "normalize accepts typed strings; non-string inputs cannot reach the function instead of returning an empty string."
+    why: "Rust validates the text type at the API boundary."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L23-L31"
+  - what: "Regex helpers use Rust regex syntax and Unicode character semantics; Python-only lookaround and backreferences are rejected."
+    why: "The required regex crate provides bounded-time matching; invalid optional markers return None and invalid signal patterns return a typed error."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L35-L54"
+  - what: "Competitor matches, competitor entities, and their evidence have deterministic lexical ordering."
+    why: "LiteLLM iterates an unordered token set; ordered Rust collections make results reproducible."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L113-L128"
+  - what: "Settings reject unknown keys and type mismatches instead of ignoring unknown keys or treating null collections as empty."
+    why: "Typed configuration reports unsupported inputs at the boundary instead of dropping them silently."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L71-L104"

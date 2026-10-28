@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: ROI GitHub transport and repository discovery
 status: todo
 depends_on: [B3150, B173]
-file: null
+file: tasks/B3152-roi-github-client.yaml
 covers:
   - "litellm/proxy/roi_calculator/github.py"
 parent: B076

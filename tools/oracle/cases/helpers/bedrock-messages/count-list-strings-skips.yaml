@@ -1,0 +1,7 @@
+kind: helper
+name: count-list-strings-skips
+call:
+  b3721:
+    step: {"selection": {"texts": ["string"], "context": {"latest_only": true, "messages": [{"role": "user", "content": ["string"]}]}}}
+env: {}
+compare: {ignore: []}

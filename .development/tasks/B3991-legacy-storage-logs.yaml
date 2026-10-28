@@ -1,0 +1,107 @@
+id: B3991
+title: Deliver legacy S3 and DynamoDB log records
+description: >-
+  Implement the legacy S3 object upload and DynamoDB string-valued item projection for betterlite logging.
+  Preserve callback failure swallowing, where exceptions are logged but do not propagate, and keep S3's
+  preview-gated team prefix distinct from v2's prefix behavior. Build S3Logger and DyanmoDBLogger as callback
+  targets compatible with the registry defined in B189. S3Logger stores JSON payloads to S3 via put_object with
+  fixed content headers (application/json, en language, cache and inline disposition), optional SSE encryption
+  (resolved via B3990), and team-prefixed paths when preview features are enabled. DynamoDB projects every field
+  as a Python-stringified value, including nested structures and timestamps, and requires AWS_REGION_NAME
+  environment variable and litellm.dynamodb_table_name setting. Both loggers accept a standard logging payload,
+  skip logging if the payload is absent, and swallow all failures with verbose logging. DynamoDB returns silently
+  on exception; S3 logs the exception and continues. Depend on B3990 for S3 option resolution, B192 for payload
+  serialization, B173 for request execution (S3 via boto3 client, DynamoDB via boto3 resource), B002 for config/env
+  lookup, B594 for credential resolution, and B595 for signing. Write tests covering successful and failed uploads,
+  missing payloads, team prefixes, SSE parameters, DynamoDB stringification of complex fields, and AWS credential
+  paths. Every observable default, credential key name, environment variable and error behavior a user can detect
+  in the owned code gets a named test case.
+scope:
+  paths:
+  - crates/betterlite-logging/src/legacy_s3.rs
+  - crates/betterlite-logging/src/legacy_s3/**
+  - crates/betterlite-logging/src/legacy_dynamodb.rs
+  - crates/betterlite-logging/src/legacy_dynamodb/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L151-L223
+  why: S3Logger initialization with boto3 client setup, parameter resolution, and team prefix handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L228-L312
+  why: S3Logger.log_event implementation with payload construction, SSE headers, put_object call and failure handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dynamodb.py#L21-L87
+  why: DynamoDB logger initialization, field stringification, put_item call and exception swallowing.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570-L3620
+  why: StandardLoggingPayload TypedDict structure for type safety of logged events.
+dod:
+- text: >-
+    S3Logger initialization loads credentials, bucket name, region, encryption settings from litellm.s3_callback_params
+    and resolves SSE parameters through B3990; team prefix is applied only when litellm.enable_preview_features is true
+    and team alias is present in the payload metadata.
+  proof:
+  - legacy-storage-tests
+- text: >-
+    S3Logger.log_event constructs the payload from standard_logging_object, applies prompts-only filtering via B3990,
+    calls B192's safe_dumps for serialization, generates object keys via B3990, sets content headers (application/json,
+    en, inline disposition with timestamp and ID, immutable cache control), includes optional SSE headers, and uploads
+    via S3 put_object without raising on exception.
+  proof:
+  - legacy-storage-tests
+- text: >-
+    DynamoDB logger accepts standard logging payload and AWS_REGION_NAME/litellm.dynamodb_table_name configuration;
+    initializes boto3 resource and looks up the table via self.dynamodb.Table(self.table_name) on every log_event call.
+    DyanmoDBLogger._async_log_event forwards to log_event synchronously.
+  proof:
+  - legacy-storage-tests
+- text: >-
+    DynamoDB log_event stringifies every field in the payload dict, handles nested structures and timestamps as strings,
+    calls table.put_item without raising on exception, and logs failures via verbose logging.
+  proof:
+  - legacy-storage-tests
+- text: >-
+    Both loggers skip logging silently when standard_logging_object is absent; failures in put_object and put_item
+    are caught, logged verbosely and do not propagate; credential failures are handled by B594/B595.
+  proof:
+  - legacy-storage-tests
+checks:
+  optional: []
+  commands:
+  - id: legacy-storage-tests
+    why: legacy storage tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(legacy_s3|legacy_dynamodb)::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+- what: >-
+    s3_legacy_logging and dynamodb_legacy_logging operations require pre-registration in tools/oracle/src/helpers/logging.rs
+    and tools/oracle/helpers/b3991.py before oracle cases can be written; this task cannot wire them in scope.
+  why: >-
+    Helper operations must be listed in the helper group macro and dispatch table by the architect before workers can build
+    helper cases that call these operations.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L153
+- what: >-
+    S3Logger swallows exceptions from put_object and logs them via verbose logging without propagating; DynamoDB
+    similarly swallows and logs exceptions from put_item initialization and execution.
+  why: >-
+    Legacy callback behavior in LiteLLM swallows failures to keep the main request path unaffected even when logging fails.
+    Betterlite follows this pattern for compatibility.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L228-L312
+out_of_scope:
+- "litellm.utils.get_logging_id: builds s3_file_name from start_time and payload; used to construct the S3 object key; owner unassigned."
+- "litellm.get_secret: resolves os.environ/ prefixes in callback params; B002 loads config keys but not this dispatcher."
+- "S3Logger does not implement the async version (_async_log_event); production uses log_event synchronously."
+- "AWS credential chain resolution, boto3 SDK initialization and put_object/put_item are provided by B173, B594, B595."
+- "DynamoDB stringification matches LiteLLM's behavior where str() is called on all values; nested JSON serialization is not changed."
+- "The callback registry (Logging.success_handler assignment) is in B189; this task only implements the logger classes."
+- "Team alias extraction from payload metadata is forwarded as-is; preview feature flag checking is done by the caller."
+pitfalls:
+- S3 team prefix is applied only when both enable_preview_features and s3_use_team_prefix are true; s3_use_team_prefix alone does not apply it.
+- get_logging_id is called at s3.py:269 to build the S3 object key; its return value feeds directly into the key name users see; ownership unresolved.
+- DynamoDB table is looked up fresh via self.dynamodb.Table(self.table_name) on every log call, not cached at init.
+- DynamoDB converts every field to string via str() call; nested structures and timestamps become their string repr.
+- S3 client.put_object sets fixed ContentLanguage en and CacheControl immutable; no override is provided.
+- Both S3 and DynamoDB log callbacks swallow exceptions; failures do not propagate to the caller.
+- S3 SSE headers are included in put_object only if self.s3_server_side_encryption or self.s3_sse_kms_key_id are set; absent values are filtered out.
+- DynamoDB ValueError on missing table_name has exact message "LiteLLM Error, trying to use DynamoDB but not table name passed. Create a table and set `litellm.dynamodb_table_name=<your-table>`".
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

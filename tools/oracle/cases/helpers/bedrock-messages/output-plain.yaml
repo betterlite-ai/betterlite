@@ -1,0 +1,7 @@
+kind: helper
+name: output-plain
+call:
+  b3721:
+    step: {"format": {"source": "OUTPUT", "response": {"choices": [{"message": {"content": "answer"}}, {"message": {"content": ""}}, {"delta": {"content": "not-output"}}]}}}
+env: {}
+compare: {ignore: []}

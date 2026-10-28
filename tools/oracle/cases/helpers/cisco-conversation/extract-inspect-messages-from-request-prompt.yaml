@@ -1,0 +1,11 @@
+kind: helper
+name: cisco-request-prompt
+call:
+  cisco_conversation:
+    function: request_messages
+    data:
+      instructions: system says
+      prompt: the prompt
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,183 @@
+id: B3804
+title: Presidio analysis chunking and entity filtering
+description: >-
+  Implement Presidio text analysis with overlapping chunk splitting, concurrent analysis
+  bounding, and filtered result merging. Build JSON-escaped byte budgeting for chunk
+  boundaries, semaphore-based concurrency control per event loop, and offset remapping
+  for overlapping detections. Preserve score and deny-list filtering, fail-closed
+  behavior when PII protection is configured, and separate error handling for analysis
+  versus anonymization paths.
+
+  Key behavior: texts larger than presidio_analyze_chunk_size_bytes (UTF-8 encoded in
+  the JSON request body) are split into overlapping chunks with PRESIDIO_ANALYZE_CHUNK_OVERLAP_CHARS
+  character overlap, analyzed concurrently with at most PRESIDIO_ANALYZE_CHUNK_CONCURRENCY
+  in-flight requests per event loop, and results are remapped to the original text
+  with deduplication of overlapping same-type detections by longest span. When
+  pii_entities_config is set or output_parse_pii or apply_to_output is true, analyzer
+  HTTP errors (status >= 400), non-JSON responses, or unparsable result shapes raise
+  GuardrailRaisedException with guardrail_name and a sanitized message; otherwise they
+  return an empty list with a warning. Per-chunk results are filtered by score threshold
+  and deny list before merging. The default chunk size is DEFAULT_PRESIDIO_ANALYZE_CHUNK_SIZE_BYTES;
+  zero or negative configured sizes fall back to the default; sizes below 4 bytes are
+  floored to 4.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/presidio_analysis.rs
+    - crates/betterlite-guardrails/src/presidio_analysis/**
+    - Cargo.toml
+    - tools/oracle/cases/presidio-analysis/**
+
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L81-L97
+    why: _JsonResponse protocol, _json_body, and _json_escaped_len for byte budgeting
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L304-L331
+    why: _get_session_iterator context manager for HTTP session lifecycle across threads/loops
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L353-L387
+    why: _get_presidio_analyze_request_payload with entity filtering and dynamic request body merge
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L389-L539
+    why: analyze_text with fail-closed error handling, chunking decision and single-call path
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L446-L457
+    why: _fail_on_invalid_response raises GuardrailRaisedException on HTTP/content-type/JSON parse errors when fail_closed is true
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L540-L608
+    why: _analyze_text_chunked with concurrent bounding, per-chunk filtering and overlap merging
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L610-L618
+    why: _get_chunk_semaphore per-event-loop shared bounding across all chunked calls
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L620-L633
+    why: _coerce_analyze_chunk_size validates and falls back chunk size, floors to 4
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L635-L683
+    why: _split_text_for_analysis with JSON-escaped byte budgeting and overlap calculation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L685-L733
+    why: _merge_chunked_analyze_results remapping per-chunk offsets and deduplicating overlapping same-type detections
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L875-L913
+    why: filter_analyze_results_by_score applies threshold and deny-list filtering
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/presidio.py
+    why: PresidioAnalyzeRequest and PresidioAnalyzeResponseItem TypedDict definitions
+
+dod:
+  - text: _JsonResponse protocol and _json_body async function exist and accept a response with a json() method.
+    proof: [json-response-protocol]
+  - text: _json_escaped_len calculates UTF-8 byte length of text as it appears in a JSON request body (json.dumps escaping).
+    proof: [json-escaped-len]
+  - text: _get_session_iterator returns an async context manager that yields an aiohttp.ClientSession, using the shared main-thread session or creating a loop-bound session for background threads.
+    proof: [session-iterator]
+  - text: _get_presidio_analyze_request_payload returns a PresidioAnalyzeRequest with text, language, ad_hoc_recognizers (if set), entities (if pii_entities_config is set), and merged dynamic request body params.
+    proof: [analyze-payload]
+  - text: analyze_text sends a POST request to the analyzer endpoint with the constructed payload and returns a list of PresidioAnalyzeResponseItem on success.
+    proof: [analyze-success]
+  - text: analyze_text raises GuardrailRaisedException with guardrail_name and a sanitized message when the analyzer returns HTTP >= 400, non-JSON content-type, unparsable JSON, error dict, or unexpected type, if pii_entities_config is set or output_parse_pii or apply_to_output is true.
+    proof: [analyze-fail-closed]
+  - text: analyze_text returns an empty list with a warning when the analyzer returns errors and fail_closed is false.
+    proof: [analyze-fail-open]
+  - text: analyze_text skips empty or whitespace-only text and returns an empty list.
+    proof: [analyze-empty-text]
+  - text: _analyze_text_chunked splits oversized text into overlapping chunks and concurrently analyzes each chunk with at most PRESIDIO_ANALYZE_CHUNK_CONCURRENCY requests in flight per event loop.
+    proof: [chunk-concurrency]
+  - text: _analyze_text_chunked filters per-chunk results by score and deny list before merging, and raises if any chunk fails.
+    proof: [chunk-filtering]
+  - text: _get_chunk_semaphore returns a per-event-loop semaphore shared by all chunked analyze calls on the instance.
+    proof: [chunk-semaphore]
+  - text: _coerce_analyze_chunk_size returns DEFAULT_PRESIDIO_ANALYZE_CHUNK_SIZE_BYTES for None, zero or negative values, and max(value, 4) for positive values.
+    proof: [chunk-size-coercion]
+  - text: _split_text_for_analysis splits text into (offset, chunk) pairs where each chunk's JSON-escaped form is at most chunk_size_bytes, with up to overlap_chars character overlap between consecutive chunks.
+    proof: [text-splitting]
+  - text: _split_text_for_analysis uses binary search to find the largest chunk prefix that fits the byte budget, and ensures every chunk advances by at least 1 character.
+    proof: [text-split-binary-search]
+  - text: _merge_chunked_analyze_results remaps per-chunk offsets to the original text and deduplicates overlapping same-entity-type detections by keeping the longest span (highest score on ties).
+    proof: [chunk-merge]
+  - text: _merge_chunked_analyze_results sorts the final result by position and allows different entity types to overlap.
+    proof: [merge-sort]
+  - text: filter_analyze_results_by_score drops detections below per-entity score thresholds or in the deny list, and returns the results unchanged if no thresholds or deny list is configured.
+    proof: [filter-by-score]
+
+checks:
+  optional: []
+  commands:
+    - id: json-response-protocol
+      why: _JsonResponse protocol and _json_body are missing or incorrect
+      run: grep -q "json_body" crates/betterlite-guardrails/src/presidio_analysis.rs
+    - id: json-escaped-len
+      why: _json_escaped_len function is missing or incorrect
+      run: grep -q "json_escaped_len" crates/betterlite-guardrails/src/presidio_analysis.rs
+    - id: session-iterator
+      why: _get_session_iterator context manager is missing or does not handle threads correctly
+      run: grep -q "session_iterator" crates/betterlite-guardrails/src/presidio_analysis.rs
+    - id: analyze-payload
+      why: _get_presidio_analyze_request_payload is missing or does not include dynamic request body params
+      run: grep -q "presidio_analyze_request_payload\|analyze_request_payload" crates/betterlite-guardrails/src/presidio_analysis.rs
+    - id: analyze-success
+      why: analyze_text does not exist or does not POST to analyzer or parse results
+      run: grep -q "analyze_text" crates/betterlite-guardrails/src/presidio_analysis.rs
+    - id: analyze-fail-closed
+      why: analyze_text fail-closed path does not raise GuardrailRaisedException or is missing named tests
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::(fail_closed|analyzer_http_error|analyzer_non_json|analyzer_unparsable)/)'
+    - id: analyze-fail-open
+      why: analyze_text fail-open path does not return empty list with warning or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::fail_open/)'
+    - id: analyze-empty-text
+      why: analyze_text does not skip empty/whitespace-only text or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::empty_text/)'
+    - id: chunk-concurrency
+      why: _analyze_text_chunked does not exist or does not bound concurrency or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::(chunking|concurrency)/)'
+    - id: chunk-filtering
+      why: _analyze_text_chunked does not filter per-chunk results or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::chunk_filter/)'
+    - id: chunk-semaphore
+      why: _get_chunk_semaphore does not exist or is not per-event-loop or tests are missing
+      run: grep -q "chunk_semaphore" crates/betterlite-guardrails/src/presidio_analysis.rs
+    - id: chunk-size-coercion
+      why: _coerce_analyze_chunk_size does not exist or does not fall back to default or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::chunk_size/)'
+    - id: text-splitting
+      why: _split_text_for_analysis does not exist or does not split with overlap or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::text_split/)'
+    - id: text-split-binary-search
+      why: _split_text_for_analysis does not use binary search or does not ensure forward progress or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::(binary_search|forward_progress)/)'
+    - id: chunk-merge
+      why: _merge_chunked_analyze_results does not exist or does not deduplicate overlapping detections or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::merge/)'
+    - id: merge-sort
+      why: _merge_chunked_analyze_results does not sort by position or allow different types to overlap or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::merge_sort/)'
+    - id: filter-by-score
+      why: filter_analyze_results_by_score does not exist or does not apply thresholds/deny list or tests are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_analysis::filter_score/)'
+
+oracle_cases: []
+
+deviations:
+  - what: When the analyzer returns an HTTP error, non-JSON content-type, unparsable JSON, error dict, or unexpected type, the response is treated as fail-closed if pii_entities_config is set or output_parse_pii or apply_to_output is true, raising GuardrailRaisedException; otherwise an empty list is returned with a warning.
+    why: LiteLLM returns a sanitized empty list on errors when fail_closed is false, and raises on fail_closed=true. betterlite preserves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L446-L457
+  - what: Per-chunk analysis results are filtered by score and deny list before merging; the same filters are applied again downstream in check_pii as a no-op.
+    why: Filtering before merge prevents below-threshold detections from winning overlap resolution.
+  - what: The chunk semaphore is shared per event loop across all concurrent chunked calls on an instance, so many oversized blocks or concurrent requests still hold at most PRESIDIO_ANALYZE_CHUNK_CONCURRENCY in-flight analyzer calls per loop.
+    why: LiteLLM bounds fan-out per instance/loop to prevent analyzer saturation; the proxy's main-thread session lock additionally serializes HTTP calls.
+
+out_of_scope:
+  - "get_guardrail_dynamic_request_body_params from CustomGuardrail (line 386 in litellm): owned by B104, which has no task file yet. B3804 calls it but does not implement it. The merge of dynamic request body params into the analyze payload is in scope; the base method is deferred to B104."
+  - "_close_http_session (lines 333-342 in litellm): only called in __del__, which is a no-op. Code owns the session, not this cleanup; proper cleanup belongs to B3805 or the lifecycle caller."
+  - "_has_block_action (lines 347-351 in litellm): no caller at the pin outside tests. Checked dynamically in check_pii (B3805), not here."
+  - "check_pii and raise_exception_if_blocked_entities_detected and anonymize_text and their callees: owned by B3805."
+  - "_post_presidio_anonymize and anonymize_text and _finalize_* methods: owned by B3805."
+  - "get_supported_event_hooks, __init__, async_pre_call_hook, apply_guardrail and other hooks: owned by lifecycle/application tasks after B3804."
+  - "Example Presidio fixture at litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json: owned by the lifecycle task that loads ad-hoc recognizers."
+
+pitfalls:
+  - "JSON-escaped byte length includes the quotes around the string; subtract 2 from the json.dumps result to measure the content."
+  - "Chunk boundary overlap is calculated per-chunk, not globally; capping at len(chunk) // 2 prevents infinite overlap loops."
+  - "A chunk can be as small as 1 character; the binary search maintains low >= 1 to keep the algorithm advancing."
+  - "Overlapping detections in the merge are resolved by longest span (highest score on ties) only within the same entity type; different types may still overlap."
+  - "The semaphore is cached by event loop; a new loop or a main-thread context gets a new or reused semaphore as needed."
+  - "Fail-closed is true when pii_entities_config is set OR output_parse_pii OR apply_to_output; any one triggers guardrail exception on analyzer errors."
+  - "Empty or whitespace-only text is skipped before the try block; it never reaches the analyzer."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

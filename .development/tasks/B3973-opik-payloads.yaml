@@ -1,0 +1,161 @@
+id: B3973
+title: Opik settings metadata and trace payload construction
+description: >-
+  Build Opik configuration variable resolution, UUIDv7 generation, metadata precedence handling, and trace/span payload
+  construction. These functions stay below the transport layer and form the basis for B3974's batch composition.
+
+  Configuration variable resolution follows priority order: first user-supplied value, then OPIK_* environment variables
+  (with OPIK_ prefix, e.g. OPIK_URL_OVERRIDE), then ~/.opik.config [opik] section, then default. The environment and
+  config-file lookups take their inputs as caller-supplied arguments (mirroring B002's constructor-injected lookup), so
+  tests pass a fake map and only the binary passes the real process environment.
+
+  UUIDv7 generation encodes Unix time in milliseconds in the first 48 bits, with version 7 in the top 4 bits of byte 6
+  and variant 0b10 in the top 2 bits of byte 8, following RFC 9562. This embedded timestamp must remain correct because
+  Opik's ingestion validates it.
+
+  Metadata merges from three increasing-priority sources: auth-key defaults, request-level litellm_metadata, then
+  requester-level metadata from proxy headers. Proxy headers prefixed opik_project_name/opik_thread_id/opik_tags override
+  their corresponding values; opik_tags is JSON-decoded and appended to the existing tags list. A malformed JSON tags
+  value logs a warning and leaves the existing tags list unmodified, no exception raised.
+
+  Traces are distinguished from spans by the absence of a "type" field in the payload. Trace payloads contain the full
+  request/response record; spans attach to an existing trace via parent_span_id or create a new trace if current_span_data
+  is absent. Both trace and span payloads apply null-removal after construction to strip any fields with None values, so
+  a payload dict like {key1: value, key2: None, key3: value} becomes {key1: value, key3: value} in the output.
+
+  Extract tags appends the raw custom_llm_provider value (e.g., openai, gemini, bedrock_converse) to the tags list drawn from
+  opik_metadata, ensuring every trace/span includes provider identification as a tag.
+
+scope:
+  paths:
+    - tools/oracle/cases/opik/**
+    - crates/betterlite-logging/src/opik/**
+    - tools/oracle/helpers/b3973.py
+    - tools/oracle/helpers/b3973/**
+    - tools/oracle/src/helpers/logging/b3973.rs
+    - tools/oracle/src/helpers/logging/b3973/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/utils.py#L10-L119
+    why: Settings resolution, UUIDv7, usage object creation and payload classification functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/extractors.py#L10-L226
+    why: Metadata extraction, precedence merging and span identifier handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/payload_builders.py#L12-L83
+    why: Trace and span payload construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/api.py#L11-L119
+    why: Orchestration of payload building from LiteLLM kwargs and response.
+  - url: https://tools.ietf.org/html/draft-ietf-uuidrev-rfc4122bis-06#section-6.10
+    why: UUIDv7 format specification with millisecond timestamp encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/types.py#L1-L46
+    why: Payload type definitions.
+dod:
+  - text: >-
+      UUIDv7 generation encodes the Unix timestamp in milliseconds in the first 48 bits, sets version 7 and variant bits
+      correctly, and produces RFC 9562-compliant strings that Opik's backend accepts.
+    proof: [opik-uuid-tests]
+  - text: >-
+      Configuration variable resolution with injected environment and config-file lookups returns user value first, then
+      OPIK_* environment (e.g., OPIK_URL_OVERRIDE), then ~/.opik.config [opik] section, then default, with a missing
+      variable substituting None or the default.
+    proof: [opik-config-tests]
+  - text: >-
+      Usage object creation omits completion_tokens, prompt_tokens and total_tokens when the corresponding field is None,
+      proven by a case with partial usage data producing a dict without those keys.
+    proof: [opik-config-tests]
+  - text: >-
+      Payload classification separates traces (no "type" field) from spans (with "type" field), and both filters produce
+      empty lists appropriately when the payload contains none of that type. Null values are removed from trace and span
+      dicts, so a payload entry {key1, key2=None, key3} loses the key2 field in the output.
+    proof: [opik-config-tests]
+  - text: >-
+      Metadata extraction merges auth-key defaults, request metadata, then requester metadata in priority order, with
+      opik_* proxy headers (opik_project_name, opik_thread_id, opik_tags as JSON) overriding their values.
+    proof: [opik-metadata-tests]
+  - text: >-
+      Provider normalization maps gemini to google_ai, vertex_ai-language-models to google_vertexai,
+      vertex_ai-anthropic_models to anthropic_vertexai, bedrock_converse to bedrock, and preserves openai, anthropic,
+      bedrock, and groq as identity mappings; unknown providers pass through unchanged.
+    proof: [opik-metadata-tests]
+  - text: >-
+      Extract span identifiers returns (trace_id, parent_span_id) for dict, object, and None inputs, and logs a warning
+      while returning (None, None) when current_span_data is neither a dict nor an object with trace_id/id attributes.
+    proof: [opik-metadata-tests]
+  - text: >-
+      Apply proxy header overrides reads opik_tags from the header, JSON-decodes the value, and appends parsed list items
+      to the existing tags list; a malformed JSON value or non-list result logs a warning and leaves tags unchanged.
+    proof: [opik-metadata-tests]
+  - text: >-
+      Extract tags appends the raw custom_llm_provider value (e.g., openai, gemini, bedrock_converse) to the tags list,
+      ensuring provider identification is always present in both trace and span payloads.
+    proof: [opik-metadata-tests]
+  - text: >-
+      Trace and span payload construction produces type-checked records with ISO 8601 UTC timestamps (Z-suffixed), correct
+      provider normalization, and payloads linked by trace_id/parent_span_id.
+    proof: [opik-payload-tests]
+  - text: >-
+      Opik payload orchestration decides whether to create a new trace (trace_id is None in current_span_data) or attach
+      to an existing one, always creates a span, and returns (optional trace_payload, span_payload).
+    proof: [opik-payload-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: opik-uuid-tests
+      why: UUIDv7 generation tests fail or do not test RFC 9562 compliance
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik_uuid_tests::/)
+        - test(/replays_the_/)'
+    - id: opik-config-tests
+      why: Configuration and usage object tests fail or are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik_config_tests::/)
+        - test(/replays_the_/)'
+    - id: opik-metadata-tests
+      why: Metadata extraction and span identifier tests fail or are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik_metadata_tests::/)
+        - test(/replays_the_/)'
+    - id: opik-payload-tests
+      why: Trace and span payload construction tests fail or are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik_payload_tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/opik/uuid7-generation.yaml
+  - tools/oracle/cases/opik/config-resolution.yaml
+  - tools/oracle/cases/opik/metadata-merging.yaml
+  - tools/oracle/cases/opik/payload-construction.yaml
+deviations:
+  - what: Configuration resolution reads the environment and ~/.opik.config as injected arguments to handle testing.
+    why: Prevents coupling tests to the real process environment, matching B002's pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/utils.py#L57-L81
+  - what: Metadata precedence follows auth-key defaults < request-level metadata < requester metadata (proxy headers).
+    why: Allows operators to set defaults, requests to override, and proxies to enforce final values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/extractors.py#L38-L72
+out_of_scope:
+  - >-
+    extract_span_identifiers's warning path is intentional preserve-as-is behavior: unexpected span data formats log but do not fail.
+  - >-
+    The native Opik SDK integration (opik_client.get_client_cached, trace, span methods) is owned separately; this task builds only pure payloads.
+pitfalls:
+  - >-
+    UUIDv7's timestamp encoding in the first 48 bits must be big-endian and millisecond-accurate for Opik's ingestion validation.
+  - >-
+    Configuration environment variables use the OPIK_ prefix; OPIK_URL_OVERRIDE is the literal name for the URL override, not OPIK_API_URL.
+  - >-
+    Metadata source priority is auth-key < request < requester, not request < auth-key.
+  - >-
+    Proxy header tags are JSON-decoded and appended to existing tags, not replaced; a malformed JSON header value logs a warning and leaves tags unchanged.
+  - >-
+    Provider normalization maps: gemini → google_ai, vertex_ai-language-models → google_vertexai, vertex_ai-anthropic_models → anthropic_vertexai, bedrock_converse → bedrock; openai, anthropic, bedrock, groq pass through unchanged.
+  - >-
+    Extract tags appends custom_llm_provider (the raw provider name, not normalized) to the tags list from opik_metadata, ensuring all traces and spans carry provider identification.
+  - >-
+    Traces are identified by the absence of a "type" field; this is the only field that distinguishes them from spans in get_traces_and_spans_from_payload.
+  - >-
+    Null-removal (_remove_nulls) applies to both trace and span payloads after construction: None-valued fields are stripped before delivery, so {a, b=None, c} returns {a, c}.
+  - >-
+    Config file lookup is always ~/.opik.config (expanded with user home), reading only the [opik] section. Missing file returns empty dict, missing section returns empty dict.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

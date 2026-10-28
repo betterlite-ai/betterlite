@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Deliver legacy S3 and DynamoDB log records
 status: todo
 depends_on: [B3990, B002, B192, B173, B594, B595]
-file: null
+file: tasks/B3991-legacy-storage-logs.yaml
 covers:
   - "litellm/integrations/{s3,dynamodb}.py"
 parent: B115

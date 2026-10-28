@@ -1,0 +1,167 @@
+id: B3777
+title: Javelin assessment and legacy Lakera initialization
+description: >-
+  Implement Javelin's pre-call assessment hook, first rejection selection and fail-open API wrapper,
+  retaining the pinned rejection status 500 when a request is blocked. Javelin's async_pre_call_hook
+  extracts the last user message from the request, calls the Javelin guard API at {api_base}/{api_version}/guardrail/{guardrail_name}/apply
+  with JavelinGuardRequest, processes the response assessments, and rejects with status 500 and detail
+  containing reject_prompt, error message and javelin_guardrail_response when request_reject is true on the first
+  assessment found. API calls include x-javelin-apikey header; optional x-javelin-application is added when application
+  is set. When the API fails or times out, assessment list becomes empty (fail-open). Constructor takes api_key
+  (required, env var JAVELIN_API_KEY or via get_secret_str), api_base (optional, env var JAVELIN_API_BASE or default
+  https://api-dev.javelin.live), api_version (default "v1"), default_on (default True), guardrail_name (default
+  "trustsafety"), javelin_guard_name (optional, defaults to guardrail_name), metadata, config, and application.
+  The initialize_guardrail function raises an exception when guard_name is missing. Registration with the logging
+  callback manager happens in the initialize function.
+
+  Also own legacy Lakera's constructor and event hooks (lakeraAI_Moderation.__init__ and get_supported_event_hooks)
+  so its moderation hook (the _check method and hooks that call it) can depend on initialized state without
+  depending on registration. Lakera v1 takes moderation_check ("pre_call" or "in_parallel"), category_thresholds
+  (optional), api_base (optional, env var LAKERA_API_BASE or via get_secret, default https://api.lakera.ai), and
+  api_key (optional, reads LAKERA_API_KEY env var directly via os.environ.get). The constructor builds the
+  async_handler once via get_async_httpx_client. The get_supported_event_hooks method returns
+  [GuardrailEventHooks.pre_call, GuardrailEventHooks.during_call].
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/javelin.rs
+    - crates/betterlite-guardrails/src/javelin/**
+    - crates/betterlite-guardrails/src/lakera.rs
+    - crates/betterlite-guardrails/src/lakera/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/__init__.py#L11-L34
+    why: The initialize_guardrail function raising an exception when guard_name is None, and Javelin guardrail registration with logging callback manager via add_litellm_callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L34-L82
+    why: JavelinGuardrail constructor with api_key, api_base, default_on, guardrail_name, javelin_guard_name, api_version, metadata, config, application and async_handler setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L84-L161
+    why: The call_javelin_guard method with HTTP request building, error handling, logging and response processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L163-L271
+    why: The async_pre_call_hook method extracting last user message, calling Javelin, iterating assessments, and raising 500 on rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L273-L282
+    why: The get_config_model method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L28-L32
+    why: JavelinGuardrail.get_supported_event_hooks returning GuardrailEventHooks.pre_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/javelin.py
+    why: Type definitions for JavelinGuardInput, JavelinGuardRequest, assessment types and JavelinGuardrailConfigModel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L49-L72
+    why: lakeraAI_Moderation class definition, constructor with moderation_check, category_thresholds, api_base, api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L50-L55
+    why: lakeraAI_Moderation.get_supported_event_hooks returning pre_call and during_call.
+dod:
+  - text: >-
+      Javelin initialize_guardrail raises an exception when litellm_params.guard_name is None,
+      with a message that mentions "JavelinGuardrailException".
+    proof: [javelin-initialization-error]
+  - text: >-
+      Javelin constructor accepts api_key (required, reads JAVELIN_API_KEY env var via get_secret_str if not provided),
+      api_base (optional, reads JAVELIN_API_BASE env var or defaults to https://api-dev.javelin.live),
+      api_version (default "v1"), default_on (default True), guardrail_name (default "trustsafety"),
+      javelin_guard_name (optional, defaults to guardrail_name), metadata, config, and application.
+    proof: [javelin-constructor]
+  - text: >-
+      Javelin async_pre_call_hook extracts last user message from request messages via get_last_user_message,
+      builds JavelinGuardRequest with text input, and returns early if no messages or text found.
+    proof: [javelin-hook-extraction]
+  - text: >-
+      Javelin calls POST {api_base}/{api_version}/guardrail/{javelin_guard_name}/apply with x-javelin-apikey header;
+      optional x-javelin-application header is added when application is set.
+    proof: [javelin-api-call]
+  - text: >-
+      Javelin processes response assessments and rejects (raises HTTPException status 500) on first assessment
+      where request_reject is true; reject_prompt comes from results.reject_prompt, defaulting to a standard message.
+    proof: [javelin-rejection]
+  - text: >-
+      Javelin fail-open: when API call fails or times out, returns empty assessments list without raising,
+      letting the request proceed unchanged.
+    proof: [javelin-fail-open]
+  - text: >-
+      Javelin rejection response includes status 500 with detail containing error message, javelin_guardrail_response, and reject_prompt.
+    proof: [javelin-rejection-status]
+  - text: >-
+      Javelin calls add_guardrail_to_applied_guardrails_header to record applied guardrail when request passes assessment.
+    proof: [javelin-applied-header]
+  - text: >-
+      Javelin get_supported_event_hooks returns [GuardrailEventHooks.pre_call].
+    proof: [javelin-hooks]
+  - text: >-
+      Javelin initialization registers the guardrail callback with litellm.logging_callback_manager via add_litellm_callback.
+    proof: [javelin-registration]
+  - text: >-
+      Legacy Lakera constructor accepts moderation_check (default "in_parallel"), category_thresholds (optional),
+      api_base (optional, reads LAKERA_API_BASE env var via get_secret or defaults to https://api.lakera.ai),
+      and api_key (optional, reads LAKERA_API_KEY env var directly via os.environ.get).
+    proof: [lakera-constructor]
+  - text: >-
+      Legacy Lakera get_supported_event_hooks returns [GuardrailEventHooks.pre_call, GuardrailEventHooks.during_call].
+    proof: [lakera-hooks]
+  - text: >-
+      Legacy Lakera constructor builds async_handler once via get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback).
+    proof: [lakera-handler]
+checks:
+  optional: []
+  commands:
+    - id: javelin-initialization-error
+      why: initialize_guardrail does not raise an exception when guard_name is missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*initialization.*error/)'
+    - id: javelin-constructor
+      why: constructor parameters, environment variable handling or default values are missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*constructor/)'
+    - id: javelin-hook-extraction
+      why: last user message extraction or request validation fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*extraction/)'
+    - id: javelin-api-call
+      why: HTTP request building, header handling or timeout configuration fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*api.*call/)'
+    - id: javelin-rejection
+      why: assessment processing, rejection detection or response handling fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*reject/)'
+    - id: javelin-fail-open
+      why: fail-open behavior on API failure or timeout fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*(fail|error|timeout)/)'
+    - id: javelin-rejection-status
+      why: HTTPException status code (500) or error detail structure is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*status.*500/)'
+    - id: javelin-applied-header
+      why: applied guardrail header registration fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*applied.*header/)'
+    - id: javelin-hooks
+      why: get_supported_event_hooks fails or does not return pre_call
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*event.*hooks/)'
+    - id: javelin-registration
+      why: guardrail registration with callback manager fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^javelin.*registration/)'
+    - id: lakera-constructor
+      why: legacy Lakera constructor parameters or environment variable handling is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^lakera.*constructor/)'
+    - id: lakera-hooks
+      why: legacy Lakera get_supported_event_hooks fails or does not return pre_call and during_call
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^lakera.*event.*hooks/)'
+    - id: lakera-handler
+      why: async_handler initialization fails or does not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^lakera.*handler/)'
+oracle_cases: []
+deviations:
+  - what: betterlite raises HTTPException with status 500 (matching LiteLLM) and detail containing error, javelin_guardrail_response and reject_prompt, but error messages are betterlite's own wording.
+    why: Error messages are betterlite's own per rule errors-match-litellm; status code and structure match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L260-L267
+  - what: Javelin does not parse response fields like language or other assessment types; unrecognized assessment types are silently passed over without raising an error.
+    why: LiteLLM's implementation iterates through assessment types without validation and only raises on request_reject true; betterlite follows the same pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L216-L242
+out_of_scope:
+  - 'CustomGuardrail.__init__, should_run_guardrail, standard logging helpers; owned by unresolved framework owner (F).'
+  - 'HTTP client initialization via get_async_httpx_client and AsyncHTTPHandler.post; owned by unresolved transport owner (H).'
+  - 'Secret manager functions get_secret_str and get_secret; owned by unresolved secret manager owner (S).'
+  - 'add_guardrail_to_applied_guardrails_header; owned by unresolved applied-guardrail header owner (A).'
+  - 'add_litellm_callback and callback registration; owned by unresolved callback owner (R).'
+  - 'Legacy Lakera moderation logic (the _check method and hooks calling it); belong to B3755 and B3779.'
+  - 'Framework lifecycle and registration beyond initialize_guardrail; belongs to B107.'
+pitfalls:
+  - Javelin get_secret_str is called for api_key; it returns empty string if not set, unlike get_secret which may raise. Test handles both cases.
+  - Javelin's rejection status is hardcoded 500, not 400; oracle cases and tests must use status 500.
+  - Javelin processes assessments in order and stops at the first request_reject=true; later assessments are ignored.
+  - Legacy Lakera's api_key reads os.environ.get("LAKERA_API_KEY") directly while api_base reads get_secret("LAKERA_API_BASE") for default lookup.
+  - Legacy Lakera's constructor does not implement moderation hooks; those remain in B3755 and B3779; this task only builds constructor and get_supported_event_hooks.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

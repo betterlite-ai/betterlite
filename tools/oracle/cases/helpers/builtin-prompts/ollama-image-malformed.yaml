@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "ollama-image-malformed", "call": {"builtin_prompts": {"family": "ollama_image", "model": "data:image/jpeg;bad", "messages": []}}, "env": {}, "compare": {"ignore": [{"pointer": "/error/message", "why": "betterlite writes its own message"}]}}
