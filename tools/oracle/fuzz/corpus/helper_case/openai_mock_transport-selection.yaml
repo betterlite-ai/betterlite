@@ -6,16 +6,13 @@ call:
     scenarios:
       - kind: async
         network_mock: false
-        client_session_supplied: false
-        shared_session_supplied: false
+        supplied: none
       - kind: async
         network_mock: true
-        client_session_supplied: false
-        shared_session_supplied: true
+        supplied: shared
       - kind: sync
         network_mock: true
-        client_session_supplied: true
-        shared_session_supplied: false
+        supplied: client
 env: {}
 compare:
   ignore: []

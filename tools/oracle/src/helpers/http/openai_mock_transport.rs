@@ -28,15 +28,10 @@ pub(crate) struct Probe {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "each flag is an independent oracle case input, not a state machine"
-)]
 pub(crate) struct SelectionScenario {
     pub(crate) kind: SelectionKind,
     pub(crate) network_mock: bool,
-    pub(crate) client_session_supplied: bool,
-    pub(crate) shared_session_supplied: bool,
+    pub(crate) supplied: SuppliedSession,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -44,6 +39,14 @@ pub(crate) struct SelectionScenario {
 pub(crate) enum SelectionKind {
     Async,
     Sync,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SuppliedSession {
+    None,
+    Client,
+    Shared,
 }
 
 fn invalid(message: String) -> Box<crate::helpers::HelperError> {
@@ -67,8 +70,8 @@ fn decode_probe(probe: &Probe) -> serde_json::Value {
 }
 
 fn selection_outcome(scenario: &SelectionScenario) -> &'static str {
-    let client_session = scenario.client_session_supplied.then_some(());
-    let shared_session = scenario.shared_session_supplied.then_some(());
+    let client_session = matches!(scenario.supplied, SuppliedSession::Client).then_some(());
+    let shared_session = matches!(scenario.supplied, SuppliedSession::Shared).then_some(());
     match select_transport(client_session, scenario.network_mock, shared_session) {
         TransportChoice::Supplied(()) => "supplied",
         TransportChoice::Mock => "mock",
