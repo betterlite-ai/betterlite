@@ -8,12 +8,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
 use super::app_crypto::{AppCrypto, AppCryptoError, Envelope};
-use super::{decode_secret_map, decode_stored_secret};
 use crate::secret_codec::diagnostics::TracingDiagnostics;
 use crate::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 
-// bytes(range(32)) as the raw master key, the exact envelope Python's
-// cryptography.AESGCM produced for aad b"caller-prefix"
+// bytes(range(32)) as the raw master key, Python's cryptography.AESGCM envelope for aad b"caller-prefix"
 const KEY: [u8; 32] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
     26, 27, 28, 29, 30, 31,
@@ -105,7 +103,7 @@ fn fuzz_cipher() -> StoredCipher<OsNonces, TracingDiagnostics> {
 fn decode_stored_secret_accepts_a_known_aes_value() {
     let cipher = fuzz_cipher();
     let text = "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L";
-    let opened = decode_stored_secret(&cipher, text.as_bytes());
+    let opened = cipher.decode_stored_secret(text.as_bytes());
     assert_eq!(
         opened.map(|value| value.expose_secret().to_owned()),
         Some("hello".to_owned())
@@ -115,13 +113,13 @@ fn decode_stored_secret_accepts_a_known_aes_value() {
 #[test]
 fn decode_stored_secret_rejects_invalid_utf8() {
     let cipher = fuzz_cipher();
-    assert!(decode_stored_secret(&cipher, &[0xff, 0xfe]).is_none());
+    assert!(cipher.decode_stored_secret(&[0xff, 0xfe]).is_none());
 }
 
 #[test]
 fn decode_secret_map_accepts_a_plaintext_map() {
     let cipher = fuzz_cipher();
-    let map = decode_secret_map(&cipher, br#"{"a":"1"}"#).unwrap();
+    let map = cipher.decode_secret_map(br#"{"a":"1"}"#).unwrap();
     assert_eq!(
         map.get("a").map(|value| value.expose_secret().to_owned()),
         Some("1".to_owned())
@@ -131,7 +129,7 @@ fn decode_secret_map_accepts_a_plaintext_map() {
 #[test]
 fn decode_secret_map_rejects_a_wrong_field_type() {
     let cipher = fuzz_cipher();
-    assert!(decode_secret_map(&cipher, br#"{"a":1}"#).is_none());
+    assert!(cipher.decode_secret_map(br#"{"a":1}"#).is_none());
 }
 
 #[test]
@@ -147,9 +145,9 @@ fn replays_the_stored_secret_corpus() {
             return false;
         };
         if tag.is_multiple_of(2) {
-            decode_stored_secret(&cipher, bytes).is_some()
+            cipher.decode_stored_secret(bytes).is_some()
         } else {
-            decode_secret_map(&cipher, bytes).is_some()
+            cipher.decode_secret_map(bytes).is_some()
         }
     });
     assert_eq!((seeds.len(), opened.count()), (5, 3));

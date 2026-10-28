@@ -1,8 +1,6 @@
 use subtle::ConstantTimeEq as _;
 
-/// Port of `spend_tracking_utils._is_master_key`: a raw, constant-time
-/// comparison against the configured master key. A hashed key never
-/// matches; only the exact raw string does.
+// Port of spend_tracking_utils._is_master_key: a digest never matches a raw key.
 #[must_use]
 pub fn matches_raw(presented: Option<&str>, master_key: Option<&str>) -> bool {
     let (Some(left), Some(right)) = (presented, master_key) else {

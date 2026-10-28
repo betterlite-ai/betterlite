@@ -2,7 +2,6 @@
 
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
-use betterlite_secrets::stored_cipher::{decode_secret_map, decode_stored_secret};
 use libfuzzer_sys::fuzz_target;
 use secrecy::SecretString;
 
@@ -22,8 +21,8 @@ fuzz_target!(|data: &[u8]| {
         diagnostics: TracingDiagnostics,
     };
     if tag.is_multiple_of(2) {
-        let _ = decode_stored_secret(&cipher, bytes);
+        let _ = cipher.decode_stored_secret(bytes);
     } else {
-        let _ = decode_secret_map(&cipher, bytes);
+        let _ = cipher.decode_secret_map(bytes);
     }
 });

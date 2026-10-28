@@ -36,7 +36,7 @@ impl Helper for Op {
                 nonce_hex,
                 steps,
             } => run_codec(
-                &KeySource::new(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref()),
+                &key_source(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref()),
                 nonce_hex,
                 steps,
             ),
@@ -49,7 +49,7 @@ impl Helper for Op {
                 extra,
                 steps,
             } => run_callback_vars(
-                &KeySource::new(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref()),
+                &key_source(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref()),
                 nonce_hex,
                 extra,
                 steps,
@@ -197,17 +197,16 @@ struct KeySource<'input> {
     general_settings: Option<&'input Value>,
 }
 
-impl<'input> KeySource<'input> {
-    fn new(
-        salt_key: Option<&'input String>,
-        master_key: Option<&'input String>,
-        general_settings: Option<&'input Value>,
-    ) -> Self {
-        Self {
-            salt_key: salt_key.map(String::as_str),
-            master_key: master_key.map(String::as_str),
-            general_settings,
-        }
+fn key_source<'input>(
+    salt_key: Option<&'input String>,
+    master_key: Option<&'input String>,
+    general_settings: Option<&'input Value>,
+) -> KeySource<'input> {
+    let salt = salt_key.map(String::as_str);
+    KeySource {
+        salt_key: salt,
+        master_key: master_key.map(String::as_str),
+        general_settings,
     }
 }
 
@@ -230,14 +229,15 @@ fn load_cipher_settings(source: &KeySource<'_>) -> Option<CipherSettings> {
 }
 
 fn invalid(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
+    let error = HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message: message.to_owned(),
-    })
+    };
+    Box::new(error)
 }
 
 fn resolve(source: &KeySource<'_>, nonce_hex: &str) -> Result<(CipherSettings, Vec<u8>), Box<HelperError>> {
