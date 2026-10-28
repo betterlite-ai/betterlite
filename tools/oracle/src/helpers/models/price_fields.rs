@@ -1,33 +1,37 @@
 use betterlite_models::price_fields::{PriceFields, parse_decimal_lexeme};
 use serde::Deserialize;
-use serde_json::{Value, value::RawValue};
+use serde_json::Value;
 
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
-struct SourceInput {
-    source: Option<String>,
+#[serde(untagged)]
+pub(crate) enum Input {
+    Source { source: String },
+    Direct(Box<PriceFields>),
 }
 
 impl crate::helpers::Helper for Op {
-    type Input = Box<RawValue>;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let result = serde_json::from_str::<SourceInput>(input.get()).and_then(|wire| {
-            serde_json::from_str::<PriceFields>(
-                wire.source.as_deref().unwrap_or_else(|| input.get()),
-            )
-        });
-        let parsed = result.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
-                class: "PriceFieldError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
+        let from_source;
+        let parsed = match input {
+            Input::Source { source } => {
+                from_source = serde_json::from_str::<PriceFields>(source).map_err(|error| {
+                    Box::new(crate::helpers::HelperError {
+                        class: "PriceFieldError".to_owned(),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                })?;
+                &from_source
+            }
+            Input::Direct(prices) => prices.as_ref(),
+        };
         let mut projected = serde_json::to_value(parsed).map_err(|error| {
             Box::new(crate::helpers::HelperError {
                 class: "Serialize".to_owned(),

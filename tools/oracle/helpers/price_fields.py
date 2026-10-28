@@ -1,8 +1,8 @@
 import json
-from decimal import Decimal, localcontext
+from decimal import Decimal, Inexact, localcontext
 from typing import TypeAlias, cast
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Json: TypeAlias = None | bool | int | float | Decimal | str | list["Json"] | dict[str, "Json"]
 
 
 class PriceFieldError(ValueError):
@@ -12,21 +12,21 @@ class PriceFieldError(ValueError):
 def _decimal(path: str, value: Json) -> str:
     if value is None:
         raise PriceFieldError(f"price field {path} must not be null")
-    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+    if isinstance(value, bool) or not isinstance(value, (int, Decimal)):
         raise PriceFieldError(f"price field {path} must be a JSON number")
     with localcontext() as context:
         context.prec = 29
-        return format(Decimal(str(value)).normalize(), "f")
+        context.traps[Inexact] = True
+        try:
+            return format(Decimal(value).normalize(), "f")
+        except Inexact as error:
+            raise PriceFieldError(f"price field {path} exceeds decimal precision") from error
 
 
 def _object(path: str, value: Json) -> dict[str, Json]:
     if not isinstance(value, dict):
         raise PriceFieldError(f"price field {path} must be a JSON object")
     return value
-
-
-def _optional(source: dict[str, Json], key: str, path: str) -> str | None:
-    return _decimal(path, source[key]) if key in source else None
 
 
 def _range(source: dict[str, Json], key: str, path: str) -> list[str] | None:
@@ -41,9 +41,7 @@ def _range(source: dict[str, Json], key: str, path: str) -> list[str] | None:
 def run(input_value: dict[str, Json]) -> dict[str, Json]:
     source = input_value.get("source")
     if isinstance(source, str):
-        input_value = cast(
-            dict[str, Json], json.loads(source, parse_float=Decimal, parse_int=Decimal)
-        )
+        input_value = cast(dict[str, Json], json.loads(source, parse_float=Decimal))
     provider = _object("provider_specific_entry", input_value.get("provider_specific_entry", {}))
     guardrails = _object("guardrail_cost_per_unit", input_value.get("guardrail_cost_per_unit", {}))
     metadata = _object("metadata", input_value.get("metadata", {}))
@@ -73,17 +71,16 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
     if off_peak is not None:
         off_peak_object = _object("off_peak_pricing", off_peak)
         off_peak_value = {
-            "input_cost_per_token": _optional(
-                off_peak_object, "input_cost_per_token", "off_peak_pricing.input_cost_per_token"
-            ),
-            "output_cost_per_token": _optional(
-                off_peak_object, "output_cost_per_token", "off_peak_pricing.output_cost_per_token"
-            ),
-            "cache_read_input_token_cost": _optional(
-                off_peak_object,
-                "cache_read_input_token_cost",
-                "off_peak_pricing.cache_read_input_token_cost",
-            ),
+            **{
+                key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
+                if key in off_peak_object
+                else None
+                for key in [
+                    "input_cost_per_token",
+                    "output_cost_per_token",
+                    "cache_read_input_token_cost",
+                ]
+            },
             "windows": off_peak_object.get("windows"),
             **{
                 key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
@@ -101,55 +98,55 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
         if not isinstance(tier, dict):
             raise PriceFieldError(f"price field tiered_pricing[{index}] must be a JSON object")
         tier_values.append(
-            cast(Json, {
-                "input_cost_per_token": _optional(
-                    tier, "input_cost_per_token", f"tiered_pricing[{index}].input_cost_per_token"
-                ),
-                "output_cost_per_token": _optional(
-                    tier, "output_cost_per_token", f"tiered_pricing[{index}].output_cost_per_token"
-                ),
-                "output_cost_per_reasoning_token": _optional(
-                    tier,
-                    "output_cost_per_reasoning_token",
-                    f"tiered_pricing[{index}].output_cost_per_reasoning_token",
-                ),
-                "range": _range(tier, "range", f"tiered_pricing[{index}].range"),
-                "max_results_range": _range(
-                    tier, "max_results_range", f"tiered_pricing[{index}].max_results_range"
-                ),
-                **{
-                    key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
-                    for key in [
-                        "cache_read_input_token_cost",
-                        "cache_creation_input_token_cost",
-                        "input_cost_per_query",
-                    ]
-                    if key in tier
+            cast(
+                Json,
+                {
+                    **{
+                        key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
+                        if key in tier
+                        else None
+                        for key in [
+                            "input_cost_per_token",
+                            "output_cost_per_token",
+                            "output_cost_per_reasoning_token",
+                        ]
+                    },
+                    "range": _range(tier, "range", f"tiered_pricing[{index}].range"),
+                    "max_results_range": _range(
+                        tier, "max_results_range", f"tiered_pricing[{index}].max_results_range"
+                    ),
+                    **{
+                        key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
+                        for key in [
+                            "cache_read_input_token_cost",
+                            "cache_creation_input_token_cost",
+                            "input_cost_per_query",
+                        ]
+                        if key in tier
+                    },
                 },
-            })
+            )
         )
     return cast(
         dict[str, Json],
         {
             **values,
             "provider_specific_entry": {
-                "us": _optional(provider, "us", "provider_specific_entry.us"),
-                "fast": _optional(provider, "fast", "provider_specific_entry.fast"),
+                key: _decimal(f"provider_specific_entry.{key}", provider[key])
+                if key in provider
+                else None
+                for key in ["us", "fast"]
             },
             "guardrail_cost_per_unit": {
                 key: _decimal(f"guardrail_cost_per_unit.{key}", value)
                 for key, value in guardrails.items()
             },
             "metadata": {
-                "original_pricing_per_hour": _optional(
-                    metadata, "original_pricing_per_hour", "metadata.original_pricing_per_hour"
-                ),
-                "original_pricing_per_minute": _optional(
-                    metadata, "original_pricing_per_minute", "metadata.original_pricing_per_minute"
-                ),
+                key: _decimal(f"metadata.{key}", metadata[key]) if key in metadata else None
+                for key in ["original_pricing_per_hour", "original_pricing_per_minute"]
             },
             "sample_spec": {
-                key: _optional(sample, key, f"sample_spec.{key}")
+                key: (_decimal(f"sample_spec.{key}", sample[key]) if key in sample else None)
                 for key in [
                     "computer_use_input_cost_per_1k_tokens",
                     "computer_use_output_cost_per_1k_tokens",
@@ -161,7 +158,11 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
             "off_peak_pricing": off_peak_value,
             "search_context_cost_per_query": (
                 {
-                    key: _optional(search, key, f"search_context_cost_per_query.{key}")
+                    key: (
+                        _decimal(f"search_context_cost_per_query.{key}", search[key])
+                        if key in search
+                        else None
+                    )
                     for key in [
                         "search_context_size_low",
                         "search_context_size_medium",
