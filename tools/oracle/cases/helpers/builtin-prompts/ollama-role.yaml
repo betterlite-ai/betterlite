@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "ollama-role", "call": {"builtin_prompts": {"family": "ollama", "messages": [{"role": "other", "content": "x"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": [{"pointer": "/error/message", "why": "betterlite writes its own message"}]}}

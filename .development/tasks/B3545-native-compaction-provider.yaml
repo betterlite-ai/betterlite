@@ -1,0 +1,126 @@
+id: B3545
+title: Native compaction capability and summary dispatch
+description: >-
+  Build Anthropic native-compaction selection, conflict checks, summarize request
+  options and signed summary extraction, plus the SDK chat/Messages dispatch adapter.
+  Preserve false-on-capability-lookup-failure and reject summary extraction unless
+  exactly one correctly signed nonblank compaction block is present.
+
+  CompactionProtocol is a Literal["chat", "messages"] discriminator. The
+  NativeCompactionProvider protocol defines the four methods that dispatch providers
+  (Anthropic, others) must implement: supports_native_compaction, compatible_defaults,
+  request_kwargs, and extract_summary. get_native_compaction_provider returns the
+  provider if the model supports compaction, or None (not an error) if capability
+  lookup fails or the model does not support it.
+
+  supports_native_compaction checks model metadata via B2225's get_model_info
+  for the supports_anthropic_compaction flag, falling back to false on any
+  exception (malformed model name, network error, missing provider). The custom
+  provider prefix (openai/, anthropic/) is stripped before lookup. Other custom
+  llm providers are unsupported.
+
+  compatible_defaults returns false if any conflicting parameter is set:
+  context_management, response_format, stop, stop_sequences, or tool_choice.
+  Null/None values pass; only truthy values trigger rejection.
+
+  request_kwargs returns the compaction operation {type: "summarize"} and the
+  anthropic-beta header "compact-2026-09-04" via extra_headers. Both are wrapped
+  in read-only TypedDicts and re-exported from the protocol module.
+
+  _native_blocks extracts compaction blocks from the response based on protocol.
+  For "messages", blocks come from content if stop_reason is "compaction"; for
+  "chat", blocks come from provider_specific_fields.compaction_blocks inside
+  choices[0].message if exactly one choice exists. Empty tuple if not found.
+
+  extract_summary requires exactly one block with type=="compaction", a
+  nonblank string signature, and nonblank string content. Returns None if the
+  block count is not 1, type is wrong, signature is absent or blank, or
+  content is absent/blank after stripping.
+
+  dispatch routes the call through the router: for "messages", calls
+  router.aanthropic_messages with custom_llm_provider=None, client=None and
+  all payload fields; for "chat", calls router.acompletion with model, messages,
+  stream=false and the remaining fields via MappingProxyType.
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/native_compaction.rs
+    - crates/betterlite-anthropic/src/native_compaction/**
+    - tools/oracle/cases/anthropic/native_compaction/**
+    - tools/oracle/helpers/b3545.py
+    - tools/oracle/helpers/b3545/**
+    - tools/oracle/src/helpers/anthropic/b3545.rs
+    - tools/oracle/src/helpers/anthropic/b3545/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/compaction.py#L14-L26
+    why: CompactionProtocol TypeAlias, NativeCompactionProvider protocol with four method signatures, type adapters for request/response validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/compaction.py#L29-L32
+    why: get_native_compaction_provider returns provider or None on capability lookup failure or unsupported models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/compaction.py#L35-L48
+    why: dispatch async function routes to aanthropic_messages or acompletion based on protocol, validates response type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L12-L16
+    why: Conflict field names and _EMPTY/protocol TypedDict constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L19-L28
+    why: supports_native_compaction checks model metadata with prefix stripping and exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L31-L32
+    why: compatible_defaults checks all conflict fields for truthy values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L35-L44
+    why: request_kwargs builds the compaction operation and extra_headers with ANTHROPIC_BETA_HEADER_VALUES.COMPACT_2026_09_04.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L47-L56
+    why: _native_blocks extracts compaction blocks from responses based on protocol-specific paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L59-L71
+    why: extract_summary validates single block with correct type, nonblank signature and content.
+dod:
+  - text: Native compaction provider is returned for models with supports_anthropic_compaction metadata, and None when capability lookup fails or the provider is unsupported.
+    proof: [capability-tests]
+  - text: Protocol type is dispatched correctly; "messages" routes to aanthropic_messages and "chat" routes to acompletion with stream=false.
+    proof: [oracle]
+  - text: Compatible defaults rejects context_management, response_format, stop, stop_sequences and tool_choice if set to truthy values.
+    proof: [conflict-tests]
+  - text: Native blocks are extracted from the response based on protocol; empty tuple if not found.
+    proof: [oracle]
+  - text: Summary extraction requires exactly one compaction block with type=="compaction", nonblank signature and nonblank content; returns None otherwise.
+    proof: [oracle]
+  - text: Request kwargs include the compaction operation and the compact-2026-09-04 anthropic-beta header.
+    proof: [request-kwargs-cases]
+  - text: Model name prefix is stripped (openai/, anthropic/) before metadata lookup.
+    proof: [capability-tests]
+checks:
+  optional: []
+  commands:
+    - id: capability-tests
+      why: Native compaction capability detection with model prefix stripping and exception handling must pass.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction_capability::/)'
+    - id: conflict-tests
+      why: Compatible defaults conflict detection must pass for all five conflict fields.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction_defaults::/)'
+    - id: request-kwargs-cases
+      why: Request kwargs building must include compaction operation and beta header.
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction_request_kwargs::/)'
+oracle_cases:
+  - tools/oracle/cases/anthropic/native_compaction/dispatch.yaml
+  - tools/oracle/cases/anthropic/native_compaction/blocks.yaml
+  - tools/oracle/cases/anthropic/native_compaction/signature.yaml
+  - tools/oracle/cases/anthropic/native_compaction/content.yaml
+  - tools/oracle/cases/anthropic/native_compaction/protocol.yaml
+deviations:
+out_of_scope:
+  - B2225 owns get_model_info and model metadata; this task only calls it with model and custom_llm_provider="anthropic".
+  - B5078 owns Router.aanthropic_messages and Router.acompletion dispatcher implementations; this task calls them with validated payloads.
+  - Protocol validation of Mapping and list types is handled by TypeAdapter; this task uses it for validation, not reimplements Pydantic.
+  - Anthropic tool exchange validation belongs to B3540; native compaction extracts summary only from the response.
+pitfalls:
+  - Exception handling in supports_native_compaction must return false, not raise; network errors and malformed model names are treated as unsupported.
+  - "Protocol must be exactly \"messages\" or \"chat\"; any other value is invalid, though the protocol dispatch is enforced at type level."
+  - Summary extraction requires exactly one block; zero, two, or more blocks all return None.
+  - "Signature must be a nonblank string; null, empty string, or non-string types all reject extraction."
+  - "Content must be a nonblank string after strip(); null, empty string, non-string, or whitespace-only content all reject extraction."
+  - "Block type must be exactly \"compaction\"; other type values (or missing type) reject extraction."
+  - For chat protocol, exactly one choice must exist; zero or multiple choices return empty tuple.
+  - "The \"compact-2026-09-04\" header value is literal and must not change without a breaking version bump."
+  - "Conflict field names must include all five: context_management, response_format, stop, stop_sequences, tool_choice."
+  - "Model prefix stripping applies only to openai/ and anthropic/ prefixes; custom_llm_provider=None accepts unprefixed models, custom_llm_provider=\"openai\" returns false, custom_llm_provider=\"anthropic\" checks metadata."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

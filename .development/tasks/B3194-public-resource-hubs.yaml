@@ -1,0 +1,142 @@
+id: B3194
+title: Public agent MCP and skill hub projections
+description: >-
+  Build GET `/public/agent_hub`, `/public/mcp_hub` and `/public/skill_hub` in
+  `betterlite-server::public_endpoints::resource_hubs`. Each route returns an unauthenticated
+  projection of a resource registry filtered by an allowlist setting.
+
+  Agent hub returns agents from the global agent registry where the agent's ID intersects
+  `litellm.public_agent_groups` (a set of allowed agent IDs, default empty, loaded through B002).
+  Each agent card gets a public URL built from the request base and the agent ID. Return empty
+  list if the allowlist is None (feature disabled). MCP hub returns MCP servers where each
+  server's `server_id` is in `litellm.public_mcp_servers` (a tuple of allowed IDs, default empty).
+  Both read their source registries from globals: `global_agent_registry.get_public_agent_list()`
+  (owned by B4777, called without auth) and `global_mcp_server_manager.get_public_mcp_servers()`
+  (owned by B2305, called without auth).
+
+  Skill hub returns enabled Claude Code plugins from the database, extracting each
+  plugin's manifest JSON into a PluginListItem. Manifest is stored as JSON text or parsed
+  object; extract string fields (source, description, version, category, keywords, author,
+  homepage, domain, namespace) from the parsed manifest using .get() with defaults. Timestamps
+  are stringified. Collect all items into ListPluginsResponse with count. Raise HTTP 500 on
+  any exception (parse failure, database error, Prisma lookup failure, type error). Load
+  prisma_client through the _get_prisma_client callback from B000's Anthropic endpoints module.
+
+  Load `litellm_settings.public_agent_groups` (default None, type: set[str] or None) and
+  `litellm_settings.public_mcp_servers` (default None, type: tuple[str, ...] or None) through B002.
+  Register the three routes at `/public/agent_hub`, `/public/mcp_hub` and `/public/skill_hub` in
+  B003's server as response-model endpoints returning AgentCard list, MCPPublicServer list and
+  ListPluginsResponse respectively. Use B860 Postgres fixtures for plugin table tests and
+  database lookup failures. Install oracle cases through the booted proxy. Every call to an
+  unresolved callee (global_agent_registry, global_mcp_server_manager, _get_prisma_client,
+  _plugin_table, or the response model types) must wait for that task to provide it.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/public_endpoints/resource_hubs.rs
+    - crates/betterlite-server/src/public_endpoints/resource_hubs/**
+    - tools/oracle/cases/public/resource-hubs/**
+    - tools/oracle/fuzz/corpus/http_case/resource-hubs-*
+    - tools/oracle/helpers/b3194.py
+    - tools/oracle/helpers/b3194/**
+    - tools/oracle/src/helpers/server/b3194.rs
+    - tools/oracle/src/helpers/server/b3194/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L69-L94
+    why: _PluginRow and _PluginTableActions protocols; _plugin_table factory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L273-L289
+    why: GET /public/agent_hub route; global_agent_registry.get_public_agent_list() and ids_for_agent() calls; allowlist filtering with isdisjoint check; public URL construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L297-L315
+    why: GET /public/mcp_hub route; global_mcp_server_manager.get_public_mcp_servers() call; MCPPublicServer validation and field overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L322-L359
+    why: GET /public/skill_hub route; plugin table query; manifest JSON parsing and field extraction; PluginListItem construction; HTTP 500 on any exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py
+    why: Response model types (AgentCard, MCPPublicServer, ListPluginsResponse, PluginListItem).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L1-L50
+    why: _get_prisma_client callback; ClaudeCodePluginRepository and table access pattern.
+
+dod:
+  - text: Agent hub returns agents from the global registry filtered by public_agent_groups allowlist,
+      with a public URL per agent, or empty list when the allowlist is None.
+    proof: [resource-hub-tests, oracle]
+  - text: MCP hub returns MCP servers filtered by public_mcp_servers allowlist, with server_id
+      membership tested explicitly.
+    proof: [resource-hub-tests, oracle]
+  - text: Skill hub returns enabled plugins with manifests fully parsed and all string fields
+      extracted using .get(), timestamps stringified, and HTTP 500 raised on any exception
+      in parsing or field access.
+    proof: [resource-hub-tests, oracle, resource-hubs-corpus]
+  - text: Config keys litellm_settings.public_agent_groups (set or None) and litellm_settings.public_mcp_servers
+      (tuple or None) are read through B002 and default to None and empty tuple respectively.
+    proof: [resource-hub-tests]
+  - text: Routes are registered at the correct paths and return the correct response models;
+      unauthenticated access is allowed on all three.
+    proof: [oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: resource-hub-tests
+      why: Agent/MCP filtering, skill hub manifest parsing or HTTP 500 behavior is missing or
+        incorrect.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::resource_hubs::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::resource_hubs_/)'
+    - id: resource-hubs-corpus
+      why: The HTTP-case decoder does not replay new resource-hubs requests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/resource-hubs-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/public/resource-hubs/agent-hub-empty-when-disabled.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-filters-by-allowlist.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-includes-public-url.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-isdisjoint-check.yaml
+  - tools/oracle/cases/public/resource-hubs/mcp-hub-empty-when-disabled.yaml
+  - tools/oracle/cases/public/resource-hubs/mcp-hub-filters-by-allowlist.yaml
+  - tools/oracle/cases/public/resource-hubs/mcp-hub-overrides-is-public-fields.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-basic-manifest-parsing.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-missing-manifest-fields.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-null-manifest.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-manifest-parse-error-500.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-database-error-500.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-count-and-response-shape.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-timestamps-stringified.yaml
+
+deviations: []
+
+out_of_scope:
+  - B4777 owns `global_agent_registry.get_public_agent_list()` and `ids_for_agent()` (litellm/proxy/agent_endpoints/agent_registry.py);
+    B3194 calls them to retrieve and filter agents.
+  - B136 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py);
+    B3194 calls it to retrieve and filter MCP servers.
+  - B000 or the Anthropic endpoints module owns `_get_prisma_client` (litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py);
+    B3194 uses it to fetch the prisma client for plugin table queries.
+  - B002 owns loading config keys `litellm_settings.public_agent_groups` and `litellm_settings.public_mcp_servers`;
+    B3194 reads them to filter registries.
+
+pitfalls:
+  - The oracle helper for this task is pre-registered as b3194 in the server group. Replace
+    the stub Op in tools/oracle/src/helpers/server/b3194.rs with an impl Helper, and write
+    run in tools/oracle/helpers/b3194.py. Do not edit the registry files (helpers/mod.rs,
+    group files, dispatch.py).
+  - >-
+    Manifest field extraction must use .get() to return None for missing fields and default
+    strings, not raise a KeyError; any exception inside the request handler (json.loads parse
+    failure, PluginListItem validation failure, type mismatch) raises HTTP 500, it is not
+    handled gracefully.
+  - >-
+    Agent allowlist filtering uses set.isdisjoint(): if the agent's ID set and the allowlist
+    have no common members, the agent is public. An incorrect boolean logic (e.g., all() or
+    any() instead of isdisjoint) would expose non-public agents to unauthenticated callers.
+  - Timestamps extracted from plugin.created_at and plugin.updated_at are None or datetime;
+    stringify them with str() to match the response model type.
+  - >-
+    MCP server filtering checks server_id membership explicitly; the is_public field in the
+    response is always true for servers returned from get_public_mcp_servers, and the
+    is_public_explicit field records whether the server_id was in the explicit allowlist.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

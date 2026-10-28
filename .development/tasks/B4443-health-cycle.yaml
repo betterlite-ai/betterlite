@@ -1,0 +1,129 @@
+id: B4443
+title: Execute model health cycles and project routing health state
+description: >-
+  Build ordered health-cycle execution in betterlite-server with injected clock, randomness
+  and provider-health operation. Execute concurrent health probes with optional bounded
+  concurrency, preserving result order despite completion order. Separate and track
+  per-deployment exceptions outside JSON responses for shared-cache readers and cooldown
+  integration. Project timestamped health state (healthy/unhealthy) per deployment ID,
+  feeding it into the background routing loop's cache. Instrument cycles with cycle/source,
+  peak concurrency, dispatch mode, duration, thread count and RSS (without secrets) when
+  enabled. Preserve process RSS measurement on Linux (KB) and macOS (bytes) or return None
+  when unavailable. Unbounded execution for non-positive or missing concurrency, matching
+  LiteLLM's asyncio.gather behavior. Healthy rows are returned first, unhealthy rows overwrite
+  duplicates with background_health_check_failed status. CLI fallback adds a synthetic
+  deployment when model_list is empty and cli_model is provided; a no-ID target is not invented
+  and deduplication skips rows without IDs.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-server/src/health_cycle.rs
+    - crates/betterlite-server/src/health_cycle/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L116-L129
+    why: "_get_process_rss_mb process memory measurement"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L132-L136
+    why: "_rss_mb_for_log RSS formatting for instrumentation"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L514-L536
+    why: "_run_model_health_check single model health probe"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L539-L576
+    why: "_run_health_checks_with_bounded_concurrency bounded scheduler with _schedule_next"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L579-L655
+    why: "_perform_health_check result separation, exception tracking and logging"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L658-L693
+    why: "build_deployment_health_states per-ID health state dict projection"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L847-L975
+    why: "perform_health_check orchestration, targeting, filtering, dependencies and instrumentation"
+
+dod:
+  - text: "_get_process_rss_mb returns process RSS in MB (using resource.getrusage), dividing by 1024 on Linux and by 1024*1024 on macOS, or None if the operation fails."
+    proof: [process-rss-tests]
+  - text: "_rss_mb_for_log formats RSS as a two-decimal string or 'unknown' when unavailable."
+    proof: [rss-formatting-tests]
+  - text: "_run_model_health_check returns an empty dict for strategy router deployments, otherwise calls the health check operation with resolved mode, timeout and default prompt."
+    proof: [model-probe-tests]
+  - text: "_run_health_checks_with_bounded_concurrency executes health checks with at most concurrency_limit active tasks, preserves result order matching the input list, and returns results tuple and peak in-flight count."
+    proof: [bounded-concurrency-tests]
+  - text: "_perform_health_check separates healthy and unhealthy endpoints, stores exceptions by model_id outside the unhealthy dict, adds exception_status integer for shared-cache readers, strips exception objects from response JSON, and instruments dispatch summary."
+    proof: [perform-health-tests]
+  - text: "build_deployment_health_states maps deployment IDs to timestamped dicts with is_healthy boolean and reason field, returning healthy rows first, then unhealthy rows with background_health_check_failed."
+    proof: [health-state-tests]
+  - text: "perform_health_check orchestrates cycle execution with targeting, eligibility filtering, dependency expansion, bounded/unbounded dispatch selection, strategy router verdict finalization, and cycle instrumentation."
+    proof: [orchestration-tests]
+  - text: "Targeting by model_id wins over model name; an unknown model_id keeps the full list (no 404). Targeting by model name routes deployments the way a request from team_id would, else routes by litellm_params.model."
+    proof: [targeting-tests]
+  - text: "Eligibility filtering with skip_disabled skips deployments with model_info.disable_background_health_check set; it applies to both requested and dependency-pool lookups so opted-out deployments cannot re-enter through router dependencies."
+    proof: [eligibility-tests]
+  - text: "health_check_timeout uses a truthy deployment override or defaults to 60 seconds; timeout results include error dict and exception without raising."
+    proof: [timeout-tests]
+  - text: "CLI fallback creates a synthetic deployment when model_list is empty and cli_model is provided; no ID is invented to make deduplication succeed."
+    proof: [cli-fallback-tests]
+  - text: "Instrumentation records cycle/source, requested/post-filter/deduped counts, max_concurrency, dispatch mode, peak in-flight, duration, thread count and RSS when enabled, without logging secrets."
+    proof: [instrumentation-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: process-rss-tests
+      why: "RSS measurement accuracy on different platforms must not fail silently"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::process_rss(::|$)/)'
+    - id: rss-formatting-tests
+      why: "RSS formatting must match log requirements"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::rss_formatting(::|$)/)'
+    - id: model-probe-tests
+      why: "single model probe must skip strategy routers and invoke health check with correct parameters"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::model_probe(::|$)/)'
+    - id: bounded-concurrency-tests
+      why: "bounded scheduler must preserve order and track peak concurrency"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::bounded_concurrency(::|$)/)'
+    - id: perform-health-tests
+      why: "health check must separate healthy/unhealthy, track exceptions, and clean JSON output"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::perform_health(::|$)/)'
+    - id: health-state-tests
+      why: "health state projection must order healthy first and map IDs correctly"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::health_state(::|$)/)'
+    - id: orchestration-tests
+      why: "cycle orchestration must handle targeting, filtering, dependencies and instrumentation"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::orchestration(::|$)/)'
+    - id: targeting-tests
+      why: "targeting logic must prioritize model_id, then route by name, then by litellm_params.model"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::targeting(::|$)/)'
+    - id: eligibility-tests
+      why: "eligibility filtering must apply consistently across requested and dependency pools"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::eligibility(::|$)/)'
+    - id: timeout-tests
+      why: "timeout handling must return result dict with error, not raise"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::timeout(::|$)/)'
+    - id: cli-fallback-tests
+      why: "CLI fallback must not invent deployment IDs"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::cli_fallback(::|$)/)'
+    - id: instrumentation-tests
+      why: "instrumentation must log without exposing secrets and track all required metrics"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_cycle::instrumentation(::|$)/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "B4441 owns _resolve_health_check_mode, _update_litellm_params_for_health_check, run_with_timeout, _clean_endpoint_data, _narrow_to_target, _health_check_eligible and filter_deployments_by_id function bodies."
+  - "B4442 owns _is_strategy_router_deployment, _dependency_deployments_to_probe and _finalize_strategy_router_endpoints function bodies."
+  - "Native health entry point dispatch (ahealth_check). B4449 owns that."
+
+pitfalls:
+  - "Result order must match input list order despite completion order: track each future's original index and slot results back correctly, never return them in completion order."
+  - "_run_health_checks_with_bounded_concurrency must not cancel sibling probes when one times out; asyncio.wait_for cancels only its awaited task, so bounded scheduling's queue scheduling must preserve that isolation."
+  - "exception_status integer must be stored for shared-cache readers only when model_id exists; absence of model_id means the source has no identity for the cache key."
+  - "Exception objects must not appear in JSON response dicts; exception_status integer and omitted exception field satisfy both cache readers and HTTP responses."
+  - "CLI fallback uses request-supplied cli_model to create a synthetic deployment only when model_list is empty; no ID is invented so deduplication will skip it (preserve that outcome)."
+  - "health_check_timeout must check for a truthy override before defaulting to 60; a zero value means 'use default', not 'disable timeout'."
+  - "Instrumentation context is optional and must not crash if missing; cycle/source/enabled defaults prevent key errors."
+  - "RSS and thread count are captured without secrets and must not log API keys, host names or deployment IDs that could appear in a full deployment dict."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

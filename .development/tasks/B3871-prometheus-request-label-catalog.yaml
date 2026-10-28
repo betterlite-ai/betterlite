@@ -1,0 +1,111 @@
+id: B3871
+title: Prometheus request and deployment label catalog
+description: >-
+  Build the declarative label catalog for request metrics (latency, spending, tokens),
+  deployment state and fallbacks. These are static assignments preserving LiteLLM's
+  label spelling, ordering and presence; they do not compute labels from emission
+  call sites.
+
+  Port litellm/types/integrations/prometheus.py:412-699 to Rust in crates/betterlite-logging.
+  PrometheusMetricLabels defines 29 complete label schemas as ordered lists of label names.
+  Each metric's schema is frozen when the logger initializes and never changes after, so it can
+  be cached for the request's lifetime. Unlike runtime label resolution in B3873, this part
+  has no function calls and no error cases.
+
+  This range contains no functions; every entry is a static list assignment of metric names
+  to label lists. Some metrics reference B3870's UserAPIKeyLabelNames enum variants, others
+  use shared constants like ZERO_COST_REASON_LABEL. Aliases share schemas (e.g.,
+  litellm_input_cached_tokens_metric = litellm_input_tokens_metric) to keep dashboards stable
+  when providers emit new token types.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus/request_label_catalog.rs
+    - crates/betterlite-logging/src/prometheus/request_label_catalog/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L412-L699
+    why: Complete range of PrometheusMetricLabels assignments for all metrics in this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L192-L208
+    why: PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS constant naming the 9 metrics affected by caller-identity mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L215-L243
+    why: ZERO_COST_REASON_LABEL constant used in zero_cost_requests_total metric definition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L667-L685
+    why: Deployment state, tpm_limit, rpm_limit and cooled_down metric label definitions showing model_group presence only on tpm/rpm metrics.
+
+dod:
+  - text: >-
+      37 metrics are defined in the request and deployment portion of the catalog
+      (litellm_llm_api_latency_metric through litellm_deployment_failed_fallbacks),
+      each mapped to its ordered label list.
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      API latency metrics (api_latency, time_to_first_token) carry these labels in order:
+      model, api_key_hash, api_key_alias, team, team_alias, requested_model, end_user, user, model_id,
+      api_provider, service_tier (with no route label).
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Request latencies carry distinct label sets: request_total_latency has end_user, api_key_hash,
+      api_key_alias, requested_model, team, team_alias, user, model, model_id, api_provider, service_tier;
+      queue_time has end_user, api_key_hash, api_key_alias, requested_model, team, team_alias, user, model,
+      model_id, api_provider (without service_tier).
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Token metrics (input_tokens, output_tokens, total_tokens) carry these labels in order:
+      end_user, api_key_hash, api_key_alias, model, team, team_alias, user, user_email, requested_model,
+      model_id, api_provider (with no client_ip or user_agent labels).
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Spend metrics (spend_metric, zero_cost_requests_total, spend_capture_rate) include
+      appropriate request context labels and the zero_cost_reason custom label on zero-cost metrics.
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Deployment state and cooled_down metrics carry labels model, model_id, api_base, api_provider
+      in that order; cooled_down adds exception_status at the end.
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Deployment tpm_limit and rpm_limit metrics carry labels model_group, model, model_id, api_base,
+      api_provider in that order, with model_group as the first label; rpm_limit references the same
+      label list as tpm_limit.
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Fallback metrics (successful/failed) carry 9 labels in order: requested_model, fallback_model,
+      api_key_hash, api_key_alias, team, team_alias, exception_status, exception_class, model_id;
+      failed_fallbacks references the same label list as successful_fallbacks.
+    proof: [prometheus-request-catalog-tests]
+  - text: >-
+      Token-detail aliases (cached, cache_creation, audio, reasoning) reference their base
+      token metric labels, and fallback aliases reuse success labels for the failure metric.
+    proof: [prometheus-request-catalog-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: prometheus-request-catalog-tests
+      why: Request and deployment catalog is incomplete or tests are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::request_label_catalog::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - 'Label resolution and custom label injection: B3873 builds the projection that resolves these labels for each request.'
+  - 'Config selection of label subsets: B3872 `get_labels` filters these catalogs by caller-identity and opt-in settings.'
+  - 'Budget and MCP catalogs: B3872 owns the remainder of the static assignment block (lines 701+).'
+
+pitfalls:
+  - Deployment tpm_limit and rpm_limit carry model_group as their first label; deployment_state and cooled_down do not carry model_group at all.
+  - Queue-time metric does not include service_tier, unlike api_latency and time_to_first_token, and it omits api_provider entirely.
+  - Token metrics (input, output, total, and their detail variants) do not include client_ip or user_agent, only api_provider.
+  - Fallback metrics list requested_model and fallback_model first, then api_key_hash/alias, unlike request/spend metrics that order by cardinality frequency.
+  - Fallback metrics carry exception_status and exception_class, not the status_code that appears in proxy request counters.
+  - The 9 metrics in PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS are the only ones where caller-identity mode substitutes or adds api_key_alias/user_email labels.
+  - Label order is preserved exactly from the source; reordering appears in emission call sites and is a display-order change for dashboards.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

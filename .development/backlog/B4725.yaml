@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP toolset management and gateway session controls
 status: todo
 depends_on: [B4711, B4717, B065, B865, B732]
-file: null
+file: tasks/B4725-mcp-toolsets-and-sessions.yaml
 covers:
   - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
 parent: B139

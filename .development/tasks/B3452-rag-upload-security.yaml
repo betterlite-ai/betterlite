@@ -1,0 +1,151 @@
+id: B3452
+title: RAG upload inspection and safe download headers
+description: >-
+  Build byte-inspected PDF and UTF-8 text upload validation, an injected
+  scanner protocol contract, deterministic safe filenames using UUID, and
+  Content-Disposition headers that reject header injection. Preserve the 512
+  MiB size limit, PDF/text detection order, ASCII-ambiguous archive magic
+  handling, shebang/BOM removal before shebang detection, exact rejection
+  reason messages, and EICAR-only default scanner.
+
+  Owned whole functions in `litellm/proxy/rag_endpoints/upload_security.py`:
+
+  - `:94-94` — `MalwareScanner.scan` protocol declaration.
+  - `:107-110` — `EicarTestMalwareScanner.scan`.
+  - `:157-158` — `_starts_with_any`; `:161-167` — `_is_archive`; `:170-177` — `_is_utf8_text`; `:180-183` — `_is_executable_binary`; `:186-188` — `_looks_like_shebang`.
+  - `:191-202` — `inspect_content`; `:205-206` — `generate_safe_filename`.
+  - `:209-226` — `_reject_disallowed`; `:229-244` — `_scan_rejection`; `:247-275` — `validate_upload`.
+
+  Own the entire file's records, enums, constants and imports. Direct dependency:
+  **B198**, injected UUID generation for `generate_safe_filename` (the source calls
+  standard-library `uuid.uuid4`). The task provides no new config parsing; byte
+  classification produces no signed wire format or database schema changes.
+
+  Build the upload_security module in betterlite-core::rag; reuse typed
+  dependencies. Keep Rust implementation under 300 lines by extracting helper
+  submodules with adjacent tests.rs files for clarity. Fuzz actual byte
+  classification; do not describe the EICAR placeholder as a production antivirus
+  engine. Every format detection case from the LiteLLM test suite gets a corpus
+  seed and a behavior case, exercising empty files, size limits, archive/executable
+  rejection, valid PDF and text, EICAR handling, and header sanitization.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/upload_security.rs
+    - crates/betterlite-core/src/rag/upload_security/**
+    - tools/oracle/cases/helpers/upload-security/**
+    - tools/oracle/fuzz/corpus/helper_case/upload-security-*
+    - crates/betterlite-core/fuzz/corpus/upload_security_content/
+    - tools/oracle/helpers/b3452.py
+    - tools/oracle/helpers/b3452/**
+    - tools/oracle/src/helpers/core_ops/b3452.rs
+    - tools/oracle/src/helpers/core_ops/b3452/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L1-L22
+    why: >-
+      Constants and size limits; MAX_UPLOAD_SIZE_BYTES=512 MiB, EICAR_TEST_SIGNATURE,
+      archive/executable magic prefixes and ASCII-ambiguous pairs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L59-L90
+    why: >-
+      Own all enums (DetectedFormat, DisallowedKind, RejectionReason, ScanVerdict)
+      and dataclasses (ScanResult, AllowedContent, DisallowedContent, SecuredUpload, RejectedUpload).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L92-L95
+    why: >-
+      MalwareScanner protocol contract; preserve call signature and ScanResult return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L97-L154
+    why: >-
+      EicarTestMalwareScanner, AllowedContent/DisallowedContent type aliases, Safe
+      extension/content-type mappings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L157-L189
+    why: >-
+      Own all classification helpers: _starts_with_any, _is_archive (including tar
+      ustar offset), _is_utf8_text, _is_executable_binary, _looks_like_shebang with
+      BOM/whitespace removal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L191-L206
+    why: >-
+      Own inspect_content detection order (shebang, PDF, archive, executable, UTF-8,
+      unknown); generate_safe_filename with uuid.uuid4 call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L209-L275
+    why: >-
+      Own _reject_disallowed, _scan_rejection, validate_upload entry point with
+      size/format checks and scanner invocation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/rag_endpoints/test_upload_security.py
+    why: >-
+      Pin comprehensive test cases exercising empty, oversized, archives, executables,
+      shebangs, valid formats, scanner injection, EICAR, and header sanitization.
+dod:
+  - text: Cases empty_file, oversized_file, zip_archive, gzip_archive, tar_archive,
+      elf_executable, pe_executable, shebang_script, unknown_binary, pdf_allowed,
+      utf8_text_allowed, inspect_content_classifies, unique_safe_filenames, malware_detected,
+      scan_error_fails_closed, clean_scanner_allows, eicar_default_clean, eicar_scanned_infected,
+      and eicar_text_classification verify byte classification without live malware scanning.
+    proof:
+      - behavior-tests
+  - text: The independently invoked helper matches the production byte inspection and
+      the new helper-case seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Content fuzz corpus exercises magic signatures, archive/executable detection,
+      UTF-8 boundaries and EICAR patterns with bounded payloads.
+    proof:
+      - content-fuzz-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::upload_security::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3452.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails
+        replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/upload-security-*")"
+        && grep -rlq "upload_security\|MalwareScanner" tools/oracle/fuzz/corpus/helper_case/upload-security-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: content-fuzz-corpus
+      why: The upload content decoder has no fuzz corpus or the corpus does not replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-core/fuzz/corpus/upload_security_content/")"
+        && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_upload_security_content_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/upload-security/empty-file-rejection.yaml
+  - tools/oracle/cases/helpers/upload-security/size-limit-and-overflow.yaml
+  - tools/oracle/cases/helpers/upload-security/archive-zip-gzip-tar.yaml
+  - tools/oracle/cases/helpers/upload-security/executable-elf-pe-shebang.yaml
+  - tools/oracle/cases/helpers/upload-security/unknown-binary-rejection.yaml
+  - tools/oracle/cases/helpers/upload-security/pdf-accepted-detection-order.yaml
+  - tools/oracle/cases/helpers/upload-security/utf8-text-accepted.yaml
+  - tools/oracle/cases/helpers/upload-security/eicar-format-passes-scan-blocks.yaml
+  - tools/oracle/cases/helpers/upload-security/scanner-injection-infected.yaml
+  - tools/oracle/cases/helpers/upload-security/scanner-error-fails-closed.yaml
+  - tools/oracle/cases/helpers/upload-security/safe-filename-unique-format.yaml
+deviations:
+  - what: >-
+      Byte classification is pure Rust matching the pinned Python byte inspection
+      without a live antivirus engine. The EICAR test signature verification is
+      compiled into the default scanner, and custom MalwareScanner implementations
+      are injected at call sites, never loaded from config or environment.
+    why: >-
+      This task builds byte inspection and scanner injection, not antivirus
+      integration. Production deployment pairs this with a real scanning service
+      provided at initialization time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L97-L110
+out_of_scope:
+  - B1076 owns the two complete download-header helpers at upload_security.py:278-289 (_sanitize_header_filename and safe_download_headers), which handle Content-Disposition and X-Content-Type-Options header construction for safe file downloads.
+pitfalls:
+  - 'Archive detection for ASCII-ambiguous magic (bzip2 BZh) requires UTF-8 validation to distinguish from text; the order of classification matters, with shebang checked before PDF detection.'
+  - 'Shebang detection removes UTF-8 BOM and leading whitespace before checking for #!; naked shebangs without actual script content pass the check.'
+  - 'Safe filename generation calls the injected UUID provider exactly once per accepted upload, returning a hex string with the detected format extension.'
+  - 'The architect adds `pub mod rag;` to crates/betterlite-core/src/lib.rs before this task runs, declaring the upload_security submodule within that parent, since the skeleton writes lib.rs once and module tasks never edit it.'
+  - 'The oracle helper operation for this task (b3452) is automatically registered in the core_ops helper group belonging to betterlite-core, the first crate in scope. The skeleton creates tools/oracle/src/helpers/core_ops/b3452.rs with an Op stub; the worker replaces it with an impl Helper and writes the Python adapter in tools/oracle/helpers/b3452.py. No manual pre-registration, new group, or mod.rs edits are needed.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security
