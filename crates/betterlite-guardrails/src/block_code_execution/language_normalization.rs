@@ -64,11 +64,11 @@ pub(crate) fn confidence_for_block(tag: &str, mode: ConfidenceMode) -> f64 {
 }
 
 pub(crate) fn normalized_blocked_languages(languages: Option<&[String]>) -> BTreeSet<String> {
-    languages
-        .unwrap_or_default()
-        .iter()
-        .map(|language| normalize_language(language))
-        .collect()
+    let mut normalized = BTreeSet::new();
+    for language in languages.unwrap_or_default() {
+        normalized.insert(normalize_language(language));
+    }
+    normalized
 }
 
 pub(crate) fn action_for_confidence(

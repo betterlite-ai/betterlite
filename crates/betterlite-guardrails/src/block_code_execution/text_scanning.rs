@@ -116,13 +116,18 @@ fn scan_blocks(
     let mut should_raise = false;
     for (start, end, language, _body, confidence, action_taken) in blocks {
         let effective_block = action_taken == CodeBlockActionTaken::Block && options.enforce_block;
-        record_detection(
-            detections,
+        detections.push(CodeBlockDetection {
+            r#type: "code_block".to_owned(),
             language,
             confidence,
-            action_taken,
-            effective_block,
-        );
+            action_taken: if effective_block {
+                CodeBlockActionTaken::Block
+            } else {
+                action_taken
+            },
+            evidence: None,
+            snippet: None,
+        });
         let prefix_length = start.saturating_sub(last_end);
         let block_length = end.saturating_sub(start);
         parts.push(
@@ -152,25 +157,4 @@ fn scan_blocks(
 struct ScanOptions {
     action: BlockCodeAction,
     enforce_block: bool,
-}
-
-fn record_detection(
-    detections: &mut Vec<CodeBlockDetection>,
-    language: String,
-    confidence: f64,
-    action_taken: CodeBlockActionTaken,
-    effective_block: bool,
-) {
-    detections.push(CodeBlockDetection {
-        r#type: "code_block".to_owned(),
-        language,
-        confidence,
-        action_taken: if effective_block {
-            CodeBlockActionTaken::Block
-        } else {
-            action_taken
-        },
-        evidence: None,
-        snippet: None,
-    });
 }
