@@ -2,8 +2,8 @@ id: B3752
 milestone: M6 guardrails
 title: Alice evaluation and Conduct decision helpers
 status: todo
-depends_on: []
-file: null
+depends_on: [B3664]
+file: tasks/B3752-alice-conduct-decisions.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/alice/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/alice.py"

@@ -24,31 +24,16 @@ roles:
   worker:
     instructions: roles/worker.md
     ladder:
-      - runner: codex-worker
-        model: gpt-reserve
-        effort: medium
-        attempts: 3
-        timeout_minutes: 90
-      - runner: codex-worker
-        model: gpt-6-astra
-        effort: high
-        attempts: 2
-        timeout_minutes: 120
       - runner: claude-worker
-        model: opus
+        model: sonnet
         effort: high
-        attempts: 1
+        attempts: 3
         timeout_minutes: 120
   reviewer:
     instructions: roles/reviewer.md
     ladder:
       - runner: claude-reviewer
         model: sonnet
-        effort: high
-        attempts: 1
-        timeout_minutes: 30
-      - runner: codex-reviewer
-        model: gpt-6-astra
         effort: high
         attempts: 1
         timeout_minutes: 30
@@ -60,21 +45,16 @@ roles:
         effort: high
         attempts: 1
         timeout_minutes: 45
-      - runner: codex-reviewer
-        model: gpt-6-astra
-        effort: xhigh
-        attempts: 1
-        timeout_minutes: 45
   planner:
     instructions: roles/planner.md
     ladder:
-      - runner: codex-worker
-        model: gpt-6-astra
-        effort: xhigh
+      - runner: claude-worker
+        model: sonnet
+        effort: high
         attempts: 1
         timeout_minutes: 60
 policy:
-  review_by_other_vendor: true
+  review_by_other_vendor: false
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6

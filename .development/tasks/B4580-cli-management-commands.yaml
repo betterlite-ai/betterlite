@@ -1,0 +1,144 @@
+id: B4580
+title: CLI credential, team, user and model-group commands
+description: >-
+  Build credential CRUD, team discovery/key assignment, user CRUD and model-group listing. Preserve the
+  inconsistent HTTP-error exit behavior of the owned commands: credentials create/delete and all teams.py commands
+  (list, available, assign_key) have try/except HTTPError handlers that print "Error: HTTP {status}" and attempt
+  JSON extraction; credentials list/get, all users.py commands (list_users, get_user, create_user, delete_user),
+  and model-groups list have no HTTP error handler and let exceptions propagate. Model-groups list outputs to
+  table or JSON with model_group, mode, input_cost_per_token and output_cost_per_token columns. Teams available
+  differs in error handling from list: available doesn't raise click.Abort() on non-HTTPError exceptions. Role and
+  budget display defaults (role defaults to "Member", max_budget displays as "Unlimited" when absent). Optional
+  user-field omission: create_user omits user_alias and teams from the request when not supplied; delete_user
+  takes multiple user_ids as arguments. Every command uses click decorators and loads base_url/api_key from
+  B4560's cli_context_values. This task implements the CLI commands that call the management clients; the clients
+  themselves are owned elsewhere.
+
+scope:
+  paths:
+    - tools/management-cli/src/commands.rs
+    - tools/management-cli/src/commands/credentials.rs
+    - tools/management-cli/src/commands/users.rs
+    - tools/management-cli/src/commands/teams.rs
+    - tools/management-cli/src/commands/model_groups.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/credentials.py#L36-L144
+  why: Credentials command group (list, create, delete, get) with client creation, table/JSON output and error handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/users.py#L10-L90
+  why: Users command group (list_users, get_user, create_user, delete_user) with table and JSON output, no error handlers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L32-L188
+  why: Teams command group (list, available, assign_key) with table output, error handling and team selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/model_groups.py#L22-L65
+  why: Model-groups list command with table/JSON output for model group info, client creation and no error handler.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/_cli_context.py#L1-L19
+  why: CLI context resolution for base_url and api_key from click context (B4560 dependency).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L37-L83
+  why: Teams table formatting with alias, team_id, models, max_budget and role columns.
+dod:
+- text: >-
+    Credentials list and get call client methods and output response JSON with no error handler.
+    Create and delete catch HTTPError, format "Error: HTTP {status}" to stderr, attempt JSON extraction, and raise click.Abort().
+  proof:
+  - credentials-error-handling
+- text: >-
+    Users list_users, get_user, create_user and delete_user call client methods with no error handler and
+    let exceptions propagate. List shows "No users found" when empty.
+  proof:
+  - users-error-handling
+- text: >-
+    Teams list and assign_key catch HTTPError with formatted output and raise click.Abort().
+    Teams available catches HTTPError but does not raise click.Abort() on non-HTTPError exceptions.
+  proof:
+  - teams-error-handling
+- text: >-
+    Teams list outputs table with columns team_alias (N/A fallback), team_id, models (formatted or "All models"),
+    max_budget ($X or Unlimited), and role (default Member); available shows joinable teams with same format
+    and "No available teams to join" when empty. Assign_key prompts for team selection if --team-id omitted,
+    calls client.keys.update, and shows "Successfully assigned key to team: {team_id}" then accessible models.
+  proof:
+  - teams-behavior
+- text: >-
+    Model-groups list calls client.model_groups.info(), outputs table with model_group, mode (default chat),
+    input_cost_per_token and output_cost_per_token columns, supports --format json, raises ClickException if
+    response is not a list, and has no error handler.
+  proof:
+  - model-groups-error-handling
+checks:
+  optional: []
+  commands:
+  - id: credentials-error-handling
+    why: Credentials commands do not match LiteLLM error behavior (create/delete with error handler, list/get without).
+    run: >-
+      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      'test(/^credentials::(create|delete|list|get).*($|::)/)'
+  - id: users-error-handling
+    why: Users commands do not match LiteLLM behavior (no error handlers in any command).
+    run: >-
+      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      'test(/^users::(list_users|get_user|create_user|delete_user).*($|::)/)'
+  - id: teams-error-handling
+    why: Teams commands do not match LiteLLM error behavior (list/assign_key always raise, available does not on non-HTTP errors).
+    run: >-
+      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      'test(/^teams::(list|available|assign_key)_error.*($|::)/)'
+  - id: teams-behavior
+    why: Teams commands do not format table correctly, handle team selection or show model access messages.
+    run: >-
+      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      'test(/^teams::(list|available|assign_key)_behavior.*($|::)/)'
+  - id: model-groups-error-handling
+    why: Model-groups list command does not match LiteLLM behavior (no error handler) or format table correctly.
+    run: >-
+      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      'test(/^model_groups::list.*($|::)/)'
+oracle_cases: []
+deviations:
+- what: >-
+    Error handling is inconsistent across commands: credentials create/delete and all teams.py commands
+    (list, available, assign_key) catch HTTPError with formatted "Error: HTTP {status}" output and raise click.Abort();
+    credentials list/get, all users.py commands (list_users, get_user, create_user, delete_user), and model-groups
+    list have no HTTP error handler and let exceptions propagate. Teams available does not raise click.Abort() on
+    non-HTTPError exceptions. Betterlite preserves this LiteLLM behavior without adding uniform error handling.
+  why: The owned LiteLLM range exhibits this inconsistency at the pinned commit; betterlite preserves
+    it rather than normalizing to match the source exactly.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/credentials.py#L103-L144
+out_of_scope:
+- >-
+  CredentialsManagementClient, UsersManagementClient, TeamsManagementClient, ModelGroupsManagementClient,
+  and HTTPClient implementation (B169 manages the Python client library).
+- >-
+  The Client class and its management subclasses used by teams and model-groups commands (for
+  client.teams.list/get_available and client.model_groups.info) are owned by B169 as part of the
+  litellm/proxy/client/*.* coverage.
+- >-
+  Browser-based authentication and SSO flow; owned by B4576.
+- >-
+  CLI configuration and context loading; owned by B4560.
+- >-
+  The main CLI entry point and command registration; owned by B4585.
+- >-
+  Terminal formatting libraries; use standard Rust output or injected writers for testability.
+pitfalls:
+- >-
+  Credentials list and get have no try/except around client calls and will propagate HTTPError and other exceptions
+  directly to the user. Create and delete have explicit error handlers; this inconsistency is preserved from LiteLLM.
+- >-
+  Teams available catches HTTPError but does not raise click.Abort() on other exception types, unlike list and
+  assign_key. This asymmetry is a LiteLLM behavior to preserve.
+- >-
+  Model-groups list is registered as a "list" subcommand (@model_groups.command("list")), not "info". The name
+  "info" refers only to the underlying ModelGroupsManagementClient.info() method, not the CLI subcommand.
+- >-
+  JSON parsing for --info and --values in credentials create must handle parse errors and output BadParameter
+  with the error message, not silently default.
+- >-
+  Teams models list formatting shows "+{N} more" only when len(models) > 3, not >= 3. Empty models list shows "All models".
+- >-
+  Role field in teams table defaults to "Member" when absent. Max_budget renders as "$X" for numbers/strings or
+  "Unlimited" for None/absent.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

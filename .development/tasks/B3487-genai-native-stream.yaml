@@ -1,0 +1,69 @@
+id: B3487
+title: Preserve native GenAI SSE framing and completion logging
+description: >-
+  Forward complete native Google GenAI SSE events from the provider to the client without injecting an OpenAI DONE marker or breaking large inline media payloads. Collect every chunk to support async-only EOF logging through the pass-through endpoint callback, which reports completion and hidden metadata after the stream ends. Preserve the distinction between Gemini and Vertex providers. Implement sync and async iterators that yield whole SSE events as bytes. Events are formed by joining lines with LF (0x0A) and terminating with a blank line (0x0A 0x0A). Never inject OpenAI-shaped chunks. Reject sync-mode async iteration with NotImplementedError. Replay every split UTF-8 sequence, blank line delimiter, and unterminated final event through the production SSE parser to ensure correctness.
+scope:
+  paths:
+  - crates/betterlite-core/src/google_genai/**
+  - crates/betterlite-core/fuzz/fuzz_targets/genai_sse.rs
+  - crates/betterlite-core/fuzz/corpus/genai_sse/**
+  - tools/oracle/cases/google/genai-stream-*.yaml
+  - tools/oracle/helpers/b3487.py
+  - tools/oracle/helpers/b3487/**
+  - tools/oracle/src/helpers/core_ops/b3487.rs
+  - tools/oracle/src/helpers/core_ops/b3487/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py
+  why: The base and sync/async streaming iterators, event encoding and the async logging callback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py
+  why: The PassThroughEndpointLogging global and the callback signature.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py
+  why: The PassThroughStreamingHandler and the _route_streaming_logging_to_handler method that receives collected chunks.
+- url: https://cloud.google.com/generative-ai/docs/text/streaming
+  why: Google Generative AI streaming protocol (chunked responses with event frames).
+dod:
+- text: Every native GenAI streaming case matches LiteLLM, event by event, without an OpenAI DONE marker.
+  proof: [oracle]
+- text: The iterators collect all chunks for async-only EOF logging and pass the collected bytes to the logging callback.
+  proof: [streaming-tests]
+- text: Sync-mode iteration on the async iterator raises NotImplementedError.
+  proof: [streaming-tests]
+- text: Large inline data payloads within an SSE event are never split across yielded chunks.
+  proof: [streaming-tests, genai-fuzz-sse]
+- text: Split UTF-8 sequences, blank line delimiters and unterminated final events are parsed correctly through a cargo-fuzz target at crates/betterlite-core/fuzz/fuzz_targets/genai_sse.rs and replayed in a test named replays_the_genai_sse_corpus.
+  proof: [genai-fuzz-sse]
+- text: Every mutant in the SSE event framing and logging invocation is caught by a test.
+  proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+  - id: streaming-tests
+    why: the native GenAI streaming tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/genai.*stream|stream.*genai/)'
+  - id: genai-fuzz-sse
+    why: the genai SSE fuzz target or its corpus is missing, or replaying the corpus fails
+    run: test -f crates/betterlite-core/fuzz/fuzz_targets/genai_sse.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/genai_sse)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_genai_sse_corpus)'
+oracle_cases:
+- tools/oracle/cases/google/genai-stream-basic.yaml
+- tools/oracle/cases/google/genai-stream-large-media.yaml
+- tools/oracle/cases/google/genai-stream-vertex.yaml
+- tools/oracle/cases/google/genai-stream-upstream-error.yaml
+deviations:
+  - what: betterlite-core/src/google_genai/streaming calls betterlite-logging's PassThroughStreamingHandler::_route_streaming_logging_to_handler asynchronously on stream EOF, passing the collected SSE bytes and metadata.
+    why: Betterlite preserves LiteLLM's pass-through logging architecture where streamed completion is logged once, after all chunks are collected. The logging callback reports the full interaction with hidden metadata to the success handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L83-104
+out_of_scope:
+- Retries and fallbacks for streamed responses.
+- B3608 owns PassThroughStreamingHandler._route_streaming_logging_to_handler; async EOF logging calls it.
+- Call-type and endpoint-type detection; B3490 and B3507 own those predicates.
+pitfalls:
+- The sync iterator must use response.iter_lines() to avoid splitting large media, while the async iterator uses response.aiter_lines(); both feed line-by-line iteration to the SSE event reassembler.
+- LiteLLM collects all chunks in a list and passes them as bytes to the logging callback; betterlite must do the same, even if earlier chunks are discarded by the client disconnect.
+- The async iterator alone calls _handle_async_streaming_logging on StopAsyncIteration, never on StopIteration; sync iteration has no EOF logging.
+- Gemini uses EndpointType.GEMINI and Vertex uses EndpointType.VERTEX_AI; the provider spelling determines the endpoint type for logging metadata.
+- An unterminated final event (EOF reached while accumulating lines) is still encoded and returned by both SSE reassemblers; test ensures the parser handles it.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
