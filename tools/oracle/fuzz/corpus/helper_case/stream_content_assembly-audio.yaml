@@ -1,0 +1,5 @@
+kind: helper
+name: stream-content-assembly-audio
+call: {stream_content_assembly: {function: audio_base64_decoder, fragment: '', max_decoded_bytes: 0}}
+env: {}
+compare: {ignore: []}
