@@ -1,0 +1,5 @@
+kind: helper
+name: payload-reasoning-mode
+call: {b3771: {action: MONITOR, score: 0.1}}
+env: {}
+compare: {ignore: []}

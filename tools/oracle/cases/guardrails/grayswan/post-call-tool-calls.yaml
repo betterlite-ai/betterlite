@@ -1,0 +1,5 @@
+kind: helper
+name: post-call-tool-calls
+call: {b3771: {action: MONITOR, score: 0.1}}
+env: {}
+compare: {ignore: []}

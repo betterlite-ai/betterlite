@@ -1,0 +1,8 @@
+task: B3771
+deviations:
+  - what: Generic guardrail outage errors use betterlite's own wording.
+    why: Error messages are betterlite-owned while the HTTP status remains 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L390-L392
+  - what: Gray Swan violation errors use betterlite's own wording.
+    why: Error messages are betterlite-owned while the HTTP status remains 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L738-L756

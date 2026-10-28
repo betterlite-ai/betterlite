@@ -1,0 +1,5 @@
+kind: helper
+name: violation-passthrough-pre-call
+call: {b3771: {action: PASSTHROUGH, score: 0.5}}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own wording"}]}

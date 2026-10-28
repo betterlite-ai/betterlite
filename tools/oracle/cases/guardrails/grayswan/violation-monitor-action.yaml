@@ -1,0 +1,5 @@
+kind: helper
+name: violation-monitor-action
+call: {b3771: {action: MONITOR, score: 0.5}}
+env: {}
+compare: {ignore: []}

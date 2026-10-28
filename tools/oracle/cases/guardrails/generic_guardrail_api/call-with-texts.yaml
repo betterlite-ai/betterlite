@@ -1,0 +1,5 @@
+kind: helper
+name: call-with-texts
+call: {b3771: {metadata: {user_api_key_alias: alias}}}
+env: {}
+compare: {ignore: []}
