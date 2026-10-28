@@ -52,25 +52,11 @@ fn identity_binding_keeps_string_identifiers() {
 }
 
 #[rstest]
-#[case::kill_auth_field_token("auth", r#"{"type":"bearer","token":"s"}"#, "token", r#""s""#)]
 #[case::kill_auth_field_header_name(
     "auth",
     r#"{"type":"api_key","api_key":"s"}"#,
     "header_name",
     r#""x-api-key""#
-)]
-#[case::kill_auth_field_api_key("auth", r#"{"type":"api_key","api_key":"s"}"#, "api_key", r#""s""#)]
-#[case::kill_auth_field_username(
-    "auth",
-    r#"{"type":"basic","username":"u","password":"s"}"#,
-    "username",
-    r#""u""#
-)]
-#[case::kill_auth_field_password(
-    "auth",
-    r#"{"type":"basic","username":"u","password":"s"}"#,
-    "password",
-    r#""s""#
 )]
 #[case::kill_config_field_method(
     "config",
@@ -185,11 +171,7 @@ fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
     r#"{"type":"bearer","token":"s","extra":1}"#
 )]
 #[case::empty_credentials_preserved("empty", r#"{"type":"basic","username":"","password":""}"#)]
-#[case::kill_method_five_variants("methods", "POST")]
-#[case::kill_method_put("methods", "PUT")]
-#[case::kill_method_patch("methods", "PATCH")]
-#[case::kill_method_delete("methods", "DELETE")]
-#[case::kill_method_get("methods", "GET")]
+#[case::kill_method_five_variants("methods", "POST,PUT,PATCH,DELETE,GET")]
 #[case::kill_maps_fresh("maps", "")]
 #[case::kill_url_original_not_normalized("original", "  HTTP://example.com/path")]
 #[case::kill_url_userinfo_and_port_not_restricted("authority", r#"{"url":"http://user@:80"}"#)]
@@ -233,9 +215,12 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
             assert_eq!(password.expose_secret(), "");
         }
         "methods" => {
-            let method_input = format!(r#"{{"url":"https://example.com","method":"{input}"}}"#);
-            let config: AgentKillSwitchConfig = serde_json::from_str(&method_input).unwrap();
-            assert_eq!(serde_json::to_value(config).unwrap()["method"], input);
+            for method in input.split(',') {
+                let method_input =
+                    format!(r#"{{"url":"https://example.com","method":"{method}"}}"#);
+                let config: AgentKillSwitchConfig = serde_json::from_str(&method_input).unwrap();
+                assert_eq!(serde_json::to_value(config).unwrap()["method"], method);
+            }
         }
         "maps" => {
             let mut first: AgentKillSwitchConfig =

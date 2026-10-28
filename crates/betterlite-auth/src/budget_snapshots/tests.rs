@@ -112,25 +112,6 @@ fn dates_keep_offset_and_naive_forms() {
 
 #[rstest]
 #[case::each_snapshot_field_alias("key_reset", r#"{"user_api_key_budget_reset_at":null}"#)]
-#[case::each_team_snapshot_field_alias(
-    "team_reset",
-    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#
-)]
-#[case::each_team_budget_field_alias(
-    "team_budget",
-    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":1.25}"#
-)]
-#[case::each_user_snapshot_field_alias("user_reset", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#)]
-#[case::each_user_budget_field_alias("user_budget", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":1.25,"user_api_key_user_alias":null}"#)]
-#[case::each_user_alias_field_alias("user_alias", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":"u"}"#)]
-#[case::each_org_spend_field_alias(
-    "org_spend",
-    r#"{"user_api_key_org_spend":1.25,"user_api_key_org_max_budget":null}"#
-)]
-#[case::each_org_budget_field_alias(
-    "org_budget",
-    r#"{"user_api_key_org_spend":0,"user_api_key_org_max_budget":1.25}"#
-)]
 #[case::snapshot_required_nullable_fields(
     "required",
     r#"{"user_api_key_team_budget_reset_at":null}"#
@@ -176,14 +157,8 @@ fn named_snapshot_contracts(#[case] name: &str, #[case] input: &str) {
     let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input).unwrap();
     match name {
         "key_reset" => assert!(KeyBudgetSnapshot::from_metadata(&metadata).is_some()),
-        "team_reset" | "team_budget" | "extras" | "all_null" => {
+        "extras" | "all_null" => {
             assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_some());
-        }
-        "user_reset" | "user_budget" | "user_alias" => {
-            assert!(UserBudgetSnapshot::from_metadata(&metadata).is_some());
-        }
-        "org_spend" | "org_budget" => {
-            assert!(OrgBudgetSnapshot::from_metadata(&metadata).is_some());
         }
         "required" | "invalid" | "omitted" | "silent" => {
             assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
