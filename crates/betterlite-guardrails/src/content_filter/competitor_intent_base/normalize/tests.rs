@@ -4,7 +4,7 @@ use super::normalize;
 use rstest::rstest;
 
 #[rstest]
-#[case::normalization("  B4t\u{200b}er  \u{ff23}afe  ", "bater cafe")]
+#[case::normalization("  B4t\u{200b}er  \u{ff23}\u{ff21}\u{ff26}\u{ff25}  ", "bater cafe")]
 #[case::leet("@473150", "aateiso")]
 #[case::zero_width("A\u{200b}c\u{200c}m\u{200d}e\u{2060}\u{feff}", "acme")]
 #[case::compatibility("\u{ff21}\u{ff20}\u{ff14}\u{fb03}", "aaaffi")]
