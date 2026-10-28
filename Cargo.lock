@@ -914,6 +914,7 @@ dependencies = [
  "axum",
  "betterlite-config",
  "indexmap 2.14.2",
+ "regex",
  "reqwest",
  "rstest",
  "secrecy",
@@ -923,6 +924,7 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unicode-normalization",
 ]
 
 [[package]]
