@@ -37,9 +37,9 @@ jobs:
           POSTGRES_DB: betterlite
         options: >-
           --health-cmd "pg_isready -U betterlite"
-          --health-interval 5s
+          --health-interval 1s
           --health-timeout 5s
-          --health-retries 12
+          --health-retries 60
     env:
       CARGO_TERM_COLOR: never
       SOURCE_TOOLS: |
@@ -50,7 +50,7 @@ jobs:
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
     steps:
       - name: Install system packages
-        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps
+        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
