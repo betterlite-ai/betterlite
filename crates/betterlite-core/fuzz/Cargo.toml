@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-core = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "proc_statm_meminfo"
+path = "fuzz_targets/proc_statm_meminfo.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

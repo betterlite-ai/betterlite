@@ -16,7 +16,7 @@ helper_group! {
     "b376" => b376, "b382" => b382, "b383" => b383, "b384" => b384, "b385" => b385,
     "b386" => b386, "b388" => b388, "b389" => b389, "b390" => b390, "b393" => b393,
     "b394" => b394, "b395" => b395, "b396" => b396, "b397" => b397, "b398" => b398,
-    "b399" => b399, "b400" => b400, "b401" => b401,
+    "b399" => b399, "b400" => b400, "b401" => b401, "b4381" => b4381,
     "deployment_credentials" => deployment_credentials,
     "deployment_model_info" => deployment_model_info,
     "model_catalog_lookup" => model_catalog_lookup, "model_group_info" => model_group_info,

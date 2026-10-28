@@ -12,6 +12,8 @@ pub(crate) enum GateError {
     Read { path: PathBuf, source: io::Error },
     #[error("cannot write {path}: {source}")]
     Write { path: PathBuf, source: io::Error },
+    #[error("cannot lock {path}: {source}")]
+    Lock { path: PathBuf, source: io::Error },
     #[error("{path} does not match its format: {source}")]
     Yaml {
         path: PathBuf,

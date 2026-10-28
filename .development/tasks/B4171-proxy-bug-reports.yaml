@@ -1,0 +1,138 @@
+id: B4171
+title: Allowlisted proxy configuration reports
+description: >-
+  Add crates/betterlite-reporting's safe_proxy_config module to filter and format the running proxy's configuration
+  for debugging, preserving credential-key filtering and the proxy-admin-only 403 branch.
+  Register GET /debug/report in betterlite-server, wired through the authentication pipeline to return an EnvironmentReport
+  when the authenticated principal is a proxy admin, otherwise HTTP 403.
+
+  The configuration snapshot reads the proxy's runtime config state but does not load config here; accept a typed snapshot
+  parameter instead of depending on a configuration umbrella.
+  Filter out credential-like keys by name (key, keys, secret, secrets, token, password, passwd, credential, credentials, url, uri, dsn, host, hosts, base, endpoint, cert, pem, salt),
+  except for the static string enum key_management_system which may appear even under credential-like keys.
+  Boolean values are allowed under credential-like keys; strings are not.
+  Preserve ordering and the provider deduplication in model lists: sort providers ascending and return them once.
+  Known values are read-only LiteLLM constants: provider names, cache types, guardrail hooks, KMS types, logging callbacks and routing strategies.
+  config_lines returns only known keys whose values are known or safe booleans, formatted as lowercase bool (true/false),
+  comma-separated lists inside brackets, or bare strings from the known-values set.
+  Skip any value that does not match those rules, including strings that look like credentials (any substring of a credential key in any part after splitting on underscore).
+  For model_list, extract every deployment's provider prefix (the part before the first slash in litellm_params.model)
+  and return one line with all unique providers sorted.
+
+  The safe_config_lines function takes a runtime config snapshot (Mapping[str, object]) and general_settings snapshot,
+  validates their JSON structure with pydantic TypeAdapters, and returns an immutable tuple of formatted lines for each
+  supported section: general_settings, litellm_settings, litellm_settings.cache_params, router_settings, guardrails
+  and model_list, in that order, with no blank lines.
+  Reuse the known-name sets from build_environment_report without importing Python modules at runtime; snapshot them as static data.
+  Use ast parsing to extract module-level names from the litellm and litellm.router modules at startup,
+  then freeze the results in a const.
+
+  Register the route as GET /debug/report with no schema in include_in_schema.
+  The route requires authentication through B052's user_api_key_auth.
+  Only proxy admins (verified via is_proxy_admin from B1018) can read this route; other authenticated principals
+  get HTTP 403 Forbidden with a message naming the permission.
+  The route returns the EnvironmentReport built by calling build_proxy_environment_report, which calls safe_config_lines
+  with a snapshot of the proxy's running configuration and general_settings.
+
+  Review as security-sensitive and test the route through the booted server.
+scope:
+  paths:
+    - crates/betterlite-reporting/src/safe_proxy_config.rs
+    - crates/betterlite-reporting/src/safe_proxy_config/**
+    - crates/betterlite-server/src/debug_routes.rs
+    - crates/betterlite-server/src/debug_routes/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/**
+    - tools/oracle/cases/debug/report/**
+    - tools/oracle/helpers/b4171.py
+    - tools/oracle/helpers/b4171/**
+    - tools/oracle/src/helpers/reporting/b4171.rs
+    - tools/oracle/src/helpers/reporting/b4171/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L1-L54
+    why: Imports, constants and credential-key-parts allowlist definition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L57-L68
+    why: _object_map and _object_list helper functions for type validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L71-L98
+    why: _known_values enum cache builder and _module_level_names AST name extraction for module and import declarations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L101-L122
+    why: _litellm_settings_keys, _router_settings_keys and _cache_params_keys keyset builders, plus _is_credential_key filter and ENUM_KEYS_WITH_CREDENTIAL_PARTS exception for key_management_system.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L125-L150
+    why: _render_json, _render and _section_lines for formatting safe values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L153-L184
+    why: _guardrail_lines and _model_list_lines for building guardrail and provider lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L187-L228
+    why: safe_config_lines, build_proxy_environment_report and build_proxy_bug_report public API.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L789-L803
+    why: GET /debug/report route with is_proxy_admin check and EnvironmentReport return type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2698-L3239
+    why: ConfigGeneralSettings enum keys for known general_settings fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_groups.py
+    why: VALID_ROUTING_STRATEGIES enum values for the routing_settings filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py
+    why: GuardrailEventHooks enum values for guardrail line filtering.
+dod:
+  - text: Credential-like keys are filtered based on name matching the allowlist parts (key, keys, secret, secrets, token, password, passwd, credential, credentials, url, uri, dsn, host, hosts, base, endpoint, cert, pem, salt) after splitting on underscore, except key_management_system which is always included.
+    proof: [credential-filter-tests]
+  - text: Boolean values format as lowercase true/false; strings format only if they are in the known-values set and not credential-like keys; other types are skipped.
+    proof: [credential-filter-tests]
+  - text: Model list providers are extracted from litellm_params.model prefixes, deduplicated, sorted ascending and returned as a single comma-separated list.
+    proof: [credential-filter-tests]
+  - text: safe_config_lines returns an immutable ordered tuple with general_settings, litellm_settings, cache_params, router_settings, guardrails and model_list lines in that order, with no duplicates or blanks.
+    proof: [credential-filter-tests]
+  - text: build_proxy_bug_report calls build_bug_report with surface='proxy' and config_lines from safe_config_lines, returning a BugReport with exception type and frames preserved.
+    proof: [safe-proxy-config-tests]
+  - text: build_proxy_environment_report calls build_environment_report with surface='proxy' and config_lines from safe_config_lines, returning an EnvironmentReport.
+    proof: [safe-proxy-config-tests]
+  - text: GET /debug/report requires authentication through user_api_key_auth.
+    proof: [report-route-tests]
+  - text: GET /debug/report returns HTTP 403 Forbidden for authenticated non-admin users.
+    proof: [report-route-tests]
+  - text: GET /debug/report returns HTTP 200 with an EnvironmentReport for proxy admins.
+    proof: [report-route-tests]
+  - text: The EnvironmentReport returned by /debug/report matches the format from build_proxy_environment_report with safe_config_lines output.
+    proof: [report-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: credential-filter-tests
+      why: Credential key filtering, value rendering or config line assembly fails or does not exist
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::tests::/) - test(/replays_the_/)'
+    - id: safe-proxy-config-tests
+      why: build_proxy_bug_report or build_proxy_environment_report is missing or does not integrate with B4170
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::tests::/) - test(/replays_the_/)'
+    - id: report-route-tests
+      why: The /debug/report route is missing, does not authenticate, does not check admin status, or returns wrong types
+      run: cargo gate run B4171 --only oracle
+oracle_cases:
+  - tools/oracle/cases/debug/report/admin-access.yaml
+  - tools/oracle/cases/debug/report/non-admin-403.yaml
+  - tools/oracle/cases/debug/report/unauthenticated.yaml
+deviations:
+  - what: Configuration is read from a typed snapshot parameter, not loaded by the route. The proxy's running config and general_settings are passed in at startup by the caller.
+    why: betterlite separates config loading (B002) from debug reporting. This route reports what is running, not what is in a file.
+  - what: Known-name sets for litellm and router modules are built once at startup using AST parsing over module source, not by importing at runtime.
+    why: Native Rust cannot execute Python imports. Startup parsing of LiteLLM's module-level constants is lightweight and avoids runtime overhead.
+  - what: Provider enum values are extracted from a static constant list, not from a provider registry. betterlite has no provider dispatch yet.
+    why: Decoupling safe config formatting from provider discovery keeps this module stable and reusable.
+out_of_scope:
+  - Configuration loading and validation. B002 owns config parsing; this task reports the snapshot that was loaded.
+  - Request dispatch and other debug routes. GET /memory-usage, /debug/asyncio-tasks and others are owned by B4173 and B4174.
+  - The exporter's get_finished_spans callable used by GET /otel-spans. B4174 owns that route; the exporter is a dependency.
+  - Custom secrets manager operations and other config dependencies referenced but not owned by B002.
+  - Caller wiring for build_proxy_bug_report in proxy exception paths (proxy_server.py, utils.py, common_request_processing.py). This function is built here; the callers that invoke it at error time depend on this part.
+pitfalls:
+  - >-
+    Credential-like key filtering is case-insensitive and substring-based on the parts: key, keys, secret, secrets, token, password, passwd, credential, credentials, url, uri, dsn, host, hosts, base, endpoint, cert, pem, salt.
+    A key like "user_password_hash" contains "password", so it is filtered even though the full name is not in the allowlist.
+    The exception key_management_system is matched exactly, not as a substring.
+  - Boolean values are safe under credential-like keys; strings are not. A credential.use_ssl = true is included, but credential.api_key = "openai" is not.
+  - Model list provider extraction splits on the first forward slash and does not lowercase. If a deployment's litellm_params.model is "GPT-4/Claude", the provider is "GPT-4".
+  - The frozen known-values set must be static and baked in at compile time. Do not reload it per route call or per config change.
+  - Proxy admin status is checked through is_proxy_admin from B1018. If that callable changes ownership or interface, update the reference here.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

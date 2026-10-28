@@ -1,0 +1,286 @@
+id: B3068
+title: Catch up Mavvrik daily exports
+description: >-
+  Build daily-only Mavvrik scheduling, seven-day catch-up and row-cap handling in betterlite-server::finops::mavvrik.
+  MavvrikFocusLogger enforces daily-only frequency, implements metricsMarker parsing with distinct empty/malformed handling,
+  and runs catch-up exports for missed dates within a seven-day window. Every export—including empty-data days—advances
+  the marker on the Mavvrik destination.
+
+  Configuration (all via environment variables through B002):
+  MAVVRIK_API_KEY, MAVVRIK_API_ENDPOINT, and MAVVRIK_CONNECTION_ID are required credentials read via os.getenv with no default;
+  missing values yield None and are passed to the destination for validation.
+  MAVVRIK_FOCUS_FREQUENCY only accepts "daily" (case-insensitive); any other value raises ValueError at construction.
+  MAVVRIK_FOCUS_MAX_ROWS defaults to 500,000 (or parsed from env var as int, with no try/except on parse error).
+
+  The metricsMarker returned by Mavvrik's register endpoint may be a Unix timestamp (int/float, seconds since epoch),
+  an ISO date string (YYYY-MM-DD or full ISO 8601), or falsy (0, None, empty string) for a fresh connector.
+  _parse_metrics_marker converts timestamps to UTC midnight, returns None for falsy values, and logs a warning for unparseable input.
+  _is_empty_metrics_marker returns true only when marker is None, 0 (int/float), or empty string; distinguishes 0 from omitted.
+
+  catch-up logic: on each scheduled run, fetch the metricsMarker; if it is behind yesterday (or empty),
+  export missed dates starting from max(last_ingested + 1 day, yesterday - 6 days) and stopping before yesterday.
+  Do not export yesterday as a catch-up; export yesterday last as the normal daily run.
+  _MAX_CATCHUP_DAYS = 7.
+
+  initialize_mavvrik_focus_export_job uses the pod lock manager with the MAVVRIK_FOCUS_EXPORT_JOB_NAME lock key.
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/mavvrik.rs
+    - crates/betterlite-server/src/finops/mavvrik/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L38-L70"
+    why: _parse_metrics_marker handling both Unix timestamp and ISO date formats, with None return for falsy values and warning for parse failures.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L73-L80"
+    why: _is_empty_metrics_marker distinguishing None, 0 (int/float), and empty string from actual date values.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L86-L108"
+    why: MavvrikFocusLogger.__init__ enforcing daily-only frequency, parsing MAVVRIK_FOCUS_MAX_ROWS with no try/except, calling super().__init__ with fixed provider/format/frequency/prefix.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L110-L144"
+    why: _export_window with Mavvrik row cap applied as effective_limit, warning when row cap is reached, delivering empty payload when data is empty but still calling deliver.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L146-L223"
+    why: _run_scheduled_export catch-up logic with metricsMarker parsing, seven-day window, last_ingested comparison, and yesterday export with now as end_time.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L225-L242"
+    why: initialize_mavvrik_focus_export_job pod lock acquisition and release using MAVVRIK_FOCUS_EXPORT_JOB_NAME.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L244-L281"
+    why: init_mavvrik_focus_background_job exact type match filtering, lazy initialization via _init_custom_logger_compatible_class, and scheduler registration.
+dod:
+  - text: >-
+      MavvrikFocusLogger.__init__ raises ValueError when MAVVRIK_FOCUS_FREQUENCY is set to any value other than "daily"
+      (case-insensitive), with a message explaining that daily frequency is required.
+    proof: [frequency-daily-only]
+  - text: >-
+      MavvrikFocusLogger.__init__ reads MAVVRIK_API_KEY, MAVVRIK_API_ENDPOINT, and MAVVRIK_CONNECTION_ID via os.getenv with no default,
+      builds destination_config dict from these values, and calls super().__init__ with provider="mavvrik", export_format="csv",
+      frequency="daily", prefix="mavvrik_focus_exports", and the destination_config dict.
+    proof: [init-super-call]
+  - text: >-
+      MAVVRIK_FOCUS_MAX_ROWS is parsed as int(raw) if present, else defaults to 500,000; invalid values raise ValueError.
+    proof: [max-rows-parsing]
+  - text: >-
+      _parse_metrics_marker handles Unix timestamps (int/float) by converting to UTC datetime at midnight,
+      ISO date strings (YYYY-MM-DD, YYYY-MM-DDT...Z formats) by parsing to UTC datetime at midnight,
+      and returns None for falsy markers (0, None, empty/whitespace string).
+    proof: [parse-marker-formats, parse-marker-none]
+  - text: >-
+      _parse_metrics_marker logs a warning and returns None when the marker cannot be parsed as timestamp or ISO date.
+    proof: [parse-marker-warning]
+  - text: >-
+      _is_empty_metrics_marker returns true only when marker is None, 0 (int/float), or empty/whitespace string;
+      returns false for any other value including non-zero integers or non-empty date strings.
+    proof: [is-empty-marker-cases]
+  - text: >-
+      _export_window applies the effective_limit (explicit limit or self._max_rows);
+      warns when data length reaches effective_limit and logs the window dates and max-rows setting.
+    proof: [export-window-row-cap]
+  - text: >-
+      _export_window delivers empty payload (b"") when data is empty or normalized data is empty,
+      passing the empty payload to destination.deliver alongside the window and filename.
+    proof: [export-window-empty-delivery]
+  - text: >-
+      _run_scheduled_export registers with Mavvrik via destination.get_metrics_marker() to fetch the metricsMarker.
+    proof: [scheduled-export-register]
+  - text: >-
+      _run_scheduled_export computes today's window with end_time = now and start_time = yesterday at midnight (00:00),
+      where yesterday = now at 00:00 minus 1 day.
+    proof: [scheduled-export-today-window]
+  - text: >-
+      _run_scheduled_export determines if metricsMarker is empty using _is_empty_metrics_marker;
+      determines if metricsMarker is behind yesterday by parsing it with _parse_metrics_marker and comparing to yesterday.
+    proof: [scheduled-export-marker-check]
+  - text: >-
+      _run_scheduled_export catch-up always runs when marker is empty, starting from (yesterday - 6 days) through yesterday.
+      Catch-up is skipped only when last_ingested is None because marker is a non-empty, unparseable string.
+    proof: [catchup-start-date]
+  - text: >-
+      _run_scheduled_export warns when last_ingested is more than 7 days behind, with a message naming the gap.
+    proof: [catchup-behind-warning]
+  - text: >-
+      _run_scheduled_export loops through catch-up dates (starting from catch_up_date, incrementing by 1 day)
+      and calls _export_window with start_time=catch_up_date and end_time=min(catch_up_date + 1 day, now);
+      stops before yesterday.
+    proof: [catchup-loop]
+  - text: >-
+      _run_scheduled_export exports yesterday's window last with start_time=yesterday and end_time=now,
+      using "now" as the upper bound to include spend rows flushed after midnight.
+    proof: [scheduled-export-yesterday]
+  - text: >-
+      initialize_mavvrik_focus_export_job retrieves pod_lock_manager from proxy_logging_obj.db_spend_update_writer,
+      checks for both pod_lock_manager existence and redis_cache presence, and acquires the lock using MAVVRIK_FOCUS_EXPORT_JOB_NAME.
+    proof: [pod-lock-acquire-mavvrik]
+  - text: >-
+      initialize_mavvrik_focus_export_job logs debug "Mavvrik FOCUS export: unable to acquire pod lock" and returns
+      early if acquire_lock returns false.
+    proof: [pod-lock-acquire-fail-mavvrik]
+  - text: >-
+      initialize_mavvrik_focus_export_job releases the lock in a finally block using MAVVRIK_FOCUS_EXPORT_JOB_NAME.
+    proof: [pod-lock-release-mavvrik]
+  - text: >-
+      init_mavvrik_focus_background_job filters registered loggers by exact type (type(cb) is MavvrikFocusLogger),
+      excluding subclasses, and selects the first match.
+    proof: [scheduler-exact-type-match-mavvrik]
+  - text: >-
+      init_mavvrik_focus_background_job attempts lazy initialization via _init_custom_logger_compatible_class
+      if "mavvrik" is registered in litellm.callbacks but no instance exists.
+    proof: [scheduler-lazy-init-mavvrik]
+  - text: >-
+      init_mavvrik_focus_background_job logs debug "No MavvrikFocusLogger registered; skipping scheduler" and returns
+      early if no logger is found after lazy init.
+    proof: [scheduler-skip-empty-mavvrik]
+  - text: >-
+      init_mavvrik_focus_background_job calls scheduler.add_job with the logger's initialize_mavvrik_focus_export_job method,
+      job id=MAVVRIK_FOCUS_EXPORT_JOB_NAME, replace_existing=True, and unpacks the trigger_kwargs.
+    proof: [scheduler-registration-mavvrik]
+  - text: >-
+      Every mutant in the mavvrik_focus module is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: frequency-daily-only
+      why: MavvrikFocusLogger does not raise ValueError for non-daily frequency values
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::frequency_daily_only/)'
+    - id: init-super-call
+      why: MavvrikFocusLogger.__init__ does not call super().__init__ with correct provider, format, frequency, prefix
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::init_super_call/)'
+    - id: max-rows-parsing
+      why: MAVVRIK_FOCUS_MAX_ROWS parsing does not default to 500000 or does not raise error on invalid input
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::max_rows_parsing/)'
+    - id: parse-marker-formats
+      why: _parse_metrics_marker does not handle Unix timestamps and ISO date formats correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::parse_marker_formats/)'
+    - id: parse-marker-none
+      why: _parse_metrics_marker does not return None for falsy markers or does not set timestamps to midnight
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::parse_marker_none/)'
+    - id: parse-marker-warning
+      why: _parse_metrics_marker does not log warning for unparseable markers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::parse_marker_warning/)'
+    - id: is-empty-marker-cases
+      why: _is_empty_metrics_marker does not distinguish None, 0, empty string from actual dates
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::is_empty_marker_cases/)'
+    - id: export-window-row-cap
+      why: _export_window does not apply effective_limit or does not warn at row cap
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export_window::row_cap/)'
+    - id: export-window-empty-delivery
+      why: _export_window does not deliver empty payload when data is empty
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export_window::empty_delivery/)'
+    - id: scheduled-export-register
+      why: _run_scheduled_export does not call get_metrics_marker on the Mavvrik destination
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::register/)'
+    - id: scheduled-export-today-window
+      why: _run_scheduled_export does not compute today window with end_time=now and start_time=yesterday at 00:00
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::today_window/)'
+    - id: scheduled-export-marker-check
+      why: _run_scheduled_export does not check if marker is empty or behind yesterday
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::marker_check/)'
+    - id: catchup-start-date
+      why: _run_scheduled_export does not compute catch-up start date from max(last_ingested+1, yesterday-6) or does not always run catch-up when marker is empty
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::catchup_start_date/)'
+    - id: catchup-behind-warning
+      why: _run_scheduled_export does not warn when last_ingested is more than 7 days behind
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::catchup_behind_warning/)'
+    - id: catchup-loop
+      why: _run_scheduled_export does not loop catch-up dates or does not use min(date+1, now) as end_time
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::catchup_loop/)'
+    - id: scheduled-export-yesterday
+      why: _run_scheduled_export does not export yesterday last with end_time=now
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::yesterday/)'
+    - id: pod-lock-acquire-mavvrik
+      why: initialize_mavvrik_focus_export_job does not acquire pod lock with MAVVRIK_FOCUS_EXPORT_JOB_NAME
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::pod_lock_acquire/)'
+    - id: pod-lock-acquire-fail-mavvrik
+      why: initialize_mavvrik_focus_export_job does not log debug and return early on acquire failure
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::pod_lock_acquire_fail/)'
+    - id: pod-lock-release-mavvrik
+      why: initialize_mavvrik_focus_export_job does not release pod lock with MAVVRIK_FOCUS_EXPORT_JOB_NAME in finally
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::pod_lock_release/)'
+    - id: scheduler-exact-type-match-mavvrik
+      why: init_mavvrik_focus_background_job does not filter by exact type or includes subclasses
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::exact_type_match/)'
+    - id: scheduler-lazy-init-mavvrik
+      why: init_mavvrik_focus_background_job does not attempt lazy initialization when "mavvrik" is registered
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::lazy_init/)'
+    - id: scheduler-skip-empty-mavvrik
+      why: init_mavvrik_focus_background_job does not skip when no logger is found
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::skip_empty/)'
+    - id: scheduler-registration-mavvrik
+      why: init_mavvrik_focus_background_job does not register the scheduler job with correct id and trigger
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::registration/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      MAVVRIK_FOCUS_MAX_ROWS is parsed as int(raw) without try/except; a non-integer value raises ValueError.
+    why: >-
+      LiteLLM's implementation at line 108 does not wrap the int() call, following the pattern of other numeric config parsing.
+      Invalid values fail fast at construction rather than degrading silently.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L107-L108"
+  - what: >-
+      Configuration is injected through betterlite-config (B002) instead of reading environment variables directly.
+    why: >-
+      All external configuration in betterlite comes through the config crate for consistency and testability.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L86-L108"
+  - what: >-
+      All methods are async/await (Rust's tokio runtime) instead of asyncio (Python).
+    why: >-
+      The gateway is built on tokio; the export scheduler is called from async contexts in the server.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mavvrik_focus/mavvrik_focus_logger.py#L110"
+out_of_scope:
+  - >-
+    FocusLogger base class methods and fields that MavvrikFocusLogger inherits unchanged
+    (provider resolution, export_format, frequency parsing, prefix handling, engine initialization) belong to B3066.
+  - >-
+    FocusMavvrikDestination implementation (registration, upload, marker retrieval) belongs to B3063.
+  - >-
+    FocusExportEngine construction and engine._transformer, engine._serializer methods belong to B3065.
+  - >-
+    Database query logic (engine._database.get_usage_data) belongs to B3060.
+  - >-
+    FocusTimeWindow record construction belongs to B3061.
+pitfalls:
+  - >-
+    MavvrikFocusLogger.__init__ must raise ValueError immediately if MAVVRIK_FOCUS_FREQUENCY is not "daily" (case-insensitive).
+    The error must be raised before calling super().__init__, so the object is not partially constructed.
+  - >-
+    _parse_metrics_marker must handle three distinct falsy values differently: None (missing), 0 (fresh connector),
+    and empty string (malformed). Only these three should return None; other values like false boolean should parse as-is or error.
+  - >-
+    _parse_metrics_marker timestamps must be converted to UTC midnight (hour=0, minute=0, second=0, microsecond=0);
+    ISO date strings parsed with %Y-%m-%d naturally fall on midnight.
+  - >-
+    _is_empty_metrics_marker must return true only for None, 0 (int/float), or empty/whitespace string.
+    Non-zero integers and non-empty date strings must return false.
+  - >-
+    _export_window must pass the explicitly provided limit or self._max_rows (whichever is not None) to get_usage_data
+    as the effective_limit; warn when len(data) >= effective_limit.
+  - >-
+    _export_window must call destination.deliver even when data is empty, passing b"" as the payload and the filename.
+    This advances the Mavvrik marker for empty days.
+  - >-
+    _run_scheduled_export must use FocusMavvrikDestination.get_metrics_marker() to fetch the marker;
+    must not fall back to a dry-run or mock marker.
+  - >-
+    Catch-up always runs when marker is empty (None, 0, or empty string), starting from yesterday - 6 days through yesterday,
+    even for a brand-new connector with last_ingested=None. Catch-up is skipped only when last_ingested is None because marker is a non-empty, unparseable string.
+  - >-
+    The catch-up loop must use min(catch_up_date + 1 day, now) as the end_time for each window,
+    not end_time=catch_up_date + 1 day, to avoid querying beyond the current time.
+  - >-
+    Today's export window uses end_time=now (the current time), not end_time=today at 23:59 or tomorrow at 00:00.
+    This includes spend rows flushed to the DB after midnight but for the same calendar day.
+  - >-
+    initialize_mavvrik_focus_export_job must check pod_lock_manager.redis_cache before attempting to acquire a lock;
+    the absence of redis_cache means the lock manager is not functional.
+  - >-
+    When acquire_lock returns false, log debug and return early without calling _run_scheduled_export.
+  - >-
+    init_mavvrik_focus_background_job must use exact type match (type(cb) is MavvrikFocusLogger) to filter,
+    not isinstance, to exclude subclasses.
+  - >-
+    If "mavvrik" is in litellm.callbacks but no instance exists, call _init_custom_logger_compatible_class with
+    logging_integration="mavvrik", internal_usage_cache=None, llm_router=None.
+  - >-
+    scheduler.add_job is called with id=MAVVRIK_FOCUS_EXPORT_JOB_NAME, replace_existing=True,
+    and the trigger_kwargs unpacked (trigger, cron/interval parameters).
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

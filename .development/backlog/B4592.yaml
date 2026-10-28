@@ -3,7 +3,7 @@ milestone: M8 platform
 title: CLI credential migration, save and logout
 status: todo
 depends_on: [B4590, B4591, B192]
-file: null
+file: tasks/B4592-cli-credential-lifecycle.yaml
 covers:
   - "litellm/litellm_core_utils/cli_token_utils.py"
 parent: B135

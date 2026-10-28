@@ -3,7 +3,7 @@ milestone: M5 api families
 title: OpenSandbox request helpers readiness and execution output
 status: todo
 depends_on: [B3516, B002, B173]
-file: null
+file: tasks/B3517-opensandbox-helpers.yaml
 covers:
   - "litellm/llms/opensandbox/sandbox/transformation.py"
   - "litellm/constants.py"

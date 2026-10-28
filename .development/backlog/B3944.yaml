@@ -3,7 +3,7 @@ milestone: M7 observability
 title: New Relic metric delivery, retries and eviction drain
 status: todo
 depends_on: [B3943, B173, B192, B256]
-file: null
+file: tasks/B3944-newrelic-metric-delivery.yaml
 covers:
   - "litellm/integrations/newrelic/newrelic_metrics.py"
 parent: B113

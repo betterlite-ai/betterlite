@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "phind", "call": {"builtin_prompts": {"family": "phind", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

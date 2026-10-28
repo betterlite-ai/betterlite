@@ -1,0 +1,8 @@
+task: B4173
+deviations:
+  - what: Endpoints requesting Python-only measurements return HTTP 501 with error.type=unsupported_runtime instead of returning the measurements.
+    why: Native Rust cannot provide CPython GC generations, object type counts, tracemalloc sites, or asyncio introspection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L60-L127
+  - what: GC configuration warnings about unavailable Python instrumentation are logged but do not prevent startup.
+    why: betterlite does not have a Python runtime to instrument; warnings acknowledge the limitation while allowing server startup to proceed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L29-L53

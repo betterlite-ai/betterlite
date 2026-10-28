@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "ollama-search_non_list", "call": {"builtin_prompts": {"family": "ollama", "messages": [{"role": "system", "content": "s", "search_results": {"title": "skip"}}, {"role": "assistant", "content": "a", "search_results": null}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Anthropic passthrough stream reconstruction
 status: todo
 depends_on: [B579, B581, B583, B206, B2227]
-file: null
+file: tasks/B3631-anthropic-relay-reconstruction.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py"
 parent: B103

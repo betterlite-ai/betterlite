@@ -1,0 +1,331 @@
+id: B3611
+title: Pass-through HTTP body and WebSocket frame helpers
+description: >-
+  Implement multipart/non-streaming HTTP preparation plus small WebSocket JSON/setup/close-frame
+  transforms. Build non_streaming_http_request_handler to dispatch GET requests with streaming
+  semantics, multipart requests via make_multipart_http_request, and generic JSON requests with
+  httpx stream=True. Build is_multipart to check for multipart/form-data in the content-type header.
+  Build make_multipart_http_request to iterate form.multi_items(), separate uploaded files from
+  non-file fields, preserve repeated field names, and send grouped non-file fields via data= when
+  file parts exist (as a dict of lists by field name), or via files= with (name, (None, value))
+  tuples when no file parts exist. When the form has file parts, real files are sent via files= as
+  (name, (filename, content, content_type)) tuples and non-file fields via data=; when the form
+  has no file parts, all fields go via files= as (name, (None, value)) tuples and data is not sent,
+  preventing httpx downgrade to application/x-www-form-urlencoded. Build _build_request_files_from_upload_file
+  to read and return (filename, content, content_type) from an UploadFile object.
+
+  Build _parse_request_data_by_content_type to read query_params, custom_body, and stream from JSON
+  bodies (application/json content-type), handle misconfigured clients sending JSON with multipart
+  content-type by attempting JSON parsing first before falling back to actual multipart handling,
+  extract query_params and custom_body from URL-encoded form data (application/x-www-form-urlencoded),
+  and fall back to dict(request.query_params) when content-type is absent or unrecognized. Return a
+  4-tuple (query_params_data, custom_body_data, file_data, stream) where file_data is always None
+  and stream is extracted from the JSON body when present.
+
+  Implement WebSocket and Vertex Live helpers: _rewrite_vertex_live_setup_model to extract the setup
+  dict from a JSON message, pass its model field to a rewriter function, and return the rewritten JSON
+  or the input unchanged if the rewriter is None, parsing fails, or the rewritten model matches the
+  original. Build _resolved_vertex_live_setup to pass the rewriter through setup data before model
+  extraction, allowing extractors to see the fully qualified path that reaches the upstream.
+  Build _json_object_frame to parse a frame as JSON and return a dict if parsing succeeds and the
+  decoded value is a dict, or None otherwise. Build _truncated_close_reason to encode a close reason
+  to UTF-8, truncate it to CLOSE_REASON_MAX_BYTES bytes without splitting a character (using
+  errors="ignore" on the final decode), and return the truncated reason.
+
+  Build SENDABLE_CLOSE_CODES as every websockets.frames.CloseCode member except NO_STATUS_RCVD (1005),
+  ABNORMAL_CLOSURE (1006), and TLS_HANDSHAKE (1015). Build the constant CLOSE_REASON_MAX_BYTES as 123
+  (the maximum bytes a WebSocket close frame reason can hold). Build _client_socket_is_open to check
+  that both halves of a Starlette WebSocket are not DISCONNECTED. Build _upstream_close_to_relay to
+  return the upstream close frame if it's not a plain normal close (code 1000, empty reason), its code
+  is in SENDABLE_CLOSE_CODES or in the private range 3000-4999, or None otherwise.
+  Build _extract_model_from_vertex_ai_setup to extract a model name from Vertex AI Live setup
+  responses in both direct format (setup_response["model"]) and nested format
+  (setup_response["setup"]["model"]), extracting just the model name after the last "/models/" if
+  present, and returning None on any exception or if the path format is unrecognized.
+
+  Preserve raw signed request bodies, upload ordering, finite close-code rules and UTF-8 close-reason
+  truncation exactly as LiteLLM does.
+
+scope:
+  paths:
+  - crates/betterlite-http/src/lib.rs
+  - crates/betterlite-http/src/passthrough.rs
+  - crates/betterlite-http/src/passthrough/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/tests.rs
+  - crates/betterlite-server/src/passthrough.rs
+  - crates/betterlite-server/src/passthrough/**
+  - tools/oracle/cases/passthrough/**
+  - crates/betterlite-server/src/tests/**
+  lint_tables: false
+
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L436-L576
+  why: >-
+    non_streaming_http_request_handler, is_multipart, _build_request_files_from_upload_file,
+    make_multipart_http_request; multipart handling preserves repeated field names via multi_items(),
+    separates files from non-file fields, groups non-file fields by name, and sends via files=/data=
+    based on whether file parts exist.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L507-L517
+  why: >-
+    make_multipart_http_request comment explaining that when form has no file parts, all fields go
+    via files= as (name, (None, value)) to prevent httpx downgrade to application/x-www-form-urlencoded.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1924-L1980
+  why: >-
+    _parse_request_data_by_content_type extracts query_params, custom_body, and stream from JSON bodies;
+    handles JSON-in-multipart misconfiguration; extracts from URL-encoded data; returns 4-tuple with
+    stream field extracted from JSON body.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2210-L2297
+  why: >-
+    _rewrite_vertex_live_setup_model, _resolved_vertex_live_setup, _json_object_frame, _truncated_close_reason,
+    SENDABLE_CLOSE_CODES (defined as CloseCode members except NO_STATUS_RCVD, ABNORMAL_CLOSURE, TLS_HANDSHAKE),
+    _client_socket_is_open, _upstream_close_to_relay with private-range fallback.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2846-L2875
+  why: >-
+    _extract_model_from_vertex_ai_setup extracts model name from direct or nested setup response format,
+    parsing /models/ separator and returning None on exception or unrecognized format.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L345
+  why: WEBSOCKET_CLOSE_REASON_MAX_BYTES defined as 123 bytes.
+
+dod:
+- text: >-
+    non_streaming_http_request_handler dispatches GET requests with stream=True, multipart requests
+    via make_multipart_http_request, and generic requests with json= and stream=True.
+  proof:
+  - non-streaming-handler-cases
+- text: >-
+    is_multipart returns true when content-type header contains "multipart/form-data", false otherwise.
+  proof:
+  - is-multipart-cases
+- text: >-
+    _build_request_files_from_upload_file reads an UploadFile and returns (filename, content, content_type).
+  proof:
+  - build-request-files-cases
+- text: >-
+    make_multipart_http_request preserves repeated field names via form.multi_items(), separates files
+    from non-file fields, groups non-file fields by name, and sends them via files=/data= according to
+    whether file parts exist: when files exist, files= carries (field_name, (filename, content, content_type))
+    tuples and data= carries grouped non-file fields as a dict of lists; when no files exist, files= carries
+    all fields as (field_name, (None, value)) tuples and data= is None.
+  proof:
+  - multipart-tests
+- text: >-
+    _parse_request_data_by_content_type returns a 4-tuple (query_params_data, custom_body_data, file_data, stream)
+    where file_data is always None; query_params and custom_body are extracted from JSON bodies; stream is
+    extracted from the JSON body when application/json content-type; handles JSON-in-multipart misconfiguration
+    by attempting JSON parsing first; extracts from URL-encoded form data; falls back to dict(request.query_params).
+  proof:
+  - parse-content-type-tests
+- text: >-
+    _rewrite_vertex_live_setup_model extracts setup dict from a JSON message, passes its model field through
+    a rewriter function, and returns the rewritten JSON or the input unchanged if rewriter is None, parsing fails,
+    or the model matches.
+  proof:
+  - rewrite-setup-model-cases
+- text: >-
+    _resolved_vertex_live_setup applies the model rewriter to setup_data and returns the fully qualified path
+    for extraction, or the original data if rewriter is None.
+  proof:
+  - resolved-setup-cases
+- text: >-
+    _json_object_frame decodes a frame (str or bytes as UTF-8) as JSON and returns a dict if successful, None
+    on parse failure or if the decoded value is not a dict.
+  proof:
+  - json-object-frame-cases
+- text: >-
+    _truncated_close_reason encodes a reason string to UTF-8, truncates it to CLOSE_REASON_MAX_BYTES without
+    splitting a character (using errors="ignore"), and returns the truncated reason.
+  proof:
+  - truncated-close-reason-cases
+- text: >-
+    SENDABLE_CLOSE_CODES contains every websockets.frames.CloseCode member except NO_STATUS_RCVD (1005),
+    ABNORMAL_CLOSURE (1006), and TLS_HANDSHAKE (1015).
+  proof:
+  - sendable-close-codes-constant
+- text: >-
+    CLOSE_REASON_MAX_BYTES is defined as 123 and is used by _truncated_close_reason and _upstream_close_to_relay.
+  proof:
+  - close-reason-max-bytes-constant
+- text: >-
+    _client_socket_is_open returns true only when both client_state and application_state are not DISCONNECTED.
+  proof:
+  - client-socket-open-cases
+- text: >-
+    _upstream_close_to_relay returns the upstream close frame if it's not a plain normal close (code 1000,
+    empty reason) and its code is in SENDABLE_CLOSE_CODES or in the private range 3000-4999, or None otherwise.
+  proof:
+  - upstream-close-tests
+- text: >-
+    _extract_model_from_vertex_ai_setup extracts model name from direct (setup_response["model"]) or nested
+    (setup_response["setup"]["model"]) format, parsing /models/ separator and returning None on exception or
+    unrecognized format.
+  proof:
+  - extract-model-cases
+
+checks:
+  optional: []
+  commands:
+  - id: non-streaming-handler-cases
+    why: >-
+      non_streaming_http_request_handler tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_non_streaming_http_handler($|::)/) - test(/replays_the_/)'
+  - id: is-multipart-cases
+    why: >-
+      is_multipart tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_is_multipart($|::)/) - test(/replays_the_/)'
+  - id: build-request-files-cases
+    why: >-
+      _build_request_files_from_upload_file tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_build_request_files($|::)/) - test(/replays_the_/)'
+  - id: multipart-tests
+    why: >-
+      make_multipart_http_request tests are missing, do not run, or fail to verify multipart
+      field/file separation or files=/data= dispatch based on whether file parts exist
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_make_multipart($|::)/) - test(/replays_the_/)'
+  - id: parse-content-type-tests
+    why: >-
+      _parse_request_data_by_content_type tests are missing, do not run, or fail to cover
+      query_params and custom_body extraction from JSON/URL-encoded content, JSON-in-multipart fallback,
+      and stream field extraction from JSON body
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_parse_content_type($|::)/) - test(/replays_the_/)'
+  - id: rewrite-setup-model-cases
+    why: >-
+      _rewrite_vertex_live_setup_model tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_rewrite_setup_model($|::)/) - test(/replays_the_/)'
+  - id: resolved-setup-cases
+    why: >-
+      _resolved_vertex_live_setup tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_resolved_setup($|::)/) - test(/replays_the_/)'
+  - id: json-object-frame-cases
+    why: >-
+      _json_object_frame tests are missing, do not run, or fail to verify JSON parsing and dict-only acceptance
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_json_object_frame($|::)/) - test(/replays_the_/)'
+  - id: truncated-close-reason-cases
+    why: >-
+      _truncated_close_reason tests are missing, do not run, or fail to verify UTF-8 truncation without character splitting
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_truncated_close_reason($|::)/) - test(/replays_the_/)'
+  - id: sendable-close-codes-constant
+    why: >-
+      SENDABLE_CLOSE_CODES is missing, has wrong members, or does not exclude NO_STATUS_RCVD (1005),
+      ABNORMAL_CLOSURE (1006), and TLS_HANDSHAKE (1015)
+    run: >-
+      grep -q "SENDABLE_CLOSE_CODES" crates/betterlite-server/src/passthrough.rs
+  - id: close-reason-max-bytes-constant
+    why: >-
+      CLOSE_REASON_MAX_BYTES is missing or does not equal 123
+    run: >-
+      grep -q "CLOSE_REASON_MAX_BYTES.*123" crates/betterlite-server/src/passthrough.rs
+  - id: client-socket-open-cases
+    why: >-
+      _client_socket_is_open tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_client_socket_open($|::)/) - test(/replays_the_/)'
+  - id: upstream-close-tests
+    why: >-
+      _upstream_close_to_relay tests are missing, do not run, or fail to verify sendable close-code filtering
+      (every CloseCode member except 1005, 1006, 1015, plus private range 3000-4999)
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_upstream_close($|::)/) - test(/replays_the_/)'
+  - id: extract-model-cases
+    why: >-
+      _extract_model_from_vertex_ai_setup tests are missing, do not run, or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_extract_model($|::)/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+- what: >-
+    When a multipart form has file parts, non-file fields are grouped by name into lists and sent via
+    httpx data=; when a form has no file parts, all fields are sent via files= as (name, (None, value))
+    tuples with data=None. This prevents httpx downgrading a file-less data=-only payload to
+    application/x-www-form-urlencoded.
+  why: >-
+    This follows LiteLLM's behavior exactly. httpx automatically sets the content-type header and
+    boundary when it sees files=; without that parameter, it downgrades to form-urlencoded, which
+    breaks multipart contracts. Sending all fields via files= when no files exist forces httpx to
+    emit a valid multipart frame.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L507-L550
+
+out_of_scope:
+- >-
+  The shared HTTP request/send transport via B173 (get_async_httpx_client, async_client.send with
+  stream=True) is used by non_streaming_http_request_handler and make_multipart_http_request but
+  owned elsewhere; this task calls it as a dependency.
+- >-
+  The _safe_get_request_headers predicate from B1100 (cached JSON/body access for streaming safety)
+  is called by form parsing; this task calls it as a dependency.
+- >-
+  The get_form_data and ordered multipart input preservation are owned by B1101; this task uses them
+  via form.multi_items().
+
+pitfalls:
+- >-
+  make_multipart_http_request must call form.multi_items() instead of form.items() to preserve repeated
+  field names; items() collapses duplicate keys to the last value.
+- >-
+  When the form has no file parts, send all fields via files= as (field_name, (None, field_value)) tuples,
+  not via data=; httpx will downgrade data=-only payloads to application/x-www-form-urlencoded.
+- >-
+  Remove the content-type header from the outgoing request before calling httpx; httpx will set it
+  with the correct boundary when it sees files=, or overwrite a mismatched user header.
+- >-
+  _parse_request_data_by_content_type returns a 4-tuple where the fourth element is the stream field;
+  file_data is always None and is a placeholder for the 3-tuple that functions like this often return.
+- >-
+  _rewrite_vertex_live_setup_model must check setup.get("model") for a string value before passing it
+  to the rewriter; a missing or non-string model field means no rewrite and return of the original frame.
+- >-
+  _json_object_frame must return None if the decoded JSON is not a dict, even on successful parsing;
+  arrays and scalar values are rejected.
+- >-
+  _truncated_close_reason uses errors="ignore" on the final decode to avoid raising UnicodeDecodeError
+  when truncating in the middle of a multi-byte character; the result is a valid UTF-8 string.
+- >-
+  SENDABLE_CLOSE_CODES is the set of all websockets.frames.CloseCode enum members except NO_STATUS_RCVD (1005),
+  ABNORMAL_CLOSURE (1006), and TLS_HANDSHAKE (1015). Do not hardcode ranges like 1000-1014 because they
+  omit 1007 (INVALID_DATA) and 1008 (POLICY_VIOLATION), which are real CloseCode members.
+- >-
+  _upstream_close_to_relay also permits the private close-code range 3000-4999; it checks both
+  membership in SENDABLE_CLOSE_CODES and the range condition.
+- >-
+  _client_socket_is_open must check both client_state and application_state to match Starlette's
+  two-half tracking; checking only one will not catch a half-closed socket.
+- >-
+  _extract_model_from_vertex_ai_setup must handle both direct ("model") and nested ("setup" > "model")
+  fields in the setup response; the nested format is used by Vertex Live and the model name is extracted
+  after the last "/models/" in the path.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

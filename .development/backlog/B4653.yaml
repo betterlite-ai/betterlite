@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: MCP bearer recognition and signing key configuration
 status: todo
 depends_on: [B4651, B4652]
-file: null
+file: tasks/B4653-mcp-bearer-credentials.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{bridge_credentials,session_credentials}.py"
 parent: B137

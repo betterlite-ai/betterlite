@@ -1,0 +1,190 @@
+id: B3853
+title: OTel V2 callback construction and proxy hooks
+description: >-
+  Build the OpenTelemetryV2 CustomLogger callback that wires request identity
+  seeding, phase spans and guardrail emission into the proxy callback system. The
+  callback construction takes an OpenTelemetryV2Config (B3842), a SpanEmitter with
+  its mappers (B3847, B3846), a TenantTracerCache (B3852), and injected metrics/event
+  recorders (B3869, B3848). The __init__ method builds a tracer provider through
+  B3868's build_tracer_provider if none is provided, resolves meter/logger providers
+  (B3848), and registers the instance in proxy_server.open_telemetry_logger for
+  global access. The tracer_provider property exposes read-only access. The callback
+  registers itself in litellm service_callback, input_callback, _async_success_callback
+  and _async_failure_callback lists if no OTel instance is already present (checked by
+  module name prefix).
+
+  Implement _span_error_from_exception to build SpanError records (B3843) from proxy-level
+  exceptions (auth/validation rejections) that never produced a StandardLoggingPayload,
+  calling B253's StandardLoggingPayloadSetup.get_error_information to extract status/type/message/traceback,
+  matching _parse_error's field mapping in B3843. Service hooks async_service_success_hook
+  and async_service_failure_hook accept ServiceLoggerPayload and optional timing/metadata,
+  delegate to _emit_service to construct ServiceSpanData (B3843), call B3840's span_role_for_service,
+  skip metrics-only operations (auth, framework-duplicate services), resolve parent context
+  and links through B3847's resolve_service_span_context, and emit through the SpanEmitter
+  with B3847's emit method.
+
+  Implement request identity seeding (seed_request_identity) to attach request-identity
+  Baggage (B3841) to the current context and server span once at the auth boundary, calling
+  RequestIdentity.from_user_api_key_auth (B3841), promoted_baggage (B3841) with the callback's
+  baggage key configuration, and set_request_baggage (B3847) to wire the contextvar. Stamp
+  identity on the server span directly (never the ambient phase span) using B3847's set_request_root_span
+  and request_root_span to anchor to the root instead of the active span. Start phase spans
+  (start_phase_span) as a context manager yielding a recordable span with name from a service
+  role, stamping errors through B3847's stamp_error.
+
+  Implement async_pre_call_hook to call seed_request_identity with the user key and request
+  metadata (B3841). Implement async_post_call_failure_hook to stamp error attributes on the
+  request's root SERVER span for failures before any LLM call (auth/validation rejections),
+  stamping through stamp_error_attrs. Stamp error.* attributes without recording
+  a duplicate event if error is already on the span. Prefer B3847's mcp_message_transport_span
+  for MCP message errors over the request root. Implement emit_guardrail_span (instance method)
+  to emit a guardrail span from a StandardLoggingGuardrailInformation entry (B3843) as a
+  sibling under the request root, calling GuardrailSpanData.from_logging_entry (B3843) and
+  resolve_request_span_context (B3847). Implement mark_request_root_span
+  to anchor the FastAPI server span as the request root span, calling set_request_root_span
+  and request_root_span.
+
+  Export module-level _registered_v2_logger (reads proxy_server.open_telemetry_logger),
+  module-level emit_guardrail_span (routes to the registered logger's instance method,
+  swallowing exceptions), module-level seed_request_identity (routes to the registered logger),
+  and phase_span context manager (routes to start_phase_span).
+
+  The span-error-from-exception helper stamps status_code on error.code to pin a proxy-level
+  500 or 400 to the real HTTP status (not the provider's), so oracle cases for pre-call failures
+  read as failed with the right code. Direct dependencies enforce that no unmapped callback field
+  is shipped untyped: every config key in OpenTelemetryV2Config (B3842), every baggage key,
+  every mapper name is validated once at construction. Request identity has trusted-versus-requester
+  precedence (B3841) preserved. Metrics and event recorders (B3869, B3848) are optional: if either
+  config is disabled, the recorder is None and hooks skip recording. The callback's open_llm_calls
+  map is bounded to _OPEN_CALLS_MAX (10_000); an oldest-call eviction on overflow caps memory.
+
+  A failed logger.emit_guardrail_span or seed_request_identity suppresses exceptions so a guardrail
+  or seed failure never breaks the request. The phase_span module entry returns None if no logger
+  is registered, so clients use it in a with-statement and check the span for None. Module-level
+  emit_guardrail_span is the single entry point for guardrail emission so a recorded entry yields
+  exactly one span regardless of how many instances are registered. The span-emission pattern
+  (emit through SpanEmitter, link back to ambient/threaded context) preserves tenant destination
+  fanout (B3849).
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/v2_callback.rs
+    - crates/betterlite-logging/src/otel/v2_callback/**
+    - crates/betterlite-logging/tests/v2_callback_tests.rs
+    - tools/oracle/cases/logging/otel-v2-**
+    - tools/oracle/helpers/b3853.py
+    - tools/oracle/helpers/b3853/**
+    - tools/oracle/src/helpers/logging/b3853.rs
+    - tools/oracle/src/helpers/logging/b3853/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L93-L120
+    why: Tracer name constant, span error construction from proxy exceptions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L145-L270
+    why: Custom logger options, callback class declaration, __init__, tracer_provider, metric/event initialization, proxy registration
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L603-L843
+    why: Service hooks, identity seeding, phase spans, guardrail/error emission
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L871
+    why: select_global_otel_v2_logger helper (out of scope, owned by B110)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L911-L922
+    why: _excluded_db_systems helper for service exclusions (out of scope, owned by B110)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L935-L967
+    why: Module-level _registered_v2_logger, emit_guardrail_span, seed_request_identity
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L993-L1000
+    why: Module-level phase_span context manager
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L1003-L1027
+    why: build_otel_v2_logger, _logger_class factory (out of scope, owned by B110)
+dod:
+  - text: The V2 callback constructs with explicit tracer/meter/logger providers, registers itself once in proxy callbacks, and exposes tracer_provider read-only.
+    proof: [v2-callback-init-tests, v2-callback-proxy-registration-tests]
+  - text: Request identity seeding attaches Baggage to the ambient context and server span once at auth boundary without breaking on malformed keys.
+    proof: [v2-callback-identity-tests, v2-callback-baggage-tests]
+  - text: Service hooks emit with correct role, parent context, timing and error overrides, skipping metrics-only operations.
+    proof: [v2-callback-service-hooks-tests]
+  - text: Guardrail emission through module-level entry point yields exactly one span per entry, routing through the single registered logger.
+    proof: [v2-callback-guardrail-tests]
+  - text: Pre-call failures stamp error.code to the real HTTP status, not provider status, without duplicate error events.
+    proof: [v2-callback-error-stamping-tests]
+  - text: Open LLM calls map is bounded; oldest entry is evicted on overflow and no memory is leaked.
+    proof: [v2-callback-llm-calls-bounded-tests]
+  - text: Phase span context manager suppresses exceptions, returns None if no logger is registered, and properly closes spans.
+    proof: [v2-callback-phase-span-tests]
+checks:
+  optional: []
+  commands:
+    - id: v2-callback-init-tests
+      why: Callback initialization with explicit and injected providers must wire dependencies correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::initialization::/)'
+    - id: v2-callback-proxy-registration-tests
+      why: Callback must register itself in proxy lists without duplicating if OTel is already present.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::proxy_registration::/)'
+    - id: v2-callback-identity-tests
+      why: Identity seeding must attach Baggage and stamp server span once without breaking on malformed keys.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::request_identity::/)'
+    - id: v2-callback-baggage-tests
+      why: Baggage promotion and span stamping preserve trusted-versus-requester precedence.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::baggage::/)'
+    - id: v2-callback-service-hooks-tests
+      why: Service hooks emit with correct spans, parent contexts, timing and error overrides.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::service_hooks::/)'
+    - id: v2-callback-guardrail-tests
+      why: Guardrail emission must route to the single registered logger and yield exactly one span.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::guardrail_emission::/)'
+    - id: v2-callback-error-stamping-tests
+      why: Error attributes must stamp to the correct span with the real HTTP status, without duplicate events.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::error_stamping::/)'
+    - id: v2-callback-llm-calls-bounded-tests
+      why: Open calls map bounded eviction and provider release must not leak memory.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::llm_calls_bounds::/)'
+    - id: v2-callback-phase-span-tests
+      why: Phase span context manager lifecycle, exception handling and None-return when no logger is registered.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_v2_callback::phase_span::/)'
+oracle_cases:
+  - tools/oracle/cases/logging/otel-v2-callback-init-success.yaml
+  - tools/oracle/cases/logging/otel-v2-callback-proxy-registration.yaml
+  - tools/oracle/cases/logging/otel-v2-service-success.yaml
+  - tools/oracle/cases/logging/otel-v2-service-failure.yaml
+  - tools/oracle/cases/logging/otel-v2-service-metrics-only.yaml
+  - tools/oracle/cases/logging/otel-v2-guardrail-single-emission.yaml
+  - tools/oracle/cases/logging/otel-v2-precall-failure-status.yaml
+  - tools/oracle/cases/logging/otel-v2-precall-failure-no-duplicate-event.yaml
+  - tools/oracle/cases/logging/otel-v2-phase-span-lifecycle.yaml
+deviations:
+  - what: Module-level emit_guardrail_span catches and suppresses all exceptions so a guardrail-emission failure never breaks the request flow.
+    why: LiteLLM's guardrail-emission path is a best-effort side channel that must not fail the request; betterlite preserves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L954-L961
+  - what: Phase span context manager returns None if no logger is registered instead of throwing.
+    why: Phase spans are optional instrumentation for context propagation; callers must handle None in the with-statement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L993-L1000
+  - what: Request identity seeding swallows exceptions from Baggage attachment so a malformed key dict never breaks auth or seeding.
+    why: Identity seeding is a best-effort span-labeling side effect; attachment failures must not reject the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L704-L734
+out_of_scope:
+  - "litellm/integrations/otel/logger.py:846-871 (select_global_otel_v2_logger): canonical logger selection, owned by B110."
+  - "litellm/integrations/otel/logger.py:874-908 (publish_global_otel_v2_provider): provider publication and fanout setup, owned by B110."
+  - "litellm/integrations/otel/logger.py:911-922 (_excluded_db_systems): service exclusion list, owned by B110."
+  - "litellm/integrations/otel/logger.py:925-932 (_v2_configs): multi-logger configuration aggregation, owned by B110."
+  - "litellm/integrations/otel/logger.py:970-990 (fan_out_provider): fallback provider access, owned by B110."
+  - "litellm/integrations/otel/logger.py:1003-1026 (build_otel_v2_logger, _logger_class): logger factory composition, owned by B110."
+  - B3852 owns the complete TenantTracerCache; this task constructs and holds it.
+  - B3849 owns attach_tenant_fan_out; this task calls it through fan_out_provider (B110).
+  - B3868 owns build_tracer_provider; this task calls it in __init__.
+  - B3869 owns create_genai_metrics and GenAIMetricRecorder; this task uses them as dependencies.
+  - B3848 owns get_tracer, get_meter, get_event_logger, GenAIEventRecorder and metric/logger provider resolution; this task uses them.
+  - B3847 owns SpanEmitter, stamp_error, and context resolution functions; this task uses them.
+  - B3841 owns RequestIdentity, promoted_baggage and all identity/metadata construction; this task calls them.
+  - B3843 owns ServiceSpanData, GuardrailSpanData and SpanError construction; this task calls them.
+  - B3846 owns resolve_mappers; this task passes the result to SpanEmitter.
+  - B253 owns StandardLoggingPayloadSetup.get_error_information; this task calls it through _span_error_from_exception.
+  - G1 (Langfuse leaf, gap) owns LangfuseOpenTelemetryV2 and LangfuseContentOpenTelemetryV2 constructors; B110 dispatches to them.
+pitfalls:
+  - The open_llm_calls map evicts the oldest entry on overflow, not the newest; a long-running proxy never calls close on an evicted provider.
+  - Request identity seeding stamps the server span only if it is recordable; a rejected auth request that never opens a root span leaves identity unstamped.
+  - Service hooks with both start_time and end_time in the past emit as finished traces; a background service call with no parent opens a root trace and is not a child.
+  - The phase_span context manager is a generator; clients must use it in a with-statement, not call it as a plain function.
+  - Emit_guardrail_span is the single entry point; directly calling the logger's instance method on multiple registered callbacks double-emits the same entry.
+  - Pre-call failure error stamping checks the Error.TYPE attribute key to detect if error is already on the span; missing the check records a duplicate event.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security
