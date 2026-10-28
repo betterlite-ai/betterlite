@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Initialize KMS clients and decrypt startup environment values
 status: todo
 depends_on: [B002, B4410]
-file: null
+file: tasks/B4412-kms-environment.yaml
 covers:
   - "litellm/secret_managers/aws_secret_manager.py"
   - "litellm/secret_managers/google_kms.py"

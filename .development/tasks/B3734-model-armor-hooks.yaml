@@ -1,0 +1,180 @@
+id: B3734
+title: Model Armor request response and logging hooks
+description: >-
+  Build Model Armor event hook implementations for pre-call (sanitizing user prompts),
+  during-call moderation (parallel scan), post-call success (sanitizing model responses),
+  and logging-only (deferred scanning for audit). Wire the core decision logic from B3732,
+  file scanning and transport from B3733, and message content extraction from B219.
+
+  The four hook methods handle the guardrail lifecycle. Pre-call scans user messages before
+  the LLM receives them; moderation scans in parallel while the LLM works; post-call success
+  scans and masks the completed response or blocks it; logging-only defers verdict recording
+  until the response is logged, without blocking the request. When masking is enabled
+  (mask_request_content or mask_response_content), sanitized content replaces the original
+  in place; when blocked, an HTTPException with status 400 and sanitized detail is raised.
+  When fail_on_error is false, guardrail API errors pass through (request continues);
+  when true, they block. Metadata buckets store per-request scan results and status
+  to prevent race conditions in concurrent request handling.
+
+  Preserve defaults: fail_on_error defaults true, mask_request_content and
+  mask_response_content default false, sanitize_error_detail defaults true.
+  Every hook calls should_run_guardrail to check if the guardrail is enabled
+  for this call type and event. Pre-call and moderation both scan request files
+  before scanning message text, accumulating responses so a file scan is not
+  dropped by a text scan. Post-call success extracts content from ModelResponse
+  objects via the common_utils helper, skipping non-text types (TTS, images).
+  Logging-only scans completed responses and records the verdict without blocking,
+  respecting logging_only mode in the event_hook config so the same guardrail
+  instance can serve both blocking and audit-only deployments.
+
+  Event type translation: when call_type is call_mcp_tool, pre-call becomes
+  pre_mcp_call and moderation becomes during_mcp_call. All hooks mark the guardrail
+  as applied via add_guardrail_to_applied_guardrails_header BEFORE potential blocking,
+  ensuring it is recorded even when the request is refused.
+
+  Standard logging guardrail information differs between the native hooks and the
+  apply_guardrail method. Pre-call, moderation, and post-call success hooks store a
+  per-request status in metadata that is {success, blocked} to reflect whether content
+  passed or was blocked. The apply_guardrail method records guardrail_status in the
+  request_data logging object with values {success, guardrail_flagged, guardrail_failed_to_respond}
+  to capture success, policy violations, and API failures respectively.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/model_armor/hooks.rs
+    - crates/betterlite-guardrails/src/model_armor/hooks/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L646-L744
+    why: async_pre_call_hook lifecycle, file scanning, content extraction, sanitization, masking and blocking logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L746-L834
+    why: async_moderation_hook structure and identical logic to pre-call for during-call execution
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L836-L923
+    why: async_post_call_success_hook for response scanning, masking and blocking
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1239-L1292
+    why: apply_guardrail for logging_only event hook without blocking
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L505-L539
+    why: _process_response helper for accumulating guardrail information into logging
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py
+    why: get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket for per-request metadata
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py
+    why: get_last_user_message, set_last_user_message, get_content_from_model_response helpers
+
+dod:
+  - text: async_pre_call_hook calls _scan_request_files, then make_model_armor_request on the last user message, stores response and status in metadata, marks guardrail as applied, and blocks or masks content based on configuration.
+    proof: [pre-call-tests]
+  - text: async_moderation_hook has identical structure to async_pre_call_hook for parallel scanning during LLM execution, using during_call and during_mcp_call event types.
+    proof: [moderation-tests]
+  - text: async_post_call_success_hook extracts content from ModelResponse via common_utils helper, skips non-text types, scans responses, and blocks or masks based on configuration.
+    proof: [post-call-tests]
+  - text: apply_guardrail scans request or response content depending on input_type (request or response), records verdict in logging without blocking, respects _event_hook_is_event_type(logging_only) to gate blocking behavior.
+    proof: [logging-only-tests]
+  - text: "_process_response reads per-request metadata bucket (_model_armor_response and _model_armor_status keys populated by other hooks) and calls add_standard_logging_guardrail_information_to_request_data with the read status."
+    proof: [logging-tests]
+  - text: All hooks check should_run_guardrail before processing; pre-call and moderation translate call_mcp_tool to pre_mcp_call and during_mcp_call event types.
+    proof: [event-type-tests]
+  - text: All hooks call add_guardrail_to_applied_guardrails_header BEFORE potential blocking to ensure guardrail is recorded even when request is refused.
+    proof: [applied-guardrails-tests]
+  - text: Pre-call and moderation masks message content in place using set_last_user_message when mask_request_content is true and sanitized content differs from original.
+    proof: [masking-tests]
+  - text: Post-call success masks response choices in place when mask_response_content is true and sanitized content differs from original.
+    proof: [response-masking-tests]
+  - text: All hooks fail_on_error=true (default) raises ModelArmorAPIError on guardrail API errors; fail_on_error=false logs a warning and continues.
+    proof: [error-handling-tests]
+  - text: Metadata buckets use get_or_create_metadata_bucket to ensure unique per-request state, preventing race conditions when the same guardrail instance handles concurrent requests.
+    proof: [metadata-isolation-tests]
+  - text: "Post-call success hook records StandardLoggingGuardrailInformation via add_guardrail_response_to_standard_logging_object with hardcoded guardrail_status=success at the top level (the actual block/pass outcome lives in guardrail_response.model_armor_status); includes start_time, end_time, duration and sanitized model_armor_response dict."
+    proof: [logging-information-tests]
+  - text: "apply_guardrail (logging-only path) records guardrail verdict via add_standard_logging_guardrail_information_to_request_data with guardrail_status in {success, guardrail_flagged, guardrail_failed_to_respond}, without raising even when flagged."
+    proof: [logging-information-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: pre-call-tests
+      why: pre-call hook does not scan files, messages, store state, mask or block correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::pre_call::/)'
+    - id: moderation-tests
+      why: moderation hook does not scan in parallel or handle call_mcp_tool event types
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::moderation::/)'
+    - id: post-call-tests
+      why: post-call hook does not extract response content, mask or block correctly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::post_call::/)'
+    - id: logging-only-tests
+      why: logging-only hook does not record verdict without blocking or respect event_hook_is_event_type gate
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::logging_only::/)'
+    - id: logging-tests
+      why: hooks do not accumulate responses, record StandardLoggingGuardrailInformation or call logging helpers
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::logging::/)'
+    - id: event-type-tests
+      why: hooks do not check should_run_guardrail, translate call_mcp_tool or apply guardrail before blocking
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::events::/)'
+    - id: applied-guardrails-tests
+      why: hooks do not call add_guardrail_to_applied_guardrails_header before blocking
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::applied_guardrails::/)'
+    - id: masking-tests
+      why: request masking does not work or applies sanitized content in place
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::request_masking::/)'
+    - id: response-masking-tests
+      why: response masking does not update response choices in place
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::response_masking::/)'
+    - id: error-handling-tests
+      why: fail_on_error configuration does not control exception raising behavior
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::error_handling::/)'
+    - id: metadata-isolation-tests
+      why: metadata buckets do not isolate per-request state or prevent race conditions
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::metadata::/)'
+    - id: logging-information-tests
+      why: hooks do not record StandardLoggingGuardrailInformation with correct status and timestamps
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^model_armor::hooks::logging_information::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "The metadata bucket for per-request guardrail state uses get_or_create_metadata_bucket(data), ensuring unique storage per request even when multiple concurrent requests use the same guardrail instance."
+    why: "LiteLLM's comment at line 692 notes race conditions between concurrent requests sharing the same guardrail instance. Using a unique metadata bucket per request prevents stale responses from one request overwriting another's results."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L692-L695"
+  - what: "Pre-computed guardrail_status in metadata (success, blocked, guardrail_failed_to_respond) allows logging to be correct even when fail_on_error=false suppresses exception raising."
+    why: "When fail_on_error=false, the exception is not raised but the correct status must still be recorded in logs. Pre-computing status in metadata ensures logging is accurate."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L704-L710"
+  - what: "The add_guardrail_to_applied_guardrails_header is called BEFORE potential blocking to record the guardrail as applied even when the request is refused."
+    why: "Audit and logging must record which guardrails examined the request, even if they refused it. Calling this before raising the exception ensures the guardrail is counted."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L712-L714"
+  - what: "Post-call success hook receives only ModelResponse objects; non-text types (TTS, images) return empty string from _extract_content_from_response and the guardrail is skipped."
+    why: "Text-only guardrails should not process non-text outputs. LiteLLM explicitly skips processing for TTS and image responses (line 217-219)."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L215-L219"
+  - what: "apply_guardrail respects _event_hook_is_event_type(logging_only) to determine whether to block on a flagged verdict (blocks only when logging_only is NOT set)."
+    why: "A guardrail can be configured for both blocking and audit-only modes. The logging_only event type gate ensures the same guardrail instance can run in audit-only mode for some deployments while blocking in others."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1283-L1290"
+  - what: "When masking is enabled and sanitized content matches original content (no change), masking is skipped to avoid unnecessary updates."
+    why: "Model Armor may not find anything to sanitize, in which case the original content is acceptable. Skipping the update when sanitized_content == original avoids unnecessary field updates."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L725-L726"
+  - what: "The async_post_call_success_hook uses add_guardrail_response_to_standard_logging_object with hardcoded guardrail_status=success at the top level, while apply_guardrail uses add_standard_logging_guardrail_information_to_request_data with guardrail_status in {success, guardrail_flagged, guardrail_failed_to_respond}. The post-call hook is called only on successful LLM responses, so the top-level status is always success; the actual verdict lives in guardrail_response.model_armor_status. The apply_guardrail path runs independently and must capture all possible status values."
+    why: "These two code paths log via different methods with different status semantics. Post-call success logging lives in the response object lifecycle (called only on success), while apply_guardrail logging lives in the request_data dict and must record verdicts for both success and failure cases."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L851-L887,https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1259-L1291"
+
+out_of_scope:
+  - "Streaming response assembly and iterator hooks; those belong to B3735."
+  - "_scan_request_files, make_model_armor_request, file scanning and transport logic owned by B3733."
+  - "_log_request_debug and _log_response_debug (L244-L280) owned by B3733 and not called from this task."
+  - "Filter result decision logic (_should_block_content, _get_sanitized_content) owned by B3732."
+  - "Message and response content extraction helpers from common_utils (B219) and core_helpers (B206); those are used but not built here."
+  - "Callback utilities add_guardrail_to_applied_guardrails_header and add_guardrail_response_to_standard_logging_object (callback_utils.py:591, :672) owned by B189."
+  - "should_run_guardrail, _event_hook_is_event_type, add_standard_logging_guardrail_information_to_request_data, and log_guardrail_information decorator (custom_guardrail.py) owned by B3664/B3665/B3666."
+
+pitfalls:
+  - "Pre-call and moderation hooks use identical logic; they differ only in event_type translation (pre_call vs during_call, pre_mcp_call vs during_mcp_call). Do not duplicate the implementation; factor shared logic."
+  - "Metadata buckets must be unique per request; use get_or_create_metadata_bucket(data) to ensure each request gets its own bucket, not a shared one overwritten by concurrent requests."
+  - "The _append_armor_response function returns a single response object on first call and a list on subsequent calls. File scans and text scans both append, so the order (file first, text second) must be preserved."
+  - "When masking is enabled, sanitized_content from Model Armor is used ONLY if it differs from the original content. Applying an identical sanitized_content is a no-op and should be skipped."
+  - "HTTPException detail for blocking may be a dict (with 'error' and optional 'model_armor_response' keys) or a string; both forms are accepted. Use _build_block_error_detail to construct the detail."
+  - "ModelArmorAPIError must be caught separately from HTTPException to apply fail_on_error logic; HTTPException (from file scanning, blocking decisions) is always re-raised."
+  - "The apply_guardrail method for logging_only must check _event_hook_is_event_type(logging_only) to decide whether to raise on a flagged verdict; if logging_only is set, the verdict is logged but not raised."
+  - "Common_utils helpers (get_last_user_message, set_last_user_message, get_content_from_model_response) are imported inside the function, not at module level, to avoid circular imports."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

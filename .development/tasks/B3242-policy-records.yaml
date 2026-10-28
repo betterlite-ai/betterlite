@@ -1,0 +1,170 @@
+id: B3242
+title: Policy database records and single-version lookup
+description: >-
+  Build typed request/response records for policy CRUD, versioning, attachment,
+  inspection and resolution. Adapt database rows to policy records and provide
+  single-version lookup by ID without loading or publishing registry state.
+
+  PolicyDBResponse and PolicyListDBResponse model a policy row: ID, name, version,
+  status, parent version, publication/production dates, inheritance, description,
+  guardrails add/remove lists, condition and pipeline objects, metadata fields
+  (created_at, updated_at, created_by, updated_by) and source (db or config).
+  PolicyVersionCreateRequest captures source_policy_id for cloning a version.
+  PolicyVersionStatusUpdateRequest and PolicyVersionListResponse handle version
+  management. PolicyVersionCompareResponse lists differing fields between two versions.
+  PolicyAttachmentCreateRequest/Response and PolicyAttachmentListResponse model
+  attachment scope, priority and default marker. PolicyAttachmentDBResponse adds
+  metadata and source.
+
+  Inspection records export policy fields in three formats: PolicyInfoResponse
+  shows a single policy with resolved guardrails and inheritance chain;
+  PolicySummaryItem is a flat view for /policy/list; PolicyListResponse wraps
+  a summary dict with total_count. PolicyTestResponse shows matching result.
+  Resolution records: PipelineTestRequest carries pipeline definition and test
+  messages; PolicyResolveRequest describes a context (team_alias, key_alias,
+  model, tags); PolicyResolveResponse returns effective guardrails and policy
+  match details with matched_via reason; PolicyMatchDetail names a matched
+  policy and its contributed guardrails. AttachmentImpactResponse previews
+  attachment impact: affected counts (keys, teams), unnamed counts and samples.
+
+  Policy condition and scope in responses project exact add/remove, teams, keys,
+  models, tags, and inherit fields from Policy and PolicyScope values via B3240
+  accessors, preserving empty-list defaults and None fields.
+
+  _PolicyRow and _PolicyVersionSourceRow protocols define database row interfaces:
+  properties for every column matching Prisma types (strings, ints, nullables,
+  JSON objects as dicts). _PolicyTableClient provides async methods (create,
+  find_unique, find_many, update, update_many, delete, delete_many) accepting
+  dicts for where/data clauses and returning rows. _policy_table returns a typed
+  client from PolicyRepository; _policy_version_source_table returns the same
+  client as TableActions[_PolicyVersionSourceRow]. _row_to_policy_db_response
+  converts a row to PolicyDBResponse using property access with defaults for
+  optional fields (version_number defaults 1, version_status defaults production,
+  is_latest defaults true). get_policy_by_id_from_db queries by policy_id,
+  catches exceptions, logs errors and returns None if not found.
+scope:
+  paths:
+    - crates/betterlite-policy/src/records.rs
+    - crates/betterlite-policy/src/records/**
+    - crates/betterlite-policy/src/row_adapter.rs
+    - crates/betterlite-policy/src/row_adapter/**
+    - crates/betterlite-policy/src/lookup.rs
+    - crates/betterlite-policy/src/lookup/**
+    - crates/betterlite-policy/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/policy-records/**
+    - tools/oracle/cases/helpers/policy-records-attachment/**
+    - tools/oracle/cases/helpers/policy-db-lookup/**
+    - tools/oracle/fuzz/corpus/helper_case/policy-records-*
+    - tools/oracle/fuzz/corpus/helper_case/policy-db-lookup-*
+    - tools/oracle/helpers/b3242.py
+    - tools/oracle/helpers/b3242/**
+    - tools/oracle/src/helpers/policy/b3242.rs
+    - tools/oracle/src/helpers/policy/b3242/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L66-L433
+    why: Own all response records from PolicyScopeResponse through AttachmentImpactResponse; preserve exact field names, defaults, nullability and descriptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L58-L160
+    why: Own _PolicyRow, _PolicyVersionSourceRow protocols and _PolicyTableClient; own _policy_table, _policy_version_source_table factory functions and _row_to_policy_db_response adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L564-L588
+    why: Own get_policy_by_id_from_db; preserve exception logging and None return on not found.
+dod:
+  - text: Policy CRUD request records capture all input fields with proper nullability and description; database response records match every Prisma column.
+    proof: [behavior-tests]
+  - text: Versioning records preserve version status enumeration, version_number defaults, parent_version_id, publication/production dates and is_latest flag.
+    proof: [behavior-tests]
+  - text: Attachment records capture scope fields (teams, keys, models, tags), priority and default marker with proper descriptions and types.
+    proof: [behavior-tests]
+  - text: Inspection records project policy values to response formats via B3240 accessors; resolved_guardrails and inheritance_chain are lists; summary dict key-values preserve policy names.
+    proof: [behavior-tests]
+  - text: Resolution records encode policy match context, pipeline test inputs, effective guardrails and match reasons with metadata.
+    proof: [behavior-tests]
+  - text: Row protocol properties match database types exactly; adapter converts rows to PolicyDBResponse using property access with correct defaults for optional columns.
+    proof: [behavior-tests]
+  - text: Single-version lookup queries database by policy_id, returns None on not found, logs and re-raises on error with no fallback.
+    proof: [behavior-tests]
+  - text: The independent helper operations policy_records_records and policy_records_lookup match the production implementation in every case.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Record fields or defaults missing or row adapter mismapping database columns.
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^records::tests::/) + test(/^row_adapter::tests::/) + test(/^lookup::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: Helper adapters missing or Python checks fail.
+      run: test -f tools/oracle/helpers/b3242.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No seed corpus or HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/policy-records-*")" && grep -rlq '"b3242' tools/oracle/fuzz/corpus/helper_case/policy-records-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-records/policy-scope-response-defaults.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-guardrails-response-lists.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-info-response-chain.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-summary-item-flat-view.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-list-response-total-count.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-test-response-matching.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-condition-request-model-field.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-create-request-all-fields.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-update-request-partial.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-db-response-version-defaults.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-db-response-timestamps.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-list-db-response-empty.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-version-create-request-source-id.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-version-status-update-request.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-version-list-response-ordering.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-version-compare-response-diffs.yaml
+  - tools/oracle/cases/helpers/policy-records-attachment/attachment-create-request-scope-wildcard.yaml
+  - tools/oracle/cases/helpers/policy-records-attachment/attachment-create-request-priority-range.yaml
+  - tools/oracle/cases/helpers/policy-records-attachment/attachment-db-response-location.yaml
+  - tools/oracle/cases/helpers/policy-records-attachment/attachment-list-response-empty.yaml
+  - tools/oracle/cases/helpers/policy-records/pipeline-test-request-messages.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-resolve-request-context.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-resolve-response-union.yaml
+  - tools/oracle/cases/helpers/policy-records/policy-match-detail-matched-via.yaml
+  - tools/oracle/cases/helpers/policy-records/attachment-impact-response-samples.yaml
+  - tools/oracle/cases/helpers/policy-db-lookup/get-policy-by-id-from-db-found.yaml
+  - tools/oracle/cases/helpers/policy-db-lookup/get-policy-by-id-from-db-not-found.yaml
+  - tools/oracle/cases/helpers/policy-db-lookup/get-policy-by-id-from-db-error-logged.yaml
+deviations: []
+out_of_scope:
+  - B3240 owns Policy, PolicyScope, PolicyGuardrails, PolicyCondition, PolicyAttachment value types and their accessors; this task uses them to populate response records.
+  - B726 owns PolicyRepository and TableActions interface in betterlite-db::auxiliary_repository; this task reuses them via protocol.
+  - B3241 owns in-memory registry and policy parsing; this task does not interact with registry state.
+pitfalls:
+  - >-
+    PolicyDBResponse and PolicyListDBResponse are database response models; PolicyCreateRequest
+    and PolicyUpdateRequest are CRUD input models. GuardrailsAdd and GuardrailsRemove in
+    inputs map to guardrails_add and guardrails_remove in responses; the database stores
+    lists which become lists in the response, not dicts.
+  - >-
+    PolicyInfoResponse and PolicySummaryItem both have resolved_guardrails and
+    inheritance_chain lists, but Info shows a single policy while Summary is a flat
+    view for list endpoints. List endpoint's summary dict keys are policy names.
+  - >-
+    PolicyAttachmentCreateRequest uses scope (string "*" for global) plus optional
+    teams/keys/models/tags lists; PolicyAttachmentDBResponse adds attachment_id, source,
+    timestamps and metadata (created_by, updated_by). Config attachments have synthetic
+    IDs.
+  - >-
+    Version status is one of "draft", "published", "production" (not "active" or "live").
+    is_latest reflects version_number ordering, not publication state. published_at and
+    production_at are nullable and set by version operations.
+  - >-
+    Condition object in responses is dict[str, Any] because JSON columns store dicts;
+    PolicyConditionRequest has model field only, but full condition objects can appear
+    in CRUD and DB responses.
+  - >-
+    AttachmentImpactResponse has affected_keys_count, affected_teams_count (total) and
+    unnamed_keys_count, unnamed_teams_count (subset without aliases), plus sample lists
+    up to 10 items each. Negative affected counts are possible (-1 for global scope
+    unbounded).
+  - >-
+    _row_to_policy_db_response uses property access with defaults for version_number (1),
+    version_status (production), is_latest (true), and parent_version_id (None).
+    Other fields are taken directly or default to empty lists (guardrails_add/remove).
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

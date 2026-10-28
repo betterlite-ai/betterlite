@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prompt backend registration and registry mutation
 status: todo
 depends_on: [B4050, B4052, B4054, B4056, B4057, B4059, B189]
-file: null
+file: tasks/B4060-prompt-registry-mutation.yaml
 covers:
   - "litellm/proxy/prompts/prompt_registry.py"
 parent: B117

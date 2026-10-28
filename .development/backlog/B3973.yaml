@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Opik settings metadata and trace payload construction
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B3973-opik-payloads.yaml
 covers:
   - "litellm/integrations/opik/utils.py"
   - "litellm/integrations/opik/opik_payload_builder/**"

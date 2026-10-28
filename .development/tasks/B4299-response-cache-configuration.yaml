@@ -1,0 +1,219 @@
+id: B4299
+title: Configure response cache backends and callback lifecycle
+description: >-
+  Build Cache.__init__ with support for supported backend types from owned dependencies:
+  in-memory (default), Redis (single-node only), and disk. When an injected _backend is provided,
+  use it directly; otherwise select and initialize the backend by type.
+  Unsupported types (Redis cluster with REDIS_CLUSTER_NODES, Redis semantic search, Valkey semantic search,
+  Qdrant semantic search, S3, GCS, Azure Blob) are owned by separate task ids (B4320+, B4350+, B4380+)
+  and raise a clear error indicating which task will implement that backend.
+
+  Register "cache" with the callback manager for input_callback, success_callback, and
+  async_success_callback only once per Cache instance, reusing existing registrations.
+
+  Load REDIS_CLUSTER_NODES as JSON through betterlite-config's environment lookup when
+  redis_startup_nodes are not explicitly provided, but raise an error when cluster mode
+  is selected (the cluster backend is not yet owned). For single-node Redis, pass GCP service
+  account and SSL CA certs only if provided. Store the cache type, namespace, TTL, cache mode,
+  and supported call types; apply default_in_memory_ttl for LOCAL type and default_in_redis_ttl
+  for REDIS type. Apply a provided namespace to RedisCache instances.
+
+  Implement ping, delete_cache_keys, and disconnect methods that delegate to the backend's
+  async methods where available. The _supports_async method returns true (all backends now
+  support async). Implement module-level enable_cache() and update_cache() functions that
+  create/replace the litellm.cache instance with the specified configuration and register
+  callbacks. Implement disable_cache() to remove the cache from callbacks and set litellm.cache
+  to None. All three functions log with print_verbose and handle callback registration idempotently.
+
+scope:
+  paths:
+    - crates/betterlite-cache/src/configuration.rs
+    - crates/betterlite-cache/src/configuration/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L318
+    why: The Cache.__init__ method with all backend type branches (lines 187-318).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L989-L1003
+    why: The ping, delete_cache_keys, and disconnect async methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1005-L1012
+    why: The _supports_async method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1015-L1120
+    why: The enable_cache, update_cache, and disable_cache module-level functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L152
+    why: The cache types, supported call types, and cache mode enums.
+
+dod:
+  - text: >-
+      Cache.__init__ initializes the backend from the type parameter or uses _backend if provided.
+      Supported backend types are constructed: InMemoryCache (LOCAL), RedisCache (REDIS, single-node only),
+      and DiskCache (DISK). Unsupported types raise a CacheTypeNotSupportedError with the message
+      naming the task id that will implement that backend (e.g., "cache type 'redis_semantic' is owned by B4320").
+    proof: [cache-backend-tests, behavior-tests]
+
+  - text: >-
+      When the cache type is REDIS and redis_startup_nodes is not provided, the environment
+      is checked for REDIS_CLUSTER_NODES through betterlite-config. If found, a CacheTypeNotSupportedError
+      is raised stating that Redis cluster mode is owned by B4320. No redis_startup_nodes parameter
+      is passed to RedisCache constructor.
+    proof: [cache-backend-tests, behavior-tests]
+
+  - text: >-
+      The Cache instance registers "cache" with litellm.input_callback, success_callback, and
+      _async_success_callback through the callback manager exactly once per instance, checking for
+      existing registrations first.
+    proof: [cache-callback-tests, behavior-tests]
+
+  - text: >-
+      The Cache instance stores type, namespace, ttl, mode (defaulting to default_on), supported_call_types,
+      and semantic_cache_scope (defaulting to SemanticCacheScope.KEY.value). When type is LOCAL and
+      default_in_memory_ttl is provided, ttl is set to that value. When type is REDIS and
+      default_in_redis_ttl is provided, ttl is set to that value. A namespace is applied to RedisCache
+      instances after construction.
+    proof: [cache-backend-tests, behavior-tests]
+
+  - text: >-
+      The ping, delete_cache_keys, and disconnect methods delegate to the backend's async methods
+      where available. The _supports_async method returns true.
+    proof: [cache-lifecycle-tests, behavior-tests]
+
+  - text: >-
+      enable_cache creates and assigns a new Cache instance to litellm.cache when it is None,
+      registering callbacks. update_cache creates a new Cache instance and assigns it to litellm.cache
+      unconditionally, overwriting any previous instance. disable_cache removes "cache" from input_callback,
+      success_callback, and _async_success_callback (ignoring ValueErrors), and sets litellm.cache to None.
+    proof: [cache-module-tests, behavior-tests]
+
+  - text: >-
+      All three module-level functions call print_verbose with status and configuration messages.
+    proof: [cache-module-tests, behavior-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: cache-backend-tests
+      why: the backend initialization or env loading fails or is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^backend_construction::/)'
+
+    - id: cache-callback-tests
+      why: callback registration fails or is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^callback_registration::/)'
+
+    - id: cache-lifecycle-tests
+      why: lifecycle methods (ping, delete, disconnect, _supports_async) fail or are missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^cache_lifecycle::/)'
+
+    - id: cache-module-tests
+      why: module functions (enable_cache, update_cache, disable_cache) fail or are missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^cache_module_functions::/)'
+
+    - id: behavior-tests
+      why: behavior tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-cache -p betterlite-config --no-tests=fail
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Redis cluster initialization with REDIS_CLUSTER_NODES environment variable.
+    why: >-
+      RedisClusterCache constructor is not yet owned by any task file. The cluster_kwargs branch
+      (litellm/caching/caching.py L190-219) belongs to B4299 but the implementation is blocked pending
+      extraction of cluster-mode backend owners. B4299 raises CacheTypeNotSupportedError("cache type 'redis' with
+      cluster mode is not yet implemented") when REDIS_CLUSTER_NODES is detected in the environment and
+      redis_startup_nodes is not explicitly provided.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L191-L219
+
+  - what: >-
+      Redis semantic search cache backend initialization.
+    why: >-
+      RedisSemanticCache is owned by B4382. B4299 raises CacheTypeNotSupportedError("cache type 'redis-semantic'
+      is owned by B4382") when that type is selected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L220-L231
+
+  - what: >-
+      Valkey semantic search cache backend initialization.
+    why: >-
+      ValkeySemanticCache (backlog B128) has not yet been split into a task file. B4299 raises
+      CacheTypeNotSupportedError("cache type 'valkey-semantic' is not yet implemented") when that type is selected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L232-L248
+
+  - what: >-
+      Qdrant semantic search cache backend initialization.
+    why: >-
+      QdrantSemanticCache is owned by B4383. B4299 raises CacheTypeNotSupportedError
+      ("cache type 'qdrant-semantic' is owned by B4383") when that type is selected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L249-L260
+
+  - what: >-
+      S3 cache backend initialization.
+    why: >-
+      S3Cache is owned by B4350. B4299 raises CacheTypeNotSupportedError("cache type 's3' is owned by B4350")
+      when that type is selected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L263-L277
+
+  - what: >-
+      GCS cache backend initialization.
+    why: >-
+      GCSCache (backlog B127) has not yet been split into a task file. B4299 raises CacheTypeNotSupportedError
+      ("cache type 'gcs' is not yet implemented") when that type is selected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L278-L283
+
+  - what: >-
+      Azure Blob cache backend initialization.
+    why: >-
+      AzureBlobCache is owned by B4351. B4299 raises CacheTypeNotSupportedError("cache type 'azure-blob'
+      is owned by B4351") when that type is selected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L284-L288
+
+  - what: >-
+      The native cache runtime (_native_cache) is not integrated.
+    why: >-
+      Native cache integration requires the Rust-bridge ResponseCacheRuntime implementation, which is outside
+      the scope of this task. The Python backends are sufficient for production use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L42-L43
+
+out_of_scope:
+  - Streaming-specific cache logic (B005, B4302).
+  - Semantic cache scope field extraction (B4296 owns _get_semantic_cache_tenant_scope and _semantic_cache_scope_fields).
+  - Cache request normalization and hit retrieval (B4300).
+  - Response cache envelopes and reads (B4297).
+  - Embedding cache writes (B4298).
+  - Batch cache operations and dual-tier logic (B4293, B4294, B4295).
+  - Cache settings endpoints and management routes (B4306, B4307, B4308, B4309).
+  - Semantic embedding routing and input limits (B4310).
+  - >-
+    Redis cluster mode (not yet owned by any task file), Redis semantic cache backend (owned by B4382),
+    Valkey semantic cache backend (backlog B128, not yet split into a task), Qdrant semantic cache backend
+    (owned by B4383), S3 cache backend (owned by B4350), GCS cache backend (backlog B127, not yet split into a task),
+    and Azure Blob cache backend (owned by B4351).
+  - Native Rust backend integration (blocker F).
+
+pitfalls:
+  - >-
+    REDIS_CLUSTER_NODES is expected as valid JSON (an array of node objects). If it is malformed or set to the string "[]",
+    json.loads will fail; provide a clear error message including the environment variable value and the exception.
+    Alternatively, if redis_startup_nodes are not explicitly provided and REDIS_CLUSTER_NODES is set, raise an
+    unsupported-type error immediately without attempting to parse it.
+
+  - >-
+    The namespace parameter is applied directly to RedisCache.namespace after construction; verify that RedisCache
+    supports this attribute assignment and that it is only applied to Redis instances, not to other backends.
+
+  - >-
+    GCP parameters (gcp_service_account, gcp_ssl_ca_certs) are never used in this task since cluster mode is not
+    supported; they must not appear in constructor signatures or initialization logic.
+
+  - >-
+    Callback registration checks for "cache" in the callback lists before adding it; ensure the callback manager
+    is initialized before this code runs (it is created in litellm/__init__.py).
+
+  - >-
+    The semantic_cache_scope parameter defaults to SemanticCacheScope.KEY.value; do not fall back to a string
+    default if the enum is not recognized, validate it strictly.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

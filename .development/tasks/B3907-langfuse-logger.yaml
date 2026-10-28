@@ -1,0 +1,175 @@
+id: B3907
+title: Langfuse logger lifecycle and credential selection
+description: >-
+  Build the LangFuseLogger class and LangFuseHandler selection logic in crates/betterlite-logging,
+  composing the lower-level services (B3900 settings, B3903 tracing, B3904 REST client, B3905 projections, B3906 logging)
+  into logger initialization, event dispatch, and per-request logger selection.
+  Preserve the MAX_LANGFUSE_INITIALIZED_CLIENTS budget, project-link lookup failure tolerance,
+  release-on-REST-construction-failure behavior, and meaningful-environment cache identity.
+  For global loggers, resolve credentials from environment and config (B3900, B188 validation).
+  For dynamic loggers, extract credentials from standard_callback_dynamic_params and cache by credential signature.
+  Omit environment overrides that match the deployment default or are empty/whitespace, so credential-only differences
+  do not mint duplicate SDK clients. Warn if Langfuse is configured both at proxy startup and in a dynamic request (B3900).
+  Return trace/generation IDs from events; log failures and return (None, None) without raising.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/src/langfuse_logger.rs
+    - crates/betterlite-logging/src/langfuse_logger/**
+    - crates/betterlite-logging/src/langfuse_handler.rs
+    - crates/betterlite-logging/src/langfuse_handler/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L288-L348
+  why: LangFuseLogger.__init__ with version checks, credential resolution, environment setup and client initialization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L350-L387
+  why: safe_init_langfuse_client budget enforcement and error handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L389-L398
+  why: flush and stop methods for logger lifecycle.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L430-L513
+  why: log_event_on_langfuse with metadata/optional params extraction, content resolution and event dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_handler.py#L23-L66
+  why: get_langfuse_logger_for_request selection logic and cache lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_handler.py#L68-L120
+  why: Global logger fallback and logger creation from credentials.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_handler.py#L122-L186
+  why: Dynamic credential extraction, meaningful environment filtering and credential detection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/langfuse.py#L19-L21
+  why: LangfuseLoggedEvent TypedDict for trace/generation ID return values.
+
+dod:
+- text: >-
+    LangFuseLogger.__init__ succeeds with environment credentials and fails when Langfuse is not installed
+    or version is outside [4.7, 5.0). An unsupported TTL raises immediately; an invalid environment value
+    is validated through B188 before assignment. Project ID lookup failure logs a debug message and does not block initialization.
+  proof: [initialization-tests]
+
+- text: >-
+    safe_init_langfuse_client increments the initialized client count, respects MAX_LANGFUSE_INITIALIZED_CLIENTS,
+    and releases the tracing channel on build_langfuse_client failure without incrementing the count.
+    The REST client is obtained from build_langfuse_client with the supplied httpx client.
+  proof: [initialization-tests, budget-enforcement]
+
+- text: >-
+    flush calls the tracing channel's flush method; stop calls release_langfuse_tracing with the stored tracing handle.
+    Both methods exist and are callable from log_event_on_langfuse error paths.
+  proof: [lifecycle-tests]
+
+- text: >-
+    log_event_on_langfuse extracts metadata from headers when litellm_params contains a proxy_server_request,
+    removes secret_fields and non-JSON-serializable optional_params, prepares prompt/functions/tools structures,
+    calls _get_langfuse_input_output_content and _log_langfuse_v2 with all required arguments, and returns
+    LangfuseLoggedEvent with trace/generation IDs or (None, None) on any exception.
+  proof: [event-dispatch-tests]
+
+- text: >-
+    get_langfuse_logger_for_request checks for dynamic credentials; if absent, returns the global logger
+    (creating it if needed and caching with empty credential dict). If present, fetches or creates a cached logger
+    and stores it with the credential dict as key. Loggers are cached per unique credential signature.
+  proof: [logger-selection-tests, dynamic-caching]
+
+- text: >-
+    _meaningful_dynamic_environment returns None when the raw value is absent, empty after strip(), or matches
+    the deployment-wide LANGFUSE_TRACING_ENVIRONMENT or resolve_deployment_environment() result.
+    Otherwise it returns the stripped value. An environment-only override that matches the default does not
+    create a duplicate logger.
+  proof: [environment-deduplication]
+
+- text: >-
+    _dynamic_langfuse_credentials_are_passed returns true when any of langfuse_host, langfuse_public_key,
+    langfuse_secret, langfuse_secret_key is set or _meaningful_dynamic_environment returns non-None.
+  proof: [credential-detection]
+
+- text: >-
+    get_dynamic_langfuse_logging_config extracts langfuse_secret (or langfuse_secret_key), langfuse_public_key,
+    langfuse_host from standard_callback_dynamic_params and calls _meaningful_dynamic_environment to get the environment;
+    it returns LangfuseLoggingConfig with all four fields filled.
+  proof: [config-extraction]
+
+- text: >-
+    Loggers created from empty credentials (global logger) and from non-empty credentials (dynamic) coexist in the cache
+    under different keys. The cache retries or creates a new logger if the cached instance is None.
+  proof: [dynamic-caching]
+
+- text: >-
+    New LangfuseLoggedEvent, LangFuseLogger and LangFuseHandler types are added with owned module paths.
+    The handler is stateless and only provides static method entry points.
+  proof: [type-definitions]
+
+checks:
+  optional: []
+  commands:
+  - id: initialization-tests
+    why: version checks, budget enforcement and credential setup must not fail silently
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_logger::tests::initialization_tests(::|$)/)'
+  - id: lifecycle-tests
+    why: flush and stop must be callable and release resources correctly
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_logger::tests::lifecycle_tests(::|$)/)'
+  - id: event-dispatch-tests
+    why: event logging must preserve metadata, sanitize params and dispatch correctly
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_logger::tests::event_dispatch_tests(::|$)/)'
+  - id: logger-selection-tests
+    why: global vs dynamic logger selection and caching must match the credential signature
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_handler::tests::logger_selection_tests(::|$)/)'
+  - id: dynamic-caching
+    why: dynamic loggers must be cached and reused by credential dict; global must be cached under empty dict
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_handler::tests::dynamic_caching(::|$)/)'
+  - id: environment-deduplication
+    why: environment overrides matching the default must not create duplicate SDK clients
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_handler::tests::environment_deduplication(::|$)/)'
+  - id: credential-detection
+    why: presence of any dynamic credential or meaningful environment must be correctly detected
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_handler::tests::credential_detection(::|$)/)'
+  - id: config-extraction
+    why: dynamic credential extraction must populate all four LangfuseLoggingConfig fields
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_handler::tests::config_extraction(::|$)/)'
+  - id: budget-enforcement
+    why: MAX_LANGFUSE_INITIALIZED_CLIENTS must prevent unbounded logger creation
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_logger::tests::budget_enforcement(::|$)/)'
+  - id: type-definitions
+    why: all new types must compile and serialize correctly
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse::tests::type_definitions(::|$)/)'
+oracle_cases: []
+
+deviations:
+- what: >-
+    DynamicLoggingCache trait is defined in this task as an injected interface (get_cache, set_cache, stop_on_eviction).
+    LiteLLM uses a global mutable cache instance; betterlite passes the cache as a dependency so loggers never hold mutable state.
+  why: >-
+    Injected dependencies allow testing and prevent hidden state shared across requests. The cache's stop_on_eviction
+    callback lets the task that evicts a logger trigger its resource cleanup without a reverse dependency.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1100-L1160
+
+- what: >-
+    Release on REST construction failure is applied without a delay; LiteLLM checks and increments the client count
+    after successful client construction.
+  why: >-
+    betterlite increments the count before construction to block concurrent attempts while one is in progress.
+    Both approaches respect the budget; this one prevents thundering-herd on a full budget.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L356-L386
+
+out_of_scope:
+  - "B3900 owns credential/environment resolution, version checks, debug flag parsing, flush interval defaults and warn_if_upstream_langfuse_configured."
+  - "B3903 owns tracing channel construction (acquire_langfuse_tracing, release_langfuse_tracing) and the LangfuseTracing trait interface."
+  - "B3904 owns build_langfuse_client and the LangfuseApiClient interface."
+  - "B3905 owns _get_langfuse_input_output_content content extraction and add_metadata_from_header header-to-metadata injection from proxy request headers; this task calls both."
+  - "B3906 owns _log_langfuse_v2 generation and trace assembly."
+  - "B173 owns _get_httpx_client pooled HTTP client construction."
+  - "B188 owns validate_langfuse_environment_value dynamic environment validation."
+  - "B2204 owns safe_deep_copy for optional params cloning."
+  - "DynamicLoggingCache.get_cache, set_cache and lifecycle: this task calls them for logger selection and caching; no leaf task owns these yet."
+
+pitfalls:
+- MAX_LANGFUSE_INITIALIZED_CLIENTS is a global counter that must be incremented only after both REST client and tracing are acquired; release_langfuse_tracing on client failure must happen before returning the error.
+- _meaningful_dynamic_environment returns None for empty strings, not empty environment fields; str(raw).strip() must filter them correctly.
+- Loggers cached under empty credential dict {} are never the same instance as ones under non-empty dicts, preventing global/dynamic collision.
+- log_event_on_langfuse must call safe_deep_copy(optional_params) before mutation to avoid corrupting the caller's dict.
+- Project ID lookup failure must not raise or block; it only logs and sets the environment variable if successful.
+- Upstream Langfuse warning is triggered by B3900 at initialization time, not by per-request credential checks.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

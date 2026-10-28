@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Health probe settings, deployment targeting and display fields
 status: todo
 depends_on: [B002, B184, B2203, B2221, B2225]
-file: null
+file: tasks/B4441-health-probe-policy.yaml
 covers:
   - "litellm/proxy/health_check.py"
 parent: B130

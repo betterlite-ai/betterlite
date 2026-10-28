@@ -1,0 +1,89 @@
+id: B3742
+title: Agent 365 tool evaluation and enforcement
+description: >-
+  Build the pre-MCP evaluator hook and verdict/error handling, completing Agent 365 guardrail
+  enforcement for tool calls. Decode the evaluation response, enforce allow/block decisions,
+  and route four error shapes from token endpoint failures through distinct outcomes: agent-owned
+  gateway failures and reachability errors apply unreachable_fallback (fail_open/fail_closed),
+  caller-owned token rejections (non-assertion AADSTS codes) return 401 without evicting the
+  cached token, endpoint throttling (408/429) blocks regardless of fail_open, and malformed or
+  unevaluated allow verdicts follow unavailability fallback. When allowed=true and
+  defender.status != "Evaluated", treat the Defender skipped evaluation as unavailable rather
+  than authorizing silently. Rejected tool calls include the tool name, HTTP status, and Defender
+  correlation ID in error details. Caller-supplied bearer token and authenticated key alias go
+  into the evaluation payload; agent_id is omitted when missing.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/agent_365.rs
+    - crates/betterlite-guardrails/src/agent_365/**
+    - tools/oracle/cases/guardrails/agent-365/**
+    - tools/oracle/helpers/b3742.py
+    - tools/oracle/helpers/b3742/**
+    - tools/oracle/src/helpers/guardrails/b3742.rs
+    - tools/oracle/src/helpers/guardrails/b3742/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L91-L113
+    why: _DefenderResult, _EvaluateResponse, _UnavailableDetail, _BlockedDetail response/detail records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L191-L276
+    why: async_pre_call_hook orchestration and error routing from token/evaluation endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L278-L384
+    why: _handle_evaluate_error and _enforce_verdict; 401 evicts token immediately, malformed/unevaluated allow follows unavailability.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L511-L556
+    why: _handle_caller_fault and _handle_throttled with verdict recording.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L563-L604
+    why: _handle_unavailable with fail_open/fail_closed branching and verdict recording.
+dod:
+  - text: Evaluation response types and error detail records match the Defender contract and HTTP contract for blocked/rejected/unavailable outcomes.
+    proof: [agent-365-enforcement-types, agent-365-enforcement-oracle]
+  - text: Caller-supplied bearer token must be present; 401 on token exchange evicts the cached assertion without re-throwing to the caller.
+    proof: [agent-365-enforcement-tests, agent-365-enforcement-oracle]
+  - text: Tool evaluation verdicts are enforced; allowed=false raises 400 with blocked details, unevaluated allowed=true falls through to unavailability.
+    proof: [agent-365-enforcement-tests, agent-365-enforcement-oracle]
+  - text: Gateway-owned token failures (client credentials, scope, resource) apply unreachable_fallback; caller-owned failures (assertion rejection) return 401.
+    proof: [agent-365-enforcement-tests, agent-365-enforcement-oracle]
+  - text: Endpoint throttling (408/429) blocks with 503 regardless of unreachable_fallback; reachability failures respect fail_open.
+    proof: [agent-365-enforcement-tests, agent-365-enforcement-oracle]
+  - text: Evaluation verdicts (Allow, Block, Rejected, Throttled, Unavailable, Unscanned) are recorded with defender status, correlation ID, latency and reason.
+    proof: [agent-365-enforcement-tests, agent-365-enforcement-oracle]
+checks:
+  optional: []
+  commands:
+    - id: agent-365-enforcement-types
+      why: Evaluation and error detail records lack required fields or wrong types.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^agent_365::enforcement_types(::|$)/)'
+    - id: agent-365-enforcement-tests
+      why: Caller authentication, token eviction, verdict enforcement, error routing or logging are incorrect.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^agent_365::enforcement(::|$)/) - test(replays_agent_365_corpus)'
+    - id: agent-365-enforcement-oracle
+      why: The oracle harness does not match LiteLLM enforcement behavior.
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/guardrails/agent-365
+oracle_cases:
+  - tools/oracle/cases/guardrails/agent-365/missing-bearer-token.yaml
+  - tools/oracle/cases/guardrails/agent-365/evaluation-allowed.yaml
+  - tools/oracle/cases/guardrails/agent-365/evaluation-blocked.yaml
+  - tools/oracle/cases/guardrails/agent-365/evaluation-malformed-json.yaml
+  - tools/oracle/cases/guardrails/agent-365/evaluation-missing-allowed-field.yaml
+  - tools/oracle/cases/guardrails/agent-365/evaluation-allowed-unevaluated-defender.yaml
+  - tools/oracle/cases/guardrails/agent-365/token-exchange-gateway-owned-error.yaml
+  - tools/oracle/cases/guardrails/agent-365/token-exchange-caller-owned-error.yaml
+  - tools/oracle/cases/guardrails/agent-365/endpoint-408-throttled.yaml
+  - tools/oracle/cases/guardrails/agent-365/endpoint-429-throttled.yaml
+  - tools/oracle/cases/guardrails/agent-365/endpoint-unreachable.yaml
+  - tools/oracle/cases/guardrails/agent-365/evaluation-malformed-response.yaml
+  - tools/oracle/cases/guardrails/agent-365/fail-open-gateway-error.yaml
+  - tools/oracle/cases/guardrails/agent-365/fail-open-reachability.yaml
+  - tools/oracle/cases/guardrails/agent-365/fail-closed-gateway-error.yaml
+deviations: []
+out_of_scope:
+  - B3741 owns _evict_obo_token, _get_obo_token, async_pre_call_hook's token-exchange path before _handle_evaluate_error, Agent365TokenExchangeError, Agent365MalformedResponseError, Agent365ThrottledError, _post_allowing_error_status and _build_evaluate_payload.
+  - B104 owns should_run_guardrail, log_guardrail_information, standard guardrail logging, the concrete MCP hook caller that supplies incoming_bearer_token, and the framework response/error dispatch.
+pitfalls:
+  - A 401 evaluation response (not token-exchange 401) does not evict the token; only the token-exchange endpoint's 401 does. The cached OBO token is valid for subsequent evaluations until explicitly evicted by another exchange failure.
+  - An allowed=true evaluation with defender.status != "Evaluated" is treated as unavailable, not silently authorized, because the Defender skipped evaluation and no threat assessment was made.
+  - Malformed or non-JSON evaluation responses from HTTP 200 endpoints fall through to unavailability, not caller fault, because the gateway's own response decoding failed.
+  - Throttling (408/429) from the evaluation endpoint blocks with 503 regardless of unreachable_fallback, but throttling from the token endpoint still respects fail_open/fail_closed.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,174 @@
+id: B3074
+title: Buffer and redact PointFive callback events
+description: >-
+  Build PointFive's callback logger in `betterlite-logging::finops::pointfive`.
+  Implement per-event buffering with periodic flush, immediate idle ping on first
+  startup, background batch flush when threshold is reached, redaction on both
+  success and failure callbacks, queue overflow removal with warning, and removal
+  of already-shipped chunks before raising retryable errors.
+
+  Inherit from CustomBatchLogger (B256) and implement async callback hooks for
+  success and failure events. Resolve API key and URL from litellm.pointfive_params
+  (with Mapping fallback), then POINTFIVE_API_KEY/POINTFIVE_API_URL environment,
+  then DEFAULT_API_URL constant, using B129's get_secret_str for secret resolution.
+  Apply redaction via B189's redact_standard_logging_payload_from_model_call_details,
+  B188's should_redact_message_logging check, and B190's redacted_standard_logging_payload
+  structure. Upload via B3073's PointFiveUploadClient and PointFiveUploadError, serialize
+  with B3073's chunk_lines/serialize_records/encode_lines, and send health checks through
+  IntegrationHealthCheckStatus. Configuration: PointFiveInitParams with batch_size (default 10),
+  flush_interval (default 300), max_batch_bytes (default 5000), turn_off_message_logging (default false)
+  and max_upload_retries (inherited from B3073).
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/finops/pointfive.rs
+    - crates/betterlite-logging/src/finops/pointfive/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L32-L44
+    why: _resolved_secret resolves config values that may name secrets via get_secret_str, detecting os.environ/ prefix and falling back to literal strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L47-L54
+    why: _configured_params reads litellm.pointfive_params as PointFiveInitParams instance or Mapping, validates via model_validate, returns empty on unset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L57-L64
+    why: _resolved_api_key prefers params.api_key, falls back to POINTFIVE_API_KEY env; _resolved_api_url cascades params.api_url, POINTFIVE_API_URL, DEFAULT_API_URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L67-L86
+    why: _upload_client_for builds PointFiveUploadClient with resolved api_key (error if missing), api_url, httpx client from B173, and max_retries from params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L94-L116
+    why: PointFiveLogger.__init__ calls super().__init__() with batch_size/flush_interval/turn_off_message_logging, stores params and upload_client, initializes task fields, starts periodic flush if flag is true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L118-L123
+    why: upload_client property returns given_upload_client if set, otherwise reconstructs via _upload_client_for to pick up runtime UI changes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L125-L146
+    why: _start_periodic_flush_task creates a task when event loop exists, returns None otherwise; _start_batch_flush_task spawns flush_queue(skip_if_flushing=True) background task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L148-L164
+    why: _flush_task_is_alive checks if periodic task exists, is not done, and loop is not closed; periodic_flush pings empty queue then calls super().periodic_flush().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L166-L182
+    why: async_log_success_event and async_log_failure_event both call _enqueue(kwargs), routing both success and failure events to the same queue.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L184-L200
+    why: _enqueue restarts periodic task if dead, calls _record_for to redact, appends to log_queue, drops overflow, and triggers batch flush if batch_size is met.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L202-L216
+    why: _record_for redacts via redact_standard_logging_payload_from_model_call_details, checks should_redact_message_logging, applies redacted_standard_logging_payload on true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L218-L232
+    why: _drop_overflow trims front of queue when len exceeds max_queue_size, but never while _flushing, with warning log of dropped count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L234-L257
+    why: flush_queue pings empty queue and returns, otherwise flushes with skip_if_flushing check; sets _flushing flag during super().flush_queue() call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L259-L267
+    why: async_health_check catches ValueError (missing key) and returns unhealthy, otherwise returns result of upload_client.ping() as status and error_message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L269-L277
+    why: _ping calls upload_client.ping(), catching ValueError and logging at warning level without re-raising; logs failure.detail at warning if failure is not None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L279-L302
+    why: async_send_batch chunks pending via chunk_lines(serialize_records()), encodes each via encode_lines(), uploads via client.upload(); removes shipped chunks on success, raises PointFiveUploadError on retryable, logs and drops on non-retryable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/__init__.py#L1-L5
+    why: Package __init__.py exports PointFiveLogger.
+
+dod:
+  - text: PointFiveLogger inherits from CustomBatchLogger and preserves constructor parameter start_periodic_flush flag.
+    proof: [pointfive-logger-init]
+  - text: API key is resolved from params.api_key, then POINTFIVE_API_KEY, then raises ValueError if neither is set.
+    proof: [pointfive-logger-auth]
+  - text: API URL is resolved from params.api_url, then POINTFIVE_API_URL, then DEFAULT_API_URL.
+    proof: [pointfive-logger-auth]
+  - text: The upload_client property reconstructs PointFiveUploadClient from current params on each access, so UI edits apply without restart.
+    proof: [pointfive-logger-lazy]
+  - text: periodic_flush sends an empty ping on first call, then continues with parent's interval loop.
+    proof: [pointfive-logger-ping]
+  - text: async_log_success_event and async_log_failure_event both queue the event via _enqueue, applying redaction.
+    proof: [pointfive-logger-enqueue]
+  - text: _record_for applies redact_standard_logging_payload_from_model_call_details, then checks should_redact_message_logging and applies redacted_standard_logging_payload.
+    proof: [pointfive-logger-redaction]
+  - text: _enqueue restarts the periodic flush task if it has died, appends the record, drops overflow, and triggers batch flush if batch_size is reached.
+    proof: [pointfive-logger-lifecycle]
+  - text: _drop_overflow holds the queue to max_queue_size by dropping oldest records only when not already flushing, with warning log.
+    proof: [pointfive-logger-overflow]
+  - text: _start_batch_flush_task spawns flush_queue(skip_if_flushing=true) as a background task, or skips if one is already running.
+    proof: [pointfive-logger-batch]
+  - text: flush_queue pings the server when the queue is empty, otherwise flushes with skip_if_flushing honored.
+    proof: [pointfive-logger-flush]
+  - text: async_send_batch chunks the pending queue, encodes and uploads each chunk, removes shipped chunks on success, and raises PointFiveUploadError on retryable failure while keeping the failed chunk queued.
+    proof: [pointfive-logger-send]
+  - text: A non-retryable upload failure logs the error and drops the chunk without raising.
+    proof: [pointfive-logger-send]
+  - text: async_health_check returns unhealthy with ValueError message if API key is missing, or calls upload_client.ping and reports its result.
+    proof: [pointfive-logger-health]
+
+checks:
+  optional: []
+  commands:
+    - id: pointfive-logger-init
+      why: PointFiveLogger.__init__ initialization tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::init/)'
+    - id: pointfive-logger-auth
+      why: API key and URL resolution tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::(auth|api_url)/)'
+    - id: pointfive-logger-lazy
+      why: upload_client property lazy construction tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::lazy/)'
+    - id: pointfive-logger-ping
+      why: periodic_flush immediate ping tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::ping/)'
+    - id: pointfive-logger-enqueue
+      why: async_log_success_event and async_log_failure_event tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::enqueue/)'
+    - id: pointfive-logger-redaction
+      why: _record_for redaction policy tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::redaction/)'
+    - id: pointfive-logger-lifecycle
+      why: Event loop restart and batch trigger tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::lifecycle/)'
+    - id: pointfive-logger-overflow
+      why: Queue overflow trimming tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::overflow/)'
+    - id: pointfive-logger-batch
+      why: _start_batch_flush_task background spawn tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::batch/)'
+    - id: pointfive-logger-flush
+      why: flush_queue empty-queue ping and skip_if_flushing tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::flush/)'
+    - id: pointfive-logger-send
+      why: async_send_batch chunking, upload and error handling tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::send/)'
+    - id: pointfive-logger-health
+      why: async_health_check status and error reporting tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::health/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Client selection rebuilds the PointFiveUploadClient for every flush, not reusing a connection pool.
+    why: LiteLLM stores the client once per PointFiveLogger instance; betterlite rebuilds on every send_batch to pick up changes from the proxy UI without restarting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L119-L123
+  - what: Periodic flush always pings an empty queue instead of skipping the flush entirely.
+    why: LiteLLM's parent CustomBatchLogger skips empty queues; betterlite sends a liveness ping to PointFive immediately to confirm setup without requiring an event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L153-L164
+  - what: Batch flush fails only on retryable errors; non-retryable failures log and drop without propagating.
+    why: LiteLLM propagates any failure; betterlite distinguishes retryable (429,5xx) from non-retryable (4xx other than 429) to avoid deadlock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L279-L302
+
+out_of_scope:
+  - "CustomBatchLogger base class, __init__, periodic_flush and flush_queue are inherited from B256; this task overrides periodic_flush and calls super().flush_queue() and super().periodic_flush()."
+  - "Redaction predicates: B189 owns redact_standard_logging_payload_from_model_call_details; B188 owns should_redact_message_logging; B190 owns redacted_standard_logging_payload structure."
+  - "HTTP client pooling and get_async_httpx_client (B173)."
+  - "PointFiveUploadClient construction, ping, upload and PointFiveUploadError exception (B3073)."
+  - "Serialization and encoding: chunk_lines, serialize_records, encode_lines (B3073)."
+  - "IntegrationHealthCheckStatus type and callback/health check registration contracts (B189)."
+  - "PointFiveInitParams, PointFiveUploadTarget, PointFiveUploadFailure types (B3073)."
+  - "get_secret_str secret resolution function (B129)."
+  - "Configuration storage and retrieval (B3075 owns finops config persistence)."
+  - "Callback registry and dispatcher (B189 owns callback registration and routing)."
+  - "Server startup registration and lifecycle (owned by server initialization layer)."
+
+pitfalls:
+  - The periodic flush task must be restarted if its event loop has closed; check task.done() and task.get_loop().is_closed() before deciding it is alive.
+  - _start_batch_flush_task must check if the running task is still alive before creating a duplicate; skip if one is already running and not yet done.
+  - _drop_overflow must never trim the queue while _flushing is true, since the flush holds a snapshot; the next event after flush finishes will trim any overflow that arrived during the upload.
+  - skip_if_flushing must return early from flush_queue if already flushing and the flag is set; otherwise every threshold-crossing event during an upload would start its own flush, turning one burst into a stream of small batches.
+  - An empty queue calls _ping and returns without raising; ping failures must not fail the flush itself, only log a warning.
+  - Redaction in _record_for applies both the callback-local turn_off_message_logging and the framework's should_redact_message_logging check; both may be true independently.
+  - The preserve-events-during-flush flag allows new events to arrive while a flush is running; they are captured by the next flush, not dropped.
+  - The given_upload_client field allows injection; when None, always reconstruct via _upload_client_for on each access.
+  - PointFiveUploadError is raised only on retryable failures; non-retryable failures log and drop the chunk instead.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

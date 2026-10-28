@@ -1,0 +1,205 @@
+id: B3772
+title: Gray Swan monitoring transport and request context
+description: >-
+  Build Gray Swan's HTTP monitoring endpoint call, request context extraction for post-call hooks, and payload preparation logic in betterlite-guardrails. The constructor manages settings and defaults; the monitoring call sends the prepared payload and extracts inbound headers for forwarding.
+
+  GraySwanGuardrail.__init__ accepts guardrail_name, api_key (with GRAYSWAN_API_KEY env fallback), api_base (with GRAYSWAN_API_BASE env fallback, default https://api.grayswan.ai), on_flagged_action (default monitor, validates against {block, monitor, passthrough}), violation_threshold, reasoning_mode, categories, policy_id, streaming_end_of_stream_only, streaming_sampling_rate, fail_open (default true), and guardrail_timeout (default 30.0). Constructor raises GraySwanGuardrailMissingSecrets with message "Gray Swan API key missing. Set `GRAYSWAN_API_KEY` or pass `api_key`." when neither the passed api_key parameter nor the GRAYSWAN_API_KEY environment variable provides a key. The constructor must preserve the monitor action's default and config model's separate passthrough default; normalizers must preserve which value reaches the constructor.
+
+  _prepare_payload accepts messages (as tuple of dicts/mappings), dynamic_body (from request metadata), request_data (the original request), logging_obj (optional), and tools (optional). It builds a payload dict with messages, tools (if present), categories (from dynamic_body or self), policy_id (from dynamic_body or self), reasoning_mode (from dynamic_body or self), metadata (from dynamic_body if present), and litellm_metadata (merged from inbound headers and request metadata, sanitized with safe_json_loads/safe_dumps default={}). When litellm_metadata is not a dict or is empty after sanitization, it is omitted.
+
+  _post_call_context accepts request_data, logging_obj, and scan_only_tool_results (bool). It extracts the call type from request_data.litellm_metadata.user_api_key_request_route or logging_obj.call_type, loads the structured message handler for that call type, extracts messages, applies scoped indices with skip_system and skip_tool flags, extracts tool definitions (if not scan_only_tool_results), and returns (tuple of message dicts, tools tuple or None). When the call type is unresolvable or structured extraction fails, it returns ((), None).
+
+  _extract_inbound_headers accepts request_data and logging_obj. It searches for headers in proxy_server_request.headers, request_data.headers, metadata.headers, or logging_obj.model_call_details.litellm_params.metadata.headers (in order). It filters for lowercase key "shade_scan_id" only and returns a dict of forwarded headers or None if none match.
+
+  _call_grayswan_api prepares headers with Bearer token, application/json content type, and grayswan-api-key header, then calls async_handler.post() with the monitor URL, headers, payload JSON, and timeout. On any error, wraps it as GraySwanGuardrailAPIError with extracted status_code.
+
+  Build GraySwanGuardrailAPIError(Exception) with __init__ accepting message and optional status_code, and store status_code as an attribute.
+
+  Build the helper functions:
+  - _as_plain_dict: accept object, check isinstance(item, Mapping) and return it, check isinstance(item, BaseModel) and return item.model_dump(mode="json") as dict, otherwise cast(Mapping[str, object], item)
+  - _resolve_threshold: accept optional float, return float(value) if value is not None, else try os.getenv("GRAYSWAN_VIOLATION_THRESHOLD") as float (catching ValueError), else return 0.5
+  - _resolve_reasoning_mode: accept optional str, validate value.lower() in {off, hybrid, thinking}, else check os.getenv("GRAYSWAN_REASONING_MODE") with same validation, else return None
+  - _is_grayswan_exception: accept Exception, return True if isinstance(exc, ModifyResponseException), or if exc.detail is dict and detail.get("error") == "Blocked by Gray Swan Guardrail"
+  - _log_guardrail_failure: accept exc, request_data, start_time, end_time, optional status_code. Call add_standard_logging_guardrail_information_to_request_data with guardrail_status="guardrail_failed_to_respond", guardrail_provider="grayswan", duration=end_time - start_time. Log error with status_code if present.
+
+  GraySwanGuardrail extends CustomGuardrail and implements get_supported_event_hooks() returning [pre_call, during_call, post_call] and should_run_guardrail(data, event_type) calling parent and logging event_type, event_hook, has_apply_guardrail, class name. GraySwanGuardrailConfigModel.ui_friendly_name() returns "Gray Swan Guardrail".
+
+  These functions own the monitor transport and context collection; B3771 owns the decision/enforcement logic, and B107 owns lifecycle entry points.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/grayswan/**
+    - tools/oracle/cases/grayswan/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L84-L86
+    why: "GraySwanGuardrailMissingSecrets exception definition."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L138-L142
+    why: "Constructor raises GraySwanGuardrailMissingSecrets with literal message when api_key is unavailable from both parameter and GRAYSWAN_API_KEY environment variable."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L76-L82
+    why: "_as_plain_dict converts BaseModel and Mapping objects to plain dicts with model_dump(mode='json')"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L91-L93
+    why: "GraySwanGuardrailAPIError.__init__ stores message and status_code"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L118-L182
+    why: "GraySwanGuardrail.__init__ constructor with settings, defaults, and validation"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L184-L190
+    why: "get_supported_event_hooks returns [pre_call, during_call, post_call]"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L196-L209
+    why: "should_run_guardrail debug override with event_hook and has_apply_guardrail logging"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L337-L345
+    why: "_is_grayswan_exception checks for ModifyResponseException or GRAYSWAN_BLOCK_ERROR_MSG in detail"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L470-L487
+    why: "_call_grayswan_api calls async_handler.post with Bearer token, wraps errors as GraySwanGuardrailAPIError"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L582-L587
+    why: "_prepare_headers returns Bearer token, content-type, grayswan-api-key headers"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L589-L611
+    why: "_extract_inbound_headers searches request_data and logging_obj, filters for shade_scan_id only"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L613-L667
+    why: "_post_call_context extracts call type, loads translation handler, scopes messages, returns tools if not scan_only_tool_results"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L669-L712
+    why: "_prepare_payload builds dict with messages, tools, categories, policy_id, reasoning_mode, metadata, litellm_metadata (sanitized with safe_json_loads default={})"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L782-L791
+    why: "_resolve_threshold returns float(value) if set, else GRAYSWAN_VIOLATION_THRESHOLD env, else 0.5"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L793-L799
+    why: "_resolve_reasoning_mode validates against {off, hybrid, thinking}, checks env GRAYSWAN_REASONING_MODE"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L801-L829
+    why: "_log_guardrail_failure calls add_standard_logging_guardrail_information_to_request_data with guardrail_status='guardrail_failed_to_respond', logs error with status_code"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py#L55-L57
+    why: "GraySwanGuardrailConfigModel.ui_friendly_name returns 'Gray Swan Guardrail'"
+
+dod:
+  - text: GraySwanGuardrailAPIError exception exists with __init__ accepting message and optional status_code, stores status_code as attribute.
+    proof: [api-error-exists]
+  - text: >-
+      Constructor raises GraySwanGuardrailMissingSecrets with message "Gray Swan API key missing.
+      Set `GRAYSWAN_API_KEY` or pass `api_key`." when api_key is unavailable from both parameter and
+      GRAYSWAN_API_KEY environment variable.
+    proof: [missing-key-error]
+  - text: GraySwanGuardrail.__init__ constructor accepts all parameters (guardrail_name, api_key with GRAYSWAN_API_KEY env fallback, api_base with env fallback and default, on_flagged_action with validation and default monitor, violation_threshold, reasoning_mode, categories, policy_id, streaming_end_of_stream_only, streaming_sampling_rate, fail_open with default true, guardrail_timeout with default 30.0) and stores them correctly.
+    proof: [constructor-exists, constructor-defaults, constructor-env-fallbacks]
+  - text: GraySwanGuardrail.get_supported_event_hooks returns list containing pre_call, during_call, post_call.
+    proof: [event-hooks-exist]
+  - text: GraySwanGuardrail.should_run_guardrail calls parent implementation and logs event_type, event_hook, has_apply_guardrail, class name.
+    proof: [should-run-exists]
+  - text: _as_plain_dict converts BaseModel to dict via model_dump(mode='json'), returns Mapping unchanged, and casts other objects to Mapping[str, object].
+    proof: [plain-dict-tests]
+  - text: _resolve_threshold returns float(value) when value is set, else tries GRAYSWAN_VIOLATION_THRESHOLD env, else returns 0.5 default.
+    proof: [threshold-resolve-tests]
+  - text: _resolve_reasoning_mode validates input and env against {off, hybrid, thinking}, returns None if no valid value found.
+    proof: [reasoning-mode-tests]
+  - text: _is_grayswan_exception returns True for ModifyResponseException or when exc.detail is dict with error key matching GRAYSWAN_BLOCK_ERROR_MSG.
+    proof: [is-grayswan-exc-tests]
+  - text: _extract_inbound_headers searches request_data and logging_obj paths in order, filters for shade_scan_id key only, returns dict or None.
+    proof: [extract-headers-tests]
+  - text: _post_call_context extracts call type, loads translation handler, returns scoped messages as tuple of dicts and tools (or None if scan_only_tool_results).
+    proof: [post-call-context-tests]
+  - text: _prepare_payload builds dict with messages, tools, categories, policy_id, reasoning_mode, metadata, litellm_metadata (sanitized with safe_json_loads default={}), omits empty litellm_metadata.
+    proof: [prepare-payload-tests]
+  - text: _prepare_headers returns dict with Authorization Bearer token, Content-Type application/json, and grayswan-api-key header.
+    proof: [prepare-headers-tests]
+  - text: _call_grayswan_api calls async_handler.post with prepared headers, payload, timeout, raises GraySwanGuardrailAPIError with status_code on error.
+    proof: [api-call-tests]
+  - text: _log_guardrail_failure calls add_standard_logging_guardrail_information_to_request_data with correct guardrail_status, guardrail_provider, duration values and logs error with status_code.
+    proof: [log-failure-tests]
+  - text: GraySwanGuardrailConfigModel.ui_friendly_name returns "Gray Swan Guardrail".
+    proof: [config-ui-name-exists]
+
+checks:
+  optional: []
+  commands:
+    - id: api-error-exists
+      why: GraySwanGuardrailAPIError exception is missing or incomplete
+      run: grep -q "struct GraySwanGuardrailAPIError" crates/betterlite-guardrails/src/grayswan/*.rs && grep -q "status_code" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: missing-key-error
+      why: GraySwanGuardrailMissingSecrets is not raised with the correct message when api_key is missing
+      run: grep -q "GraySwanGuardrailMissingSecrets" crates/betterlite-guardrails/src/grayswan/*.rs && grep -q "Gray Swan API key missing" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: constructor-exists
+      why: GraySwanGuardrail constructor is missing or incomplete
+      run: grep -q "impl GraySwanGuardrail" crates/betterlite-guardrails/src/grayswan/*.rs && grep -q "fn new" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: constructor-defaults
+      why: Constructor default values are missing or incorrect
+      run: grep -q "fail_open.*true" crates/betterlite-guardrails/src/grayswan/*.rs && grep -q "guardrail_timeout.*30" crates/betterlite-guardrails/src/grayswan/*.rs && grep -q "on_flagged_action.*monitor" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: constructor-env-fallbacks
+      why: Environment variable fallbacks are missing
+      run: grep -q "GRAYSWAN_API_KEY" crates/betterlite-guardrails/src/grayswan/*.rs && grep -q "GRAYSWAN_API_BASE" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: event-hooks-exist
+      why: Event hooks list is missing or incomplete
+      run: grep -q "pre_call\|during_call\|post_call" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: should-run-exists
+      why: should_run_guardrail method is missing
+      run: grep -q "should_run_guardrail" crates/betterlite-guardrails/src/grayswan/*.rs
+    - id: plain-dict-tests
+      why: _as_plain_dict conversion tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::as_plain_dict/)'
+    - id: threshold-resolve-tests
+      why: Threshold resolution tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::resolve_threshold/)'
+    - id: reasoning-mode-tests
+      why: Reasoning mode resolution tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::resolve_reasoning_mode/)'
+    - id: is-grayswan-exc-tests
+      why: GraySwan exception check tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::is_grayswan_exception/)'
+    - id: extract-headers-tests
+      why: Inbound header extraction tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::extract_inbound_headers/)'
+    - id: post-call-context-tests
+      why: Post-call context extraction tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::post_call_context/)'
+    - id: prepare-payload-tests
+      why: Payload preparation tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::prepare_payload/)'
+    - id: prepare-headers-tests
+      why: Header preparation tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::prepare_headers/)'
+    - id: api-call-tests
+      why: API call integration tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::call_grayswan_api/)'
+    - id: log-failure-tests
+      why: Failure logging tests must pass
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::log_guardrail_failure/)'
+    - id: config-ui-name-exists
+      why: GraySwanGuardrailConfigModel.ui_friendly_name is missing or returns wrong string
+      run: grep -q '"Gray Swan Guardrail"' crates/betterlite-guardrails/src/grayswan/*.rs
+
+oracle_cases: []
+
+deviations:
+  - what: "GraySwanGuardrail.__init__ calls get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback) directly to obtain the HTTP client; betterlite injects this client as a dependency rather than calling the factory."
+    why: "HTTP client creation is a boundary between guardrails and the transport layer. B104 owns the factory; this task receives the client as a constructor parameter."
+  - what: "The violation_threshold default is 0.5; on_flagged_action default is monitor in the constructor and passthrough in the config model's optional params. The constructor and config must be kept separate so the normalizer can preserve which value actually reaches constructor initialization."
+    why: "Config defaults (passthrough) and constructor defaults (monitor) diverge by design; the normalizer controls which is active."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py#L12-L13"
+  - what: "The _post_call_context function calls load_guardrail_translation_mappings() to obtain handlers for structured message extraction; this dependency is resolved at call time, not import time."
+    why: "Translation mappings are loaded per-call to avoid circular dependencies and allow handler registration at runtime."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L625"
+  - what: "safe_json_loads with default={} is used to recover from JSON parsing failures in _prepare_payload; the default is restored explicitly when the parsing fails."
+    why: "Malformed litellm_metadata should not block payload construction; the fallback ensures the payload is always populated with a sanitized version."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L708"
+
+out_of_scope:
+  - "GraySwanGuardrail.apply_guardrail body and decision/enforcement (belongs to B3771)"
+  - "GraySwanGuardrail._process_response_internal and violation formatting (belongs to B3771)"
+  - "Lifecycle entry points and callback registration (belong to B107)"
+  - "Frame dispatch and route registration (belong to B104 and gateway framework)"
+
+pitfalls:
+  - >-
+    The api_key field is security-sensitive and must never be logged, printed in Debug output, or exposed
+    in error messages. Mark the field as SecretString and use only in the Authorization and grayswan-api-key
+    headers. Never include api_key in log messages or exception details.
+  - "The _as_plain_dict function must use TypeAdapter(dict[str, object]).validate_python(item.model_dump(mode='json')) for BaseModel, not model_dump() alone, to ensure the output is a plain dict not a pydantic model."
+  - "GraySwanGuardrailAPIError status_code is optional but must be stored as an attribute when present; use getattr(exc, 'status_code', None) to extract it from the original exception."
+  - "on_flagged_action validation is case-insensitive (value.lower()); normalize to lowercase before storing."
+  - "violation_threshold from on_flagged_action config param is 'passthrough' (string), not a boolean; distinguish it from the constructor's on_flagged_action='monitor' default."
+  - "_extract_inbound_headers searches multiple paths in order of preference; only headers from proxy_server_request.headers take precedence, and it must return None (not empty dict) when no matching headers are found."
+  - "_post_call_context returns ((), None) when call_type is unresolvable, not an exception; this allows graceful degradation when translation handlers are unavailable."
+  - "safe_json_loads(..., default={}) on line 708 means that even if sanitized content fails to parse, the fallback dict {} is used; betterlite must preserve this exact behavior."
+  - "fail_open (default true) must allow the request to proceed on any error except ModifyResponseException and GRAYSWAN_BLOCK_ERROR_MSG errors."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

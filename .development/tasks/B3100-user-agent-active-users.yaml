@@ -1,0 +1,117 @@
+id: B3100
+title: Report distinct user agents and daily and weekly active users
+description: >-
+  Implement user-agent analytics endpoints in betterlite-server::user_agent_analytics.
+  Add response types for distinct tags, daily active users (DAU) and weekly active users (WAU).
+  Build three GET routes: `/tag/distinct`, `/tag/dau` and `/tag/wau` that query the database
+  and return active user metrics grouped by tag.
+
+  Add response types: DistinctTagsResponse (list of tags), ActiveUsersAnalyticsResponse (results list),
+  TagActiveUsersResponse (tag, active_users, date, optional period_start/period_end).
+
+  Add internal row types _DistinctTagRow and _ActiveUsersRow for parsing SQL query results via
+  TypeAdapter.
+
+  Implement get_distinct_user_agent_tags (GET `/tag/distinct`): query all distinct tags from
+  LiteLLM_DailyTagSpend filtered by pattern (User-Agent: or non-prefixed tags), order by usage count
+  descending, limit to MAX_TAGS=250. Return tags with no user filtering or date range.
+
+  Implement get_daily_active_users (GET `/tag/dau`): calculate active users per tag for last
+  MAX_DAYS=7 days, where end_date is UTC today + 1 day at 0:00 UTC. Accept optional tag_filter
+  (substring ILIKE match, legacy) and tag_filters (exact match list, takes precedence). Query joins
+  LiteLLM_DailyTagSpend with LiteLLM_VerificationToken on api_key=token, groups by tag and date,
+  counts distinct user_id. Order by date descending then active_users descending.
+
+  Implement get_weekly_active_users (GET `/tag/wau`): calculate active users per tag for last
+  MAX_WEEKS=7 weeks (49 days), where weeks are 7-day periods. End boundary is same UTC tomorrow.
+  Support same tag filtering as DAU. Group data by week_offset using FLOOR division, generate
+  descriptive week labels with ordinal numbers and month names (e.g., "Week 1 (Jan 15)").
+  Include period_start and period_end dates in response. Order by week_offset descending
+  (most recent first) then active_users descending.
+
+  All three endpoints require user API key authentication (B052). When prisma_client is unavailable,
+  return HTTP 500 with "Database not connected" error matching CommonProxyErrors.db_not_connected_error.
+  Build SQL queries dynamically with parameter injection; do not use template strings for user input.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/user_agent_analytics.rs
+    - crates/betterlite-server/src/user_agent_analytics/**
+    - tools/oracle/cases/analytics/user-agent-*.yaml
+    - tools/oracle/helpers/b3100.py
+    - tools/oracle/helpers/b3100/**
+    - tools/oracle/src/helpers/server/b3100.rs
+    - tools/oracle/src/helpers/server/b3100/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L1-L140
+    why: Response types, row models, imports, constants, protocol declarations, TypeAdapter definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L158-L159
+    why: _query_raw async helper function for executing raw SQL queries with parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L162-L210
+    why: get_distinct_user_agent_tags endpoint implementation, SQL query, tag filtering logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L213-L302
+    why: get_daily_active_users endpoint, date range calculation (UTC tomorrow), tag filtering with ILIKE and exact match, SQL join with VerificationToken.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L305-L423
+    why: get_weekly_active_users endpoint, week numbering with FLOOR division, descriptive week labels with month names, period_start and period_end calculation, 7-week constant, SQL window function logic.
+dod:
+  - text: "DistinctTagsResponse, ActiveUsersAnalyticsResponse and TagActiveUsersResponse types exist with all required fields and match LiteLLM's wire format exactly."
+    proof: [behavior-tests]
+  - text: "_DistinctTagRow and _ActiveUsersRow row types parse correctly from SQL results via TypeAdapter without data loss."
+    proof: [behavior-tests]
+  - text: "get_distinct_user_agent_tags returns tags filtered by pattern (User-Agent: or non-prefixed), ordered by count descending, limited to 250, without date or user filtering."
+    proof: [oracle]
+  - text: "get_daily_active_users calculates active users per tag for last 7 days ending UTC tomorrow, supports both exact-match tag_filters (takes precedence) and substring tag_filter legacy mode, correctly joins with VerificationToken to count distinct user_id."
+    proof: [oracle, behavior-tests]
+  - text: "get_weekly_active_users calculates active users per tag for 7 weeks (49 days), groups by 7-day period, generates descriptive week labels with ordinal and month names (e.g., \"Week 1 (Jan 15)\"), includes period_start and period_end dates, ordered with most recent week first."
+    proof: [oracle, behavior-tests]
+  - text: "All three endpoints require user API key authentication, return HTTP 500 with \"Database not connected\" error when prisma_client is unavailable, and build SQL queries with parameter injection, not string templates."
+    proof: [oracle, behavior-tests]
+  - text: "Tag filtering respects exact-list precedence (tag_filters with exact match before tag_filter substring search) and empty filter lists mean no filtering (fetch all)."
+    proof: [oracle, behavior-tests]
+  - text: "GET /tag/distinct returns HTTP 500 with message 'Failed to fetch distinct user agent tags: {e}' when a query execution error occurs."
+    proof: [oracle]
+  - text: "GET /tag/dau returns HTTP 500 with message 'Failed to fetch DAU analytics: {e}' when a query execution error occurs."
+    proof: [oracle]
+  - text: "GET /tag/wau returns HTTP 500 with message 'Failed to fetch WAU analytics: {e}' when a query execution error occurs."
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Response types, row parsing, tag filtering or date range logic is broken
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_agent_analytics::/)'
+oracle_cases:
+  - tools/oracle/cases/analytics/user-agent-distinct.yaml
+  - tools/oracle/cases/analytics/user-agent-dau.yaml
+  - tools/oracle/cases/analytics/user-agent-wau.yaml
+  - tools/oracle/cases/analytics/user-agent-distinct-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-dau-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-wau-query-error.yaml
+deviations:
+  - what: SQL parameter injection uses Rust's native parameterized query API instead of string formatting. Parameter indices match the count and order of provided values.
+    why: Prevents SQL injection and matches betterlite's database abstraction patterns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L278-L288
+  - what: Week labels use Rust chrono date formatting instead of PostgreSQL TO_CHAR. Output matches LiteLLM's format (e.g., "Week 1 (Jan 15)") exactly.
+    why: Simplifies query building and aligns with Rust type safety.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L376-L402
+out_of_scope:
+  - "_TableOps protocol and _typed_table overloads (lines 142-155 of user_agent_analytics_endpoints.py) are used only by get_per_user_analytics, which B3101 owns. B3100 builds only _query_raw and does not use these protocol helpers."
+  - get_monthly_active_users, get_tag_summary, get_per_user_analytics (owned by B3101).
+  - Tag ownership scoping or authorization checks beyond user_api_key_auth (B052).
+  - Caching of results or precomputed aggregations.
+  - Database schema or table definitions (uses existing LiteLLM tables).
+pitfalls:
+  - "UTC-tomorrow boundary: end_dt is calculated as today at 0:00 UTC + 1 day; queries use `date <= end_date` (inclusive) or `date < (end_date + 1)` to include the entire end_date calendar day."
+  - "Exact-list tag filtering (tag_filters) takes precedence over substring filtering (tag_filter). tag_filters must use equality comparisons; tag_filter uses ILIKE for substring matching."
+  - "Empty tag_filters list means no tag filtering (fetch all), not exclude everything. Query logic must check list length before adding WHERE conditions."
+  - "Distinct tags are filtered by pattern: tags starting with 'User-Agent:' or tags without colons are included. Tags with other prefixes are excluded."
+  - "Week numbering counts from most recent backwards: week_offset 0 is the most recent 7-day period, week_offset 1 is 7-14 days ago, etc. Label text shows 'Week N' where N = MAX_WEEKS - week_offset."
+  - "Week labels must include descriptive month names and dates. Format is 'Week N (Mon DD)' where the date is the start of that week's period, calculated as end_date - (week_offset * 7) - 6 days."
+  - "Period_start is the first day of the week period; period_end is the last day (inclusive). Both are returned as YYYY-MM-DD strings."
+  - "NULL user_id in VerificationToken rows are filtered out; only records with non-null user_id contribute to active user counts."
+  - "TypeAdapters parse SQL results into strongly typed row objects; if SQL returns unexpected types (e.g., string instead of int), parsing fails and returns HTTP 500 error."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

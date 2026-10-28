@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Pass-through stream lifecycle and failure logging
 status: todo
 depends_on: [B3600, B3605, B3608, B191, B247, B251, B1719]
-file: null
+file: tasks/B3609-passthrough-stream-lifecycle.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/streaming_handler.py"
 parent: B102

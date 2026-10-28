@@ -1,0 +1,192 @@
+id: B3152
+title: ROI GitHub transport and repository discovery
+description: >-
+  Build the GitHub client foundation in crates/betterlite-server::roi_github,
+  backed by B173's injected client pool. Preserve per-request credentials from
+  ROISettings.github_token, 45-second timeout, disabled redirects, GET-only
+  retries for 429/502/503/504, Link-header pagination, repository search across
+  ten upstream pages, profile-email caching and source-error conversion.
+
+  The HTTP client construction takes timeout: 45, follow_redirects: False and an
+  injected transport from B173's get_async_httpx_client for the ROICalculator
+  provider. The _request function retries failed GET requests up to once more on
+  429/502/503/504 status codes after a 0.5 second base delay, never retries
+  other methods, and converts httpx.RequestError to SourceError with the message
+  'Could not reach GitHub. Check the API URL and network connection.' HTTP
+  errors map to status-specific labels (401: 'Authentication failed...', 403:
+  'GitHub denied access...', 404: 'GitHub repository or organization not
+  found...', 429: 'GitHub rate limit reached...') with fallback 'GitHub returned
+  an error.' Page fetching uses Link-header pagination detection ('rel="next"'
+  in response headers); limit is 10 pages for repository search and 3 for
+  unauthenticated REST commits, raising SourceError 'GitHub's pagination limit
+  was reached. Narrow the date range.' when exceeded. Repository search queries
+  the user's owned, collaborated and organization repositories, filters by
+  case-insensitive substring match within ten GitHub pages, caches profile
+  emails by login in a MappingProxyType, and test_repositories validates read
+  access to a repository and its closed pulls endpoint. Every response body is
+  parsed through a TypeAdapter matching LiteLLM's exact field names and nesting
+  structure, with extra fields ignored.
+
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite-server/src/roi_github.rs
+    - crates/betterlite-server/src/roi_github/**
+    - tools/oracle/cases/roi-github/**
+    - tools/oracle/helpers/b3152.py
+    - tools/oracle/helpers/b3152/**
+    - tools/oracle/src/helpers/server/b3152.rs
+    - tools/oracle/src/helpers/server/b3152/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L1-L211
+    why: GitHub models, TypeAdapters, pagination constants, SourceError exception and GraphQL query declaration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L212-L253
+    why: _request function with retry logic for GET-only 429/502/503/504, per-attempt recursion, and labeled HTTP errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L255-L302
+    why: _fetch_page, _pages and _collect pagination helpers with Link-header detection and limit enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L305-L412
+    why: GitHub client __init__, close, _url, repositories search/filter/pagination, test_repositories and profile_email caching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L56-L64
+    why: _repository_values tuple helper extracting normalized visibility from private/archived flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L87-L147
+    why: _PullFile.evidence, _rest_commit_evidence and _graphql_commit_evidence adapters used by B3153.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L497-L516
+    why: GitHub.profile_email lookup and _load_profile_email with caching and normalize_email integration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1764
+    why: get_async_httpx_client signature and usage pattern for injected pooled client construction.
+
+dod:
+  - text: _request retries GET requests exactly once on 429/502/503/504, sleeps for 0.5 then 1.0 seconds on first and second attempts, never retries other methods, and converts httpx.RequestError to SourceError with the exact message.
+    proof: [request-retry, request-no-retry]
+  - text: _fetch_page detects Link-header pagination ('rel="next"' substring), parses JSON through the passed TypeAdapter, validates all required fields and ignores extras, and returns the tuple and has-next flag.
+    proof: [pagination-link-header, pagination-parsing, pagination-extra-fields]
+  - text: _pages yields pages up to the limit, raises SourceError with exact message when limit is reached, and stops when hasNextPage is false.
+    proof: [pages-limit, pages-stop]
+  - text: GitHub.__init__ accepts ROISettings, timeout 45, follow_redirects False, and optionally an httpx transport; the Authorization header includes the Bearer token when token is present; get_async_httpx_client is called with llm_provider ROICalculator and the configured parameters.
+    proof: [github-init-timeout, github-init-redirects, github-init-token, github-init-httpx-client]
+  - text: GitHub.repositories without query returns user repos sorted by updated, and with query filters by case-insensitive substring match across up to ten GitHub pages.
+    proof: [repositories-list, repositories-search, repositories-search-depth]
+  - text: GitHub.test_repositories calls GET /repos/{repo} and GET /repos/{repo}/pulls with per_page=1 and state=closed for each repository in order.
+    proof: [test-repositories]
+  - text: GitHub.profile_email caches results in MappingProxyType, returns the fallback when cached as None, fetches from /users/{login} using normalize_email on the response email, and handles HTTP errors by returning None.
+    proof: [profile-email-cache, profile-email-fetch, profile-email-errors]
+  - text: HTTP errors match LiteLLM's labeled messages for 401, 403, 404 and 429, with fallback for others, all suffixed with the status code in parentheses.
+    proof: [http-errors]
+  - text: Helper adapters _repository_values, _PullFile.evidence, _rest_commit_evidence and _graphql_commit_evidence construct ROI records with exact fields matching LiteLLM's model structure.
+    proof: [helper-adapters]
+
+checks:
+  optional: []
+  commands:
+    - id: request-retry
+      why: _request does not retry GET requests on 429/502/503/504 with correct sleep delays
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::request_retry_behavior($|::)/)' - test(/replays_the_/)
+    - id: request-no-retry
+      why: _request retries non-GET methods or non-retryable status codes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::request_no_retry_behavior($|::)/)' - test(/replays_the_/)
+    - id: pagination-link-header
+      why: _fetch_page does not detect Link-header pagination correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_link_header_behavior($|::)/)' - test(/replays_the_/)
+    - id: pagination-parsing
+      why: _fetch_page does not parse JSON through TypeAdapter or validate required fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_parsing_behavior($|::)/)' - test(/replays_the_/)
+    - id: pagination-extra-fields
+      why: _fetch_page does not ignore extra fields in responses
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_extra_fields_behavior($|::)/)' - test(/replays_the_/)
+    - id: pages-limit
+      why: _pages does not enforce the page limit
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pages_limit_behavior($|::)/)' - test(/replays_the_/)
+    - id: pages-stop
+      why: _pages does not stop when hasNextPage is false
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pages_stop_behavior($|::)/)' - test(/replays_the_/)
+    - id: github-init-timeout
+      why: GitHub.__init__ does not set 45-second timeout
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_timeout_behavior($|::)/)' - test(/replays_the_/)
+    - id: github-init-redirects
+      why: GitHub.__init__ does not disable redirects
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_redirects_behavior($|::)/)' - test(/replays_the_/)
+    - id: github-init-token
+      why: GitHub.__init__ does not include the Bearer token in Authorization header
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_token_behavior($|::)/)' - test(/replays_the_/)
+    - id: github-init-httpx-client
+      why: GitHub.__init__ does not call get_async_httpx_client correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_httpx_client_behavior($|::)/)' - test(/replays_the_/)
+    - id: repositories-list
+      why: GitHub.repositories without query does not return user repos correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_list_behavior($|::)/)' - test(/replays_the_/)
+    - id: repositories-search
+      why: GitHub.repositories with query does not filter by case-insensitive substring
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_search_behavior($|::)/)' - test(/replays_the_/)
+    - id: repositories-search-depth
+      why: GitHub.repositories search does not respect ten-page depth limit
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_search_depth_behavior($|::)/)' - test(/replays_the_/)
+    - id: test-repositories
+      why: GitHub.test_repositories does not call the correct endpoints
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::test_repositories_behavior($|::)/)' - test(/replays_the_/)
+    - id: profile-email-cache
+      why: GitHub.profile_email does not cache results correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_cache_behavior($|::)/)' - test(/replays_the_/)
+    - id: profile-email-fetch
+      why: GitHub.profile_email does not fetch from the correct endpoint
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_fetch_behavior($|::)/)' - test(/replays_the_/)
+    - id: profile-email-errors
+      why: GitHub.profile_email does not handle HTTP errors correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_errors_behavior($|::)/)' - test(/replays_the_/)
+    - id: http-errors
+      why: HTTP error status codes do not map to the correct labeled messages
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::http_errors_behavior($|::)/)' - test(/replays_the_/)
+    - id: helper-adapters
+      why: Helper adapters do not construct ROI records correctly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::helper_adapters_behavior($|::)/)' - test(/replays_the_/)
+    - id: behavior-tests
+      why: the required behavior tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github_behavior($|::)/)' - test(/replays_the_/)
+
+oracle_cases:
+  - tools/oracle/cases/roi-github/init-timeout.yaml
+  - tools/oracle/cases/roi-github/init-redirects.yaml
+  - tools/oracle/cases/roi-github/init-token.yaml
+  - tools/oracle/cases/roi-github/request-get-retry-429.yaml
+  - tools/oracle/cases/roi-github/request-post-no-retry.yaml
+  - tools/oracle/cases/roi-github/request-error-401.yaml
+  - tools/oracle/cases/roi-github/request-error-403.yaml
+  - tools/oracle/cases/roi-github/request-error-404.yaml
+  - tools/oracle/cases/roi-github/request-error-429.yaml
+  - tools/oracle/cases/roi-github/fetch-page-link-header.yaml
+  - tools/oracle/cases/roi-github/fetch-page-no-next.yaml
+  - tools/oracle/cases/roi-github/fetch-page-parse-error.yaml
+  - tools/oracle/cases/roi-github/pages-iteration-10-limit.yaml
+  - tools/oracle/cases/roi-github/pages-stops-on-no-next.yaml
+  - tools/oracle/cases/roi-github/repositories-list-user.yaml
+  - tools/oracle/cases/roi-github/repositories-search-query.yaml
+  - tools/oracle/cases/roi-github/repositories-search-depth-10.yaml
+  - tools/oracle/cases/roi-github/test-repositories-access.yaml
+  - tools/oracle/cases/roi-github/profile-email-cached.yaml
+  - tools/oracle/cases/roi-github/profile-email-fetch.yaml
+  - tools/oracle/cases/roi-github/profile-email-http-error.yaml
+
+deviations:
+  - what: Timeout is a concrete 45 seconds rather than a configurable parameter.
+    why: B173 wraps timeout in a shared transport contract; ROI GitHub sets it explicitly for this provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L332
+
+out_of_scope:
+  - "GitHub.pulls, GitHub.evidence, GitHub._commit_metadata and GitHub._graphql_commits are built by B3153; B3152 owns only the pagination and request infrastructure they consume."
+  - "The nested pull_pages, matching_pulls and file_pages generators inside pulls and evidence belong to B3153."
+  - "Enforce pagination limits of 3 pages REST vs 100 pages GraphQL (both raising the pagination-limit SourceError) — owned by B3153."
+  - "_commit_metadata's conditional selection of REST vs GraphQL is owned by B3153 along with its entire function body."
+
+pitfalls:
+  - "The Link-header detection checks for the exact substring 'rel=\"next\"' in the link header value, not just its presence."
+  - "Repository search's recursion wraps around the GitHub page boundary: first_github_page = (page - 1) * 10 + 1 carries the client's page number through the recursive depth limit."
+  - "_request's retry recursion passes the attempt count explicitly and increments it; the first attempt is 0, the second is 1, and anything beyond fails."
+  - "Normalize_email is called on profile email fetch result and imported from roi_calculator.analytics; it handles None gracefully."
+  - "MappingProxyType is immutable; each cache update creates a new MappingProxyType with the updated mapping."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

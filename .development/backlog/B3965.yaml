@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Galileo callback records and queue admission
 status: todo
 depends_on: [B3963, B3964]
-file: null
+file: tasks/B3965-galileo-callbacks.yaml
 covers:
   - "litellm/integrations/galileo.py"
 parent: B114
