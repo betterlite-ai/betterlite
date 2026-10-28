@@ -6,7 +6,6 @@ use super::{
 };
 use rstest::rstest;
 use std::fs;
-use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(serde::Deserialize)]
@@ -153,13 +152,20 @@ fn openai_mock_transport_cases(#[case] source: &str) {
     run_scenario(source);
 }
 
-#[rstest]
-fn replays_the_openai_mock_transport_corpus(
-    #[files("fuzz/corpus/openai_mock_transport/*")] path: PathBuf,
-) {
-    let content = fs::read(path).unwrap();
-    match decode_mock_request(&content) {
-        Ok(decoded) => assert!(!decoded.stream),
-        Err(DecodeMockRequestError::NotAMapping { type_name }) => assert!(!type_name.is_empty()),
+#[test]
+fn replays_the_openai_mock_transport_corpus() {
+    let entries = fs::read_dir("fuzz/corpus/openai_mock_transport").unwrap();
+    let mut seen = 0;
+    for entry in entries {
+        let path = entry.unwrap().path();
+        let content = fs::read(&path).unwrap();
+        match decode_mock_request(&content) {
+            Ok(decoded) => assert!(!decoded.stream),
+            Err(DecodeMockRequestError::NotAMapping { type_name }) => {
+                assert!(!type_name.is_empty());
+            }
+        }
+        seen += 1;
     }
+    assert!(seen > 0);
 }
