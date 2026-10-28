@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
+use super::stream::Item;
 use super::{CodexHarnessConfig, CodexStreamState};
 use crate::context::{GatewayTarget, SessionContext, SessionSettings, TurnOutcome};
 use crate::errors::HarnessError;
@@ -9,8 +11,9 @@ use crate::events::Event;
 use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, ReasoningEffort};
 use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
 use crate::sandbox::local::LocalSandbox;
-use crate::transformation::BaseCLIHarnessConfig as _;
-use crate::types::{Harness, JsonObject, PermissionMode};
+use crate::sandbox::{CompletedRun, Sandbox, SandboxCommand};
+use crate::transformation::{BaseCLIHarnessConfig as _, BaseHarnessConfig as _};
+use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
 
 #[test]
 fn empty_toml_key_is_quoted() {
@@ -25,7 +28,14 @@ fn config_toml_managed_keys() {
         serde_json::from_str("{\"a key\": [true, 2], \"model\": \"wrong\"}").unwrap();
     let value = config.values().next().unwrap();
     assert_eq!(super::config::toml_value(value, 0).unwrap(), "[true, 2]");
-    super::config::config_overrides(&config).unwrap_err();
+    assert!(matches!(
+        super::config::config_overrides(&config).unwrap_err(),
+        HarnessError::OptionsMismatch {
+            given: "CodexOptions.config",
+            harness: Harness::Codex,
+            expected: "a key Codex does not manage itself",
+        }
+    ));
 }
 
 #[test]
@@ -50,8 +60,30 @@ fn stream_tool_call_precedes_result() {
 #[case::null_error(r#"{"type":"mcp_tool_call","error":null,"result":"ok"}"#, "ok", false)]
 #[case::null_result(r#"{"type":"mcp_tool_call","result":null}"#, "", false)]
 #[case::string_error(r#"{"type":"mcp_tool_call","error":"broken"}"#, "broken", true)]
+#[case::empty_string_error_is_not_error(
+    r#"{"type":"mcp_tool_call","error":"","result":"ok"}"#,
+    "ok",
+    false
+)]
+#[case::empty_object_error_is_not_error(
+    r#"{"type":"mcp_tool_call","error":{},"result":"ok"}"#,
+    "ok",
+    false
+)]
+#[case::false_error_is_not_error(
+    r#"{"type":"mcp_tool_call","error":false,"result":"ok"}"#,
+    "ok",
+    false
+)]
+#[case::zero_error_is_not_error(r#"{"type":"mcp_tool_call","error":0,"result":"ok"}"#, "ok", false)]
+#[case::object_error_without_message(r#"{"type":"mcp_tool_call","error":{}}"#, "", false)]
+#[case::truthy_object_error_without_message(
+    r#"{"type":"mcp_tool_call","error":{"code":1}}"#,
+    "None",
+    true
+)]
 fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] is_error: bool) {
-    let item: JsonObject = serde_json::from_str(raw).unwrap();
+    let item: Item = serde_json::from_str(raw).unwrap();
     assert_eq!(
         super::stream::tool_output(&item),
         (expected.to_owned(), is_error)
@@ -59,14 +91,31 @@ fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] i
 }
 
 #[test]
+fn mcp_object_result_is_compact_json() {
+    let item: Item =
+        serde_json::from_str(r#"{"type":"mcp_tool_call","result":{"ok":true,"n":1}}"#).unwrap();
+    let (output, is_error) = super::stream::tool_output(&item);
+    assert_eq!(output, r#"{"n":1,"ok":true}"#);
+    assert!(!is_error);
+}
+
+#[test]
 fn missing_mcp_arguments_are_null() {
-    let item: JsonObject =
-        serde_json::from_str(r#"{"type":"mcp_tool_call","tool":"list"}"#).unwrap();
+    let item: Item = serde_json::from_str(r#"{"type":"mcp_tool_call","tool":"list"}"#).unwrap();
     let (_, _, input, _) = super::stream::tool_input(&item);
     assert_eq!(
         serde_json::to_string(&input).unwrap(),
         r#"{"arguments":null}"#
     );
+}
+
+#[rstest::rstest]
+#[case::null(r#"{"type":"file_change","id":"f1","changes":null}"#)]
+#[case::missing(r#"{"type":"file_change","id":"f1"}"#)]
+fn missing_or_null_changes_are_empty_array(#[case] raw: &str) {
+    let item: Item = serde_json::from_str(raw).unwrap();
+    let (_, _, input, _) = super::stream::tool_input(&item);
+    assert_eq!(serde_json::to_string(&input["changes"]).unwrap(), "[]");
 }
 
 #[test]
@@ -81,7 +130,43 @@ fn absent_thread_id_preserves_session() {
 }
 
 #[test]
-fn reasoning_enables_summaries() {
+fn empty_error_message_falls_back() {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(r#"{"type":"error","message":""}"#).unwrap();
+    CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert_eq!(state.error.as_deref(), Some("codex reported an error"));
+}
+
+#[rstest::rstest]
+#[case::empty_text(r#"{"type":"turn.failed","error":""}"#)]
+#[case::empty_object_message(r#"{"type":"turn.failed","error":{"message":""}}"#)]
+#[case::missing_message(r#"{"type":"turn.failed","error":{}}"#)]
+fn empty_turn_failed_message_falls_back(#[case] raw: &str) {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(raw).unwrap();
+    CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert!(state.failed);
+    assert_eq!(state.error.as_deref(), Some("codex turn failed"));
+}
+
+#[test]
+fn turn_failed_keeps_prior_error_when_message_is_empty() {
+    let mut state = CodexStreamState::default();
+    let error_line: JsonObject =
+        serde_json::from_str(r#"{"type":"error","message":"earlier problem"}"#).unwrap();
+    CodexHarnessConfig.transform_stream_line(&error_line, &mut state);
+    let failed_line: JsonObject =
+        serde_json::from_str(r#"{"type":"turn.failed","error":{}}"#).unwrap();
+    CodexHarnessConfig.transform_stream_line(&failed_line, &mut state);
+    assert_eq!(state.error.as_deref(), Some("earlier problem"));
+}
+
+#[rstest::rstest]
+#[case::low(ReasoningEffort::Low, "low")]
+#[case::medium(ReasoningEffort::Medium, "medium")]
+#[case::high(ReasoningEffort::High, "high")]
+#[case::xhigh(ReasoningEffort::Xhigh, "xhigh")]
+fn reasoning_effort_sets_model_reasoning(#[case] effort: ReasoningEffort, #[case] value: &str) {
     let context = SessionContext {
         harness: Harness::Codex,
         sandbox: (),
@@ -90,16 +175,67 @@ fn reasoning_enables_summaries() {
         outcome: TurnOutcome::default(),
     };
     let options = CodexOptions {
-        reasoning_effort: Some(ReasoningEffort::High),
+        reasoning_effort: Some(effort),
         web_search: false,
         config: JsonObject::new(),
         env: BTreeMap::new(),
     };
     let overrides = super::features::feature_overrides(&context, &options);
+    assert_eq!(
+        overrides,
+        [
+            "web_search=disabled".to_owned(),
+            format!("model_reasoning_effort={value}"),
+            "model_reasoning_summary=auto".to_owned(),
+            "model_supports_reasoning_summaries=true".to_owned(),
+        ]
+    );
+}
+
+#[rstest::rstest]
+#[case::live(true, "web_search=live")]
+#[case::disabled(false, "web_search=disabled")]
+fn web_search_flag_is_translated(#[case] web_search: bool, #[case] expected: &str) {
+    let context = SessionContext {
+        harness: Harness::Codex,
+        sandbox: (),
+        session_id: "session-1".to_owned(),
+        settings: SessionSettings::default(),
+        outcome: TurnOutcome::default(),
+    };
+    let options = CodexOptions {
+        reasoning_effort: None,
+        web_search,
+        config: JsonObject::new(),
+        env: BTreeMap::new(),
+    };
+    assert_eq!(
+        super::features::feature_overrides(&context, &options),
+        [expected.to_owned()]
+    );
+}
+
+#[test]
+fn instructions_become_developer_instructions() {
+    let mut context = SessionContext {
+        harness: Harness::Codex,
+        sandbox: (),
+        session_id: "session-1".to_owned(),
+        settings: SessionSettings::default(),
+        outcome: TurnOutcome::default(),
+    };
+    context.settings.instructions = Some("be terse".to_owned());
+    let options = CodexOptions::default();
     assert!(
-        overrides
+        super::features::feature_overrides(&context, &options)
             .iter()
-            .any(|value| value == "model_supports_reasoning_summaries=true")
+            .any(|value| value == r#"developer_instructions="be terse""#)
+    );
+    context.settings.instructions = Some(String::new());
+    assert!(
+        !super::features::feature_overrides(&context, &options)
+            .iter()
+            .any(|value| value.starts_with("developer_instructions"))
     );
 }
 
@@ -113,7 +249,26 @@ fn config_values(#[case] raw: &str, #[case] expected: &str) {
     let config: JsonObject = serde_json::from_str(&format!("{{\"value\":{raw}}}")).unwrap();
     let value = &config["value"];
     assert_eq!(super::config::toml_value(value, 0).unwrap(), expected);
-    super::config::toml_value(value, DEFAULT_MAX_RECURSE_DEPTH + 1).unwrap_err();
+    assert!(matches!(
+        super::config::toml_value(value, DEFAULT_MAX_RECURSE_DEPTH + 1).unwrap_err(),
+        HarnessError::OptionsMismatch {
+            given: "CodexOptions.config value",
+            harness: Harness::Codex,
+            expected: "a value within the Codex config nesting limit",
+        }
+    ));
+}
+
+#[test]
+fn null_config_value_is_rejected() {
+    assert!(matches!(
+        super::config::toml_value(&serde_json::Value::Null, 0).unwrap_err(),
+        HarnessError::OptionsMismatch {
+            given: "CodexOptions.config value",
+            harness: Harness::Codex,
+            expected: "a bool, number, string, array or object",
+        }
+    ));
 }
 
 #[rstest::rstest]
@@ -126,7 +281,14 @@ fn config_values(#[case] raw: &str, #[case] expected: &str) {
 #[case::search("web_search")]
 fn rejects_managed_config(#[case] key: &str) {
     let config: JsonObject = serde_json::from_str(&format!("{{\"{key}\":true}}")).unwrap();
-    super::config::config_overrides(&config).unwrap_err();
+    assert!(matches!(
+        super::config::config_overrides(&config).unwrap_err(),
+        HarnessError::OptionsMismatch {
+            given: "CodexOptions.config",
+            harness: Harness::Codex,
+            expected: "a key Codex does not manage itself",
+        }
+    ));
 }
 
 #[test]
@@ -136,6 +298,21 @@ fn accepts_network_config() {
     assert_eq!(
         super::config::config_overrides(&config).unwrap(),
         ["sandbox_workspace_write.network_access=true"]
+    );
+}
+
+#[test]
+fn capabilities_match_litellm() {
+    assert_eq!(
+        CodexHarnessConfig.capabilities(),
+        Capabilities {
+            supported: BTreeSet::from([
+                Capability::StructuredOutput,
+                Capability::Skills,
+                Capability::Resume,
+            ]),
+            permission_modes: BTreeSet::from([PermissionMode::ReadOnly, PermissionMode::Full]),
+        }
     );
 }
 
@@ -172,6 +349,107 @@ fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
     (root, context)
 }
 
+struct ContainerSandbox(LocalSandbox);
+
+impl Sandbox for ContainerSandbox {
+    type Process = <LocalSandbox as Sandbox>::Process;
+
+    fn workdir(&self) -> &str {
+        self.0.workdir()
+    }
+
+    fn is_container(&self) -> bool {
+        true
+    }
+
+    async fn exec(&self, command: &SandboxCommand) -> Result<Self::Process, HarnessError> {
+        self.0.exec(command).await
+    }
+
+    async fn run(
+        &self,
+        command: &SandboxCommand,
+        timeout: Duration,
+        max_output_bytes: usize,
+    ) -> Result<CompletedRun, HarnessError> {
+        self.0.run(command, timeout, max_output_bytes).await
+    }
+
+    async fn read(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>, HarnessError> {
+        self.0.read(path, max_bytes).await
+    }
+
+    async fn write(&self, path: &str, data: &[u8]) -> Result<(), HarnessError> {
+        self.0.write(path, data).await
+    }
+
+    fn host_url(&self, port: u16) -> String {
+        self.0.host_url(port)
+    }
+
+    async fn which(&self, binary: &str) -> Result<Option<String>, HarnessError> {
+        self.0.which(binary).await
+    }
+
+    async fn snapshot(&self) -> Result<BTreeMap<String, String>, HarnessError> {
+        self.0.snapshot().await
+    }
+
+    async fn tempdir(&self) -> Result<String, HarnessError> {
+        self.0.tempdir().await
+    }
+
+    async fn close(&self) -> Result<(), HarnessError> {
+        self.0.close().await
+    }
+}
+
+#[rstest::rstest]
+#[case::read_only_first_turn(PermissionMode::ReadOnly, false, false, &["--sandbox", "read-only"])]
+#[case::full_first_turn(PermissionMode::Full, false, false, &["--sandbox", "workspace-write"])]
+#[case::read_only_resumed(PermissionMode::ReadOnly, true, false, &["-c", "sandbox_mode=\"read-only\""])]
+#[case::full_resumed(PermissionMode::Full, true, false, &["-c", "sandbox_mode=\"workspace-write\""])]
+#[case::full_container(
+    PermissionMode::Full,
+    false,
+    true,
+    &["--dangerously-bypass-approvals-and-sandbox"]
+)]
+#[case::read_only_container_still_sandboxes(
+    PermissionMode::ReadOnly,
+    false,
+    true,
+    &["--sandbox", "read-only"]
+)]
+fn permission_args_match_mode_and_container(
+    #[case] permissions: PermissionMode,
+    #[case] resumed: bool,
+    #[case] is_container: bool,
+    #[case] expected: &[&str],
+) {
+    let (_root, mut plain) = session_context();
+    plain.settings.permissions = permissions;
+    if is_container {
+        let container = ContainerSandbox(plain.sandbox);
+        let context = SessionContext {
+            harness: plain.harness,
+            sandbox: container,
+            session_id: plain.session_id,
+            settings: plain.settings,
+            outcome: plain.outcome,
+        };
+        assert_eq!(
+            super::permissions::permission_args(&context, resumed),
+            expected
+        );
+    } else {
+        assert_eq!(
+            super::permissions::permission_args(&plain, resumed),
+            expected
+        );
+    }
+}
+
 #[test]
 fn setup_rejects_other_options() {
     let (_root, mut context) = session_context();
@@ -183,6 +461,25 @@ fn setup_rejects_other_options() {
             given: "ClaudeCodeOptions",
             harness: Harness::Codex,
             expected: "CodexOptions",
+        })
+    ));
+}
+
+#[test]
+fn setup_rejects_env_collision_with_managed_keys() {
+    let (_root, mut context) = session_context();
+    context.settings.options = Some(HarnessOptions::Codex(CodexOptions {
+        reasoning_effort: None,
+        web_search: false,
+        config: JsonObject::new(),
+        env: BTreeMap::from([("CODEX_HOME".to_owned(), "/elsewhere".to_owned())]),
+    }));
+    assert!(matches!(
+        CodexHarnessConfig.transform_session_setup(&context, "/private"),
+        Err(HarnessError::OptionsMismatch {
+            given: "CodexOptions.env",
+            harness: Harness::Codex,
+            expected: "keys other than LITELLM_HARNESS_TOKEN or CODEX_HOME",
         })
     ));
 }

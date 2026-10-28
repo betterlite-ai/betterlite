@@ -23,70 +23,40 @@ mod permissions;
 mod provider;
 #[path = "stream.rs"]
 pub mod stream;
+#[path = "stream_events.rs"]
+mod stream_events;
 mod tests;
 use config::config_overrides;
 use config::{CODEX_HOME_ENV, CODEX_SCHEMA_FILENAME, CODEX_TOKEN_ENV};
 use features::feature_overrides;
 use permissions::permission_args;
 use provider::provider_overrides;
-use stream::{CodexStreamState, FailureDetail, Item, ItemEventKind, StreamEvent};
+use stream::{CodexStreamState, ItemEventKind, StreamEvent};
+use stream_events::{record_error, record_thread_id, record_turn_failed, transform_item_event};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CodexHarnessConfig;
 
-fn transform_item_event(item: Item, event_type: ItemEventKind, state: &mut CodexStreamState) -> Vec<Event> {
-    match item {
-        Item::AgentMessage { text, .. } => {
-            if event_type != ItemEventKind::Completed {
-                return Vec::new();
-            }
-            let text = text.unwrap_or_default();
-            state.final_text.clone_from(&text);
-            if text.is_empty() {
-                Vec::new()
-            } else {
-                vec![Event::Text { delta: text }]
-            }
-        }
-        Item::Reasoning { text, .. } => {
-            if event_type != ItemEventKind::Completed {
-                return Vec::new();
-            }
-            let Some(text) = text.filter(|value| !value.is_empty()) else {
-                return Vec::new();
-            };
-            vec![Event::Reasoning { delta: text }]
-        }
-        Item::CommandExecution { .. }
-        | Item::FileChange { .. }
-        | Item::WebSearch { .. }
-        | Item::McpToolCall { .. } => tool_events(&item, event_type, state),
-        Item::Other => Vec::new(),
+fn reject_managed_env_collision(env: &BTreeMap<String, String>) -> Result<(), HarnessError> {
+    if env.contains_key(CODEX_TOKEN_ENV) || env.contains_key(CODEX_HOME_ENV) {
+        return Err(HarnessError::OptionsMismatch {
+            given: "CodexOptions.env",
+            harness: Harness::Codex,
+            expected: "keys other than LITELLM_HARNESS_TOKEN or CODEX_HOME",
+        });
     }
+    Ok(())
 }
 
-fn tool_events(item: &Item, event_type: ItemEventKind, state: &mut CodexStreamState) -> Vec<Event> {
-    let id = stream::item_id(item).to_owned();
-    let mut events = Vec::new();
-    if state.started.insert(id.clone()) {
-        let (name, native_name, input, builtin) = stream::tool_input(item);
-        events.push(Event::ToolCall {
-            id: id.clone(),
-            name,
-            native_name,
-            input,
-            builtin,
-        });
-    }
-    if event_type == ItemEventKind::Completed {
-        let (output, is_error) = stream::tool_output(item);
-        events.push(Event::ToolResult {
-            id,
-            output,
-            is_error,
-        });
-    }
-    events
+fn output_schema_file(schema: &JsonObject) -> Result<Vec<u8>, HarnessError> {
+    let strict = strict_json_schema(config::schema_value(schema), 0).map_err(|_schema_err| {
+        HarnessError::OptionsMismatch {
+            given: "SessionSettings.output_schema",
+            harness: Harness::Codex,
+            expected: "a JSON Schema within the Codex config nesting limit",
+        }
+    })?;
+    serde_json::to_vec(&strict).map_err(|source| HarnessError::StateEncode { source })
 }
 
 impl BaseCLIHarnessConfig for CodexHarnessConfig {
@@ -115,13 +85,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 expected: "a configured session model endpoint",
             })?;
         let options = self.get_options(context)?;
-        if options.env.contains_key(CODEX_TOKEN_ENV) || options.env.contains_key(CODEX_HOME_ENV) {
-            return Err(HarnessError::OptionsMismatch {
-                given: "CodexOptions.env",
-                harness: Harness::Codex,
-                expected: "keys other than LITELLM_HARNESS_TOKEN or CODEX_HOME",
-            });
-        }
+        reject_managed_env_collision(&options.env)?;
         let mut setup = HarnessSessionSetup {
             files: BTreeMap::new(),
             persisted_dirs: vec![PersistedDir {
@@ -132,17 +96,9 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
             env: BTreeMap::new(),
         };
         if let Some(schema) = context.settings.output_schema.as_ref() {
-            let strict =
-                strict_json_schema(config::schema_value(schema), 0).map_err(|_schema_err| {
-                    HarnessError::OptionsMismatch {
-                        given: "SessionSettings.output_schema",
-                        harness: Harness::Codex,
-                        expected: "a JSON Schema within the Codex config nesting limit",
-                    }
-                })?;
             setup.files.insert(
                 CODEX_SCHEMA_FILENAME.to_owned(),
-                serde_json::to_vec(&strict).map_err(|source| HarnessError::StateEncode { source })?,
+                output_schema_file(schema)?,
             );
         }
         setup.env.extend(
@@ -211,9 +167,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
         };
         match event {
             StreamEvent::ThreadStarted { thread_id } => {
-                if let Some(thread_id) = thread_id.filter(|value| !value.is_empty()) {
-                    state.thread_id = Some(thread_id);
-                }
+                record_thread_id(thread_id, state);
                 Vec::new()
             }
             StreamEvent::ItemStarted { item } => {
@@ -226,24 +180,11 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 transform_item_event(item, ItemEventKind::Completed, state)
             }
             StreamEvent::Error { message } => {
-                state.error = Some(
-                    message
-                        .filter(|text| !text.is_empty())
-                        .unwrap_or_else(|| "codex reported an error".to_owned()),
-                );
+                record_error(message, state);
                 Vec::new()
             }
             StreamEvent::TurnFailed { error } => {
-                state.failed = true;
-                let message = match error {
-                    Some(FailureDetail::Text(text)) => Some(text),
-                    Some(FailureDetail::Object { message }) => message,
-                    None => None,
-                };
-                state.error = message
-                    .filter(|text| !text.is_empty())
-                    .or_else(|| state.error.clone())
-                    .or_else(|| Some("codex turn failed".to_owned()));
+                record_turn_failed(error, state);
                 Vec::new()
             }
             StreamEvent::Other => Vec::new(),
