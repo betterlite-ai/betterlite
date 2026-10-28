@@ -1,0 +1,7 @@
+kind: helper
+name: structured-precedence
+call:
+  b3721:
+    step: {"selection": {"texts": ["new"], "context": {"latest_only": true, "structured_messages": [{"role": "user", "content": "new"}], "messages": [{"role": "system", "content": "old"}, {"role": "user", "content": "new"}]}}}
+env: {}
+compare: {ignore: []}

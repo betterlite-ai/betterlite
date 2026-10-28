@@ -1,0 +1,7 @@
+kind: helper
+name: grounding-role-boundary
+call:
+  b3721:
+    step: {"grounding": {"messages": [{"role": "developer", "content": [{"type": "grounding_source", "text": "developer"}, {"type": "query", "text": "developer query"}]}, {"role": "system", "content": [{"type": "grounding_source", "text": "system"}, {"type": "query", "text": "system query"}]}, {"role": "tool", "content": [{"type": "grounding_source", "text": "tool"}, {"type": "query", "text": "tool query"}]}, {"role": "function", "content": [{"type": "grounding_source", "text": "function"}, {"type": "query", "text": "function query"}]}, {"role": "assistant", "content": [{"type": "grounding_source", "text": "assistant"}, {"type": "query", "text": "assistant query"}]}, {"role": "user", "content": [{"type": "grounding_source", "text": "user"}, {"type": "query", "text": "user query"}]}], "contextual_fallback": false}}
+env: {}
+compare: {ignore: []}
