@@ -59,7 +59,7 @@ impl fmt::Debug for BedrockError {
     }
 }
 
-fn redacted_pairs(pairs: &[(String, String)]) -> Vec<(&str, &str)> {
+fn redacted_pairs<'pairs>(pairs: &'pairs [(String, String)]) -> Vec<(&'pairs str, &'static str)> {
     pairs
         .iter()
         .map(|(name, _)| (name.as_str(), "[REDACTED]"))
