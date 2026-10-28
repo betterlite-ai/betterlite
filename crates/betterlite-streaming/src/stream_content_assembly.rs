@@ -108,12 +108,20 @@ pub fn get_combined_content(
     field: ContentField,
 ) -> Result<String, AssemblyError> {
     let mut combined = String::new();
+    for_each_delta(chunks, |delta| append_content(&mut combined, delta, field))?;
+    Ok(combined)
+}
+
+fn for_each_delta<F>(chunks: &[Chunk], mut action: F) -> Result<(), AssemblyError>
+where
+    F: FnMut(Option<&Delta>) -> Result<(), AssemblyError>,
+{
     for chunk in chunks {
         for choice in &chunk.choices {
-            append_content(&mut combined, choice.delta.as_ref(), field)?;
+            action(choice.delta.as_ref())?;
         }
     }
-    Ok(combined)
+    Ok(())
 }
 
 fn append_content(
@@ -207,11 +215,7 @@ pub fn get_combined_audio_content(
     now: i64,
 ) -> Result<AudioResponse, AssemblyError> {
     let mut state = AudioState::default();
-    for chunk in chunks {
-        for choice in &chunk.choices {
-            state.consume(choice.delta.as_ref())?;
-        }
-    }
+    for_each_delta(chunks, |delta| state.consume(delta))?;
     Ok(state.finish(now))
 }
 
