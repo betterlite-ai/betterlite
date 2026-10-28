@@ -9,9 +9,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+betterlite-secrets = { path = "../betterlite-secrets" }
 chrono.workspace = true
 deadpool-postgres.workspace = true
 rust_decimal.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio-postgres.workspace = true

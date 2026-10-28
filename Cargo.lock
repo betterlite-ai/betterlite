@@ -869,6 +869,7 @@ name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
  "betterlite-postgres-fixture",
+ "betterlite-secrets",
  "chrono",
  "clap",
  "deadpool-postgres",
