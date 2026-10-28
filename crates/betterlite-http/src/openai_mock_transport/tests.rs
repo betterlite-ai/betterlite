@@ -154,18 +154,15 @@ fn openai_mock_transport_cases(#[case] source: &str) {
 
 #[test]
 fn replays_the_openai_mock_transport_corpus() {
-    let entries = fs::read_dir("fuzz/corpus/openai_mock_transport").unwrap();
-    let mut seen = 0_usize;
-    for entry in entries {
-        let path = entry.unwrap().path();
-        let content = fs::read(&path).unwrap();
-        match decode_mock_request(&content) {
+    let seen = fs::read_dir("fuzz/corpus/openai_mock_transport")
+        .unwrap()
+        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
+        .map(|content| match decode_mock_request(&content) {
             Ok(decoded) => assert!(!decoded.stream),
             Err(DecodeMockRequestError::NotAMapping { type_name }) => {
                 assert!(!type_name.is_empty());
             }
-        }
-        seen += 1;
-    }
+        })
+        .count();
     assert!(seen > 0_usize);
 }

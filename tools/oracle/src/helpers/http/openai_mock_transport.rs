@@ -1,6 +1,6 @@
 use betterlite_http::openai_mock_transport::{
-    DecodeMockRequestError, MockModel, TransportChoice, decode_mock_request,
-    mock_chat_completion, select_transport,
+    DecodeMockRequestError, MockModel, TransportChoice, decode_mock_request, mock_chat_completion,
+    select_transport,
 };
 use serde_json::value::RawValue;
 use uuid::Uuid;
@@ -49,17 +49,6 @@ pub(crate) enum SuppliedSession {
     Shared,
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 fn decode_probe(probe: &Probe) -> serde_json::Value {
     match decode_mock_request(probe.content.as_bytes()) {
         Ok(decoded) => serde_json::json!({"model": decoded.model, "stream": decoded.stream}),
@@ -67,6 +56,36 @@ fn decode_probe(probe: &Probe) -> serde_json::Value {
             serde_json::json!({"error": error.to_string()})
         }
     }
+}
+
+fn reply_literals(model: &str, clock: i64, uuid: &str) -> crate::helpers::HelperResult {
+    let identifier = Uuid::parse_str(uuid).map_err(|error| {
+        Box::new(crate::helpers::HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("uuid must be a UUID: {error}"),
+        })
+    })?;
+    let raw =
+        RawValue::from_string(serde_json::to_string(model).unwrap_or_default()).map_err(
+            |error| {
+                Box::new(crate::helpers::HelperError {
+                    class: "ValueError".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: format!("model must be JSON: {error}"),
+                })
+            },
+        )?;
+    let clock_fn = || clock;
+    let identifier_fn = || identifier;
+    let body = mock_chat_completion(MockModel::Raw(raw), &clock_fn, &identifier_fn);
+    Ok(serde_json::to_value(body).unwrap_or(serde_json::Value::Null))
 }
 
 fn selection_outcome(scenario: &SelectionScenario) -> &'static str {
@@ -86,24 +105,16 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::ReplyLiterals { model, clock, uuid } => {
-                let identifier = Uuid::parse_str(uuid)
-                    .map_err(|error| invalid(format!("uuid must be a UUID: {error}")))?;
-                let raw = RawValue::from_string(serde_json::to_string(model).unwrap_or_default())
-                    .map_err(|error| invalid(format!("model must be JSON: {error}")))?;
-                let clock_value = *clock;
-                let clock_fn = || clock_value;
-                let identifier_fn = || identifier;
-                let body = mock_chat_completion(MockModel::Raw(raw), &clock_fn, &identifier_fn);
-                Ok(serde_json::to_value(body).unwrap_or(serde_json::Value::Null))
-            }
-            Input::RequestDecoder { probes } => {
-                Ok(serde_json::Value::Array(probes.iter().map(decode_probe).collect()))
-            }
+            Input::ReplyLiterals { model, clock, uuid } => reply_literals(model, *clock, uuid),
+            Input::RequestDecoder { probes } => Ok(serde_json::Value::Array(
+                probes.iter().map(decode_probe).collect(),
+            )),
             Input::Selection { scenarios } => Ok(serde_json::Value::Array(
                 scenarios
                     .iter()
-                    .map(|scenario| serde_json::Value::String(selection_outcome(scenario).to_owned()))
+                    .map(|scenario| {
+                        serde_json::Value::String(selection_outcome(scenario).to_owned())
+                    })
                     .collect(),
             )),
         }
