@@ -994,12 +994,16 @@ name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-models",
  "chrono",
  "flate2",
  "hex",
+ "indexmap 2.14.2",
+ "insta",
  "parquet-format-safe",
  "parquet2",
  "pep440_rs",
+ "prost",
  "regex",
  "rstest",
  "rust_decimal",
