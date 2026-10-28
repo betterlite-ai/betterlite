@@ -90,6 +90,20 @@ fn case_1_audio_base64_decoder() {
     assert_eq!(decode_stream_audio_fragment("", 1).unwrap(), b"");
     decode_stream_audio_fragment("YQ=", 1).unwrap_err();
     decode_stream_audio_fragment("YWFh", 2).unwrap_err();
+
+    let fragment = STANDARD.encode(vec![0; DEFAULT_AUDIO_LIMIT]);
+    let chunks = vec![Chunk {
+        choices: vec![Choice {
+            delta: Some(Delta {
+                audio: Some(AudioDelta {
+                    data: Some(ChunkText::Text(fragment)),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        }],
+    }];
+    assert!(get_combined_audio_content(&chunks, 0).is_ok());
 }
 
 #[test]
