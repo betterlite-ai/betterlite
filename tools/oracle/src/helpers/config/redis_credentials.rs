@@ -23,12 +23,12 @@ impl crate::helpers::Helper for Op {
             Input::GcpTokenCaching { service_account } => json!({
                 "provider": "gcp",
                 "service_account_configured": !service_account.is_empty(),
-                "token_ttl_seconds": 3300,
+                "token_ttl_seconds": 3300_u32,
             }),
             Input::ElasticacheSigGeneration { cache_name, serverless } => json!({
                 "provider": "aws",
                 "cache_name": cache_name.to_ascii_lowercase(),
-                "token_ttl_seconds": 900,
+                "token_ttl_seconds": 900_u32,
                 "query": if *serverless { "Action=connect&ResourceType=ServerlessCache" } else { "Action=connect" },
             }),
             Input::AzureCredentialSelection { client_id, tenant_id, client_secret } => json!({
