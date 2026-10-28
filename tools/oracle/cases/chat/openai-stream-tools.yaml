@@ -1,0 +1,30 @@
+name: chat-openai-stream-tools
+config: |
+  model_list:
+    - model_name: tools-model
+      litellm_params: {model: openai/gpt-tools-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: tools-model
+    messages: [{role: user, content: Weather in Paris?}]
+    stream: true
+    tools: [{type: function, function: {name: get_weather, parameters: {type: object}}}]
+    tool_choice: auto
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-tools","object":"chat.completion.chunk","created":1700000001,"model":"gpt-tools-upstream","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather"}}]},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-tools","object":"chat.completion.chunk","created":1700000001,"model":"gpt-tools-upstream","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}'
+      - '[DONE]'
+compare:
+  headers: [content-type, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /0/created, why: LiteLLM timestamps stream chunks}
+    - {pointer: /1/created, why: LiteLLM timestamps stream chunks}
