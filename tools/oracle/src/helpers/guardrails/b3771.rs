@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_guardrails::generic_guardrail_api::extract_user_api_key_metadata;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::grayswan::{
-    GraySwanGuardrail, GraySwanResponse, GraySwanSettings, OnFlaggedAction,
-};
+use betterlite_guardrails::grayswan::wire::GraySwanResponse;
+use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -30,15 +29,15 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .cloned()
         .unwrap_or_else(|| json!({}));
     let metadata_json = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
-    let litellm_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(litellm_json)
-        .map_err(|error| failure(error.to_string()))?;
-    let metadata_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(metadata_json)
-        .map_err(|error| failure(error.to_string()))?;
-    let serialized = serde_json::to_value(extract_user_api_key_metadata(
-        Some(&litellm_values),
-        Some(&metadata_values),
-    ))
-    .map_err(|error| failure(error.to_string()))?;
+    let litellm_values =
+        serde_json::from_value::<BTreeMap<String, Option<String>>>(litellm_json)
+            .map_err(stringify_failure)?;
+    let metadata_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(
+        metadata_json,
+    )
+    .map_err(stringify_failure)?;
+    let merged = extract_user_api_key_metadata(Some(&litellm_values), Some(&metadata_values));
+    let serialized = serde_json::to_value(merged).map_err(stringify_failure)?;
     let object = serialized.as_object().cloned().unwrap_or_default();
     Ok(serde_json::Value::Object(
         object
@@ -49,12 +48,29 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
 }
 
 fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
+    let guardrail = grayswan_guardrail(input);
+    let response = GraySwanResponse {
+        violation_score: input
+            .get("score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0_f64),
+        violation_reason: Some("oracle violation".to_owned()),
+        messages: None,
+    };
+    let value = guardrail
+        .process_response(response, GuardrailInputType::Request, Vec::new())
+        .map_err(|error| failure(error.to_string()))?;
+    serde_json::to_value(json!({"allowed": true, "flagged": value.flagged}))
+        .map_err(stringify_failure)
+}
+
+fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
     let action = match input.get("action").and_then(serde_json::Value::as_str) {
         Some("PASSTHROUGH") => OnFlaggedAction::Passthrough,
         Some("MONITOR") => OnFlaggedAction::Monitor,
         _ => OnFlaggedAction::Block,
     };
-    let guardrail = GraySwanGuardrail::new(
+    GraySwanGuardrail::new(
         SecretString::from("oracle-key"),
         Some("http://oracle.invalid".to_owned()),
         GraySwanSettings {
@@ -65,21 +81,11 @@ fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
             policy_id: None,
             fail_open: true,
         },
-    );
-    let response = GraySwanResponse {
-        violation_score: input
-            .get("score")
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.0_f64),
-        violation_reason: Some("oracle violation".to_owned()),
-        messages: None,
-    };
-    let result = guardrail.process_response(response, GuardrailInputType::Request, Vec::new());
-    match result {
-        Ok(value) => serde_json::to_value(json!({"allowed": true, "flagged": value.flagged}))
-            .map_err(|error| failure(error.to_string())),
-        Err(error) => Err(failure(error.to_string())),
-    }
+    )
+}
+
+fn stringify_failure<E: std::fmt::Display>(error: E) -> Box<crate::helpers::HelperError> {
+    failure(error.to_string())
 }
 
 fn failure(message: String) -> Box<crate::helpers::HelperError> {

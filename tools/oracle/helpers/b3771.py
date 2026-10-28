@@ -4,6 +4,10 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 VIOLATION_THRESHOLD = 0.5
 
 
+class GuardrailError(Exception):
+    pass
+
+
 def run(input_value: dict[str, Json]) -> Json:
     data = input_value
     if "metadata" in data or "litellm_metadata" in data:
@@ -20,5 +24,5 @@ def run(input_value: dict[str, Json]) -> Json:
         flagged = score >= VIOLATION_THRESHOLD
         if not flagged or action == "MONITOR":
             return {"allowed": True, "flagged": flagged}
-        return {"error": {"class": "GuardrailError"}}
+        raise GuardrailError("content flagged")
     raise ValueError("unsupported operation")

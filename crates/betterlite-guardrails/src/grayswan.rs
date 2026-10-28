@@ -12,7 +12,8 @@ use crate::generic_guardrail_contracts::{
 };
 
 pub mod wire;
-pub use wire::{GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult};
+
+use wire::{GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult};
 
 pub const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -84,14 +85,13 @@ impl GraySwanGuardrail {
         api_base: Option<String>,
         settings: GraySwanSettings,
     ) -> Self {
-        let resolved_base = api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-        Self {
+        Self::with_client(
             api_key,
-            api_base: resolved_base,
+            api_base,
             settings,
-            client: reqwest::Client::default(),
-            timeout: DEFAULT_TIMEOUT,
-        }
+            reqwest::Client::default(),
+            DEFAULT_TIMEOUT,
+        )
     }
 
     #[must_use]
