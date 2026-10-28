@@ -60,6 +60,8 @@ fn has_valid_authority(value: &str) -> bool {
             return false;
         }
         literal
+    } else if host_port.contains('[') {
+        return false;
     } else {
         host_port.split(':').next().unwrap_or_default()
     };

@@ -12,6 +12,7 @@ fn kill_url_accepted(#[case] input: &str) {
 
 #[rstest]
 #[case::kill_url_bad_authority("http://[::1")]
+#[case::kill_url_bracket_not_leading("http://v1.a[]")]
 #[case::kill_url_missing_authority("http:example.com")]
 #[case::kill_url_one_slash("http:/example.com")]
 #[case::kill_url_backslash(r"http:\example.com")]
