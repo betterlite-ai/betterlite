@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "alpaca-null", "call": {"builtin_prompts": {"family": "alpaca", "messages": [{"role": "assistant", "content": null}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

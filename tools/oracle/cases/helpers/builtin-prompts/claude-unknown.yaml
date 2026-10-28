@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "claude-unknown", "call": {"builtin_prompts": {"family": "claude", "messages": [{"role": "other", "content": "x"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

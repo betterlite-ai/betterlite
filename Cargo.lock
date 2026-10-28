@@ -914,6 +914,7 @@ dependencies = [
  "axum",
  "betterlite-config",
  "indexmap 2.14.2",
+ "regex",
  "reqwest",
  "rstest",
  "secrecy",
@@ -923,6 +924,7 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1096,7 +1098,9 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-prompts",
  "betterlite-rate-limit",
+ "betterlite-redact",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
@@ -1165,6 +1169,14 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-prompts"
 version = "0.1.0"
+dependencies = [
+ "betterlite-logging",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-provider"
@@ -1188,6 +1200,11 @@ dependencies = [
 [[package]]
 name = "betterlite-redact"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-redis"

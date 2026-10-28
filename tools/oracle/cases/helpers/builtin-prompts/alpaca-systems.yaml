@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "alpaca-systems", "call": {"builtin_prompts": {"family": "alpaca", "messages": [{"role": "system", "content": "s"}, {"role": "system", "content": "t"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}
