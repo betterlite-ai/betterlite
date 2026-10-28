@@ -126,41 +126,60 @@ fn mcp_tool_input(item: &JsonObject) -> (String, String, JsonObject, bool) {
 
 pub(super) fn tool_output(item: &JsonObject) -> (String, bool) {
     let status = item.get("status").and_then(Value::as_str);
+    let failed = status == Some("failed");
     match item_kind(item) {
-        "command_execution" => command_execution_output(item, status),
-        "file_change" => file_change_output(item, status),
-        "web_search" => (String::new(), status == Some("failed")),
-        _ => mcp_tool_output(item, status),
+        "command_execution" => (aggregated_output_text(item), failed || exited_nonzero(item)),
+        "file_change" => (file_change_summary(item), failed),
+        "web_search" => (String::new(), failed),
+        _ => mcp_tool_result_text(item, failed),
     }
 }
 
-fn command_execution_output(item: &JsonObject, status: Option<&str>) -> (String, bool) {
-    let failed = status == Some("failed")
-        || item
-            .get("exit_code")
-            .is_some_and(|value| value.as_i64().is_some_and(|code| code != 0));
-    (
-        item.get("aggregated_output")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        failed,
-    )
+fn mcp_tool_result_text(item: &JsonObject, failed: bool) -> (String, bool) {
+    let Some(error) = item.get("error").filter(|error| !error.is_null()) else {
+        return (mcp_tool_result_value(item), failed);
+    };
+    (mcp_tool_error_message(error), true)
 }
 
-fn file_change_output(item: &JsonObject, status: Option<&str>) -> (String, bool) {
-    let summary = item
-        .get("changes")
-        .and_then(Value::as_array)
-        .map(|changes| {
-            changes
-                .iter()
-                .map(change_summary)
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_default();
-    (summary, status == Some("failed"))
+fn mcp_tool_result_value(item: &JsonObject) -> String {
+    let Some(value) = item.get("result").filter(|value| !value.is_null()) else {
+        return String::new();
+    };
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
+}
+
+fn mcp_tool_error_message(error: &Value) -> String {
+    error
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| error.as_str())
+        .map_or_else(|| error.to_string(), str::to_owned)
+}
+
+fn aggregated_output_text(item: &JsonObject) -> String {
+    item.get("aggregated_output")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn exited_nonzero(item: &JsonObject) -> bool {
+    item.get("exit_code")
+        .is_some_and(|value| value.as_i64().is_some_and(|code| code != 0))
+}
+
+fn file_change_summary(item: &JsonObject) -> String {
+    let Some(changes) = item.get("changes").and_then(Value::as_array) else {
+        return String::new();
+    };
+    changes
+        .iter()
+        .map(change_summary)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn change_summary(change: &Value) -> String {
@@ -177,33 +196,4 @@ fn change_summary(change: &Value) -> String {
     )
     .trim()
     .to_owned()
-}
-
-fn mcp_tool_output(item: &JsonObject, status: Option<&str>) -> (String, bool) {
-    item.get("error")
-        .filter(|error| !error.is_null())
-        .map_or_else(
-            || {
-                (
-                    item.get("result")
-                        .filter(|value| !value.is_null())
-                        .map_or_else(String::new, |value| {
-                            value
-                                .as_str()
-                                .map_or_else(|| value.to_string(), str::to_owned)
-                        }),
-                    status == Some("failed"),
-                )
-            },
-            |error| {
-                (
-                    error
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .or_else(|| error.as_str())
-                        .map_or_else(|| error.to_string(), str::to_owned),
-                    true,
-                )
-            },
-        )
 }
