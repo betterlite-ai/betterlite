@@ -3,6 +3,7 @@
 use super::PriceFields;
 use rstest::rstest;
 use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -144,6 +145,14 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
     {
         assert!(parsed.unwrap_err().to_string().contains(expected));
     } else {
+        let numbers: BTreeMap<String, Box<RawValue>> = serde_json::from_str(source).unwrap();
+        let number = numbers.values().next().unwrap();
+        assert_eq!(
+            super::parse_decimal_lexeme(number.get())
+                .unwrap()
+                .to_string(),
+            expected
+        );
         let parsed_value = parsed.unwrap();
         assert_eq!(
             parsed_value
