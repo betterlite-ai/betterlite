@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::{env, fs, process, slice};
 
+use rstest::rstest;
 use serde_json::{Map, Value};
 
 use crate::case::{
@@ -70,8 +71,10 @@ fn upstream_pointer(left: &ProviderRequest, right: &ProviderRequest) -> Option<S
         body: Value::Null,
     };
     let headers = Compare {
+        headers: vec![],
+        headers_present: vec![],
         upstream_headers: vec!["content-type".to_owned(), "x-test".to_owned()],
-        ..Compare::default()
+        ignore: vec![],
     };
     compare(
         &response,
@@ -176,22 +179,16 @@ fn sends_real_wire_bytes() {
         MockProvider::start(MockScript::try_from(&[answer.clone(), answer][..]).unwrap()).unwrap();
     let (content_type, bytes) =
         multipart("{name: file, filename: a.bin, fixture: binary-response.bin}");
-    for (body_kind, body) in [
-        (
-            "multipart",
-            "{parts: [{name: file, filename: a.bin, fixture: binary-response.bin}]}",
-        ),
-        (
-            "bytes",
-            "{fixture: binary-response.bin, content_type: application/octet-stream}",
-        ),
-    ] {
-        let request: Request = serde_saphyr::from_str(&format!(
-            "{{method: POST, path: /upload, headers: {{}}, body_kind: {body_kind}, body: {body}}}"
-        ))
-        .unwrap();
-        send(&client().unwrap(), &mock.base_url, &request).unwrap();
-    }
+    let multipart_request: Request = serde_saphyr::from_str(
+        "{method: POST, path: /upload, headers: {}, body_kind: multipart, body: {parts: [{name: file, filename: a.bin, fixture: binary-response.bin}]}}",
+    )
+    .unwrap();
+    send(&client().unwrap(), &mock.base_url, &multipart_request).unwrap();
+    let bytes_request: Request = serde_saphyr::from_str(
+        "{method: POST, path: /upload, headers: {}, body_kind: bytes, body: {fixture: binary-response.bin, content_type: application/octet-stream}}",
+    )
+    .unwrap();
+    send(&client().unwrap(), &mock.base_url, &bytes_request).unwrap();
     let calls = mock.finish().unwrap();
     assert_eq!(
         calls[0].request.headers["content-type"],
@@ -259,25 +256,22 @@ fn rejects_text_binary_mismatch() {
     assert_eq!(error.to_string(), "HTTP response exceeded 16 MiB");
 }
 
-#[test]
-fn fixture_root_escape_rejected() {
-    for name in [
-        "../outside.bin",
-        "/tmp/outside.bin",
-        "nested/../../outside.bin",
-        "/etc/passwd",
-    ] {
-        let body = format!("{{fixture: '{name}', content_type: application/octet-stream}}");
-        assert_eq!(
-            decode("bytes", &body),
-            Err("fixture path escapes multipart fixture root".to_owned())
-        );
-        let part = format!("{{parts: [{{name: file, fixture: '{name}'}}]}}");
-        assert_eq!(
-            decode("multipart", &part),
-            Err("fixture path escapes multipart fixture root".to_owned())
-        );
-    }
+#[rstest]
+#[case::parent_relative("../outside.bin")]
+#[case::absolute_tmp("/tmp/outside.bin")]
+#[case::nested_parent("nested/../../outside.bin")]
+#[case::absolute_etc("/etc/passwd")]
+fn fixture_root_escape_rejected(#[case] name: &str) {
+    let body = format!("{{fixture: '{name}', content_type: application/octet-stream}}");
+    assert_eq!(
+        decode("bytes", &body),
+        Err("fixture path escapes multipart fixture root".to_owned())
+    );
+    let part = format!("{{parts: [{{name: file, fixture: '{name}'}}]}}");
+    assert_eq!(
+        decode("multipart", &part),
+        Err("fixture path escapes multipart fixture root".to_owned())
+    );
 }
 
 #[test]
@@ -377,8 +371,13 @@ fn rejects_captured_body_limits() {
     );
 }
 
-#[test]
-fn rejects_invalid_boundary() {
+#[rstest]
+#[case::missing_boundary("multipart/form-data")]
+#[case::empty_boundary("multipart/form-data; boundary=")]
+#[case::unterminated_quote("multipart/form-data; boundary=\"boundary-a")]
+#[case::mismatched_boundary("multipart/form-data; boundary=boundary-b")]
+#[case::wrong_content_type("text/plain; boundary=boundary-a")]
+fn rejects_invalid_boundary(#[case] content_type: &str) {
     let body = b"--boundary-a\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\nx--boundary-a y--boundary-a--\r\n--boundary-a--\r\n";
     let quoted =
         decode_multipart_capture("multipart/form-data; boundary=\"boundary-a\"", body).unwrap();
@@ -400,20 +399,8 @@ fn rejects_invalid_boundary() {
         decode_multipart_capture("multipart/form-data; boundary=boundary-a", body).unwrap(),
         quoted
     );
-    for content_type in [
-        "multipart/form-data",
-        "multipart/form-data; boundary=",
-        "multipart/form-data; boundary=\"boundary-a",
-        "multipart/form-data; boundary=boundary-b",
-        "text/plain; boundary=boundary-a",
-    ] {
-        let error = decode_multipart_capture(content_type, body).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "multipart capture has no valid boundary",
-            "{content_type}"
-        );
-    }
+    let error = decode_multipart_capture(content_type, body).unwrap_err();
+    assert_eq!(error.to_string(), "multipart capture has no valid boundary");
 }
 
 #[test]
@@ -496,30 +483,34 @@ fn preserves_optional_fields() {
     );
 }
 
+fn replay_folder(corpus: &Path, folder: &str) -> usize {
+    let mut replayed = 0_usize;
+    for entry in fs::read_dir(corpus.join(folder)).unwrap() {
+        let path = entry.unwrap().path();
+        let bytes = fs::read(&path).unwrap();
+        let failed = if folder == "multipart_oracle" {
+            decode_http_body(&bytes).is_err()
+        } else {
+            split_capture_input(&bytes)
+                .and_then(|(content_type, body)| decode_multipart_capture(content_type, body))
+                .is_err()
+        };
+        let rejected = path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("reject-");
+        assert_eq!(failed, rejected, "{}", path.display());
+        replayed += 1_usize;
+    }
+    replayed
+}
+
 #[test]
 fn replays_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus");
-    let mut replayed = 0_usize;
-    for folder in ["multipart_oracle", "multipart_capture"] {
-        for entry in fs::read_dir(corpus.join(folder)).unwrap() {
-            let path = entry.unwrap().path();
-            let bytes = fs::read(&path).unwrap();
-            let failed = if folder == "multipart_oracle" {
-                decode_http_body(&bytes).is_err()
-            } else {
-                split_capture_input(&bytes)
-                    .and_then(|(content_type, body)| decode_multipart_capture(content_type, body))
-                    .is_err()
-            };
-            let rejected = path
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .starts_with("reject-");
-            assert_eq!(failed, rejected, "{}", path.display());
-            replayed += 1_usize;
-        }
-    }
+    let replayed =
+        replay_folder(&corpus, "multipart_oracle") + replay_folder(&corpus, "multipart_capture");
     assert!(replayed >= 20_usize, "{replayed}");
 }
