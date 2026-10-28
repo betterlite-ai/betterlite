@@ -6,6 +6,11 @@ use crate::transformation::BaseCLIHarnessConfig as _;
 use crate::types::JsonObject;
 
 #[test]
+fn empty_toml_key_is_quoted() {
+    assert_eq!(super::toml_key(""), "\"\"");
+}
+
+#[test]
 fn config_toml_managed_keys() {
     assert_eq!(super::toml_key("plain-key"), "plain-key");
     assert_eq!(super::toml_key("a key"), "\"a key\"");

@@ -29,9 +29,10 @@ pub(super) fn mismatch() -> HarnessError {
 }
 
 pub fn toml_key(key: &str) -> String {
-    if key
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    if !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     {
         key.to_owned()
     } else {
