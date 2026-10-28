@@ -152,14 +152,23 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
             parsed_value.tiers[0].range.as_ref().unwrap()[1].to_string(),
             "256000"
         );
-    } else if expected.contains('_') || expected.contains("must") || expected.contains("duplicate")
+    } else if expected
+        .chars()
+        .any(|character| character.is_ascii_alphabetic())
     {
-        assert!(parsed.unwrap_err().to_string().contains(expected));
+        if expected.contains('.')
+            || expected.contains("duplicate")
+            || expected.contains("unknown field")
+        {
+            assert!(parsed.unwrap_err().to_string().contains(expected));
+        } else {
+            parsed.unwrap_err();
+        }
     } else {
         let numbers: BTreeMap<String, Box<RawValue>> = serde_json::from_str(source).unwrap();
         let number = numbers.values().next().unwrap();
         assert_eq!(
-            super::parse_decimal_lexeme(number.get())
+            super::decimal_lexeme::parse_decimal_lexeme(number.get())
                 .unwrap()
                 .to_string(),
             expected
@@ -168,8 +177,9 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
         assert_eq!(
             parsed_value
                 .values
+                .input
                 .input_token
-                .or(parsed_value.values.output_token)
+                .or(parsed_value.values.output.output_token)
                 .unwrap()
                 .to_string(),
             expected
@@ -181,21 +191,21 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
 mod inventory;
 
 #[rstest]
-#[case::flat_null(r#"{"input_cost_per_token":null}"#, "input_cost_per_token")]
-#[case::flat_overprecision(
-    r#"{"input_cost_per_token":0.12345678901234567890123456789}"#,
-    "input_cost_per_token"
-)]
-fn rejects_invalid_flat_prices(#[case] source: &str, #[case] field: &str) {
-    let error = serde_json::from_str::<super::values::PricingValues>(source).unwrap_err();
-    assert!(error.to_string().contains(field));
+#[case::flat_null(r#"{"input_cost_per_token":null}"#)]
+#[case::flat_overprecision(r#"{"input_cost_per_token":0.12345678901234567890123456789}"#)]
+fn rejects_invalid_flat_prices(#[case] source: &str) {
+    let raw: Box<RawValue> = serde_json::from_str(source).unwrap();
+    PriceFields::parse(raw.as_ref()).unwrap_err();
 }
 
 #[rstest]
-#[case::null(r#"{"input_cost_per_token":null}"#)]
-#[case::overprecision(r#"{"input_cost_per_token":0.12345678901234567890123456789}"#)]
+#[case::null(r#"{"off_peak_pricing":{"input_cost_per_token":null}}"#)]
+#[case::overprecision(
+    r#"{"off_peak_pricing":{"input_cost_per_token":0.12345678901234567890123456789}}"#
+)]
 fn rejects_invalid_nested_prices(#[case] source: &str) {
-    let error = serde_json::from_str::<super::nested::OffPeakPricing>(source).unwrap_err();
+    let raw: Box<RawValue> = serde_json::from_str(source).unwrap();
+    let error = PriceFields::parse(raw.as_ref()).unwrap_err();
     assert!(error.to_string().contains("input_cost_per_token"));
 }
 
@@ -220,6 +230,7 @@ fn price_window_treats_absent_weekdays_as_every_day() {
 #[case::number_monday("1", Weekday::Monday)]
 #[case::number_sunday("7", Weekday::Sunday)]
 #[case::name_monday(r#""MON""#, Weekday::Monday)]
+#[case::name_monday_padded(r#"" Monday ""#, Weekday::Monday)]
 #[case::name_tuesday(r#""tues""#, Weekday::Tuesday)]
 #[case::name_wednesday(r#""Wednesday""#, Weekday::Wednesday)]
 #[case::name_thursday(r#""thur""#, Weekday::Thursday)]

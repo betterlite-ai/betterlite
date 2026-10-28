@@ -2,11 +2,33 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
-use std::num::ParseIntError;
 
+pub mod decimal_lexeme;
 mod deserialize;
 pub mod nested;
 pub mod values;
+
+// Each field keeps its long LiteLLM wire name through a serde rename, one line per field.
+macro_rules! price_struct {
+    (
+        $(#[$meta:meta])*
+        pub struct $name:ident { $($field:ident: $wire:literal),* $(,)? }
+    ) => {
+        $(#[$meta])*
+        pub struct $name {
+            $(
+                #[serde(
+                    rename = $wire,
+                    deserialize_with = "crate::price_fields::deserialize::optional_price",
+                    skip_serializing_if = "Option::is_none"
+                )]
+                pub $field: Option<rust_decimal::Decimal>,
+            )*
+        }
+    };
+}
+pub(crate) use price_struct;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PriceFields {
@@ -47,48 +69,6 @@ impl PriceFields {
             source: error.into_inner(),
         })
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum DecimalLexemeError {
-    #[error("the exponent is not a valid integer")]
-    Exponent {
-        #[source]
-        source: ParseIntError,
-    },
-    #[error("the exponent moves the decimal point out of the supported range")]
-    ScaleOverflow,
-    #[error(transparent)]
-    Decimal(#[from] rust_decimal::Error),
-}
-
-pub fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError> {
-    let Some((coefficient, exponent_text)) = lexeme.split_once(['e', 'E']) else {
-        return Ok(Decimal::from_str_exact(lexeme)?);
-    };
-    let decimal = Decimal::from_str_exact(coefficient)?;
-    let exponent = exponent_text
-        .parse::<i32>()
-        .map_err(|source| DecimalLexemeError::Exponent { source })?;
-    let scale = i32::try_from(decimal.scale())
-        .map_err(|_source| DecimalLexemeError::ScaleOverflow)?
-        .checked_sub(exponent)
-        .ok_or(DecimalLexemeError::ScaleOverflow)?;
-    if !scale.is_negative() {
-        return Ok(Decimal::try_from_i128_with_scale(
-            decimal.mantissa(),
-            u32::try_from(scale).map_err(|_source| DecimalLexemeError::ScaleOverflow)?,
-        )
-        .map(|value| value.normalize())?);
-    }
-    let multiplier = 10_i128
-        .checked_pow(scale.unsigned_abs())
-        .ok_or(rust_decimal::Error::ExceedsMaximumPossibleValue)?;
-    let mantissa = decimal
-        .mantissa()
-        .checked_mul(multiplier)
-        .ok_or(rust_decimal::Error::ExceedsMaximumPossibleValue)?;
-    Ok(Decimal::try_from_i128_with_scale(mantissa, 0).map(|value| value.normalize())?)
 }
 
 mod tests;

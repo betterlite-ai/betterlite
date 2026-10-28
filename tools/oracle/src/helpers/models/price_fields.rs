@@ -1,4 +1,5 @@
-use betterlite_models::price_fields::{PriceFields, parse_decimal_lexeme};
+use betterlite_models::price_fields::PriceFields;
+use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use serde::Deserialize;
 use serde_json::Value;
 

@@ -6,3 +6,6 @@ deviations:
   - what: Duplicate guardrail unit keys are rejected instead of keeping the last value.
     why: The no-silent-drops rule requires an error rather than silently replacing a price.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
+  - what: An unrecognized weekday name or an out-of-range weekday number is a parse error instead of a silently skipped window.
+    why: LiteLLM's _normalize_weekday returns None for bad input and lets the window match no day; the no-silent-drops rule requires an error instead of a price window that quietly stops applying.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L454-L461

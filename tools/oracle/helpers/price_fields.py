@@ -81,7 +81,7 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
                     "cache_read_input_token_cost",
                 ]
             },
-            "windows": off_peak_object.get("windows"),
+            "windows": off_peak_object.get("windows", []),
             **{
                 key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
                 for key in ["cache_creation_input_token_cost", "output_cost_per_reasoning_token"]

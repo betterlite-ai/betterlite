@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use crate::price_fields::{PriceFields, parse_decimal_lexeme};
+use crate::price_fields::PriceFields;
+use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use rstest::rstest;
 use serde::Deserialize;
 use serde_json::value::RawValue;
