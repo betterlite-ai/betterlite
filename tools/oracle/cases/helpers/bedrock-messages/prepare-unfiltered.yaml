@@ -1,0 +1,7 @@
+kind: helper
+name: prepare-unfiltered
+call:
+  b3721:
+    step: {"prepare": {"messages": [{"role": "user", "content": "question"}], "latest_only": false}}
+env: {}
+compare: {ignore: []}

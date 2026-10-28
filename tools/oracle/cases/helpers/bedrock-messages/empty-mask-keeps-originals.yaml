@@ -1,0 +1,7 @@
+kind: helper
+name: empty-mask-keeps-originals
+call:
+  b3721:
+    step: {"merge": {"texts": ["old", "new"], "masked": [], "scanned_slice": [1, 1], "scanned_role_subset": true}}
+env: {}
+compare: {ignore: []}

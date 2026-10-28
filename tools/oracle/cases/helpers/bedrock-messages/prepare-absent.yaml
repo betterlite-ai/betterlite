@@ -1,0 +1,7 @@
+kind: helper
+name: prepare-absent
+call:
+  b3721:
+    step: {"prepare": {"latest_only": true}}
+env: {}
+compare: {ignore: []}

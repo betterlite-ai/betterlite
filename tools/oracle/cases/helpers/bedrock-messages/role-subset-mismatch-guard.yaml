@@ -1,0 +1,7 @@
+kind: helper
+name: role-subset-mismatch-guard
+call:
+  b3721:
+    step: {merge: {masked: [MASKED], texts: [old, new], scanned_slice: null, scanned_role_subset: true}}
+env: {}
+compare: {ignore: []}

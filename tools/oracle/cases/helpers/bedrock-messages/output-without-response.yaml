@@ -1,0 +1,7 @@
+kind: helper
+name: output-without-response
+call:
+  b3721:
+    step: {"format": {"source": "OUTPUT", "messages": [{"role": "developer", "content": [{"type": "grounding_source", "text": "evidence"}]}]}}
+env: {}
+compare: {ignore: []}

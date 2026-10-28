@@ -1,0 +1,7 @@
+kind: helper
+name: response-choice-masking
+call:
+  b3721:
+    step: {mask_response: {response: {choices: [{message: {content: a}}, {delta: {content: b}}, {text: c}]}, masked_texts: [A, B, C]}}
+env: {}
+compare: {ignore: []}
