@@ -1,0 +1,36 @@
+kind: helper
+name: stored-cipher-app-envelope-aad
+call:
+  stored_cipher:
+    op: app_crypto
+    key: "0123456789abcdef0123456789abcde0"
+    steps:
+      - kind: decrypt
+        envelope:
+          nonce: AAECAwQFBgcICQoL
+          ciphertext: svx5qAA0pNDiiY80UkuXsYv0V4kEQppXeS9AN+VC4F/Z+4U=
+          tag: YvF4vk9f1nOfC1kTTQFbOA==
+        aad: caller-prefix
+      - kind: decrypt
+        envelope:
+          nonce: AAECAwQFBgcICQoL
+          ciphertext: svx5qAA0pNDiiY80UkuXsYv0V4kEQppXeS9AN+VC4F/Z+4U=
+          tag: YvF4vk9f1nOfC1kTTQFbOA==
+        aad: null
+      - kind: roundtrip
+        data: {token: sk-live-secret, n: 7}
+        aad: caller-prefix
+      - kind: roundtrip
+        data: {token: sk-live-secret, n: 7}
+        aad: null
+      - kind: aad_mismatch
+        data: {token: sk-live-secret}
+        encrypt_aad: a
+        decrypt_aad: b
+      - kind: aad_mismatch
+        data: {token: sk-live-secret}
+        encrypt_aad: null
+        decrypt_aad: a
+env: {}
+compare:
+  ignore: []

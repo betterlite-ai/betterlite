@@ -1,0 +1,10 @@
+kind: helper
+name: stored-cipher-raw-master-digest-and-unicode
+call:
+  stored_cipher:
+    op: master_key_match
+    presented: "sk-héllo"
+    master_key: "sk-héllo"
+env: {}
+compare:
+  ignore: []

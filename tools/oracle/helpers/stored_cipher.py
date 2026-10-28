@@ -41,6 +41,23 @@ class LogCapture(logging.Filter):
         return False
 
 
+class DropAll(logging.Filter):
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        return False
+
+
+@contextmanager
+def silenced_proxy_logger() -> Generator[None]:
+    drop = DropAll()
+    logger = logging.getLogger("LiteLLM Proxy")
+    logger.filters.insert(0, drop)
+    try:
+        yield
+    finally:
+        logger.removeFilter(drop)
+
+
 class FixedRandom:
     def __init__(self, nonce: bytes) -> None:
         self.nonce = nonce
@@ -261,11 +278,14 @@ def run_callback_vars(input_value: dict[str, Json]) -> Json:
     if not isinstance(extra_value, list) or not all(isinstance(item, str) for item in extra_value):
         raise ValueError("extra must be a list of strings")
     extra = set(cast(list[str], extra_value))
-    with restored_globals(
-        optional_text(input_value, "salt_key"),
-        optional_text(input_value, "master_key"),
-        input_value.get("general_settings"),
-        text(input_value, "nonce_hex"),
+    with (
+        restored_globals(
+            optional_text(input_value, "salt_key"),
+            optional_text(input_value, "master_key"),
+            input_value.get("general_settings"),
+            text(input_value, "nonce_hex"),
+        ),
+        silenced_proxy_logger(),
     ):
         return [call_callback(step, extra) for step in steps if isinstance(step, dict)]
 
