@@ -3,8 +3,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_config::sections::content_filter_records::overrides::{
     CompetitorIntentConfig, CompetitorIntentEvidenceEntry, CompetitorIntentResult,
 };
-use regex::Regex;
-use unicode_normalization::UnicodeNormalization as _;
+
+#[path = "evidence.rs"]
+mod evidence;
+#[path = "normalization.rs"]
+mod normalization;
+use evidence::{empty_entities, entity_evidence, other_result, signal_evidence};
+pub(super) use normalization::{compile_marker, count_signals, word_boundary_match};
+use normalization::{
+    count_signals as count_signals_impl, word_boundary_match as word_boundary_match_impl,
+};
+pub use normalization::{normalize, text_for_entity_matching};
 
 const OTHER_MEANING_THRESHOLD: f64 = 0.65;
 const DEFAULT_COMPARISON_WORDS: [&str; 9] = [
@@ -18,64 +27,6 @@ const DEFAULT_COMPARISON_WORDS: [&str; 9] = [
     "recommend",
     "ranked",
 ];
-
-#[must_use]
-pub fn normalize(text: &str) -> String {
-    let without_zero_width: String = text
-        .chars()
-        .filter(|character| !matches!(character, '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}'))
-        .collect();
-    let normalized: String = without_zero_width.nfkc().collect();
-    let lowercased = normalized.to_lowercase();
-    let leet_replaced = lowercased.chars().map(|character| match character {
-        '@' | '4' => 'a',
-        '0' => 'o',
-        '3' => 'e',
-        '1' => 'i',
-        '5' => 's',
-        '7' => 't',
-        other => other,
-    });
-    leet_replaced
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-#[must_use]
-pub fn text_for_entity_matching(text: &str) -> String {
-    text.chars()
-        .map(|character| {
-            if character.is_alphanumeric() || character.is_whitespace() {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn word_boundary_match(text: &str, token: &str) -> bool {
-    let pattern = format!(r"\b{}\b", regex::escape(token));
-    Regex::new(&pattern).is_ok_and(|regex| regex.is_match(text))
-}
-
-fn count_signals(text: &str, patterns: &[String]) -> usize {
-    patterns
-        .iter()
-        .filter_map(|pattern| compile_marker(Some(pattern)))
-        .filter(|pattern| pattern.is_match(text))
-        .count()
-}
-
-fn compile_marker(pattern: Option<&str>) -> Option<Regex> {
-    let value = pattern.filter(|value| !value.trim().is_empty())?;
-    Regex::new(&format!("(?i){value}")).ok()
-}
 
 #[derive(Debug, Clone)]
 pub struct BaseCompetitorIntentChecker {
@@ -133,7 +84,9 @@ impl BaseCompetitorIntentChecker {
 
     #[must_use]
     pub fn classify_ambiguous(&self, _text: &str, _token: &str) -> (String, f64) {
-        ("OTHER_MEANING".to_owned(), 0.5)
+        let label = "OTHER_MEANING".to_owned();
+        let confidence = 0.5;
+        (label, confidence)
     }
 
     #[must_use]
@@ -141,7 +94,7 @@ impl BaseCompetitorIntentChecker {
         let normalized = normalize(text);
         self.competitor_tokens
             .iter()
-            .filter(|token| word_boundary_match(&normalized, token))
+            .filter(|token| word_boundary_match_impl(&normalized, token))
             .filter_map(|token| {
                 self.competitor_canonical.get(token).map(|canonical| {
                     (
@@ -180,7 +133,7 @@ impl BaseCompetitorIntentChecker {
         if competitors.is_empty() {
             return other_result(entities, evidence);
         }
-        let has_comparison = count_signals(normalized, &self.comparison_words) > 0;
+        let has_comparison = count_signals_impl(normalized, &self.comparison_words) > 0;
         let confidence: f64 = if has_comparison { 0.75 } else { 0.55 };
         let intent = intent_for_confidence(
             confidence,
@@ -220,7 +173,7 @@ impl BaseCompetitorIntentChecker {
         let mut entities = empty_entities();
         let mut evidence = Vec::new();
         for brand in &self.brand_self {
-            if word_boundary_match(normalized, brand) {
+            if word_boundary_match_impl(normalized, brand) {
                 entities.insert("brand_self".to_owned(), vec![brand.clone()]);
                 evidence.push(entity_evidence("brand_self", brand, brand));
             }
@@ -263,8 +216,8 @@ impl BaseCompetitorIntentChecker {
         entities: BTreeMap<String, Vec<String>>,
         mut evidence: Vec<CompetitorIntentEvidenceEntry>,
     ) -> CompetitorIntentResult {
-        let has_comparison = count_signals(text, &self.comparison_words) > 0;
-        let has_domain = count_signals(text, &self.domain_words) > 0;
+        let has_comparison = count_signals_impl(text, &self.comparison_words) > 0;
+        let has_domain = count_signals_impl(text, &self.domain_words) > 0;
         if has_comparison && has_domain {
             evidence.push(signal_evidence("category_ranking", "comparison + domain"));
             let action_hint = self
@@ -291,34 +244,13 @@ impl BaseCompetitorIntentChecker {
     }
 }
 
-fn empty_entities() -> BTreeMap<String, Vec<String>> {
-    BTreeMap::from([
-        ("brand_self".to_owned(), Vec::new()),
-        ("competitors".to_owned(), Vec::new()),
-        ("category".to_owned(), Vec::new()),
-    ])
-}
-
-fn other_result(
-    entities: &BTreeMap<String, Vec<String>>,
-    evidence: Vec<CompetitorIntentEvidenceEntry>,
-) -> CompetitorIntentResult {
-    CompetitorIntentResult {
-        intent: Some("other".to_owned()),
-        confidence: Some(0.0),
-        entities: entities.clone(),
-        signals: vec!["other_meaning_or_ambiguous".to_owned()],
-        action_hint: Some("allow".to_owned()),
-        evidence,
-    }
-}
-
 fn normalized_set(values: &[String]) -> BTreeSet<String> {
-    values
+    let normalized = values
         .iter()
         .map(|value| value.trim().to_lowercase())
         .filter(|value| !value.is_empty())
-        .collect()
+        .collect();
+    normalized
 }
 
 fn intent_for_confidence(confidence: f64, high: f64, medium: f64, low: f64) -> &'static str {
@@ -358,22 +290,30 @@ fn build_competitor_maps(
     (canonical_map, tokens)
 }
 
-fn entity_evidence(key: &str, value: &str, matched: &str) -> CompetitorIntentEvidenceEntry {
-    CompetitorIntentEvidenceEntry {
-        r#type: Some("entity".to_owned()),
-        key: Some(key.to_owned()),
-        value: Some(value.to_owned()),
-        r#match: Some(matched.to_owned()),
-    }
-}
-
-fn signal_evidence(key: &str, matched: &str) -> CompetitorIntentEvidenceEntry {
-    CompetitorIntentEvidenceEntry {
-        r#type: Some("signal".to_owned()),
-        key: Some(key.to_owned()),
-        value: None,
-        r#match: Some(matched.to_owned()),
-    }
-}
-
-mod tests;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod classify_ambiguous;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod compile_marker;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod count_signals;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod find_matches;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod init;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod normalize;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod run;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod text_for_entity_matching;
+#[cfg(test)]
+#[path = "competitor_intent_base/tests.rs"]
+mod word_boundary;
