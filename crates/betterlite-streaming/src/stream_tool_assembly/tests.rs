@@ -14,3 +14,16 @@ fn stream_tool_assembly_cases(#[case] input: &str, #[case] expected: &str) {
     let actual = serde_json::to_string(&assemble(&decoded).unwrap()).unwrap();
     assert_eq!(actual, expected_output);
 }
+
+#[test]
+fn legacy_function_join_missing_arguments_is_attribute_error() {
+    let input: AssemblyInput = serde_json::from_str(
+        r#"{"function":{"chunks":[{"choices":[{"delta":{"function_call":{"name":"first"}}}]}]}}"#,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        assemble(&input),
+        Err(super::AssemblyError::MissingFunctionArguments)
+    ));
+}

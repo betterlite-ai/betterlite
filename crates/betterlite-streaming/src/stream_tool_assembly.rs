@@ -21,6 +21,8 @@ pub enum AssemblyError {
     MissingFirstFunction,
     #[error("the first function call has no name")]
     MissingFirstFunctionName,
+    #[error("the function call has no arguments")]
+    MissingFunctionArguments,
     #[error("function call arguments cannot be joined")]
     InvalidArguments,
 }
@@ -241,7 +243,7 @@ fn append_function_arguments(arguments: &mut String, choice: &Choice) -> Result<
     let value = call
         .arguments
         .as_ref()
-        .ok_or(AssemblyError::InvalidArguments)?;
+        .ok_or(AssemblyError::MissingFunctionArguments)?;
     let JsonValue::String(text) = value else {
         return Err(AssemblyError::InvalidArguments);
     };
