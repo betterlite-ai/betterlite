@@ -1,4 +1,6 @@
-use crate::spec::review::{Review, ReviewVerdict};
+mod tests;
+
+use crate::spec::review::{FindingOrigin, Review, ReviewVerdict};
 use crate::spec::rules::Rules;
 
 pub(crate) fn review_problems(
@@ -14,12 +16,19 @@ pub(crate) fn review_problems(
             review.task
         ));
     }
+    let ours = review
+        .findings
+        .iter()
+        .any(|finding| finding.origin == FindingOrigin::Ours);
     let consistent = match review.verdict {
-        ReviewVerdict::Approve => review.findings.is_empty(),
-        ReviewVerdict::Changes => !review.findings.is_empty(),
+        ReviewVerdict::Approve => !ours,
+        ReviewVerdict::Changes => ours,
     };
     if !consistent {
-        problems.push("approve comes with no findings and changes with at least one".to_owned());
+        problems.push(
+            "approve comes with no findings of origin ours and changes with at least one"
+                .to_owned(),
+        );
     }
     for finding in &review.findings {
         let reviewed_rule = rules
