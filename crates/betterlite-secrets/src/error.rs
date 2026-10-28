@@ -46,4 +46,16 @@ pub enum SecretError {
     },
     #[error("Cannot decode encrypted MCP {field}; check LITELLM_SALT_KEY")]
     MapDecode { field: String },
+    #[error("Master key must be {expected} bytes for AES-256-GCM, got {length}")]
+    KeyLength { length: usize, expected: usize },
+    #[error("could not encode the payload as JSON")]
+    JsonEncode {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("could not decode the payload as JSON")]
+    JsonDecode {
+        #[source]
+        source: serde_json::Error,
+    },
 }
