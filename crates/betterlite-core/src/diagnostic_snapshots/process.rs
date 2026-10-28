@@ -142,15 +142,13 @@ pub fn snapshot_process_memory() -> ProcessMemorySnapshot {
     process_memory_snapshot(result)
 }
 
-#[cfg(target_os = "linux")]
 pub(super) fn read_process_memory() -> Result<ProcessMemory, ProcessMemoryError> {
-    let statm = fs::read("/proc/self/statm").map_err(ProcessMemoryError::Io)?;
-    let meminfo = fs::read("/proc/meminfo").map_err(ProcessMemoryError::Io)?;
-    parse_proc_memory(&statm, &meminfo, 4096)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(super) fn read_process_memory() -> Result<ProcessMemory, ProcessMemoryError> {
-    let error = ProcessMemoryError::Unsupported;
-    Err(error)
+    if cfg!(target_os = "linux") {
+        let statm = fs::read("/proc/self/statm").map_err(ProcessMemoryError::Io)?;
+        let meminfo = fs::read("/proc/meminfo").map_err(ProcessMemoryError::Io)?;
+        parse_proc_memory(&statm, &meminfo, 4096)
+    } else {
+        let error = ProcessMemoryError::Unsupported;
+        Err(error)
+    }
 }

@@ -2,6 +2,7 @@
 
 use super::process::{
     MemoryStatus, ProcessMemoryError, health_status, parse_proc_memory, process_memory_snapshot,
+    snapshot_process_memory,
 };
 use super::runtime::{
     CacheComponent, CacheMemoryInput, CacheMemorySnapshot, RouterMemoryInput, RouterMemorySnapshot,
@@ -39,6 +40,16 @@ fn process_snapshot_keeps_healthy_status_on_error() {
     let snapshot = process_memory_snapshot(Err(ProcessMemoryError::Unsupported));
     assert_eq!(snapshot.status, MemoryStatus::Healthy);
     assert!(snapshot.error.is_some());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_process_snapshot_has_real_memory_values() {
+    let snapshot = snapshot_process_memory();
+    let memory = snapshot.memory.expect("Linux proc memory is available");
+    assert!(memory.resident_bytes > 0);
+    assert!(memory.virtual_bytes >= memory.resident_bytes);
+    assert!(memory.percent.is_finite());
 }
 
 #[test]
