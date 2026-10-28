@@ -19,4 +19,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "sse_events"
+path = "fuzz_targets/sse_events.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

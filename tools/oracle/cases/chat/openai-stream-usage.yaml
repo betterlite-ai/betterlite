@@ -1,0 +1,33 @@
+name: chat-openai-stream-usage
+config: |
+  model_list:
+    - model_name: oracle-model
+      litellm_params: {model: openai/oracle-model, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: oracle-model
+    messages: [{role: user, content: Say hello.}]
+    stream: true
+    stream_options: {include_usage: true}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-usage","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-usage","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{"content":"Hello!"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-usage","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chatcmpl-usage","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}'
+      - '[DONE]'
+compare:
+  headers: [content-type, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /0/created, why: LiteLLM timestamps stream chunks}
+    - {pointer: /1/created, why: LiteLLM timestamps stream chunks}
+    - {pointer: /2/created, why: LiteLLM timestamps stream chunks}
+    - {pointer: /3/created, why: LiteLLM timestamps stream chunks}

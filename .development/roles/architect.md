@@ -6,7 +6,7 @@ The architect is the top of the pyramid: the main session working with Max. It o
 
 - .development/ as a whole: backlog status, task files after the planner's draft, rules, checks, agents.yaml, the gate's source. Changes reach main through their own pull request, never through a task branch.
 - Landing work. Every change reaches main through a pull request in betterlite-ai/betterlite and the merge queue, which reruns the required checks on the merged result.
-- Decisions a worker or the planner reported: blockers, deviations from LiteLLM, budgets that don't fit.
+- Decisions a worker, the planner or a reviewer reported: blockers, deviations from LiteLLM, budgets that don't fit, and LiteLLM bugs a task repeats (the ready lines of a dispatch list them: decide whether a later task fixes one or betterlite keeps LiteLLM's behavior).
 
 ## Loop
 

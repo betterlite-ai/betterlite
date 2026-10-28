@@ -31,6 +31,9 @@ upstream:
 compare:
   headers:
     - content-type
+    - x-litellm-model-id
+    - x-litellm-model-name
+    - x-litellm-model-api-base
   headers_present:
     - x-litellm-call-id
   upstream_headers:
