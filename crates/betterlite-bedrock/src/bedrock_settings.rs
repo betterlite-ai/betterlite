@@ -52,8 +52,11 @@ pub struct BedrockError {
 
 impl fmt::Debug for BedrockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = self;
-        f.write_str("BedrockError { headers: [REDACTED] }")
+        write!(
+            f,
+            "BedrockError {{ headers: [REDACTED; present={}] }}",
+            self.headers.is_some()
+        )
     }
 }
 
