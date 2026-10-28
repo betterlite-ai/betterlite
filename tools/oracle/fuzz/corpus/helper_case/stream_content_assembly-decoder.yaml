@@ -1,0 +1,9 @@
+kind: helper
+name: stream-content-decoder-padding
+call:
+  stream_content_assembly:
+    function: audio_base64_decoder
+    fragment: Y=Q===
+    max_decoded_bytes: 1
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

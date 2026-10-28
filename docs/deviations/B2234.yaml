@@ -1,0 +1,8 @@
+task: B2234
+deviations:
+  - what: Assembly limits text, thinking, transcripts, IDs and decoded audio to 8 MiB; the fragment decoder also accepts a smaller caller limit.
+    why: The task requires bounded outputs. LiteLLM assembles these fields without a size limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L667-L775
+  - what: An absent audio ID remains null instead of receiving an SDK-generated UUID.
+    why: The explicit task contract requires preserving None. The pinned SDK constructor generates an ID after the owned assembly function passes None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1346-L1359

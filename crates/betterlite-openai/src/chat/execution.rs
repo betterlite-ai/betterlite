@@ -2,7 +2,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::{JsonPost, ProxiedClient, UpstreamResponse};
+use betterlite_http::proxy::{JsonPost, ProxiedClient, StreamResponse, UpstreamResponse};
 use rand::RngExt as _;
 use rand::rngs::StdRng;
 use secrecy::SecretString;
@@ -31,7 +31,7 @@ pub enum ChatError {
         #[from]
         source: RequestError,
     },
-    #[error("betterlite does not support streaming chat completions yet")]
+    #[error("betterlite does not support streaming through the buffered chat completion path")]
     Streaming,
     #[error("betterlite does not serve {model} chat completions yet")]
     UnsupportedProvider { model: String },
@@ -99,26 +99,12 @@ impl ChatExecutor {
         deployment: &ChatDeployment,
         request: &ChatRequest,
     ) -> Result<ChatOutcome, ChatError> {
-        let (model, api_key) = servable(deployment, request)?;
-        let body = serde_json::to_vec(&self.body(request, model)?)
-            .map_err(|source| ChatError::Encode { source })?;
+        if request.stream {
+            return Err(ChatError::Streaming);
+        }
+        let post = self.post(deployment, request)?;
         let started = Instant::now();
-        let upstream = self
-            .client
-            .post_json(JsonPost {
-                url: deployment.endpoint.clone(),
-                bearer: api_key,
-                headers: deployment
-                    .organization
-                    .iter()
-                    .map(|organization| ("OpenAI-Organization", organization.clone()))
-                    .collect(),
-                body,
-                timeout: deployment.timeout,
-                body_limit: RESPONSE_LIMIT,
-            })
-            .await
-            .map_err(http_failure)?;
+        let upstream = self.client.post_json(post).await.map_err(http_failure)?;
         let upstream_time = started.elapsed();
         if upstream.status >= 400 {
             return Err(ChatError::Provider {
@@ -131,6 +117,47 @@ impl ChatExecutor {
             response: decoded.for_client(request.model.as_deref()),
             upstream,
             upstream_time,
+        })
+    }
+
+    pub async fn stream(
+        &self,
+        deployment: &ChatDeployment,
+        request: &ChatRequest,
+    ) -> Result<StreamResponse, ChatError> {
+        let post = self.post(deployment, request)?;
+        let response = self.client.post_stream(post).await.map_err(http_failure)?;
+        if !response.status().is_success() {
+            let upstream = StreamResponse::from(response)
+                .buffered(RESPONSE_LIMIT)
+                .await
+                .map_err(http_failure)?;
+            return Err(ChatError::Provider {
+                response: Box::new(upstream),
+            });
+        }
+        Ok(StreamResponse::from(response))
+    }
+
+    fn post<'key>(
+        &self,
+        deployment: &'key ChatDeployment,
+        request: &ChatRequest,
+    ) -> Result<JsonPost<'key>, ChatError> {
+        let (model, api_key) = servable(deployment)?;
+        let body = serde_json::to_vec(&self.body(request, model)?)
+            .map_err(|source| ChatError::Encode { source })?;
+        Ok(JsonPost {
+            url: deployment.endpoint.clone(),
+            bearer: api_key,
+            headers: deployment
+                .organization
+                .iter()
+                .map(|organization| ("OpenAI-Organization", organization.clone()))
+                .collect(),
+            body,
+            timeout: deployment.timeout,
+            body_limit: RESPONSE_LIMIT,
         })
     }
 
@@ -156,15 +183,23 @@ impl ChatExecutor {
         };
         let mut optional = Map::new();
         policy.map_params(model, &known, &mut optional, &self.catalog);
+        if request.stream {
+            optional.insert(String::from("stream"), Value::Bool(true));
+        }
+        if request.stream && !optional.contains_key("stream_options") {
+            let mut stream_options = Map::new();
+            stream_options.insert(String::from("include_usage"), Value::Bool(true));
+            optional.insert(
+                String::from("stream_options"),
+                Value::Object(stream_options),
+            );
+        }
         optional.extend(forwarded);
         Ok(policy.request_body(model, messages, &optional))
     }
 }
 
-fn servable<'deployment>(
-    deployment: &'deployment ChatDeployment,
-    request: &ChatRequest,
-) -> Result<(&'deployment str, &'deployment SecretString), ChatError> {
+fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), ChatError> {
     let model = match &deployment.provider {
         Provider::OpenAi { model } => model,
         Provider::Unsupported { model } => {
@@ -173,9 +208,6 @@ fn servable<'deployment>(
             });
         }
     };
-    if request.stream {
-        return Err(ChatError::Streaming);
-    }
     let api_key = deployment
         .api_key
         .as_ref()

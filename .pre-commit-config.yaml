@@ -11,12 +11,12 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
-      # Codex keeps .codex/ read-only for its agents, and these two fixers open every file for writing
+      # Codex keeps .codex/ and Claude keeps .claude/ read-only for their agents, and these two fixers open every file for writing
       # rustfmt ends every .rs file, and an empty one as a single newline that this fixer would strip again
       - id: end-of-file-fixer
-        exclude: ^\.codex/|\.rs$|/fuzz/corpus/
+        exclude: ^\.(codex|claude)/|\.rs$|/fuzz/corpus/
       - id: trailing-whitespace
-        exclude: ^\.codex/|/fuzz/corpus/
+        exclude: ^\.(codex|claude)/|/fuzz/corpus/
 
   - repo: local
     hooks:
