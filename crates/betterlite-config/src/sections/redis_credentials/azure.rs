@@ -1,12 +1,11 @@
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::loader::EnvironmentLookup;
 
-use super::{RawSettings, choose};
+use super::RawSettings;
 
 #[derive(Debug, Clone)]
 pub struct AzureSettings {
-    pub token: Option<SecretString>,
     pub client_id: Option<SecretString>,
     pub tenant_id: Option<SecretString>,
     pub client_secret: Option<SecretString>,
@@ -20,35 +19,36 @@ pub enum AzureCredential {
     ClientSecret,
 }
 
-pub(super) fn resolve_azure(
-    settings: &RawSettings,
-    lookup: &impl EnvironmentLookup,
-) -> Option<AzureSettings> {
-    let token = choose(
-        settings.azure_redis_ad_token.clone(),
-        lookup,
-        "REDIS_AZURE_AD_TOKEN",
-    );
-    let client_id = choose(settings.azure_client_id.clone(), lookup, "AZURE_CLIENT_ID");
-    let tenant_id = choose(settings.azure_tenant_id.clone(), lookup, "AZURE_TENANT_ID");
-    let client_secret = choose(
-        settings.azure_client_secret.clone(),
-        lookup,
-        "AZURE_CLIENT_SECRET",
-    );
-    (token.is_some() || client_id.is_some() || tenant_id.is_some() || client_secret.is_some()).then(
-        || AzureSettings {
-            credential: azure_credential(
-                client_id.as_deref(),
-                tenant_id.as_deref(),
-                client_secret.as_deref(),
-            ),
-            token: token.map(|value| SecretString::new(Box::<str>::from(value))),
-            client_id: client_id.map(|value| SecretString::new(Box::<str>::from(value))),
-            tenant_id: tenant_id.map(|value| SecretString::new(Box::<str>::from(value))),
-            client_secret: client_secret.map(|value| SecretString::new(Box::<str>::from(value))),
-        },
-    )
+pub(super) fn resolve_azure<L>(settings: &RawSettings, lookup: &L) -> AzureSettings
+where
+    L: EnvironmentLookup,
+{
+    let client_id = settings
+        .azure_client_id
+        .clone()
+        .or_else(|| lookup.lookup("REDIS_AZURE_CLIENT_ID"))
+        .or_else(|| lookup.lookup("AZURE_CLIENT_ID"));
+    let tenant_id = settings
+        .azure_tenant_id
+        .clone()
+        .or_else(|| lookup.lookup("REDIS_AZURE_TENANT_ID"))
+        .or_else(|| lookup.lookup("AZURE_TENANT_ID"));
+    let client_secret = settings
+        .azure_client_secret
+        .clone()
+        .map(|value| value.expose_secret().to_owned())
+        .or_else(|| lookup.lookup("REDIS_AZURE_CLIENT_SECRET"))
+        .or_else(|| lookup.lookup("AZURE_CLIENT_SECRET"));
+    AzureSettings {
+        credential: azure_credential(
+            client_id.as_deref(),
+            tenant_id.as_deref(),
+            client_secret.as_deref(),
+        ),
+        client_id: client_id.map(SecretString::from),
+        tenant_id: tenant_id.map(SecretString::from),
+        client_secret: client_secret.map(SecretString::from),
+    }
 }
 
 const fn azure_credential(
