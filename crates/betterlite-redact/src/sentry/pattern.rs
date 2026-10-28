@@ -149,27 +149,28 @@ fn scan_and_filter<M>(
 }
 
 fn scrub_fields(text: &str, field_pattern: &Regex) -> String {
+    let find_field = |haystack: &str, scan_from: usize| {
+        let captures = field_pattern.captures_at(haystack, scan_from)?;
+        let (whole, field, value) = (
+            captures.get(0)?,
+            captures.name("field")?,
+            captures.name("value")?,
+        );
+        let rejected =
+            field_match_is_rejected(haystack, whole.start(), field.as_str(), value.as_str());
+        let data = (field.as_str().to_owned(), value.as_str().starts_with('"'));
+        Some((whole.range(), rejected, data))
+    };
     scan_and_filter(
         text,
-        |haystack, scan_from| {
-            let captures = field_pattern.captures_at(haystack, scan_from)?;
-            let (whole, field, value) = (
-                captures.get(0)?,
-                captures.name("field")?,
-                captures.name("value")?,
-            );
-            let rejected =
-                field_match_is_rejected(haystack, whole.start(), field.as_str(), value.as_str());
-            let data = (field.as_str().to_owned(), value.as_str().starts_with('"'));
-            Some((whole.range(), rejected, data))
-        },
+        find_field,
         |output, (field, value_starts_with_quote)| {
             push_filtered_field(output, &field, value_starts_with_quote);
         },
     )
 }
 
-fn sha256_match_is_adjacent_to_word(text: &str, whole: regex::Match<'_>) -> bool {
+fn sha256_touches_word(text: &str, whole: regex::Match<'_>) -> bool {
     let before_byte = whole
         .start()
         .checked_sub(1)
@@ -180,15 +181,12 @@ fn sha256_match_is_adjacent_to_word(text: &str, whole: regex::Match<'_>) -> bool
 }
 
 fn scrub_sha256(text: &str, sha256_pattern: &Regex) -> String {
-    scan_and_filter(
-        text,
-        |haystack, scan_from| {
-            let whole = sha256_pattern.find_at(haystack, scan_from)?;
-            let rejected = sha256_match_is_adjacent_to_word(haystack, whole);
-            Some((whole.range(), rejected, ()))
-        },
-        |output, ()| output.push_str(FILTERED),
-    )
+    let find_sha256 = |haystack: &str, scan_from: usize| {
+        let whole = sha256_pattern.find_at(haystack, scan_from)?;
+        let rejected = sha256_touches_word(haystack, whole);
+        Some((whole.range(), rejected, ()))
+    };
+    scan_and_filter(text, find_sha256, |output, ()| output.push_str(FILTERED))
 }
 
 pub(super) fn apply(patterns: &Patterns, text: &str) -> String {
