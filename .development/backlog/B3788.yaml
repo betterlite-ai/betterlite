@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Prisma AIRS legacy and streaming hooks
 status: todo
 depends_on: [B3786, B3787, B3789, B2227]
-file: null
+file: tasks/B3788-prisma-hooks.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py"
 parent: B108

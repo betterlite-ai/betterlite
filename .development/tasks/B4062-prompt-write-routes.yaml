@@ -1,0 +1,203 @@
+id: B4062
+title: Prompt creation and version mutation routes
+description: >-
+  Register POST /prompts, PUT /prompts/{prompt_id}, PATCH /prompts/{prompt_id} and DELETE /prompts/{prompt_id}
+  to create, mutate and delete prompts. POST creates a new prompt in the specified or default environment with the next available version number.
+  PUT strips the version suffix from the prompt_id and creates a new version in the specified or default environment, rejecting existing prompts
+  with prompt_type="config". PATCH merges supplied litellm_params and prompt_info with the latest row in the target environment (defaulting to development),
+  updating by primary key to target exactly one row, and rejects config prompts. DELETE removes all database rows for the base_prompt_id
+  (optionally scoped to an environment) before calling delete_prompts_by_base_id on the registry; resolve_prompt_spec must succeed before deletion.
+  Keep failed registry initialization after a successful database write visible, preserving observable failure semantics rather than rolling back.
+  All writes require proxy admin role; a missing database is 500; ambiguous prompt data (field names containing literal ": ") is 400;
+  config prompts cannot be updated or deleted. Preserve the write order: create_versioned_prompt_spec, initialize_prompt (or reload_prompt for PATCH),
+  then delete after registry sync for DELETE.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes/prompts/write.rs
+    - crates/betterlite-server/src/routes/prompts/write/tests.rs
+    - tools/oracle/cases/prompts/write/**
+    - tools/oracle/helpers/b4062.py
+    - tools/oracle/helpers/b4062/**
+    - tools/oracle/src/helpers/server/b4062.rs
+    - tools/oracle/src/helpers/server/b4062/**
+    - crates/betterlite-server/src/routes/prompts/write/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L593-L686
+    why: "create_prompt route, POST /prompts decorator, admin role check, version allocation, database create and registry initialization"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L689-L803
+    why: "update_prompt route, PUT /prompts/{prompt_id} decorator, base-ID stripping, existing-prompt check, config-prompt protection, new-version creation"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L806-L876
+    why: "delete_prompt route, DELETE /prompts/{prompt_id} decorator, environment-scoped deletion, registry removal after database delete, 404 check via resolve_prompt_spec"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L879-L883
+    why: "_reload_prompt_in_registry helper for PATCH route's registry sync after in-place update"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L886-L1007
+    why: "patch_prompt route, PATCH /prompts/{prompt_id} decorator, environment defaulting, composite-key query with version suffix handling, in-place row update, config-prompt protection"
+dod:
+  - text: "POST /prompts returns 403 if user is not proxy admin, 500 if database is missing, 400 if prompt data contains field names with literal `: `."
+    proof: [create-permission-checks, create-db-missing, create-ambiguous-data]
+  - text: "POST /prompts allocates the next version number in the specified or default environment, creates a database row, initializes the prompt in the registry, and returns the initialized spec."
+    proof: [create-version-allocation, create-db-write, create-registry-init]
+  - text: "PUT /prompts/{prompt_id} returns 403 if user is not proxy admin, 500 if database is missing, 404 if no version of the prompt exists, 400 if prompt_type=config or data is ambiguous."
+    proof: [update-permission-checks, update-db-missing, update-not-found, update-config-protection, update-ambiguous-data]
+  - text: "PUT /prompts/{prompt_id} strips .v and _v version suffixes from the prompt_id, allocates the next version in the specified or default environment, creates a new database row, initializes it in the registry, and returns the spec."
+    proof: [update-base-id-stripping, update-version-allocation, update-db-write, update-registry-init]
+  - text: "PATCH /prompts/{prompt_id} returns 403 if user is not proxy admin, 500 if database is missing, 404 if the target row does not exist, 400 if prompt_type=config or data is ambiguous."
+    proof: [patch-permission-checks, patch-db-missing, patch-not-found, patch-config-protection, patch-ambiguous-data]
+  - text: "PATCH /prompts/{prompt_id} defaults environment to development, resolves version suffix from prompt_id if present, queries by prompt_id+environment+(optional version), updates only the matched row, and reloads it in the registry."
+    proof: [patch-environment-default, patch-version-suffix-resolution, patch-composite-key-query, patch-single-row-update, patch-registry-reload]
+  - text: "DELETE /prompts/{prompt_id} returns 403 if user is not proxy admin, 500 if database is missing, 404 if resolve_prompt_spec returns None, 400 if prompt_type=config."
+    proof: [delete-permission-checks, delete-db-missing, delete-not-found, delete-config-protection]
+  - text: "DELETE /prompts/{prompt_id} removes all database rows for base_prompt_id (optionally scoped by environment), then calls delete_prompts_by_base_id on the registry, and returns a success message."
+    proof: [delete-db-remove, delete-registry-remove, delete-success-message]
+  - text: "Every route verifies through the booted proxy, including status/code/type on error and 500 for failed registry initialization after successful database write, with no helper adapter invoking these handlers."
+    proof: [oracle-cases-prompts-write]
+checks:
+  optional: []
+  commands:
+    - id: create-permission-checks
+      why: "the create route does not reject non-admins with 403"
+      run: grep -q "403\|admin\|PROXY_ADMIN" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: create-db-missing
+      why: "the create route does not return 500 when database is missing"
+      run: grep -q "500\|db_not_connected" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: create-ambiguous-data
+      why: "the create route does not check for ambiguous prompt data"
+      run: grep -q "ambiguous\|is_ambiguous_keyed_prompt_data" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: create-version-allocation
+      why: "the create route does not allocate the next version"
+      run: grep -q "get_next_version_for_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: create-db-write
+      why: "the create route does not write to the database"
+      run: grep -q "\.create\|insert\|_prompt_table" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: create-registry-init
+      why: "the create route does not initialize the prompt in the registry"
+      run: grep -q "initialize_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-permission-checks
+      why: "the update route does not reject non-admins with 403"
+      run: grep -q "403\|admin\|PROXY_ADMIN" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-db-missing
+      why: "the update route does not return 500 when database is missing"
+      run: grep -q "500\|db_not_connected" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-not-found
+      why: "the update route does not return 404 when no version exists"
+      run: grep -q "404\|not found\|not_found" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-config-protection
+      why: "the update route does not reject config prompts"
+      run: grep -q "config\|prompt_type\|has_config_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-ambiguous-data
+      why: "the update route does not check for ambiguous prompt data"
+      run: grep -q "ambiguous\|is_ambiguous_keyed_prompt_data" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-base-id-stripping
+      why: "the update route does not strip version suffixes from prompt_id"
+      run: grep -q "get_base_prompt_id\|strip" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-version-allocation
+      why: "the update route does not allocate the next version"
+      run: grep -q "get_next_version_for_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-db-write
+      why: "the update route does not write a new row to the database"
+      run: grep -q "\.create\|insert" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: update-registry-init
+      why: "the update route does not initialize the new version in the registry"
+      run: grep -q "initialize_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-permission-checks
+      why: "the patch route does not reject non-admins with 403"
+      run: grep -q "403\|admin\|PROXY_ADMIN" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-db-missing
+      why: "the patch route does not return 500 when database is missing"
+      run: grep -q "500\|db_not_connected" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-not-found
+      why: "the patch route does not return 404 when the target row is not found"
+      run: grep -q "404\|not found\|not_found" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-config-protection
+      why: "the patch route does not reject config prompts"
+      run: grep -q "config\|prompt_type\|has_config_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-ambiguous-data
+      why: "the patch route does not check for ambiguous prompt data when litellm_params is supplied"
+      run: grep -q "ambiguous\|is_ambiguous_keyed_prompt_data" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-environment-default
+      why: "the patch route does not default environment to development"
+      run: grep -q "development\|DEFAULT_PROMPT_ENVIRONMENT\|prompt_environment_or_default" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-version-suffix-resolution
+      why: "the patch route does not extract and use version suffix from prompt_id"
+      run: grep -q "get_version_number" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-composite-key-query
+      why: "the patch route does not query by composite key (prompt_id + environment + optional version)"
+      run: grep -q "find_many\|where.*prompt_id.*environment" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-single-row-update
+      why: "the patch route does not update by primary key to target exactly one row"
+      run: grep -q "\.update\|id\|primary.*key" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: patch-registry-reload
+      why: "the patch route does not reload the prompt in the registry"
+      run: grep -q "reload_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-permission-checks
+      why: "the delete route does not reject non-admins with 403"
+      run: grep -q "403\|admin\|PROXY_ADMIN" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-db-missing
+      why: "the delete route does not return 500 when database is missing"
+      run: grep -q "500\|db_not_connected" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-not-found
+      why: "the delete route does not check resolve_prompt_spec or return 404"
+      run: grep -q "404\|resolve_prompt_spec\|not found\|not_found" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-config-protection
+      why: "the delete route does not reject config prompts"
+      run: grep -q "config\|prompt_type\|has_config_prompt" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-db-remove
+      why: "the delete route does not remove database rows"
+      run: grep -q "delete_many\|delete" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-registry-remove
+      why: "the delete route does not call delete_prompts_by_base_id"
+      run: grep -q "delete_prompts_by_base_id" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: delete-success-message
+      why: "the delete route does not return a success message"
+      run: grep -q "message.*deleted\|successfully" crates/betterlite-server/src/routes/prompts/write.rs
+    - id: oracle-cases-prompts-write
+      why: "the oracle cases for these routes fail, are missing, or booted-proxy tests fail"
+      run: test -d tools/oracle/cases/prompts/write && test "$(find tools/oracle/cases/prompts/write -name '*.yaml' | wc -l)" -ge 8 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^oracle::prompts::write::/)'
+pitfalls:
+  - "POST and PUT both allocate next version but only PUT strips the version suffix from the incoming prompt_id; POST accepts it without stripping."
+  - "PATCH defaults environment to development via prompt_environment_or_default, but PUT uses the request's environment or defaults the same way; the same function should be used."
+  - "DELETE checks resolve_prompt_spec (which requires the prompt to exist) before removing rows; database rows are deleted before calling delete_prompts_by_base_id, preserving observable order."
+  - "Failed registry initialization (initialize_prompt, reload_prompt returning None) is a 500 after a successful database write, not rolled back; the database state is observable even when registry sync fails."
+  - "Config prompts (where has_config_prompt returns true) are protected from all three mutations (update, patch, delete), returning 400 instead of proceeding."
+  - "Ambiguous prompt data is checked against litellm_params when is_ambiguous_keyed_prompt_data(request.litellm_params) is true, not on prompt_info; the check prevents field names containing `: ` (literal colon-space)."
+  - "PATCH merges supplied litellm_params and prompt_info with the latest row; both are Optional in the request, and None means keep the current value."
+  - "Environment is optional in DELETE (query parameter) and defaults to None (meaning all environments); when supplied, only rows matching that environment are deleted."
+oracle_cases:
+  - tools/oracle/cases/prompts/write/create_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/create_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/create_prompt_no_database.yaml
+  - tools/oracle/cases/prompts/write/create_prompt_ambiguous_data.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_config_protection.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_ambiguous_data.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_version_suffix_stripping.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_config_protection.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_environment_default.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_version_suffix_resolution.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_partial_update.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_config_protection.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_environment_scoped.yaml
+  - tools/oracle/cases/prompts/write/registry_init_failure_after_db_write.yaml
+deviations:
+  - what: "Failed registry initialization (initialize_prompt or reload_prompt returning None) after a successful database write is reported as 500 without rolling back the database transaction."
+    why: "LiteLLM keeps the database write even when registry initialization fails; betterlite preserves this behavior to surface the failure rather than hiding it with rollback semantics."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L677-L682
+out_of_scope:
+  - "The authentication mechanism (user_api_key_auth, user_api_key_has_admin_view, LitellmUserRoles.PROXY_ADMIN) is owned by B052/B124 and called via dependency injection."
+  - "The database table operations (create, update, delete_many, find_many) and PromptRepository are provided by B726's auxiliary_repository."
+  - "The prompt specification, request/response types and ambiguous data checking are owned by B4050 and B4059."
+  - "Registry state and version/environment helpers (get_base_prompt_id, get_version_number, prompt_environment_or_default, get_next_version_for_prompt, create_versioned_prompt_spec, resolve_prompt_spec, has_config_prompt, initialize_prompt, reload_prompt, delete_prompts_by_base_id) are owned by B4059 and B4060."
+  - "The IN_MEMORY_PROMPT_REGISTRY instance and initialization are owned by B4060."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

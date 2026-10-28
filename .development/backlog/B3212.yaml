@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Read stored skills through owner predicates and the row cache
 status: todo
 depends_on: [B171, B726, B732, B858, B860, B1018, B2226]
-file: null
+file: tasks/B3212-stored-skill-reads.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/handler.py"
 parent: B078

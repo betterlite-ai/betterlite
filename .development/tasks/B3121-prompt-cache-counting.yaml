@@ -1,0 +1,113 @@
+id: B3121
+title: Resolve native cache prediction targets and count prompt boundaries
+description: >-
+  Build the native Anthropic cache prediction target resolver and token counter service in `betterlite-anthropic`,
+  distinguishing public-endpoint prediction from configured-endpoint baseline paths.
+  Resolve provider credentials and identity from existing credential and model crates, inject the messages URL builder,
+  and count prompt tokens within a 15-second timeout using the native provider counting endpoint.
+  Reuse B3120's parsed plans and observational data to construct counted breakpoints with both fingerprint families.
+
+  The module exports `cache_scope` to hash the scope tuple (caller_key_hash, deployment_id, provider_key, model, anthropic_version)
+  and the `TokenCounter` protocol for async token counting.
+  `count_prompt_tokens` calls the provider's native count_tokens endpoint with 15-second timeout, returning None on any failure.
+  `count_cache_plan` counts tokens for each breakpoint in a cache plan, returning counted records or an unsupported reason.
+  `resolve_prediction_target` resolves a deployment to native Anthropic info for public-endpoint prediction.
+  `resolve_baseline_target` allows configured endpoints for baseline-event observations.
+  `supported_prediction_headers` and `supported_baseline_recipient` filter requests by Anthropic-specific headers and URL paths.
+
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/cache_prediction_targets.rs
+    - crates/betterlite-anthropic/src/cache_prediction_targets/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L448-L655"
+    why: All functions owned by B3121 for target resolution and token counting.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L521-L546"
+    why: count_prompt_tokens implementation and the 15-second timeout.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L549-L584"
+    why: count_cache_plan logic, handling thinking blocks and consistency checks.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L448-L456"
+    why: cache_scope hashing the deployment context.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1-L50"
+    why: LiteLLM_Params structure for target resolution.
+dod:
+  - text: cache_scope returns a hex digest of the sha256 hash of the scope tuple (caller_key_hash, deployment_id, provider_key, model, anthropic_version).
+    proof: [cache-scope-test]
+  - text: "count_prompt_tokens calls the native Anthropic /count_tokens endpoint with a 15-second timeout, returning the input token count or None on any provider/validation failure."
+    proof: [count-prompt-tokens-test]
+  - text: "count_cache_plan counts tokens for every breakpoint in the cache plan, rejects thinking blocks when the model does not support thinking cache preservation, and returns CountedPromptCachePlan or UnsupportedCachePlan."
+    proof: [count-cache-plan-test]
+  - text: "resolve_prediction_target only accepts Anthropic deployments with public endpoints (api.anthropic.com), rejecting unsupported_deployment_configuration when extra options exist."
+    proof: [deployment-config-extra-option]
+  - text: "resolve_prediction_target rejects unsupported_provider_endpoint when api_base is not public (e.g. custom endpoint or non-anthropic.com domain)."
+    proof: [endpoint-non-public]
+  - text: "resolve_prediction_target rejects unsupported_provider when custom_llm_provider is not anthropic or model resolution fails."
+    proof: [provider-not-anthropic]
+  - text: "resolve_prediction_target rejects unsupported_provider_credentials when api_key is None, empty, or an OAuth key via is_anthropic_oauth_key."
+    proof: [credentials-missing-or-oauth]
+  - text: "resolve_baseline_target accepts both public and configured Anthropic endpoints, used for observation baseline validation, returning the same UnsupportedPredictionTarget variants."
+    proof: [resolve-baseline-test]
+  - text: "supported_prediction_headers rejects anthropic-beta and enforces anthropic-version == DEFAULT_ANTHROPIC_API_VERSION (2023-06-01)."
+    proof: [headers-test]
+  - text: "supported_baseline_recipient checks that the request URL matches the native messages URL and x-api-key matches the target's api_key."
+    proof: [baseline-recipient-test]
+checks:
+  optional: []
+  commands:
+    - id: cache-scope-test
+      why: cache_scope hashing or format is incorrect
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::scope/)' --no-tests=fail
+    - id: count-prompt-tokens-test
+      why: count_prompt_tokens endpoint or timeout handling fails
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::count_prompt/)' --no-tests=fail
+    - id: count-cache-plan-test
+      why: count_cache_plan logic or breakpoint handling fails
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::count_cache_plan/)' --no-tests=fail
+    - id: deployment-config-extra-option
+      why: resolve_prediction_target rejects extra deployment options via unsupported_deployment_configuration
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::deployment_config_extra_option/)' --no-tests=fail
+    - id: endpoint-non-public
+      why: resolve_prediction_target rejects non-public endpoints via unsupported_provider_endpoint
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::endpoint_non_public/)' --no-tests=fail
+    - id: provider-not-anthropic
+      why: resolve_prediction_target rejects non-Anthropic providers via unsupported_provider
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::provider_not_anthropic/)' --no-tests=fail
+    - id: credentials-missing-or-oauth
+      why: resolve_prediction_target rejects missing or OAuth keys via unsupported_provider_credentials
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::credentials_missing_or_oauth/)' --no-tests=fail
+    - id: resolve-baseline-test
+      why: baseline endpoint resolution validation fails for both public and configured endpoints
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::resolve_baseline/)' --no-tests=fail
+    - id: headers-test
+      why: prediction header validation fails
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::headers/)' --no-tests=fail
+    - id: baseline-recipient-test
+      why: baseline recipient validation fails
+      run: cargo nextest run --locked -p betterlite-anthropic -E 'test(/^cache_prediction_targets::tests::baseline_recipient/)' --no-tests=fail
+oracle_cases: []
+deviations:
+  - what: "count_prompt_tokens uses the injected TokenCounter protocol instead of directly importing Anthropic counting internals."
+    why: "Inversion of control prevents circular imports between betterlite-anthropic and the core provider integration; callers inject the counting implementation."
+  - what: "UnsupportedPredictionTarget reasons are enumerated (unsupported_deployment_configuration, unsupported_provider_endpoint, unsupported_provider, unsupported_provider_credentials) instead of returning an error string."
+    why: "Typed errors allow callers to distinguish recovery paths and log meaningful context without pattern matching on text."
+  - what: "cache_scope hashes the full deployment context in one digest instead of storing components separately."
+    why: "A single hash ensures consistency across cache observations and avoids exposing credential material in intermediate values."
+out_of_scope:
+  - Observing and storing cache evidence; that belongs to B3122.
+  - Pricing cache scenarios or routing; that belongs to B3123 and B3124.
+  - Serving cache predictions via HTTP; that belongs to B3125.
+  - "Thinking cache preservation capability definition; this task only rejects counting when the capability check returns unsupported. The capability check itself delegates to model metadata resolution (B174, B2219, B2220)."
+pitfalls:
+  - "The 15-second timeout applies to the entire count_prompt_tokens call, not per-request to the provider. Use tokio::time::timeout with a Duration, not a per-connection timeout."
+  - "count_cache_plan uses asyncio.gather in LiteLLM to count breakpoints in parallel. Use tokio::join! or futures::future::join_all in Rust, not sequential awaits."
+  - "Thinking cache support check: call _positions (owned by B3120) to detect thinking blocks in the prompt. If thinking blocks are present, resolve the model metadata via B2219's resolver to read the supports_thinking_cache_preservation field of the returned record. Reject the count if the field is false."
+  - "api_base may be None (environment-resolved) or an explicit URL; AnthropicModelInfo.get_api_base normalizes both. Pass the result to _messages_url, which builds the full /v1/messages path."
+  - "OAuth keys (is_anthropic_oauth_key check) must be rejected for native prediction because they are not API keys and cannot hit the count_tokens endpoint."
+  - "DEFAULT_ANTHROPIC_API_VERSION is defined in the pass_through module from LiteLLM; import it or hardcode the 2023-06-01 literal exactly as LiteLLM uses it."
+  - "supported_prediction_headers must reject anthropic-beta entirely and enforce anthropic-version exactly. Case-insensitive header names are required."
+  - "resolve_baseline_target allows configured endpoints for baseline observation validation, while resolve_prediction_target rejects them for public-only prediction."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

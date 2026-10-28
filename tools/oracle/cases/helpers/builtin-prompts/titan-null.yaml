@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "titan-null", "call": {"builtin_prompts": {"family": "titan", "messages": [{"role": "assistant", "content": null}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

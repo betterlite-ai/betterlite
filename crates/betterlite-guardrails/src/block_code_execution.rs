@@ -1,5 +1,9 @@
 pub mod block_detection;
+pub mod error_handling;
 pub mod escaped_newlines;
+pub mod initializer;
 pub mod intent_detection;
 pub mod language_normalization;
+pub mod lifecycle;
+pub mod registration;
 pub mod text_scanning;

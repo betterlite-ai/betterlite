@@ -1,0 +1,203 @@
+id: B3841
+title: OTel request identity and baggage projections
+description: >-
+  Build request identity parsing from StandardLoggingPayload and UserAPIKeyAuth
+  at the proxy auth boundary and from closed-request payloads. Resolve request-vs-provider
+  model split (user-facing group vs. dispatched deployment). Promote filtered identity
+  values into Baggage labels so child spans inherit caller context, including team_id,
+  team_alias, key_hash, end_user, request_model, provider_model and filtered team metadata.
+  The task does not handle Baggage read/write or span processor lifecycle; it provides
+  immutable data structures and helpers the span processor and OTel callbacks read.
+
+  RequestIdentity is a frozen dataclass with call_id, team_id, team_alias, team_metadata
+  (raw, filtered at baggage-promotion time), key_hash, end_user, provider_model (filled
+  from payload only), request_route, and a flattened metadata dict. RequestIdentity.from_payload
+  parses from StandardLoggingPayload metadata (team_id prefers user_api_key_team_id), resolves
+  provider_model from deployment/litellm_model_name/model. RequestIdentity.from_user_api_key_auth
+  seeds identity at the auth boundary from UserAPIKeyAuth fields, flattening requester_metadata
+  under requester_metadata.* keys and provider_model filled from payload only. RequestContext
+  wraps RequestIdentity with request_model, response_model, model_group, model_id and api_base
+  from the closed payload. LLMCallEvent wraps live callback kwargs with call_id, payload,
+  dynamic_params, auth_metadata (key/team config from auth), is_no_upstream_call,
+  upstream_started, provisional_span_name, time_to_first_chunk_seconds and session_id.
+  Helper functions extract caller_session_id (ignoring minted ids, preferring headers),
+  time_to_first_chunk_seconds (seconds for streaming only), auth_metadata (string values only),
+  model_from_request_data, metadata_from_request_data, flatten_metadata (dotted-key leaves),
+  resolve_provider_model and _team_metadata_dict. promoted_baggage filters identity values
+  to promoted_keys and metadata/team_metadata to their allowlists, JSON-serializing only
+  allowlisted team metadata. promoted_metadata builds the litellm.metadata.* namespace from
+  flattened metadata keys. Count: **414 lines** (metadata.py 325 + baggage.py 89).
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/model/metadata.rs
+    - crates/betterlite-logging/src/otel/model/metadata/**
+    - crates/betterlite-logging/src/otel/model/baggage.rs
+    - crates/betterlite-logging/src/otel/model/baggage/**
+    - tools/oracle/cases/helpers/request-identity/**
+    - tools/oracle/helpers/b3841.py
+    - tools/oracle/helpers/b3841/**
+    - tools/oracle/src/helpers/logging/b3841.rs
+    - tools/oracle/src/helpers/logging/b3841/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L1-L35
+    why: Module docstring explaining request-vs-provider model split and RequestIdentity vs RequestContext roles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L56-L97
+    why: RequestIdentity structure with call_id, team_id, team_alias, team_metadata, key_hash, end_user, provider_model, request_route, metadata; from_payload and from_user_api_key_auth factories.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L139-L177
+    why: RequestContext structure with request_model, response_model, model_group, model_id, api_base, identity; from_standard_logging_payload factory and provider_model property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L189-L249
+    why: LLMCallEvent structure with call_id, payload, dynamic_params, auth_metadata, is_no_upstream_call, upstream_started, provisional_span_name, time_to_first_chunk_seconds, trace, session_id; from_dict factory parsing live callback kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L252-L294
+    why: caller_session_id and time_to_first_chunk_seconds extraction; SESSION_ID_GENERATED_METADATA_KEY filtering to ignore minted ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L296-L430
+    why: auth_metadata extraction from payload/kwargs; _metadata_dicts, _string_entries, _call_id, model_from_request_data, metadata_from_request_data, flatten_metadata, resolve_provider_model, _model_info_id, _team_metadata_dict helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/baggage.py#L1-L14
+    why: Module docstring explaining baggage promotion; _PROMOTABLE map and role of filtered team_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/baggage.py#L28-L66
+    why: _PROMOTABLE extractors for team_id, team_alias, key_hash, end_user, request_model, provider_model, team_metadata; BAGGAGE_PROMOTED_KEYS and metadata/team_metadata key allowlists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/baggage.py#L69-L118
+    why: promoted_baggage and promoted_metadata filtering functions; _filtered_team_metadata_json JSON serialization of allowlisted team metadata.
+
+dod:
+  - text: >-
+      RequestIdentity parses team_id (preferring user_api_key_team_id over team_id),
+      team_alias, team_metadata, key_hash, end_user, and call_id from StandardLoggingPayload metadata.
+      provider_model is resolved from the payload (preferring deployment, then litellm_model_name, then model).
+      request_route is extracted from metadata. Metadata leaves are flattened to dotted keys.
+    proof: [identity-parsing-tests]
+  - text: >-
+      RequestIdentity.from_user_api_key_auth seeds identity at the auth boundary with team and key fields,
+      extracting user_id, org_id, key_alias, end_user_id from the auth object. requester_metadata is flattened
+      and carried under the requester_metadata prefix. provider_model is absent at auth time and filled from payload.
+    proof: [identity-from-auth-tests]
+  - text: >-
+      RequestContext wraps RequestIdentity and adds request_model (user-facing group, fallback call model),
+      response_model, model_group, model_id, api_base. The model split is correct on both proxy (group vs deployment)
+      and SDK paths (same model).
+    proof: [context-parsing-tests]
+  - text: >-
+      LLMCallEvent parses live callback kwargs and carries call_id, payload, dynamic_params, auth_metadata,
+      is_no_upstream_call (from LITELLM_LOGGING_NO_UPSTREAM_LLM_CALL), upstream_started (api_call_start_time set),
+      provisional span name, time_to_first_chunk_seconds (for streaming only), trace controls, and session_id.
+    proof: [llm-call-event-tests]
+  - text: >-
+      caller_session_id ignores minted session ids (those carrying SESSION_ID_GENERATED_METADATA_KEY),
+      prefers litellm_session_id header over body, and falls back to trace.session_id only when no minted ids exist.
+      Minted ids echoing trace_id are also filtered.
+    proof: [session-id-tests]
+  - text: >-
+      time_to_first_chunk_seconds is None for non-streaming calls; for streaming, it subtracts api_call_start_time
+      from completion_start_time and returns seconds (or None if either is missing).
+    proof: [time-to-chunk-tests]
+  - text: >-
+      promoted_baggage filters identity values to promoted_keys and metadata leaves to metadata_keys and team_metadata to team_metadata_keys.
+      Team metadata is JSON-serialized only when allowlisted keys exist; empty metadata is dropped. promoted_metadata builds the
+      litellm.metadata.* namespace from the allowlisted flattened keys.
+    proof: [baggage-promotion-tests]
+  - text: >-
+      auth_metadata is extracted from payload (once call closes) or litellm_params (at pre_call for tracer resolution).
+      Values are strings only; non-string entries are dropped. model_from_request_data and metadata_from_request_data
+      read the requester_metadata snapshot from pre-call data.
+    proof: [metadata-extraction-tests]
+  - text: >-
+      resolve_provider_model prefers deployment (from metadata), then litellm_model_name (hidden params),
+      then model (top-level, already reconstructed). flatten_metadata walks nested dicts and yields (dotted_key, str_value) tuples.
+      _team_metadata_dict returns the raw mapping or None when empty.
+    proof: [helper-function-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: identity-parsing-tests
+      why: RequestIdentity must parse all fields from StandardLoggingPayload metadata and resolve provider_model correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::request_identity::parse::/)'
+    - id: identity-from-auth-tests
+      why: RequestIdentity.from_user_api_key_auth must seed identity at auth boundary with key/team fields and flatten requester_metadata.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::request_identity::from_auth::/)'
+    - id: context-parsing-tests
+      why: RequestContext must wrap identity and resolve request_model, response_model, model_group correctly on both proxy and SDK paths.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::request_context::/)'
+    - id: llm-call-event-tests
+      why: LLMCallEvent must parse live callback kwargs with all fields including dynamic_params, auth_metadata, and upstream_started flag.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::llm_call_event::/)'
+    - id: session-id-tests
+      why: caller_session_id must filter minted ids and prefer header over body, falling back to trace.session_id only when no minted ids exist.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::session_id::/)'
+    - id: time-to-chunk-tests
+      why: time_to_first_chunk_seconds must be None for non-streaming and compute seconds difference for streaming.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::time_to_chunk::/)'
+    - id: baggage-promotion-tests
+      why: promoted_baggage and promoted_metadata must filter to allowlisted keys and serialize team metadata as JSON when non-empty.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::baggage::/)'
+    - id: metadata-extraction-tests
+      why: auth_metadata, model_from_request_data, and metadata_from_request_data must extract values from payload and kwargs correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::extraction::/)'
+    - id: helper-function-tests
+      why: resolve_provider_model, flatten_metadata, and _team_metadata_dict helper functions must work correctly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::helpers::/)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3841::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new request identity decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/request-identity tools/oracle/fuzz/corpus/helper_case/request-identity-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/request-identity/team-id-prefers-canonical-key.yaml
+  - tools/oracle/cases/helpers/request-identity/model-split-proxy-vs-sdk.yaml
+  - tools/oracle/cases/helpers/request-identity/session-id-ignores-minted.yaml
+  - tools/oracle/cases/helpers/request-identity/baggage-promotion-filters-keys.yaml
+  - tools/oracle/cases/helpers/request-identity/metadata-flattening-dotted-keys.yaml
+
+deviations:
+  - what: >-
+      team_metadata is carried raw on RequestIdentity and filtered only at baggage promotion time
+      via an allowlist, not at identity creation. An empty team_metadata dict is stored as None.
+    why: >-
+      The filtering policy is a configuration concern (baggage_team_metadata_keys), not a parsing concern.
+      Deferring the filter allows the identity to be reused across different baggage policies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/baggage.py#L102-L118
+
+out_of_scope:
+  - Baggage read/write and BaggageSpanProcessor lifecycle; owned by the span processor framework.
+  - Span creation, naming and attribute stamping; owned by span builders and attributes that consume this metadata.
+  - Route model group lookups and deployment resolution; the caller passes already-resolved model names.
+  - Session id policy (minting, echo-check); this task only reads and filters per the caller's provided logic.
+  - Langfuse SDK integration and header propagation; this task only parses the headers and request fields.
+  - Metadata sanitization (secrets redaction, PII masking); this task reads raw metadata without transformation.
+  - CustomLogger and live callback dispatch; this task only provides data structures for callbacks to populate.
+
+pitfalls:
+  - >-
+      team_metadata is carried raw and filtered only at promotion time. An empty dict must be stored as None
+      so the empty case is not promoted as "{}".
+  - >-
+      The user_api_key_team_id key is canonical and prefers over the bare team_id alias; always check the
+      canonical key first or the returned team_id may be empty when the alias is populated.
+  - >-
+      Session id filtering for minted ids uses SESSION_ID_GENERATED_METADATA_KEY in the same metadata dict as the id.
+      A minted id echoing trace_id is checked after filtering; a litellm_session_id header takes the minted check.
+  - >-
+      Header values (langfuse_* prefix) for trace controls win over body values unconditionally; a None header
+      does not fall through to the body — only the absence of a header causes fallback.
+  - >-
+      resolve_provider_model reads deployment first (from metadata), then litellm_model_name, then model. The model
+      field is already reconstructed to the provider-prefixed deployment name, so it's the fallback, not the primary.
+  - >-
+      time_to_first_chunk_seconds is None for non-streaming calls, even if timestamps are present. Check stream: true
+      in optional_params before subtracting times.
+  - >-
+      Metadata flattening uses dotted keys (e.g. "requester_metadata.user_id") so dotted lookups in promote
+      must use the exact dotted key, not nested dict access.
+  - >-
+      Tags are validated as a tuple of objects by Pydantic; non-string entries are silently dropped. An empty
+      tags list is stored as an empty tuple, never None.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: security

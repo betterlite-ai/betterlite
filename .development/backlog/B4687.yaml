@@ -1,0 +1,14 @@
+id: B4687
+milestone: M9 agents and mcp
+title: MCP BYOK authorization form HTML builder
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py"
+parent: B137
+split_from: B4677
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

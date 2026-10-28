@@ -848,6 +848,7 @@ name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-config",
  "chrono",
  "rstest",
  "rust_decimal",
@@ -924,6 +925,7 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1097,6 +1099,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-prompts",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-router",
@@ -1167,6 +1170,14 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-prompts"
 version = "0.1.0"
+dependencies = [
+ "betterlite-logging",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-provider"

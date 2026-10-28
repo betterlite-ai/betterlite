@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "claude-empty", "call": {"builtin_prompts": {"family": "claude", "messages": [], "model": "injected-model"}}, "env": {}, "compare": {"ignore": [{"pointer": "/error/message", "why": "betterlite writes its own message"}]}}

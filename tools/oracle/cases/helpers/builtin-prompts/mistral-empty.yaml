@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "mistral-empty", "call": {"builtin_prompts": {"family": "mistral", "messages": [], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

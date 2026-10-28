@@ -2,8 +2,8 @@ id: B4443
 milestone: M8 platform
 title: Execute model health cycles and project routing health state
 status: todo
-depends_on: [B4441, B4442]
-file: null
+depends_on: [B4441, B4442, B4449]
+file: tasks/B4443-health-cycle.yaml
 covers:
   - "litellm/proxy/health_check.py"
 parent: B130

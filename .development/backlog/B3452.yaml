@@ -3,7 +3,7 @@ milestone: M5 api families
 title: RAG upload inspection and safe download headers
 status: todo
 depends_on: [B198]
-file: null
+file: tasks/B3452-rag-upload-security.yaml
 covers:
   - "litellm/proxy/rag_endpoints/upload_security.py"
 parent: B097

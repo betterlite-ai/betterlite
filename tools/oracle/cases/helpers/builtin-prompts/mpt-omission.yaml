@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "mpt-omission", "call": {"builtin_prompts": {"family": "mpt", "messages": [{"role": "tool", "content": "x"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

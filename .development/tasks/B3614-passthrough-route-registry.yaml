@@ -1,0 +1,153 @@
+id: B3614
+title: Pass-through route registry and collision lookup
+description: >-
+  Implement collision-aware route insertion and removal as a lower route-registry service
+  in betterlite-server. Preserve method/path matching, distinguish between FastAPI-registered
+  and lazy-owned routes, and the marker used by auth to distinguish custom upstream model names.
+
+  Own SafeRouteAdder.add_api_route_if_not_exists and its collision detection, the registry
+  removal handler, and the list query that auth calls. Consume B2302's registry read API
+  (_route_for_registry_lookup, is_registered_pass_through_route, get_registered_pass_through_route)
+  instead of rebuilding it, since those three functions form a single lookup operation that auth
+  depends on before route registration.
+
+  SafeRouteAdder distinguishes between FastAPI-registered (non-lazy-owned) routes and lazy-owned
+  placeholders: when a new route collides with a non-lazy-owned route, addition is blocked and
+  returns false. When a collision exists only with lazy-owned routes, the new route is added and
+  reordered ahead of the first colliding lazy-owned route so configuration endpoints take priority
+  over placeholder features. Exact method matching preserves per-method registration.
+  remove_endpoint_routes mutates LiteLLMRoutes.openai_routes (owned by B866) to keep the config-visible
+  list and the installed route set in sync.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_route_registry.rs
+    - crates/betterlite-server/src/passthrough_route_registry/**
+    - tools/oracle/helpers/b3614.py
+    - tools/oracle/helpers/b3614/**
+    - tools/oracle/src/helpers/server/b3614.rs
+    - tools/oracle/src/helpers/server/b3614/**
+  lint_tables: false
+references:
+  - url: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2878-L2952
+    why: >-
+      Own _placed_ahead and SafeRouteAdder collision detection and insertion.
+  - url: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3123-L3142
+    why: >-
+      Own remove_endpoint_routes, which mutates LiteLLMRoutes.openai_routes.
+  - url: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3149-L3152
+    why: >-
+      Own get_all_registered_pass_through_routes, which lists registered entries.
+dod:
+  - text: >-
+      SafeRouteAdder correctly detects exact-path and method-overlapping collisions using
+      route.path equality and method set intersection. Collisions with FastAPI-registered
+      (non-lazy-owned) routes block addition; add_api_route_if_not_exists returns false
+      and skips the new route.
+    proof:
+      - collision-detection-cases
+  - text: >-
+      When a new route collides only with lazy-owned routes (not with any FastAPI-registered
+      route), add_api_route_if_not_exists still adds the route and reorders it ahead of the
+      first colliding lazy-owned route in the route dispatch list, preserving other routes'
+      relative order.
+    proof:
+      - collision-reordering-cases
+  - text: >-
+      remove_endpoint_routes deletes all registry entries for an endpoint ID and removes
+      corresponding entries from LiteLLMRoutes.openai_routes (both exact paths and wildcard paths).
+    proof:
+      - registry-removal-cases
+  - text: get_all_registered_pass_through_routes returns all registered route keys as a list.
+    proof:
+      - behavior-tests
+  - text: >-
+      The registry consumes B2302's is_registered_pass_through_route and
+      get_registered_pass_through_route for collision detection and auth queries.
+    proof:
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: collision-detection-cases
+      why: >-
+        the collision detection tests fail, do not exist, or do not cover path equality and
+        method set intersection
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/::collision_detection($|::)/)'
+    - id: collision-reordering-cases
+      why: >-
+        the route reordering tests fail, do not exist, or do not cover _placed_ahead and
+        SafeRouteAdder.add_api_route_if_not_exists reordering behavior
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/::collision_reordering($|::)/)'
+    - id: registry-removal-cases
+      why: >-
+        the registry removal tests fail, do not exist, or do not cover endpoint ID deletion,
+        openai_routes cleanup and wildcard path removal
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/::registry_removal($|::)/)'
+    - id: behavior-tests
+      why: Registry queries or collision detection fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_registry::/)'
+oracle_cases:
+  - tools/oracle/cases/passthrough/collision-detect-exact-match.yaml
+  - tools/oracle/cases/passthrough/collision-detect-method-overlap.yaml
+  - tools/oracle/cases/passthrough/collision-reorder-ahead.yaml
+  - tools/oracle/cases/passthrough/registry-remove-exact.yaml
+  - tools/oracle/cases/passthrough/registry-remove-subpath.yaml
+  - tools/oracle/cases/passthrough/registry-remove-openai-routes.yaml
+deviations:
+  - what: >-
+      SafeRouteAdder.add_api_route_if_not_exists does not block addition when a collision
+      exists only with lazy-owned routes; the route is always added when no non-lazy-owned
+      route exists, and is also reordered ahead of the first colliding lazy-owned route.
+    why: >-
+      LiteLLM distinguishes lazy-owned (placeholder) routes from app-registered routes so
+      configuration pass-through endpoints can take priority over features not yet loaded.
+      A route added at a path where lazy features have registered placeholders is moved
+      ahead of those placeholders, giving it the precedence the configuration intended.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2884-L2950
+  - what: >-
+      remove_endpoint_routes mutates the shared LiteLLMRoutes.openai_routes list, which auth
+      and configuration reads directly.
+    why: >-
+      Registration and removal must keep the registry and the exposed configuration in sync
+      so auth sees the same routes the config API returns.
+out_of_scope:
+  - >-
+    Registry lookup and method filtering; B2302 owns is_registered_pass_through_route and
+    get_registered_pass_through_route.
+  - >-
+    Route factory and endpoint handler registration (B3615/B3616).
+  - >-
+    Configuration read/update; B3617 owns the GET endpoint and B102 owns create/delete.
+pitfalls:
+  - >-
+    The distinction between _colliding_routes and _is_path_registered is critical:
+    _colliding_routes includes all routes (lazy and non-lazy), while _is_path_registered
+    checks only non-lazy routes. A collision with only lazy-owned routes does not block
+    addition; only a non-lazy collision does. Confusing these two checks is the pitfall
+    that inverts the reordering behavior.
+  - >-
+    The lazy_owned_routes check uses Python's id() function to identify route objects
+    by identity, comparing against a set of ids from a separate lazy-route tracking
+    mechanism. This identity check must be preserved in the Rust port; two routes
+    at the same path from different sources are distinct.
+  - >-
+    Mutate the route list in place (equivalent to Python's slice assignment) to keep the app's
+    router reference valid; a full rebind would detach external references to the list.
+  - >-
+    LiteLLMRoutes.openai_routes.value is a list that accepts path strings; the registry stores
+    path and type but openai_routes stores both exact and "{path}/*" for subpaths. Preserve list
+    semantics (order, possible duplicates) instead of converting to a set.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

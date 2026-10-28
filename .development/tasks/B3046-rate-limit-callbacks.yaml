@@ -1,0 +1,286 @@
+id: B3046
+title: Settle limiter callbacks and publish quota headers
+description: >-
+  Wire the post-call settlement callbacks to release slots, refund reservations and publish
+  quota headers. Build five callback hooks that complete the rate-limit lifecycle: success
+  settlement that releases parallel slots and reconciles token usage, logging mirroring for
+  streaming responses, failure settlement that refunds reserved tokens when rejection occurs
+  before the LLM call, disconnect handling for cancelled streams, and batch enqueued post-call
+  accounting.
+
+  _merge_ratelimit_statuses_into_additional_headers takes a dict of additional headers and a
+  list of RateLimitStatus records, returning the dict extended with x-ratelimit-{descriptor_key}-{remaining|limit}-{rate_limit_type}
+  entries. Non-mutating so callers choose their target dict.
+
+  async_logging_hook and _mirror_ratelimit_response_into_logging_payload handle streaming
+  responses where the logging callback runs before the post-call hook. Copy the stashed
+  RateLimitResponse into the SLP's hidden_params.additional_headers (when present) and the
+  response object's _hidden_params.additional_headers (when a dict), using _merge_ratelimit_statuses_into_additional_headers.
+  async_logging_hook returns (kwargs, result) unchanged after mirroring; idempotent for non-streaming.
+
+  async_log_success_event runs after successful completion: release the stashed parallel slot
+  via _release_stashed_parallel_slot, then build and apply TPM/combined operations from
+  _build_success_event_pipeline_operations via async_increment_tokens_with_ttl_preservation;
+  when ITPM/OTPM operations exist, apply them via async_increment_reservation_aware_tokens.
+  Catch exceptions so logging errors never fail the response.
+
+  async_log_failure_event runs on LLM errors: release the parallel slot, then conditionally
+  refund reserved tokens. Skip refund if async_post_call_failure_hook already released them
+  (checked via stash.reservation_released). Build refund ops from _build_reservation_aware_tpm_ops
+  and _build_project_reservation_ops for the originally reserved scopes (not unreserved ones).
+  For partial-stream failures with recovered usage, settle at that usage instead of full refund.
+  Apply via async_increment_cache_pipeline_post_call for simple TPM ops and async_increment_reservation_aware_tokens
+  for project operations; flag the stash's reservation_released when done.
+
+  async_release_max_parallel_requests_on_disconnect releases the acquired max_parallel_requests
+  slot when a stream cancels mid-flight without either callback firing. Uses the stashed
+  acquisition presence to decide whether to release (allowing config changes mid-request without
+  leaking slots past their TTL).
+
+  async_post_call_success_hook combines two tasks: release the acquired parallel slot, then
+  merge rate-limit headers into the response object's _hidden_params.additional_headers (when
+  response_has_hidden_params is true). Catch exceptions separately so slot release errors do
+  not block header updates; both exceptions are logged but neither fails the response.
+
+  _handle_batch_enqueued_post_call completes batch token reservation accounting: on successful
+  enqueue, save the stashed BatchEnqueuedTokenReservation via batch_enqueued_token_store.save_reservation;
+  on completion (status in BATCH_ENQUEUED_REFUND_STATUSES), pop and refund it. Idempotent per
+  reservation; handles batch_id canonicalization via canonical_provider_batch_id and batch_response_view.
+
+  async_post_call_failure_hook handles proxy-level rejections after pre-call acquired slots/reservations
+  but before the LLM call ran (e.g. guardrails, auth hooks). Release the slot, refund batch
+  enqueued reservations, apply any batch TPD refund ops, then conditionally refund TPM/ITPM/OTPM
+  reservations (guarded by reservation_released flag — idempotent with async_log_failure_event).
+  Settle at recovered partial usage when available; use _build_reservation_aware_tpm_ops and
+  _build_project_reservation_ops for delta ops. Apply simple ops via async_increment_cache_pipeline
+  and project ops via async_increment_cache_pipeline or async_increment_reservation_aware_tokens.
+  Catch exceptions so batch/reservation failures never fail the response.
+
+  Depends on B732 for UserAPIKeyAuth and parent_otel_span; B1042 for BatchEnqueuedTokenReservation,
+  batch_response_view, canonical_provider_batch_id; B1043 for BatchEnqueuedTokenStore.save_reservation,
+  pop_reservation, refund; B3031 for get_request_stash, get_request_stash_for_call, _call_id_from_callback_kwargs;
+  B3035 for _release_stashed_parallel_slot; B3037 for async_increment_tokens_with_ttl_preservation,
+  async_increment_reservation_aware_tokens, _build_reservation_aware_tpm_ops, _build_project_reservation_ops;
+  B3044 for get_rate_limit_type, _recovered_partial_usage_tokens; B3045 for _build_success_event_pipeline_operations.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/post_call_settlement.rs
+    - crates/betterlite-rate-limit/src/post_call_settlement/**
+    - tools/oracle/cases/post_call_settlement/**
+    - tools/oracle/helpers/b3046.py
+    - tools/oracle/helpers/b3046/**
+    - tools/oracle/src/helpers/rate_limit/b3046.rs
+    - tools/oracle/src/helpers/rate_limit/b3046/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4547-L4562
+    why: _merge_ratelimit_statuses_into_additional_headers formats x-ratelimit-* headers from descriptor statuses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5035-L5053
+    why: async_logging_hook mirrors headers into logging payload before post-call hook for streaming responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5055-L5093
+    why: _mirror_ratelimit_response_into_logging_payload copies stashed rate-limit response into SLP and response hidden params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4989-L5034
+    why: async_log_success_event releases parallel slots and applies TPM/ITPM/OTPM reconciliation operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5105-L5210
+    why: async_log_failure_event refunds reserved tokens on LLM errors, respecting idempotency with proxy-level rejection hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5212-L5230
+    why: async_release_max_parallel_requests_on_disconnect releases slots for cancelled streams without callback firing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5232-L5264
+    why: async_post_call_success_hook releases parallel slot and merges rate-limit headers into response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5265-L5285
+    why: _handle_batch_enqueued_post_call saves/refunds batch token reservations on enqueue/completion transitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5286-L5411
+    why: async_post_call_failure_hook refunds reservations on proxy-level rejection, idempotent with async_log_failure_event.
+
+dod:
+  - text: _merge_ratelimit_statuses_into_additional_headers returns a new dict extended with x-ratelimit-* headers, one per status and rate-limit-type.
+    proof: [header-merge-format]
+  - text: async_logging_hook copies rate-limit response into standard_logging_object.hidden_params.additional_headers and response._hidden_params.additional_headers without failing the response.
+    proof: [logging-hook-mirror]
+  - text: async_log_success_event releases the stashed parallel slot, builds and applies TPM operations via async_increment_tokens_with_ttl_preservation, and applies ITPM/OTPM operations via async_increment_reservation_aware_tokens.
+    proof: [success-event-slot-release, success-event-tpm-ops, success-event-io-ops]
+  - text: async_log_success_event catches all exceptions and logs them without failing the response.
+    proof: [success-event-error-handling]
+  - text: async_log_failure_event releases the parallel slot, checks stash.reservation_released to skip redundant refunds, and builds refund operations for originally reserved scopes only.
+    proof: [failure-event-slot-release, failure-event-idempotency, failure-event-scope-filtering]
+  - text: async_log_failure_event settles at recovered partial usage when available, or refunds full reserved amounts when not.
+    proof: [failure-event-partial-usage]
+  - text: async_log_failure_event applies refund operations via async_increment_cache_pipeline_post_call and async_increment_reservation_aware_tokens and flags reservation_released.
+    proof: [failure-event-refund-application, failure-event-release-flag]
+  - text: async_log_failure_event catches all exceptions and logs them without failing the response.
+    proof: [failure-event-error-handling]
+  - text: async_release_max_parallel_requests_on_disconnect releases the stashed parallel slot when a stream cancels without triggering success/failure callbacks.
+    proof: [disconnect-slot-release]
+  - text: async_post_call_success_hook releases the parallel slot and merges rate-limit headers into response._hidden_params.additional_headers, with separate exception handling for each task.
+    proof: [success-hook-slot-release, success-hook-header-merge, success-hook-exception-separation]
+  - text: _handle_batch_enqueued_post_call saves stashed batch token reservations via BatchEnqueuedTokenStore.save_reservation on successful enqueue.
+    proof: [batch-enqueued-save]
+  - text: _handle_batch_enqueued_post_call pops and refunds batch reservations via pop_reservation and refund when status is in BATCH_ENQUEUED_REFUND_STATUSES.
+    proof: [batch-enqueued-refund]
+  - text: _handle_batch_enqueued_post_call uses batch_response_view to extract view from response and canonical_provider_batch_id to normalize batch ID.
+    proof: [batch-enqueued-batch-id]
+  - text: async_post_call_failure_hook refunds batch enqueued reservations and applies batch TPD refund ops before checking reservation_released guard.
+    proof: [failure-hook-batch-setup]
+  - text: async_post_call_failure_hook conditionally refunds TPM/ITPM/OTPM reservations only when reservation_released is false, settling at recovered partial usage or refunding full reserved amounts.
+    proof: [failure-hook-tpm-refund, failure-hook-io-refund]
+  - text: async_post_call_failure_hook applies refund operations via async_increment_cache_pipeline and async_increment_cache_pipeline or async_increment_reservation_aware_tokens.
+    proof: [failure-hook-refund-application]
+  - text: async_post_call_failure_hook flags stash.reservation_released when refunds are applied and catches all exceptions without failing the response.
+    proof: [failure-hook-release-flag, failure-hook-error-handling]
+  - text: Every default header name, cache pipeline method, refund transition and duplicate-prevention pattern a user can observe is in a named oracle case with input and outcome.
+    proof: [oracle-cases-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: header-merge-format
+      why: _merge_ratelimit_statuses_into_additional_headers must format x-ratelimit-* headers correctly
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::header_merge(::|$)/)'
+    - id: logging-hook-mirror
+      why: async_logging_hook must copy rate-limit headers into logging payload and response object
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::logging_hook(::|$)/)'
+    - id: success-event-slot-release
+      why: async_log_success_event must release the stashed parallel slot
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_event_slot(::|$)/)'
+    - id: success-event-tpm-ops
+      why: async_log_success_event must build and apply TPM operations
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_event_tpm(::|$)/)'
+    - id: success-event-io-ops
+      why: async_log_success_event must build and apply ITPM/OTPM operations
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_event_io(::|$)/)'
+    - id: success-event-error-handling
+      why: async_log_success_event must catch and log exceptions without failing the response
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_event_error(::|$)/)'
+    - id: failure-event-slot-release
+      why: async_log_failure_event must release the stashed parallel slot
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_slot(::|$)/)'
+    - id: failure-event-idempotency
+      why: async_log_failure_event must skip refunds when reservation_released is true
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_idempotency(::|$)/)'
+    - id: failure-event-scope-filtering
+      why: async_log_failure_event must refund only originally reserved scopes
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_scope(::|$)/)'
+    - id: failure-event-partial-usage
+      why: async_log_failure_event must settle at partial usage when available
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_partial(::|$)/)'
+    - id: failure-event-refund-application
+      why: async_log_failure_event must apply refunds via correct cache pipeline methods
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_application(::|$)/)'
+    - id: failure-event-release-flag
+      why: async_log_failure_event must flag reservation_released when refunds are applied
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_flag(::|$)/)'
+    - id: failure-event-error-handling
+      why: async_log_failure_event must catch and log exceptions without failing the response
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_event_error(::|$)/)'
+    - id: disconnect-slot-release
+      why: async_release_max_parallel_requests_on_disconnect must release the stashed slot
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::disconnect_slot(::|$)/)'
+    - id: success-hook-slot-release
+      why: async_post_call_success_hook must release the parallel slot
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_hook_slot(::|$)/)'
+    - id: success-hook-header-merge
+      why: async_post_call_success_hook must merge rate-limit headers into response
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_hook_headers(::|$)/)'
+    - id: success-hook-exception-separation
+      why: async_post_call_success_hook must handle slot and header exceptions separately
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::success_hook_exception(::|$)/)'
+    - id: batch-enqueued-save
+      why: _handle_batch_enqueued_post_call must save stashed batch reservations
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::batch_save(::|$)/)'
+    - id: batch-enqueued-refund
+      why: _handle_batch_enqueued_post_call must refund batch reservations on completion
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::batch_refund(::|$)/)'
+    - id: batch-enqueued-batch-id
+      why: _handle_batch_enqueued_post_call must canonicalize batch ID correctly
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::batch_id(::|$)/)'
+    - id: failure-hook-batch-setup
+      why: async_post_call_failure_hook must refund batch reservations and TPD ops before checking release guard
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_batch(::|$)/)'
+    - id: failure-hook-tpm-refund
+      why: async_post_call_failure_hook must conditionally refund TPM reservations
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_tpm(::|$)/)'
+    - id: failure-hook-io-refund
+      why: async_post_call_failure_hook must conditionally refund ITPM/OTPM reservations
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_io(::|$)/)'
+    - id: failure-hook-refund-application
+      why: async_post_call_failure_hook must apply refunds via correct cache pipeline methods
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_application(::|$)/)'
+    - id: failure-hook-release-flag
+      why: async_post_call_failure_hook must flag reservation_released when refunds are applied
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_flag(::|$)/)'
+    - id: failure-hook-error-handling
+      why: async_post_call_failure_hook must catch and log exceptions without failing the response
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_error(::|$)/)'
+    - id: oracle-cases-tests
+      why: Oracle cases verify callback settlement across success, failure, proxy rejection, and disconnect paths
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/post_call_settlement -k 'b3046'
+
+oracle_cases:
+  - tools/oracle/cases/post_call_settlement/header-merge-single-status.yaml
+  - tools/oracle/cases/post_call_settlement/header-merge-multiple-statuses.yaml
+  - tools/oracle/cases/post_call_settlement/logging-hook-streaming-response.yaml
+  - tools/oracle/cases/post_call_settlement/logging-hook-non-streaming-idempotent.yaml
+  - tools/oracle/cases/post_call_settlement/success-event-tpm-reconciliation.yaml
+  - tools/oracle/cases/post_call_settlement/success-event-io-reconciliation.yaml
+  - tools/oracle/cases/post_call_settlement/success-event-missing-stash.yaml
+  - tools/oracle/cases/post_call_settlement/failure-event-full-refund.yaml
+  - tools/oracle/cases/post_call_settlement/failure-event-partial-usage.yaml
+  - tools/oracle/cases/post_call_settlement/failure-event-already-released.yaml
+  - tools/oracle/cases/post_call_settlement/disconnect-slot-release.yaml
+  - tools/oracle/cases/post_call_settlement/success-hook-header-merge.yaml
+  - tools/oracle/cases/post_call_settlement/batch-enqueued-save.yaml
+  - tools/oracle/cases/post_call_settlement/batch-enqueued-refund-on-completion.yaml
+  - tools/oracle/cases/post_call_settlement/failure-hook-batch-and-tpd-refund.yaml
+  - tools/oracle/cases/post_call_settlement/failure-hook-tpm-refund.yaml
+  - tools/oracle/cases/post_call_settlement/failure-hook-io-refund.yaml
+  - tools/oracle/cases/post_call_settlement/failure-hook-idempotent-with-log-failure.yaml
+
+deviations:
+  - what: >-
+      When async_post_call_failure_hook and async_log_failure_event both run (proxy-level
+      rejection that also bubbles as LLM error), the refund is guarded by stash.reservation_released
+      flag. Only the first to acquire the stash can apply refunds; the second sees the flag
+      set and skips refunding. This ensures double-refunds do not occur.
+    why: >-
+      Some error conditions trigger both the proxy-level rejection hook and the LLM logging callback,
+      creating a window where both could refund the same reservation. The reservation_released flag
+      prevents the second callback from driving counters negative.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5126-L5135
+  - what: >-
+      BATCH_ENQUEUED_REFUND_STATUSES determines which batch completion statuses trigger refund
+      (e.g. failed, expired). Only statuses in this set cause pop_reservation and refund to run;
+      successful batch operations do not refund.
+    why: >-
+      Batch API semantics distinguish successful enqueuing from successful batch execution. Only
+      when the batch itself fails or expires should reservations be returned to the pool. The set
+      is sourced from B1043's batch store configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5278
+
+out_of_scope:
+  - Rate-limit descriptor and status construction belong to earlier pre-call phases (B3038-B3040).
+  - Parallel slot acquisition and release APIs belong to B3035.
+  - Token increment and reservation-aware delta operations belong to B3037.
+  - Successful operation pipeline construction belongs to B3045.
+  - Batch token store interface (save, pop, refund) belongs to B1043.
+  - User API key auth context and parent span extraction belong to B732.
+  - Request stash lifecycle and call-ID filtering belong to B3031.
+  - Cache pipeline transport methods and Redis registration belong to external owners (B124/B125/B126).
+
+pitfalls:
+  - _merge_ratelimit_statuses_into_additional_headers is non-mutating; callers must use the returned dict, not assume the input is modified.
+  - async_logging_hook must be idempotent for non-streaming responses that trigger both logging hook and post-call hook. Use the same stashed response to write the same headers.
+  - Header names follow the pattern x-ratelimit-{descriptor_key}-{remaining|limit}-{rate_limit_type}; ensure descriptor_key and rate_limit_type match what was returned at pre-call.
+  - async_log_failure_event and async_post_call_failure_hook are separate callbacks that may both run on certain errors. Guard refunds with stash.reservation_released to prevent double-refunding.
+  - Refund operations are built from reserved scopes (stash.reserved_scopes, stash.itpm_reserved_scopes, stash.otpm_reserved_scopes), not from requested scopes. Refunding unreserved scopes would drive counters negative.
+  - Partial stream failures recovered via _recovered_partial_usage_tokens must settle at that usage (actual - reserved delta) rather than refunding the full reserved amount.
+  - async_post_call_failure_hook's exception handling must be broad (catch Exception) so batch/reservation failures never fail the response. Separate exception blocks per task preserve partial success when some operations fail.
+  - batch_response_view(response) returns None for non-batch responses; always check before dereferencing the view.
+  - BATCH_ENQUEUED_REFUND_STATUSES is a string set (e.g. {"failed", "expired"}); use .lower() on status values before set membership checks.
+  - Slot stashing uses call_id filtering to prevent nested callbacks from releasing the wrong acquisition. Always pass the correct call ID to _call_id_from_callback_kwargs.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

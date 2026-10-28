@@ -1,0 +1,28 @@
+kind: helper
+name: daily-activity-export-comprehensive
+call:
+  daily_activity_export:
+    cases:
+      daily_cursor:
+        scope: {table: litellm_dailyuserspend, entity_id_field: user_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+        utc_now: '2026-08-06T00:30:00Z'
+        function: export
+        export_type: daily
+        after: {date: '2026-08-02', entity_id: entity, group_key: unrepaired}
+        batch_size: 2
+      team:
+        scope: {table: litellm_dailyteamspend, entity_id_field: team_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+        utc_now: '2026-08-06T00:30:00Z'
+        function: export
+        export_type: daily_with_keys
+        after: null
+        batch_size: 2
+      organization:
+        scope: {table: litellm_dailyorganizationspend, entity_id_field: organization_id, entity_ids: null, exclude_entity_ids: [], api_keys: null, start_date: '2026-08-01', end_date: '2026-08-05', model: null, timezone_offset_minutes: null, include_current_utc_day: false}
+        utc_now: '2026-08-06T00:30:00Z'
+        function: export
+        export_type: daily_with_users
+        after: null
+        batch_size: 2
+env: {}
+compare: {ignore: []}
