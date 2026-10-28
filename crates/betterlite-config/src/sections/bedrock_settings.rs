@@ -128,12 +128,14 @@ where
         variable: &str,
     ) -> Result<Option<SecretString>, ConfigError> {
         let path = format!("model_list.{}.litellm_params.{key}", self.index);
-        match value {
-            Some(secret) => resolve_string(secret.expose_secret().to_owned(), &path, self.lookup)
-                .map(SecretString::from)
-                .map(Some),
-            None => Ok(self.lookup.lookup(variable).map(SecretString::from)),
-        }
+        value.map_or_else(
+            || Ok(self.lookup.lookup(variable).map(SecretString::from)),
+            |secret| {
+                resolve_string(secret.expose_secret().to_owned(), &path, self.lookup)
+                    .map(SecretString::from)
+                    .map(Some)
+            },
+        )
     }
 }
 
