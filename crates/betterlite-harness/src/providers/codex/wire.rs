@@ -86,44 +86,124 @@ pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
     serde_json::from_value(Value::Object(object)).ok()
 }
 
-pub(crate) fn tool_input(item: &Item) -> (String, String, JsonObject, bool) {
+pub(crate) struct ToolProjection {
+    pub(crate) name: String,
+    pub(crate) native_name: String,
+    pub(crate) input: JsonObject,
+    pub(crate) builtin: bool,
+    pub(crate) output: String,
+    pub(crate) is_error: bool,
+}
+
+pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
     match item {
-        Item::CommandExecution { command, .. } => (
-            "bash".to_owned(),
-            "command_execution".to_owned(),
-            BTreeMap::from([(
-                "command".to_owned(),
-                Value::String(command.clone().unwrap_or_default()),
-            )]),
-            true,
+        Item::CommandExecution {
+            command,
+            aggregated_output,
+            exit_code,
+            status,
+            ..
+        } => command_execution_projection(
+            command.as_deref(),
+            aggregated_output.as_deref(),
+            *exit_code,
+            status.as_deref(),
         ),
-        Item::FileChange { changes, .. } => (
-            "edit".to_owned(),
-            "apply_patch".to_owned(),
-            BTreeMap::from([(
-                "changes".to_owned(),
-                Value::Array(changes.clone().unwrap_or_default()),
-            )]),
-            true,
-        ),
-        Item::WebSearch { query, .. } => (
-            "web_search".to_owned(),
-            "web_search".to_owned(),
-            BTreeMap::from([(
-                "query".to_owned(),
-                Value::String(query.clone().unwrap_or_default()),
-            )]),
-            true,
-        ),
+        Item::FileChange {
+            changes, status, ..
+        } => file_change_projection(changes.as_deref(), status.as_deref()),
+        Item::WebSearch { query, status, .. } => {
+            web_search_projection(query.as_deref(), status.as_deref())
+        }
         Item::McpToolCall {
             server,
             tool,
             arguments,
+            result,
+            error,
+            status,
             ..
-        } => mcp_tool_input(server.as_deref(), tool.as_deref(), arguments.as_ref()),
-        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => {
-            (String::new(), String::new(), JsonObject::new(), false)
-        }
+        } => mcp_tool_projection(
+            (server.as_deref(), tool.as_deref(), arguments.as_ref()),
+            (result.as_ref(), error.as_ref(), status.as_deref()),
+        ),
+        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => ToolProjection {
+            name: String::new(),
+            native_name: String::new(),
+            input: JsonObject::new(),
+            builtin: false,
+            output: String::new(),
+            is_error: false,
+        },
+    }
+}
+
+fn command_execution_projection(
+    command: Option<&str>,
+    aggregated_output: Option<&str>,
+    exit_code: Option<i64>,
+    status: Option<&str>,
+) -> ToolProjection {
+    let failed = status == Some("failed");
+    let exited_nonzero = exit_code.is_some_and(|code| code != 0);
+    ToolProjection {
+        name: "bash".to_owned(),
+        native_name: "command_execution".to_owned(),
+        input: BTreeMap::from([(
+            "command".to_owned(),
+            Value::String(command.unwrap_or_default().to_owned()),
+        )]),
+        builtin: true,
+        output: aggregated_output.unwrap_or_default().to_owned(),
+        is_error: failed || exited_nonzero,
+    }
+}
+
+fn file_change_projection(changes: Option<&[Value]>, status: Option<&str>) -> ToolProjection {
+    let output = file_change_summary(changes);
+    ToolProjection {
+        name: "edit".to_owned(),
+        native_name: "apply_patch".to_owned(),
+        input: BTreeMap::from([(
+            "changes".to_owned(),
+            Value::Array(changes.unwrap_or_default().to_vec()),
+        )]),
+        builtin: true,
+        output,
+        is_error: status == Some("failed"),
+    }
+}
+
+fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProjection {
+    let input = BTreeMap::from([(
+        "query".to_owned(),
+        Value::String(query.unwrap_or_default().to_owned()),
+    )]);
+    ToolProjection {
+        name: "web_search".to_owned(),
+        native_name: "web_search".to_owned(),
+        input,
+        builtin: true,
+        output: String::new(),
+        is_error: status == Some("failed"),
+    }
+}
+
+fn mcp_tool_projection(
+    call: (Option<&str>, Option<&str>, Option<&Value>),
+    outcome: (Option<&Value>, Option<&Value>, Option<&str>),
+) -> ToolProjection {
+    let (server, tool, arguments) = call;
+    let (result, error, status) = outcome;
+    let (name, native_name, input) = mcp_tool_input(server, tool, arguments);
+    let (output, is_error) = mcp_tool_output(result, error, status);
+    ToolProjection {
+        name,
+        native_name,
+        input,
+        builtin: false,
+        output,
+        is_error,
     }
 }
 
@@ -131,7 +211,7 @@ fn mcp_tool_input(
     server: Option<&str>,
     tool: Option<&str>,
     arguments: Option<&Value>,
-) -> (String, String, JsonObject, bool) {
+) -> (String, String, JsonObject) {
     let native = tool.unwrap_or_default().to_owned();
     let input = match arguments {
         Some(Value::Object(map)) => map
@@ -144,48 +224,22 @@ fn mcp_tool_input(
     let name = server
         .filter(|value| !value.is_empty())
         .map_or_else(|| native.clone(), |prefix| format!("{prefix}.{native}"));
-    (name, native, input, false)
+    (name, native, input)
 }
 
-pub(crate) fn tool_output(item: &Item) -> (String, bool) {
-    match item {
-        Item::CommandExecution {
-            aggregated_output,
-            exit_code,
-            status,
-            ..
-        } => {
-            let failed = status.as_deref() == Some("failed");
-            let exited_nonzero = exit_code.is_some_and(|code| code != 0);
-            (
-                aggregated_output.clone().unwrap_or_default(),
-                failed || exited_nonzero,
-            )
-        }
-        Item::FileChange {
-            changes, status, ..
-        } => (
-            change_summary(changes.as_deref()),
-            status.as_deref() == Some("failed"),
-        ),
-        Item::WebSearch { status, .. } => (String::new(), status.as_deref() == Some("failed")),
-        Item::McpToolCall {
-            result,
-            error,
-            status,
-            ..
-        } => {
-            let failed = status.as_deref() == Some("failed");
-            error.as_ref().filter(|value| is_truthy(value)).map_or_else(
-                || (mcp_result_text(result.as_ref()), failed),
-                |reported| (mcp_error_message(reported), true),
-            )
-        }
-        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => (String::new(), false),
-    }
+fn mcp_tool_output(
+    result: Option<&Value>,
+    error: Option<&Value>,
+    status: Option<&str>,
+) -> (String, bool) {
+    let failed = status == Some("failed");
+    error.filter(|value| is_truthy(value)).map_or_else(
+        || (mcp_result_text(result), failed),
+        |reported| (mcp_error_message(reported), true),
+    )
 }
 
-fn change_summary(changes: Option<&[Value]>) -> String {
+fn file_change_summary(changes: Option<&[Value]>) -> String {
     changes
         .unwrap_or_default()
         .iter()

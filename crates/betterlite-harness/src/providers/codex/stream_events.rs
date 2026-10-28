@@ -43,14 +43,6 @@ pub(super) fn record_thread_id(thread_id: Option<String>, state: &mut CodexStrea
     }
 }
 
-pub(super) fn record_error(message: Option<String>, state: &mut CodexStreamState) {
-    state.error = Some(
-        message
-            .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| "codex reported an error".to_owned()),
-    );
-}
-
 pub(super) fn record_turn_failed(error: Option<FailureDetail>, state: &mut CodexStreamState) {
     state.failed = true;
     let message = match error {
@@ -66,23 +58,27 @@ pub(super) fn record_turn_failed(error: Option<FailureDetail>, state: &mut Codex
 
 fn tool_events(item: &Item, event_type: ItemEventKind, state: &mut CodexStreamState) -> Vec<Event> {
     let id = stream::item_id(item).to_owned();
+    let is_new = state.started.insert(id.clone());
+    let is_completed = event_type == ItemEventKind::Completed;
+    if !is_new && !is_completed {
+        return Vec::new();
+    }
+    let projection = stream::tool_projection(item);
     let mut events = Vec::new();
-    if state.started.insert(id.clone()) {
-        let (name, native_name, input, builtin) = stream::tool_input(item);
+    if is_new {
         events.push(Event::ToolCall {
             id: id.clone(),
-            name,
-            native_name,
-            input,
-            builtin,
+            name: projection.name,
+            native_name: projection.native_name,
+            input: projection.input,
+            builtin: projection.builtin,
         });
     }
-    if event_type == ItemEventKind::Completed {
-        let (output, is_error) = stream::tool_output(item);
+    if is_completed {
         events.push(Event::ToolResult {
             id,
-            output,
-            is_error,
+            output: projection.output,
+            is_error: projection.is_error,
         });
     }
     events
