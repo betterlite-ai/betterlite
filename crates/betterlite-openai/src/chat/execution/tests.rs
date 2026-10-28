@@ -195,3 +195,62 @@ async fn refuses_calls_it_cannot_make(
         .unwrap();
     assert!(error.to_string().contains(message), "{error}");
 }
+
+#[rstest]
+#[case::default(r#"{"messages":[],"stream":true}"#, Some(true))]
+#[case::enabled(
+    r#"{"messages":[],"stream":true,"stream_options":{"include_usage":true}}"#,
+    Some(true)
+)]
+#[case::disabled(
+    r#"{"messages":[],"stream":true,"stream_options":{"include_usage":false}}"#,
+    Some(false)
+)]
+#[case::buffered(r#"{"messages":[]}"#, None)]
+fn stream_options_preserve_caller(#[case] input: &str, #[case] usage: Option<bool>) {
+    let chat = executor("[]", 1);
+    let request = ChatRequest::parse(input.as_bytes()).unwrap();
+    let body = chat.body(&request, "up").unwrap();
+    assert_eq!(
+        body.get("stream"),
+        request.stream.then_some(&Value::Bool(true))
+    );
+    let actual = body
+        .get("stream_options")
+        .and_then(|options| options.get("include_usage"))
+        .and_then(Value::as_bool);
+    assert_eq!(actual, usage);
+}
+
+#[rstest]
+#[case::success(200)]
+#[case::provider_failure(429)]
+#[tokio::test]
+async fn stream_distinguishes_status(#[case] status: u16) {
+    let (listener, base) = listen().await;
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k}}}}]"
+    );
+    let chat = executor(&entries, 1);
+    let request = ChatRequest::parse(br#"{"model":"g","messages":[],"stream":true}"#).unwrap();
+    let body = r#"{"error":{"type":"requests","param":"p"}}"#;
+    let (sent, result) = tokio::join!(
+        provider(listener, status, body, Duration::ZERO),
+        chat.stream(chat.pick("g").unwrap(), &request)
+    );
+    assert!(sent.contains("accept: text/event-stream"));
+    if status == 200 {
+        let response = result
+            .unwrap()
+            .buffered(super::RESPONSE_LIMIT)
+            .await
+            .unwrap();
+        assert_eq!(response.status, status);
+        assert_eq!(response.body, body.as_bytes());
+    } else {
+        let failure = result.err().unwrap().failure();
+        assert_eq!(failure.status, status);
+        assert_eq!(failure.error_type, "throttling_error");
+        assert_eq!(failure.param.as_deref(), Some("p"));
+    }
+}
