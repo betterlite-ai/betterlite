@@ -92,9 +92,15 @@ fn synthesizes_safe_mapping_headers() {
     assert!(!error.error.status_code_is_synthesized);
     assert_eq!(error.error.message, "too large");
     assert_eq!(error.error.body, input(None, None).base.body);
-    let latin_headers = mapping(vec![("x", HeaderValue::Bytes(vec![0xff]))]);
+    let latin_headers = mapping(vec![
+        ("x", HeaderValue::Bytes(vec![0xff])),
+        ("y", HeaderValue::Bytes(vec![0xc3, 0xa9])),
+    ]);
     let latin = build(Some(latin_headers), None);
-    assert_eq!(latin.response_headers, pairs(&[("x", "\u{ff}")]));
+    assert_eq!(
+        latin.response_headers,
+        pairs(&[("x", "\u{ff}"), ("y", "\u{c3}\u{a9}")])
+    );
 }
 
 fn keeps_inputs_unchanged() {
