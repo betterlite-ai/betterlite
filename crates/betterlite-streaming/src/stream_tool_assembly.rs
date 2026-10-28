@@ -104,24 +104,30 @@ fn append_fragments(
     key: (u32, u32),
     tool: &ToolCall,
 ) -> Result<(), AssemblyError> {
-    let fragments_to_add = [
-        (
-            tool.function
-                .as_ref()
-                .and_then(|function| function.arguments.as_ref()),
-            FragmentField::Arguments,
-        ),
-        (
-            tool.custom
-                .as_ref()
-                .and_then(|custom| custom.input.as_ref()),
-            FragmentField::CustomInput,
-        ),
-    ];
-    for (candidate, field) in fragments_to_add {
-        if let Some(fragment) = candidate.filter(|value| value.is_truthy()) {
-            append_string(fragments, (key, field), fragment)?;
-        }
+    append_fragment(
+        fragments,
+        (key, FragmentField::Arguments),
+        tool.function
+            .as_ref()
+            .and_then(|function| function.arguments.as_ref()),
+    )?;
+    append_fragment(
+        fragments,
+        (key, FragmentField::CustomInput),
+        tool.custom
+            .as_ref()
+            .and_then(|custom| custom.input.as_ref()),
+    )?;
+    Ok(())
+}
+
+fn append_fragment(
+    fragments: &mut BTreeMap<((u32, u32), FragmentField), String>,
+    key: ((u32, u32), FragmentField),
+    value: Option<&JsonValue>,
+) -> Result<(), AssemblyError> {
+    if let Some(fragment) = value.filter(|candidate| candidate.is_truthy()) {
+        append_string(fragments, key, fragment)?;
     }
     Ok(())
 }
@@ -134,18 +140,11 @@ fn append_string(
     if !value.is_truthy() {
         return Ok(());
     }
-    match value {
-        JsonValue::Null => Ok(()),
-        JsonValue::String(text) => {
-            fragments.entry(key).or_default().push_str(text);
-            Ok(())
-        }
-        JsonValue::Bool(true)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => Err(AssemblyError::InvalidArguments),
-        _ => Ok(()),
-    }
+    let JsonValue::String(text) = value else {
+        return Err(AssemblyError::InvalidArguments);
+    };
+    fragments.entry(key).or_default().push_str(text);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -192,18 +191,18 @@ impl ToolState {
         {
             self.custom_name = Some(value.clone());
         }
-        let candidate = tool
+        let tool_provider_fields = tool
             .provider_specific_fields
             .as_ref()
             .filter(|value| value.is_truthy());
-        let candidate = candidate.or_else(|| {
+        let merged_provider_fields = tool_provider_fields.or_else(|| {
             tool.function
                 .as_ref()
                 .and_then(|function| function.provider_specific_fields.as_ref())
                 .filter(|value| value.is_truthy())
         });
-        let candidate = candidate.and_then(JsonValue::as_object);
-        if let Some(fields) = candidate.filter(|fields| !fields.is_empty()) {
+        let provider_fields = merged_provider_fields.and_then(JsonValue::as_object);
+        if let Some(fields) = provider_fields.filter(|fields| !fields.is_empty()) {
             self.provider_fields
                 .get_or_insert_with(BTreeMap::new)
                 .extend(fields.clone());
