@@ -7,9 +7,8 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
-use super::app_crypto::{AppCrypto, Envelope};
+use super::app_crypto::{AppCrypto, AppCryptoError, Envelope};
 use super::{decode_secret_map, decode_stored_secret};
-use crate::error::SecretError;
 use crate::secret_codec::diagnostics::TracingDiagnostics;
 use crate::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 
@@ -33,7 +32,7 @@ fn rejects_a_key_that_is_not_32_bytes() {
     let short = SecretString::from("too-short");
     assert!(matches!(
         AppCrypto::new(&short),
-        Err(SecretError::KeyLength {
+        Err(AppCryptoError::KeyLength {
             length: 9,
             expected: 32
         })
@@ -71,7 +70,7 @@ fn wrong_aad_fails_authentication() {
     };
     assert!(matches!(
         app.decrypt_json(&envelope, None),
-        Err(SecretError::Seal { .. })
+        Err(AppCryptoError::Seal { .. })
     ));
 }
 
@@ -87,7 +86,7 @@ fn tampering_fails_authentication(#[case] ciphertext: String, #[case] tag: Strin
     };
     assert!(matches!(
         app.decrypt_json(&envelope, Some(AAD)),
-        Err(SecretError::Seal { .. })
+        Err(AppCryptoError::Seal { .. })
     ));
 }
 
