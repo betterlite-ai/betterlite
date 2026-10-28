@@ -1080,6 +1080,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-db",
  "betterlite-guardrails",
+ "betterlite-harness",
  "betterlite-http",
  "betterlite-lens",
  "betterlite-logging",

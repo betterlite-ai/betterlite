@@ -65,20 +65,23 @@ pub(super) fn tool_output(item: &JsonObject) -> (String, bool) {
             status == Some("failed"),
         ),
         "web_search" => (String::new(), status == Some("failed")),
-        _ => match item.get("error") {
+        _ => match item.get("error").filter(|error| !error.is_null()) {
             Some(error) => (
                 error
                     .get("message")
                     .and_then(Value::as_str)
+                    .or_else(|| error.as_str())
                     .map_or_else(|| error.to_string(), str::to_owned),
                 true,
             ),
             None => (
-                item.get("result").map_or_else(String::new, |value| {
-                    value
-                        .as_str()
-                        .map_or_else(|| value.to_string(), str::to_owned)
-                }),
+                item.get("result")
+                    .filter(|value| !value.is_null())
+                    .map_or_else(String::new, |value| {
+                        value
+                            .as_str()
+                            .map_or_else(|| value.to_string(), str::to_owned)
+                    }),
                 status == Some("failed"),
             ),
         },

@@ -52,7 +52,7 @@ pub(super) fn tool_input(item: &JsonObject) -> (String, String, JsonObject, bool
                     .map(|(key, value)| (key.clone(), value.clone()))
                     .collect(),
                 Some(value) => BTreeMap::from([("arguments".to_owned(), value.clone())]),
-                None => BTreeMap::new(),
+                None => BTreeMap::from([("arguments".to_owned(), Value::Null)]),
             };
             (
                 if server.is_empty() {

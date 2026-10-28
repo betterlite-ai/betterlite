@@ -152,10 +152,13 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
     ) -> Vec<Event> {
         match line.get("type").and_then(Value::as_str) {
             Some("thread.started") => {
-                state.thread_id = line
+                if let Some(thread_id) = line
                     .get("thread_id")
                     .and_then(Value::as_str)
-                    .map(str::to_owned);
+                    .filter(|thread_id| !thread_id.is_empty())
+                {
+                    state.thread_id = Some(thread_id.to_owned());
+                }
                 Vec::new()
             }
             Some("error") => {
