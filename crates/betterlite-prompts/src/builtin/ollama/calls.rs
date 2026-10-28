@@ -1,7 +1,6 @@
-use super::super::{Field, PromptError, ToolCall, bounds};
+use super::super::{Field, PromptError, ToolCall};
+use super::json;
 use serde::Serialize;
-use std::fmt::Write as _;
-mod numbers;
 
 #[derive(Serialize)]
 struct Call<'input> {
@@ -30,22 +29,5 @@ pub(super) fn render(calls: &[ToolCall]) -> Result<String, PromptError> {
         })
         .collect::<Result<Vec<_>, serde_json::Error>>()
         .map_err(|source| PromptError::ToolArguments { source })?;
-    let pretty = serde_json::to_string_pretty(&converted)
-        .map_err(|source| PromptError::ToolArguments { source })?;
-    let normalized = pretty
-        .lines()
-        .map(numbers::line)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let mut output = String::new();
-    for character in normalized.chars() {
-        if character < '\u{7f}' {
-            output.push(character);
-        } else {
-            for unit in character.encode_utf16(&mut [0; 2]) {
-                write!(output, "\\u{unit:04x}")?;
-            }
-        }
-    }
-    bounds::finish(output)
+    json::render(&converted, false)
 }

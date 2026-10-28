@@ -1,5 +1,7 @@
-use super::{Content, Field, Message, OllamaPrompt, PromptError, bounds, text};
+use super::{Content, Field, Message, OllamaPrompt, PromptError, bounds};
 mod calls;
+mod json;
+mod search;
 use std::fmt::Write as _;
 
 pub fn ollama(model: &str, messages: &[Message]) -> Result<OllamaPrompt, PromptError> {
@@ -27,7 +29,7 @@ pub fn ollama(model: &str, messages: &[Message]) -> Result<OllamaPrompt, PromptE
             if label == "User" {
                 collect(turn, &mut content, &mut images)?;
             } else {
-                content.push_str(&text::joined(&turn.content));
+                content.push_str(&search::joined(turn)?);
             }
             let tool_calls = turn.tool_calls.as_slice();
             if label == "Assistant" && !tool_calls.is_empty() {
