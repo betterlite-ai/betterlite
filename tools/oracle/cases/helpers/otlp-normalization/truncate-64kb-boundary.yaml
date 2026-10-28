@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-truncate-boundary
+call:
+  otlp_normalization: {otlp_truncate: {value: "boundary"}}
+env: {}
+compare: {ignore: []}

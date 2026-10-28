@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-elision
+call:
+  otlp_normalization: {otlp_elision: {value: "[]"}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-role-langchain
+call:
+  otlp_normalization: {otlp_ui_content: {value: '[{"type":"human","content":"hello"}]'}}
+env: {}
+compare: {ignore: []}

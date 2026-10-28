@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-response-protobuf
+call:
+  otlp_normalization: {otlp_response_encoding: {content_type: application/x-protobuf}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-content-mixed
+call:
+  otlp_normalization: {otlp_content_text: {content: [{type: text, text: hello}]}}
+env: {}
+compare: {ignore: []}

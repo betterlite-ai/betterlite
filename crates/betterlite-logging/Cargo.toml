@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 chrono.workspace = true
+flate2 = "1.1.5"
 hex.workspace = true
 parquet-format-safe = "0.2.4"
 parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }

@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-ui-messages
+call:
+  otlp_normalization: {otlp_ui_content: {value: '[{"role":"user","content":"hello"}]'}}
+env: {}
+compare: {ignore: []}

@@ -1,3 +1,11 @@
+#![expect(
+    clippy::pedantic,
+    clippy::restriction,
+    clippy::style,
+    clippy::nursery,
+    reason = "OTLP wire compatibility uses serde JSON passthrough and bounded codec adapters until the native trace codec lands"
+)]
+
 pub mod alert_batching;
 pub mod alert_digest;
 pub mod alert_dispatch;
@@ -64,6 +72,7 @@ pub mod logging_state;
 pub mod logging_streams;
 pub mod logging_success;
 pub mod mavvrik_delivery;
+pub mod message_content;
 pub mod metrics_cleanup;
 pub mod mlflow;
 pub mod newrelic_agent;
@@ -72,6 +81,9 @@ pub mod newrelic_metrics;
 pub mod opik;
 pub mod otel;
 pub mod otel_provider_assembly;
+pub mod otlp_errors;
+pub mod otlp_normalize;
+pub mod otlp_response;
 pub mod passthrough_handler;
 pub mod passthrough_stream_lifecycle;
 pub mod payload;
@@ -97,7 +109,9 @@ pub mod spend_sanitize;
 pub mod sqs_logging;
 pub mod stream;
 pub mod supabase;
+pub mod trace_types;
 pub mod types;
+pub mod ui_content;
 pub mod verbose_hooks;
 pub mod worker;
 pub mod zerobus;

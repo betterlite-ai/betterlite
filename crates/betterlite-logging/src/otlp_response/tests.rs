@@ -1,0 +1,19 @@
+#![cfg(test)]
+
+use super::*;
+
+#[test]
+fn json_success_is_empty_object() {
+    assert_eq!(
+        encode_otlp_response(Some("application/json"), None),
+        (b"{}".to_vec(), "application/json".to_owned())
+    );
+}
+
+#[test]
+fn protobuf_error_has_message_field() {
+    assert_eq!(
+        encode_otlp_response(Some("application/x-protobuf"), Some("bad")).0,
+        vec![10, 3, b'b', b'a', b'd']
+    );
+}

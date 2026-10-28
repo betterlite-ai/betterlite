@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-ui-text
+call:
+  otlp_normalization: {otlp_ui_content: {value: plain}}
+env: {}
+compare: {ignore: []}

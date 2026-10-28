@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-ui-fields
+call:
+  otlp_normalization: {otlp_ui_content: {value: '{"key":"value"}'}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: otlp-truncate-invalid
+call:
+  otlp_normalization: {otlp_truncate: {value: "invalid"}}
+env: {}
+compare: {ignore: []}
