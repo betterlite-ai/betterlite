@@ -16,6 +16,16 @@ fn response_blocks_keep_text() {
 }
 
 #[test]
+fn invalid_and_non_text_blocks_are_json_or_empty() {
+    assert_eq!(content_text(&serde_json::json!([{"type":"tool_call"}])), "");
+    assert_eq!(
+        content_text(&serde_json::json!([{"type":"image"}])),
+        "[{\"type\":\"image\"}]"
+    );
+    assert_eq!(content_text(&serde_json::json!(null)), "");
+}
+
+#[test]
 fn unknown_role_uses_tool_call_default() {
     assert_eq!(role_for("other", true), ChatRole::Assistant);
 }

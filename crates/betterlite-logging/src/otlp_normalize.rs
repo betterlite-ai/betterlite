@@ -157,17 +157,20 @@ pub fn truncate(value: &str) -> String {
     if encoded.len() <= OTLP_MAX_ATTRIBUTE_VALUE_BYTES {
         return value.to_owned();
     }
-    let kept = std::str::from_utf8(
-        encoded
-            .get(..OTLP_MAX_ATTRIBUTE_VALUE_BYTES)
-            .unwrap_or(encoded),
-    )
-    .unwrap_or_default();
+    let kept = valid_utf8_prefix(encoded, OTLP_MAX_ATTRIBUTE_VALUE_BYTES);
     let kept_bytes = kept.len();
     format!(
         "{kept}…[truncated {} bytes]",
         encoded.len().saturating_sub(kept_bytes)
     )
+}
+
+fn valid_utf8_prefix(value: &[u8], limit: usize) -> &str {
+    let mut boundary = limit.min(value.len());
+    while boundary > 0 && std::str::from_utf8(value.get(..boundary).unwrap_or_default()).is_err() {
+        boundary -= 1;
+    }
+    std::str::from_utf8(value.get(..boundary).unwrap_or_default()).unwrap_or_default()
 }
 
 pub fn span_row(span: &NormalizedSpan) -> SpanRow {
