@@ -13,7 +13,6 @@ use std::collections::BTreeMap;
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
 use crate::events::Event;
-use crate::options::{CodexOptions, OptionsKind};
 use crate::payloads::{stderr_tail_text, strict_json_schema};
 use crate::sandbox::Sandbox;
 use crate::transformation::{
@@ -62,6 +61,7 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
         S: Sandbox,
     {
         let gateway = context.settings.gateway.as_ref().ok_or_else(mismatch)?;
+        let options = self.get_options(context)?;
         let mut setup = HarnessSessionSetup {
             files: BTreeMap::new(),
             persisted_dirs: vec![PersistedDir {
@@ -83,17 +83,10 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
             );
         }
         setup.env.extend(
-            context
-                .settings
-                .options
-                .as_ref()
-                .and_then(|o| CodexOptions::pick(o))
-                .map_or_else(BTreeMap::new, |o| {
-                    o.env
-                        .iter()
-                        .map(|(k, v)| (k.clone(), SecretString::from(v.clone())))
-                        .collect()
-                }),
+            options
+                .env
+                .iter()
+                .map(|(key, value)| (key.clone(), SecretString::from(value.clone()))),
         );
         setup
             .env

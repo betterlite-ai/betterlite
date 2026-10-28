@@ -159,6 +159,23 @@ fn session_context() -> (
     (root, context)
 }
 
+#[test]
+fn setup_rejects_other_options() {
+    let (_root, mut context) = session_context();
+    context.settings.options = Some(crate::options::HarnessOptions::ClaudeCode(
+        crate::options::ClaudeCodeOptions::default(),
+    ));
+    let result = CodexHarnessConfig.transform_session_setup(&context, "/private");
+    assert!(matches!(
+        result,
+        Err(crate::errors::HarnessError::OptionsMismatch {
+            given: "ClaudeCodeOptions",
+            harness: crate::types::Harness::Codex,
+            expected: "CodexOptions",
+        })
+    ));
+}
+
 #[rstest::rstest]
 #[case::first(None)]
 #[case::resume(Some("thread-1"))]
