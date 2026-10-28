@@ -18,24 +18,29 @@ pub struct UnsupportedSnapshot {
 impl UnsupportedSnapshot {
     #[must_use]
     pub fn gc_statistics() -> Self {
-        Self::new("GC statistics")
+        let measurement = "GC statistics";
+        Self::new(measurement)
     }
 
     #[must_use]
     pub fn object_type_counts() -> Self {
-        Self::new("object type counts")
+        let measurement = "object type counts";
+        Self::new(measurement)
     }
 
     #[must_use]
     pub fn uncollectable_objects() -> Self {
-        Self::new("uncollectable objects")
+        let measurement = "uncollectable objects";
+        Self::new(measurement)
     }
 
     fn new(measurement: &str) -> Self {
+        let error_type = "unsupported_runtime".to_owned();
+        let code = "unsupported_runtime".to_owned();
         Self {
             error: DiagnosticError {
-                error_type: "unsupported_runtime".to_owned(),
-                code: "unsupported_runtime".to_owned(),
+                error_type,
+                code,
                 message: format!("{measurement} requires CPython runtime introspection"),
             },
         }
@@ -78,17 +83,22 @@ pub struct CacheMemorySnapshot {
 
 #[must_use]
 pub fn cache_memory_snapshot(input: CacheMemoryInput) -> CacheMemorySnapshot {
-    CacheMemorySnapshot::from_input(input)
+    let cache_input = input;
+    CacheMemorySnapshot::from_input(cache_input)
 }
 
 impl CacheMemorySnapshot {
     #[must_use]
     pub fn from_input(input: CacheMemoryInput) -> Self {
+        let user_api_key_cache = input.user_api_key_cache;
+        let llm_router_cache = input.llm_router_cache;
+        let proxy_logging_cache = input.proxy_logging_cache;
+        let redis_usage_cache = input.redis_usage_cache;
         Self {
-            user_api_key_cache: input.user_api_key_cache,
-            llm_router_cache: input.llm_router_cache,
-            proxy_logging_cache: input.proxy_logging_cache,
-            redis_usage_cache: input.redis_usage_cache,
+            user_api_key_cache,
+            llm_router_cache,
+            proxy_logging_cache,
+            redis_usage_cache,
         }
     }
 }
@@ -122,12 +132,14 @@ pub struct RouterMemorySnapshot {
 
 #[must_use]
 pub fn router_memory_snapshot(input: RouterMemoryInput) -> RouterMemorySnapshot {
-    RouterMemorySnapshot::from_input(input)
+    let router_input = input;
+    RouterMemorySnapshot::from_input(router_input)
 }
 
 impl RouterMemorySnapshot {
     #[must_use]
     pub fn from_input(input: RouterMemoryInput) -> Self {
+        let router_object_bytes = input.router_object_bytes;
         Self {
             model_list: input.model_list.map(|values| SizedSection {
                 item_count: values.len(),
@@ -151,7 +163,7 @@ impl RouterMemorySnapshot {
             }),
             router_object: Some(SizedSection {
                 item_count: 1,
-                size_bytes: input.router_object_bytes,
+                size_bytes: router_object_bytes,
             }),
             error: None,
         }

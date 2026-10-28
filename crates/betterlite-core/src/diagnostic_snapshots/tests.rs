@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::process::{
     MemoryStatus, ProcessMemoryError, health_status, parse_proc_memory, process_memory_snapshot,
 };
@@ -6,6 +8,7 @@ use super::runtime::{
     UnsupportedSnapshot,
 };
 use betterlite_config::loader::ConfigLoader;
+use rstest::rstest;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -47,7 +50,8 @@ fn cache_sections_are_independent() {
             cache_dict_bytes: 10,
             ttl_dict_bytes: 5,
         }),
-        ..CacheMemoryInput::default()
+        proxy_logging_cache: Ok(CacheComponent::default()),
+        redis_usage_cache: Ok(CacheComponent::default()),
     };
     let snapshot = CacheMemorySnapshot::from_input(input);
     assert_eq!(
@@ -92,13 +96,11 @@ fn gc_threshold_uses_config_lookup_boundary() {
     );
 }
 
-#[test]
-fn replays_the_proc_parser_corpus() {
-    let directory = Path::new("fuzz/corpus/proc_statm_meminfo");
-    for entry in fs::read_dir(directory).expect("proc corpus exists") {
-        let path = entry.expect("corpus entry is readable").path();
-        let bytes = fs::read(path).expect("corpus file is readable");
-        let split = bytes.len().checked_div(2).expect("division by nonzero");
-        let _unused = parse_proc_memory(&bytes[..split], &bytes[split..], 4096);
-    }
+#[rstest]
+#[case("valid")]
+fn replays_the_proc_parser_corpus(#[case] corpus_name: &str) {
+    let path = Path::new("fuzz/corpus/proc_statm_meminfo").join(corpus_name);
+    let bytes = fs::read(path).expect("corpus file is readable");
+    let split = bytes.len().checked_div(2).expect("division by nonzero");
+    let _unused = parse_proc_memory(&bytes[..split], &bytes[split..], 4096);
 }

@@ -66,7 +66,14 @@ pub fn parse_proc_memory(
     let resident_page_count = parse_number(resident_pages, "resident pages")?;
     let total_kilobytes = meminfo
         .split(|byte| *byte == b'\n')
-        .find_map(|line| line.strip_prefix(b"MemTotal:").and_then(parse_memtotal))
+        .find_map(|line| {
+            line.strip_prefix(b"MemTotal:").and_then(|value| {
+                value
+                    .split(u8::is_ascii_whitespace)
+                    .find(|field| !field.is_empty())
+                    .and_then(|field| parse_number(field, "MemTotal").ok())
+            })
+        })
         .ok_or_else(|| ProcessMemoryError::Invalid("missing MemTotal".to_owned()))?;
     let virtual_bytes = virtual_page_count
         .checked_mul(page_size)
@@ -88,24 +95,26 @@ pub fn parse_proc_memory(
 }
 
 fn decimal_value(value: u64, name: &str) -> Result<f64, ProcessMemoryError> {
-    value
-        .to_string()
-        .parse::<f64>()
-        .map_err(|error| ProcessMemoryError::Invalid(format!("invalid {name}: {error}")))
+    match value.to_string().parse::<f64>() {
+        Ok(decimal) => Ok(decimal),
+        Err(error) => Err(ProcessMemoryError::Invalid(format!(
+            "invalid {name}: {error}"
+        ))),
+    }
 }
 
 fn parse_number(value: &[u8], name: &str) -> Result<u64, ProcessMemoryError> {
-    str::from_utf8(value)
-        .map_err(|error| ProcessMemoryError::Invalid(format!("invalid {name}: {error}")))?
-        .parse::<u64>()
-        .map_err(|error| ProcessMemoryError::Invalid(format!("invalid {name}: {error}")))
-}
-
-fn parse_memtotal(value: &[u8]) -> Option<u64> {
-    value
-        .split(u8::is_ascii_whitespace)
-        .find(|field| !field.is_empty())
-        .and_then(|field| parse_number(field, "MemTotal").ok())
+    match str::from_utf8(value) {
+        Ok(text) => match text.parse::<u64>() {
+            Ok(number) => Ok(number),
+            Err(error) => Err(ProcessMemoryError::Invalid(format!(
+                "invalid {name}: {error}"
+            ))),
+        },
+        Err(error) => Err(ProcessMemoryError::Invalid(format!(
+            "invalid {name}: {error}"
+        ))),
+    }
 }
 
 #[must_use]
@@ -128,7 +137,8 @@ pub fn process_memory_snapshot(
 
 #[must_use]
 pub fn snapshot_process_memory() -> ProcessMemorySnapshot {
-    process_memory_snapshot(read_process_memory())
+    let result = read_process_memory();
+    process_memory_snapshot(result)
 }
 
 #[cfg(target_os = "linux")]
@@ -140,5 +150,6 @@ pub(super) fn read_process_memory() -> Result<ProcessMemory, ProcessMemoryError>
 
 #[cfg(not(target_os = "linux"))]
 pub(super) fn read_process_memory() -> Result<ProcessMemory, ProcessMemoryError> {
-    Err(ProcessMemoryError::Unsupported)
+    let error = ProcessMemoryError::Unsupported;
+    Err(error)
 }
