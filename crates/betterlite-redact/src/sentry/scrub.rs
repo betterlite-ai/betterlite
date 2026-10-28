@@ -70,13 +70,10 @@ fn walk_object(
 }
 
 fn walk_array(items: &[EventValue], patterns: &Patterns, path: &[String]) -> EventValue {
-    let mut output = Vec::with_capacity(items.len());
-    for item in items {
-        let mut child_path = path.to_vec();
-        child_path.push("*".to_owned());
-        output.push(walk(item, patterns, &child_path));
-    }
-    EventValue::Array(output)
+    let mut child_path = path.to_vec();
+    child_path.push("*".to_owned());
+    let scrubbed = items.iter().map(|item| walk(item, patterns, &child_path));
+    EventValue::Array(scrubbed.collect())
 }
 
 mod tests;

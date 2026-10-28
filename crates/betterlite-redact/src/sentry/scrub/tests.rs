@@ -30,13 +30,24 @@ fn nested_object(depth: usize, leaf: EventValue) -> EventValue {
     current
 }
 
-fn innermost(value: &EventValue) -> &EventValue {
+fn innermost_by<'value>(
+    value: &'value EventValue,
+    step: impl Fn(&'value EventValue) -> Option<&'value EventValue>,
+) -> &'value EventValue {
     let mut current = value;
-    while let EventValue::Object(map) = current {
-        let Some(next) = map.get("n") else { break };
+    while let Some(next) = step(current) {
         current = next;
     }
     current
+}
+
+fn innermost_object(value: &EventValue) -> &EventValue {
+    innermost_by(value, |current| {
+        let EventValue::Object(map) = current else {
+            return None;
+        };
+        map.get("n")
+    })
 }
 
 fn nested_array(depth: usize, leaf: EventValue) -> EventValue {
@@ -47,31 +58,34 @@ fn nested_array(depth: usize, leaf: EventValue) -> EventValue {
     current
 }
 
-fn innermost_array(value: &EventValue) -> &EventValue {
-    let mut current = value;
-    while let EventValue::Array(items) = current {
-        let Some(next) = items.first() else { break };
-        current = next;
-    }
-    current
-}
-
 #[test]
 fn sentry_scrubbing_behavior_tests_behavior() {
     let at_limit = nested_object(MAX_SCRUB_DEPTH, text("api_key='secret'"));
     let scrubbed_at_limit = scrub_event(&at_limit, false).unwrap();
-    assert_eq!(innermost(&scrubbed_at_limit), &text("api_key='[Filtered]'"));
+    assert_eq!(
+        innermost_object(&scrubbed_at_limit),
+        &text("api_key='[Filtered]'")
+    );
 
     let beyond_limit = nested_object(MAX_SCRUB_DEPTH.saturating_add(1), text("harmless"));
     let scrubbed_beyond_limit = scrub_event(&beyond_limit, false).unwrap();
-    assert_eq!(innermost(&scrubbed_beyond_limit), &text("[Filtered]"));
+    assert_eq!(
+        innermost_object(&scrubbed_beyond_limit),
+        &text("[Filtered]")
+    );
 }
 
 #[test]
 fn array_nesting_also_counts_toward_scrub_depth() {
-    let current = nested_array(MAX_SCRUB_DEPTH.saturating_add(1), text("harmless"));
-    let scrubbed = scrub_event(&current, false).unwrap();
-    assert_eq!(innermost_array(&scrubbed), &text("[Filtered]"));
+    let nested = nested_array(MAX_SCRUB_DEPTH.saturating_add(1), text("harmless"));
+    let scrubbed = scrub_event(&nested, false).unwrap();
+    let innermost = innermost_by(&scrubbed, |value| {
+        let EventValue::Array(items) = value else {
+            return None;
+        };
+        items.first()
+    });
+    assert_eq!(innermost, &text("[Filtered]"));
 }
 
 fn wrap_frame_in_stacktrace(frame: EventValue) -> EventValue {
