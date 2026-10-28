@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -21,11 +21,11 @@ struct RawDeployment {
 #[derive(Debug, Default, Deserialize)]
 struct RawParams {
     #[serde(rename = "aws_access_key_id")]
-    access_key_id: Option<String>,
+    access_key_id: Option<SecretString>,
     #[serde(rename = "aws_secret_access_key")]
-    secret_access_key: Option<String>,
+    secret_access_key: Option<SecretString>,
     #[serde(rename = "aws_session_token")]
-    session_token: Option<String>,
+    session_token: Option<SecretString>,
     #[serde(rename = "aws_region_name")]
     region_name: Option<String>,
     #[serde(rename = "aws_session_name")]
@@ -35,7 +35,7 @@ struct RawParams {
     #[serde(rename = "aws_role_name")]
     role_name: Option<String>,
     #[serde(rename = "aws_web_identity_token")]
-    web_identity_token: Option<String>,
+    web_identity_token: Option<SecretString>,
     #[serde(rename = "aws_sts_endpoint")]
     sts_endpoint: Option<String>,
     #[serde(rename = "aws_external_id")]
@@ -120,6 +120,21 @@ where
         )?;
         Ok(text.map(T::from))
     }
+
+    fn secret(
+        &self,
+        value: Option<SecretString>,
+        key: &str,
+        variable: &str,
+    ) -> Result<Option<SecretString>, ConfigError> {
+        let path = format!("model_list.{}.litellm_params.{key}", self.index);
+        match value {
+            Some(secret) => resolve_string(secret.expose_secret().to_owned(), &path, self.lookup)
+                .map(SecretString::from)
+                .map(Some),
+            None => Ok(self.lookup.lookup(variable).map(SecretString::from)),
+        }
+    }
 }
 
 fn snapshot<L>(raw: RawParams, index: usize, lookup: &L) -> Result<AwsSettings, ConfigError>
@@ -128,17 +143,17 @@ where
 {
     let resolver = Resolver { index, lookup };
     Ok(AwsSettings {
-        access_key_id: resolver.value(
+        access_key_id: resolver.secret(
             raw.access_key_id,
             "aws_access_key_id",
             "AWS_ACCESS_KEY_ID",
         )?,
-        secret_access_key: resolver.value(
+        secret_access_key: resolver.secret(
             raw.secret_access_key,
             "aws_secret_access_key",
             "AWS_SECRET_ACCESS_KEY",
         )?,
-        session_token: resolver.value(
+        session_token: resolver.secret(
             raw.session_token,
             "aws_session_token",
             "AWS_SESSION_TOKEN",
@@ -147,7 +162,7 @@ where
         session_name: resolver.value(raw.session_name, "aws_session_name", "AWS_SESSION_NAME")?,
         profile_name: resolver.value(raw.profile_name, "aws_profile_name", "AWS_PROFILE_NAME")?,
         role_name: resolver.value(raw.role_name, "aws_role_name", "AWS_ROLE_NAME")?,
-        web_identity_token: resolver.value(
+        web_identity_token: resolver.secret(
             raw.web_identity_token,
             "aws_web_identity_token",
             "AWS_WEB_IDENTITY_TOKEN",

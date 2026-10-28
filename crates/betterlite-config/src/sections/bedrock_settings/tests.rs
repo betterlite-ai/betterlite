@@ -138,3 +138,14 @@ fn bedrock_settings_config_cases(
         !secret && matches!(source, Source::Deployment | Source::Environment)
     );
 }
+
+#[test]
+fn raw_configuration_debug_redacts_credentials() {
+    let (raw, _) = crate::loader::parse_view::<super::Raw>(
+        "model_list:\n- litellm_params:\n    aws_access_key_id: raw-key\n    aws_secret_access_key: raw-secret\n",
+    )
+    .unwrap();
+    let debug = format!("{raw:?}");
+    assert!(!debug.contains("raw-key"));
+    assert!(!debug.contains("raw-secret"));
+}

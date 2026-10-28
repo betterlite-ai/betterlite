@@ -61,17 +61,17 @@ fn bedrock_settings_secret_safe_failure() {
     let debug = format!("{:?}", load(&[configured], &environment).unwrap());
     let missing = ", aws_secret_access_key: os.environ/MISSING_SECRET";
     let failure = load(&[missing], &environment).unwrap_err();
-    let secret_header = ("authorization".to_owned(), text("fixture-s\u{e9}cret"));
+    let secret_header = ("authorization".to_owned(), text("fixture-header-secret"));
     let headers = Some(ErrorHeaders::Mapping(vec![secret_header]));
-    let header = BedrockError::try_from(input(headers, None)).unwrap_err();
-    let rendered = format!("{debug} {failure} {failure:?} {header} {header:?}");
+    let header = BedrockError::try_from(input(headers, None)).unwrap();
+    let rendered = format!("{debug} {failure} {failure:?} {header:?}");
     let secrets = [
         "fixture-env-secret",
         "fixture-bearer",
         "fixture-session",
         "fixture-key",
         "fixture-web",
-        "s\u{e9}cret",
+        "fixture-header-secret",
     ];
     let leaked: Vec<&str> = secrets
         .into_iter()

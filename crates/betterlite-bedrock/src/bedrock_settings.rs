@@ -1,4 +1,4 @@
-use std::str;
+use std::{fmt, str};
 
 use betterlite_openai::error::{ErrorResponse, ProviderError, ProviderErrorParts};
 use serde::{Deserialize, Serialize};
@@ -42,12 +42,87 @@ pub struct ErrorInput {
     pub response: Option<ErrorReply>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BedrockError {
     pub error: ProviderError,
     pub headers: Option<ErrorHeaders>,
     pub response_headers: Vec<(String, String)>,
     pub response_body: ResponseBody,
+}
+
+impl fmt::Debug for BedrockError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BedrockError")
+            .field("error", &RedactedProviderError(&self.error))
+            .field("headers", &RedactedHeaders(self.headers.as_ref()))
+            .field("response_headers", &RedactedPairs(&self.response_headers))
+            .field("response_body", &self.response_body)
+            .finish()
+    }
+}
+
+struct RedactedProviderError<'error>(&'error ProviderError);
+
+impl fmt::Debug for RedactedProviderError<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let error = self.0;
+        formatter
+            .debug_struct("ProviderError")
+            .field("status_code", &error.status_code)
+            .field(
+                "status_code_is_synthesized",
+                &error.status_code_is_synthesized,
+            )
+            .field("message", &error.message)
+            .field(
+                "headers",
+                &RedactedPairs(error.headers.as_deref().unwrap_or(&[])),
+            )
+            .field("request", &error.request)
+            .field("response", &error.response)
+            .field("body", &error.body)
+            .finish()
+    }
+}
+
+struct RedactedHeaders<'headers>(Option<&'headers ErrorHeaders>);
+
+impl fmt::Debug for RedactedHeaders<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(headers) => formatter
+                .debug_tuple("Headers")
+                .field(&RedactedHeaderSet(headers))
+                .finish(),
+            None => formatter.write_str("None"),
+        }
+    }
+}
+
+struct RedactedHeaderSet<'headers>(&'headers ErrorHeaders);
+
+impl fmt::Debug for RedactedHeaderSet<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            ErrorHeaders::Http(pairs) => RedactedPairs(pairs).fmt(formatter),
+            ErrorHeaders::Mapping(entries) => formatter
+                .debug_list()
+                .entries(entries.iter().map(|(name, _)| (name, "[REDACTED]")))
+                .finish(),
+        }
+    }
+}
+
+struct RedactedPairs<'pairs>(&'pairs [(String, String)]);
+
+impl fmt::Debug for RedactedPairs<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_list()
+            .entries(self.0.iter().map(|(name, _)| (name, "[REDACTED]")))
+            .finish()
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

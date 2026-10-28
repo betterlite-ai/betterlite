@@ -26,8 +26,24 @@ pub(crate) enum Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SettingsCall {
-    deployments: Vec<Map<String, Value>>,
+    deployments: Vec<Deployment>,
     environment: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Deployment {
+    aws_access_key_id: Option<String>,
+    aws_secret_access_key: Option<String>,
+    aws_session_token: Option<String>,
+    aws_region_name: Option<String>,
+    aws_session_name: Option<String>,
+    aws_profile_name: Option<String>,
+    aws_role_name: Option<String>,
+    aws_web_identity_token: Option<String>,
+    aws_sts_endpoint: Option<String>,
+    aws_external_id: Option<String>,
+    aws_session_tags: Option<betterlite_config::sections::bedrock_settings::SessionTagValue>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,21 +78,21 @@ enum Failure {
 }
 
 #[derive(Serialize)]
-struct Config<'call> {
-    model_list: Vec<Deployment<'call>>,
+struct Config {
+    model_list: Vec<ModelDeployment>,
 }
 
 #[derive(Serialize)]
-struct Deployment<'call> {
+struct ModelDeployment {
     model_name: &'static str,
-    litellm_params: Params<'call>,
+    litellm_params: Params,
 }
 
 #[derive(Serialize)]
-struct Params<'call> {
+struct Params {
     model: &'static str,
     #[serde(flatten)]
-    params: &'call Map<String, Value>,
+    settings: Deployment,
 }
 
 #[derive(Serialize)]
@@ -111,11 +127,11 @@ impl Helper for Op {
 }
 
 fn settings(call: &SettingsCall) -> Result<Value, Failure> {
-    let model_list = call.deployments.iter().map(|params| Deployment {
+    let model_list = call.deployments.iter().cloned().map(|params| ModelDeployment {
         model_name: "oracle",
         litellm_params: Params {
             model: "bedrock/oracle",
-            params,
+            settings: params,
         },
     });
     let config = serde_json::to_string(&Config {

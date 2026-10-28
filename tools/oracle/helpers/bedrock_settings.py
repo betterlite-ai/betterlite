@@ -292,7 +292,11 @@ def http_response(reply: Reply) -> httpx.Response:
         )
     content = (reply.body.read or "").encode()
     stream = httpx.ByteStream(content)
-    return httpx.Response(reply.status_code, headers=reply.headers, stream=stream, request=request)
+    response = httpx.Response(
+        reply.status_code, headers=reply.headers, stream=stream, request=request
+    )
+    response.read()
+    return response
 
 
 def error(argument: Json) -> Json:
