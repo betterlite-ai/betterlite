@@ -64,6 +64,29 @@ pub fn parse_proc_memory(
         .ok_or_else(|| ProcessMemoryError::Invalid("missing resident pages".to_owned()))?;
     let virtual_page_count = parse_number(virtual_pages, "virtual pages")?;
     let resident_page_count = parse_number(resident_pages, "resident pages")?;
+    let total_bytes = system_memory_bytes(meminfo)?;
+    let virtual_bytes = virtual_page_count
+        .checked_mul(page_size)
+        .ok_or_else(|| ProcessMemoryError::Invalid("virtual memory overflow".to_owned()))?;
+    let resident_bytes = resident_page_count
+        .checked_mul(page_size)
+        .ok_or_else(|| ProcessMemoryError::Invalid("resident memory overflow".to_owned()))?;
+    let resident = resident_bytes.to_string().parse::<f64>().map_err(|error| {
+        ProcessMemoryError::Invalid(format!("invalid resident memory: {error}"))
+    })?;
+    let total = total_bytes
+        .to_string()
+        .parse::<f64>()
+        .map_err(|error| ProcessMemoryError::Invalid(format!("invalid system memory: {error}")))?;
+    let percent = resident.mul(100.0_f64).div(total);
+    Ok(ProcessMemory {
+        resident_bytes,
+        virtual_bytes,
+        percent,
+    })
+}
+
+fn system_memory_bytes(meminfo: &[u8]) -> Result<u64, ProcessMemoryError> {
     let total_kilobytes = meminfo
         .split(|byte| *byte == b'\n')
         .find_map(|line| {
@@ -75,32 +98,10 @@ pub fn parse_proc_memory(
             })
         })
         .ok_or_else(|| ProcessMemoryError::Invalid("missing MemTotal".to_owned()))?;
-    let virtual_bytes = virtual_page_count
-        .checked_mul(page_size)
-        .ok_or_else(|| ProcessMemoryError::Invalid("virtual memory overflow".to_owned()))?;
-    let resident_bytes = resident_page_count
-        .checked_mul(page_size)
-        .ok_or_else(|| ProcessMemoryError::Invalid("resident memory overflow".to_owned()))?;
     let total_bytes = total_kilobytes
         .checked_mul(1024)
         .ok_or_else(|| ProcessMemoryError::Invalid("system memory overflow".to_owned()))?;
-    let resident = decimal_value(resident_bytes, "resident memory")?;
-    let total = decimal_value(total_bytes, "system memory")?;
-    let percent = resident.mul(100.0_f64).div(total);
-    Ok(ProcessMemory {
-        resident_bytes,
-        virtual_bytes,
-        percent,
-    })
-}
-
-fn decimal_value(value: u64, name: &str) -> Result<f64, ProcessMemoryError> {
-    match value.to_string().parse::<f64>() {
-        Ok(decimal) => Ok(decimal),
-        Err(error) => Err(ProcessMemoryError::Invalid(format!(
-            "invalid {name}: {error}"
-        ))),
-    }
+    Ok(total_bytes)
 }
 
 fn parse_number(value: &[u8], name: &str) -> Result<u64, ProcessMemoryError> {
