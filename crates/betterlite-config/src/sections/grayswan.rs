@@ -88,34 +88,14 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let key_text = parameters
-            .api_key
-            .filter(|key| !key.expose_secret().is_empty())
-            .map(|key| key.expose_secret().to_owned())
-            .or_else(|| lookup.lookup("GRAYSWAN_API_KEY"))
-            .ok_or_else(|| ConfigError::MissingEnvironment {
-                variable: "GRAYSWAN_API_KEY".to_owned(),
-                path: format!("{prefix}.api_key"),
-            })?;
-        let api_key =
-            SecretString::from(resolve_string(key_text, &format!("{prefix}.api_key"), lookup)?);
-        let base = parameters.api_base.filter(|value| !value.is_empty()).map_or_else(
-            || Ok(lookup.lookup("GRAYSWAN_API_BASE").unwrap_or_else(|| DEFAULT_API_BASE.to_owned())),
-            |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
-        )?;
-        let violation_threshold = parameters.violation_threshold.map_or_else(
-            || {
-                Ok(lookup
-                    .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
-                    .and_then(|text| text.parse::<f64>().ok())
-                    .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
-            },
-            |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
-        )?;
+        let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
+        let api_base = resolve_api_base(parameters.api_base, &prefix, lookup)?;
+        let violation_threshold =
+            resolve_violation_threshold(parameters.violation_threshold, &prefix, lookup)?;
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
-            api_base: base.trim_end_matches('/').to_owned(),
+            api_base,
             on_flagged_action: resolve_on_flagged_action(parameters.on_flagged_action.as_deref()),
             violation_threshold,
             reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode, lookup),
@@ -124,6 +104,64 @@ impl Entry {
             fail_open: parameters.fail_open.unwrap_or(true),
         })
     }
+}
+
+fn resolve_api_key<L>(
+    api_key: Option<SecretString>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<SecretString, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let key_text = api_key
+        .filter(|key| !key.expose_secret().is_empty())
+        .map(|key| key.expose_secret().to_owned())
+        .or_else(|| lookup.lookup("GRAYSWAN_API_KEY"))
+        .ok_or_else(|| ConfigError::MissingEnvironment {
+            variable: "GRAYSWAN_API_KEY".to_owned(),
+            path: format!("{prefix}.api_key"),
+        })?;
+    Ok(SecretString::from(resolve_string(
+        key_text,
+        &format!("{prefix}.api_key"),
+        lookup,
+    )?))
+}
+
+fn resolve_api_base<L>(api_base: Option<String>, prefix: &str, lookup: &L) -> Result<String, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let base = api_base.filter(|value| !value.is_empty()).map_or_else(
+        || {
+            Ok(lookup
+                .lookup("GRAYSWAN_API_BASE")
+                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
+        },
+        |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
+    )?;
+    Ok(base.trim_end_matches('/').to_owned())
+}
+
+fn resolve_violation_threshold<L>(
+    value: Option<String>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let threshold = value.map_or_else(
+        || {
+            Ok(lookup
+                .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
+                .and_then(|text| text.parse::<f64>().ok())
+                .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
+        },
+        |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
+    )?;
+    Ok(threshold)
 }
 
 fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
@@ -135,19 +173,16 @@ fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
     }
 }
 
-fn is_supported_reasoning_mode(value: &str) -> bool {
-    matches!(value, "off" | "hybrid" | "thinking")
-}
-
 fn resolve_reasoning_mode<L>(value: Option<String>, lookup: &L) -> Option<String>
 where
     L: EnvironmentLookup,
 {
-    value
-        .filter(|text| is_supported_reasoning_mode(text))
-        .or_else(|| {
-            lookup
-                .lookup("GRAYSWAN_REASONING_MODE")
-                .filter(|text| is_supported_reasoning_mode(text))
-        })
+    if let Some(text) = value.filter(|text| matches!(text.as_str(), "off" | "hybrid" | "thinking"))
+    {
+        return Some(text);
+    }
+    lookup
+        .lookup("GRAYSWAN_REASONING_MODE")
+        .filter(|text| matches!(text.as_str(), "off" | "hybrid" | "thinking"))
 }
+

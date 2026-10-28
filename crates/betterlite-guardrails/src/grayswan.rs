@@ -80,21 +80,6 @@ pub struct GraySwanGuardrail {
 
 impl GraySwanGuardrail {
     #[must_use]
-    pub fn new(
-        api_key: SecretString,
-        api_base: Option<String>,
-        settings: GraySwanSettings,
-    ) -> Self {
-        Self::with_client(
-            api_key,
-            api_base,
-            settings,
-            reqwest::Client::default(),
-            DEFAULT_TIMEOUT,
-        )
-    }
-
-    #[must_use]
     pub fn with_client(
         api_key: SecretString,
         api_base: Option<String>,

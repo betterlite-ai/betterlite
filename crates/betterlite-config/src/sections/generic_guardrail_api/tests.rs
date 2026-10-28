@@ -9,7 +9,10 @@ use crate::sections::Section as _;
 
 const GENERIC_CONFIG: &str = "guardrails:\n  - guardrail_name: safety\n    litellm_params:\n      guardrail: generic_guardrail_api\n      api_base: http://localhost:8080\n";
 
-fn resolve(source: &str, lookup: &BTreeMap<String, String>) -> Result<super::Settings, ConfigError> {
+fn resolve(
+    source: &str,
+    lookup: &BTreeMap<String, String>,
+) -> Result<super::Settings, ConfigError> {
     let (raw, _ignored) = parse_view::<super::Raw>(source)?;
     raw.convert(lookup)
 }

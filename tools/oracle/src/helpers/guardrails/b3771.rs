@@ -29,15 +29,13 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .cloned()
         .unwrap_or_else(|| json!({}));
     let metadata_json = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
-    let litellm_values =
-        serde_json::from_value::<BTreeMap<String, Option<String>>>(litellm_json)
-            .map_err(stringify_failure)?;
-    let metadata_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(
-        metadata_json,
-    )
-    .map_err(stringify_failure)?;
+    let litellm_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(litellm_json)
+        .map_err(|error| failure(error.to_string()))?;
+    let metadata_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(metadata_json)
+        .map_err(|error| failure(error.to_string()))?;
     let merged = extract_user_api_key_metadata(Some(&litellm_values), Some(&metadata_values));
-    let serialized = serde_json::to_value(merged).map_err(stringify_failure)?;
+    let serialized =
+        serde_json::to_value(merged).map_err(|error| failure(error.to_string()))?;
     let object = serialized.as_object().cloned().unwrap_or_default();
     Ok(serde_json::Value::Object(
         object
@@ -61,7 +59,7 @@ fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .process_response(response, GuardrailInputType::Request, Vec::new())
         .map_err(|error| failure(error.to_string()))?;
     serde_json::to_value(json!({"allowed": true, "flagged": value.flagged}))
-        .map_err(stringify_failure)
+        .map_err(|error| failure(error.to_string()))
 }
 
 fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
@@ -70,7 +68,7 @@ fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
         Some("MONITOR") => OnFlaggedAction::Monitor,
         _ => OnFlaggedAction::Block,
     };
-    GraySwanGuardrail::new(
+    GraySwanGuardrail::with_client(
         SecretString::from("oracle-key"),
         Some("http://oracle.invalid".to_owned()),
         GraySwanSettings {
@@ -81,14 +79,9 @@ fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
             policy_id: None,
             fail_open: true,
         },
+        reqwest::Client::default(),
+        betterlite_guardrails::grayswan::DEFAULT_TIMEOUT,
     )
-}
-
-fn stringify_failure<E>(error: E) -> Box<crate::helpers::HelperError>
-where
-    E: std::fmt::Display,
-{
-    failure(error.to_string())
 }
 
 fn failure(message: String) -> Box<crate::helpers::HelperError> {

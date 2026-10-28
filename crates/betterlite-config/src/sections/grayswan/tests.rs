@@ -9,7 +9,10 @@ use crate::sections::Section as _;
 
 const GRAYSWAN_CONFIG: &str = "guardrails:\n  - guardrail_name: safety\n    litellm_params:\n      guardrail: grayswan\n      api_key: configured-key\n";
 
-fn resolve(source: &str, lookup: &BTreeMap<String, String>) -> Result<super::Settings, ConfigError> {
+fn resolve(
+    source: &str,
+    lookup: &BTreeMap<String, String>,
+) -> Result<super::Settings, ConfigError> {
     let (raw, _ignored) = parse_view::<super::Raw>(source)?;
     raw.convert(lookup)
 }
@@ -56,7 +59,10 @@ fn grayswan_config_defaults_match_litellm() {
     assert_eq!(configured.guardrail_name, "safety");
     assert_eq!(configured.api_key.expose_secret(), "configured-key");
     assert_eq!(configured.api_base, "https://api.grayswan.ai");
-    assert_eq!(configured.on_flagged_action, super::OnFlaggedAction::Monitor);
+    assert_eq!(
+        configured.on_flagged_action,
+        super::OnFlaggedAction::Monitor
+    );
     assert!((configured.violation_threshold - 0.5).abs() < f64::EPSILON);
     assert_eq!(configured.reasoning_mode, None);
     assert_eq!(configured.categories, None);

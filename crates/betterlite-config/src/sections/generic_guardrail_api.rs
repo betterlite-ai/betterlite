@@ -78,7 +78,10 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let api_key = match parameters.api_key.filter(|key| !key.expose_secret().is_empty()) {
+        let api_key = match parameters
+            .api_key
+            .filter(|key| !key.expose_secret().is_empty())
+        {
             Some(key) => Some(SecretString::from(resolve_string(
                 key.expose_secret().to_owned(),
                 &format!("{prefix}.api_key"),

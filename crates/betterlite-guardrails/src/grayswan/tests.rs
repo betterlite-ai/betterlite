@@ -20,10 +20,12 @@ fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
         policy_id: None,
         fail_open: true,
     };
-    GraySwanGuardrail::new(
+    GraySwanGuardrail::with_client(
         SecretString::from("secret"),
         Some("http://example".to_owned()),
         settings,
+        reqwest::Client::default(),
+        super::DEFAULT_TIMEOUT,
     )
 }
 
