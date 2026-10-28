@@ -91,7 +91,7 @@ sections! {
     auth_invalidation, auth_key_budgets, auth_key_validation, auth_limit_inputs,
     auth_model_budgets, auth_model_grants, auth_model_patterns, auth_org_lookup, auth_prefetch,
     auth_pricing, auth_reconnect, auth_request_policy, auth_route_patterns, auth_route_policy,
-    auth_user_lookup, available_models, azure_arc_identity, azure_client_secret,
+    auth_user_lookup, available_models, azure_arc_identity, azure_blob_cache, azure_client_secret,
     azure_credentials, azure_default_chain, azure_endpoints, azure_image_transport,
     azure_managed_identity, azure_oidc_exchange, azure_responses, azure_search,
     azure_transcription, azure_url_policy, batch_cost_finalize, batch_create_route,
