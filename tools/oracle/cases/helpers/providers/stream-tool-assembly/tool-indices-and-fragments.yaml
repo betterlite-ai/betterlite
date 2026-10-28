@@ -14,6 +14,15 @@ call:
                   - index: 0
                     id: b
                     function: {name: second, arguments: '{}'}
+                  - index: 2
+                    id: d
+                    function: {name: fourth, arguments: 0}
+                  - index: 3
+                    id: e
+                    function: {name: fifth, arguments: []}
+                  - index: 4
+                    id: f
+                    function: {name: sixth, arguments: 0.0}
         - choices:
             - index: 1
               delta:
