@@ -13,18 +13,19 @@ In a later round the prompt names the earlier round's commit and findings. Check
 
 ## Judge
 
-A finding is a broken reviewed rule at a specific line of a changed file. For each one, name the rule id, the location as path:line, the problem in one or two sentences, and the fix.
+A finding is a broken reviewed rule at a specific line of a changed file. For each one, name the rule id, the origin, the location as path:line, the problem in one or two sentences, and the fix.
 
 - Report only what breaks a rule. Taste that no rule covers isn't a finding.
 - Cite the line where the problem is, not the file it lives in.
 - When the code is right but you'd have written it differently, that's not a finding.
 - When a reviewed rule needs a judgment you can't make from the code and the task (a requirement the task doesn't state), leave it out rather than guess.
 - Check reuse-before-building against the worker's prior art: hand-written code for a solved problem with no recorded comparison is a finding.
+- Before you call a behavior wrong, read the LiteLLM line it ports. Code that does what LiteLLM does is not a finding, unless it repeats a bug that rule owned-behavior-is-built says to fix: then report it with origin litellm. A fix of such a bug that docs/deviations/<ID>.yaml lists is accepted. Everything else betterlite introduced, including a change to what a working LiteLLM setup relies on, has origin ours.
 
 ## Final answer
 
 Your final answer is one JSON object that matches .development/schema/review.schema.json, and nothing else.
 
 - task is the task id.
-- verdict is approve with an empty findings list, or changes with at least one finding.
-- each finding has rule (a reviewed rule id), location (path:line in a changed file), problem and fix.
+- verdict is changes when at least one finding has origin ours, otherwise approve. Litellm findings don't hold the merge: the dispatcher hands them to the architect, and the worker never sees them.
+- each finding has rule (a reviewed rule id), origin (ours or litellm), location (path:line in a changed file), problem and fix.

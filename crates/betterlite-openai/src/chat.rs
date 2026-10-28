@@ -44,6 +44,7 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub stream: bool,
+    pub stream_options: Option<StreamOptions>,
     pub temperature: Option<Number>,
     pub top_p: Option<Number>,
     pub presence_penalty: Option<Number>,
@@ -66,6 +67,13 @@ pub struct ChatRequest {
     // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct StreamOptions {
+    #[serde(default)]
+    pub include_usage: bool,
 }
 
 impl ChatRequest {

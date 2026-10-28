@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
+use futures_util::StreamExt as _;
+use futures_util::stream::BoxStream;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -84,41 +86,29 @@ impl ProxiedClient {
     }
 
     pub async fn post_json(&self, post: JsonPost<'_>) -> Result<UpstreamResponse, HttpError> {
+        let limit = post.body_limit;
+        let request = self.json_request(post, "application/json")?;
+        let response = self.execute(request).await.map_err(timed_out)?;
+        StreamResponse { response }.buffered(limit).await
+    }
+
+    pub async fn post_stream(&self, post: JsonPost<'_>) -> Result<Response, HttpError> {
+        let request = self.json_request(post, "text/event-stream")?;
+        self.execute(request).await.map_err(timed_out)
+    }
+
+    fn json_request(&self, post: JsonPost<'_>, accept: &'static str) -> Result<Request, HttpError> {
         let mut builder = self
             .client
             .post(post.url)
             .timeout(post.timeout)
             .bearer_auth(post.bearer.expose_secret())
-            .header(ACCEPT, "application/json")
+            .header(ACCEPT, accept)
             .header(CONTENT_TYPE, "application/json");
         for (name, value) in post.headers {
             builder = builder.header(name, value);
         }
-        let request = builder
-            .body(post.body)
-            .build()
-            .map_err(HttpError::Request)?;
-        let mut response = self.execute(request).await.map_err(timed_out)?;
-        let status = response.status().as_u16();
-        let headers = mem::take(response.headers_mut());
-        let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|source| timed_out(HttpError::Request(source)))?
-        {
-            if body.len().saturating_add(chunk.len()) > post.body_limit {
-                return Err(HttpError::TooLarge {
-                    limit: post.body_limit,
-                });
-            }
-            body.extend_from_slice(&chunk);
-        }
-        Ok(UpstreamResponse {
-            status,
-            headers,
-            body,
-        })
+        builder.body(post.body).build().map_err(HttpError::Request)
     }
 }
 
@@ -146,6 +136,53 @@ pub struct UpstreamResponse {
     pub status: u16,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
+}
+
+pub struct StreamResponse {
+    pub response: Response,
+}
+
+impl StreamResponse {
+    pub async fn buffered(mut self, limit: usize) -> Result<UpstreamResponse, HttpError> {
+        let status = self.response.status().as_u16();
+        let headers = mem::take(self.response.headers_mut());
+        let mut body = Vec::new();
+        while let Some(chunk) = self
+            .response
+            .chunk()
+            .await
+            .map_err(|source| timed_out(HttpError::Request(source)))?
+        {
+            if body.len().saturating_add(chunk.len()) > limit {
+                return Err(HttpError::TooLarge { limit });
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(UpstreamResponse {
+            status,
+            headers,
+            body,
+        })
+    }
+
+    #[must_use]
+    pub fn body_stream(self) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
+        let response = self.response;
+        response
+            .bytes_stream()
+            .map(|chunk| {
+                chunk
+                    .map(|bytes| bytes.to_vec())
+                    .map_err(HttpError::Request)
+            })
+            .boxed()
+    }
+}
+
+impl From<Response> for StreamResponse {
+    fn from(response: Response) -> Self {
+        Self { response }
+    }
 }
 
 mod tests;
