@@ -27,3 +27,16 @@ fn legacy_function_join_missing_arguments_is_attribute_error() {
         Err(super::AssemblyError::MissingFunctionArguments)
     ));
 }
+
+#[test]
+fn tool_fragment_truthy_nonzero_float_is_invalid_arguments() {
+    let input: AssemblyInput = serde_json::from_str(
+        r#"{"tool":{"chunks":[{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"first","arguments":1.5}}]}}]}]}}"#,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        assemble(&input),
+        Err(super::AssemblyError::InvalidArguments)
+    ));
+}
