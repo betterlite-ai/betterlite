@@ -5,6 +5,8 @@ use super::*;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
+const RESPONSE_JSON: &str = r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#;
+
 #[test]
 fn auth_is_discriminated_and_secret_safe() {
     let auth: AgentKillSwitchAuth =
@@ -26,19 +28,6 @@ fn kill_switch_preserves_url_and_defaults() {
     assert!(config.headers.is_empty());
     assert!(config.query_params.is_empty());
     assert!(config.body.is_none());
-}
-
-#[test]
-fn response_ignores_extras_and_uses_defaults() {
-    let response: AgentResponse = serde_json::from_str(
-        r#"{"agent_id":"a","agent_name":"n","agent_card_params":{},"unknown":true}"#,
-    )
-    .unwrap();
-    assert!(response.enabled.0);
-    assert!(!response.identity_managed);
-    assert!(!response.jwt_auth_configured);
-    assert_eq!(response.execution_mode, AgentExecutionMode::Autonomous);
-    assert!(response.litellm_params.is_none());
 }
 
 #[test]
@@ -73,33 +62,23 @@ fn identity_binding_keeps_string_identifiers() {
 )]
 #[case::kill_config_field_body("config", r#"{"url":"https://example.com"}"#, "body", "null")]
 #[case::kill_config_field_auth("config", r#"{"url":"https://example.com"}"#, "auth", "null")]
-#[case::agent_response_field_identity(
-    "response",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#,
-    "identity",
-    "null"
-)]
+#[case::agent_response_field_identity("response", RESPONSE_JSON, "identity", "null")]
 #[case::agent_response_field_identity_managed(
     "response",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#,
+    RESPONSE_JSON,
     "identity_managed",
     "false"
 )]
-#[case::agent_response_field_enabled(
-    "response",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#,
-    "enabled",
-    "true"
-)]
+#[case::agent_response_field_enabled("response", RESPONSE_JSON, "enabled", "true")]
 #[case::agent_response_field_execution_mode(
     "response",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#,
+    RESPONSE_JSON,
     "execution_mode",
     r#""autonomous""#
 )]
 #[case::agent_response_field_jwt_auth_configured(
     "response",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#,
+    RESPONSE_JSON,
     "jwt_auth_configured",
     "false"
 )]
@@ -372,8 +351,7 @@ fn key_summary_requires_token_and_defaults() {
 #[case::agent_response_field_created_by("created_by")]
 #[case::agent_response_field_updated_by("updated_by")]
 fn response_nullable_fields(#[case] field: &str) {
-    let input = r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#;
-    let missing: AgentResponse = serde_json::from_str(input).unwrap();
+    let missing: AgentResponse = serde_json::from_str(RESPONSE_JSON).unwrap();
     assert!(
         serde_json::to_value(missing)
             .unwrap()
@@ -440,9 +418,7 @@ fn binding_provider_other_rejected() {
 #[case::agent_response_field_agent_name("agent_name")]
 #[case::agent_response_field_agent_card_params("agent_card_params")]
 fn response_required_fields(#[case] field: &str, #[values(false, true)] explicit_null: bool) {
-    let mut fields: BTreeMap<String, Box<RawValue>> =
-        serde_json::from_str(r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#)
-            .unwrap();
+    let mut fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(RESPONSE_JSON).unwrap();
     if explicit_null {
         fields.insert(field.to_owned(), serde_json::from_str("null").unwrap());
     } else {

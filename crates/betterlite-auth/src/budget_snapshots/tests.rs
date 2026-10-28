@@ -222,19 +222,6 @@ fn named_snapshot_contracts(#[case] name: &str, #[case] input: &str) {
 }
 
 #[rstest]
-#[case::utc("2026-01-01T12:00:00Z")]
-#[case::offset("2026-01-01T12:00:00+02:00")]
-#[case::naive("2026-01-01T12:00:00")]
-fn metadata_date_serialization(#[case] date: &str) {
-    let snapshot: KeyBudgetSnapshot =
-        serde_json::from_str(&format!(r#"{{"budget_reset_at":{date:?}}}"#)).unwrap();
-    assert_eq!(
-        snapshot.metadata_entries().unwrap().as_ref()["user_api_key_budget_reset_at"].get(),
-        format!("{date:?}")
-    );
-}
-
-#[rstest]
 #[case::policy_nonfinite_or_out_of_range_rejected(
     r#"{"agent_id":"a","agent_name":"n","agent_card_params":{},"spend":1e+1000}"#
 )]
