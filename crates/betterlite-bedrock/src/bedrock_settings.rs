@@ -52,74 +52,45 @@ pub struct BedrockError {
 
 impl fmt::Debug for BedrockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let error = &self.error;
         f.debug_struct("BedrockError")
-            .field("error", &RedactedProviderError(&self.error))
-            .field("headers", &RedactedHeaders(self.headers.as_ref()))
-            .field("response_headers", &RedactedPairs(&self.response_headers))
+            .field("error_status_code", &error.status_code)
+            .field(
+                "error_status_code_is_synthesized",
+                &error.status_code_is_synthesized,
+            )
+            .field("error_message", &error.message)
+            .field(
+                "error_headers",
+                &redacted_pairs(error.headers.as_deref().unwrap_or(&[])),
+            )
+            .field("error_request", &error.request)
+            .field("error_response", &error.response)
+            .field("error_body", &error.body)
+            .field("headers", &redacted_headers(self.headers.as_ref()))
+            .field("response_headers", &redacted_pairs(&self.response_headers))
             .field("response_body", &self.response_body)
             .finish()
     }
 }
 
-struct RedactedProviderError<'error>(&'error ProviderError);
-
-impl fmt::Debug for RedactedProviderError<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let error = self.0;
-        f.debug_struct("ProviderError")
-            .field("status_code", &error.status_code)
-            .field(
-                "status_code_is_synthesized",
-                &error.status_code_is_synthesized,
-            )
-            .field("message", &error.message)
-            .field(
-                "headers",
-                &RedactedPairs(error.headers.as_deref().unwrap_or(&[])),
-            )
-            .field("request", &error.request)
-            .field("response", &error.response)
-            .field("body", &error.body)
-            .finish()
-    }
+fn redacted_pairs(pairs: &[(String, String)]) -> Vec<(&str, &str)> {
+    pairs
+        .iter()
+        .map(|(name, _)| (name.as_str(), "[REDACTED]"))
+        .collect()
 }
 
-struct RedactedHeaders<'headers>(Option<&'headers ErrorHeaders>);
-
-impl fmt::Debug for RedactedHeaders<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Some(headers) => f
-                .debug_tuple("Headers")
-                .field(&RedactedHeaderSet(headers))
-                .finish(),
-            None => f.write_str("None"),
-        }
-    }
-}
-
-struct RedactedHeaderSet<'headers>(&'headers ErrorHeaders);
-
-impl fmt::Debug for RedactedHeaderSet<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            ErrorHeaders::Http(pairs) => RedactedPairs(pairs).fmt(f),
-            ErrorHeaders::Mapping(entries) => f
-                .debug_list()
-                .entries(entries.iter().map(|(name, _)| (name, "[REDACTED]")))
-                .finish(),
-        }
-    }
-}
-
-struct RedactedPairs<'pairs>(&'pairs [(String, String)]);
-
-impl fmt::Debug for RedactedPairs<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list()
-            .entries(self.0.iter().map(|(name, _)| (name, "[REDACTED]")))
-            .finish()
-    }
+fn redacted_headers<'headers>(
+    headers: Option<&'headers ErrorHeaders>,
+) -> Option<Vec<(&'headers str, &'static str)>> {
+    headers.map(|headers| match headers {
+        ErrorHeaders::Http(pairs) => redacted_pairs(pairs),
+        ErrorHeaders::Mapping(entries) => entries
+            .iter()
+            .map(|(name, _)| (name.as_str(), "[REDACTED]"))
+            .collect(),
+    })
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

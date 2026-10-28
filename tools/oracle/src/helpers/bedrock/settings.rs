@@ -192,6 +192,15 @@ fn snapshot(aws: &AwsSettings) -> Result<Value, Failure> {
 }
 
 fn error(call: &ErrorCall) -> Result<Value, Failure> {
+    let built = build_error(call)?;
+    serialize_error(&built)
+}
+
+fn build_error(call: &ErrorCall) -> Result<BedrockError, Failure> {
+    Ok(BedrockError::try_from(error_input(call))?)
+}
+
+fn error_input(call: &ErrorCall) -> ErrorInput {
     let base = ProviderErrorParts {
         status_code: call.status_code,
         message: call.message.clone(),
@@ -201,7 +210,7 @@ fn error(call: &ErrorCall) -> Result<Value, Failure> {
         body: call.body.clone(),
         status_code_is_synthesized: call.status_code_is_synthesized,
     };
-    let input = ErrorInput {
+    ErrorInput {
         base,
         headers: call.headers.clone(),
         response: call.response.as_ref().map(|reply| ErrorReply {
@@ -212,23 +221,29 @@ fn error(call: &ErrorCall) -> Result<Value, Failure> {
             headers: reply.headers.clone(),
             body: reply.body.clone(),
         }),
-    };
-    let built = BedrockError::try_from(input)?;
+    }
+}
+
+fn serialize_error(built: &BedrockError) -> Result<Value, Failure> {
     let view = ErrorView {
         status_code: built.error.status_code,
         status_code_is_synthesized: built.error.status_code_is_synthesized,
         message: &built.error.message,
         headers: built.headers.as_ref(),
         request: &built.error.request,
-        response: ResponseView {
-            status_code: built.error.response.status_code,
-            request: &built.error.response.request,
-            headers: &built.response_headers,
-            text: error_response_text(&built.response_body),
-        },
+        response: response_view(built),
         body: built.error.body.as_ref(),
     };
     Ok(serde_json::to_value(view)?)
+}
+
+fn response_view(built: &BedrockError) -> ResponseView<'_> {
+    ResponseView {
+        status_code: built.error.response.status_code,
+        request: &built.error.response.request,
+        headers: &built.response_headers,
+        text: error_response_text(&built.response_body),
+    }
 }
 
 impl From<Failure> for Box<HelperError> {
