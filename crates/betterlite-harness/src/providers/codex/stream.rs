@@ -131,16 +131,7 @@ pub(super) fn tool_output(item: &JsonObject) -> (String, bool) {
     let status = item.get("status").and_then(Value::as_str);
     let failed = status == Some("failed");
     match item_kind(item) {
-        "command_execution" => (
-            item.get("aggregated_output")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            failed
-                || item
-                    .get("exit_code")
-                    .is_some_and(|value| value.as_i64().is_some_and(|code| code != 0)),
-        ),
+        "command_execution" => (aggregated_output_text(item), failed || exited_nonzero(item)),
         "file_change" => (file_change_summary(item), failed),
         "web_search" => (String::new(), failed),
         _ => mcp_tool_result_text(item, failed),
@@ -151,12 +142,7 @@ fn mcp_tool_result_text(item: &JsonObject, failed: bool) -> (String, bool) {
     let Some(error) = item.get("error").filter(|error| !error.is_null()) else {
         return (mcp_tool_result_value(item), failed);
     };
-    let message = error
-        .get("message")
-        .and_then(Value::as_str)
-        .or_else(|| error.as_str())
-        .map_or_else(|| error.to_string(), str::to_owned);
-    (message, true)
+    (mcp_tool_error_message(error), true)
 }
 
 fn mcp_tool_result_value(item: &JsonObject) -> String {
@@ -168,27 +154,43 @@ fn mcp_tool_result_value(item: &JsonObject) -> String {
         .map_or_else(|| value.to_string(), str::to_owned)
 }
 
+fn mcp_tool_error_message(error: &Value) -> String {
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| error.as_str());
+    message.map_or_else(|| error.to_string(), str::to_owned)
+}
+
+fn aggregated_output_text(item: &JsonObject) -> String {
+    let text = item.get("aggregated_output").and_then(Value::as_str);
+    text.unwrap_or_default().to_owned()
+}
+
+fn exited_nonzero(item: &JsonObject) -> bool {
+    let exit_code = item.get("exit_code");
+    exit_code.is_some_and(|value| value.as_i64().is_some_and(|code| code != 0))
+}
+
 fn file_change_summary(item: &JsonObject) -> String {
     let Some(changes) = item.get("changes").and_then(Value::as_array) else {
         return String::new();
     };
     changes
         .iter()
-        .map(|change| {
-            format!(
-                "{} {}",
-                change
-                    .get("kind")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-                change
-                    .get("path")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-            )
-            .trim()
-            .to_owned()
-        })
+        .map(change_summary)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn change_summary(change: &Value) -> String {
+    let kind = change
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let path = change
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    format!("{kind} {path}").trim().to_owned()
 }
