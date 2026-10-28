@@ -1,21 +1,6 @@
-//! Field and value matching for `sentry_scrubbing.py`'s repr scrubber.
-//!
-//! The `regex` crate refuses lookaround (it would break its linear-time guarantee),
-//! so the two lookaround spots in the Python source (a field-name word boundary and
-//! a "don't swallow bare `None`" guard) are replicated here as O(1) byte checks after
-//! an un-anchored match, with the scan cursor stepping forward by one char on a
-//! rejected candidate instead of the match length. Everything else -- the quoted,
-//! bracketed and bare value alternatives, three levels of nested brackets -- compiles
-//! to plain regex exactly as `sentry_scrubbing.py` builds it.
-//!
-//! Compiled patterns are never cached behind a global: callers build a [`Patterns`]
-//! once (through [`build`]) and pass it down to every string they scrub.
-
 use regex::Regex;
 
-use super::fixture::{
-    self, KEY_PREFIX, LENGTH_OF_LITELLM_GENERATED_KEY, MINIMUM_CUSTOM_KEY_LENGTH,
-};
+use super::fixture::{self, GENERATED_KEY_LENGTH, KEY_PREFIX, MINIMUM_CUSTOM_KEY_LENGTH};
 
 pub(super) const FILTERED: &str = "[Filtered]";
 
@@ -60,7 +45,7 @@ fn field_pattern_source(names: &[&str]) -> String {
 }
 
 fn key_pattern_source() -> String {
-    let generated_suffix_length = LENGTH_OF_LITELLM_GENERATED_KEY
+    let generated_suffix_length = GENERATED_KEY_LENGTH
         .saturating_mul(4)
         .saturating_add(2)
         .checked_div(3)
@@ -71,41 +56,44 @@ fn key_pattern_source() -> String {
     format!("{KEY_PREFIX}[A-Za-z0-9_-]{{{floor},}}")
 }
 
-fn compile(source: &str) -> Result<Regex, PatternError> {
-    Regex::new(source).map_err(|error| PatternError::Compile {
-        reason: error.to_string(),
-    })
-}
-
-/// Builds the compiled patterns for one `send_default_pii` setting, mirroring
-/// `build_string_scrubber`. The caller owns the result and passes it to [`apply`]
-/// for every string it scrubs, instead of recompiling per call.
 pub(super) fn build(send_default_pii: bool) -> Result<Patterns, PatternError> {
-    let mut field_names = fixture::secret_field_names();
+    let mut field_names = fixture::DEFAULT_DENYLIST
+        .iter()
+        .chain(fixture::SENTRY_DENYLIST)
+        .copied()
+        .collect::<Vec<_>>();
     if !send_default_pii {
-        field_names.extend(fixture::pii_field_names());
+        field_names.extend(
+            fixture::DEFAULT_PII_DENYLIST
+                .iter()
+                .chain(fixture::SENTRY_PII_DENYLIST)
+                .copied(),
+        );
     }
     let (email, sha256) = if send_default_pii {
         (None, None)
     } else {
-        (Some(compile(EMAIL_BODY)?), Some(compile(SHA256_BODY)?))
+        let email = Regex::new(EMAIL_BODY).map_err(|error| PatternError::Compile {
+            reason: error.to_string(),
+        })?;
+        let sha256 = Regex::new(SHA256_BODY).map_err(|error| PatternError::Compile {
+            reason: error.to_string(),
+        })?;
+        (Some(email), Some(sha256))
     };
+    let field =
+        Regex::new(&field_pattern_source(&field_names)).map_err(|error| PatternError::Compile {
+            reason: error.to_string(),
+        })?;
+    let key = Regex::new(&key_pattern_source()).map_err(|error| PatternError::Compile {
+        reason: error.to_string(),
+    })?;
     Ok(Patterns {
-        field: compile(&field_pattern_source(&field_names))?,
-        key: compile(&key_pattern_source())?,
+        field,
+        key,
         email,
         sha256,
     })
-}
-
-fn advance_past_char(text: &str, start: usize) -> usize {
-    text.get(start..)
-        .and_then(|rest| rest.chars().next())
-        .map_or(text.len(), |ch| start.saturating_add(ch.len_utf8()))
-}
-
-const fn is_name_boundary_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn field_match_is_rejected(text: &str, start: usize, field: &str, value: &str) -> bool {
@@ -113,8 +101,8 @@ fn field_match_is_rejected(text: &str, start: usize, field: &str, value: &str) -
     let before_byte = start
         .checked_sub(1)
         .and_then(|index| text.as_bytes().get(index));
-    let boundary_violation =
-        field_is_bare && before_byte.is_some_and(|byte| is_name_boundary_byte(*byte));
+    let boundary_violation = field_is_bare
+        && before_byte.is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_');
     let value_is_quoted_or_bracketed = value.starts_with(['\'', '"', '[', '{', '(']);
     let none_violation = !value_is_quoted_or_bracketed && value == "None";
     boundary_violation || none_violation
@@ -144,7 +132,10 @@ fn scrub_fields(text: &str, field_pattern: &Regex) -> String {
             break;
         };
         if field_match_is_rejected(text, whole.start(), field.as_str(), value.as_str()) {
-            scan_from = advance_past_char(text, whole.start());
+            scan_from = text
+                .get(whole.start()..)
+                .and_then(|rest| rest.chars().next())
+                .map_or(text.len(), |ch| whole.start().saturating_add(ch.len_utf8()));
             continue;
         }
         output.push_str(text.get(copied_until..whole.start()).unwrap_or_default());
@@ -172,7 +163,10 @@ fn scrub_sha256(text: &str, sha256_pattern: &Regex) -> String {
         let adjacent_to_word = before_byte.is_some_and(u8::is_ascii_alphanumeric)
             || after_byte.is_some_and(u8::is_ascii_alphanumeric);
         if adjacent_to_word {
-            scan_from = advance_past_char(text, whole.start());
+            scan_from = text
+                .get(whole.start()..)
+                .and_then(|rest| rest.chars().next())
+                .map_or(text.len(), |ch| whole.start().saturating_add(ch.len_utf8()));
             continue;
         }
         output.push_str(text.get(copied_until..whole.start()).unwrap_or_default());
@@ -184,8 +178,6 @@ fn scrub_sha256(text: &str, sha256_pattern: &Regex) -> String {
     output
 }
 
-/// Scrubs `text` with an already-built [`Patterns`], mirroring `build_string_scrubber`'s
-/// closure: the field-name repr pass first, then the key/email/sha256 value passes.
 pub(super) fn apply(patterns: &Patterns, text: &str) -> String {
     let fields_scrubbed = scrub_fields(text, &patterns.field);
     let keys_scrubbed = patterns
@@ -204,10 +196,7 @@ pub(super) fn apply(patterns: &Patterns, text: &str) -> String {
     scrub_sha256(&emails_scrubbed, sha256_pattern)
 }
 
-/// Builds patterns for one call and scrubs `text`, for callers that only need a
-/// single string scrubbed. `scrub_event` builds [`Patterns`] once instead, since it
-/// scrubs many strings from the same tree.
-pub(super) fn scrub(text: &str, send_default_pii: bool) -> Result<String, PatternError> {
+pub fn scrub(text: &str, send_default_pii: bool) -> Result<String, PatternError> {
     let patterns = build(send_default_pii)?;
     Ok(apply(&patterns, text))
 }

@@ -1,9 +1,3 @@
-//! Walks a JSON event tree, scrubbing every string value.
-//!
-//! Uses the patterns from [`super::pattern`], except inside a few literal
-//! source-context keys on the known stack-frame shapes that `sentry_scrubbing.py`
-//! deliberately leaves untouched.
-
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -19,9 +13,6 @@ const STACK_FRAME_PATHS: &[&[&str]] = &[
     &["stacktrace", "frames", "*"],
 ];
 
-/// A typed stand-in for the arbitrary JSON a Sentry event carries, mirroring the
-/// shapes `scrub_json_strings` walks: strings, nested objects and arrays, and the
-/// scalars it passes through untouched.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EventValue {
@@ -33,25 +24,9 @@ pub enum EventValue {
     Object(BTreeMap<String, Self>),
 }
 
-/// Scrubs every secret/PII repr pattern in `text`, mirroring `build_string_scrubber`.
-pub fn scrub_text(text: &str, send_default_pii: bool) -> Result<String, PatternError> {
-    pattern::scrub(text, send_default_pii)
-}
-
-/// Scrubs every string reachable from `event`, mirroring `scrub_json_strings`.
 pub fn scrub_event(event: &EventValue, send_default_pii: bool) -> Result<EventValue, PatternError> {
     let patterns = pattern::build(send_default_pii)?;
     Ok(walk(event, &patterns, &[]))
-}
-
-fn is_stack_frame_path(path: &[String]) -> bool {
-    STACK_FRAME_PATHS.iter().any(|candidate| {
-        candidate.len() == path.len()
-            && candidate
-                .iter()
-                .zip(path)
-                .all(|(expected, actual)| *expected == actual.as_str())
-    })
 }
 
 fn walk(value: &EventValue, patterns: &Patterns, path: &[String]) -> EventValue {
@@ -73,7 +48,13 @@ fn walk_object(
     patterns: &Patterns,
     path: &[String],
 ) -> EventValue {
-    let unscrubbed = is_stack_frame_path(path);
+    let unscrubbed = STACK_FRAME_PATHS.iter().any(|candidate| {
+        candidate.len() == path.len()
+            && candidate
+                .iter()
+                .zip(path)
+                .all(|(expected, actual)| *expected == actual.as_str())
+    });
     let mut output = BTreeMap::new();
     for (key, item) in mapping {
         let scrubbed = if unscrubbed && SOURCE_CONTEXT_KEYS.contains(&key.as_str()) {

@@ -1,12 +1,8 @@
-//! Pinned deny lists: sentry-sdk 2.21.0's `DEFAULT_DENYLIST`/`DEFAULT_PII_DENYLIST`
-//! plus `LiteLLM`'s own `SENTRY_DENYLIST`/`SENTRY_PII_DENYLIST`, combined the way
-//! `sentry_scrubbing.py` combines them into `SECRET_FIELD_NAMES`/`PII_FIELD_NAMES`.
-
 pub(super) const KEY_PREFIX: &str = "sk-";
 pub(super) const MINIMUM_CUSTOM_KEY_LENGTH: usize = 16;
-pub(super) const LENGTH_OF_LITELLM_GENERATED_KEY: usize = 16;
+pub(super) const GENERATED_KEY_LENGTH: usize = 16;
 
-const DEFAULT_DENYLIST: &[&str] = &[
+pub(super) const DEFAULT_DENYLIST: &[&str] = &[
     "password",
     "passwd",
     "secret",
@@ -41,10 +37,10 @@ const DEFAULT_DENYLIST: &[&str] = &[
     "XSRF-TOKEN",
 ];
 
-const DEFAULT_PII_DENYLIST: &[&str] =
+pub(super) const DEFAULT_PII_DENYLIST: &[&str] =
     &["x_forwarded_for", "x_real_ip", "ip_address", "remote_addr"];
 
-const SENTRY_DENYLIST: &[&str] = &[
+pub(super) const SENTRY_DENYLIST: &[&str] = &[
     "api_key",
     "token",
     "key",
@@ -105,7 +101,7 @@ const SENTRY_DENYLIST: &[&str] = &[
     "environment_variables",
 ];
 
-const SENTRY_PII_DENYLIST: &[&str] = &[
+pub(super) const SENTRY_PII_DENYLIST: &[&str] = &[
     "user_id",
     "user_email",
     "end_user_id",
@@ -120,19 +116,3 @@ const SENTRY_PII_DENYLIST: &[&str] = &[
     "SMTP_SENDER_EMAIL",
     "TEST_EMAIL_ADDRESS",
 ];
-
-pub(super) fn secret_field_names() -> Vec<&'static str> {
-    DEFAULT_DENYLIST
-        .iter()
-        .chain(SENTRY_DENYLIST)
-        .copied()
-        .collect()
-}
-
-pub(super) fn pii_field_names() -> Vec<&'static str> {
-    DEFAULT_PII_DENYLIST
-        .iter()
-        .chain(SENTRY_PII_DENYLIST)
-        .copied()
-        .collect()
-}

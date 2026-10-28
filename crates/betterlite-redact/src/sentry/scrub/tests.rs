@@ -39,6 +39,23 @@ fn innermost(value: &EventValue) -> &EventValue {
     current
 }
 
+fn nested_array(depth: usize, leaf: EventValue) -> EventValue {
+    let mut current = leaf;
+    for _ in 0..depth {
+        current = arr(vec![current]);
+    }
+    current
+}
+
+fn innermost_array(value: &EventValue) -> &EventValue {
+    let mut current = value;
+    while let EventValue::Array(items) = current {
+        let Some(next) = items.first() else { break };
+        current = next;
+    }
+    current
+}
+
 #[test]
 fn sentry_scrubbing_behavior_tests_behavior() {
     let at_limit = nested_object(MAX_SCRUB_DEPTH, text("api_key='secret'"));
@@ -52,17 +69,9 @@ fn sentry_scrubbing_behavior_tests_behavior() {
 
 #[test]
 fn array_nesting_also_counts_toward_scrub_depth() {
-    let mut current = text("harmless");
-    for _ in 0..=MAX_SCRUB_DEPTH {
-        current = arr(vec![current]);
-    }
+    let current = nested_array(MAX_SCRUB_DEPTH.saturating_add(1), text("harmless"));
     let scrubbed = scrub_event(&current, false).unwrap();
-    let mut probe = &scrubbed;
-    while let EventValue::Array(items) = probe {
-        let Some(first) = items.first() else { break };
-        probe = first;
-    }
-    assert_eq!(probe, &text("[Filtered]"));
+    assert_eq!(innermost_array(&scrubbed), &text("[Filtered]"));
 }
 
 fn wrap_frame_in_stacktrace(frame: EventValue) -> EventValue {

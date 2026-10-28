@@ -1,16 +1,9 @@
-//! Pure settings assembly for `build_sentry_init_options`: environment parsing and
-//! the event-scrubber configuration, without an actual Sentry SDK call.
-
 use std::collections::BTreeMap;
 
 use super::fixture;
 
 const SEND_DEFAULT_PII_ENV: &str = "SENTRY_SEND_DEFAULT_PII";
 
-/// Mirrors the two attributes `EventScrubber.__init__` keeps on the instance.
-///
-/// It folds `pii_denylist` into `denylist` (when PII sending is off) and
-/// lowercases the merged list before storing it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventScrubberConfig {
     pub denylist: Vec<String>,
@@ -35,20 +28,10 @@ pub enum SettingsError {
     InvalidSampleRate,
 }
 
-fn str_to_bool(value: Option<&String>) -> Option<bool> {
-    match value?.trim().to_lowercase().as_str() {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-/// Mirrors `send_default_pii_from_env`: only the literal string `"true"` (after
-/// trimming and lowercasing) turns PII sending on; everything else, including a
-/// missing variable, keeps it off.
 #[must_use]
 pub fn send_default_pii_from_env(env: &BTreeMap<String, String>) -> bool {
-    str_to_bool(env.get(SEND_DEFAULT_PII_ENV)) == Some(true)
+    let raw = env.get(SEND_DEFAULT_PII_ENV);
+    raw.is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
 }
 
 fn parse_rate(
@@ -64,15 +47,22 @@ fn parse_rate(
 }
 
 fn event_scrubber_denylist(send_default_pii: bool) -> Vec<String> {
-    let mut names = fixture::secret_field_names();
-    if !send_default_pii {
-        names.extend(fixture::pii_field_names());
+    let secret_names = fixture::DEFAULT_DENYLIST
+        .iter()
+        .chain(fixture::SENTRY_DENYLIST);
+    let pii_names = fixture::DEFAULT_PII_DENYLIST
+        .iter()
+        .chain(fixture::SENTRY_PII_DENYLIST);
+    if send_default_pii {
+        secret_names.map(|name| name.to_lowercase()).collect()
+    } else {
+        secret_names
+            .chain(pii_names)
+            .map(|name| name.to_lowercase())
+            .collect()
     }
-    names.into_iter().map(str::to_lowercase).collect()
 }
 
-/// Mirrors `build_sentry_init_options`: assembles pure settings, with no Sentry SDK
-/// call of its own.
 pub fn build_sentry_init_options(
     env: &BTreeMap<String, String>,
 ) -> Result<SentryInitOptions, SettingsError> {
