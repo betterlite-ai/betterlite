@@ -1,0 +1,45 @@
+kind: helper
+name: audio-base64-decoder
+call:
+  stream_content_assembly:
+    function: batch
+    cases:
+      - function: audio_base64_decoder
+        fragment: "YQ=="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "=Y=!R=!=="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "Y=Q=="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "YWI="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "+/09"
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "YQ==Yg=="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "===="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: ""
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "YQ="
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "Y"
+        max_decoded_bytes: 16
+      - function: audio_base64_decoder
+        fragment: "éYQ=="
+        max_decoded_bytes: 16
+env: {LITELLM_RUST: 'false'}
+compare:
+  ignore:
+    - {pointer: /value/8/error, why: betterlite uses its own error wording}
+    - {pointer: /value/9/error, why: betterlite uses its own error wording}
+    - {pointer: /value/10/error, why: betterlite uses its own error wording}

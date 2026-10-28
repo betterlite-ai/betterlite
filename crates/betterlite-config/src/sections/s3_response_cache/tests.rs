@@ -9,7 +9,7 @@ fn loads_required_bucket_and_defaults_ssl() {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load("litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n")
+    .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n")
     .expect("valid S3 settings");
     assert_eq!(
         config
@@ -31,7 +31,7 @@ fn resolves_bucket_from_environment() {
     let mut lookup = BTreeMap::new();
     lookup.insert("CACHE_BUCKET".to_owned(), "responses".to_owned());
     let config = ConfigLoader { lookup }
-        .load("litellm_settings:\n  cache_params:\n    s3_bucket_name: os.environ/CACHE_BUCKET\n")
+        .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: os.environ/CACHE_BUCKET\n")
         .expect("environment-backed bucket");
     assert_eq!(
         config.sections.s3_response_cache.unwrap().bucket_name,
@@ -44,7 +44,7 @@ fn rejects_missing_bucket() {
     let error = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load("litellm_settings:\n  cache_params:\n    s3_region_name: eu-west-1\n")
+    .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_region_name: eu-west-1\n")
     .expect_err("bucket is required");
     assert!(matches!(error, ConfigError::MissingEnvironment { .. }));
 }
@@ -57,7 +57,7 @@ fn rejects_missing_bucket() {
 #[case::api_version("s3_api_version: unsupported")]
 fn rejects_unusable_settings(#[case] setting: &str) {
     let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    {setting}\n"
+        "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    {setting}\n"
     );
     ConfigLoader {
         lookup: BTreeMap::new(),
@@ -76,13 +76,53 @@ fn absent_section_is_none() {
     assert!(config.sections.s3_response_cache.is_none());
 }
 
+#[test]
+fn cache_false_yields_none() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings:\n  cache: false\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n")
+    .unwrap();
+    assert!(config.sections.s3_response_cache.is_none());
+}
+
+#[test]
+fn other_cache_type_yields_none() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: redis\n    s3_bucket_name: responses\n")
+    .unwrap();
+    assert!(config.sections.s3_response_cache.is_none());
+}
+
+#[test]
+fn missing_cache_type_yields_none() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings:\n  cache: true\n  cache_params:\n    s3_bucket_name: responses\n")
+    .unwrap();
+    assert!(config.sections.s3_response_cache.is_none());
+}
+
+#[test]
+fn azure_type_does_not_load_s3_settings() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: azure-blob\n    azure_account_url: https://example.blob.core.windows.net\n    azure_blob_container: responses\n")
+    .unwrap();
+    assert!(config.sections.s3_response_cache.is_none());
+}
+
 #[rstest::rstest]
 #[case::empty("", "")]
 #[case::slash("/", "/")]
 #[case::prefix("prefix///", "prefix/")]
 fn normalizes_prefix(#[case] path: &str, #[case] expected: &str) {
     let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_path: '{path}'\n"
+        "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    s3_path: '{path}'\n"
     );
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
@@ -103,7 +143,7 @@ fn resolves_credentials_and_nested_config() {
         ("SECRET".to_owned(), "secret".to_owned()),
         ("TOKEN".to_owned(), "token".to_owned()),
     ]);
-    let yaml = "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    s3_aws_access_key_id: os.environ/ACCESS\n    s3_aws_secret_access_key: os.environ/SECRET\n    s3_aws_session_token: os.environ/TOKEN\n    s3_config:\n      connect_timeout: 5\n      retries:\n        max_attempts: 3\n      s3:\n        addressing_style: path\n";
+    let yaml = "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    s3_aws_access_key_id: os.environ/ACCESS\n    s3_aws_secret_access_key: os.environ/SECRET\n    s3_aws_session_token: os.environ/TOKEN\n    s3_config:\n      connect_timeout: 5\n      retries:\n        max_attempts: 3\n      s3:\n        addressing_style: path\n";
     let config = ConfigLoader { lookup }.load(yaml).unwrap();
     let settings = config.sections.s3_response_cache.unwrap();
     let credentials = settings.credentials.unwrap();
@@ -129,7 +169,7 @@ fn resolves_credentials_and_nested_config() {
 #[case::overflow("s3_config: {retries: {max_attempts: 4294967295}}", "max_attempts")]
 fn names_rejected_key(#[case] setting: &str, #[case] key: &str) {
     let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    {setting}\n"
+        "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    {setting}\n"
     );
     let error = ConfigLoader {
         lookup: BTreeMap::new(),
@@ -145,7 +185,7 @@ fn names_rejected_key(#[case] setting: &str, #[case] key: &str) {
 #[case::partial("s3_config: {s3: {addressing_style: path}}")]
 fn null_optional_values_use_defaults(#[case] setting: &str) {
     let yaml = format!(
-        "litellm_settings:\n  cache_params:\n    s3_bucket_name: responses\n    {setting}\n"
+        "litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    s3_bucket_name: responses\n    {setting}\n"
     );
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
