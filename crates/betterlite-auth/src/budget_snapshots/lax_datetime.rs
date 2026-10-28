@@ -2,8 +2,9 @@ mod tests;
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
+use std::num::TryFromIntError;
+use thiserror::Error;
 
-// RFC 3339, a bare date, a space-separated naive string, or a Unix-second timestamp.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 #[serde(try_from = "LaxDateTimeRaw")]
@@ -20,21 +21,35 @@ enum LaxDateTimeRaw {
     U64(u64),
 }
 
+#[derive(Debug, Error)]
+pub enum LaxDateTimeError {
+    #[error("invalid datetime: {value}")]
+    Invalid { value: String },
+    #[error("timestamp out of range: {seconds}")]
+    OutOfRange { seconds: i64 },
+    #[error("timestamp out of range")]
+    TooLarge {
+        #[source]
+        source: TryFromIntError,
+    },
+}
+
 impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
-    type Error = String;
+    type Error = LaxDateTimeError;
 
     fn try_from(raw: LaxDateTimeRaw) -> Result<Self, Self::Error> {
         match raw {
             LaxDateTimeRaw::Str(value) => {
-                parse_lax_datetime(&value).ok_or_else(|| format!("invalid datetime: {value}"))
+                parse_lax_datetime(&value).ok_or(LaxDateTimeError::Invalid { value })
             }
             LaxDateTimeRaw::I64(seconds) => {
-                timestamp_to_utc(seconds).ok_or_else(|| "timestamp out of range".to_owned())
+                timestamp_to_utc(seconds).ok_or(LaxDateTimeError::OutOfRange { seconds })
             }
-            LaxDateTimeRaw::U64(seconds) => i64::try_from(seconds)
-                .ok()
-                .and_then(timestamp_to_utc)
-                .ok_or_else(|| "timestamp out of range".to_owned()),
+            LaxDateTimeRaw::U64(seconds) => {
+                let signed = i64::try_from(seconds)
+                    .map_err(|source| LaxDateTimeError::TooLarge { source })?;
+                timestamp_to_utc(signed).ok_or(LaxDateTimeError::OutOfRange { seconds: signed })
+            }
         }
     }
 }
