@@ -43,7 +43,7 @@ where
         sql: where_sql,
         mut params,
     } = build_where_clause(scope, 1, clock)?;
-    let grouping = grouping::export_grouping(export_type, scope.as_ref().table);
+    let grouping = grouping::group_fields(export_type);
     let indexes = export::export_bind_indexes(params.len(), export_type, after.is_some())?;
     let plan = export::ExportPlan {
         scope,

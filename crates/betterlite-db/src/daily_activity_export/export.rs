@@ -1,5 +1,5 @@
 use super::DailyActivityExportError;
-use super::grouping::{Grouping, cursor_clause as export_cursor_clause};
+use super::grouping::{Grouping, cursor_clause as export_cursor_clause, table_parts};
 use crate::daily_activity_contracts::{DailyActivityScope, ExportType};
 use crate::daily_activity_sql::metrics::ptu_flat_cost_select;
 
@@ -66,18 +66,20 @@ pub(super) fn render_export_sql(plan: &ExportPlan<'_>) -> String {
     } else {
         format!(", {}", grouping.key)
     };
+    let (entity_alias, entity_join) = table_parts(scope.as_ref().table);
+    let model = if plan.export_type == ExportType::DailyWithModels {
+        "NULLIF(COALESCE(scoped.model, ''), '')"
+    } else {
+        "NULL::text"
+    };
     let flat_cost = ptu_flat_cost_select(scope.as_ref().table, false);
-    let cursor_sql = export_cursor_clause(scope, plan.indexes.cursor, &grouping.key);
+    let cursor_sql = export_cursor_clause(scope, plan.indexes.cursor, grouping.key);
     format!(
-        "WITH scoped AS ( SELECT * FROM \"{table}\" WHERE {}{} ) SELECT scoped.date, COALESCE(scoped.\"{entity}\", '') AS entity_id, {} AS entity_alias, {} AS api_key, {}, {}, {}, {} AS model, COALESCE(SUM(scoped.spend), 0)::float AS spend, {flat_cost} AS flat_cost, COALESCE(SUM(scoped.prompt_tokens), 0)::bigint AS prompt_tokens, COALESCE(SUM(scoped.completion_tokens), 0)::bigint AS completion_tokens, COALESCE(SUM(scoped.api_requests), 0)::bigint AS api_requests, COALESCE(SUM(scoped.successful_requests), 0)::bigint AS successful_requests, COALESCE(SUM(scoped.failed_requests), 0)::bigint AS failed_requests, COALESCE(SUM(scoped.cache_read_input_tokens), 0)::bigint AS cache_read_input_tokens, COALESCE(SUM(scoped.cache_creation_input_tokens), 0)::bigint AS cache_creation_input_tokens FROM scoped{} WHERE TRUE{} GROUP BY scoped.date, COALESCE(scoped.\"{entity}\", ''){} ORDER BY scoped.date, COALESCE(scoped.\"{entity}\", ''){} LIMIT ${}",
+        "WITH scoped AS ( SELECT * FROM \"{table}\" WHERE {}{} ) SELECT scoped.date, COALESCE(scoped.\"{entity}\", '') AS entity_id, {entity_alias} AS entity_alias, {} AS api_key, {}, {model} AS model, COALESCE(SUM(scoped.spend), 0)::float AS spend, {flat_cost} AS flat_cost, COALESCE(SUM(scoped.prompt_tokens), 0)::bigint AS prompt_tokens, COALESCE(SUM(scoped.completion_tokens), 0)::bigint AS completion_tokens, COALESCE(SUM(scoped.api_requests), 0)::bigint AS api_requests, COALESCE(SUM(scoped.successful_requests), 0)::bigint AS successful_requests, COALESCE(SUM(scoped.failed_requests), 0)::bigint AS failed_requests, COALESCE(SUM(scoped.cache_read_input_tokens), 0)::bigint AS cache_read_input_tokens, COALESCE(SUM(scoped.cache_creation_input_tokens), 0)::bigint AS cache_creation_input_tokens FROM scoped{}{entity_join} WHERE TRUE{} GROUP BY scoped.date, COALESCE(scoped.\"{entity}\", ''){} ORDER BY scoped.date, COALESCE(scoped.\"{entity}\", ''){} LIMIT ${}",
         plan.where_sql,
         sentinel_sql,
-        grouping.alias,
         grouping.output,
-        grouping.key_alias,
-        grouping.user_id,
-        grouping.user_email,
-        grouping.model,
+        grouping.user_fields,
         grouping.joins,
         cursor_sql,
         group_suffix,
