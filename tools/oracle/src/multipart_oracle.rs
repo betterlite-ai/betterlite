@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::case::BodyKind;
+
 pub mod capture;
 pub(crate) mod request;
 
@@ -35,7 +37,7 @@ pub(crate) struct MultipartSpec {
 #[serde(deny_unknown_fields)]
 pub(crate) struct BytesSpec {
     #[serde(default)]
-    pub(crate) body_kind: Option<crate::case::BodyKind>,
+    pub(crate) body_kind: Option<BodyKind>,
     pub(crate) fixture: String,
     pub(crate) content_type: String,
 }

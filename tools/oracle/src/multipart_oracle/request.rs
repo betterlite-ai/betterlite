@@ -55,8 +55,7 @@ pub(crate) fn request_body(body: &Value, kind: BodyKind) -> Result<RequestBody, 
         }
         BodyKind::Bytes => {
             reject_unknown_fields(body, &["body_kind", "fixture", "content_type"])?;
-            let spec: BytesSpec = serde_json::from_value(body.clone())
-                .map_err(|error| OracleError::MultipartOwned(error.to_string()))?;
+            let spec = decode_bytes_spec(body)?;
             Ok(RequestBody::Raw {
                 content_type: spec.content_type,
                 bytes: fixture(&spec.fixture)?,
@@ -71,7 +70,7 @@ fn reject_unknown_fields(body: &Value, allowed: &[&str]) -> Result<(), OracleErr
     };
     if let Some(field) = fields
         .keys()
-        .find(|field| !allowed.iter().any(|allowed| allowed == field))
+        .find(|field| !allowed.iter().any(|allowed_field| allowed_field == field))
     {
         return Err(OracleError::MultipartOwned(format!(
             "field \"{field}\" is not allowed"
@@ -80,14 +79,18 @@ fn reject_unknown_fields(body: &Value, allowed: &[&str]) -> Result<(), OracleErr
     Ok(())
 }
 
+fn decode_bytes_spec(body: &Value) -> Result<BytesSpec, OracleError> {
+    serde_json::from_value(body.clone())
+        .map_err(|error| OracleError::MultipartOwned(error.to_string()))
+}
+
 pub(crate) fn answer_body(answer: &UpstreamAnswer) -> Result<Option<Vec<u8>>, OracleError> {
     if answer
         .headers
         .get("content-type")
         .is_some_and(|value| value.starts_with("application/octet-stream"))
     {
-        let spec: BytesSpec = serde_json::from_value(answer.body.clone().unwrap_or(Value::Null))
-            .map_err(|error| OracleError::MultipartOwned(error.to_string()))?;
+        let spec = decode_bytes_spec(&answer.body.clone().unwrap_or(Value::Null))?;
         if spec.body_kind.is_some_and(|kind| kind != BodyKind::Bytes) {
             return Err(OracleError::Multipart(
                 "binary answer body_kind must be bytes",
