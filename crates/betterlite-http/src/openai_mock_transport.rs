@@ -1,120 +1,50 @@
-use serde::Deserializer as _;
-use serde::de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::value::RawValue;
-use std::fmt;
 use uuid::Uuid;
 
-enum Extracted {
-    Mapping(Option<Box<RawValue>>),
-    NotMapping(&'static str),
+// A dict missing "model" fails here and falls to the same mock-model fallback as any other parse failure.
+#[derive(Deserialize)]
+struct MappingBody {
+    model: Box<RawValue>,
 }
 
-struct ModelExtractor;
+// Runs only once the mapping attempt fails, so it never has to carry a RawValue through untagged buffering.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NotMapping {
+    Null,
+    Bool(bool),
+    UInt(u64),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    List(Vec<IgnoredAny>),
+}
 
-impl<'de> Visitor<'de> for ModelExtractor {
-    type Value = Extracted;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a JSON value")
-    }
-
-    fn visit_unit<E>(self) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(Extracted::NotMapping("NoneType"))
-    }
-
-    fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(Extracted::NotMapping("bool"))
-    }
-
-    fn visit_i64<E>(self, _value: i64) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(Extracted::NotMapping("int"))
-    }
-
-    fn visit_u64<E>(self, _value: u64) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(Extracted::NotMapping("int"))
-    }
-
-    fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(Extracted::NotMapping("float"))
-    }
-
-    fn visit_str<E>(self, _value: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(Extracted::NotMapping("str"))
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        while seq.next_element::<IgnoredAny>()?.is_some() {}
-        Ok(Extracted::NotMapping("list"))
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let mut model = None;
-        while let Some(key) = map.next_key::<String>()? {
-            if key == "model" {
-                model = Some(map.next_value::<Box<RawValue>>()?);
-            } else {
-                let _ignored: IgnoredAny = map.next_value()?;
-            }
-        }
-        Ok(Extracted::Mapping(model))
+const fn not_mapping_type_name(value: &NotMapping) -> &'static str {
+    match value {
+        NotMapping::Null => "NoneType",
+        NotMapping::Bool(_flag) => "bool",
+        NotMapping::UInt(_magnitude) => "int",
+        NotMapping::Int(_magnitude) => "int",
+        NotMapping::Float(_magnitude) => "float",
+        NotMapping::Str(_text) => "str",
+        NotMapping::List(_items) => "list",
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
 pub enum MockModel {
-    Default,
+    Default(&'static str),
     Raw(Box<RawValue>),
-}
-
-impl serde::Serialize for MockModel {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::Default => serializer.serialize_str("mock-model"),
-            Self::Raw(raw) => raw.serialize(serializer),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct DecodedMockRequest {
     pub model: MockModel,
     pub stream: bool,
-}
-
-impl DecodedMockRequest {
-    const fn fallback() -> Self {
-        Self {
-            model: MockModel::Default,
-            stream: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -125,23 +55,31 @@ pub enum DecodeMockRequestError {
 
 // Any decode failure (bad UTF-8, invalid JSON, trailing bytes) falls back rather than erroring, matching _parse_request.
 pub fn decode_mock_request(content: &[u8]) -> Result<DecodedMockRequest, DecodeMockRequestError> {
-    let mut deserializer = serde_json::Deserializer::from_slice(content);
-    let outcome = deserializer
-        .deserialize_any(ModelExtractor)
-        .and_then(|extracted| deserializer.end().map(|()| extracted));
-    let Ok(extracted) = outcome else {
-        return Ok(DecodedMockRequest::fallback());
-    };
-    match extracted {
-        Extracted::Mapping(Some(raw)) => Ok(DecodedMockRequest {
-            model: MockModel::Raw(raw),
+    let mut mapping_deserializer = serde_json::Deserializer::from_slice(content);
+    let mapping_outcome = MappingBody::deserialize(&mut mapping_deserializer)
+        .and_then(|body| mapping_deserializer.end().map(|()| body));
+    if let Ok(body) = mapping_outcome {
+        return Ok(DecodedMockRequest {
+            model: MockModel::Raw(body.model),
             stream: false,
-        }),
-        Extracted::Mapping(None) => Ok(DecodedMockRequest::fallback()),
-        Extracted::NotMapping(type_name) => Err(DecodeMockRequestError::NotAMapping {
-            type_name: type_name.to_owned(),
-        }),
+        });
     }
+    let mut scalar_deserializer = serde_json::Deserializer::from_slice(content);
+    let scalar_outcome = NotMapping::deserialize(&mut scalar_deserializer)
+        .and_then(|value| scalar_deserializer.end().map(|()| value));
+    scalar_outcome.map_or_else(
+        |_error| {
+            Ok(DecodedMockRequest {
+                model: MockModel::Default("mock-model"),
+                stream: false,
+            })
+        },
+        |value| {
+            Err(DecodeMockRequestError::NotAMapping {
+                type_name: not_mapping_type_name(&value).to_owned(),
+            })
+        },
+    )
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -174,15 +112,11 @@ pub struct MockChatCompletion {
     pub usage: MockUsage,
 }
 
-pub fn mock_chat_completion<Clock, Identifier>(
+pub fn mock_chat_completion(
     model: MockModel,
-    clock: &Clock,
-    identifier: &Identifier,
-) -> MockChatCompletion
-where
-    Clock: Fn() -> i64,
-    Identifier: Fn() -> Uuid,
-{
+    clock: &dyn Fn() -> i64,
+    identifier: &dyn Fn() -> Uuid,
+) -> MockChatCompletion {
     let short_id = identifier()
         .simple()
         .to_string()
@@ -218,21 +152,19 @@ pub struct MockHttpResponse {
 }
 
 // handle_async_request and handle_request share this implementation: the mock never performs IO either way.
-pub fn handle_mock_request<Clock, Identifier>(
+pub fn handle_mock_request(
     content: &[u8],
-    clock: &Clock,
-    identifier: &Identifier,
-) -> Result<MockHttpResponse, DecodeMockRequestError>
-where
-    Clock: Fn() -> i64,
-    Identifier: Fn() -> Uuid,
-{
+    clock: &dyn Fn() -> i64,
+    identifier: &dyn Fn() -> Uuid,
+) -> Result<MockHttpResponse, DecodeMockRequestError> {
     let decoded = decode_mock_request(content)?;
-    Ok(MockHttpResponse {
+    let body = mock_chat_completion(decoded.model, clock, identifier);
+    let response = MockHttpResponse {
         status: 200,
         content_type: "application/json".to_owned(),
-        body: mock_chat_completion(decoded.model, clock, identifier),
-    })
+        body,
+    };
+    Ok(response)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
