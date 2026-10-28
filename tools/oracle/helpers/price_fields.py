@@ -92,6 +92,11 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
                 if "hours_utc" in off_peak_object
                 else {}
             ),
+            **(
+                {"weekday_timezone": off_peak_object["weekday_timezone"]}
+                if "weekday_timezone" in off_peak_object
+                else {}
+            ),
         }
     tier_values: list[Json] = []
     for index, tier in enumerate(tiers):

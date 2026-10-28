@@ -2,6 +2,6 @@ kind: helper
 name: off-peak
 call:
   price_fields:
-    source: '{"input_cost_per_token":0.1,"off_peak_pricing":{"input_cost_per_token":0.00000015,"output_cost_per_token":0.0000006,"cache_read_input_token_cost":0.000000003,"cache_creation_input_token_cost":0.00000003,"output_cost_per_reasoning_token":0.000002,"hours_utc":"00:00-01:00","windows":[{"hours_utc":["00:00-01:00","04:00-06:00"],"weekdays":[1,2,3,4,5]},{"hours_utc":"00:00-00:00","weekdays":[6,7]}]}}'
+    source: '{"input_cost_per_token":0.1,"off_peak_pricing":{"input_cost_per_token":0.00000015,"output_cost_per_token":0.0000006,"cache_read_input_token_cost":0.000000003,"cache_creation_input_token_cost":0.00000003,"output_cost_per_reasoning_token":0.000002,"hours_utc":"00:00-01:00","weekday_timezone":"Asia/Shanghai","windows":[{"hours_utc":["00:00-01:00","04:00-06:00"],"weekdays":[1,2,3,4,5]},{"hours_utc":"00:00-00:00","weekdays":[6,7]},{"hours_utc":"12:00-13:00"}]}}'
 compare: {ignore: []}
 env: {}
