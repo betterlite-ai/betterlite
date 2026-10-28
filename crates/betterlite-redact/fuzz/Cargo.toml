@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-redact-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-redact = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "structured_redaction"
+path = "fuzz_targets/structured_redaction.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

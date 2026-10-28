@@ -1,0 +1,12 @@
+kind: helper
+name: cisco-reasoning-parts
+call:
+  cisco_conversation:
+    function: reasoning
+    message:
+      reasoning_content: thought
+      thinking_blocks: [{thinking: a, reasoning: "", text: b}, {type: redacted_thinking, data: opaque}, not a block]
+      reasoning_items: [{summary: [{text: s1}, {text: 5}], text: t, reasoning: r, reasoning_content: c}]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,8 @@
+task: B3756
+deviations:
+  - what: A content part whose type is a list or object, and a messages, tool_calls or Responses output content field that holds a number, read as no text instead of raising.
+    why: LiteLLM raises TypeError there (an unhashable value in a frozenset lookup, or iterating an int), so a malformed request turns into a guardrail crash; betterlite scans what it can and skips the rest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1965
+  - what: Where LiteLLM coerces a value with str(), a JSON number prints as its JSON text and only control characters are escaped in quoted strings.
+    why: Python parses floats first, so 1e2 prints as 100.0 and 1.50 as 1.5, and its repr also escapes other non-printable characters such as U+00A0; matching float formatting would need floats, which the crate rules deny.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1978

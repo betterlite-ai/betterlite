@@ -1,0 +1,7 @@
+kind: helper
+name: empty-structured-fallback
+call:
+  b3721:
+    step: {"selection": {"texts": ["old", "new"], "context": {"latest_only": true, "structured_messages": [], "messages": [{"role": "user", "content": "new"}]}}}
+env: {}
+compare: {ignore: []}
