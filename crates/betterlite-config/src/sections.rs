@@ -139,7 +139,7 @@ sections! {
     model_info_v1, model_management, model_patch, model_public_settings, model_rate_limits,
     model_visibility, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_mock_transport, openai_provider, openai_realtime,
-    openai_workload_identity, pass_through_registry, passthrough_request_policies,
+    openai_workload_identity, otel_settings, pass_through_registry, passthrough_request_policies,
     password_login, password_policy, pre_routing_registry, prometheus_bounded_series,
     prompt_affinity, prompt_cache_accounting, proxy_custom_dispatch, proxy_provider_options,
     public_router_presets, quality_router, rag_records_and_chunking, rate_limit_usage,
