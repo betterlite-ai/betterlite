@@ -172,6 +172,25 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
 mod inventory;
 
 #[rstest]
+#[case::flat_null(r#"{"input_cost_per_token":null}"#, "input_cost_per_token")]
+#[case::flat_overprecision(
+    r#"{"input_cost_per_token":0.12345678901234567890123456789}"#,
+    "input_cost_per_token"
+)]
+fn rejects_invalid_flat_prices(#[case] source: &str, #[case] field: &str) {
+    let error = serde_json::from_str::<super::values::PricingValues>(source).unwrap_err();
+    assert!(error.to_string().contains(field));
+}
+
+#[rstest]
+#[case::null(r#"{"input_cost_per_token":null}"#)]
+#[case::overprecision(r#"{"input_cost_per_token":0.12345678901234567890123456789}"#)]
+fn rejects_invalid_nested_prices(#[case] source: &str) {
+    let error = serde_json::from_str::<super::nested::OffPeakPricing>(source).unwrap_err();
+    assert!(error.to_string().contains("input_cost_per_token"));
+}
+
+#[rstest]
 fn replays_the_price_fields_corpus() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/price_fields");
     for entry in fs::read_dir(directory).unwrap() {

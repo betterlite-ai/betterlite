@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 
+mod deserialize;
 pub mod nested;
-mod validation;
 pub mod values;
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
+#[serde(default)]
 pub struct PriceFields {
     #[serde(flatten)]
     pub values: values::PricingValues,
@@ -15,29 +15,7 @@ pub struct PriceFields {
     pub provider_specific: nested::ProviderSpecificPricing,
     #[serde(
         rename = "guardrail_cost_per_unit",
-        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
-    )]
-    pub guardrail_units: BTreeMap<String, Decimal>,
-    pub metadata: nested::MetadataPricing,
-    pub sample_spec: nested::SamplePricing,
-    #[serde(rename = "off_peak_pricing")]
-    pub off_peak: Option<nested::OffPeakPricing>,
-    #[serde(rename = "search_context_cost_per_query")]
-    pub search_context: Option<nested::SearchContextPricing>,
-    #[serde(rename = "tiered_pricing")]
-    pub tiers: Vec<nested::TierPricing>,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct PriceInput {
-    #[serde(flatten)]
-    pub values: values::PricingValues,
-    #[serde(rename = "provider_specific_entry")]
-    pub provider_specific: nested::ProviderSpecificPricing,
-    #[serde(
-        rename = "guardrail_cost_per_unit",
-        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
+        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, deserialize::ExactDecimal>>::deserialize"
     )]
     pub guardrail_units: BTreeMap<String, Decimal>,
     pub metadata: nested::MetadataPricing,
@@ -63,8 +41,9 @@ pub enum PriceFieldError {
     },
     #[error("price field {path} must not be null")]
     Null { path: String },
-    #[error("price fields JSON is invalid: {source}")]
+    #[error("price field {path}: {source}")]
     Json {
+        path: String,
         #[source]
         source: serde_json::Error,
     },
@@ -72,54 +51,12 @@ pub enum PriceFieldError {
 
 impl PriceFields {
     pub fn parse(input: &RawValue) -> Result<Self, PriceFieldError> {
-        let object: BTreeMap<String, Box<RawValue>> =
-            serde_json::from_str(input.get()).map_err(|source| PriceFieldError::Json { source })?;
-        validation::validate(&object, "")?;
-        let wire: PriceInput =
-            serde_json::from_str(input.get()).map_err(|source| PriceFieldError::Json { source })?;
-        Ok(Self {
-            values: wire.values,
-            provider_specific: wire.provider_specific,
-            guardrail_units: wire.guardrail_units,
-            metadata: wire.metadata,
-            sample_spec: wire.sample_spec,
-            off_peak: wire.off_peak,
-            search_context: wire.search_context,
-            tiers: wire.tiers,
+        let mut deserializer = serde_json::Deserializer::from_str(input.get());
+        serde_path_to_error::deserialize(&mut deserializer).map_err(|error| PriceFieldError::Json {
+            path: error.path().to_string(),
+            source: error.into_inner(),
         })
     }
-}
-
-impl TryFrom<Box<RawValue>> for PriceFields {
-    type Error = PriceFieldError;
-
-    fn try_from(input: Box<RawValue>) -> Result<Self, Self::Error> {
-        Self::parse(&input)
-    }
-}
-
-pub(super) fn decimal_at(path: &str, value: &RawValue) -> Result<Decimal, PriceFieldError> {
-    let lexeme = value.get();
-    if lexeme == "null" {
-        return Err(PriceFieldError::Null {
-            path: path.to_owned(),
-        });
-    }
-    if lexeme.starts_with('"')
-        || lexeme == "true"
-        || lexeme == "false"
-        || lexeme.starts_with('[')
-        || lexeme.starts_with('{')
-    {
-        return Err(PriceFieldError::NotNumber {
-            path: path.to_owned(),
-        });
-    }
-    parse_decimal_lexeme(lexeme).map_err(|source| PriceFieldError::InvalidDecimal {
-        path: path.to_owned(),
-        value: lexeme.to_owned(),
-        source,
-    })
 }
 
 pub fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, rust_decimal::Error> {
