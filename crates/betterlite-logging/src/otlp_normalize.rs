@@ -133,19 +133,20 @@ fn decode_gzip(body: &[u8]) -> Result<Vec<u8>, OtlpError> {
     let limit = OTLP_MAX_BODY_BYTES.saturating_add(1);
     let mut payload = Vec::new();
     let mut rest = body;
-    while !rest.is_empty() && payload.len() < limit {
+    while !rest.is_empty() {
         let budget = u64::try_from(limit.saturating_sub(payload.len())).unwrap_or(u64::MAX);
         let mut member = GzDecoder::new(rest);
         (&mut member)
             .take(budget)
             .read_to_end(&mut payload)
             .map_err(OtlpError::InvalidGzip)?;
+        // Stop at the first byte over the limit instead of parsing the headers of what follows
+        if payload.len() > OTLP_MAX_BODY_BYTES {
+            return Err(OtlpError::BodyTooLarge);
+        }
         rest = member.into_inner();
         let padding = rest.iter().take_while(|&&byte| byte == 0).count();
         rest = rest.get(padding..).unwrap_or_default();
-    }
-    if payload.len() > OTLP_MAX_BODY_BYTES {
-        return Err(OtlpError::BodyTooLarge);
     }
     Ok(payload)
 }

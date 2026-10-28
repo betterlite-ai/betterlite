@@ -116,6 +116,7 @@ fn span() -> DecodedSpan {
 #[case::gzip_body_over_limit(vec![0; OTLP_MAX_BODY_BYTES + 1], Some("gzip"), Err(TOO_LARGE))]
 #[case::inflated_to_limit(gzip(&[&vec![0; OTLP_MAX_BODY_BYTES]]), Some("gzip"), Ok(vec![0; OTLP_MAX_BODY_BYTES]))]
 #[case::inflated_over_limit(gzip(&[&vec![0; OTLP_MAX_BODY_BYTES], b"x"]), Some("gzip"), Err(TOO_LARGE))]
+#[case::inflated_over_limit_stops_before_trailing_garbage([gzip(&[&vec![0; OTLP_MAX_BODY_BYTES + 1]]), b"not gzip".to_vec()].concat(), Some("gzip"), Err(TOO_LARGE))]
 fn decodes_content_encoding_like_litellm(
     #[case] body: Vec<u8>,
     #[case] encoding: Option<&str>,
