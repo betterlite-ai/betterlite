@@ -1,0 +1,40 @@
+kind: helper
+name: tool-indices-and-fragments
+call:
+  stream_tool_assembly:
+    tool:
+      chunks:
+        - choices:
+            - index: 0
+              delta:
+                tool_calls:
+                  - index: 1
+                    id: a
+                    function: {name: first, arguments: a}
+                  - index: 0
+                    id: b
+                    function: {name: second, arguments: '{}'}
+                  - index: 2
+                    id: d
+                    function: {name: fourth, arguments: 0}
+                  - index: 3
+                    id: e
+                    function: {name: fifth, arguments: []}
+                  - index: 4
+                    id: f
+                    function: {name: sixth, arguments: 0.0}
+        - choices:
+            - index: 1
+              delta:
+                tool_calls:
+                  - index: 1
+                    id: c
+                    function: {name: third, arguments: x}
+        - choices:
+            - index: 0
+              delta:
+                tool_calls:
+                  - index: 1
+                    function: {arguments: b}
+env: {}
+compare: {ignore: []}

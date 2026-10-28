@@ -1,0 +1,53 @@
+#![cfg(test)]
+
+use super::{AssemblyInput, assemble};
+use rstest::rstest;
+
+#[rstest]
+#[case::tool_indices_and_fragments(r#"{"tool":{"chunks":[{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"a","function":{"name":"first","arguments":"a"}},{"index":0,"id":"b","function":{"name":"second","arguments":"{}"}},{"index":2,"id":"d","function":{"name":"fourth","arguments":0}},{"index":3,"id":"e","function":{"name":"fifth","arguments":[]}},{"index":4,"id":"f","function":{"name":"sixth","arguments":0.0}}]}}]},{"choices":[{"index":1,"delta":{"tool_calls":[{"index":1,"id":"c","function":{"name":"third","arguments":"x"}}]}}]},{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"b"}}]}}]}]}}"#, r#"[{"id":"b","type":"function","function":{"name":"second","arguments":"{}"}},{"id":"a","type":"function","function":{"name":"first","arguments":"ab"}},{"id":"d","type":"function","function":{"name":"fourth","arguments":"{}"}},{"id":"e","type":"function","function":{"name":"fifth","arguments":"{}"}},{"id":"f","type":"function","function":{"name":"sixth","arguments":"{}"}},{"id":"c","type":"function","function":{"name":"third","arguments":"x"}}]"#)]
+#[case::tool_metadata_last_truthy(r#"{"tool":{"chunks":[{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"one","provider_specific_fields":{"a":1}}}]}}]},{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a2","type":"custom","function":{"name":"two","provider_specific_fields":{"b":2}},"provider_specific_fields":{"a":3}}]}}]}]}}"#, r#"[{"id":"a2","type":"custom","function":{"name":"two","arguments":"{}"},"provider_specific_fields":{"a":3}}]"#)]
+#[case::custom_precedence_and_incomplete(r#"{"tool":{"chunks":[{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"custom-id","function":{"name":"ignored","arguments":"x"},"custom":{"name":"custom","input":"a"}}]}}]},{"choices":[{"delta":{"tool_calls":[{"index":0,"custom":{"input":"b"}},{"index":1,"function":{"name":"missing-id"}}]}}]}]}}"#, r#"[{"id":"custom-id","type":"custom","custom":{"name":"custom","input":"ab"}}]"#)]
+#[case::legacy_function_join(r#"{"function":{"chunks":[{"choices":[{"delta":{"function_call":{"name":"first","arguments":"a"}}}]},{"choices":[{"delta":{"function_call":{"name":"second","arguments":"b"}}}]}]}}"#, r#"{"name":"first","arguments":"ab"}"#)]
+fn stream_tool_assembly_cases(#[case] input: &str, #[case] expected: &str) {
+    let decoded: AssemblyInput = serde_json::from_str(input).unwrap();
+    let expected_output = expected.to_owned();
+    let actual = serde_json::to_string(&assemble(&decoded).unwrap()).unwrap();
+    assert_eq!(actual, expected_output);
+}
+
+#[test]
+fn legacy_function_join_null_first_name_succeeds() {
+    let input: AssemblyInput = serde_json::from_str(
+        r#"{"function":{"chunks":[{"choices":[{"delta":{"function_call":{"name":null,"arguments":"a"}}}]}]}}"#,
+    )
+    .unwrap();
+
+    let actual = serde_json::to_string(&assemble(&input).unwrap()).unwrap();
+    assert_eq!(actual, r#"{"name":null,"arguments":"a"}"#);
+}
+
+#[test]
+fn legacy_function_join_missing_arguments_is_attribute_error() {
+    let input: AssemblyInput = serde_json::from_str(
+        r#"{"function":{"chunks":[{"choices":[{"delta":{"function_call":{"name":"first"}}}]}]}}"#,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        assemble(&input),
+        Err(super::AssemblyError::MissingFunctionArguments)
+    ));
+}
+
+#[test]
+fn tool_fragment_truthy_nonzero_float_is_invalid_arguments() {
+    let input: AssemblyInput = serde_json::from_str(
+        r#"{"tool":{"chunks":[{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"first","arguments":1.5}}]}}]}]}}"#,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        assemble(&input),
+        Err(super::AssemblyError::InvalidArguments)
+    ));
+}
