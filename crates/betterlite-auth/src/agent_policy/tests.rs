@@ -146,24 +146,14 @@ fn named_owned_defaults(
 
 fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
     if kind == "auth" {
-        return serde_json::to_value(
-            serde_json::from_str::<AgentKillSwitchAuth>(input)
-                .unwrap()
-                .exposed(),
-        )
-        .unwrap()[field]
+        return serde_json::to_value(serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap())
+            .unwrap()[field]
             .to_string();
     }
     if kind == "config" {
-        let config: AgentKillSwitchConfig = serde_json::from_str(input).unwrap();
-        let mut output = serde_json::to_value(&config).unwrap();
-        if let Some(auth) = config.auth.as_ref() {
-            output.as_object_mut().unwrap().insert(
-                String::from("auth"),
-                serde_json::to_value(auth.exposed()).unwrap(),
-            );
-        }
-        return output[field].to_string();
+        return serde_json::to_value(serde_json::from_str::<AgentKillSwitchConfig>(input).unwrap())
+            .unwrap()[field]
+            .to_string();
     }
     if kind == "response" {
         return serde_json::to_value(serde_json::from_str::<AgentResponse>(input).unwrap())
@@ -190,12 +180,20 @@ fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
     r#"{"type":"bearer","token":"s","extra":1}"#
 )]
 #[case::empty_credentials_preserved("empty", r#"{"type":"basic","username":"","password":""}"#)]
-#[case::kill_method_five_variants("methods", "")]
+#[case::kill_method_five_variants("methods", "POST")]
+#[case::kill_method_put("methods", "PUT")]
+#[case::kill_method_patch("methods", "PATCH")]
+#[case::kill_method_delete("methods", "DELETE")]
+#[case::kill_method_get("methods", "GET")]
 #[case::kill_maps_fresh("maps", "")]
-#[case::kill_url_absolute_http_https("urls", "")]
+#[case::kill_url_absolute_http_https("urls", "http://example.com")]
+#[case::kill_url_https("urls", "https://example.com")]
 #[case::kill_url_original_not_normalized("original", "  HTTP://example.com/path")]
 #[case::kill_url_userinfo_and_port_not_restricted("authority", r#"{"url":"http://user@:80"}"#)]
-#[case::kill_url_bad_authority("bad_url", "")]
+#[case::kill_url_bad_authority("bad_url", "http://[::1")]
+#[case::kill_url_missing_authority("bad_url", "http:example.com")]
+#[case::kill_url_one_slash("bad_url", "http:/example.com")]
+#[case::kill_url_backslash("bad_url", r"http:\example.com")]
 #[case::kill_headers_not_validated_here(
     "headers",
     r#"{"url":"https://example.com","headers":{"Bad Header":"\u0001"}}"#
@@ -226,11 +224,9 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
             assert_eq!(auth.secret_value(), "");
         }
         "methods" => {
-            for method in ["POST", "PUT", "PATCH", "DELETE", "GET"] {
-                let method_input =
-                    format!(r#"{{"url":"https://example.com","method":"{method}"}}"#);
-                serde_json::from_str::<AgentKillSwitchConfig>(&method_input).unwrap();
-            }
+            let method_input = format!(r#"{{"url":"https://example.com","method":"{input}"}}"#);
+            let config: AgentKillSwitchConfig = serde_json::from_str(&method_input).unwrap();
+            assert_eq!(serde_json::to_value(config).unwrap()["method"], input);
         }
         "maps" => {
             let mut first: AgentKillSwitchConfig =
@@ -241,10 +237,7 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
             assert!(second.headers.is_empty());
         }
         "urls" => {
-            for url in ["http://example.com", "https://example.com"] {
-                serde_json::from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":"{url}"}}"#))
-                    .unwrap();
-            }
+            assert_eq!(KillSwitchUrl::try_from(input.to_owned()).unwrap().0, input);
         }
         "original" => assert_eq!(
             serde_json::from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":{input:?}}}"#))
@@ -257,22 +250,22 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
             serde_json::from_str::<AgentKillSwitchConfig>(input).unwrap();
         }
         "bad_url" => {
-            for url in [
-                "http:example.com",
-                "http:/example.com",
-                r"http:\example.com",
-                "http://[::1",
-            ] {
-                serde_json::from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":{url:?}}}"#))
-                    .unwrap_err();
-            }
+            KillSwitchUrl::try_from(input.to_owned()).unwrap_err();
         }
         "caller" => assert_eq!(
             (CALLER_USER_ID_HEADER, CALLER_TEAM_ID_HEADER),
             ("x-litellm-user-id", "x-litellm-team-id")
         ),
         "response_extra" | "open" | "sequence" => {
-            serde_json::from_str::<AgentResponse>(input).unwrap();
+            let response: AgentResponse = serde_json::from_str(input).unwrap();
+            let expected = match kind {
+                "open" => r#"{"x":[1,1]}"#,
+                "sequence" => r#"{"x":[2,1,2]}"#,
+                _ => "{}",
+            };
+            let output = serde_json::to_value(response).unwrap();
+            assert_eq!(output["agent_card_params"].to_string(), expected);
+            assert!(output.get("extra").is_none());
         }
         "binding_id" => assert_eq!(
             serde_json::from_str::<AgentIdentityBinding>(input)
@@ -294,4 +287,146 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
         }
         _ => panic!("unknown behavior case"),
     }
+}
+
+#[rstest]
+#[case::agent_response_field_litellm_params("litellm_params")]
+#[case::agent_response_field_object_permission("object_permission")]
+#[case::agent_response_field_spend("spend")]
+#[case::agent_response_field_tpm_limit("tpm_limit")]
+#[case::agent_response_field_rpm_limit("rpm_limit")]
+#[case::agent_response_field_session_tpm_limit("session_tpm_limit")]
+#[case::agent_response_field_session_rpm_limit("session_rpm_limit")]
+#[case::agent_response_field_static_headers("static_headers")]
+#[case::agent_response_field_extra_headers("extra_headers")]
+#[case::agent_response_field_access_group_ids("access_group_ids")]
+#[case::agent_response_field_kill_switch("kill_switch")]
+#[case::agent_response_field_keys("keys")]
+#[case::agent_response_field_search_score("search_score")]
+#[case::agent_response_field_created_at("created_at")]
+#[case::agent_response_field_updated_at("updated_at")]
+#[case::agent_response_field_created_by("created_by")]
+#[case::agent_response_field_updated_by("updated_by")]
+fn response_nullable_fields(#[case] field: &str) {
+    let input = r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#;
+    let missing: AgentResponse = serde_json::from_str(input).unwrap();
+    assert!(
+        serde_json::to_value(missing)
+            .unwrap()
+            .get(field)
+            .unwrap()
+            .is_null()
+    );
+    let explicit_input =
+        format!(r#"{{"agent_id":"a","agent_name":"n","agent_card_params":{{}},"{field}":null}}"#);
+    let explicit: AgentResponse = serde_json::from_str(&explicit_input).unwrap();
+    assert!(
+        serde_json::to_value(explicit)
+            .unwrap()
+            .get(field)
+            .unwrap()
+            .is_null()
+    );
+}
+
+#[rstest]
+#[case::bearer(r#"{"type":"bearer","token":"carried-secret"}"#, "token")]
+#[case::api_key(r#"{"type":"api_key","api_key":"carried-secret"}"#, "api_key")]
+#[case::basic(
+    r#"{"type":"basic","username":"u","password":"carried-secret"}"#,
+    "password"
+)]
+fn policy_secrets_absent_from_debug(#[case] input: &str, #[case] field: &str) {
+    let auth: AgentKillSwitchAuth = serde_json::from_str(input).unwrap();
+    assert!(!format!("{auth:?}").contains("carried-secret"));
+    assert_eq!(
+        serde_json::to_value(&auth).unwrap()[field],
+        "carried-secret"
+    );
+    let config: AgentKillSwitchConfig = serde_json::from_str(&format!(
+        r#"{{"url":"https://example.com","auth":{input}}}"#
+    ))
+    .unwrap();
+    assert!(!format!("{config:?}").contains("carried-secret"));
+    assert_eq!(
+        serde_json::to_value(&config).unwrap()["auth"][field],
+        "carried-secret"
+    );
+    let serialized = serde_json::to_string(&config).unwrap();
+    let response: AgentResponse = serde_json::from_str(&format!(
+        r#"{{"agent_id":"a","agent_name":"n","agent_card_params":{{}},"kill_switch":{serialized}}}"#
+    ))
+    .unwrap();
+    assert!(!format!("{response:?}").contains("carried-secret"));
+    assert_eq!(
+        serde_json::to_value(response).unwrap()["kill_switch"]["auth"][field],
+        "carried-secret"
+    );
+}
+
+#[test]
+fn binding_provider_other_rejected() {
+    serde_json::from_str::<AgentIdentityBinding>(
+        r#"{"agent_id":"a","provider":"other","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#
+    ).unwrap_err();
+}
+
+#[rstest]
+#[case::userinfo_ipv6("http://user@[::1]/", true)]
+#[case::invalid_ip_literal("http://[abc]", false)]
+#[case::bracket_suffix("http://[::1]x", false)]
+#[case::scheme_tab("ht\ttp://example.com", true)]
+#[case::authority_tab("http:/\t/example.com", true)]
+#[case::cr_lf("h\rtt\np://example.com", true)]
+#[case::ipvfuture("http://[v1.a]", true)]
+#[case::invalid_ipvfuture("http://[v.a]", false)]
+#[case::scoped_ipv6("http://[fe80::1%eth0]", true)]
+#[case::invalid_scope("http://[fe80::1%]", false)]
+#[case::nfkc_separator("http://example.com\u{ff0f}bad", false)]
+fn urlsplit_acceptance(#[case] input: &str, #[case] accepted: bool) {
+    let result = KillSwitchUrl::try_from(input.to_owned());
+    assert_eq!(result.is_ok(), accepted);
+    if let Ok(url) = result {
+        assert_eq!(url.0, input);
+    }
+}
+
+#[rstest]
+#[case::agent_response_field_agent_id("agent_id")]
+#[case::agent_response_field_agent_name("agent_name")]
+#[case::agent_response_field_agent_card_params("agent_card_params")]
+fn response_required_fields(#[case] field: &str, #[values(false, true)] explicit_null: bool) {
+    let mut fields: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#)
+            .unwrap();
+    if explicit_null {
+        fields.insert(field.to_owned(), serde_json::from_str("null").unwrap());
+    } else {
+        fields.remove(field);
+    }
+    serde_json::from_slice::<AgentResponse>(&serde_json::to_vec(&fields).unwrap()).unwrap_err();
+}
+
+#[rstest]
+#[case::autonomous("autonomous")]
+#[case::delegated("delegated")]
+#[case::both("both")]
+fn response_execution_modes(#[case] mode: &str) {
+    let input = format!(
+        r#"{{"agent_id":"a","agent_name":"n","agent_card_params":{{}},"execution_mode":"{mode}"}}"#
+    );
+    let response: AgentResponse = serde_json::from_str(&input).unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap()["execution_mode"],
+        mode
+    );
+}
+
+#[rstest]
+#[case::autonomous("autonomous")]
+#[case::delegated("delegated")]
+fn managed_execution_modes(#[case] mode: &str) {
+    let input = format!(r#"{{"agent_id":"a","mode":"{mode}"}}"#);
+    let context: ManagedAgentContext = serde_json::from_str(&input).unwrap();
+    assert_eq!(serde_json::to_value(context).unwrap()["mode"], mode);
 }

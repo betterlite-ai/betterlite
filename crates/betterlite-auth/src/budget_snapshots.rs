@@ -21,13 +21,25 @@ pub enum BudgetSnapshotError {
     },
 }
 
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct MetadataEntries(BTreeMap<String, Box<RawValue>>);
+
+impl AsRef<BTreeMap<String, Box<RawValue>>> for MetadataEntries {
+    fn as_ref(&self) -> &BTreeMap<String, Box<RawValue>> {
+        &self.0
+    }
+}
+
 pub trait BudgetSnapshot: Serialize + for<'de> Deserialize<'de> + Sized {
     const ALIASES: &'static [(&'static str, &'static str)];
 
-    fn metadata_entries(&self) -> Result<BTreeMap<String, Box<RawValue>>, BudgetSnapshotError> {
+    fn metadata_entries(&self) -> Result<MetadataEntries, BudgetSnapshotError> {
         let bytes =
             serde_json::to_vec(self).map_err(|source| BudgetSnapshotError::Serialize { source })?;
-        serde_json::from_slice(&bytes).map_err(|source| BudgetSnapshotError::Project { source })
+        let entries = serde_json::from_slice(&bytes)
+            .map_err(|source| BudgetSnapshotError::Project { source })?;
+        Ok(MetadataEntries(entries))
     }
 
     #[must_use]

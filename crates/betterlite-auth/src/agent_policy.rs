@@ -1,6 +1,8 @@
+mod auth_wire;
 pub mod records;
 mod tests;
 
+use auth_wire::ExposedSecret;
 use records::AgentKeySummary;
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
@@ -9,7 +11,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
+use std::net::Ipv6Addr;
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization as _;
 
 pub const CALLER_USER_ID_HEADER: &str = "x-litellm-user-id";
 pub const CALLER_TEAM_ID_HEADER: &str = "x-litellm-team-id";
@@ -28,59 +32,29 @@ impl Default for ApiKeyHeader {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AgentKillSwitchAuth {
     Bearer {
-        #[serde(skip_serializing)]
+        #[serde(
+            serialize_with = "serde_with::As::<serde_with::FromIntoRef<ExposedSecret>>::serialize"
+        )]
         token: SecretString,
     },
     ApiKey {
         #[serde(default)]
         header_name: ApiKeyHeader,
-        #[serde(skip_serializing)]
+        #[serde(
+            serialize_with = "serde_with::As::<serde_with::FromIntoRef<ExposedSecret>>::serialize"
+        )]
         api_key: SecretString,
     },
     Basic {
         username: String,
-        #[serde(skip_serializing)]
+        #[serde(
+            serialize_with = "serde_with::As::<serde_with::FromIntoRef<ExposedSecret>>::serialize"
+        )]
         password: SecretString,
     },
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum AgentKillSwitchAuthView {
-    Bearer {
-        token: String,
-    },
-    ApiKey {
-        header_name: ApiKeyHeader,
-        api_key: String,
-    },
-    Basic {
-        username: String,
-        password: String,
-    },
-}
-
 impl AgentKillSwitchAuth {
-    #[must_use]
-    pub fn exposed(&self) -> AgentKillSwitchAuthView {
-        match self {
-            Self::Bearer { token } => AgentKillSwitchAuthView::Bearer {
-                token: token.expose_secret().to_owned(),
-            },
-            Self::ApiKey {
-                header_name,
-                api_key,
-            } => AgentKillSwitchAuthView::ApiKey {
-                header_name: header_name.clone(),
-                api_key: api_key.expose_secret().to_owned(),
-            },
-            Self::Basic { username, password } => AgentKillSwitchAuthView::Basic {
-                username: username.clone(),
-                password: password.expose_secret().to_owned(),
-            },
-        }
-    }
-
     #[must_use]
     pub fn secret_value(&self) -> &str {
         match self {
@@ -95,15 +69,10 @@ impl AgentKillSwitchAuth {
 #[serde(rename_all = "UPPERCASE")]
 pub enum AgentKillSwitchMethod {
     #[default]
-    #[serde(rename = "POST")]
     Post,
-    #[serde(rename = "PUT")]
     Put,
-    #[serde(rename = "PATCH")]
     Patch,
-    #[serde(rename = "DELETE")]
     Delete,
-    #[serde(rename = "GET")]
     Get,
 }
 
@@ -124,7 +93,9 @@ impl TryFrom<String> for KillSwitchUrl {
     type Error = KillSwitchUrlError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let candidate = value.trim_start_matches(|character| character <= ' ');
+        let candidate = value
+            .trim_start_matches(|character| character <= ' ')
+            .replace(['\t', '\r', '\n'], "");
         let Some((scheme, remainder)) = candidate.split_once(':') else {
             return Err(KillSwitchUrlError);
         };
@@ -142,19 +113,52 @@ impl TryFrom<String> for KillSwitchUrl {
 
 fn has_valid_authority(value: &str) -> bool {
     let authority = value.split(['/', '?', '#']).next().unwrap_or_default();
-    if authority.is_empty() {
+    let unseparated = authority.replace(['@', ':', '#', '?'], "");
+    if authority.is_empty()
+        || unseparated
+            .nfkc()
+            .any(|character| "/?#@:".contains(character))
+    {
         return false;
     }
-    if authority.starts_with('[') {
-        return authority.find(']').is_some_and(|end| {
-            let Some(after_bracket) = end.checked_add(1).and_then(|index| authority.get(index..))
-            else {
-                return false;
-            };
-            !after_bracket.contains('[') && !after_bracket.contains(']')
+    if !authority.contains(['[', ']']) {
+        return true;
+    }
+    if !authority.contains('[') || !authority.contains(']') {
+        return false;
+    }
+    let host_port = authority.rsplit('@').next().unwrap_or_default();
+    let host = if let Some(bracketed) = host_port.strip_prefix('[') {
+        let Some((literal, suffix)) = bracketed.split_once(']') else {
+            return false;
+        };
+        if !suffix.is_empty() && !suffix.starts_with(':') {
+            return false;
+        }
+        literal
+    } else {
+        host_port.split(':').next().unwrap_or_default()
+    };
+    valid_ip_literal(host)
+}
+
+fn valid_ip_literal(host: &str) -> bool {
+    if let Some(future) = host.strip_prefix(['v', 'V']) {
+        return future.split_once('.').is_some_and(|(version, address)| {
+            !version.is_empty()
+                && version.bytes().all(|byte| byte.is_ascii_hexdigit())
+                && !address.is_empty()
         });
     }
-    !authority.contains(['[', ']'])
+    let address = if let Some((address, scope)) = host.split_once('%') {
+        if scope.is_empty() || scope.contains('%') {
+            return false;
+        }
+        address
+    } else {
+        host
+    };
+    address.parse::<Ipv6Addr>().is_ok()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

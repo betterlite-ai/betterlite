@@ -1,0 +1,11 @@
+kind: helper
+name: kill-switch-url-bracket-suffix
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "http://[::1]x"}
+env: {}
+compare:
+  ignore: 
+    - pointer: /error/message
+      why: betterlite writes its own validation message

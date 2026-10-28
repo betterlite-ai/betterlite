@@ -6,4 +6,6 @@ call:
     value: {agent_id: a, provider: other, tenant_id: t, client_id: c, issuer: i, revision: r}
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own validation message

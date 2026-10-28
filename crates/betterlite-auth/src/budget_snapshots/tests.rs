@@ -14,9 +14,18 @@ fn required_nullable_fields_and_aliases_are_serialized() {
         max_budget: None,
     };
     let entries = snapshot.metadata_entries().unwrap();
-    assert_eq!(entries["user_api_key_team_budget_reset_at"].get(), "null");
-    assert_eq!(entries["user_api_key_team_table_max_budget"].get(), "null");
-    assert_eq!(TeamBudgetSnapshot::from_metadata(&entries), Some(snapshot));
+    assert_eq!(
+        entries.as_ref()["user_api_key_team_budget_reset_at"].get(),
+        "null"
+    );
+    assert_eq!(
+        entries.as_ref()["user_api_key_team_table_max_budget"].get(),
+        "null"
+    );
+    assert_eq!(
+        TeamBudgetSnapshot::from_metadata(entries.as_ref()),
+        Some(snapshot)
+    );
 }
 
 #[test]
@@ -172,15 +181,39 @@ fn named_snapshot_contracts(#[case] name: &str, #[case] input: &str) {
         "team_reset" | "team_budget" | "extras" | "all_null" => {
             assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_some());
         }
-        "user_reset" | "user_budget" | "user_alias" | "embedded" => {
+        "user_reset" | "user_budget" | "user_alias" => {
             assert!(UserBudgetSnapshot::from_metadata(&metadata).is_some());
         }
-        "org_spend" | "org_budget" | "negative" | "decimal" => {
+        "org_spend" | "org_budget" => {
             assert!(OrgBudgetSnapshot::from_metadata(&metadata).is_some());
         }
-        "required" | "invalid" | "omitted" | "silent" | "range" => {
+        "required" | "invalid" | "omitted" | "silent" => {
             assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
         }
+        "embedded" => {
+            let snapshot = UserBudgetSnapshot::from_metadata(&metadata).unwrap();
+            assert_eq!(snapshot.user_alias.as_deref(), Some(r#"{"x":1}"#));
+            assert_eq!(
+                snapshot.metadata_entries().unwrap().as_ref()["user_api_key_user_alias"].get(),
+                r#""{\"x\":1}""#
+            );
+        }
+        "negative" | "decimal" => {
+            let snapshot = OrgBudgetSnapshot::from_metadata(&metadata).unwrap();
+            let expected = if name == "negative" { "-1" } else { "1.2300" };
+            assert_eq!(snapshot.spend.to_string(), expected);
+            assert_eq!(
+                snapshot.max_budget,
+                (name == "negative").then(|| Decimal::from(-2_i32))
+            );
+            let entries = snapshot.metadata_entries().unwrap();
+            assert_eq!(entries.as_ref()["user_api_key_org_spend"].get(), expected);
+            assert_eq!(
+                entries.as_ref()["user_api_key_org_max_budget"].get(),
+                if name == "negative" { "-2" } else { "null" }
+            );
+        }
+        "range" => assert!(OrgBudgetSnapshot::from_metadata(&metadata).is_none()),
         "precedence" => {
             let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
             assert_eq!(
@@ -191,23 +224,39 @@ fn named_snapshot_contracts(#[case] name: &str, #[case] input: &str) {
         "metadata" => {
             let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
             assert_eq!(
-                snapshot.metadata_entries().unwrap()["user_api_key_team_budget_reset_at"].get(),
+                snapshot.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"]
+                    .get(),
                 "null"
             );
         }
         "dates" => {
             let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-            assert!(matches!(
-                snapshot.budget_reset_at,
-                Some(SnapshotDateTime::Offset(_))
-            ));
+            assert_eq!(
+                snapshot.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"]
+                    .get(),
+                r#""2026-01-01T12:00:00+02:00""#
+            );
         }
         "readonly" => {
-            TeamBudgetSnapshot::from_metadata(&metadata)
-                .unwrap()
-                .metadata_entries()
-                .unwrap();
+            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+            let entries = snapshot.metadata_entries().unwrap();
+            let shared: &BTreeMap<String, Box<RawValue>> = entries.as_ref();
+            assert_eq!(shared["user_api_key_team_table_max_budget"].get(), "null");
+            assert_eq!(shared.len(), 2);
         }
         _ => panic!("unknown snapshot case"),
     }
+}
+
+#[rstest]
+#[case::utc("2026-01-01T12:00:00Z")]
+#[case::offset("2026-01-01T12:00:00+02:00")]
+#[case::naive("2026-01-01T12:00:00")]
+fn metadata_date_serialization(#[case] date: &str) {
+    let snapshot: KeyBudgetSnapshot =
+        serde_json::from_str(&format!(r#"{{"budget_reset_at":{date:?}}}"#)).unwrap();
+    assert_eq!(
+        snapshot.metadata_entries().unwrap().as_ref()["user_api_key_budget_reset_at"].get(),
+        format!("{date:?}")
+    );
 }

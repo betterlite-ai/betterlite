@@ -3,7 +3,7 @@ name: agent-response-auth
 call:
   carried_policy_records:
     function: agent_response
-    value: {agent_id: a, agent_name: n, agent_card_params: {}, kill_switch: {url: 'https://example.com', auth: {type: basic, username: u, password: carried-secret}}}
+    value: {agent_id: a, agent_name: 'n', agent_card_params: {}, kill_switch: {url: 'https://example.com', auth: {type: basic, username: u, password: carried-secret}}}
 env: {}
 compare:
   ignore: []
