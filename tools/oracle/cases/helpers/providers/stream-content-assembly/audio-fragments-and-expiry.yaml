@@ -2,12 +2,65 @@ kind: helper
 name: audio-fragments-and-expiry
 call:
   stream_content_assembly:
-    function: audio_fragments_and_expiry
-    now: 100
-    chunks:
+    function: batch
+    cases:
+    - function: audio_fragments_and_expiry
+      now: 100
+      chunks:
       - choices:
-          - delta: {audio: {data: YQ==, transcript: a, expires_at: 0, id: one}}
+        - delta:
+            audio:
+              data: YQ==
+              transcript: a
+              expires_at: 0
+              id: one
       - choices:
-          - delta: {audio: {data: Yg==, transcript: b, expires_at: -2, id: ''}}
-env: {}
-compare: {ignore: []}
+        - delta:
+            audio:
+              data: Yg==
+              transcript: b
+              expires_at: -2
+              id: ''
+      - choices:
+        - delta:
+            audio:
+              expires_at: true
+        - delta:
+            audio:
+              data: null
+              transcript: 7
+              expires_at: later
+              id: null
+    - function: audio_fragments_and_expiry
+      now: 100
+      chunks:
+      - choices:
+        - delta:
+            audio:
+              expires_at: -2
+    - function: audio_fragments_and_expiry
+      now: 100
+      chunks:
+      - choices:
+        - delta:
+            audio:
+              expires_at: false
+    - function: audio_fragments_and_expiry
+      now: 100
+      chunks:
+      - choices:
+        - delta:
+            audio:
+              data: YQ=
+env:
+  LITELLM_RUST: 'false'
+compare:
+  ignore:
+  - pointer: /3/error
+    why: betterlite uses its own error wording
+  - pointer: /1/id
+    why: 'Documented B2234 deviation: absent audio ID remains null as required by the task instead of
+      an SDK-generated UUID'
+  - pointer: /2/id
+    why: 'Documented B2234 deviation: absent audio ID remains null as required by the task instead of
+      an SDK-generated UUID'

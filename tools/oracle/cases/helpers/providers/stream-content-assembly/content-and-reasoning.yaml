@@ -2,9 +2,41 @@ kind: helper
 name: content-and-reasoning
 call:
   stream_content_assembly:
-    function: content_and_reasoning
-    chunks:
-      - choices: [{delta: {content: a, reasoning_content: r}}]
-      - choices: [{delta: {content: b, reasoning_content: s}}]
-env: {}
-compare: {ignore: []}
+    function: batch
+    cases:
+    - function: content_and_reasoning
+      chunks:
+      - choices:
+        - delta:
+            content: a
+            reasoning_content: r
+      - choices:
+        - delta:
+            content: b
+            reasoning_content: s
+    - function: content_and_reasoning
+      chunks:
+      - choices:
+        - {}
+        - delta:
+            content: null
+            reasoning_content: r
+        - delta:
+            content: next
+    - function: content_and_reasoning
+      chunks:
+      - choices:
+        - delta:
+            content: []
+    - function: content_and_reasoning
+      chunks:
+      - choices:
+        - delta:
+            reasoning_content: 4
+env: {LITELLM_RUST: 'false'}
+compare:
+  ignore:
+  - pointer: /2/error
+    why: betterlite uses its own error wording
+  - pointer: /3/error
+    why: betterlite uses its own error wording

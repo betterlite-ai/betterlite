@@ -1,9 +1,16 @@
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
-use serde::de::IgnoredAny;
-use serde::{Deserialize, Serialize};
+use base64::alphabet;
+use base64::engine::GeneralPurpose;
+use base64::engine::general_purpose::{NO_PAD, STANDARD};
 use std::mem;
 use thiserror::Error;
+
+pub mod wire;
+
+use wire::{
+    AudioResponse, Chunk, ChunkText, Delta, ExpiryInput, ExpiryValue, ThinkingBlock,
+    ThinkingBlocks, ThinkingInput,
+};
 
 const DEFAULT_AUDIO_LIMIT: usize = 8 * 1024 * 1024;
 
@@ -11,96 +18,20 @@ const DEFAULT_AUDIO_LIMIT: usize = 8 * 1024 * 1024;
 pub enum AssemblyError {
     #[error("content field is not a string")]
     NonStringContent,
-    #[error("invalid audio base64: {0}")]
-    InvalidAudioBase64(String),
+    #[error("invalid audio base64: {source}")]
+    InvalidAudioBase64 {
+        #[source]
+        source: base64::DecodeError,
+    },
+    #[error("audio base64 requires ASCII input")]
+    NonAsciiAudio,
+    #[error("invalid audio base64 padding")]
+    InvalidAudioPadding,
     #[error("decoded audio exceeds {limit} bytes")]
     AudioTooLarge { limit: usize },
+    #[error("assembled output exceeds {DEFAULT_AUDIO_LIMIT} bytes")]
+    OutputTooLarge,
 }
-#[derive(Debug, Deserialize)]
-pub struct Chunk {
-    pub choices: Vec<Choice>,
-}
-#[derive(Debug, Deserialize)]
-pub struct Choice {
-    #[serde(default)]
-    pub delta: Option<Delta>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct Delta {
-    #[serde(default)]
-    pub content: Option<ChunkText>,
-    #[serde(default)]
-    pub reasoning_content: Option<ChunkText>,
-    #[serde(default)]
-    pub thinking_blocks: Option<ThinkingBlocks>,
-    #[serde(default)]
-    pub audio: Option<AudioDelta>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum ChunkText {
-    Text(String),
-    Other(IgnoredAny),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum ThinkingBlocks {
-    List(Vec<ThinkingInput>),
-    Other(IgnoredAny),
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ThinkingInput {
-    #[serde(default)]
-    pub r#type: Option<String>,
-    #[serde(default)]
-    pub thinking: Option<String>,
-    #[serde(default)]
-    pub signature: Option<String>,
-    #[serde(default)]
-    pub data: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct AudioDelta {
-    #[serde(default)]
-    pub data: Option<ChunkText>,
-    #[serde(default)]
-    pub transcript: Option<ChunkText>,
-    #[serde(default)]
-    pub expires_at: Option<ExpiryValue>,
-    #[serde(default)]
-    pub id: Option<ChunkText>,
-}
-
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
-#[serde(untagged)]
-pub enum ExpiryValue {
-    Boolean(bool),
-    Signed(i64),
-    Unsigned(u64),
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(tag = "type")]
-pub enum ThinkingBlock {
-    #[serde(rename = "thinking")]
-    Thinking { thinking: String, signature: String },
-    #[serde(rename = "redacted_thinking")]
-    Redacted { data: String },
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-pub struct AudioResponse {
-    pub data: String,
-    pub expires_at: ExpiryValue,
-    pub transcript: String,
-    pub id: Option<String>,
-}
-
 pub fn get_combined_content(
     chunks: &[Chunk],
     field: ContentField,
@@ -132,7 +63,7 @@ fn append_content(
         ContentField::Reasoning => chunk_delta.reasoning_content.as_ref(),
     });
     match value {
-        Some(ChunkText::Text(text)) => combined.push_str(text),
+        Some(ChunkText::Text(text)) => append_text(combined, text)?,
         Some(ChunkText::Other(_)) => return Err(AssemblyError::NonStringContent),
         None => {}
     }
@@ -145,8 +76,9 @@ pub enum ContentField {
     Reasoning,
 }
 
-#[must_use]
-pub fn get_combined_thinking_content(chunks: &[Chunk]) -> Option<Vec<ThinkingBlock>> {
+pub fn get_combined_thinking_content(
+    chunks: &[Chunk],
+) -> Result<Option<Vec<ThinkingBlock>>, AssemblyError> {
     let mut state = ThinkingState::default();
     for chunk in chunks {
         for choice in &chunk.choices {
@@ -158,11 +90,11 @@ pub fn get_combined_thinking_content(chunks: &[Chunk]) -> Option<Vec<ThinkingBlo
                 continue;
             };
             for block in blocks {
-                state.consume(block);
+                state.consume(block)?;
             }
         }
     }
-    state.finish()
+    Ok(state.finish())
 }
 
 #[derive(Default)]
@@ -170,26 +102,31 @@ struct ThinkingState {
     blocks: Vec<ThinkingBlock>,
     text: String,
     signature: Option<String>,
+    size: usize,
 }
 
 impl ThinkingState {
-    fn consume(&mut self, block: &ThinkingInput) {
+    fn consume(&mut self, block: &ThinkingInput) -> Result<(), AssemblyError> {
         if block.r#type.as_deref() == Some("redacted_thinking") {
             self.flush();
             if let Some(data) = block.data.as_deref().filter(|data| !data.is_empty()) {
+                self.size = checked_size(self.size, data.len())?;
                 self.blocks.push(ThinkingBlock::Redacted {
                     data: data.to_owned(),
                 });
             }
-            return;
+            return Ok(());
         }
         if let Some(thinking) = block.thinking.as_deref().filter(|text| !text.is_empty()) {
+            self.size = checked_size(self.size, thinking.len())?;
             self.text.push_str(thinking);
         }
         if let Some(signature) = block.signature.as_deref().filter(|value| !value.is_empty()) {
+            self.size = checked_size(self.size, signature.len())?;
             self.signature = Some(signature.to_owned());
             self.flush();
         }
+        Ok(())
     }
 
     fn flush(&mut self) {
@@ -240,12 +177,16 @@ impl AudioState {
                 .extend(decode_stream_audio_fragment(data, remaining)?);
         }
         if let Some(ChunkText::Text(value)) = &audio.transcript {
-            self.transcript.push_str(value);
+            append_text(&mut self.transcript, value)?;
         }
-        if let Some(value) = &audio.expires_at {
-            self.expires_at = Some(value.clone());
+        if let Some(ExpiryInput::Integer(value)) = &audio.expires_at {
+            self.expires_at = Some(match value {
+                ExpiryValue::Boolean(boolean) => ExpiryValue::Signed(i64::from(*boolean)),
+                ExpiryValue::Signed(_) | ExpiryValue::Unsigned(_) => value.clone(),
+            });
         }
         if let Some(ChunkText::Text(value)) = &audio.id {
+            checked_size(0, value.len())?;
             self.id = Some(value.clone());
         }
         Ok(())
@@ -279,22 +220,32 @@ pub fn decode_stream_audio_fragment(
     fragment: &str,
     max_decoded_bytes: usize,
 ) -> Result<Vec<u8>, AssemblyError> {
-    let filtered: String = fragment
-        .chars()
-        .filter(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '/' | '=')
-        })
-        .collect();
-    let decoded = STANDARD
-        .decode(filtered.as_bytes())
-        .map_err(|error| AssemblyError::InvalidAudioBase64(error.to_string()))?;
-    if decoded.len() > max_decoded_bytes {
-        return Err(AssemblyError::AudioTooLarge {
-            limit: max_decoded_bytes,
-        });
-    }
-    Ok(decoded)
+    let filtered = decoder::normalize(fragment, max_decoded_bytes)?;
+    let engine = GeneralPurpose::new(
+        &alphabet::STANDARD,
+        NO_PAD.with_decode_allow_trailing_bits(true),
+    );
+    engine
+        .decode(filtered)
+        .map_err(|source| AssemblyError::InvalidAudioBase64 { source })
 }
 
-#[path = "stream_content_assembly/tests.rs"]
-mod stream_content_assembly_cases;
+const fn checked_size(current: usize, additional: usize) -> Result<usize, AssemblyError> {
+    match current.checked_add(additional) {
+        Some(size) if size <= DEFAULT_AUDIO_LIMIT => Ok(size),
+        _ => Err(AssemblyError::OutputTooLarge),
+    }
+}
+
+fn append_text(target: &mut String, value: &str) -> Result<(), AssemblyError> {
+    checked_size(target.len(), value.len())?;
+    target.push_str(value);
+    Ok(())
+}
+
+mod decoder;
+
+mod tests;
+
+#[path = "stream_content_assembly/edge/tests.rs"]
+mod edge_tests;

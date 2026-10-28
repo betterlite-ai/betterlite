@@ -1,5 +1,6 @@
+use betterlite_streaming::stream_content_assembly::wire::Chunk;
 use betterlite_streaming::stream_content_assembly::{
-    Chunk, ContentField, decode_stream_audio_fragment, get_combined_audio_content,
+    AssemblyError, ContentField, decode_stream_audio_fragment, get_combined_audio_content,
     get_combined_content, get_combined_thinking_content,
 };
 use serde::Deserialize;
@@ -11,6 +12,9 @@ mod tests;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
+    Batch {
+        cases: Vec<Self>,
+    },
     ContentAndReasoning {
         chunks: Vec<Chunk>,
     },
@@ -34,6 +38,10 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let result = match input {
+            Input::Batch { cases } => {
+                let results: Result<Vec<_>, _> = cases.iter().map(Self::run).collect();
+                json!(results?)
+            }
             Input::ContentAndReasoning { chunks } => {
                 let content = get_combined_content(chunks, ContentField::Content);
                 let reasoning = get_combined_content(chunks, ContentField::Reasoning);
@@ -41,18 +49,19 @@ impl crate::helpers::Helper for Op {
                     (Ok(content_value), Ok(reasoning_value)) => {
                         json!({"content": content_value, "reasoning": reasoning_value})
                     }
-                    (Err(error), _) | (_, Err(error)) => {
-                        json!({"ok": false, "error": error.to_string()})
-                    }
+                    (Err(error), _) | (_, Err(error)) => error_output(&error),
                 }
             }
             Input::ThinkingSignatureBoundaries { chunks } => {
-                json!(get_combined_thinking_content(chunks))
+                match get_combined_thinking_content(chunks) {
+                    Ok(blocks) => json!(blocks),
+                    Err(error) => error_output(&error),
+                }
             }
             Input::AudioFragmentsAndExpiry { chunks, now } => {
                 match get_combined_audio_content(chunks, *now) {
                     Ok(audio) => json!(audio),
-                    Err(error) => json!({"ok": false, "error": error.to_string()}),
+                    Err(error) => error_output(&error),
                 }
             }
             Input::AudioBase64Decoder {
@@ -60,9 +69,19 @@ impl crate::helpers::Helper for Op {
                 max_decoded_bytes,
             } => match decode_stream_audio_fragment(fragment, *max_decoded_bytes) {
                 Ok(bytes) => json!({"ok": true, "bytes": bytes}),
-                Err(error) => json!({"ok": false, "error": error.to_string()}),
+                Err(error) => error_output(&error),
             },
         };
         Ok(result)
     }
+}
+
+fn error_output(error: &AssemblyError) -> serde_json::Value {
+    let error_type = match error {
+        AssemblyError::NonStringContent => "TypeError",
+        AssemblyError::NonAsciiAudio => "ValueError",
+        AssemblyError::InvalidAudioBase64 { .. } | AssemblyError::InvalidAudioPadding => "Error",
+        AssemblyError::AudioTooLarge { .. } | AssemblyError::OutputTooLarge => "OutputTooLarge",
+    };
+    json!({"ok": false, "error_type": error_type, "error": error.to_string()})
 }
