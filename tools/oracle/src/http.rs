@@ -4,8 +4,8 @@ use std::str::{self, Utf8Error};
 use std::time::Duration;
 
 use crate::OracleError;
-use crate::case::{BodyKind, Request, RequestBody};
-use crate::multipart_oracle;
+use crate::case::{Request, RequestBody};
+use crate::multipart_oracle::request::request_body;
 use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
@@ -47,10 +47,10 @@ pub(crate) fn send(
     for (name, value) in &request.headers {
         outgoing = outgoing.header(name, value);
     }
-    if !request.body.is_null() {
-        outgoing = add_body(outgoing, &request.body, request.body_kind)?;
-    }
-    let incoming = outgoing.send().map_err(OracleError::HttpRequest)?;
+    let body = request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
+    let incoming = with_body(outgoing, body)
+        .send()
+        .map_err(OracleError::HttpRequest)?;
     let status = incoming.status().as_u16();
     let headers = incoming
         .headers()
@@ -78,26 +78,23 @@ pub(crate) fn send(
     })
 }
 
-fn add_body(
-    outgoing: RequestBuilder,
-    body: &Value,
-    kind: BodyKind,
-) -> Result<RequestBuilder, OracleError> {
-    match multipart_oracle::request::request_body(body, kind)? {
-        RequestBody::Json(bytes) => Ok(outgoing.body(bytes)),
-        RequestBody::Raw {
-            content_type,
-            bytes,
-        } => Ok(outgoing.header("content-type", content_type).body(bytes)),
-    }
-}
-
 pub(crate) fn ready(client: &Client, base: &str) -> Result<bool, OracleError> {
     let response = client
         .get(format!("{base}/health/liveliness"))
         .send()
         .map_err(OracleError::HttpRequest)?;
     Ok(response.status() == reqwest::StatusCode::OK)
+}
+
+fn with_body(outgoing: RequestBuilder, body: RequestBody) -> RequestBuilder {
+    match body {
+        RequestBody::Empty => outgoing,
+        RequestBody::Json(bytes) => outgoing.body(bytes),
+        RequestBody::Raw {
+            content_type,
+            bytes,
+        } => outgoing.header("content-type", content_type).body(bytes),
+    }
 }
 
 pub(crate) fn parse_body(

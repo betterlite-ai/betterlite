@@ -3,11 +3,20 @@ use serde::Deserialize;
 use crate::case::BodyKind;
 
 pub mod capture;
-pub(crate) mod request;
+pub mod error;
+pub mod request;
 
-pub(crate) const MAX_FIXTURE_BYTES: usize = 16 * 1024 * 1024;
-pub(crate) const MAX_PARTS: usize = 128;
-pub(crate) const MAX_CAPTURED_BODY_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) struct OracleLimits {
+    pub(crate) fixture_bytes: usize,
+    pub(crate) parts: usize,
+    pub(crate) captured_body_bytes: usize,
+}
+
+pub(crate) const LIMITS: OracleLimits = OracleLimits {
+    fixture_bytes: 16 * 1024 * 1024,
+    parts: 128,
+    captured_body_bytes: 16 * 1024 * 1024,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Part {
@@ -20,6 +29,8 @@ pub struct Part {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PartSpec {
+    // an absent name reaches the empty-name diagnostic instead of serde's missing-field one
+    #[serde(default)]
     pub(crate) name: String,
     pub(crate) filename: Option<String>,
     pub(crate) content_type: Option<String>,
@@ -36,8 +47,14 @@ pub(crate) struct MultipartSpec {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BytesSpec {
-    #[serde(default)]
-    pub(crate) body_kind: Option<BodyKind>,
+    pub(crate) fixture: String,
+    pub(crate) content_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BytesAnswer {
+    pub(crate) body_kind: BodyKind,
     pub(crate) fixture: String,
     pub(crate) content_type: String,
 }

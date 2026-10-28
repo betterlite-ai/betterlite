@@ -9,7 +9,8 @@ use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::multipart_oracle;
+use crate::multipart_oracle::error::MultipartError;
+use crate::multipart_oracle::request::{answer_body, request_body};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,7 +63,7 @@ pub(crate) struct HelperCompare {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Request {
+pub struct Request {
     pub(crate) method: String,
     pub(crate) path: String,
     pub(crate) headers: BTreeMap<String, String>,
@@ -73,15 +74,17 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum BodyKind {
+pub enum BodyKind {
     #[default]
     Json,
     Multipart,
     Bytes,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum RequestBody {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum RequestBody {
+    #[default]
+    Empty,
     Json(Vec<u8>),
     Raw {
         content_type: String,
@@ -158,9 +161,11 @@ pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
     decode_case(path, bytes)
 }
 
-pub fn decode_http_body(bytes: &[u8]) -> Result<HttpCase, OracleError> {
-    let path = Path::new("<bytes>");
-    decode_case(path, bytes)
+pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
+    let text = str::from_utf8(bytes).map_err(MultipartError::RequestUtf8)?;
+    let request: Request = serde_saphyr::from_str(text)
+        .map_err(|source| MultipartError::RequestSpecification(Box::new(source)))?;
+    request_body(&request.body, request.body_kind)
 }
 
 fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
@@ -235,18 +240,10 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
                 "each upstream answer must contain exactly one of body or events",
             ));
         }
-        if answer
-            .headers
-            .get("content-type")
-            .is_some_and(|value| value.starts_with("application/octet-stream"))
-        {
-            drop(multipart_oracle::request::answer_body(answer)?);
-        }
+        answer_body(answer).map_err(OracleError::Multipart)?;
     }
-    drop(multipart_oracle::request::request_body(
-        &case.request.body,
-        case.request.body_kind,
-    )?);
+    // the request body decodes here once so a bad specification stops the run before any gateway starts
+    request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &case.compare.ignore)
 }
 

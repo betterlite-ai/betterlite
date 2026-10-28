@@ -75,10 +75,8 @@ pub enum OracleError {
     HttpText(#[source] Utf8Error),
     #[error("response body event is not valid JSON: {0}")]
     HttpBody(#[source] serde_json::Error),
-    #[error("{0}")]
-    Multipart(&'static str),
-    #[error("{0}")]
-    MultipartOwned(String),
+    #[error(transparent)]
+    Multipart(multipart_oracle::error::MultipartError),
     #[error("mock provider failed: {0}")]
     MockIo(#[source] io::Error),
     #[error("mock provider thread panicked")]

@@ -1,189 +1,114 @@
 use std::str;
 
-use crate::OracleError;
+use super::error::MultipartError;
+use super::{LIMITS, Part};
 
-use super::{MAX_CAPTURED_BODY_BYTES, MAX_PARTS, Part};
-
-pub fn decode_multipart_capture(content_type: &str, body: &[u8]) -> Result<Vec<Part>, OracleError> {
-    if body.len() > MAX_CAPTURED_BODY_BYTES {
-        return Err(OracleError::Multipart(
-            "captured body exceeds 16777216 bytes",
-        ));
+pub fn decode_multipart_capture(
+    content_type: &str,
+    body: &[u8],
+) -> Result<Vec<Part>, MultipartError> {
+    if body.len() > LIMITS.captured_body_bytes {
+        return Err(MultipartError::CapturedTooLarge {
+            limit: LIMITS.captured_body_bytes,
+        });
     }
-    let boundary = boundary(content_type).ok_or(OracleError::Multipart(
-        "multipart capture has no valid boundary",
-    ))?;
-    let marker = format!("--{boundary}").into_bytes();
-    decode_parts(body, &marker, &boundary)
-}
-
-fn decode_parts(body: &[u8], marker: &[u8], boundary: &str) -> Result<Vec<Part>, OracleError> {
+    let boundary = boundary(content_type).ok_or(MultipartError::Boundary)?;
+    let delimiter = format!("\r\n--{boundary}");
+    let opening = delimiter.get(2..).ok_or(MultipartError::Boundary)?;
+    let mut rest = body
+        .strip_prefix(opening.as_bytes())
+        .ok_or(MultipartError::Boundary)?;
     let mut parts = Vec::new();
-    let mut cursor = 0;
-    while let Some(start) = find_marker(body, cursor, marker) {
-        let marker_end = start
-            .checked_add(marker.len())
-            .ok_or(OracleError::Multipart(
-                "multipart capture has no valid boundary",
-            ))?;
-        if body.get(
-            marker_end
-                ..marker_end.checked_add(2).ok_or(OracleError::Multipart(
-                    "multipart capture has no valid boundary",
-                ))?,
-        ) == Some(b"--")
-        {
-            break;
+    loop {
+        if let Some(epilogue) = rest.strip_prefix(b"--") {
+            return match epilogue {
+                b"" | b"\r\n" => Ok(parts),
+                _ => Err(MultipartError::Boundary),
+            };
         }
-        let content_start = marker_end.checked_add(2).ok_or(OracleError::Multipart(
-            "multipart capture has no valid boundary",
-        ))?;
-        let next = find_marker(body, content_start, marker).ok_or(OracleError::Multipart(
-            "multipart capture has no valid boundary",
-        ))?;
-        parts.push(parse_part(body.get(content_start..next).ok_or(
-            OracleError::Multipart("multipart capture has no valid boundary"),
-        )?)?);
-        if parts.len() > MAX_PARTS {
-            return Err(OracleError::Multipart(
-                "multipart contains more than 128 parts",
-            ));
+        let section_start = rest.strip_prefix(b"\r\n").ok_or(MultipartError::Boundary)?;
+        let end = section_start
+            .windows(delimiter.len())
+            .position(|window| window == delimiter.as_bytes())
+            .ok_or(MultipartError::Boundary)?;
+        let (section, next) = section_start
+            .split_at_checked(end)
+            .ok_or(MultipartError::Boundary)?;
+        if parts.len() == LIMITS.parts {
+            return Err(MultipartError::TooManyParts {
+                limit: LIMITS.parts,
+            });
         }
-        cursor = next;
+        parts.push(parse_part(section)?);
+        rest = next
+            .strip_prefix(delimiter.as_bytes())
+            .ok_or(MultipartError::Boundary)?;
     }
-    if parts.is_empty() && !body.ends_with(format!("--{boundary}--\r\n").as_bytes()) {
-        return Err(OracleError::Multipart(
-            "multipart capture has no valid boundary",
-        ));
-    }
-    Ok(parts)
 }
 
-fn find_marker(body: &[u8], start: usize, marker: &[u8]) -> Option<usize> {
-    let offset = body
-        .get(start..)?
-        .windows(marker.len())
-        .position(|window| window == marker)?;
-    start.checked_add(offset)
+pub fn split_capture_input(input: &[u8]) -> Result<(&str, &[u8]), MultipartError> {
+    let (prefix, rest) = input
+        .split_first_chunk::<2>()
+        .ok_or(MultipartError::CaptureInput)?;
+    let (content_type, body) = rest
+        .split_at_checked(usize::from(u16::from_be_bytes(*prefix)))
+        .ok_or(MultipartError::CaptureInput)?;
+    let text = str::from_utf8(content_type).map_err(|_source| MultipartError::Boundary)?;
+    Ok((text, body))
 }
 
-fn parse_part(raw_section: &[u8]) -> Result<Part, OracleError> {
-    let section = raw_section.strip_suffix(b"\r\n").unwrap_or(raw_section);
+fn parse_part(section: &[u8]) -> Result<Part, MultipartError> {
     let split = section
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
-        .ok_or(OracleError::Multipart(
-            "multipart capture has no valid boundary",
-        ))?;
-    let headers = section.get(..split).ok_or(OracleError::Multipart(
-        "multipart capture has no valid boundary",
-    ))?;
-    let payload_start = split.checked_add(4).ok_or(OracleError::Multipart(
-        "multipart capture has no valid boundary",
-    ))?;
-    let payload = section.get(payload_start..).ok_or(OracleError::Multipart(
-        "multipart capture has no valid boundary",
-    ))?;
-    let (name, filename, content_type) = parse_headers(headers)?;
-    Ok(Part {
-        name,
-        filename,
-        content_type,
-        body: payload.to_vec(),
-    })
-}
-
-fn parse_headers(headers: &[u8]) -> Result<(String, Option<String>, Option<String>), OracleError> {
-    let mut name = None;
-    let mut filename = None;
-    let mut part_content_type = None;
-    for header_line in headers.split(|byte| *byte == b'\n') {
-        let line = header_line.strip_suffix(b"\r").unwrap_or(header_line);
-        match line {
-            line_value if line_value.starts_with(b"Content-Disposition: form-data; ") => {
-                let disposition = line_value
-                    .strip_prefix(b"Content-Disposition: form-data; ")
-                    .ok_or(OracleError::Multipart(
-                        "multipart capture has no valid boundary",
-                    ))?;
-                let (part_name, part_filename) = parse_disposition(disposition)?;
-                name = part_name.or(name);
-                filename = part_filename.or(filename);
-            }
-            line_value if line_value.starts_with(b"Content-Type: ") => {
-                let value =
-                    line_value
-                        .strip_prefix(b"Content-Type: ")
-                        .ok_or(OracleError::Multipart(
-                            "multipart capture has no valid boundary",
-                        ))?;
-                part_content_type = Some(String::from_utf8(value.to_vec()).map_err(|_error| {
-                    OracleError::Multipart("multipart capture has no valid boundary")
-                })?);
-            }
-            _ => {}
+        .ok_or(MultipartError::Boundary)?;
+    let (headers, payload) = section
+        .split_at_checked(split)
+        .ok_or(MultipartError::Boundary)?;
+    let mut part = Part {
+        name: String::new(),
+        filename: None,
+        content_type: None,
+        body: payload.get(4..).ok_or(MultipartError::Boundary)?.to_vec(),
+    };
+    let mut disposition_seen = false;
+    for raw_line in headers.split(|byte| *byte == b'\n') {
+        let line = str::from_utf8(raw_line.strip_suffix(b"\r").unwrap_or(raw_line))
+            .map_err(|_source| MultipartError::Boundary)?;
+        let unsupported = || MultipartError::PartHeader {
+            line: line.to_owned(),
+        };
+        let (name, value) = line.split_once(": ").ok_or_else(unsupported)?;
+        if name.eq_ignore_ascii_case("content-disposition") && !disposition_seen {
+            disposition_seen = true;
+            let attributes = value.strip_prefix("form-data; ").ok_or_else(unsupported)?;
+            parse_disposition(attributes, &mut part).ok_or_else(unsupported)?;
+        } else if name.eq_ignore_ascii_case("content-type") && part.content_type.is_none() {
+            part.content_type = Some(value.to_owned());
+        } else {
+            return Err(unsupported());
         }
     }
-    Ok((
-        name.ok_or(OracleError::Multipart(
-            "multipart capture has no valid boundary",
-        ))?,
-        filename,
-        part_content_type,
-    ))
+    if part.name.is_empty() {
+        return Err(MultipartError::PartName);
+    }
+    Ok(part)
 }
 
-fn parse_disposition(disposition: &[u8]) -> Result<(Option<String>, Option<String>), OracleError> {
-    let attributes = disposition
-        .split(|byte| *byte == b';')
-        .map(|attribute| attribute.strip_prefix(b" ").unwrap_or(attribute))
-        .collect::<Vec<_>>();
-    let name = find_attribute(&attributes, b"name=\"")?;
-    let filename = find_attribute(&attributes, b"filename=\"")?;
-    Ok((name, filename))
-}
-
-fn find_attribute(attributes: &[&[u8]], prefix: &[u8]) -> Result<Option<String>, OracleError> {
-    for attribute in attributes {
-        if let Some(value) = quoted_attribute(attribute, prefix) {
-            return Ok(Some(value?));
+fn parse_disposition(attributes: &str, part: &mut Part) -> Option<()> {
+    for attribute in attributes.split("; ") {
+        let (key, quoted) = attribute.split_once('=')?;
+        let value = quoted.strip_prefix('"')?.strip_suffix('"')?.to_owned();
+        match key {
+            "name" if part.name.is_empty() => part.name = value,
+            "filename" if part.filename.is_none() => part.filename = Some(value),
+            _ => return None,
         }
     }
-    Ok(None)
+    Some(())
 }
 
-fn quoted_attribute(attribute: &[u8], prefix: &[u8]) -> Option<Result<String, OracleError>> {
-    let value = attribute.strip_prefix(prefix)?.strip_suffix(b"\"")?;
-    Some(
-        String::from_utf8(value.to_vec())
-            .map_err(|_error| OracleError::Multipart("multipart capture has no valid boundary")),
-    )
-}
-
-pub fn decode_capture_input(input: &[u8]) -> Result<Vec<Part>, OracleError> {
-    let prefix_bytes = input.get(..2).ok_or(OracleError::Multipart(
-        "multipart capture has no valid boundary",
-    ))?;
-    let prefix = <[u8; 2]>::try_from(prefix_bytes)
-        .map_err(|_error| OracleError::Multipart("multipart capture has no valid boundary"))?;
-    let content_type_length = usize::from(u16::from_be_bytes(prefix));
-    let content_type_bytes =
-        input
-            .get(2..2 + content_type_length)
-            .ok_or(OracleError::Multipart(
-                "multipart capture has no valid boundary",
-            ))?;
-    let content_type = str::from_utf8(content_type_bytes)
-        .map_err(|_error| OracleError::Multipart("multipart capture has no valid boundary"))?;
-    let body = input
-        .get(2 + content_type_length..)
-        .ok_or(OracleError::Multipart(
-            "multipart capture has no valid boundary",
-        ))?;
-    decode_multipart_capture(content_type, body)
-}
-
-fn boundary(content_type: &str) -> Option<String> {
+fn boundary(content_type: &str) -> Option<&str> {
     let (media_type, parameters) = content_type.split_once(';')?;
     if !media_type
         .trim()
@@ -191,22 +116,17 @@ fn boundary(content_type: &str) -> Option<String> {
     {
         return None;
     }
-    let boundary_value = parameters
+    let value = parameters
         .split(';')
-        .find_map(|item| item.trim().strip_prefix("boundary="))?
-        .trim();
-    let unquoted_boundary = if let Some(quoted) = boundary_value.strip_prefix('"') {
-        quoted.strip_suffix('"')?
-    } else {
-        boundary_value
+        .find_map(|item| item.trim().strip_prefix("boundary="))?;
+    let unquoted = match value.strip_prefix('"') {
+        Some(quoted) => quoted.strip_suffix('"')?,
+        None => value,
     };
-    (!unquoted_boundary.is_empty()
-        && !unquoted_boundary.bytes().any(|byte| {
-            byte.is_ascii_whitespace()
-                || byte == b'\r'
-                || byte == b'\n'
-                || byte == b'"'
-                || byte == b';'
-        }))
-    .then(|| unquoted_boundary.to_owned())
+    let valid = (1..=70).contains(&unquoted.len())
+        && unquoted
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"'()+_,-./:=? ".contains(&byte))
+        && !unquoted.ends_with(' ');
+    valid.then_some(unquoted)
 }

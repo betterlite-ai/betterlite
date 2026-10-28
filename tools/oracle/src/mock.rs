@@ -21,7 +21,7 @@ use tokio::sync::oneshot;
 use crate::OracleError;
 use crate::case::UpstreamAnswer;
 use crate::http::MAX_BODY;
-use crate::multipart_oracle;
+use crate::multipart_oracle::request::answer_body;
 use crate::routing_mock_scripts::{
     CallGuard, CallOutcome, MockScript, Outcome, ProviderCall, Recording, Ticket, redact,
 };
@@ -171,9 +171,8 @@ fn capture_request(parts: &Parts, bytes: &[u8]) -> Result<ProviderRequest, Statu
     let body = if raw_body {
         Value::Array(bytes.iter().map(|byte| Value::from(*byte)).collect())
     } else {
-        let body_text = str::from_utf8(bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
-        serde_json::from_str(body_text)
-            .unwrap_or_else(|_source| Value::String(body_text.to_owned()))
+        let text = str::from_utf8(bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+        serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned()))
     };
     Ok(ProviderRequest {
         method: parts.method.to_string(),
@@ -225,15 +224,12 @@ fn fail(state: &Mutex<Recording>, error: Error) -> StatusCode {
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
-fn reply(answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
-    let body = if answer
-        .headers
-        .get("content-type")
-        .is_some_and(|value| value.starts_with("application/octet-stream"))
-    {
-        multipart_oracle::request::answer_body(&answer)
-            .map_err(Error::other)?
-            .ok_or_else(|| Error::other("missing bytes answer"))?
+fn reply(mut answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
+    let body = if let Some((content_type, bytes)) = answer_body(&answer).map_err(Error::other)? {
+        answer
+            .headers
+            .insert("content-type".to_owned(), content_type);
+        bytes
     } else if let Some(json) = answer.body {
         serde_json::to_vec(&json).map_err(Error::other)?
     } else {
