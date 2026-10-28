@@ -17,12 +17,15 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct LiteLlmSettings {
+    cache: Option<bool>,
     cache_params: Option<CacheParams>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct CacheParams {
+    #[serde(rename = "type")]
+    cache_type: Option<String>,
     #[serde(rename = "s3_bucket_name")]
     bucket_name: Option<String>,
     #[serde(rename = "s3_region_name")]
@@ -73,10 +76,16 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        self.litellm_settings
-            .cache_params
-            .map(|params| convert_params(params, lookup))
-            .transpose()
+        if self.litellm_settings.cache != Some(true) {
+            return Ok(None);
+        }
+        let Some(params) = self.litellm_settings.cache_params else {
+            return Ok(None);
+        };
+        if params.cache_type.as_deref() != Some("s3") {
+            return Ok(None);
+        }
+        convert_params(params, lookup).map(Some)
     }
 }
 
