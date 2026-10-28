@@ -1,0 +1,69 @@
+id: B4771
+title: Native agent provider contracts and A2A response records
+description: >-
+  Build typed agent CRUD response records and the abstract interface for providers with native agents APIs under betterlite-core::agents. AgentCreateResponse, AgentDeleteResult, AgentListResponse, and AgentVersionsResponse preserve provider-specific fields via extra="allow" and wrap the provider's raw payload (e.g. Gemini returns base_agent, system_instruction, base_environment). LiteLLMSendMessageResponse wraps the A2A SDK's SendMessageResponse with betterlite's _hidden_params for cost tracking and logging. _normalize_a2a_jsonrpc_response backfills JSON-RPC request ids on error payloads when the agent SDK omits them.
+
+  BaseAgentsAPIConfig is the abstract interface that provider-specific transformations (e.g. GeminiAgentsAPIConfig) implement. Methods map create/list/get/delete/list-versions requests to provider URLs and request bodies, and parse responses into the typed response records. A default get_error_class maps HTTP errors to a provider-agnostic exception; subclasses override when needed.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/agents.rs
+    - crates/betterlite-core/src/agents/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L308-340
+    why: AgentKeySummary and AgentResponse response types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L342-403
+    why: AgentCreateResponse, AgentDeleteResult, AgentListResponse, AgentVersionsResponse provider response types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L342-344
+    why: ListAgentsResponse wrapping a list of AgentResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L416-506
+    why: LiteLLMSendMessageResponse wrapping A2A SendMessageResponse, _normalize_a2a_jsonrpc_response helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/agents/transformation.py
+    why: BaseAgentsAPIConfig abstract interface for provider-side agents CRUD with create, list, get, delete, list_versions, and error handling.
+
+dod:
+  - text: AgentCreateResponse, AgentDeleteResult, AgentListResponse, and AgentVersionsResponse deserialize and serialize with extra="allow" to preserve provider-specific fields.
+    proof: [agent-provider-tests]
+  - text: ListAgentsResponse wraps a list of AgentResponse records.
+    proof: [agent-provider-tests]
+  - text: LiteLLMSendMessageResponse preserves JSON-RPC structure, normalizes id fields, and has _hidden_params for cost tracking.
+    proof: [agent-provider-tests]
+  - text: _normalize_a2a_jsonrpc_response backfills JSON-RPC id from the request id when missing on error payloads, and handles bool request ids by stringifying them.
+    proof: [agent-provider-tests]
+  - text: BaseAgentsAPIConfig trait defines abstract methods for create, list, get, delete, and list_versions transformations.
+    proof: [agent-provider-tests]
+  - text: BaseAgentsAPIConfig.get_error_class maps HTTP status codes to exceptions; subclasses override when needed.
+    proof: [agent-provider-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: agent-provider-tests
+      why: agent provider contracts and A2A response tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^agents::provider/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Agent card and registry record types (AgentCard, AugmentedAgentCard, AgentProvider, AgentCapabilities, AgentSkill, AgentInterface, AgentCardSignature, SecurityScheme unions, AgentConfig, PatchAgentRequest, AgentResponse core fields, AgentKeySummary, AgentCaller, AgentKillSwitchConfig, AgentKillSwitchAuth, AgentKillSwitchResult). Owned by B4770 in litellm/types/agents.py L1-175, L176-340.
+  - Agent identity and Entra bindings (EntraIdentityConfig, AgentIdentityBinding, etc). Owned by B4770 in litellm/types/proxy/agent_identity.py.
+  - HTTP transport for agent CRUD calls (AgentsHTTPHandler in litellm/interactions/agents/http_handler.py). Owned by B3502/B3503.
+  - Agent registry endpoints and management logic (litellm/proxy/agent_endpoints/agent_registry.py and endpoints.py). Owned by B4775, B4776, B4777, B4784, B4785, B4786, B4787.
+  - Agent A2A invocation and streaming (litellm/proxy/agent_endpoints/a2a_endpoints.py, a2a_routing.py). Owned by B4788, B4789.
+  - Agent search and health probes (litellm/proxy/agent_endpoints/agent_search.py). Owned by B4783.
+
+pitfalls:
+  - _normalize_a2a_jsonrpc_response treats bool request ids as "anything else" and stringifies them, avoiding collision with integer 1. Never pass bool as a JSON-RPC id.
+  - LiteLLMSendMessageResponse.from_a2a_response and from_dict both call _normalize_a2a_jsonrpc_response; do not duplicate the normalization logic.
+  - BaseAgentsAPIConfig.get_error_class returns a BaseLLMException by default. Subclasses must override it when a provider has custom error types.
+  - 'AgentCreateResponse and siblings preserve extra fields via model_config {"extra": "allow"}. Do not add a closed schema or the provider fields will be silently dropped.'
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

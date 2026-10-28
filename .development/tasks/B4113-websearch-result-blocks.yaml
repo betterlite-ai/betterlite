@@ -1,0 +1,207 @@
+id: B4113
+title: Search result messages and native citation blocks
+description: >-
+  Build response builders that transform search outcomes into message format for agentic loop
+  follow-ups and native Anthropic citation blocks. Preserve the two-message shape for Anthropic
+  (assistant with tool_use blocks + user with tool_result blocks), the separate messages list for
+  OpenAI (assistant with tool_calls + separate tool messages), the additive `snippet` field alongside
+  the empty `encrypted_content`, the `srvtoolu_` ID prefix in native result pairs, and fallback text
+  formatting when structured SearchResponse is absent.
+
+  Build ten transformation and citation-block functions. In the transformation module: `transform_response`
+  routes by response_format to either `_transform_response_anthropic` or `_transform_response_openai`; both
+  accept tool_calls (dicts with id/name/input) and search_results (strings). `_transform_response_anthropic`
+  prepends thinking_blocks if present (required by Anthropic API) and returns (assistant_message, user_message).
+  `_transform_response_openai` returns (assistant_message, tool_messages list). `search_error_code` matches
+  BaseException to WebSearchToolResultErrorCode: RateLimitError to "too_many_requests", BadRequestError to
+  "invalid_tool_input", others to "unavailable". `search_outcome` converts execution results (exceptions,
+  (text, SearchResponse) tuples or (text, None)) to SearchOutcome with logged errors. `search_outcome_text`
+  extracts text from SearchSucceeded or formats SearchFailed as "Search failed: {message}". `format_search_response`
+  builds readable text from SearchResponse.results with "Title: ...\nURL: ...\nSnippet: ..." per result or str(result).
+
+  In the transformation module, build three native result block functions. `build_web_search_tool_result_block`
+  constructs Anthropic-native blocks with type, tool_use_id, content (list of result items with url/title/page_age
+  /encrypted_content/snippet). `build_web_search_tool_result_error_block` returns block with error_code.
+  `build_web_search_outcome_block` dispatches SearchOutcome to one of the two builders.
+
+  In the handler module, build four native-block injection functions. `_build_native_result_blocks` zips
+  tool_calls with search_outcomes and returns tuple of (server_tool_use, web_search_tool_result) pairs.
+  `_tool_call_query` extracts query from tool_call["input"] dict. `_native_result_pair` builds one pair with
+  srvtoolu_<uuid> id. `_inject_native_blocks` prepends blocks to response.content (dict or object), catching
+  AttributeError/TypeError. `async_post_agentic_loop_response_hook` reads WEBSEARCH_NATIVE_BLOCKS_METADATA_KEY
+  from plan.metadata and injects blocks if present.
+
+  Direct dependencies: B4111 for SearchSucceeded/SearchFailed/AnthropicSearchQuery/AnthropicServerToolUseBlock
+  and B184 for RateLimitError/BadRequestError classification.
+
+scope:
+  paths:
+    - crates/betterlite-websearch/**
+    - tools/oracle/cases/helpers/websearch_result_blocks/**
+    - Cargo.toml
+    - tools/oracle/helpers/b4113.py
+    - tools/oracle/helpers/b4113/**
+    - tools/oracle/src/helpers/oracle/b4113.rs
+    - tools/oracle/src/helpers/oracle/b4113/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L290-L322
+    why: The transform_response dispatcher and the two format-specific builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L324-L372
+    why: Anthropic format transformation (tool_use to tool_result with thinking blocks).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L374-L406
+    why: OpenAI format transformation (tool_calls to separate tool messages).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L408-L467
+    why: Building web_search_tool_result blocks with url, title, page_age, encrypted_content, snippet.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L469-L478
+    why: Building error blocks with error_code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L480-L494
+    why: Dispatching SearchOutcome to build_web_search_tool_result_block or build_web_search_tool_result_error_block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L496-L504
+    why: Mapping BaseException to WebSearchToolResultErrorCode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L506-L518
+    why: Classifying search result tuples to SearchSucceeded or SearchFailed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L520-L528
+    why: Extracting text from SearchOutcome.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L530-L550
+    why: Formatting SearchResponse as text for tool_result content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1006-L1028
+    why: Post-agentic-loop hook injecting native blocks into Anthropic responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1030-L1050
+    why: Building (server_tool_use_block, web_search_tool_result) pairs per tool_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1052-L1058
+    why: Extracting query string from tool_call input dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1060-L1069
+    why: Constructing one server_tool_use + result block pair with srvtoolu_* id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1071-L1090
+    why: Prepending native blocks to response content dict or object, graceful on write failure.
+  - url: https://docs.anthropic.com/en/api/web-search-tool
+    why: The web_search_tool_result block shape and field contracts.
+
+dod:
+  - text: >-
+      transform_response returns (assistant_message, user_or_tool_messages) matching
+      LiteLLM: for Anthropic, assistant with prepended thinking blocks then tool_use blocks,
+      user message with tool_result blocks keyed by tool_use_id. For OpenAI, assistant with
+      tool_calls and separate tool messages with tool_call_id keys.
+    proof: [transformation-tests, helper-cases]
+  - text: >-
+      Thinking blocks from Anthropic responses are prepended to assistant_content before
+      tool_use blocks when present, required by Anthropic API when extended thinking is enabled.
+    proof: [transformation-tests, helper-cases]
+  - text: >-
+      search_error_code classifies exceptions: RateLimitError to too_many_requests,
+      BadRequestError to invalid_tool_input, others to unavailable.
+    proof: [transformation-tests]
+  - text: >-
+      search_outcome classifies result tuples: (str, SearchResponse) to SearchSucceeded,
+      (str, None) to SearchSucceeded with response=None, BaseException to SearchFailed with
+      error code, unexpected types to SearchSucceeded with string conversion.
+    proof: [transformation-tests, helper-cases]
+  - text: >-
+      search_outcome_text extracts text: SearchSucceeded returns text, SearchFailed returns
+      prefixed error message.
+    proof: [transformation-tests]
+  - text: >-
+      format_search_response formats SearchResponse as text: iterate results emitting
+      "Title: {}\nURL: {}\nSnippet: {}" separated by "\n\n"; if no results, return string conversion.
+    proof: [transformation-tests, helper-cases]
+  - text: >-
+      build_web_search_tool_result_block returns web_search_tool_result block with url, title,
+      page_age, empty encrypted_content, additive snippet per result. Empty response emits block
+      with empty content list.
+    proof: [transformation-tests, helper-cases]
+  - text: >-
+      build_web_search_tool_result_error_block returns block with error_code from
+      WebSearchToolResultErrorCode.
+    proof: [transformation-tests]
+  - text: >-
+      _build_native_result_blocks zips tool_calls with search_outcomes and returns tuple of
+      (server_tool_use_block, web_search_tool_result) pairs. Each pair uses fresh srvtoolu_* id.
+    proof: [native-blocks-tests, helper-cases]
+  - text: >-
+      _tool_call_query extracts query string from tool_call input dict, returning empty string
+      if missing or not a string.
+    proof: [native-blocks-tests]
+  - text: >-
+      _native_result_pair constructs pair with AnthropicSearchQuery and AnthropicServerToolUseBlock,
+      calling model_dump() to serialize. Tool use id matches query string.
+    proof: [native-blocks-tests, helper-cases]
+  - text: >-
+      _inject_native_blocks prepends native blocks to response content (dict field or object
+      attribute), handles both dict and object form, gracefully falls through if object refuses write.
+    proof: [native-blocks-tests]
+  - text: Every listed transformation case (Anthropic, OpenAI, thinking blocks, error codes) matches LiteLLM.
+    proof: [helper-cases]
+  - text: Every listed native block case (single result, multiple results, error, empty) matches LiteLLM.
+    proof: [helper-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: transformation-tests
+      why: transformation functions fail or do not exist
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^(search_error|search_outcome|format_search|transform_response|build_web_search)/)'
+    - id: native-blocks-tests
+      why: native result block functions fail or do not exist
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^(build_native|tool_call_query|native_result_pair|inject_native|post_agentic)/)'
+    - id: helper-cases
+      why: helper cases fail against LiteLLM or helper operation does not exist
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/helpers/websearch_result_blocks/
+
+oracle_cases:
+  - tools/oracle/cases/helpers/websearch_result_blocks/search_error_code_rate_limit.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/search_error_code_bad_request.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/search_error_code_other.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/search_outcome_succeeded.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/search_outcome_failed.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/format_search_response_with_results.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/format_search_response_empty.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/transform_response_anthropic_single.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/transform_response_anthropic_multiple.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/transform_response_anthropic_thinking.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/transform_response_openai_single.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/transform_response_openai_multiple.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/build_web_search_tool_result_block.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/build_web_search_tool_result_error_block.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/native_result_pairs.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/inject_native_blocks_dict.yaml
+  - tools/oracle/cases/helpers/websearch_result_blocks/inject_native_blocks_object.yaml
+
+deviations:
+  - what: >-
+      betterlite returns message objects as Rust structs from transform_response,
+      while LiteLLM returns dicts. The wire format is identical; the type system
+      requires explicit returns.
+    why: Rust's type system requires explicit message structures; Python uses implicit dicts.
+  - what: >-
+      Thinking blocks in Anthropic responses are preserved as a list prepended to
+      assistant_content before tool_use blocks, matching LiteLLM's order when extended
+      thinking is enabled.
+    why: The Anthropic API requires thinking blocks to come first in the content list.
+  - what: >-
+      When format_search_response encounters a SearchResponse without results, it returns
+      the result object as a string, matching LiteLLM's fallback behavior.
+    why: Graceful handling of partial or missing structured data.
+
+out_of_scope:
+  - SearchResponse contract, the external search-execution provider record.
+  - Native Anthropic web_search_* type detection (owned by B4111).
+  - Actual search execution via litellm.asearch (owned by B4115).
+  - Integration with agentic loop callbacks and async logging (owned by B4118/B4119).
+  - Chat Completions or Responses API format detection (owned by B4112).
+  - Web search tool recognition functions (owned by B4111).
+
+pitfalls:
+  - Helper cases for this task test pure transformation and block-building functions in the websearch_result_blocks oracle helper.
+  - Arguments in OpenAI responses may be a JSON string or already a dict; normalize to dict for internal use and JSON for the wire.
+  - The Responses API does not receive a transform_response call; output handling is separate.
+  - Tool use IDs in tool_call dicts must match exactly in result blocks; generate srvtoolu_* IDs not toolu_*.
+  - _inject_native_blocks handles both dict and object responses; catch AttributeError and TypeError gracefully.
+  - search_outcome_text for SearchFailed returns the message with prefix not the error code.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

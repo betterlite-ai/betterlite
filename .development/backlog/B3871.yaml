@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prometheus request and deployment label catalog
 status: todo
 depends_on: [B3870]
-file: null
+file: tasks/B3871-prometheus-request-label-catalog.yaml
 covers:
   - "litellm/types/integrations/prometheus.py"
 parent: B111

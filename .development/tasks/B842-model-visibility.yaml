@@ -144,7 +144,7 @@ checks:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_visibility::tests::/)
-        - test(/replays_the_/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^model_visibility::tests::/) - test(/replays_the_/)'
+        - test(/replays_the_/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_visibility::tests::/) - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/model_visibility.py && uv run --locked --project tools/oracle/litellm

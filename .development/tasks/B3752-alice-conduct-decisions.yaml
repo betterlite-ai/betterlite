@@ -1,0 +1,169 @@
+id: B3752
+title: Alice evaluation and Conduct decision helpers
+description: >-
+  Implement Alice's credential-stripping bounded serialization, evaluation and enforcement for ALLOW, BLOCK, MASK and DETECT verdicts,
+  including outage handling with fail_open and fail_closed policies. Also provide Conduct's request payload construction,
+  decision status resolution and verdict recording helpers that the optional external guardrail package integrates with.
+
+
+  Alice forwards the hook's arguments without renaming or selecting any fields, since which parts are worth evaluating
+  are decided by Alice, not here. Configuration carries api_key (required, reads ALICE_API_KEY), api_base (optional,
+  default https://api.alice.io, reads ALICE_API_BASE) and unreachable_fallback (fail_closed or fail_open, default fail_closed).
+  HTTP headers include Content-Type (application/json) and af-api-key (bearer token). The evaluation endpoint is
+  /v2/evaluate/litellm under api_base. ALLOW passes the request through; BLOCK raises 400 invalid_request_error with
+  the detected message; MASK applies positional text replacements to the texts field in strict order (a single malformed
+  replacement blocks the whole verdict); DETECT logs the correlation ID and categories and allows the request.
+  When all five input fields (texts, images, tools, tool_calls, structured_messages) are empty or absent, apply_guardrail returns inputs unchanged without calling Alice.
+  Outage handling replaces any connection failure, timeout, 5xx response, decode error or malformed verdict with the
+  configured unreachable_fallback behavior: fail_closed raises 400 invalid_request_error, fail_open returns the original
+  inputs and logs the error at critical level. Verdict application uses a mechanical JSON serialization that drops only
+  what cannot be JSON-encoded: at depth 12 or more, or when a traversal cycles, return null; dict keys must be strings
+  and cannot be in {secret_fields, api_key, raw_headers, headers, provider_specific_header}; lists and objects are
+  size-capped at 5000 items; anything else (bytes, datetime, OpenTelemetry span) returns null.
+
+
+  Conduct's role is to adapt the optional external ``conduct-litellm-guard>=0.2.5`` package to LiteLLM's guardrail contract.
+  request_payload builds the payload by copying request_data with prompt set to None and taking either structured_messages
+  from inputs or constructing user messages from texts; it returns None if input_type is not "request" so Conduct checks
+  only on pre_call. decision_status returns "guardrail_flagged" if the verdict is warning or advisory, else "success".
+  record_decision calls add_standard_logging_guardrail_information_to_request_data (from B3664) with the verdict and status.
+  apply_conduct_guardrail calls the check, raises the blocked exception on block/approval verdicts, records the decision
+  and returns inputs unchanged. binds_unreachable_fallback detects whether the optional package's ConductGuard class
+  accepts an unreachable_fallback parameter by inspecting its __init__ signature. The Python module-level names (initialize_guardrail,
+  guardrail_initializer_registry, guardrail_class_registry) are owned by B107; Conduct's own initializer, @log_guardrail_information wrapper, and
+  call-site orchestration stay with B107.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/alice.rs
+    - crates/betterlite-guardrails/src/alice/**
+    - crates/betterlite-guardrails/src/conduct.rs
+    - crates/betterlite-guardrails/src/conduct/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - tools/oracle/cases/guardrails/alice/**
+    - tools/oracle/cases/guardrails/conduct/**
+    - crates/betterlite-config/src/sections/alice_conduct_decisions.rs
+    - crates/betterlite-config/src/sections/alice_conduct_decisions/**
+    - tools/oracle/helpers/b3752.py
+    - tools/oracle/helpers/b3752/**
+    - tools/oracle/src/helpers/guardrails/b3752.rs
+    - tools/oracle/src/helpers/guardrails/b3752/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L145-L325
+    why: The complete AliceGuardrail class with __init__, apply_guardrail, _evaluate, _enforce, _apply_replacements, _mask_rejected and _on_unreachable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/__init__.py#L11-L35
+    why: The initialize_guardrail function and guardrail_initializer_registry, guardrail_class_registry registries that B107 owns; B3752 provides the AliceGuardrail class these registries wrap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L327-L373
+    why: The _json_safe helper for bounded serialization with credential stripping and depth/cycle limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/alice.py
+    why: The AliceGuardrailConfigModel with api_key and api_base fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L46-L101
+    why: The request_payload, decision_status, record_decision, apply_conduct_guardrail and binds_unreachable_fallback helpers, plus Conduct types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/conduct.py
+    why: The ConductGuardrailConfigModel and its optional parameters.
+dod:
+  - text: When all five input fields (texts, images, tools, tool_calls, structured_messages) are empty or absent, apply_guardrail returns inputs unchanged without calling Alice.
+    proof: [oracle]
+  - text: When at least one input field is populated, apply_guardrail sends credential-stripped bounded JSON to /v2/evaluate/litellm, with depth, cycle and size limits matching LiteLLM.
+    proof: [oracle]
+  - text: ALLOW verdict returns inputs unchanged; BLOCK raises 400 invalid_request_error with the message.
+    proof: [oracle]
+  - text: MASK verdict applies positional text replacements to the texts field in strict order, raising 400 if any replacement is malformed or out of range.
+    proof: [alice-tests]
+  - text: DETECT verdict logs the correlation ID and categories at warning level and returns inputs unchanged.
+    proof: [alice-tests]
+  - text: Unrecognized verdict (not in {ALLOW, BLOCK, MASK, DETECT}) falls through to outage handling.
+    proof: [alice-tests]
+  - text: Connection failure, timeout, 5xx response, decode error or malformed verdict body follows unreachable_fallback policy.
+    proof: [alice-tests]
+  - text: fail_open policy logs the error at critical level and returns inputs unchanged; fail_closed raises 400 invalid_request_error.
+    proof: [alice-tests]
+  - text: Credential keys {secret_fields, api_key, raw_headers, headers, provider_specific_header} are stripped from request_data at any nesting depth.
+    proof: [alice-tests]
+  - text: JSON serialization respects 12-level depth limit, 5000-item size cap per container, and drops cycles and non-JSON-native objects.
+    proof: [alice-tests]
+  - text: Objects exposing model_dump(mode="json") are recursively serialized through that method; objects whose model_dump raises are dropped as null.
+    proof: [alice-tests]
+  - text: Configuration loads api_key (required, ALICE_API_KEY env), api_base (optional, ALICE_API_BASE env, default https://api.alice.io),
+      and unreachable_fallback (optional, default fail_closed).
+    proof: [alice-tests, config-load]
+  - text: Missing or empty api_key in both config and ALICE_API_KEY environment variable raises AliceGuardrailMissingSecrets on initialization.
+    proof: [oracle]
+  - text: Conduct request_payload builds from request_data with prompt null, using structured_messages or constructing user messages from texts.
+    proof: [conduct-tests]
+  - text: Conduct request_payload returns None when input_type is not "request", skipping the Conduct check on response inputs.
+    proof: [conduct-tests]
+  - text: Conduct decision_status returns "guardrail_flagged" for warning/advisory verdicts, else "success".
+    proof: [conduct-tests]
+  - text: Conduct record_decision calls add_standard_logging_guardrail_information_to_request_data with verdict and status.
+    proof: [conduct-tests]
+  - text: Conduct apply_conduct_guardrail raises the blocked exception on block/approval verdicts, records the decision, and returns inputs unchanged.
+    proof: [conduct-tests]
+  - text: binds_unreachable_fallback detects unreachable_fallback parameter by inspecting __init__ signature of the guardrail class.
+    proof: [conduct-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: alice-tests
+      why: the alice guardrail evaluation and enforcement tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/alice_guardrail/)'
+    - id: conduct-tests
+      why: the conduct guardrail decision and payload helpers fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-server --no-tests=fail -E 'test(/conduct_guardrail/)'
+    - id: config-load
+      why: the Alice configuration does not load from files or environment
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/alice.*config/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/alice/missing-api-key.yaml
+  - tools/oracle/cases/guardrails/alice/empty-inputs.yaml
+  - tools/oracle/cases/guardrails/alice/evaluate-allow-verdict.yaml
+  - tools/oracle/cases/guardrails/alice/evaluate-block-verdict.yaml
+  - tools/oracle/cases/guardrails/alice/enforce-mask-verdict.yaml
+  - tools/oracle/cases/guardrails/alice/enforce-detect-verdict.yaml
+  - tools/oracle/cases/guardrails/alice/enforce-unrecognized-verdict.yaml
+  - tools/oracle/cases/guardrails/alice/outage-connection-failure.yaml
+  - tools/oracle/cases/guardrails/alice/outage-timeout.yaml
+  - tools/oracle/cases/guardrails/alice/outage-5xx-response.yaml
+  - tools/oracle/cases/guardrails/alice/outage-malformed-verdict.yaml
+  - tools/oracle/cases/guardrails/alice/fail-open-policy.yaml
+  - tools/oracle/cases/guardrails/alice/fail-closed-policy.yaml
+  - tools/oracle/cases/guardrails/alice/credential-stripping.yaml
+  - tools/oracle/cases/guardrails/alice/json-safe-depth-limit.yaml
+  - tools/oracle/cases/guardrails/alice/json-safe-cycle-detection.yaml
+  - tools/oracle/cases/guardrails/alice/json-safe-size-cap.yaml
+  - tools/oracle/cases/guardrails/conduct/request-payload-pre-call.yaml
+  - tools/oracle/cases/guardrails/conduct/request-payload-post-call.yaml
+  - tools/oracle/cases/guardrails/conduct/request-payload-structured-messages.yaml
+  - tools/oracle/cases/guardrails/conduct/request-payload-texts.yaml
+deviations:
+  - what: When Alice is unreachable with fail_closed policy, betterlite raises GuardrailRaisedException with status_code 400 (invalid_request_error), not 503 (service_unavailable).
+    why: GuardrailRaisedException defaults to status_code=400 when not passed explicitly. The _on_unreachable method in alice.py:304-316 does not pass status_code, so the default applies. This matches BLOCK and MASK verdicts which also take the default 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1090-L1110
+  - what: Alice error messages use betterlite's own wording in outage scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L304-L317
+  - what: MASK verdict that cannot be applied in full is refused outright rather than partially applied.
+    why: LiteLLM's behavior; a single out-of-range or malformed replacement blocks the whole verdict so content Alice meant to replace never reaches the model unmasked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L267-L292
+out_of_scope:
+  - Lifecycle hook entry points (apply_guardrail decorator wrapper logic); B107 orchestrates when Alice guardrails are invoked and integrates the initialized callbacks into the logging pipeline.
+  - The threshold-based decision whether to run Alice on a particular request; B219 and other tasks handle that.
+  - Conduct's initializer, @log_guardrail_information wrapper, adapter class and call-site orchestration logic; B107 integrates the helpers.
+  - The optional external conduct-litellm-guard package implementation and its ConductGuard class; betterlite only adapts it.
+  - Other guardrail providers (Akto, Cisco, etc.); each gets its own task.
+pitfalls:
+  - apply_guardrail checks empty inputs with `not any(inputs.get(field) for field in _SELECTABLE_INPUT_FIELDS)` where the five fields are ("texts", "images", "tools", "tool_calls", "structured_messages"). This treats falsy values (empty lists, empty strings, None, 0) as empty, so a request with neither texts nor images nor any other input field skips Alice entirely.
+  - Text replacement indices must be validated strictly; a single out-of-range index blocks the entire MASK verdict.
+  - JSON serialization must visit every value in request_data recursively and strip credential keys at any nesting depth, not just the root.
+  - Depth and cycle limits prevent serialization of malformed or circular objects; both return null, not raise.
+  - Size cap of 5000 items per container is applied during islice, not after building the whole structure.
+  - Outage handling must catch both network failures (timeout, HTTPStatusError) and payload errors (decode, malformed verdict).
+  - 5xx errors (500-599) are treated as Alice outages and follow unreachable_fallback; 4xx errors propagate without fallback.
+  - fail_open must log the error at critical level, not silent; fail_closed must raise 400, not drop the request.
+  - ALICE_API_KEY must never be logged or shown in Debug output; mark as SecretString.
+  - Conduct's request_payload must return None when input_type is "response", not attempt to check response inputs.
+  - binds_unreachable_fallback inspects the guardrail class's __init__ signature, not the instance; it is called at module import time.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

@@ -1,0 +1,193 @@
+id: B4717
+title: MCP management visibility and credential inheritance
+description: >-
+  Build role-sensitive redaction, per-user-state authorization, and credential
+  inheritance for MCP management endpoints in betterlite-server::mcp::management_visibility.
+
+  Redaction layers: full admins see server credentials with admin-config keys
+  (scopes, minting parameters) preserved for the edit form; non-admin viewers and
+  virtual keys receive progressively stripped server views. The redaction contract
+  ensures secrets never leak through unencrypted fields like static_headers, env,
+  url, spec_path, command, args, issuer, or token endpoints.
+
+  Role distinctions: PROXY_ADMIN (full admin), PROXY_ADMIN_VIEW_ONLY (admin view,
+  no mutations), and regular users. virtual-key callers with non-empty allowed_routes
+  are restricted and get the virtual-key sanitizer. Everyone else maps to admin or
+  non-admin sanitization.
+
+  User-state authorization: _authorize_and_fetch_mcp_server looks up servers in
+  both DB and the in-memory registry (for config-defined servers), then gates
+  access per identity: full admins see any server or get 404 for unknown; non-admins
+  must have the server in their allowed set and otherwise get 403 (never 404). The
+  same allowed-server resolution MCP gateway enforces on tool calls applies here.
+
+  Credential inheritance: when a user edits a session server (draft) derived from
+  a stored server, new credentials come from admin input (form submission); omitted
+  fields inherit from the parent server's stored secrets via a whitelist of
+  (server_attr, credential_key) pairs. Admin config overrides inherited values, and
+  the guard refuses to leak readable BYOK via inheritance if no real credential
+  was supplied.
+
+  Management mode: user_mcp_management_mode defaults to restricted; only exact
+  view_all enables catalog visibility, isolation per key, and non-admin access.
+  _resolve_accessible_mcp_servers returns the credential-free server set a user
+  may query; sanitization is caller-applied. _get_user_mcp_management_mode loads
+  the setting from proxy config.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/management_visibility.rs
+    - crates/betterlite-server/src/mcp/management_visibility/**
+    - tools/oracle/cases/helpers/mcp-management-visibility/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L639-L663
+    why: _redact_mcp_credentials deep copies server and applies _preserved_admin_config_credentials, then decorates mcp_info with is_public from manager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L664-L702
+    why: _preserved_admin_config_credentials parses JSON strings, extracts scopes list and MCP_ADMIN_CONFIG_CREDENTIAL_KEYS, falls back to None on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L704-L707
+    why: _redact_mcp_credentials_list applies redaction to a sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L709-L716
+    why: _user_is_full_admin returns true only for PROXY_ADMIN, not PROXY_ADMIN_VIEW_ONLY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L718-L739
+    why: _resolve_credential_target_user_id enforces PROXY_ADMIN for cross-user revocation, returns 403/400 on permission/identity errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L741-L750
+    why: _is_restricted_virtual_key_request returns true when allowed_routes is a non-empty list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L752-L793
+    why: _sanitize_mcp_server_for_non_admin clears credentials, url, spec_path, headers, env, command, args, auth endpoints, env_vars, team/access_group metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L795-L798
+    why: _sanitize_mcp_server_list_for_non_admin applies non-admin sanitization to a sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L800-L851
+    why: _sanitize_mcp_server_for_virtual_key additionally clears pinned_tools, allowed_tools, mcp_access_groups, teams, health_check fields, created_by/updated_by, and reduces mcp_info to is_public/is_public_explicit only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L853-L856
+    why: _sanitize_mcp_server_list_for_virtual_key applies virtual-key sanitization to a sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L860-L872
+    why: _INHERITED_CREDENTIAL_FIELDS tuple maps twelve (server_attr, credential_key) pairs for inheritance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L874-L882
+    why: _has_non_admin_config_credentials returns true when credentials holds any non-admin key or value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L884-L917
+    why: _inherit_credentials_from_existing_server fills omitted fields from parent server via _INHERITED_CREDENTIAL_FIELDS; admin config wins over inherited.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1112-L1120
+    why: _get_user_mcp_management_mode returns "view_all" or "restricted" from config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1160-L1179
+    why: _resolve_accessible_mcp_servers returns all servers in view_all mode or union of auth contexts otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2728-L2761
+    why: _authorize_and_fetch_mcp_server resolves from DB and registry, applies per-user authorization with admin-view predicate.
+
+dod:
+  - text: >-
+      _redact_mcp_credentials removes all secret credential keys and returns a copy with
+      non-secret admin-config preserved and is_public set in mcp_info; used as the base for
+      all downstream sanitizers.
+    proof: [visibility-tests]
+  - text: >-
+      _preserved_admin_config_credentials extracts scopes and non-secret admin config keys
+      (MCP_ADMIN_CONFIG_CREDENTIAL_KEYS); returns None for absent/unparseable credentials
+      or when no keys survive redaction.
+    proof: [visibility-tests]
+  - text: >-
+      _redact_mcp_credentials_list applies _redact_mcp_credentials to every server in an iterable.
+    proof: [visibility-tests]
+  - text: >-
+      _user_is_full_admin returns true only when user_role == PROXY_ADMIN; PROXY_ADMIN_VIEW_ONLY
+      returns false.
+    proof: [visibility-tests]
+  - text: >-
+      _resolve_credential_target_user_id returns the caller's user_id by default; allows naming
+      another user only when caller is a full admin, raising 403 FORBIDDEN otherwise; raises 400
+      BAD_REQUEST if caller has no user_id.
+    proof: [visibility-tests]
+  - text: >-
+      _is_restricted_virtual_key_request returns true when allowed_routes is a non-empty list,
+      false otherwise (absent, None, or empty list).
+    proof: [visibility-tests]
+  - text: >-
+      _sanitize_mcp_server_for_non_admin strips credentials, url, spec_path, headers, env,
+      command, args, auth fields, env_vars, and access-group metadata; applies _redact_mcp_credentials
+      first so no secrets leak. Fields reset to defaults (None, [], {}).
+    proof: [visibility-tests]
+  - text: >-
+      _sanitize_mcp_server_list_for_non_admin applies _sanitize_mcp_server_for_non_admin to every server.
+    proof: [visibility-tests]
+  - text: >-
+      _sanitize_mcp_server_for_virtual_key strips credentials, pinned_tools, all auth/URL/env/header fields,
+      access_groups, teams, tool allowlists, health and timestamp fields, and reduces mcp_info to only
+      is_public and is_public_explicit booleans; differs from non-admin in preserving no access detail.
+    proof: [visibility-tests]
+  - text: >-
+      _sanitize_mcp_server_list_for_virtual_key applies _sanitize_mcp_server_for_virtual_key to every server.
+    proof: [visibility-tests]
+  - text: >-
+      _has_non_admin_config_credentials returns true when credentials dict contains any non-admin key or
+      any non-scopes value; returns false when credentials is absent or holds only admin config/scopes.
+    proof: [visibility-tests]
+  - text: >-
+      _inherit_credentials_from_existing_server fills omitted credential fields from the parent server's
+      stored values using the _INHERITED_CREDENTIAL_FIELDS table; allows inheritance only when
+      server_id is set and no actual credential was supplied; admin config in payload wins over inherited values.
+    proof: [visibility-tests]
+  - text: >-
+      _get_user_mcp_management_mode returns "view_all" when user_mcp_management_mode config key
+      is exactly "view_all", else returns "restricted".
+    proof: [visibility-tests]
+  - text: >-
+      _resolve_accessible_mcp_servers returns every server unredacted when mode is view_all and caller
+      is not a restricted virtual key; otherwise aggregates servers from all auth contexts the caller
+      has (de-duping by server_id, preserving first instance per id).
+    proof: [visibility-tests]
+  - text: >-
+      _authorize_and_fetch_mcp_server resolves from DB then in-memory registry, returns the resolved
+      server after authorization check; full admins see any server or get 404; non-admins get 403
+      when server is not in their allowed set.
+    proof: [visibility-tests]
+  - text: >-
+      Every default, env var, config key, error code, and warn-and-drop path a user
+      can observe is in a named case with literal input and outcome.
+    proof: [visibility-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: visibility-tests
+      why: >-
+        Redaction, sanitization, authorization, credential inheritance and role checks
+        must correctly strip credentials and enforce access boundaries.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::management_visibility::/)'
+
+deviations:
+  - what: _sanitize_mcp_server_for_virtual_key does not clear spec_path, unlike _sanitize_mcp_server_for_non_admin.
+    why: "Q8 per outline: a task-level decision on whether static/URL/spec-path secrets can survive the virtual-key sanitizer is pending. For now, follow LiteLLM's behavior: virtual keys see spec_path to allow schema upload during tool discovery."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L800-L851
+  - what: _resolve_accessible_mcp_servers returns unredacted servers; callers are responsible for applying their own sanitization.
+    why: "Per-user env-var status endpoint (B4724) relies on the raw env_vars field and only ever returns is_set booleans, never secrets. Sharing the same server resolution keeps red-card status aligned with rendered servers."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1160-L1179
+
+out_of_scope:
+  - Server reads and DB access (get_mcp_server); owned by B4711
+  - Credential storage and retrieval; owned by B4713, B4714, B4715
+  - UserAPIKeyAuth type and LitellmUserRoles (PROXY_ADMIN, PROXY_ADMIN_VIEW_ONLY); owned by B2314
+  - AuthContext type and interface; owned by B732
+  - Manager methods (is_mcp_server_public, get_mcp_server_by_id, resolve_mcp_server, authorize_mcp_server, get_all_mcp_servers_unfiltered, get_all_allowed_mcp_servers, registry reload); owned by B4731
+  - Config loading and proxy_general_settings access; owned by B002
+  - MCP_ADMIN_CONFIG_CREDENTIAL_KEYS constant, NewMCPServerRequest, MCPCredentials type; Q1 per outline
+  - admitted_user_context, build_effective_auth_contexts, _user_has_admin_view functions; owned by B4731
+
+pitfalls:
+  - 'The _INHERITED_CREDENTIAL_FIELDS table maps server attributes to credentials dict keys for inheritance; a mismatch here breaks the draft form pre-fill. Non-matching fields are silently dropped (not inherited), matching LiteLLM''s behavior.'
+  - '_preserved_admin_config_credentials must parse JSON strings (for older stored formats) before checking isinstance(dict); falling back to None on parse error ensures one bad row doesn''t fail all admin listings.'
+  - '_sanitize_mcp_server_for_non_admin and _sanitize_mcp_server_for_virtual_key both start with _redact_mcp_credentials (which preserves admin config), then strip everything else; the sanitizers are layered, not independent.'
+  - 'Virtual key detection checks for allowed_routes being a non-empty list, not just presence; an empty list counts as non-restricted.'
+  - '_resolve_credential_target_user_id enforces full-admin-only revocation of another user''s credentials; PROXY_ADMIN_VIEW_ONLY cannot revoke even with all other permissions.'
+  - 'user_mcp_management_mode defaults to restricted if missing or any value other than the exact string "view_all"; the default keeps catalog visibility off by default for isolation.'
+  - '_resolve_accessible_mcp_servers returns the set the dashboard grid renders (no team filter); callers apply redaction/sanitization. Per-user env-var checks rely on the raw env_vars field.'
+  - '_authorize_and_fetch_mcp_server must resolve from both DB and registry because config-defined servers never get a DB row; non-admin enumeration is prevented by returning 403 on denied access (never 404).'
+  - 'is_public in mcp_info is computed from the manager, not stored; is_public_explicit compares server_id against litellm.public_mcp_servers to distinguish computed vs. admin-set.'
+
+review_level: security
+
+oracle_cases: []
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

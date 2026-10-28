@@ -1,0 +1,14 @@
+id: B5078
+milestone: M12 python
+title: Router anthropic_messages and completion dispatch
+status: todo
+depends_on: [B158, B016]
+file: null
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

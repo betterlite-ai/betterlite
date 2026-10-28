@@ -1,0 +1,167 @@
+id: B4083
+title: Load shadow jobs and persist attempts and funnel counters
+description: >-
+  Build job admission and attempt recording for shadow evaluations, with pod-local funnel
+  tracking. Shadow jobs are configuration rows that define which requests to sample, which
+  routers to compare, and spending/turn limits. The sampling hook loads active jobs through
+  a short-TTL cache so configuration changes take effect within one cache interval, queries
+  the database to build attempt statistics per job, and records verdicts and errors to the
+  attempt table. A pod-local counter batches sampling-outcome increments (not sampled,
+  unjudgeable, shed, withheld) and flushes them to the database on a timer, so job results
+  state what share of eligible traffic they represent.
+
+  Build betterlite-server with the job admission and loading logic, injecting the database
+  client and cache primitives the proxy supplies. Own the job data type, validation, and
+  the in-memory cache wrapper that reads active jobs grouped by target. Record attempt rows
+  with verdict and error shapes matching what the evaluation pipeline calls with (real/shadow/tie,
+  confidence as Decimal, costs as Decimal). The cache starts empty, holds four jobs, and
+  refreshes every ten seconds. Cache failures return empty without storing, so a DB blip
+  pauses sampling for one request and retries on the next. Validation rejects unknown
+  directions and reverse jobs without a baseline model, failing attempts closed.
+
+  Build crates/betterlite-db with shadow table queries: find_many active jobs by unstopped
+  status and future end time, and group_by to count attempts and sum costs per job. Build
+  one shadow evaluation schema migration if needed and own the three tables LiteLLM defines
+  (litellm_shadowevaljob, litellm_shadowevalattempt, litellm_shadowevalfunnel).
+
+  Pod-local funnel counters are a simple dictionary cleared before each database flush. The
+  flush snapshots the dictionary, clears it, then upserts each job's counters atomically,
+  dropping the batch on any failure (a repeated increment is worse than an undercount).
+  Flush errors are logged at error level and swallowed so the counter queue never blocks.
+  The queue supplies only this task's record calls; the spend update job calls the flush
+  and the pending-events check.
+
+  Job rows carry team-aware and model-group-scoped targeting (key, team, or user). Reverse
+  jobs have exactly one router in their scope, and forward jobs skip traffic any candidate
+  router served. Team-scoped targeting supports JWT-authenticated traffic without keys.
+  Load all active jobs in one read, validate each with Pydantic to reject invalid rows,
+  group by target key, and cache the grouped result. Attempt insertion names every cost
+  type the eval pipeline bills (call costs, classifier costs, judge costs).
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite-server/src/shadow_eval_job_loading.rs
+    - crates/betterlite-server/src/shadow_eval_job_loading/**
+    - crates/betterlite-db/src/shadow_tables.rs
+    - crates/betterlite-db/src/shadow_tables/**
+    - crates/betterlite-db/migrations/shadow_eval*.sql
+    - tools/oracle/cases/helpers/server/shadow-job-loading/**
+    - tools/oracle/helpers/b4083.py
+    - tools/oracle/helpers/b4083/**
+    - tools/oracle/src/helpers/server/b4083.rs
+    - tools/oracle/src/helpers/server/b4083/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L483-L488
+    why: _sample_hits deterministically decides if a request falls in the shadowed slice based on job id and request id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L581-L585
+    why: _leg_eval_spend sums judge_cost, shadow_cost, and shadow_classifier_cost from attempt statistics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L588-L598
+    why: Job spend counter key generation and reading the cross-pod counter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L601-L620
+    why: Add cost to counter and record funnel event, with error suppression so they never block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L692-L701
+    why: Direction-based admission check determining if request belongs to a forward or reverse job.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L788-L800
+    why: >-
+      Alias-resolved model-group matching: _canonical_group resolves the model group
+      through the router's alias map, and _scope_admits checks whether a request's
+      group matches any in the job's scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L734-L812
+    why: ActiveShadowEvalJob model validation, arm router names, target model calculation, and canonical group resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L851-L903
+    why: Load active jobs from database grouped by target type and id, with attempt count and spend aggregation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1218-L1264
+    why: Record attempt row with verdict or error details, truncating error messages to 500 characters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1377-L1382
+    why: Default Prisma provider fallback when no client is supplied.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/shadow_eval_funnel.py
+    why: Pod-local funnel counter implementation with pending events, recording, and flush logic.
+dod:
+  - text: ActiveShadowEvalJob validates direction and baseline_model consistency, and rejects reverse jobs without exactly one router.
+    proof: [job-validation]
+  - text: Job loading queries the database, aggregates attempt stats per job, groups by target, and caches the result for ten seconds.
+    proof: [oracle, job-loading-tests]
+  - text: A cache miss or DB error returns empty without storing, so sampling pauses and the next request retries.
+    proof: [job-loading-tests]
+  - text: Funnel events are recorded to a pod-local dictionary and flushed atomically per job, dropping the batch on failure.
+    proof: [funnel-tests]
+  - text: Attempt insertion includes every cost type (call cost, classifier cost, judge cost) as Decimal and error messages truncated to 500 characters.
+    proof: [oracle, attempt-recording-tests]
+  - text: Direction-based admission filters forward-job traffic not served by any candidate router, and reverse-job traffic from exactly one router.
+    proof: [oracle, admission-tests]
+  - text: Model-group scope resolution uses the injected router's alias map and accepts traffic only matching job-scoped groups.
+    proof: [oracle, admission-tests]
+  - text: When eval_spend is positive, the job's spend counter is incremented before the attempt row is inserted, so a lost row still closes the job's budget gate on the next read.
+    proof: [oracle, spend-write-ordering-tests]
+checks:
+  optional: []
+  commands:
+    - id: job-validation
+      why: ActiveShadowEvalJob model validation does not reject invalid direction or baseline_model mismatch.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(shadow_eval_job_validation)'
+    - id: job-loading-tests
+      why: Job loading, caching, or error handling fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(shadow_eval_job_loading)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(shadow_eval_job_)'
+    - id: funnel-tests
+      why: Funnel recording or flushing fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(shadow_eval_funnel)'
+    - id: attempt-recording-tests
+      why: Attempt insertion with costs and error truncation fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(shadow_eval_attempt)'
+    - id: admission-tests
+      why: Direction-based or scope-based admission filtering fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/shadow_eval.*admission|shadow_eval.*scope/)'
+    - id: spend-write-ordering-tests
+      why: Spend counter increment before attempt insert does not happen or is not verified.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(shadow_eval.*spend.*write.*order)'
+oracle_cases:
+  - tools/oracle/cases/helpers/server/shadow-job-loading/active-jobs-forward.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/active-jobs-reverse.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/job-validation-invalid-direction.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/job-validation-baseline-mismatch.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/job-validation-reverse-multiple-routers.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/attempt-record-verdict.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/attempt-record-error.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/attempt-record-error-truncation.yaml
+  - tools/oracle/cases/helpers/server/shadow-job-loading/spend-counter-write-before-insert.yaml
+deviations:
+  - what: Cache failures return empty rather than retrying immediately, so sampling pauses for one request while the next request fills the cache.
+    why: Keep the sampling loop lock-free and avoid blocking on transient DB issues; the ten-second TTL bounds the pause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L851-L903
+  - what: >-
+      betterlite's spend counter callables (async function to read current spend for a job,
+      async function to increment a job's spend counter) are injected through the shadow
+      job loader struct as Fields: read_spend receives (counter_key: String, fallback_spend: f64,
+      max_budget: f64) -> Future<f64>, write_spend receives (counter_key: String, cost: f64) ->
+      Future<()>. Production defaults delegate to B2321::get_current_spend (read side) and
+      B3015::increment_spend_counter (write side); tests inject in-memory implementations.
+    why: >-
+      The cross-pod spend counter is external to the shadow pipeline. B4083 takes these
+      callables through explicit fields rather than reading proxy globals, so tests control
+      counter behavior and the pipeline degrades gracefully on counter unavailability
+      (reads return the fallback spend floor, writes log and continue). The spend writer is
+      called before the attempt insert, so a lost row still closes the job's budget gate on
+      the next read via the fallback floor. These callables are optional to preserve test
+      isolation; they are not listed in depends_on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L828-L845
+  - what: Funnel flush drops the batch on any database error instead of retrying, since a repeated increment is worse than an undercount.
+    why: Advisory counters should degrade gracefully; the spend update job runs periodically and will retry on the next cycle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/shadow_eval_funnel.py#L47-L65
+out_of_scope:
+  - Shadow evaluation execution (B4084), spending logic (B4081/B4085), verdict parsing and judging (B4080).
+  - Snapshot capture and request normalization (B4082).
+  - Virtual key and team budget checks; injection of those checks into the spend gate is B4085.
+  - "get_current_spend production implementation: owned by B2321 (betterlite-auth::current_spend); this task receives it as an injected callable."
+  - "increment_spend_counter production implementation: owned by B3015 (betterlite-auth::spend_writes); this task receives it as an injected callable."
+pitfalls:
+  - Reverse jobs validate to exactly one router via the arm_router_names property, which merges router_name and router_names fields.
+  - The cache is typed as InMemoryCache with hardcoded capacity four and TTL ten seconds; do not parameterize these.
+  - Error messages from exceptions are truncated after 500 characters; longer messages get cut off by the database insert.
+  - Funnel recording is synchronous (no async lock) so the hook's read-modify-write on the shared event loop cannot interleave with the flush's snapshot.
+  - "Spend counter write happens before the attempt insert, so a lost row still closes the job's budget gate: the counter is the source of truth, not the row."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
