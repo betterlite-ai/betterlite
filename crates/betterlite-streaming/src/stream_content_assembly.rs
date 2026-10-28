@@ -16,12 +16,10 @@ pub enum AssemblyError {
     #[error("decoded audio exceeds {limit} bytes")]
     AudioTooLarge { limit: usize },
 }
-
 #[derive(Debug, Deserialize)]
 pub struct Chunk {
     pub choices: Vec<Choice>,
 }
-
 #[derive(Debug, Deserialize)]
 pub struct Choice {
     #[serde(default)]
