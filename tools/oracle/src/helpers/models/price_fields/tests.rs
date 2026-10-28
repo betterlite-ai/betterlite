@@ -46,7 +46,7 @@ fn rejects_invalid_typed_input(#[case] source: &str) {
 }
 
 #[rstest]
-#[case::float(r#"{'input_cost_per_token': 0.1}"#, "type(None)")]
+#[case::float("{'input_cost_per_token': 0.1}", "type(None)")]
 #[case::overprecision(
     r#"{'source': '{"input_cost_per_token":0.123456789012345678901234567891}'}"#,
     "Inexact"
