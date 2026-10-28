@@ -7,8 +7,6 @@ use url::Url;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-const GCP_TOKEN_TTL_SECONDS: u64 = 3300;
-
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
@@ -74,13 +72,6 @@ pub struct Settings {
     pub environment_snapshot: BTreeMap<String, bool>,
 }
 
-#[derive(Debug, Clone)]
-pub struct GcpSettings {
-    pub service_account: SecretString,
-    pub ssl_ca_certs: Option<String>,
-    pub token_ttl_seconds: u64,
-}
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -110,105 +101,6 @@ impl Section for Raw {
             environment_snapshot,
         })
     }
-}
-
-struct ProviderSelection {
-    gcp: Option<GcpSettings>,
-    azure: Option<AzureSettings>,
-    aws: Option<AwsSettings>,
-    warnings: Vec<ProviderWarning>,
-}
-
-fn resolve_providers<L>(
-    settings: &RawSettings,
-    lookup: &L,
-) -> Result<ProviderSelection, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let mut warnings = Vec::new();
-    let gcp = build_gcp(settings, lookup);
-    let azure = resolve_azure_provider(settings, lookup, gcp.as_ref(), &mut warnings);
-    let aws = resolve_aws_provider(
-        settings,
-        lookup,
-        gcp.as_ref(),
-        azure.as_ref(),
-        &mut warnings,
-    )?;
-
-    Ok(ProviderSelection {
-        gcp,
-        azure,
-        aws,
-        warnings,
-    })
-}
-
-fn build_gcp<L>(settings: &RawSettings, lookup: &L) -> Option<GcpSettings>
-where
-    L: EnvironmentLookup,
-{
-    let gcp_service_account = settings
-        .gcp_service_account
-        .clone()
-        .or_else(|| lookup.lookup("REDIS_GCP_SERVICE_ACCOUNT"));
-    let gcp_ssl_ca_certs = settings
-        .gcp_ssl_ca_certs
-        .clone()
-        .or_else(|| lookup.lookup("REDIS_GCP_SSL_CA_CERTS"));
-    let ssl = ssl_enabled(settings, lookup);
-    gcp_service_account.map(|account| GcpSettings {
-        service_account: SecretString::from(account),
-        ssl_ca_certs: gcp_ssl_ca_certs.filter(|_| ssl),
-        token_ttl_seconds: GCP_TOKEN_TTL_SECONDS,
-    })
-}
-
-fn resolve_azure_provider<L>(
-    settings: &RawSettings,
-    lookup: &L,
-    gcp: Option<&GcpSettings>,
-    warnings: &mut Vec<ProviderWarning>,
-) -> Option<AzureSettings>
-where
-    L: EnvironmentLookup,
-{
-    let azure_ad_enabled = settings
-        .azure_redis_ad_token
-        .clone()
-        .or_else(|| lookup.lookup("REDIS_AZURE_AD_TOKEN"))
-        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
-    if azure_ad_enabled && gcp.is_some() {
-        warnings.push(ProviderWarning::GcpOutranksAzure);
-    }
-    (azure_ad_enabled && gcp.is_none()).then(|| resolve_azure(settings, lookup))
-}
-
-fn resolve_aws_provider<L>(
-    settings: &RawSettings,
-    lookup: &L,
-    gcp: Option<&GcpSettings>,
-    azure: Option<&AzureSettings>,
-    warnings: &mut Vec<ProviderWarning>,
-) -> Result<Option<AwsSettings>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let aws_iam_enabled = settings.aws_iam_auth.as_ref().is_some_and(coerces_to_true)
-        || lookup
-            .lookup("REDIS_AWS_IAM_AUTH")
-            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)));
-    if aws_iam_enabled && gcp.is_some() {
-        warnings.push(ProviderWarning::GcpOutranksAws);
-    } else if aws_iam_enabled && azure.is_some() {
-        warnings.push(ProviderWarning::AzureOutranksAws);
-    } else {
-        // neither conflict applies; the branch below may still build the provider
-    }
-    (aws_iam_enabled && gcp.is_none() && azure.is_none())
-        .then(|| build_aws(settings, lookup))
-        .transpose()
 }
 
 fn resolve_connection<L>(
@@ -288,22 +180,6 @@ where
     settings.ssl.as_ref().map_or_else(fallback, coerces_to_true)
 }
 
-const fn provider_precedence(
-    gcp: Option<&GcpSettings>,
-    azure: Option<&AzureSettings>,
-    aws: Option<&AwsSettings>,
-) -> Option<Provider> {
-    if gcp.is_some() {
-        Some(Provider::Gcp)
-    } else if azure.is_some() {
-        Some(Provider::Azure)
-    } else if aws.is_some() {
-        Some(Provider::Aws)
-    } else {
-        None
-    }
-}
-
 fn coerces_to_true(setting: &ScalarBool) -> bool {
     match setting {
         ScalarBool::Boolean(boolean) => *boolean,
@@ -324,11 +200,19 @@ fn url_without_userinfo(url: &str) -> String {
 
 #[path = "redis_credentials/aws.rs"]
 pub mod aws;
-use aws::{AwsSettings, build_aws};
+use aws::AwsSettings;
 
 #[path = "redis_credentials/azure.rs"]
 pub mod azure;
-use azure::{AzureSettings, resolve_azure};
+use azure::AzureSettings;
+
+#[path = "redis_credentials/gcp.rs"]
+pub mod gcp;
+use gcp::GcpSettings;
+
+#[path = "redis_credentials/provider.rs"]
+mod provider;
+use provider::{provider_precedence, resolve_providers};
 
 #[path = "redis_credentials/tests.rs"]
 mod tests;
