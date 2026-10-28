@@ -84,6 +84,8 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
         Ok(value) => PriceFields::parse(value.as_ref()),
         Err(error) => panic!("test JSON must parse: {error}"),
     };
+    let decoded = serde_json::from_str::<PriceFields>(source);
+    assert_eq!(decoded.as_ref().ok(), parsed.as_ref().ok());
     if expected == "absent" {
         assert_eq!(parsed.unwrap(), PriceFields::default());
     } else if expected == "nested" {
