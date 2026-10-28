@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "granite-null", "call": {"builtin_prompts": {"family": "granite", "messages": [{"role": "assistant", "content": null}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

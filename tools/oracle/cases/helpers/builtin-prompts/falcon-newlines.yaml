@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "falcon-newlines", "call": {"builtin_prompts": {"family": "falcon_instruct", "messages": [{"role": "user", "content": "a\r\nb\n\nc\n\n\nd"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}
