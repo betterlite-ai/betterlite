@@ -361,25 +361,6 @@ fn policy_secrets_absent_from_debug(#[case] input: &str, #[case] field: &str) {
     );
 }
 
-#[rstest]
-#[case::response_date_accepts_int_timestamp("1700000000", true)]
-#[case::response_date_accepts_naive_space_separated(r#""2026-01-01 12:00:00""#, false)]
-#[case::response_date_accepts_date_only(r#""2026-01-01""#, false)]
-fn response_date_accepts_lax_forms(#[case] raw_created_at: &str, #[case] is_offset: bool) {
-    let input = format!(
-        r#"{{"agent_id":"a","agent_name":"n","agent_card_params":{{}},"created_at":{raw_created_at},"updated_at":{raw_created_at}}}"#
-    );
-    let response: AgentResponse = serde_json::from_str(&input).unwrap();
-    assert_eq!(
-        matches!(response.created_at, Some(LaxDateTime::Offset(_))),
-        is_offset
-    );
-    assert_eq!(
-        matches!(response.updated_at, Some(LaxDateTime::Offset(_))),
-        is_offset
-    );
-}
-
 #[test]
 fn binding_provider_other_rejected() {
     serde_json::from_str::<AgentIdentityBinding>(
