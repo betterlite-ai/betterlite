@@ -1,0 +1,7 @@
+kind: helper
+name: prepare-latest
+call:
+  b3721:
+    step: {"prepare": {"messages": [{"role": "system", "content": "source"}, {"role": "user", "content": "old"}, {"role": "assistant", "content": "answer"}, {"role": "user", "content": "new"}], "latest_only": true}}
+env: {}
+compare: {ignore: []}

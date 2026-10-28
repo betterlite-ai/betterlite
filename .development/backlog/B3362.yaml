@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Container ownership and filtered pagination
 status: todo
 depends_on: [B903, B904, B1018, B726, B732, B2226]
-file: null
+file: tasks/B3362-container-ownership.yaml
 covers:
   - "litellm/proxy/container_endpoints/ownership.py"
 parent: B094

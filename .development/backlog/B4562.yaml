@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Claude settings merge, private writes and status installation
 status: todo
 depends_on: [B192, B4560, B4561]
-file: null
+file: tasks/B4562-claude-settings-foundation.yaml
 covers:
   - "litellm/proxy/client/cli/commands/claude_settings.py"
 parent: B134

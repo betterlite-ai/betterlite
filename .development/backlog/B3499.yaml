@@ -2,8 +2,8 @@ id: B3499
 milestone: M5 api families
 title: Create native or Responses-backed interactions
 status: todo
-depends_on: [B3490, B3493, B3496, B3498, B174, B185, B186, B198, B247]
-file: null
+depends_on: [B3481, B3490, B3493, B3496, B3498, B174, B185, B186, B198, B247]
+file: tasks/B3499-interaction-create-call.yaml
 covers:
   - "litellm/interactions/main.py"
 parent: B098

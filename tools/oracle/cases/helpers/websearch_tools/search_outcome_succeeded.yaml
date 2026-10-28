@@ -1,0 +1,5 @@
+kind: helper
+name: search-outcome-succeeded
+call: {websearch_tool_records: {function: search_outcome_succeeded, text: "fresh result", response: {results: [], object: search}}}
+env: {}
+compare: {ignore: []}

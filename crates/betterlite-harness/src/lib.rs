@@ -1,3 +1,4 @@
+pub mod cli_handler;
 pub mod context;
 pub mod deepagents;
 pub mod endpoint;

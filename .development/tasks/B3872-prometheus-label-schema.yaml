@@ -1,0 +1,72 @@
+id: B3872
+title: Prometheus budget label catalog and schema selection
+description: >-
+  Complete the budget, limit, cache, batch and MCP label schemas and resolve caller identity and opt-in labels.
+  Implement three validation functions: get_caller_identity_mode returns the configured mode (api_key_alias, user_email, or both, defaulting to api_key_alias); validate_caller_identity rejects configs where user_email mode conflicts with metrics requesting api_key_alias; resolve_caller_identity_labels returns a fresh label list with the configured mode applied (replacing api_key_alias with user_email or inserting both).
+  Add PrometheusMetricLabels attributes for team, org, user and customer budgets; key, team and org rate limits; cache hits/misses and provider cache metrics; managed batch operations; and MCP tool calls.
+  Implement get_labels(metric_name) to build schema projection: default labels with caller identity resolved, plus custom_prometheus_metadata_labels and custom_prometheus_tags (both sanitized), plus conditional toggles for stream label (prometheus_emit_stream_label), rate-limit labels (prometheus_emit_rate_limit_labels), input-length label (prometheus_emit_input_sequence_length_label), org labels (injected based on _org_label_metrics), and user-budget email/alias (prometheus_user_budget_label_include_email_alias).
+  A logger snapshots the resulting schema for its lifetime; model-specific litellm_params key-limit declarations stay effective where the config loader builds them.
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_label_schema.rs
+    - crates/betterlite-logging/src/prometheus_label_schema/tests.rs
+    - crates/betterlite-logging/src/prometheus_label_schema/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L340-L408
+    why: Caller-identity validation functions and label resolution logic
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L319-L337
+    why: Constants for caller-identity valid values and affected metrics
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L701-L758
+    why: Budget, limit and rate-limit metric label schemas
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L759-L823
+    why: "Metric assignments: litellm_remaining_api_key_requests_for_model, litellm_remaining_api_key_tokens_for_model, litellm_callback_logging_failures_metric, litellm_deployment_failure_responses, litellm_deployment_total_requests, litellm_deployment_success_responses"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L824-L839
+    why: Rate-limit label definitions (RATE_LIMIT_TYPE, RATE_LIMIT_CATEGORY)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L840-L861
+    why: "Metric assignments: litellm_llm_api_failed_requests_metric, buffer-monitoring queue-size metrics"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L862-L882
+    why: Cache and provider-cache metric label schemas
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L883-L908
+    why: _org_label_metrics and _input_sequence_length_metrics frozensets used by get_labels
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L909-L955
+    why: Batch and MCP tool call metric label schemas and _batch_user_labels
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L956-L1023
+    why: PrometheusMetricLabels.get_labels implementation with custom labels, stream toggle, rate-limit toggle, user-budget opt-in and org/input-length label injection
+dod:
+  - text: "Three validation functions are implemented: get_caller_identity_mode returns the configured mode, validate_caller_identity rejects conflicts, resolve_caller_identity_labels replaces or inserts user_email on affected metrics including litellm_deployment_total_requests, litellm_deployment_success_responses, and litellm_deployment_failure_responses."
+    proof: [schema-tests]
+  - text: "PrometheusMetricLabels provides immutable label schemas for budget, rate-limit, cache, batch and deployment metrics, with every assignment from LiteLLM lines 701–955 replicated except duplicated rate-limit tuple definitions; caller-identity mode is applied to the three deployment metrics."
+    proof: [schema-tests]
+  - text: "get_labels returns a mutable list combining default labels, custom metadata/tags, and opt-in labels controlled by config flags, with stream/rate-limit/input-length toggles and org label injection."
+    proof: [schema-tests]
+  - text: "Caller-identity default is api_key_alias; stream, rate-limit and input-length toggles default false; user-budget email/alias opt-in defaults false."
+    proof: [schema-config]
+  - text: "Model-specific key-limit declarations (model_list[].litellm_params.requests/tokens) stay effective; overwrites of earlier assignments remain in place."
+    proof: [schema-tests]
+  - text: "Every mutant in caller-identity validation logic and get_labels is caught by a test."
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: schema-tests
+      why: the schema tests fail, do not exist, or assertion snapshots were not accepted
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_schema::/) - test(replays_the_prometheus_label_schema_corpus)'
+    - id: schema-config
+      why: a config key toggle defaults to the wrong value or is missing from the schema test fixtures
+      run: grep -qE 'prometheus_deployment_and_latency_caller_identity.*api_key_alias' crates/betterlite-logging/src/prometheus_label_schema/tests.rs && grep -q 'prometheus_emit_stream_label.*false' crates/betterlite-logging/src/prometheus_label_schema/tests.rs && grep -q 'prometheus_emit_rate_limit_labels.*false' crates/betterlite-logging/src/prometheus_label_schema/tests.rs && grep -q 'prometheus_emit_input_sequence_length_label.*false' crates/betterlite-logging/src/prometheus_label_schema/tests.rs && grep -q 'prometheus_user_budget_label_include_email_alias.*false' crates/betterlite-logging/src/prometheus_label_schema/tests.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The optional inclusion of STREAM, RATE_LIMIT_CATEGORY, RATE_LIMIT_TYPE labels on specific metrics is logic only; emission is a caller responsibility (B3873–B3881)."
+  - "Config key resolution and environment variable binding; B002 supplies the resolved values."
+pitfalls:
+  - "Caller-identity defaults to api_key_alias, and the validation checks that a \"user_email\" mode with conflicting metrics raises ValueError with the metric names and expected mode."
+  - "get_labels returns a fresh mutable list every call so later mutations (inserting, appending) don't affect the schema class attributes."
+  - "_org_label_metrics is a frozenset whose membership is checked on every get_labels call; keep the set declaration efficient by iterating once at module load time rather than per-metric."
+  - "The _batch_user_labels and _cache_metric_labels are reused by multiple metrics (litellm_managed_batch_created_total, litellm_cache_hits_metric); mutations by one caller break others, so only get_labels returns fresh lists."
+  - "Model-specific litellm_params overwrites happen in the config loader (B002), not here; this task only exposes the static schemas."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

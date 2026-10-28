@@ -1,0 +1,107 @@
+id: B3060
+title: Read daily usage rows for FinOps exports
+description: >-
+  Build typed daily-user-spend queries in `betterlite-db::finops` that retrieve usage
+  data for FOCUS and CloudZero exports. Implement get_usage_data for both adapters,
+  preserving inclusive `updated_at` bounds, descending date/creation ordering, joins
+  with VerificationToken/TeamTable/UserTable/OrganizationTable (for FOCUS only),
+  and alias recovery through B1710's fill_missing_api_key_aliases.
+
+  FOCUS queries join organizations and reject negative limit values with ValueError
+  after type coercion; CloudZero queries pass integer limits directly without negative checks.
+  Both validate that limit is an integer, raising ValueError("limit must be an integer")
+  on type/parse errors. start_time_utc and end_time_utc are inclusive bounds applied to updated_at.
+
+  Config keys: none (read-only database queries).
+  Cache keys: none.
+  DB tables: LiteLLM_DailyUserSpend, LiteLLM_VerificationToken, LiteLLM_TeamTable,
+  LiteLLM_UserTable, LiteLLM_OrganizationTable (the last used by FOCUS only).
+scope:
+  paths:
+    - crates/betterlite-db/src/finops/focus.rs
+    - crates/betterlite-db/src/finops/focus/**
+    - crates/betterlite-db/src/finops/cloudzero.rs
+    - crates/betterlite-db/src/finops/cloudzero/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L14-L113"
+    why: "FocusLiteLLMDatabase._ensure_prisma_client (L14-L22) and get_usage_data (L24-L113) implementations, with organization joins and negative limit validation."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/database.py#L30-L111"
+    why: "Complete CloudZero database module: LiteLLMDatabase._ensure_prisma_client and get_usage_data without organization joins or negative limit checks."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py"
+    why: "fill_missing_api_key_aliases function owned by B1710, called by both modules after raw query execution."
+dod:
+  - text: "FOCUS module implements get_usage_data with selects matching LiteLLM: id, date, user_id, api_key, model, model_group, custom_llm_provider, prompt_tokens, completion_tokens, spend, api_requests, successful_requests, failed_requests, cache_creation_input_tokens, cache_read_input_tokens, created_at, updated_at, team_id, api_key_alias, team_alias, user_email, organization_id, organization_alias."
+    proof: [focus-selects]
+  - text: "CloudZero module implements get_usage_data with selects matching LiteLLM: id, date, user_id, api_key, model, model_group, custom_llm_provider, prompt_tokens, completion_tokens, spend, api_requests, successful_requests, failed_requests, cache_creation_input_tokens, cache_read_input_tokens, created_at, updated_at, team_id, api_key_alias, team_alias, user_email (no organization fields)."
+    proof: [cloudzero-selects]
+  - text: "Both modules join LiteLLM_VerificationToken on api_key = vt.token to get team_id and api_key_alias; FOCUS additionally joins LiteLLM_OrganizationTable to get organization_id and organization_alias (CloudZero omits organization joins)."
+    proof: [join-coverage]
+  - text: "Both modules apply inclusive updated_at bounds: updated_at >= start_time_utc (when provided) and updated_at <= end_time_utc (when provided)."
+    proof: [bounds-cases]
+  - text: "Both modules order results descending by date, then descending by created_at."
+    proof: [order-cases]
+  - text: "FOCUS module validates limit as non-negative integer after type coercion, raising ValueError('limit must be an integer') on TypeError/ValueError and ValueError('limit must be non-negative') if limit_value < 0."
+    proof: [focus-limit-validation]
+  - text: "CloudZero module validates limit only as an integer on type coercion, raising ValueError('limit must be an integer') on error; negative limits are passed to the database without additional validation."
+    proof: [cloudzero-limit-validation]
+  - text: "Both modules call B1710's fill_missing_api_key_aliases on the raw query result to recover aliases for keys not found in VerificationToken."
+    proof: [alias-recovery]
+  - text: "Both modules return Polars DataFrame with dict row format (to_dicts conversion or list of dict) inferred schema."
+    proof: [dataframe-conversion]
+  - text: "Every mutant in the two modules is caught by a test."
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: focus-selects
+      why: FOCUS column selects do not match LiteLLM or are missing organization fields
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::focus_selects/)'
+    - id: cloudzero-selects
+      why: CloudZero column selects do not match LiteLLM or incorrectly include organization fields
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::cloudzero_selects/)'
+    - id: join-coverage
+      why: Join tables (VerificationToken, TeamTable, UserTable, OrganizationTable for FOCUS only) do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::join_coverage/)'
+    - id: bounds-cases
+      why: Inclusive updated_at bound tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::bounds/)'
+    - id: order-cases
+      why: Descending date/created_at ordering tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::ordering/)'
+    - id: focus-limit-validation
+      why: FOCUS limit validation (non-integer and non-negative checks) fails or is missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::focus_limit/)'
+    - id: cloudzero-limit-validation
+      why: CloudZero limit validation (integer-only check, no negative check) fails or is missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::cloudzero_limit/)'
+    - id: alias-recovery
+      why: Alias recovery via B1710's fill_missing_api_key_aliases is not called or not integrated
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::alias_recovery/)'
+    - id: dataframe-conversion
+      why: DataFrame conversion from raw query result (to_dicts, list, or empty) and schema inference fails
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::dataframe/)'
+oracle_cases: []
+deviations:
+  - what: "FOCUS and CloudZero modules are split into separate modules under the same crate to preserve their different join/validation behavior. LiteLLM implements them as separate classes in separate files; Rust scoping preserves this separation."
+    why: "Limit validation differs (FOCUS rejects negative values; CloudZero does not) and organization joins are FOCUS-only. Separate modules make behavior differences explicit and testable."
+    link: "https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations"
+out_of_scope:
+  - "`FocusLiteLLMDatabase.get_table_info` (litellm/integrations/focus/database.py:115-129) has no caller at the pinned commit; it is a diagnostic helper with its own query and error path, excluded from B3060."
+  - HTTP routing and FinOps export orchestration (handled by B3065, B3066, B3071).
+  - Request/response encoding and serialization (handled by export engines).
+  - B1710's fill_missing_api_key_aliases helper (imported and called, not reimplemented).
+  - Prisma client setup and lifecycle (injected via B700's DbSession).
+  - Schema inference and Polars DataFrame operations beyond basic dict/list conversion.
+pitfalls:
+  - "FOCUS module must join LiteLLM_OrganizationTable and include organization_id/organization_alias in the select; CloudZero deliberately omits these fields."
+  - "FOCUS rejects negative limit values after int() coercion with ValueError('limit must be non-negative'); CloudZero passes negative integers directly to the database without additional checks."
+  - "Both modules check limit is an integer via int() coercion, catching TypeError and ValueError and raising ValueError('limit must be an integer')."
+  - "The updated_at bounds are inclusive on both sides: >= start_time_utc AND <= end_time_utc. Parameter binding prevents SQL injection from user-supplied timestamps."
+  - "Results are ordered descending by date, then descending by created_at, matching LiteLLM's order."
+  - "Alias recovery via fill_missing_api_key_aliases must be called on the raw query result (converted to dict list) before returning the DataFrame."
+  - "Database connection errors raise RuntimeError/Exception ('Database not connected...'), not a custom error type, matching LiteLLM's behavior."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

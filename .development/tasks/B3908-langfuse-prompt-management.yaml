@@ -1,0 +1,155 @@
+id: B3908
+title: Langfuse prompt management and completion callbacks
+description: >-
+  Implement Langfuse prompt management and success/failure callback wrappers in crates/betterlite-logging,
+  composing lower-level services to handle prompt selection, compilation, optional-parameter projection, and
+  logged event dispatching. Preserve cached REST-client initialization distinct from the shared export channel
+  and per-request logger selection. Retain LRU cache sizing (10 items) on the REST client factory to prevent
+  duplicate initialization overhead. Implement success and failure logging callbacks that wrap async dispatch
+  through injected logger selection, sanitize optional parameters and completion callback, and cache returned
+  trace IDs for service correlation. Warn at startup if Langfuse is configured both globally and per-request.
+  When prompt management is requested without a prompt_id, skip it; when a fetch fails, do not block the request
+  (return the original messages, model and params). Log callback failures and handle the async bridge from sync
+  context through the provided run_async_function utility.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/src/langfuse_prompt_management.rs
+    - crates/betterlite-logging/src/langfuse_prompt_management/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L50-L110
+    why: "langfuse_client_init factory with LRU caching and _remember_trace_id cache storage"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L114-L190
+    why: "LangfusePromptManagement.__init__, integration_name, _get_prompt_from_id, _compile_prompt, _get_optional_params_from_langfuse"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L192-L305
+    why: "async_get_chat_completion_prompt, should_run_prompt_management, _compile_prompt_helper, async_compile_prompt_helper"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L307-L364
+    why: "log_success_event, log_failure_event, async_log_success_event, async_log_failure_event with callback wrapping"
+
+dod:
+  - text: "langfuse_client_init initializes a REST client through build_langfuse_client with LRU cache of size 10, checking Langfuse version and TTL validity before creation, returning the same client for identical credential+host combinations."
+    proof: [client-init-tests]
+  - text: "_remember_trace_id extracts the trace_id from logged events and stores it in the trace ID cache when the litellm_call_id is a string."
+    proof: [trace-id-caching-tests]
+  - text: "LangfusePromptManagement inherits from LangFuseLogger, PromptManagementBase and CustomLogger, acquiring both REST client and tracing channel at initialization."
+    proof: [initialization-tests]
+  - text: "integration_name returns 'langfuse'."
+    proof: [integration-name-tests]
+  - text: "_get_prompt_from_id calls langfuse_client.get_prompt with optional label and version parameters."
+    proof: [prompt-fetch-tests]
+  - text: "_compile_prompt transforms a prompt client's compiled output (string or list) into a list of AllMessageValues, converting strings to system messages."
+    proof: [prompt-compilation-tests]
+  - text: "_get_optional_params_from_langfuse extracts the config dict from a prompt client, filtering out the 'model' key."
+    proof: [optional-params-tests]
+  - text: "async_get_chat_completion_prompt delegates to get_chat_completion_prompt from the PromptManagementBase contract."
+    proof: [sync-async-delegation-tests]
+  - text: "should_run_prompt_management returns false if prompt_id is None, else fetches the prompt to validate it exists and returns true, swallowing fetch exceptions."
+    proof: [prompt-validation-tests]
+  - text: "_compile_prompt_helper retrieves the prompt from a dynamic-credential client, compiles it with variables, extracts optional params and model, and returns a PromptManagementClient struct."
+    proof: [compilation-helper-tests]
+  - text: "async_compile_prompt_helper delegates to _compile_prompt_helper."
+    proof: [async-compilation-tests]
+  - text: "log_success_event calls run_async_function to bridge to async_log_success_event with all arguments."
+    proof: [success-event-tests]
+  - text: "log_failure_event calls run_async_function to bridge to async_log_failure_event with all arguments."
+    proof: [failure-event-tests]
+  - text: "async_log_success_event selects a logger through get_langfuse_logger_for_request, calls log_event_on_langfuse, stores the returned trace ID through _remember_trace_id, and catches exceptions with verbose_logger and handle_callback_failure."
+    proof: [success-logging-tests]
+  - text: "async_log_failure_event selects a logger, extracts status message from standard_logging_object or exception, calls log_event_on_langfuse with level='ERROR', stores the trace ID, and handles exceptions like success."
+    proof: [failure-logging-tests]
+  - text: "Dynamic credential clients are initialized with allow_env_credentials=false when langfuse_host is supplied in dynamic_callback_params, else allow_env_credentials=true."
+    proof: [dynamic-credentials-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: client-init-tests
+      why: "REST client caching and version/TTL checks must not fail silently"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::client_init(::|$)/)'
+    - id: trace-id-caching-tests
+      why: "trace ID extraction and caching must work for service correlation"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::trace_id_caching(::|$)/)'
+    - id: initialization-tests
+      why: "prompt management logger must initialize both REST and tracing"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::initialization(::|$)/)'
+    - id: integration-name-tests
+      why: "integration_name property must be set correctly"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::integration_name(::|$)/)'
+    - id: prompt-fetch-tests
+      why: "prompt fetching with label/version must work"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::prompt_fetch(::|$)/)'
+    - id: prompt-compilation-tests
+      why: "prompt compilation must transform strings to system messages and preserve lists"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::prompt_compilation(::|$)/)'
+    - id: optional-params-tests
+      why: "optional parameters must be extracted, filtering out 'model'"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::optional_params(::|$)/)'
+    - id: sync-async-delegation-tests
+      why: "async_get_chat_completion_prompt must delegate correctly"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::sync_async_delegation(::|$)/)'
+    - id: prompt-validation-tests
+      why: "prompt validation must return false for None and true when fetch succeeds, swallowing exceptions"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::prompt_validation(::|$)/)'
+    - id: compilation-helper-tests
+      why: "compilation helper must build the complete PromptManagementClient struct"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::compilation_helper(::|$)/)'
+    - id: async-compilation-tests
+      why: "async compilation must delegate to sync"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::async_compilation(::|$)/)'
+    - id: success-event-tests
+      why: "success event callback must bridge to async correctly"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::success_event_callback(::|$)/)'
+    - id: failure-event-tests
+      why: "failure event callback must bridge to async correctly"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::failure_event_callback(::|$)/)'
+    - id: success-logging-tests
+      why: "success logging must dispatch through selected logger and store trace ID"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::success_logging(::|$)/)'
+    - id: failure-logging-tests
+      why: "failure logging must extract status, dispatch through logger and store trace ID"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::failure_logging(::|$)/)'
+    - id: dynamic-credentials-tests
+      why: "dynamic credentials must isolate host-supplied keys from environment"
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::dynamic_credentials(::|$)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "LRU cache size for REST clients is fixed at 10 items, matching the pinned commit's lru_cache(maxsize=10)."
+    why: "Betterlite's caching layer preserves the pin's overhead-prevention strategy without requiring a per-client configuration."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L50"
+  - what: "Callback exceptions are logged via verbose_logger and handle_callback_failure is called with callback_name='langfuse'; exceptions do not propagate."
+    why: "LiteLLM's same error handling in callbacks: failures do not block the request, they are logged for debugging."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L329-L333"
+
+out_of_scope:
+  - "B3900 owns version/TTL checks, resolve_langfuse_credentials, warn_if_upstream_langfuse_configured, mock helpers, configured_release, and deployment environment."
+  - "B3903 owns acquire_langfuse_tracing and the LangfuseTracing interface."
+  - "B3904 owns build_langfuse_client and get_prompt from LangfuseApiClient."
+  - "B3907 owns get_langfuse_logger_for_request logger selection and log_event_on_langfuse event dispatch."
+  - "B173 owns HTTPHandler client construction for HTTP requests."
+  - "B198 owns run_async_function bridge from asyncify.py; this task calls it to execute async callbacks from sync context."
+  - "B254 owns StandardLoggingPayload and StandardCallbackDynamicParams contracts."
+  - "B3931 owns CustomLogger.handle_callback_failure for callback error counting."
+  - "B3945 owns DynamicLoggingCache.set_cache and the in_memory_dynamic_logger_cache instance."
+  - "PromptManagementBase.get_chat_completion_prompt contract; this task implements the async override that delegates to it."
+  - "ServiceTraceIDCache.set_cache for trace ID storage; this task calls it through _remember_trace_id."
+
+pitfalls:
+  - "LRU cache on langfuse_client_init must use cache key with all six parameters (public_key, secret, secret_key, host, flush_interval, allow_env_credentials) so dynamic credentials with allow_env_credentials=false never collide with environment fallback clients."
+  - "allow_env_credentials=false must be set when dynamic_callback_params contains a langfuse_host, preventing environment variable reading for keys; else allow_env_credentials=true."
+  - "should_run_prompt_management must return false before attempting to fetch when prompt_id is None; it must also catch and suppress exceptions on fetch, returning false on error."
+  - "_compile_prompt must distinguish string output (converted to a system message) from list output (cast and returned); the prompt client's compile() is called with variables unpacked."
+  - "_get_optional_params_from_langfuse filters the 'model' key from config but preserves all other keys; empty dicts are valid."
+  - "async_log_success_event and async_log_failure_event must construct in_memory_dynamic_logger_cache per-call; they do not retain it across requests."
+  - "Both async event functions must call _remember_trace_id after dispatch, extracting trace_id from the LangfuseLoggedEvent dict."
+  - "handle_callback_failure is called inside exception handlers and must not raise; it updates internal counter state."
+  - "run_async_function is imported from asyncify.py and called synchronously to execute async functions from sync callbacks; exception handling is on the async path."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

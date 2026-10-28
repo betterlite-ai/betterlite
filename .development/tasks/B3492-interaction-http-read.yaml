@@ -1,0 +1,73 @@
+id: B3492
+title: Share native HTTP clients and retrieve interactions
+description: >-
+  Build the HTTP foundation for Interactions and Agents APIs. Add crates/betterlite-http with two modules: betterlite_http::interactions::base for shared HTTP infrastructure and betterlite_http::interactions::get for GET retrieval.
+  The base module defines _BaseHTTPHandler with three methods: _handle_error converts httpx.HTTPStatusError to provider-specific exception types via the contract's get_error_class method, passing through other exceptions unchanged; _sync_client returns the supplied HTTPHandler or creates one via _get_httpx_client with ssl_verify from litellm_params; _async_client returns the supplied AsyncHTTPHandler or creates one via get_async_httpx_client, selecting the provider from litellm_params.custom_llm_provider or falling back to "gemini".
+  The GET module implements native retrieval for interactions by interaction_id. Both sync and async variants call interactions_api_config.validate_environment to prepare headers, call interactions_api_config.transform_get_interaction_request to build the URL and query params, log pre-call with the interaction_id as input, execute the GET request (without passing timeout), handle errors via _BaseHTTPHandler._handle_error, and call interactions_api_config.transform_get_interaction_response to convert the response.
+  This task is the foundation for interaction polling (B3496) and public retrieval (B3495), and shared by agent operations (B3502, B3503) that reuse _BaseHTTPHandler's client resolution without building the full HTTP methods. Provider selection and optional-field extraction are owned by B3490; request/response transformation are owned by the provider contracts (B1369 for Vertex, B1370 for Studio).
+scope:
+  paths:
+    - crates/betterlite-http/src/interactions/base.rs
+    - crates/betterlite-http/src/interactions/get.rs
+    - crates/betterlite-http/src/interactions/base/**
+    - crates/betterlite-http/src/interactions/get/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L37-L73
+    why: The _BaseHTTPHandler class with _handle_error, _sync_client and _async_client methods that resolve HTTP clients and convert provider errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L341-L454
+    why: The get_interaction and async_get_interaction methods that execute native GET requests with validation, URL construction, logging and response transformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L608-L700
+    why: AsyncHTTPHandler class definition and core methods for asynchronous HTTP operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1376-L1470
+    why: HTTPHandler class definition and core methods for synchronous HTTP operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1764
+    why: get_async_httpx_client factory function for creating and caching async HTTP clients.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1767-L1810
+    why: _get_httpx_client factory function for creating and caching synchronous HTTP clients.
+dod:
+  - text: The _BaseHTTPHandler class provides three methods for HTTP infrastructure shared by Interactions and Agents handlers.
+    proof: [http-base-tests]
+  - text: _handle_error converts httpx.HTTPStatusError to provider-specific exceptions via get_error_class and passes through other exceptions unchanged.
+    proof: [http-base-tests]
+  - text: _sync_client returns the supplied client or creates one via _get_httpx_client with ssl_verify from litellm_params.
+    proof: [http-base-tests]
+  - text: _async_client returns the supplied client or creates one via get_async_httpx_client, using custom_llm_provider from litellm_params or falling back to "gemini".
+    proof: [http-base-tests]
+  - text: The get_interaction method validates environment, constructs URL/params via transform_get_interaction_request, logs pre-call, executes GET without passing timeout, handles errors and transforms response.
+    proof: [interaction-get-tests]
+  - text: The async_get_interaction method implements the same flow asynchronously without requiring a _is_async dispatcher argument.
+    proof: [interaction-get-tests]
+checks:
+  optional: []
+  commands:
+    - id: http-base-tests
+      why: _BaseHTTPHandler methods are missing, do not correctly handle errors, do not resolve clients, or do not select the provider correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::base::/) and not test(/replays/)'
+    - id: interaction-get-tests
+      why: get_interaction or async_get_interaction do not validate headers, construct URLs, log pre-call, handle errors or transform responses correctly
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::get::/) and not test(/replays/)'
+oracle_cases: []
+deviations:
+  - what: GET requests do not pass the supplied timeout parameter to httpx.get(); they use default timeout behavior.
+    why: The LiteLLM source code omits timeout from the GET call at lines 390 and 443, signaling that interaction retrieval does not respect the timeout parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L390-L394
+  - what: _async_client uses custom_llm_provider from litellm_params.get() (which returns None for unset fields) and falls back to "gemini" only if the field is None or empty, not by suppressing a null value.
+    why: GenericLiteLLMParams.get uses getattr; an unset field is None, not a missing dict entry. The fallback happens in Rust at the point of use, not through a default suppression mechanism.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L67-L72
+out_of_scope:
+  - Provider contract methods (validate_environment, transform_get_interaction_request, transform_get_interaction_response, get_error_class). These are owned by B3490 (contract definition) and B1369/B1370 (provider implementations).
+  - Streaming iterators for interaction responses. B3491 owns the streaming SSE iterator.
+  - Create, delete and cancel operations. These are owned by separate HTTP handler tasks (B3493, B3494).
+  - Request/response body construction and transformation. These are delegated to the provider contract methods called by this module.
+pitfalls:
+  - "The three _BaseHTTPHandler methods (_handle_error, _sync_client, _async_client) are inherited by InteractionsHTTPHandler and other handler subclasses. The error handler accepts Any provider_config because AgentsHTTPHandler passes BaseAgentsAPIConfig, which is structurally compatible with BaseInteractionsAPIConfig but a different type."
+  - "GET requests do not pass the timeout parameter (lines 390 and 443 in LiteLLM omit it). This is intentional behavior, not a bug; betterlite preserves this pattern."
+  - "_async_client receives custom_llm_provider as a value from litellm_params.get('custom_llm_provider'), which returns None for unset fields. The fallback to 'gemini' is a literal or-null check in Rust, not a default-suppression mechanism."
+  - "The interaction_id is logged as input to pre_call, not as a structured field. The api_base (full URL) is logged separately in additional_args."
+  - "Error conversion uses provider_config.get_error_class(error_message, status_code, headers), passing the exact signature from the contract. The status code comes from e.response.status_code and headers are dict(e.response.headers)."
+  - "The _handle_error method accepts Any provider_config because it is called with both BaseInteractionsAPIConfig and BaseAgentsAPIConfig. Type checking in Rust must allow this structural compatibility."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

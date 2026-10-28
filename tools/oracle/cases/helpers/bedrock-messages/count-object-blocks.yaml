@@ -1,0 +1,7 @@
+kind: helper
+name: count-object-blocks
+call:
+  b3721:
+    step: {"selection": {"texts": ["old", "first", "second"], "context": {"latest_only": true, "messages": [{"role": "system", "content": "old"}, {"role": "user", "content": [{"type": "text", "text": "first"}, {"text": "second"}]}]}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,159 @@
+id: B4441
+title: Health probe settings, deployment targeting and display fields
+description: >-
+  Build typed probe settings and pure deployment-selection/display helpers in crates/betterlite-server,
+  with config parsing in crates/betterlite-config.
+  Prepare the final health request without changing the configured deployment catalog, and expose targeting
+  helpers to both live probes and cached-result authorization.
+
+  Implement typed structs to parse health_check_* settings from config and resolve them during request
+  preparation: max_tokens (with reasoning/non-reasoning variants), mode (via model_info or cost map),
+  model overrides, voice (for audio_speech), and health_check_params merges. Environment variables
+  BACKGROUND_HEALTH_CHECK_MAX_TOKENS, BACKGROUND_HEALTH_CHECK_MAX_TOKENS_REASONING and HEALTH_CHECK_TIMEOUT_SECONDS
+  are read at startup via config with defaults unset, unset, and 60 seconds. Malformed/blank token env vars
+  are treated as unset. The default health check prompt is `test from litellm`.
+
+  Implement background_health_check_model_groups parsing from config that distinguishes absent (all models)
+  from an empty list (no models) and rejects malformed input at startup. Implement disabled-background and
+  skip-wildcard filtering. Deduplication drops deployments without a truthy ID; narrowing to an unknown ID
+  retains the input list (unlike HTTP routing which rejects), and narrowing to a model name uses request
+  routing semantics: team public names win, then deployments named that way, then public team-agnostic names,
+  then model string matches.
+
+  Implement Bedrock region routing normalization that strips bedrock/ prefix and removes region path segments
+  from bedrock/region/model, preserving cross-region inference profile prefixes (us., eu., apac.).
+  Explicit custom_llm_provider overrides stay; missing ones default to bedrock for bare model ids to resolve.
+  A malformed health_check_params dict warns and is ignored; explicit dedicated knobs win on conflict.
+
+  Copy the display field sets MINIMAL_DISPLAY_PARAMS and HEALTH_DISPLAY_PARAMS with admin-only subset
+  ADMIN_ONLY_HEALTH_DISPLAY_PARAMS and mode constants _MAX_TOKEN_SUPPORT_MODES and
+  _HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT.
+
+  Use LiteLLM's TypeAdapter for validation, serde/serde_yaml for config, and secrecy types for any
+  credential fields passed through. The config task (B002) owns loading and parsing; this task reads
+  resolved config values and environment through constructor injection, never ambient environment.
+  The health cycle (B4443) consumes these helpers; B4446 reuses targeting and display filtering.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/health_probe_policy/tests.rs
+    - crates/betterlite-server/src/health_probe_settings.rs
+    - crates/betterlite-server/src/health_probe_settings/**
+    - crates/betterlite-server/src/health_probe_settings/tests.rs
+    - crates/betterlite-config/src/sections/health_probe_policy.rs
+    - crates/betterlite-config/src/sections/health_probe_policy/**
+    - crates/betterlite-config/src/sections/health_probe_policy/tests/**
+    - crates/betterlite-server/src/health_probe_settings/tests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L75-94
+    why: _resolve_health_check_mode picks health check mode from model_info or cost map fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L97-109
+    why: _should_inject_health_check_max_tokens gate for chat-style modes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L35-72
+    why: Display field sets MINIMAL_DISPLAY_PARAMS, HEALTH_DISPLAY_PARAMS, ADMIN_ONLY_HEALTH_DISPLAY_PARAMS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L72
+    why: Mode constant _MAX_TOKEN_SUPPORT_MODES defines chat-style completion modes accepting max_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L113
+    why: Mode constant _HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT for forwarding reasoning_effort.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L139-154
+    why: _get_random_llm_message, _clean_endpoint_data, health_check_filter_kwargs_from_general_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L156-171
+    why: health_check_filter_kwargs_from_general_settings reads health_check_skip_disabled_background_models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L174-203
+    why: parse_background_health_check_model_groups, filter_deployments_to_model_groups, filter_deployments_by_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L206-222
+    why: filter_deployments_by_id deduplicates by model_info.id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L225-236
+    why: run_with_timeout wraps asyncio.wait_for with litellm.Timeout exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L239-253
+    why: _skips_health_checks, _health_check_eligible, _deployment_model, _owner_team_id, _team_public_model_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L267-314
+    why: Team routing precedence and deployment targeting by name and ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L328-331
+    why: _deployment_id accessor for health endpoint deduplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L705-751
+    why: Health-check wildcard detection and _resolve_health_check_max_tokens priority chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L754-844
+    why: Request builder with mode resolution, max_tokens, reasoning_effort, model/voice overrides, and Bedrock region routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L8
+    why: DEFAULT_HEALTH_CHECK_PROMPT environment variable default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1665-L1691
+    why: BACKGROUND_HEALTH_CHECK_MAX_TOKENS, BACKGROUND_HEALTH_CHECK_MAX_TOKENS_REASONING, HEALTH_CHECK_TIMEOUT_SECONDS environment variable defaults.
+  - url: https://docs.rs/serde_yaml/latest/serde_yaml/
+    why: YAML parsing for config.
+  - url: https://docs.rs/serde/latest/serde/
+    why: Serialize/deserialize traits for config structs.
+
+dod:
+  - text: Mode resolution prefers explicit model_info.mode and falls back to the model cost map; handles unresolvable modes gracefully.
+    proof: [behavior-tests]
+  - text: Max token injection decision checks mode against _MAX_TOKEN_SUPPORT_MODES or model_info override; unresolvable modes default to chat.
+    proof: [behavior-tests]
+  - text: General settings filtering reads health_check_skip_disabled_background_models with false default.
+    proof: [config-tests]
+  - text: Model groups parsing returns None for absent, a set for valid lists, and raises ValueError for malformed input at startup.
+    proof: [config-tests]
+  - text: Model group filtering keeps deployments with matching model_name or all when unset.
+    proof: [behavior-tests]
+  - text: Deployment deduplication by ID drops entries without IDs and preserves first occurrence.
+    proof: [behavior-tests]
+  - text: "Deployment targeting by name uses routing semantics: team public names, then model_name, then public team-agnostic names, then model string fallback."
+    proof: [behavior-tests]
+  - text: Target narrowing by ID returns the whole list on mismatch; by model uses routing semantics.
+    proof: [behavior-tests]
+  - text: Health check params merge happens first; explicit mode, max_tokens, reasoning_effort, model, and voice knobs then win on conflict.
+    proof: [behavior-tests]
+  - text: Bedrock bedrock/region/model paths strip bedrock/ and region segments while preserving routes and cross-region inference profiles.
+    proof: [behavior-tests]
+  - text: Max tokens follow the priority chain and account for reasoning capability, environment variables, and wildcard status.
+    proof: [behavior-tests]
+  - text: Timeout wrapping returns error result on timeout and does not cancel sibling probes.
+    proof: [behavior-tests]
+  - text: Display field sets match LiteLLM contents and admin-only filtering is applied correctly.
+    proof: [behavior-tests]
+  - text: Environment variables BACKGROUND_HEALTH_CHECK_MAX_TOKENS, BACKGROUND_HEALTH_CHECK_MAX_TOKENS_REASONING, HEALTH_CHECK_TIMEOUT_SECONDS have correct defaults and handle malformed input.
+    proof: [config-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: config parsing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::health_probe_policy::/)'
+    - id: behavior-tests
+      why: health probe settings or deployment targeting tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_probe_settings::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Narrowing to an unknown deployment ID retains the input list, whereas HTTP routing in B4446 rejects it with 404."
+    why: The targeting helper is used both by cached-result authorization (which needs the fallback list) and by health cycle execution; the HTTP layer adds its own validation.
+  - what: "Malformed health_check_params dict logs a warning and is ignored; the request is built without that override."
+    why: "LiteLLM allows passing arbitrary fields; a typo in health_check_params should not fail the health check silently."
+  - what: "run_with_timeout is async and accepts a task/coroutine, returning a result dict with error and exception on timeout, matching LiteLLM's internal contract."
+    why: The health cycle (B4443) supplies async tasks; the timeout wrapping must not cancel sibling probes.
+
+out_of_scope:
+  - The background health check loop, scheduled cooldown and caching integration. These are owned by B4443.
+  - Native entry points (ahealth_check, acompletion, etc.) and their mode handlers. B4440 owns those.
+  - HTTP routing, request validation and access control. B4446 owns the /health endpoints.
+  - Health-state persistence to the database. B4445 owns that.
+  - Strategy router verdicts and dependency expansion. B4442 owns those.
+
+pitfalls:
+  - "The BACKGROUND_HEALTH_CHECK_MAX_TOKENS environment variable defaults to None (unset) when absent or blank; HEALTH_CHECK_TIMEOUT_SECONDS defaults to 60 seconds (an int). Parse them at config load time to reject malformed values."
+  - "Bedrock region removal must check BedrockModelInfo.all_global_regions from B2203, not hardcode region names."
+  - "Wildcard deployments default to omitting max_tokens; non-wildcard default to 16. Do not invert this logic."
+  - "Team public name matching is scoped to the caller's team; a caller with no team sees only public team-agnostic names."
+  - "filter_deployments_by_id mutates the input list order only to deduplicate by ID; use it after narrowing, not before, to avoid dropping valid rows."
+  - "HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT includes None (unresolvable mode) for backward compatibility; treat missing mode as chat."
+  - "health_check_params is a dict that merges into litellm_params; its keys must not be validated against betterlite's typed model (no schema enforcement)."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

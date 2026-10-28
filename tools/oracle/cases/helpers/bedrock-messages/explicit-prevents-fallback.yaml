@@ -1,0 +1,7 @@
+kind: helper
+name: explicit-prevents-fallback
+call:
+  b3721:
+    step: {"grounding": {"messages": [{"role": "system", "content": "source"}, {"role": "user", "content": [{"type": "query", "text": "question"}]}], "contextual_fallback": true}}
+env: {}
+compare: {ignore: []}

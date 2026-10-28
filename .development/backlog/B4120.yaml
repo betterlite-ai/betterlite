@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Code execution tool records arguments and metadata filtering
 status: todo
 depends_on: [B004]
-file: null
+file: tasks/B4120-code-execution-records.yaml
 covers:
   - "litellm/integrations/code_interpreter_interception/handler.py"
 parent: B119

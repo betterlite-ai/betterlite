@@ -1,0 +1,164 @@
+id: B3994
+title: Flush S3 log batches with bounded retries and NDJSON grouping
+description: >-
+  Implement queue outcome reconciliation, bounded concurrent uploads and optional
+  parent-directory NDJSON objects. Keep the sender below B115's timer/registry
+  integration and pass its state and upload operation explicitly.
+
+  Owned functions build the batch flush behavior: `_s3_key_parent` splits S3 keys
+  at the last slash to identify parent directories; `_upload_semaphore` property
+  returns the bounded concurrency limiter (either asyncio.Semaphore or
+  AdaptiveConcurrencyLimiter); `_batch_file_mode_active` decides whether to
+  group individual elements into parent-directory NDJSON bundles, returning false
+  if batch-file mode is disabled or if s3_v2 is the cold-storage logger (which
+  requires per-request objects for spend lookups); `_upload_bounded` acquires
+  the concurrency permit and runs the upload with the context var `_in_flush`
+  set to true; `_upload_outcome` classifies an upload as delivered, retry or
+  dropped; `_batch_file_elements` groups uploaded elements by parent key and
+  builds NDJSON wrapper objects for groups; `_build_batch_file_element`
+  constructs a single batch file from elements, combining their payloads as
+  newline-delimited JSON with the earliest element's retrying_since timestamp.
+
+  `async_send_batch` is the primary entry point called by the timer/registry
+  loop. It processes the entire log queue, respecting the preserve_events_added_during_flush
+  contract. Fresh work (never requeued) precedes requeued work by index order.
+  Elements are uploaded concurrently up to the configured limit. If all uploads
+  fail, every element (including age-exceeded and terminal) is preserved for the
+  next flush. Partial success preserves only retryable elements, dropping those
+  that are stale (retrying longer than s3_max_retry_age_seconds) or terminal.
+  Overflow above max_queue_size trims the oldest entries when requeue + arrivals
+  exceed capacity. Raises S3BatchUploadError only when survivors remain, so the
+  inherited flush loop retains queue state.
+
+  UploadOutcome literal values are delivered (successful upload), retry
+  (transient failure, keep for next flush), and dropped (terminal failure or
+  age-exceeded). S3BatchUploadError.__init__ accepts failed and total counts,
+  storing them for reporting via message text.
+
+  Defaults: concurrency limit DEFAULT_S3_MAX_CONCURRENT_UPLOADS (16), batch-file
+  upload false, max-retry-age 3600 seconds (explicit null/zero disables), and
+  drop on terminal error true. Partition granularity cache keys on the raw
+  environment value or configured override, so an injected settings update
+  invalidates the cache.
+
+  Resolve s3_batch_file_upload through B002's config loader (key
+  S3_BATCH_FILE_UPLOAD_ENV_VAR). Accept a cold-storage key only if its value
+  exactly equals the locally computed day or hour key; any mismatch leaves no
+  batch file group. Frozen partition granularity respects resolve_s3_partition_granularity's
+  caching but remains overridable per instance. When batch-file mode is active,
+  preserve individual retry timestamps and use the earliest as the group's
+  retrying_since. Fresh elements have retrying_since=None; on first requeue
+  during partial success, add the current time.monotonic() unless one exists.
+
+  Do not invoke the upload operation directly from async_send_batch; retrieve it
+  from B3993's async_upload_data_to_s3 through self and the upload bounds.
+  B347's 1,024-waiter/deadline policy on AdaptiveConcurrencyLimiter must not
+  accidentally overload a large flush; use its record() method to report throttled
+  samples and let adaptive policy scale down, but do not skip samples or invent
+  retries. Every _flush_dropped entry tracks uploaded objects that failed
+  terminally; retain them during a full-queue requeue and drop only during
+  partial success.
+scope:
+  paths:
+    - crates/betterlite-logging/src/s3_batch.rs
+    - crates/betterlite-logging/src/s3_batch/**
+    - tools/oracle/helpers/b3994.py
+    - tools/oracle/helpers/b3994/**
+    - tools/oracle/src/helpers/logging/b3994.rs
+    - tools/oracle/src/helpers/logging/b3994/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L104-L105
+    why: Own _s3_key_parent to extract parent directory from S3 object keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L108-L112
+    why: Own S3BatchUploadError exception class and its failed/total counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L544-L549
+    why: Own _upload_semaphore property getter and the stored _upload_limiter field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L626-L702
+    why: Own async_send_batch to drive batch uploads, preserve queues on partial success, and raise on survivors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L704-L713
+    why: Own _batch_file_mode_active to conditionally enable NDJSON grouping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L715-L721
+    why: Own _upload_bounded to enforce concurrency limits and set flush context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L723-L729
+    why: Own _upload_outcome to classify each upload as delivered, retry or dropped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L748-L758
+    why: Own _batch_file_elements to group elements by parent and build NDJSON wrappers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L760-L773
+    why: Own _build_batch_file_element to create NDJSON batch objects from grouped elements.
+dod:
+  - text: >-
+      Batch outcomes fresh_work_ordered, requeued_preserved_on_total_failure,
+      partial_success_drops_stale_and_terminal, overflow_trims_oldest,
+      preserve_retrying_since_on_requeue and raises_only_on_survivors verify
+      the queue reconciliation without a live S3 service.
+    proof: [batch-behavior-tests]
+  - text: >-
+      Batch file grouping groups_by_parent, sorts_parents, combines_payloads_to_ndjson,
+      earliest_retrying_since and disables_when_cold_storage verify NDJSON
+      construction and conditional activation.
+    proof: [batch-file-tests]
+  - text: >-
+      Concurrency bounded_by_limit, context_var_set, limiter_returns_semaphore
+      and adaptive_samples_record verify bounded uploads and adaptive integration.
+    proof: [bounded-concurrency-tests]
+  - text: >-
+      The oracle cases batch_full_upload, batch_partial_success, batch_with_adaptive_throttle,
+      batch_timeout_classification and batch_file_ndjson_grouping confirm that
+      queue state, retries, drops and grouping match the oracle LiteLLM behavior.
+    proof: [s3-batch-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: batch-behavior-tests
+      why: The batch queue reconciliation tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_batch::.*::tests::/) - test(/replays_the_/)'
+    - id: batch-file-tests
+      why: NDJSON grouping and conditional activation tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_batch::.*_batch_file::tests::/)'
+    - id: bounded-concurrency-tests
+      why: Concurrency limit enforcement and adaptive samples are absent or fail.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_batch::.*_bounded::tests::/)'
+    - id: s3-batch-corpus
+      why: The oracle corpus seed for S3 batch operations is missing or replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/s3-log-batches-s3-batch-*)" && grep -rlq "b3994" tools/oracle/fuzz/corpus/helper_case/s3-log-batches-s3-batch-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/fresh-work-ordered.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/requeued-preserved-on-total-failure.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/partial-success-drops-stale.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/overflow-trims-oldest.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/batch-file-grouping.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/batch-file-disabled-on-cold-storage.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/concurrency-bounded-by-limit.yaml
+  - tools/oracle/cases/helpers/s3-log-batches-s3-batch/adaptive-throttle-sampling.yaml
+deviations:
+  - what: >-
+      The concurrency limiter B347 uses a 1,024-waiter deadline and may not scale
+      down adaptive concurrency when a large flush holds many waiters beyond the
+      deadline. Adaptive sampling still records throttled outcomes per upload, but
+      scaling down may lag the flush.
+    why: >-
+      B347's architecture targets long-lived fine-grained sampling, not bulk flushes.
+      Respecting its record() interface maintains compatibility; the scaling lag is
+      acceptable because S3 throttle 429/503 causes the upstream client to back off,
+      and future flushes adapt from the recorded samples.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L738-L745
+out_of_scope:
+  - B3990 owns s3BatchLoggingElement type and resolve_s3_partition_granularity; this task's dependencies rely on these.
+  - B3993 owns _is_terminal and async_upload_data_to_s3, where _is_terminal is called to classify terminal errors and _flush_dropped is populated when terminal responses occur. This task reads _flush_dropped in _upload_outcome to classify outcomes without calling _is_terminal itself.
+  - B002 owns configuration loading and S3_BATCH_FILE_UPLOAD_ENV_VAR resolution.
+  - B192 owns safe_dumps for NDJSON payload serialization.
+  - B347 owns AdaptiveConcurrencyLimiter and its record() interface.
+  - B256 owns the inherited CustomBatchLogger base and its log_queue, periodic_flush, flush_queue and preserve_events_added_during_flush contract.
+pitfalls:
+  - s3_batch_file_upload warns and disables itself if s3_v2 is the cold_storage_logger; the warning output and return value determine downstream behavior.
+  - Fresh and requeued work are interleaved by index order, not segregated into separate rounds; requeue count indexes (stale, stale+1, ...) before (0, 1, ...).
+  - A full-queue failure (no uploads delivered) preserves even terminal and stale elements; only partial success allows dropping them.
+  - Retrying_since is set only on first requeue during partial success, not on every requeue, so elements remember their initial entry into retry state.
+  - AdaptiveConcurrencyLimiter records samples immediately after each PUT, even if the PUT fails; throttled samples classify 429/503 and the SlowDown XML error.
+  - The NDJSON batch inherits the earliest element's retrying_since, so a fresh element requeued with stale elements resets retry time to the fresh one's None.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

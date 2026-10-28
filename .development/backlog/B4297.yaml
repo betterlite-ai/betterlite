@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Read and write response cache envelopes
 status: todo
 depends_on: [B393, B4290, B4296]
-file: null
+file: tasks/B4297-response-cache-envelopes.yaml
 covers:
   - "litellm/caching/caching.py"
 parent: B125

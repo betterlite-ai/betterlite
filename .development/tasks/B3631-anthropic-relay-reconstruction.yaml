@@ -1,0 +1,77 @@
+id: B3631
+title: Anthropic passthrough stream reconstruction
+description: >-
+  Build native SSE reconstruction with a pure-text collapse fast path and usage-only response builder.
+  Own the decoder functions _split_sse_chunk_into_events and _collapse_pure_text_chunks, which decode raw provider SSE bytes to UTF-8 and normalize events into a form suitable for assembly.
+  Retain malformed-event skipping and all cache, geographic, speed and server-tool usage when full response assembly fails.
+  Do not collapse thinking, tool JSON, signatures or citations; preserve initial bare event lines, block indexes, exact whole-line [DONE] filtering and strict UTF-8 conversion.
+  Build in crates/betterlite-streaming/src/passthrough_reconstruction.rs or as a submodule.
+  Reuse AnthropicModelResponseIterator from B581, convert_str_chunk_to_generic_chunk from B583, map_finish_reason from B206, AnthropicConfig.calculate_usage from B579, and stream_chunk_builder from B2227.
+
+scope:
+  paths:
+    - crates/betterlite-streaming/src/passthrough_reconstruction.rs
+    - crates/betterlite-streaming/src/passthrough_reconstruction/**
+    - crates/betterlite-streaming/fuzz/Cargo.toml
+    - crates/betterlite-streaming/fuzz/fuzz_targets/anthropic_relay_reconstruction.rs
+    - crates/betterlite-streaming/fuzz/corpus/anthropic_relay_reconstruction/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L516-L538
+    why: _split_sse_chunk_into_events splits raw SSE chunks on double newlines, converts bytes to UTF-8 and returns non-empty events.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L540-L577
+    why: _build_complete_streaming_response calls _collapse_pure_text_chunks and falls back to legacy reconstruction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L579-L697
+    why: _collapse_pure_text_chunks normalizes and collapses contiguous text-only events, returning None for mixed-content or disallowed-type streams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L700-L759
+    why: _build_complete_streaming_response_legacy uses _split_sse_chunk_into_events to process each raw chunk and assemble via stream_chunk_builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L762-L774
+    why: _extract_sse_data parses JSON from SSE event lines and returns None on malformed JSON, preserving nonfatal skip behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L777-L894
+    why: _build_usage_only_response_from_chunks extracts usage from message_start and message_delta events without requiring full assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L579-L589
+    why: _FAST_PATH_DISALLOWED_DELTA_TYPES constant declares which SSE types prevent pure-text collapse.
+
+dod:
+  - text: _split_sse_chunk_into_events splits raw SSE chunks on double newlines, converts bytes to UTF-8, and returns non-empty events.
+    proof: [streaming-tests]
+  - text: _collapse_pure_text_chunks returns None when the stream contains disallowed delta types, non-text blocks, or interleaved blocks; otherwise returns a normalized collapsed event list.
+    proof: [streaming-tests]
+  - text: _build_complete_streaming_response calls collapse, uses the fast path when it succeeds, and falls back to legacy reconstruction.
+    proof: [streaming-tests]
+  - text: _build_complete_streaming_response_legacy splits each raw chunk, skips malformed JSON, and assembles the response via stream_chunk_builder.
+    proof: [streaming-tests]
+  - text: _extract_sse_data parses SSE event JSON and returns None on malformed or [DONE] data without raising.
+    proof: [streaming-tests]
+  - text: _build_usage_only_response_from_chunks extracts usage from message_start and message_delta events and builds a ModelResponse with usage.
+    proof: [streaming-tests]
+  - text: The SSE byte decoders _split_sse_chunk_into_events and _collapse_pure_text_chunks have a cargo-fuzz target that replays new corpus seeds.
+    proof: [parser-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: streaming-tests
+      why: the streaming reconstruction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail
+    - id: parser-corpus
+      why: The SSE byte decoders lack a fuzz target, new corpus seeds or passing replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-streaming/fuzz/corpus/anthropic_relay_reconstruction)" && grep -q '_split_sse_chunk_into_events\|_collapse_pure_text_chunks' crates/betterlite-streaming/fuzz/fuzz_targets/anthropic_relay_reconstruction.rs && cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::replays_the_anthropic_relay_reconstruction_corpus$/)'
+
+oracle_cases: []
+
+deviations: []
+out_of_scope:
+  - Selection between fast-path and legacy reconstruction (B3632 decides and passes the result to cost tracking).
+  - The fallback builder called here; its selection belongs to B3632.
+  - External callers such as guardrails and chat completion handlers; they are owned by their handler tasks.
+pitfalls:
+  - "_collapse_pure_text_chunks normalizes chunks twice (once in the outer loop over all_chunks, once per \"\\n\\n\" split within each chunk) to handle both chunked transport and internal multi-event frames."
+  - "Bare event lines (lines without \"data:\") are preserved unless they are interior content_block_delta or ping markers."
+  - "JSON parsing failures and missing data lines are both nonfatal and fall back to legacy reconstruction."
+  - "The [DONE] marker must match exact whole-line \"data: [DONE]\" to be dropped; text payloads containing the substring are preserved."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,9 @@
+kind: helper
+name: structured-mask-value
+call:
+  structured_redaction:
+    function: mask_value
+    data: "abc123456xyz"
+env: {}
+compare:
+  ignore: []

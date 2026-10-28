@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "alpaca-human-reopens", "call": {"builtin_prompts": {"family": "alpaca", "messages": [{"role": "assistant", "content": "a"}, {"role": "human", "content": "h"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

@@ -1,3 +1,5 @@
+pub mod atomic_counter;
+pub mod concurrency_gauges;
 pub mod dynamic_callbacks;
 pub mod dynamic_priority;
 pub mod identity_descriptors;
