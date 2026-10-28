@@ -17,7 +17,7 @@ use std::path::Path;
     r#"{"input_cost_per_token":999999999999999999999999999999999999999999999999}"#,
     "input_cost_per_token"
 )]
-#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]}}"#, "nested")]
+#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"sample_spec":{"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
 #[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "tiered_pricing[0].unknown_price")]
 #[case::null(r#"{"input_cost_per_token":null}"#, "must not be null")]
 #[case::string(r#"{"input_cost_per_token":"0.1"}"#, "must be a JSON number")]
@@ -44,9 +44,28 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
             "0.020833333333333333"
         );
         assert_eq!(
+            parsed_value
+                .sample_spec
+                .computer_use_input
+                .unwrap()
+                .to_string(),
+            "0.00001"
+        );
+        assert_eq!(
+            parsed_value
+                .sample_spec
+                .file_search_calls
+                .unwrap()
+                .to_string(),
+            "0.003"
+        );
+        assert_eq!(
             parsed_value.off_peak.unwrap().values["input_cost_per_token"].to_string(),
             "0.0000002"
         );
+        assert_eq!(parsed_value.tiers.len(), 1);
+        assert_eq!(parsed_value.tiers[0].range.len(), 2);
+        assert_eq!(parsed_value.tiers[0].range[1].to_string(), "256000");
     } else if expected.contains('_') || expected.contains("must") {
         assert!(parsed.unwrap_err().to_string().contains(expected));
     } else {
