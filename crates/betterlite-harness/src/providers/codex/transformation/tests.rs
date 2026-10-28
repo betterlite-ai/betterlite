@@ -1,24 +1,31 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use super::{CodexHarnessConfig, CodexStreamState};
+use crate::context::{GatewayTarget, SessionContext, SessionSettings, TurnOutcome};
+use crate::errors::HarnessError;
 use crate::events::Event;
+use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, ReasoningEffort};
+use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
+use crate::sandbox::local::LocalSandbox;
 use crate::transformation::BaseCLIHarnessConfig as _;
-use crate::types::JsonObject;
+use crate::types::{Harness, JsonObject};
 
 #[test]
 fn empty_toml_key_is_quoted() {
-    assert_eq!(super::toml_key(""), "\"\"");
+    assert_eq!(super::config::toml_key(""), "\"\"");
 }
 
 #[test]
 fn config_toml_managed_keys() {
-    assert_eq!(super::toml_key("plain-key"), "plain-key");
-    assert_eq!(super::toml_key("a key"), "\"a key\"");
+    assert_eq!(super::config::toml_key("plain-key"), "plain-key");
+    assert_eq!(super::config::toml_key("a key"), "\"a key\"");
     let config: JsonObject =
         serde_json::from_str("{\"a key\": [true, 2], \"model\": \"wrong\"}").unwrap();
     let value = config.values().next().unwrap();
-    assert_eq!(super::toml_value(value, 0).unwrap(), "[true, 2]");
-    super::config_overrides(&config).unwrap_err();
+    assert_eq!(super::config::toml_value(value, 0).unwrap(), "[true, 2]");
+    super::config::config_overrides(&config).unwrap_err();
 }
 
 #[test]
@@ -55,7 +62,7 @@ fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] i
 fn missing_mcp_arguments_are_null() {
     let item: JsonObject =
         serde_json::from_str(r#"{"type":"mcp_tool_call","tool":"list"}"#).unwrap();
-    let (_, _, input, _) = super::input::tool_input(&item);
+    let (_, _, input, _) = super::stream::tool_input(&item);
     assert_eq!(
         serde_json::to_string(&input).unwrap(),
         r#"{"arguments":null}"#
@@ -75,18 +82,18 @@ fn absent_thread_id_preserves_session() {
 
 #[test]
 fn reasoning_enables_summaries() {
-    let context = crate::context::SessionContext {
-        harness: crate::types::Harness::Codex,
+    let context = SessionContext {
+        harness: Harness::Codex,
         sandbox: (),
         session_id: "session-1".to_owned(),
-        settings: crate::context::SessionSettings::default(),
-        outcome: crate::context::TurnOutcome::default(),
+        settings: SessionSettings::default(),
+        outcome: TurnOutcome::default(),
     };
-    let options = crate::options::CodexOptions {
-        reasoning_effort: Some(crate::options::ReasoningEffort::High),
+    let options = CodexOptions {
+        reasoning_effort: Some(ReasoningEffort::High),
         web_search: false,
         config: JsonObject::new(),
-        env: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
     };
     let overrides = super::features::feature_overrides(&context, &options);
     assert!(
@@ -104,9 +111,9 @@ fn reasoning_enables_summaries() {
 #[case::table(r#"{"": [true, 2]}"#, r#"{"" = [true, 2]}"#)]
 fn config_values(#[case] raw: &str, #[case] expected: &str) {
     let config: JsonObject = serde_json::from_str(&format!("{{\"value\":{raw}}}")).unwrap();
-    let value = config.get("value").unwrap();
-    assert_eq!(super::toml_value(value, 0).unwrap(), expected);
-    assert!(super::toml_value(value, crate::payloads::DEFAULT_MAX_RECURSE_DEPTH + 1).is_err());
+    let value = &config["value"];
+    assert_eq!(super::config::toml_value(value, 0).unwrap(), expected);
+    super::config::toml_value(value, DEFAULT_MAX_RECURSE_DEPTH + 1).unwrap_err();
 }
 
 #[rstest::rstest]
@@ -119,7 +126,7 @@ fn config_values(#[case] raw: &str, #[case] expected: &str) {
 #[case::search("web_search")]
 fn rejects_managed_config(#[case] key: &str) {
     let config: JsonObject = serde_json::from_str(&format!("{{\"{key}\":true}}")).unwrap();
-    assert!(super::config_overrides(&config).is_err());
+    super::config::config_overrides(&config).unwrap_err();
 }
 
 #[test]
@@ -127,34 +134,29 @@ fn accepts_network_config() {
     let config: JsonObject =
         serde_json::from_str(r#"{"sandbox_workspace_write.network_access":true}"#).unwrap();
     assert_eq!(
-        super::config_overrides(&config).unwrap(),
+        super::config::config_overrides(&config).unwrap(),
         ["sandbox_workspace_write.network_access=true"]
     );
 }
 
-fn session_context() -> (
-    tempfile::TempDir,
-    crate::context::SessionContext<crate::sandbox::local::LocalSandbox>,
-) {
+fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
     let root = tempfile::tempdir().unwrap();
-    let sandbox = crate::sandbox::local::LocalSandbox::new(
-        root.path(),
-        &std::collections::BTreeMap::new(),
-        root.path().to_path_buf(),
-    )
-    .unwrap();
-    let mut settings = crate::context::SessionSettings::default();
-    settings.model = Some("gpt-test".to_owned());
-    settings.gateway = Some(crate::context::GatewayTarget {
-        api_base: "http://localhost:1234/".to_owned(),
-        api_key: secrecy::SecretString::from("private-token"),
-    });
-    let context = crate::context::SessionContext {
-        harness: crate::types::Harness::Codex,
+    let sandbox =
+        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let settings = SessionSettings {
+        model: Some("gpt-test".to_owned()),
+        gateway: Some(GatewayTarget {
+            api_base: "http://localhost:1234/".to_owned(),
+            api_key: secrecy::SecretString::from("private-token"),
+        }),
+        ..SessionSettings::default()
+    };
+    let context = SessionContext {
+        harness: Harness::Codex,
         sandbox,
         session_id: "session-1".to_owned(),
         settings,
-        outcome: crate::context::TurnOutcome::default(),
+        outcome: TurnOutcome::default(),
     };
     (root, context)
 }
@@ -162,15 +164,13 @@ fn session_context() -> (
 #[test]
 fn setup_rejects_other_options() {
     let (_root, mut context) = session_context();
-    context.settings.options = Some(crate::options::HarnessOptions::ClaudeCode(
-        crate::options::ClaudeCodeOptions::default(),
-    ));
+    context.settings.options = Some(HarnessOptions::ClaudeCode(ClaudeCodeOptions::default()));
     let result = CodexHarnessConfig.transform_session_setup(&context, "/private");
     assert!(matches!(
         result,
-        Err(crate::errors::HarnessError::OptionsMismatch {
+        Err(HarnessError::OptionsMismatch {
             given: "ClaudeCodeOptions",
-            harness: crate::types::Harness::Codex,
+            harness: Harness::Codex,
             expected: "CodexOptions",
         })
     ));
@@ -187,16 +187,9 @@ fn turn_is_private(#[case] native_session_id: Option<&str>) {
     let setup = CodexHarnessConfig
         .transform_session_setup(&context, "/private")
         .unwrap();
+    assert_eq!(setup.env["CODEX_HOME"].expose_secret(), "/private");
     assert_eq!(
-        setup.env.get("CODEX_HOME").unwrap().expose_secret(),
-        "/private"
-    );
-    assert_eq!(
-        setup
-            .env
-            .get("LITELLM_HARNESS_TOKEN")
-            .unwrap()
-            .expose_secret(),
+        setup.env["LITELLM_HARNESS_TOKEN"].expose_secret(),
         "private-token"
     );
     assert_eq!(setup.skills_dir.as_deref(), Some("skills"));
@@ -263,8 +256,10 @@ fn structured_output_and_failures() {
         .transform_session_setup(&context, "/private")
         .unwrap();
     assert!(setup.files.contains_key("output_schema.json"));
-    let mut state = CodexStreamState::default();
-    state.final_text = r#"{"answer":"yes"}"#.to_owned();
+    let mut state = CodexStreamState {
+        final_text: r#"{"answer":"yes"}"#.to_owned(),
+        ..CodexStreamState::default()
+    };
     let response = CodexHarnessConfig
         .transform_turn_response(&context, &state, 0, &[])
         .unwrap();
@@ -280,15 +275,11 @@ fn structured_output_and_failures() {
             .output_json
             .is_none()
     );
-    assert!(
-        CodexHarnessConfig
-            .transform_turn_response(&context, &state, 1, &[])
-            .is_err()
-    );
+    CodexHarnessConfig
+        .transform_turn_response(&context, &state, 1, &[])
+        .unwrap_err();
     state.failed = true;
-    assert!(
-        CodexHarnessConfig
-            .transform_turn_response(&context, &state, 0, &[])
-            .is_err()
-    );
+    CodexHarnessConfig
+        .transform_turn_response(&context, &state, 0, &[])
+        .unwrap_err();
 }

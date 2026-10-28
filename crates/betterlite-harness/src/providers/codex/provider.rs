@@ -1,9 +1,7 @@
-use serde_json::Value;
-
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
 
-use super::config::{CODEX_TOKEN_ENV, mismatch, toml_value};
+use super::config::{CODEX_TOKEN_ENV, mismatch, toml_string};
 
 pub(super) fn provider_overrides<S>(
     context: &SessionContext<S>,
@@ -13,10 +11,7 @@ pub(super) fn provider_overrides<S>(
     Ok(vec![
         "model_provider=litellm".to_owned(),
         "model_providers.litellm.name=litellm".to_owned(),
-        format!(
-            "model_providers.litellm.base_url={}",
-            toml_value(&Value::String(base), 0)?
-        ),
+        format!("model_providers.litellm.base_url={}", toml_string(&base)?),
         format!("model_providers.litellm.env_key={CODEX_TOKEN_ENV}"),
         "model_providers.litellm.wire_api=responses".to_owned(),
         "approval_policy=never".to_owned(),

@@ -1,7 +1,12 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "Codex configuration overrides and the structured-output schema are caller-supplied JSON with no fixed shape"
+)]
 use serde_json::Value;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
+use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
 use crate::sandbox::Sandbox;
 use crate::types::{Harness, JsonObject, PermissionMode};
 
@@ -19,20 +24,20 @@ const MANAGED_CONFIG_KEYS: [&str; 8] = [
     "web_search",
 ];
 
-pub(super) fn mismatch() -> HarnessError {
-    let error = HarnessError::OptionsMismatch {
+pub(super) const fn mismatch() -> HarnessError {
+    HarnessError::OptionsMismatch {
         given: "CodexOptions.config",
         harness: Harness::Codex,
         expected: "valid Codex configuration",
-    };
-    error
+    }
 }
 
-pub fn toml_key(key: &str) -> String {
+#[must_use]
+pub(super) fn toml_key(key: &str) -> String {
     if !key.is_empty()
         && key
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            .all(|letter| letter.is_ascii_alphanumeric() || letter == '_' || letter == '-')
     {
         key.to_owned()
     } else {
@@ -40,36 +45,49 @@ pub fn toml_key(key: &str) -> String {
     }
 }
 
-pub fn toml_value(value: &Value, depth: usize) -> Result<String, HarnessError> {
-    if depth > crate::payloads::DEFAULT_MAX_RECURSE_DEPTH {
+pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessError> {
+    if depth > DEFAULT_MAX_RECURSE_DEPTH {
         return Err(mismatch());
     }
-    match value {
-        Value::Bool(value) => Ok(value.to_string()),
-        Value::Number(value) => Ok(value.to_string()),
-        Value::String(value) => serde_json::to_string(value).map_err(|_| mismatch()),
-        Value::Array(values) => values
+    match raw {
+        Value::Bool(flag) => Ok(flag.to_string()),
+        Value::Number(number) => Ok(number.to_string()),
+        Value::String(text) => serde_json::to_string(text).map_err(|_encode_err| mismatch()),
+        Value::Array(items) => items
             .iter()
-            .map(|value| toml_value(value, depth.saturating_add(1)))
+            .map(|item| toml_value(item, depth.saturating_add(1)))
             .collect::<Result<Vec<_>, _>>()
-            .map(|values| format!("[{}]", values.join(", "))),
-        Value::Object(values) => values
+            .map(|encoded| format!("[{}]", encoded.join(", "))),
+        Value::Object(entries) => entries
             .iter()
-            .map(|(key, value)| {
+            .map(|(key, entry)| {
                 Ok(format!(
                     "{} = {}",
                     toml_key(key),
-                    toml_value(value, depth.saturating_add(1))?
+                    toml_value(entry, depth.saturating_add(1))?
                 ))
             })
             .collect::<Result<Vec<_>, HarnessError>>()
-            .map(|values| format!("{{{}}}", values.join(", "))),
+            .map(|encoded| format!("{{{}}}", encoded.join(", "))),
         Value::Null => Err(mismatch()),
     }
 }
 
-pub fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError> {
-    let overrides = config
+pub(super) fn toml_string(value: &str) -> Result<String, HarnessError> {
+    serde_json::to_string(value).map_err(|_encode_err| mismatch())
+}
+
+pub(super) fn schema_value(schema: &JsonObject) -> Value {
+    Value::Object(
+        schema
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    )
+}
+
+pub(super) fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError> {
+    config
         .iter()
         .map(|(key, value)| {
             let first = key.split('.').next().unwrap_or_default();
@@ -78,22 +96,20 @@ pub fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError
             }
             Ok(format!("{}={}", key, toml_value(value, 0)?))
         })
-        .collect();
-    overrides
+        .collect()
 }
 
 pub(super) fn pairs(flag: &str, values: &[String]) -> Vec<String> {
-    let pairs = values
+    values
         .iter()
         .flat_map(|value| [flag.to_owned(), value.clone()])
-        .collect();
-    pairs
+        .collect()
 }
 
-pub(super) fn permission_args<S: Sandbox>(
-    context: &SessionContext<S>,
-    resumed: bool,
-) -> Vec<String> {
+pub(super) fn permission_args<S>(context: &SessionContext<S>, resumed: bool) -> Vec<String>
+where
+    S: Sandbox,
+{
     if context.settings.permissions != PermissionMode::ReadOnly && context.sandbox.is_container() {
         return vec!["--dangerously-bypass-approvals-and-sandbox".to_owned()];
     }

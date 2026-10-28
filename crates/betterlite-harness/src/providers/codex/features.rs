@@ -1,9 +1,7 @@
-use serde_json::Value;
-
 use crate::context::SessionContext;
 use crate::options::{CodexOptions, ReasoningEffort};
 
-use super::config::toml_value;
+use super::config::toml_string;
 
 pub(super) fn feature_overrides<S>(
     context: &SessionContext<S>,
@@ -28,10 +26,10 @@ pub(super) fn feature_overrides<S>(
         values.push("model_reasoning_summary=auto".to_owned());
         values.push("model_supports_reasoning_summaries=true".to_owned());
     }
-    if let Some(instructions) = context.settings.instructions.as_ref() {
-        if let Ok(encoded) = toml_value(&Value::String(instructions.clone()), 0) {
-            values.push(format!("developer_instructions={encoded}"));
-        }
+    if let Some(instructions) = context.settings.instructions.as_ref()
+        && let Ok(encoded) = toml_string(instructions)
+    {
+        values.push(format!("developer_instructions={encoded}"));
     }
     values
 }
