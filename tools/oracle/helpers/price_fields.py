@@ -85,6 +85,11 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
                 "off_peak_pricing.cache_read_input_token_cost",
             ),
             "windows": off_peak_object.get("windows"),
+            **{
+                key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
+                for key in ["cache_creation_input_token_cost", "output_cost_per_reasoning_token"]
+                if key in off_peak_object
+            },
             **(
                 {"hours_utc": off_peak_object["hours_utc"]}
                 if "hours_utc" in off_peak_object
@@ -114,7 +119,11 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
                 ),
                 **{
                     key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
-                    for key in ["cache_read_input_token_cost", "input_cost_per_query"]
+                    for key in [
+                        "cache_read_input_token_cost",
+                        "cache_creation_input_token_cost",
+                        "input_cost_per_query",
+                    ]
                     if key in tier
                 },
             })

@@ -134,7 +134,7 @@ pub fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, rust_decimal::Error
         .map_err(|_source| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?
         .checked_sub(exponent)
         .ok_or(rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?;
-    if scale >= 0_i32 {
+    if !scale.is_negative() {
         return Decimal::try_from_i128_with_scale(
             decimal.mantissa(),
             u32::try_from(scale)

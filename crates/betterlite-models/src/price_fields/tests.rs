@@ -42,6 +42,13 @@ use std::path::Path;
     r#"{"guardrail_cost_per_unit":{"custom":1,"custom":2}}"#,
     "duplicate key"
 )]
+#[case::expanded_exponent(r#"{"input_cost_per_token":1.25e3}"#, "1250")]
+#[case::expanded_overflow(r#"{"input_cost_per_token":1e29}"#, "input_cost_per_token")]
+#[case::unbounded_exponent(
+    r#"{"input_cost_per_token":1e999999999999999999999}"#,
+    "input_cost_per_token"
+)]
+#[case::false_boolean(r#"{"input_cost_per_token":false}"#, "must be a JSON number")]
 #[case::fraction(r#"{"input_cost_per_token":0.000000123456789}"#, "0.000000123456789")]
 #[case::exponent(r#"{"output_cost_per_token":1.2e-7}"#, "0.00000012")]
 #[case::overprecision(
@@ -160,51 +167,69 @@ struct Schema {
 
 #[derive(Deserialize)]
 struct Definition {
-    properties: BTreeMap<String, Box<RawValue>>,
+    #[serde(default)]
+    properties: BTreeMap<String, Self>,
+    items: Option<Box<Self>>,
+    #[serde(rename = "type")]
+    kind: Option<String>,
 }
 
-#[rstest]
-fn model_price_types_inventory_covers_pinned_fixtures() {
-    let schema: Schema = serde_json::from_str(include_str!(
-        "../../fixtures/model_prices_and_context_window.schema.json"
-    ))
-    .unwrap();
-    let entries: BTreeMap<String, BTreeMap<String, Box<RawValue>>> = serde_json::from_str(
-        &fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("fixtures/model_prices_and_context_window.json"),
+mod inventory {
+    use super::{PriceFields, Schema, assert_prices, assert_schema};
+    use rstest::rstest;
+    use serde_json::value::RawValue;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::Path;
+
+    #[rstest]
+    #[case::pinned_sources("modelEntry")]
+    fn model_price_types_price_field_tests_behavior(#[case] definition: &str) {
+        let schema: Schema = serde_json::from_str(include_str!(
+            "../../fixtures/model_prices_and_context_window.schema.json"
+        ))
+        .unwrap();
+        let entries: BTreeMap<String, BTreeMap<String, Box<RawValue>>> = serde_json::from_str(
+            &fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("fixtures/model_prices_and_context_window.json"),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .unwrap();
-    for name in schema.definitions["modelEntry"]
-        .properties
-        .keys()
-        .chain(entries.values().flat_map(BTreeMap::keys))
-    {
-        if name.contains("cost") || name.contains("multiplier") {
-            if ["guardrail_cost_per_unit", "search_context_cost_per_query"].contains(&name.as_str())
-            {
-                continue;
+        .unwrap();
+        assert_schema(&schema.definitions[definition], &[]);
+        for name in schema.definitions[definition]
+            .properties
+            .keys()
+            .chain(entries.values().flat_map(BTreeMap::keys))
+        {
+            if name.contains("cost") || name.contains("multiplier") {
+                if ["guardrail_cost_per_unit", "search_context_cost_per_query"]
+                    .contains(&name.as_str())
+                {
+                    continue;
+                }
+                let input =
+                    RawValue::from_string(format!("{{{name:?}:0.0000001234567890123456789}}"))
+                        .unwrap();
+                let prices = PriceFields::parse(&input).unwrap();
+                let output: BTreeMap<String, Box<RawValue>> =
+                    serde_json::from_str(&serde_json::to_string(&prices).unwrap()).unwrap();
+                assert_eq!(
+                    output.get(name).map(|value| value.get()),
+                    Some("\"0.0000001234567890123456789\""),
+                    "missing typed field {name}"
+                );
             }
-            let input =
-                RawValue::from_string(format!("{{{name:?}:0.0000001234567890123456789}}")).unwrap();
-            let prices = PriceFields::parse(&input).unwrap();
-            let output: BTreeMap<String, Box<RawValue>> =
-                serde_json::from_str(&serde_json::to_string(&prices).unwrap()).unwrap();
-            assert_eq!(
-                output.get(name).map(|value| value.get()),
-                Some("\"0.0000001234567890123456789\""),
-                "missing typed field {name}"
-            );
         }
-    }
-    for (name, entry) in entries {
-        if name != "sample_spec" && name != "fallback_generalizations" {
-            let raw = RawValue::from_string(serde_json::to_string(&entry).unwrap()).unwrap();
-            let prices = PriceFields::parse(&raw).unwrap();
-            let projected = RawValue::from_string(serde_json::to_string(&prices).unwrap()).unwrap();
-            assert_prices(&raw, Some(&projected), "");
+        for (name, entry) in entries {
+            if name != "sample_spec" && name != "fallback_generalizations" {
+                let raw = RawValue::from_string(serde_json::to_string(&entry).unwrap()).unwrap();
+                let prices = PriceFields::parse(&raw).unwrap();
+                let projected =
+                    RawValue::from_string(serde_json::to_string(&prices).unwrap()).unwrap();
+                assert_prices(&raw, Some(&projected), "");
+            }
         }
     }
 }
@@ -273,4 +298,35 @@ fn assert_scalar(source: &RawValue, projected: Option<&RawValue>, path: &str) {
         expected,
         "{path}"
     );
+}
+
+fn assert_schema(schema: &Definition, path: &[String]) {
+    if schema.kind.as_deref() == Some("number")
+        && path
+            .iter()
+            .any(|key| key.contains("cost") || key.contains("multiplier"))
+    {
+        let mut source = "0.0000001234567890123456789".to_owned();
+        for key in path.iter().rev() {
+            source = if key == "[]" {
+                format!("[{source}]")
+            } else {
+                format!("{{{key:?}:{source}}}")
+            };
+        }
+        let raw = RawValue::from_string(source).unwrap();
+        let prices = PriceFields::parse(&raw).unwrap_or_else(|error| panic!("{path:?}: {error}"));
+        let projected = RawValue::from_string(serde_json::to_string(&prices).unwrap()).unwrap();
+        assert_prices(&raw, Some(&projected), "");
+    }
+    for (name, nested) in &schema.properties {
+        let mut child = path.to_vec();
+        child.push(name.clone());
+        assert_schema(nested, &child);
+    }
+    if let Some(items) = &schema.items {
+        let mut child = path.to_vec();
+        child.push("[]".to_owned());
+        assert_schema(items, &child);
+    }
 }

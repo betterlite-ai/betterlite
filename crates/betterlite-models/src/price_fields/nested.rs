@@ -38,6 +38,16 @@ pub struct OffPeakPricing {
     pub input_cost_per_token: Option<Decimal>,
     pub output_cost_per_token: Option<Decimal>,
     pub cache_read_input_token_cost: Option<Decimal>,
+    #[serde(
+        rename = "cache_creation_input_token_cost",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cache_create_token: Option<Decimal>,
+    #[serde(
+        rename = "output_cost_per_reasoning_token",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub output_reasoning_token: Option<Decimal>,
     pub windows: Option<Vec<PriceWindow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hours_utc: Option<HoursUtc>,
@@ -84,6 +94,11 @@ pub struct TierPricing {
     pub cache_read_input_token_cost: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_cost_per_query: Option<Decimal>,
+    #[serde(
+        rename = "cache_creation_input_token_cost",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cache_create_token: Option<Decimal>,
     pub range: Option<Vec<Decimal>>,
     pub max_results_range: Option<Vec<Decimal>>,
 }
