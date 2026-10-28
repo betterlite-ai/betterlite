@@ -848,6 +848,7 @@ name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-config",
  "chrono",
  "rstest",
  "rust_decimal",
