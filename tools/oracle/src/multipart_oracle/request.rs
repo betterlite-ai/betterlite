@@ -80,8 +80,10 @@ fn reject_unknown_fields(body: &Value, allowed: &[&str]) -> Result<(), OracleErr
 }
 
 fn decode_bytes_spec(body: &Value) -> Result<BytesSpec, OracleError> {
-    serde_json::from_value(body.clone())
-        .map_err(|error| OracleError::MultipartOwned(error.to_string()))
+    match serde_json::from_value(body.clone()) {
+        Ok(spec) => Ok(spec),
+        Err(error) => Err(OracleError::MultipartOwned(error.to_string())),
+    }
 }
 
 pub(crate) fn answer_body(answer: &UpstreamAnswer) -> Result<Option<Vec<u8>>, OracleError> {
