@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests;
 
 // Real newlines mean the text was never JSON-escaped, so a literal \n there is content

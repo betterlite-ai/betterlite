@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests;
 
 use betterlite_config::sections::content_filter_records::CodeBlockActionTaken;

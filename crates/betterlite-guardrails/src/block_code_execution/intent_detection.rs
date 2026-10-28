@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests;
 
 pub const NO_EXECUTION_PHRASES: &[&str] = &[

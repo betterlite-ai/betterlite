@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests;
 
 pub const MASK_PLACEHOLDER: &str = "[CODE_BLOCK_REDACTED]";
