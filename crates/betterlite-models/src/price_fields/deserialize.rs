@@ -1,6 +1,6 @@
 use super::{PriceFieldError, parse_decimal_lexeme};
 use rust_decimal::Decimal;
-use serde::{Deserialize as _, Deserializer, de::Error as _};
+use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Number;
 
 pub(super) fn read_price<'de, Input>(
@@ -31,13 +31,21 @@ where
     })
 }
 
-pub(super) struct ExactDecimal;
+#[derive(Deserialize)]
+#[serde(try_from = "Number")]
+pub(super) struct ExactDecimal(Decimal);
 
-impl<'de> serde_with::DeserializeAs<'de, Decimal> for ExactDecimal {
-    fn deserialize_as<Input>(deserializer: Input) -> Result<Decimal, Input::Error>
-    where
-        Input: Deserializer<'de>,
-    {
-        read_price(deserializer, "decimal")
+impl TryFrom<Number> for ExactDecimal {
+    type Error = rust_decimal::Error;
+
+    fn try_from(number: Number) -> Result<Self, Self::Error> {
+        let lexeme = number.to_string();
+        parse_decimal_lexeme(&lexeme).map(Self)
+    }
+}
+
+impl From<ExactDecimal> for Decimal {
+    fn from(value: ExactDecimal) -> Self {
+        value.0
     }
 }

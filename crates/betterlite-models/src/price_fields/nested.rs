@@ -123,11 +123,11 @@ pub struct TierPricing {
     #[serde(deserialize_with = "cache_create_token")]
     pub cache_create_token: Option<Decimal>,
     #[serde(
-        deserialize_with = "serde_with::As::<Option<Vec<super::deserialize::ExactDecimal>>>::deserialize"
+        deserialize_with = "serde_with::As::<Option<Vec<serde_with::FromInto<super::deserialize::ExactDecimal>>>>::deserialize"
     )]
     pub range: Option<Vec<Decimal>>,
     #[serde(
-        deserialize_with = "serde_with::As::<Option<Vec<super::deserialize::ExactDecimal>>>::deserialize"
+        deserialize_with = "serde_with::As::<Option<Vec<serde_with::FromInto<super::deserialize::ExactDecimal>>>>::deserialize"
     )]
     pub max_results_range: Option<Vec<Decimal>>,
 }
