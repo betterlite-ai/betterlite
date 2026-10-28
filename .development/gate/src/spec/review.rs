@@ -10,6 +10,9 @@ use serde::Deserialize;
 pub(crate) struct Review {
     #[schemars(description = "The task id, for example B004.")]
     pub(crate) task: String,
+    #[schemars(
+        description = "changes when at least one finding has origin ours, approve otherwise."
+    )]
     pub(crate) verdict: ReviewVerdict,
     pub(crate) findings: Vec<Finding>,
 }
@@ -21,6 +24,13 @@ pub(crate) enum ReviewVerdict {
     Changes,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum FindingOrigin {
+    Ours,
+    Litellm,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Finding {
@@ -28,6 +38,10 @@ pub(crate) struct Finding {
         description = "A rule id from .development/rules.yaml whose reviewed flag is true."
     )]
     pub(crate) rule: String,
+    #[schemars(
+        description = "ours when betterlite introduced the problem; litellm when the code repeats LiteLLM's own behavior and rule owned-behavior-is-built says to fix that bug. Only ours findings go back to the worker; litellm findings go to the architect."
+    )]
+    pub(crate) origin: FindingOrigin,
     #[schemars(
         description = "path:line of the code the finding is about, path relative to the repository root."
     )]

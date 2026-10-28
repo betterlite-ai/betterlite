@@ -26,7 +26,7 @@ use prompt::Brief;
 pub(crate) enum Step {
     Ready(Vec<String>),
     Retry(Vec<String>),
-    Reviewed(EarlierReview),
+    Reviewed(EarlierReview, Vec<String>),
     Climb(Vec<String>),
 }
 
@@ -42,6 +42,7 @@ struct Progress {
     blocked_reports: u32,
     last_blocked: u32,
     earlier: Option<EarlierReview>,
+    litellm: Vec<String>,
 }
 
 pub(crate) struct Places<'run> {
@@ -181,14 +182,20 @@ fn climb_rung(
             earlier: progress.earlier.as_ref(),
         };
         match attempt::attempt_once(&current, runner, rung, &progress.feedback)? {
-            Step::Ready(lines) => return Ok(Some(lines)),
+            Step::Ready(mut lines) => {
+                lines.append(&mut progress.litellm);
+                return Ok(Some(lines));
+            }
             Step::Retry(next) => progress.feedback = next,
-            Step::Reviewed(review) if progress.review_rounds < agents.policy.max_review_rounds => {
+            Step::Reviewed(review, mut litellm)
+                if progress.review_rounds < agents.policy.max_review_rounds =>
+            {
+                progress.litellm.append(&mut litellm);
                 progress.review_rounds = progress.review_rounds.saturating_add(1);
                 progress.feedback.clone_from(&review.findings);
                 progress.earlier = Some(review);
             }
-            Step::Reviewed(review) => {
+            Step::Reviewed(review, _) => {
                 let reason = format!("review rounds ran out: {}", review.findings.join("; "));
                 return Err(GateError::Dispatch {
                     task: brief.task.id.clone(),
@@ -217,6 +224,7 @@ fn run_ladder(
         blocked_reports: 0,
         last_blocked: 0,
         earlier: None,
+        litellm: Vec::new(),
     };
     for rung in &agents.roles.worker.ladder {
         if let Some(lines) = climb_rung(agents, brief, places, rung, &mut progress)? {
