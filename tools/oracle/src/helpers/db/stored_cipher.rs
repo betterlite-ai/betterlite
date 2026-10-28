@@ -27,7 +27,11 @@ impl Helper for Op {
                 nonce_hex,
                 steps,
             } => {
-                let source = key_source(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref());
+                let source = key_source(
+                    salt_key.as_ref(),
+                    master_key.as_ref(),
+                    general_settings.as_ref(),
+                );
                 run_codec(&source, nonce_hex, steps)
             }
             Input::AppCrypto { key, steps } => run_app_crypto(key, steps),
@@ -39,7 +43,11 @@ impl Helper for Op {
                 extra,
                 steps,
             } => {
-                let source = key_source(salt_key.as_ref(), master_key.as_ref(), general_settings.as_ref());
+                let source = key_source(
+                    salt_key.as_ref(),
+                    master_key.as_ref(),
+                    general_settings.as_ref(),
+                );
                 run_callback_vars(&source, nonce_hex, extra, steps)
             }
             Input::MasterKeyMatch {
