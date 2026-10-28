@@ -49,11 +49,19 @@ impl Helper for Op {
             Input::Truncate { value } => Ok(json!(truncate(&joined(value)))),
             Input::Elision { value } => Ok(json!(truncate_payload(&joined(value)))),
             Input::ContentText { content } => {
-                let parsed: Json = serde_json::from_str(content).map_err(|error| invalid(&error))?;
+                let parsed: Json = serde_json::from_str(content).map_err(|error| {
+                    Box::new(HelperError {
+                        class: "InvalidInput".to_owned(),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                })?;
                 Ok(json!(content_text(&parsed)))
             }
-            Input::UiContent { value } => serde_json::to_value(to_ui_content(&joined(value)))
-                .map_err(|error| invalid(&error)),
+            Input::UiContent { value } => Ok(json!(to_ui_content(&joined(value)))),
             Input::ResponseEncoding {
                 content_type,
                 error,
@@ -75,15 +83,4 @@ fn joined(pieces: &[Piece]) -> String {
         }
     }
     value
-}
-
-fn invalid(error: &serde_json::Error) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }
