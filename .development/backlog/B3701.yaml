@@ -1,14 +1,14 @@
 id: B3701
 milestone: M6 guardrails
 title: Fenced code detection and execution intent
-status: todo
+status: done
 depends_on: [B3690]
 file: tasks/B3701-code-execution-detection.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py"
 parent: B105
 split_from: B105
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 276

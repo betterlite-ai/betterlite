@@ -1,0 +1,14 @@
+kind: helper
+name: seed-tool
+call:
+  stream_tool_assembly:
+    tool:
+      chunks:
+        - choices:
+            - delta:
+                tool_calls:
+                  - index: 0
+                    id: seed
+                    function: {name: seed, arguments: '{}'}
+env: {}
+compare: {ignore: []}

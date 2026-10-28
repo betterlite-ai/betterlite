@@ -1106,6 +1106,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
+ "betterlite-streaming",
  "betterlite-websearch",
  "chrono",
  "clap",
@@ -1315,6 +1316,12 @@ dependencies = [
 [[package]]
 name = "betterlite-streaming"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-tokenizer"
