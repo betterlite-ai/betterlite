@@ -128,21 +128,14 @@ fn append_fragment(
     key: ((u32, u32), FragmentField),
     value: Option<&JsonValue>,
 ) -> Result<(), AssemblyError> {
-    if let Some(fragment) = value.filter(|candidate| candidate.is_truthy()) {
-        append_string(fragments, key, fragment)?;
-    }
-    Ok(())
-}
-
-fn append_string(
-    fragments: &mut BTreeMap<((u32, u32), FragmentField), String>,
-    key: ((u32, u32), FragmentField),
-    value: &JsonValue,
-) -> Result<(), AssemblyError> {
-    if !value.is_truthy() {
+    let Some(fragment) = value else {
+        return Ok(());
+    };
+    if !fragment.is_truthy() {
         return Ok(());
     }
-    let JsonValue::String(text) = value else {
+
+    let JsonValue::String(text) = fragment else {
         return Err(AssemblyError::InvalidArguments);
     };
     fragments.entry(key).or_default().push_str(text);
