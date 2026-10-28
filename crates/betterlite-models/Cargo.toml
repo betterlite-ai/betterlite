@@ -13,6 +13,7 @@ rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 speedate = "0.18.0"
 thiserror.workspace = true
 tracing.workspace = true

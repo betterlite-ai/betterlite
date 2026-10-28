@@ -2,11 +2,46 @@
 
 use super::PriceFields;
 use rstest::rstest;
+use serde::Deserialize;
 use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 #[rstest]
+#[case::absent("{}", "absent")]
+#[case::exact_digits(
+    r#"{"input_cost_per_token":0.0000001234567890123456789}"#,
+    "0.0000001234567890123456789"
+)]
+#[case::positive_exponent(r#"{"input_cost_per_token":1.25e2}"#, "125")]
+#[case::maximum_scale(r#"{"input_cost_per_token":1e-28}"#, "0.0000000000000000000000000001")]
+#[case::underflow(r#"{"input_cost_per_token":1e-29}"#, "input_cost_per_token")]
+#[case::secondary_null(r#"{"annotation_cost_per_page":null}"#, "annotation_cost_per_page")]
+#[case::nested_precision(
+    r#"{"guardrail_cost_per_unit":{"custom":1e-29}}"#,
+    "guardrail_cost_per_unit.custom"
+)]
+#[case::metadata_null(
+    r#"{"metadata":{"original_pricing_per_hour":null}}"#,
+    "metadata.original_pricing_per_hour"
+)]
+#[case::search_null(
+    r#"{"search_context_cost_per_query":{"search_context_size_low":null}}"#,
+    "search_context_cost_per_query.search_context_size_low"
+)]
+#[case::off_peak_null(
+    r#"{"off_peak_pricing":{"input_cost_per_token":null}}"#,
+    "off_peak_pricing.input_cost_per_token"
+)]
+#[case::tier_null(
+    r#"{"tiered_pricing":[{"input_cost_per_query":null}]}"#,
+    "tiered_pricing[0].input_cost_per_query"
+)]
+#[case::duplicate_unit(
+    r#"{"guardrail_cost_per_unit":{"custom":1,"custom":2}}"#,
+    "duplicate key"
+)]
 #[case::fraction(r#"{"input_cost_per_token":0.000000123456789}"#, "0.000000123456789")]
 #[case::exponent(r#"{"output_cost_per_token":1.2e-7}"#, "0.00000012")]
 #[case::overprecision(
@@ -27,6 +62,11 @@ use std::path::Path;
 )]
 #[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"sample_spec":{"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"search_context_cost_per_query":{"search_context_size_high":0.01},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
 #[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "unknown field `unknown_price`")]
+#[case::extreme_exponent(r#"{"input_cost_per_token":1e-2147483648}"#, "input_cost_per_token")]
+#[case::nested_null(
+    r#"{"provider_specific_entry":{"us":null}}"#,
+    "provider_specific_entry.us"
+)]
 #[case::null(r#"{"input_cost_per_token":null}"#, "must not be null")]
 #[case::string(r#"{"input_cost_per_token":"0.1"}"#, "must be a JSON number")]
 #[case::boolean(r#"{"input_cost_per_token":true}"#, "must be a JSON number")]
@@ -38,7 +78,9 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
         Ok(value) => PriceFields::parse(value.as_ref()),
         Err(error) => panic!("test JSON must parse: {error}"),
     };
-    if expected == "nested" {
+    if expected == "absent" {
+        assert_eq!(parsed.unwrap(), PriceFields::default());
+    } else if expected == "nested" {
         let parsed_value = parsed.unwrap();
         assert_eq!(
             parsed_value.provider_specific.us.unwrap().to_string(),
@@ -93,7 +135,8 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
             parsed_value.tiers[0].range.as_ref().unwrap()[1].to_string(),
             "256000"
         );
-    } else if expected.contains('_') || expected.contains("must") {
+    } else if expected.contains('_') || expected.contains("must") || expected.contains("duplicate")
+    {
         assert!(parsed.unwrap_err().to_string().contains(expected));
     } else {
         let parsed_value = parsed.unwrap();
@@ -109,23 +152,59 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
     }
 }
 
+#[derive(Deserialize)]
+struct Schema {
+    #[serde(rename = "$defs")]
+    definitions: BTreeMap<String, Definition>,
+}
+
+#[derive(Deserialize)]
+struct Definition {
+    properties: BTreeMap<String, Box<RawValue>>,
+}
+
 #[rstest]
 fn model_price_types_inventory_covers_pinned_fixtures() {
-    for fixture in [
-        "model_prices_and_context_window.json",
-        "model_prices_and_context_window.schema.json",
-    ] {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures")
-            .join(fixture);
-        let source = fs::read_to_string(path).unwrap();
-        let entries: std::collections::BTreeMap<String, Box<RawValue>> =
-            serde_json::from_str(&source).unwrap();
-        for (name, value) in entries {
-            if name == "sample_spec" || name == "fallback_generalizations" {
+    let schema: Schema = serde_json::from_str(include_str!(
+        "../../fixtures/model_prices_and_context_window.schema.json"
+    ))
+    .unwrap();
+    let entries: BTreeMap<String, BTreeMap<String, Box<RawValue>>> = serde_json::from_str(
+        &fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/model_prices_and_context_window.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for name in schema.definitions["modelEntry"]
+        .properties
+        .keys()
+        .chain(entries.values().flat_map(BTreeMap::keys))
+    {
+        if name.contains("cost") || name.contains("multiplier") {
+            if ["guardrail_cost_per_unit", "search_context_cost_per_query"].contains(&name.as_str())
+            {
                 continue;
             }
-            PriceFields::parse(value.as_ref()).unwrap();
+            let input =
+                RawValue::from_string(format!("{{{name:?}:0.0000001234567890123456789}}")).unwrap();
+            let prices = PriceFields::parse(&input).unwrap();
+            let output: BTreeMap<String, Box<RawValue>> =
+                serde_json::from_str(&serde_json::to_string(&prices).unwrap()).unwrap();
+            assert_eq!(
+                output.get(name).map(|value| value.get()),
+                Some("\"0.0000001234567890123456789\""),
+                "missing typed field {name}"
+            );
+        }
+    }
+    for (name, entry) in entries {
+        if name != "sample_spec" && name != "fallback_generalizations" {
+            let raw = RawValue::from_string(serde_json::to_string(&entry).unwrap()).unwrap();
+            let prices = PriceFields::parse(&raw).unwrap();
+            let projected = RawValue::from_string(serde_json::to_string(&prices).unwrap()).unwrap();
+            assert_prices(&raw, Some(&projected), "");
         }
     }
 }
@@ -139,4 +218,59 @@ fn replays_the_price_fields_corpus() {
         let raw: Box<RawValue> = serde_json::from_str(&source).unwrap();
         drop(PriceFields::parse(raw.as_ref()));
     }
+}
+
+fn assert_prices(source: &RawValue, projected: Option<&RawValue>, path: &str) {
+    if source.get().starts_with('{') {
+        let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(source.get()).unwrap();
+        let output: BTreeMap<String, Box<RawValue>> = projected
+            .map(|raw| serde_json::from_str(raw.get()).unwrap())
+            .unwrap_or_default();
+        for (key, value) in fields {
+            assert_prices(
+                &value,
+                output.get(&key).map(Box::as_ref),
+                &format!("{path}.{key}"),
+            );
+        }
+    } else if source.get().starts_with('[') {
+        let items: Vec<Box<RawValue>> = serde_json::from_str(source.get()).unwrap();
+        let output: Vec<Box<RawValue>> = projected
+            .map(|raw| serde_json::from_str(raw.get()).unwrap())
+            .unwrap_or_default();
+        for (index, value) in items.iter().enumerate() {
+            assert_prices(
+                value,
+                output.get(index).map(Box::as_ref),
+                &format!("{path}[{index}]"),
+            );
+        }
+    } else if (path.contains("cost")
+        || path.contains("multiplier")
+        || path.contains("original_pricing")
+        || path.ends_with("provider_specific_entry.us")
+        || path.ends_with("provider_specific_entry.fast"))
+        && !source.get().starts_with('"')
+    {
+        assert_scalar(source, projected, path);
+    } else {
+        assert!(!path.is_empty());
+    }
+}
+
+fn assert_scalar(source: &RawValue, projected: Option<&RawValue>, path: &str) {
+    let expected = super::parse_decimal_lexeme(source.get())
+        .unwrap()
+        .normalize()
+        .to_string();
+    let actual: String =
+        serde_json::from_str(projected.unwrap_or_else(|| panic!("missing {path}")).get()).unwrap();
+    assert_eq!(
+        super::parse_decimal_lexeme(&actual)
+            .unwrap()
+            .normalize()
+            .to_string(),
+        expected,
+        "{path}"
+    );
 }

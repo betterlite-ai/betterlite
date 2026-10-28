@@ -2,22 +2,18 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct ProviderSpecificPricing {
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub us: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub fast: Option<Decimal>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct MetadataPricing {
     #[serde(rename = "original_pricing_per_hour")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub per_hour: Option<Decimal>,
     #[serde(rename = "original_pricing_per_minute")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub per_minute: Option<Decimal>,
 }
 
@@ -25,32 +21,26 @@ pub struct MetadataPricing {
 #[serde(default, deny_unknown_fields)]
 pub struct SamplePricing {
     #[serde(rename = "computer_use_input_cost_per_1k_tokens")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub computer_use_input: Option<Decimal>,
     #[serde(rename = "computer_use_output_cost_per_1k_tokens")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub computer_use_output: Option<Decimal>,
     #[serde(rename = "file_search_cost_per_1k_calls")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub file_search_calls: Option<Decimal>,
     #[serde(rename = "file_search_cost_per_gb_per_day")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub file_search_storage: Option<Decimal>,
     #[serde(rename = "vector_store_cost_per_gb_per_day")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub vector_store_storage: Option<Decimal>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OffPeakPricing {
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub input_cost_per_token: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub output_cost_per_token: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub cache_read_input_token_cost: Option<Decimal>,
     pub windows: Option<Vec<PriceWindow>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hours_utc: Option<HoursUtc>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -76,11 +66,8 @@ pub enum Weekday {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchContextPricing {
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub search_context_size_low: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub search_context_size_medium: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub search_context_size_high: Option<Decimal>,
 }
 
@@ -88,14 +75,15 @@ pub struct SearchContextPricing {
 #[serde(default, deny_unknown_fields)]
 pub struct TierPricing {
     #[serde(rename = "input_cost_per_token")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub input_token: Option<Decimal>,
     #[serde(rename = "output_cost_per_token")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub output_token: Option<Decimal>,
     #[serde(rename = "output_cost_per_reasoning_token")]
-    #[serde(deserialize_with = "crate::price_fields::decimal_option")]
     pub output_reasoning_token: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_token_cost: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_cost_per_query: Option<Decimal>,
     pub range: Option<Vec<Decimal>>,
     pub max_results_range: Option<Vec<Decimal>>,
 }

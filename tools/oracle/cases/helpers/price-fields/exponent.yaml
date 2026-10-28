@@ -2,6 +2,6 @@ kind: helper
 name: exponent
 call:
   price_fields:
-    output_cost_per_token: 1.2e-7
+    source: '{"output_cost_per_token":1.2e-7,"cost_per_second":0.0050}'
 compare: {ignore: []}
 env: {}

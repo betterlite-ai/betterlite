@@ -1,673 +1,157 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PricingValues {
-    #[serde(
-        rename = "input_cost_per_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_token: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_token: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_audio_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_audio_token: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_audio_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_audio_token: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_image",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_image: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_image",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_image: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_video_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_video_token: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_video_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_video_token: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_character",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_character: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_character",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_character: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_pixel",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_pixel: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_pixel",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_pixel: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_query",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_query: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_request",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_request: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_second",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_second: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second: Option<Decimal>,
-    #[serde(
-        rename = "cost_per_second",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub per_second: Option<Decimal>,
-    #[serde(
-        rename = "citation_cost_per_token",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub citation_token: Option<Decimal>,
-    #[serde(
-        rename = "code_interpreter_cost_per_session",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub code_interpreter_session: Option<Decimal>,
-    #[serde(
-        rename = "google_maps_grounding_cost_per_query",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub google_maps_query: Option<Decimal>,
-    #[serde(
-        rename = "ocr_cost_per_credit",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub ocr_credit: Option<Decimal>,
-    #[serde(
-        rename = "ocr_cost_per_page",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub ocr_page: Option<Decimal>,
-    #[serde(
-        rename = "regional_endpoint_uplift_multiplier",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub regional_endpoint_uplift: Option<Decimal>,
-    #[serde(
-        rename = "regional_processing_uplift_multiplier_eu",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub regional_processing_eu: Option<Decimal>,
-    #[serde(
-        rename = "regional_processing_uplift_multiplier_us",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub regional_processing_us: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_12_0: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_1hr",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_1h_1: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_1hr_above_200k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_1h_2: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_200k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_20_3: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_200k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_20_4: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_256k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_25_5: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_272k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_27_6: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_272k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_27_7: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_272k_tokens_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_27_8: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_272k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_27_9: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_272k_tokens_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_27_10: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_above_32k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_over_32_11: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_batch_12: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_flex_13: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_prio_14: Option<Decimal>,
-    #[serde(
-        rename = "cache_creation_input_token_cost_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_create_input_ultra_15: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_128k_16: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_200k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_200k_17: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_200k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_200k_18: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_200k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_200k_19: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_256k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_256k_20: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_272k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_272k_21: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_272k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_272k_22: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_272k_tokens_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_272k_23: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_272k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_272k_24: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_272k_tokens_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_272k_25: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_32k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_32k_26: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_above_512k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_over_512k_27: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_balanced",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_balanced_28: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_batch_29: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_flex_30: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_prio_31: Option<Decimal>,
-    #[serde(
-        rename = "cache_read_input_token_cost_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub cache_read_input_ultra_32: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_audio_per_second_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_audio_per_second_ove_33: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_audio_token_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_audio_batch_34: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_audio_token_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_audio_prio_35: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_character_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_character_over_128k_36: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_image_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_image_over_128k_37: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_image_token_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_image_batch_38: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_128k_39: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_200k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_200k_40: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_200k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_200k_batch_41: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_200k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_200k_prio_42: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_256k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_256k_43: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_272k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_272k_44: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_272k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_272k_batch_45: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_272k_tokens_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_272k_flex_46: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_272k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_272k_prio_47: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_272k_tokens_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_272k_ultra_48: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_32k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_32k_49: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_above_512k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_over_512k_50: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_balanced",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_balanced_51: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_batch_52: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_cache_hit",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_cache_hit_53: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_flex_54: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_prio_55: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_token_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_ultra_56: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_video_per_second",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_video_per_second_57: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_video_per_second_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_video_per_second_ove_58: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_video_per_second_above_15s_interval",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_video_per_second_ove_59: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_video_per_second_above_8s_interval",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_video_per_second_ove_60: Option<Decimal>,
-    #[serde(
-        rename = "input_cost_per_video_token_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub input_video_batch_61: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_character_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_character_over_128k_62: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second_1080p",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second_1080p_63: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second_2k",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second_2k_64: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second_480p",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second_480p_65: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second_4k",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second_4k_66: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second_720p",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second_720p_67: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_second_768p",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_second_768p_68: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_128k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_128k_69: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_200k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_200k_70: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_200k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_200k_batch_71: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_200k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_200k_prio_72: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_256k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_256k_73: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_272k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_272k_74: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_272k_tokens_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_272k_batch_75: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_272k_tokens_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_272k_flex_76: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_272k_tokens_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_272k_prio_77: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_272k_tokens_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_272k_ultra_78: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_32k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_32k_79: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_above_512k_tokens",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_over_512k_80: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_balanced",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_balanced_81: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_batches",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_batch_82: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_flex",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_flex_83: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_priority",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_prio_84: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token_ultrafast",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::decimal_option"
-    )]
-    pub output_ultra_85: Option<Decimal>,
+macro_rules! price_values {
+    ($($field:ident: $wire:literal),* $(,)?) => {
+        #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+        #[serde(default)]
+        pub struct PricingValues {
+            $(
+                #[serde(rename = $wire, skip_serializing_if = "Option::is_none")]
+                pub $field: Option<Decimal>,
+            )*
+        }
+        pub const PRICE_KEYS: &[&str] = &[$($wire),*];
+    };
+}
+
+price_values! {
+    annotation_page: "annotation_cost_per_page",
+    annotation_page_batch: "annotation_cost_per_page_batches",
+    cache_write_input_audio_token: "cache_creation_input_audio_token_cost",
+    cache_write_input_token: "cache_creation_input_token_cost",
+    write_over_128k: "cache_creation_input_token_cost_above_128k_tokens",
+    write_over_1hr: "cache_creation_input_token_cost_above_1hr",
+    write_over_1hr_over_200k: "cache_creation_input_token_cost_above_1hr_above_200k_tokens",
+    write_over_200k: "cache_creation_input_token_cost_above_200k_tokens",
+    write_over_200k_batch: "cache_creation_input_token_cost_above_200k_tokens_batches",
+    write_over_256k: "cache_creation_input_token_cost_above_256k_tokens",
+    write_over_272k: "cache_creation_input_token_cost_above_272k_tokens",
+    write_over_272k_batch: "cache_creation_input_token_cost_above_272k_tokens_batches",
+    write_over_272k_flex: "cache_creation_input_token_cost_above_272k_tokens_flex",
+    write_over_272k_priority: "cache_creation_input_token_cost_above_272k_tokens_priority",
+    write_over_272k_ultra: "cache_creation_input_token_cost_above_272k_tokens_ultrafast",
+    write_over_32k: "cache_creation_input_token_cost_above_32k_tokens",
+    cache_write_input_token_batch: "cache_creation_input_token_cost_batches",
+    cache_write_input_token_flex: "cache_creation_input_token_cost_flex",
+    write_priority: "cache_creation_input_token_cost_priority",
+    write_ultra: "cache_creation_input_token_cost_ultrafast",
+    cache_read_input_audio_token: "cache_read_input_audio_token_cost",
+    cache_read_input_image_token: "cache_read_input_image_token_cost",
+    cache_read_input_token: "cache_read_input_token_cost",
+    read_over_128k: "cache_read_input_token_cost_above_128k_tokens",
+    read_over_200k: "cache_read_input_token_cost_above_200k_tokens",
+    read_over_200k_batch: "cache_read_input_token_cost_above_200k_tokens_batches",
+    read_over_200k_priority: "cache_read_input_token_cost_above_200k_tokens_priority",
+    read_over_256k: "cache_read_input_token_cost_above_256k_tokens",
+    read_over_272k: "cache_read_input_token_cost_above_272k_tokens",
+    read_over_272k_batch: "cache_read_input_token_cost_above_272k_tokens_batches",
+    read_over_272k_flex: "cache_read_input_token_cost_above_272k_tokens_flex",
+    read_over_272k_priority: "cache_read_input_token_cost_above_272k_tokens_priority",
+    read_over_272k_ultra: "cache_read_input_token_cost_above_272k_tokens_ultrafast",
+    read_over_32k: "cache_read_input_token_cost_above_32k_tokens",
+    read_over_512k: "cache_read_input_token_cost_above_512k_tokens",
+    read_balanced: "cache_read_input_token_cost_balanced",
+    cache_read_input_token_batch: "cache_read_input_token_cost_batches",
+    cache_read_input_token_flex: "cache_read_input_token_cost_flex",
+    read_priority: "cache_read_input_token_cost_priority",
+    read_ultra: "cache_read_input_token_cost_ultrafast",
+    citation_token: "citation_cost_per_token",
+    code_interpreter_session: "code_interpreter_cost_per_session",
+    computer_input_1k: "computer_use_input_cost_per_1k_tokens",
+    computer_output_1k: "computer_use_output_cost_per_1k_tokens",
+    per_second: "cost_per_second",
+    file_search_1k_calls: "file_search_cost_per_1k_calls",
+    file_search_gb_day: "file_search_cost_per_gb_per_day",
+    google_maps_query: "google_maps_grounding_cost_per_query",
+    input_audio_second: "input_cost_per_audio_per_second",
+    input_audio_second_over_128k: "input_cost_per_audio_per_second_above_128k_tokens",
+    input_audio_token: "input_cost_per_audio_token",
+    input_audio_token_batch: "input_cost_per_audio_token_batches",
+    input_audio_token_priority: "input_cost_per_audio_token_priority",
+    input_character: "input_cost_per_character",
+    input_character_over_128k: "input_cost_per_character_above_128k_tokens",
+    input_image: "input_cost_per_image",
+    input_image_over_128k: "input_cost_per_image_above_128k_tokens",
+    input_image_token: "input_cost_per_image_token",
+    input_image_token_batch: "input_cost_per_image_token_batches",
+    input_pixel: "input_cost_per_pixel",
+    input_query: "input_cost_per_query",
+    input_request: "input_cost_per_request",
+    input_second: "input_cost_per_second",
+    input_token: "input_cost_per_token",
+    input_token_over_128k: "input_cost_per_token_above_128k_tokens",
+    input_token_over_200k: "input_cost_per_token_above_200k_tokens",
+    input_token_over_200k_batch: "input_cost_per_token_above_200k_tokens_batches",
+    input_token_over_200k_priority: "input_cost_per_token_above_200k_tokens_priority",
+    input_token_over_256k: "input_cost_per_token_above_256k_tokens",
+    input_token_over_272k: "input_cost_per_token_above_272k_tokens",
+    input_token_over_272k_batch: "input_cost_per_token_above_272k_tokens_batches",
+    input_token_over_272k_flex: "input_cost_per_token_above_272k_tokens_flex",
+    input_token_over_272k_priority: "input_cost_per_token_above_272k_tokens_priority",
+    input_over_272k_ultra: "input_cost_per_token_above_272k_tokens_ultrafast",
+    input_token_over_32k: "input_cost_per_token_above_32k_tokens",
+    input_token_over_512k: "input_cost_per_token_above_512k_tokens",
+    input_token_balanced: "input_cost_per_token_balanced",
+    input_token_batch: "input_cost_per_token_batches",
+    input_token_cache_hit: "input_cost_per_token_cache_hit",
+    input_token_flex: "input_cost_per_token_flex",
+    input_token_priority: "input_cost_per_token_priority",
+    input_token_ultrafast: "input_cost_per_token_ultrafast",
+    input_video_second: "input_cost_per_video_per_second",
+    input_video_second_over_128k: "input_cost_per_video_per_second_above_128k_tokens",
+    input_video_sec_over_15s: "input_cost_per_video_per_second_above_15s_interval",
+    input_video_sec_over_8s: "input_cost_per_video_per_second_above_8s_interval",
+    input_video_token: "input_cost_per_video_token",
+    input_video_token_batch: "input_cost_per_video_token_batches",
+    input_dbu_token: "input_dbu_cost_per_token",
+    ocr_credit: "ocr_cost_per_credit",
+    ocr_page: "ocr_cost_per_page",
+    ocr_page_batch: "ocr_cost_per_page_batches",
+    output_audio_token: "output_cost_per_audio_token",
+    output_character: "output_cost_per_character",
+    output_character_over_128k: "output_cost_per_character_above_128k_tokens",
+    output_image: "output_cost_per_image",
+    output_image_half_k: "output_cost_per_image_0.5K",
+    output_image_1024: "output_cost_per_image_1024",
+    output_image_1536: "output_cost_per_image_1536",
+    output_image_1k: "output_cost_per_image_1K",
+    output_image_2k: "output_cost_per_image_2K",
+    output_image_4k: "output_cost_per_image_4K",
+    output_image_512: "output_cost_per_image_512",
+    output_image_token: "output_cost_per_image_token",
+    output_pixel: "output_cost_per_pixel",
+    output_reasoning_token: "output_cost_per_reasoning_token",
+    output_second: "output_cost_per_second",
+    output_second_1080p: "output_cost_per_second_1080p",
+    output_second_2k: "output_cost_per_second_2k",
+    output_second_480p: "output_cost_per_second_480p",
+    output_second_4k: "output_cost_per_second_4k",
+    output_second_720p: "output_cost_per_second_720p",
+    output_second_768p: "output_cost_per_second_768p",
+    output_token: "output_cost_per_token",
+    output_token_over_128k: "output_cost_per_token_above_128k_tokens",
+    output_token_over_200k: "output_cost_per_token_above_200k_tokens",
+    output_token_over_200k_batch: "output_cost_per_token_above_200k_tokens_batches",
+    output_over_200k_priority: "output_cost_per_token_above_200k_tokens_priority",
+    output_token_over_256k: "output_cost_per_token_above_256k_tokens",
+    output_token_over_272k: "output_cost_per_token_above_272k_tokens",
+    output_token_over_272k_batch: "output_cost_per_token_above_272k_tokens_batches",
+    output_token_over_272k_flex: "output_cost_per_token_above_272k_tokens_flex",
+    output_over_272k_priority: "output_cost_per_token_above_272k_tokens_priority",
+    output_over_272k_ultra: "output_cost_per_token_above_272k_tokens_ultrafast",
+    output_token_over_32k: "output_cost_per_token_above_32k_tokens",
+    output_token_over_512k: "output_cost_per_token_above_512k_tokens",
+    output_token_balanced: "output_cost_per_token_balanced",
+    output_token_batch: "output_cost_per_token_batches",
+    output_token_flex: "output_cost_per_token_flex",
+    output_token_priority: "output_cost_per_token_priority",
+    output_token_ultrafast: "output_cost_per_token_ultrafast",
+    output_video_second: "output_cost_per_video_per_second",
+    output_video_token: "output_cost_per_video_token",
+    output_dbu_token: "output_dbu_cost_per_token",
+    regional_endpoint_uplift: "regional_endpoint_uplift_multiplier",
+    regional_processing_eu: "regional_processing_uplift_multiplier_eu",
+    regional_processing_us: "regional_processing_uplift_multiplier_us",
+    vector_store_gb_day: "vector_store_cost_per_gb_per_day",
 }

@@ -1,19 +1,44 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 
 pub mod nested;
+mod validation;
 pub mod values;
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(try_from = "Box<RawValue>")]
 pub struct PriceFields {
     #[serde(flatten)]
     pub values: values::PricingValues,
     #[serde(rename = "provider_specific_entry")]
     pub provider_specific: nested::ProviderSpecificPricing,
-    #[serde(rename = "guardrail_cost_per_unit")]
-    #[serde(deserialize_with = "decimal_map")]
+    #[serde(
+        rename = "guardrail_cost_per_unit",
+        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
+    )]
+    pub guardrail_units: BTreeMap<String, Decimal>,
+    pub metadata: nested::MetadataPricing,
+    pub sample_spec: nested::SamplePricing,
+    #[serde(rename = "off_peak_pricing")]
+    pub off_peak: Option<nested::OffPeakPricing>,
+    #[serde(rename = "search_context_cost_per_query")]
+    pub search_context: Option<nested::SearchContextPricing>,
+    #[serde(rename = "tiered_pricing")]
+    pub tiers: Vec<nested::TierPricing>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct PriceInput {
+    #[serde(flatten)]
+    pub values: values::PricingValues,
+    #[serde(rename = "provider_specific_entry")]
+    pub provider_specific: nested::ProviderSpecificPricing,
+    #[serde(
+        rename = "guardrail_cost_per_unit",
+        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
+    )]
     pub guardrail_units: BTreeMap<String, Decimal>,
     pub metadata: nested::MetadataPricing,
     pub sample_spec: nested::SamplePricing,
@@ -49,82 +74,28 @@ impl PriceFields {
     pub fn parse(input: &RawValue) -> Result<Self, PriceFieldError> {
         let object: BTreeMap<String, Box<RawValue>> =
             serde_json::from_str(input.get()).map_err(|source| PriceFieldError::Json { source })?;
-        for (name, value) in object {
-            if matches!(
-                name.as_str(),
-                "input_cost_per_token"
-                    | "output_cost_per_token"
-                    | "input_cost_per_audio_token"
-                    | "output_cost_per_audio_token"
-                    | "input_cost_per_image"
-                    | "output_cost_per_image"
-                    | "input_cost_per_video_token"
-                    | "output_cost_per_video_token"
-                    | "input_cost_per_character"
-                    | "output_cost_per_character"
-                    | "input_cost_per_pixel"
-                    | "output_cost_per_pixel"
-                    | "input_cost_per_query"
-                    | "input_cost_per_request"
-                    | "input_cost_per_second"
-                    | "output_cost_per_second"
-                    | "cost_per_second"
-                    | "citation_cost_per_token"
-                    | "code_interpreter_cost_per_session"
-                    | "google_maps_grounding_cost_per_query"
-                    | "ocr_cost_per_credit"
-                    | "ocr_cost_per_page"
-                    | "regional_endpoint_uplift_multiplier"
-                    | "regional_processing_uplift_multiplier_eu"
-                    | "regional_processing_uplift_multiplier_us"
-            ) {
-                decimal_at(&name, value.as_ref())?;
-            }
-        }
-        serde_json::from_str(input.get()).map_err(|source| PriceFieldError::Json { source })
+        validation::validate(&object, "")?;
+        let wire: PriceInput =
+            serde_json::from_str(input.get()).map_err(|source| PriceFieldError::Json { source })?;
+        Ok(Self {
+            values: wire.values,
+            provider_specific: wire.provider_specific,
+            guardrail_units: wire.guardrail_units,
+            metadata: wire.metadata,
+            sample_spec: wire.sample_spec,
+            off_peak: wire.off_peak,
+            search_context: wire.search_context,
+            tiers: wire.tiers,
+        })
     }
 }
 
-pub(crate) fn decimal_option<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    let lexeme = match &value {
-        serde_json::Value::Number(number) => number.to_string(),
-        serde_json::Value::Null => "null".to_owned(),
-        serde_json::Value::String(_) => "\"string\"".to_owned(),
-        serde_json::Value::Bool(value) => value.to_string(),
-        serde_json::Value::Array(_) => "[]".to_owned(),
-        serde_json::Value::Object(_) => "{}".to_owned(),
-    };
-    let raw = RawValue::from_string(lexeme).map_err(serde::de::Error::custom)?;
-    decimal_at("price", raw.as_ref())
-        .map(Some)
-        .map_err(serde::de::Error::custom)
-}
+impl TryFrom<Box<RawValue>> for PriceFields {
+    type Error = PriceFieldError;
 
-fn decimal_map<'de, D>(deserializer: D) -> Result<BTreeMap<String, Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values = BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
-    let mut result = BTreeMap::new();
-    for (name, value) in values {
-        let lexeme = match value {
-            serde_json::Value::Number(number) => number.to_string(),
-            serde_json::Value::Null => "null".to_owned(),
-            serde_json::Value::String(_) => "\"string\"".to_owned(),
-            serde_json::Value::Bool(value) => value.to_string(),
-            serde_json::Value::Array(_) => "[]".to_owned(),
-            serde_json::Value::Object(_) => "{}".to_owned(),
-        };
-        let raw = RawValue::from_string(lexeme).map_err(serde::de::Error::custom)?;
-        let value = decimal_at(&format!("guardrail_cost_per_unit.{name}"), raw.as_ref())
-            .map_err(serde::de::Error::custom)?;
-        result.insert(name, value);
+    fn try_from(input: Box<RawValue>) -> Result<Self, Self::Error> {
+        Self::parse(&input)
     }
-    Ok(result)
 }
 
 pub(super) fn decimal_at(path: &str, value: &RawValue) -> Result<Decimal, PriceFieldError> {
@@ -151,22 +122,23 @@ pub(super) fn decimal_at(path: &str, value: &RawValue) -> Result<Decimal, PriceF
     })
 }
 
-fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, rust_decimal::Error> {
-    let Some((mantissa, exponent)) = lexeme.split_once(['e', 'E']) else {
+pub fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, rust_decimal::Error> {
+    let Some((coefficient, exponent_text)) = lexeme.split_once(['e', 'E']) else {
         return Decimal::from_str_exact(lexeme);
     };
-    let decimal = Decimal::from_str_exact(mantissa)?;
-    let exponent = exponent
+    let decimal = Decimal::from_str_exact(coefficient)?;
+    let exponent = exponent_text
         .parse::<i32>()
-        .map_err(|_| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?;
+        .map_err(|_source| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?;
     let scale = i32::try_from(decimal.scale())
-        .map_err(|_| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?
-        - exponent;
-    if scale >= 0 {
+        .map_err(|_source| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?
+        .checked_sub(exponent)
+        .ok_or(rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?;
+    if scale >= 0_i32 {
         return Decimal::try_from_i128_with_scale(
             decimal.mantissa(),
             u32::try_from(scale)
-                .map_err(|_| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?,
+                .map_err(|_source| rust_decimal::Error::ScaleExceedsMaximumPrecision(29))?,
         )
         .map(|value| value.normalize());
     }
@@ -180,5 +152,4 @@ fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, rust_decimal::Error> {
     Decimal::try_from_i128_with_scale(mantissa, 0).map(|value| value.normalize())
 }
 
-#[cfg(test)]
 mod tests;

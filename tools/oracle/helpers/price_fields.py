@@ -1,4 +1,5 @@
-from decimal import Decimal
+import json
+from decimal import Decimal, localcontext
 from typing import TypeAlias, cast
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -13,7 +14,9 @@ def _decimal(path: str, value: Json) -> str:
         raise PriceFieldError(f"price field {path} must not be null")
     if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         raise PriceFieldError(f"price field {path} must be a JSON number")
-    return format(Decimal(str(value)).normalize(), "f")
+    with localcontext() as context:
+        context.prec = 29
+        return format(Decimal(str(value)).normalize(), "f")
 
 
 def _object(path: str, value: Json) -> dict[str, Json]:
@@ -36,6 +39,11 @@ def _range(source: dict[str, Json], key: str, path: str) -> list[str] | None:
 
 
 def run(input_value: dict[str, Json]) -> dict[str, Json]:
+    source = input_value.get("source")
+    if isinstance(source, str):
+        input_value = cast(
+            dict[str, Json], json.loads(source, parse_float=Decimal, parse_int=Decimal)
+        )
     provider = _object("provider_specific_entry", input_value.get("provider_specific_entry", {}))
     guardrails = _object("guardrail_cost_per_unit", input_value.get("guardrail_cost_per_unit", {}))
     metadata = _object("metadata", input_value.get("metadata", {}))
@@ -59,11 +67,7 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
             "tiered_pricing",
         }:
             continue
-        if (
-            name.startswith(("input_", "output_", "cache_"))
-            or "_cost_" in name
-            or "_multiplier" in name
-        ):
+        if "cost" in name or "multiplier" in name:
             values[name] = _decimal(name, value)
     off_peak_value: Json = None
     if off_peak is not None:
@@ -81,13 +85,18 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
                 "off_peak_pricing.cache_read_input_token_cost",
             ),
             "windows": off_peak_object.get("windows"),
+            **(
+                {"hours_utc": off_peak_object["hours_utc"]}
+                if "hours_utc" in off_peak_object
+                else {}
+            ),
         }
     tier_values: list[Json] = []
     for index, tier in enumerate(tiers):
         if not isinstance(tier, dict):
             raise PriceFieldError(f"price field tiered_pricing[{index}] must be a JSON object")
         tier_values.append(
-            {
+            cast(Json, {
                 "input_cost_per_token": _optional(
                     tier, "input_cost_per_token", f"tiered_pricing[{index}].input_cost_per_token"
                 ),
@@ -103,7 +112,12 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
                 "max_results_range": _range(
                     tier, "max_results_range", f"tiered_pricing[{index}].max_results_range"
                 ),
-            }
+                **{
+                    key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
+                    for key in ["cache_read_input_token_cost", "input_cost_per_query"]
+                    if key in tier
+                },
+            })
         )
     return cast(
         dict[str, Json],

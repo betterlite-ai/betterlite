@@ -2,6 +2,6 @@ kind: helper
 name: fraction
 call:
   price_fields:
-    input_cost_per_token: 0.000000123456789
+    source: '{"input_cost_per_token":0.0000001234567890123456789}'
 compare: {ignore: []}
 env: {}
