@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Javelin assessment and legacy Lakera initialization
 status: todo
 depends_on: [B219]
-file: null
+file: tasks/B3777-javelin-assessment.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/javelin/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/javelin.py"

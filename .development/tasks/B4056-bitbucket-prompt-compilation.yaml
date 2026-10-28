@@ -1,0 +1,170 @@
+id: B4056
+title: Bitbucket prompt compilation and initialization
+description: >-
+  Build BitBucketPromptManager as a compiler for Bitbucket-hosted prompts, with lazy template
+  loading, role parsing and optional parameter projection. The manager construction takes
+  bitbucket_config and optional prompt_id but does not construct BitBucketTemplateManager until
+  the prompt_manager property is accessed. Implement should_run_prompt_management to gate on
+  prompt_id, _compile_prompt_helper and async_compile_prompt_helper to load missing prompts from
+  Bitbucket, render templates with variables, parse rendered content into messages by role
+  prefix, and extract five optional parameters from metadata into PromptManagementClient. After
+  rendering the template with supplied variables, message parsing detects role prefixes
+  (System:, User:, Assistant:) case-insensitively and normalizes them to lowercase in output,
+  while five optional model parameters (temperature, max_tokens, top_p, frequency_penalty,
+  presence_penalty) are extracted from metadata and included when present, preserving null
+  values. Build the prompt_initializer
+  to construct managers from litellm_params and prompt_spec, and register it in
+  prompt_initializer_registry under SupportedPromptIntegrations.BITBUCKET. Build
+  set_global_bitbucket_config for runtime config updates. Preserve lazy template manager
+  construction, case-insensitive role detection with lowercase output, five-parameter null-value
+  inclusion, and ignored label/version inputs. The initializer extracts bitbucket_config from
+  litellm_params, raising ValueError if missing.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/bitbucket.rs
+    - crates/betterlite-prompts/src/bitbucket/**
+    - tools/oracle/cases/prompts/bitbucket/**
+    - tools/oracle/helpers/b4056.py
+    - tools/oracle/helpers/b4056/**
+    - tools/oracle/src/helpers/prompts/b4056.rs
+    - tools/oracle/src/helpers/prompts/b4056/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L185-L265
+    why: BitBucketPromptManager class declaration, __init__, integration_name property, prompt_manager property, and get_prompt_template method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L325-L383
+    why: _parse_prompt_to_messages method with case-insensitive role prefix detection and blank-line handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L411-L506
+    why: should_run_prompt_management, _compile_prompt_helper, and async_compile_prompt_helper methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/__init__.py#L1-L63
+    why: Imports/globals, set_global_bitbucket_config function, prompt_initializer, and registry declarations.
+dod:
+  - text: BitBucketPromptManager.__init__ accepts bitbucket_config and optional prompt_id; does not construct BitBucketTemplateManager during initialization.
+    proof: [bitbucket-compiler-init-tests]
+  - text: integration_name property returns "bitbucket".
+    proof: [bitbucket-compiler-init-tests]
+  - text: prompt_manager property lazily constructs BitBucketTemplateManager on first access if not already set, passing bitbucket_config and prompt_id to the constructor.
+    proof: [bitbucket-compiler-lazy-tests]
+  - text: get_prompt_template renders an already-loaded template from prompt_manager.prompts and returns (rendered_prompt, metadata), or raises ValueError with exact message "Prompt template '{prompt_id}' not found" if missing.
+    proof: [bitbucket-compiler-get-template-tests, bitbucket-compiler-get-template-missing]
+  - text: should_run_prompt_management returns true when prompt_id is not None, false otherwise.
+    proof: [bitbucket-compiler-gate-tests]
+  - text: _compile_prompt_helper raises ValueError if prompt_id is None, loads the prompt if not already in prompt_manager.prompts by calling _load_prompt_from_bitbucket, parses rendered template into messages, projects five optional parameters, and returns PromptManagementClient with template_messages and optional_params.
+    proof: [bitbucket-compiler-compile-tests]
+  - text: >-
+      _compile_prompt_helper wraps all exceptions raised during loading/parsing in ValueError with message
+      "Error compiling prompt '{prompt_id}': {e}".
+    proof: [bitbucket-compiler-exception-wrap-tests]
+  - text: _compile_prompt_helper projects exactly five optional parameters (temperature, max_tokens, top_p, frequency_penalty, presence_penalty), checking `if param in prompt_metadata` to include null values.
+    proof: [bitbucket-compiler-params-tests]
+  - text: async_compile_prompt_helper accepts the same parameters and delegates to _compile_prompt_helper.
+    proof: [bitbucket-compiler-async-tests]
+  - text: _parse_prompt_to_messages parses rendered template with case-insensitive role detection (System:, User:, Assistant:), skips blank lines, accumulates content under each role, and returns list of messages.
+    proof: [bitbucket-compiler-parse-tests]
+  - text: >-
+      _parse_prompt_to_messages wraps a non-empty template with no role prefix into single message with role "user" and full stripped template as content.
+    proof: [bitbucket-compiler-parse-no-prefix]
+  - text: _parse_prompt_to_messages returns empty list when template is blank or whitespace-only.
+    proof: [bitbucket-compiler-parse-blank]
+  - text: set_global_bitbucket_config accepts a dict and stores it for runtime retrieval.
+    proof: [bitbucket-compiler-global-tests]
+  - text: prompt_initializer accepts PromptLiteLLMParams and PromptSpec, extracts bitbucket_config from litellm_params, raises ValueError("bitbucket_config is required for BitBucket prompt integration") if missing, and returns BitBucketPromptManager.
+    proof: [bitbucket-compiler-init-tests]
+  - text: prompt_initializer_registry maps SupportedPromptIntegrations.BITBUCKET.value to prompt_initializer function.
+    proof: [bitbucket-compiler-registry-tests]
+checks:
+  optional: []
+  commands:
+    - id: bitbucket-compiler-init-tests
+      why: BitBucketPromptManager initialization, integration_name, or prompt_initializer tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*init/|^bitbucket_prompt_manager::.*integration_name/|^bitbucket_initializer_tests::/)'
+    - id: bitbucket-compiler-lazy-tests
+      why: lazy property tests for prompt_manager fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*lazy/)'
+    - id: bitbucket-compiler-get-template-tests
+      why: get_prompt_template rendering and metadata extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::get_template/)'
+    - id: bitbucket-compiler-get-template-missing
+      why: get_prompt_template missing-template error case test fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::get_template_not_found/)'
+    - id: bitbucket-compiler-gate-tests
+      why: should_run_prompt_management tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*should_run/)'
+    - id: bitbucket-compiler-compile-tests
+      why: _compile_prompt_helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*compile/)'
+    - id: bitbucket-compiler-exception-wrap-tests
+      why: _compile_prompt_helper exception wrapping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*exception_wrap/)'
+    - id: bitbucket-compiler-params-tests
+      why: optional parameter projection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*params/)'
+    - id: bitbucket-compiler-async-tests
+      why: async_compile_prompt_helper tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*async/)'
+    - id: bitbucket-compiler-parse-tests
+      why: _parse_prompt_to_messages with role prefixes and blank line tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_compiler_parse_tests::|^bitbucket_prompt_manager::.*parse/)'
+    - id: bitbucket-compiler-parse-no-prefix
+      why: _parse_prompt_to_messages no-role-prefix fallback test fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_compiler_parse_tests::no_role_prefix_single_user_message/)'
+    - id: bitbucket-compiler-parse-blank
+      why: _parse_prompt_to_messages blank/whitespace-only template test fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_compiler_parse_tests::blank_template_empty_list/)'
+    - id: bitbucket-compiler-global-tests
+      why: set_global_bitbucket_config tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_global_config_tests::/)'
+    - id: bitbucket-compiler-registry-tests
+      why: prompt_initializer_registry tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_initializer_registry_tests::/)'
+oracle_cases:
+  - tools/oracle/cases/prompts/bitbucket/compile-basic.yaml
+  - tools/oracle/cases/prompts/bitbucket/compile-with-params.yaml
+  - tools/oracle/cases/prompts/bitbucket/parse-roles.yaml
+  - tools/oracle/cases/prompts/bitbucket/missing-template.yaml
+deviations:
+  - what: "BitBucketPromptManager.__init__ accepts bitbucket_config and optional prompt_id but does not construct BitBucketTemplateManager; construction is deferred until the prompt_manager property is accessed."
+    why: LiteLLM uses lazy property initialization to avoid constructing HTTP clients until actually needed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L226-L233
+  - what: "get_prompt_template does not load missing prompts; it only renders already-loaded templates and raises ValueError for missing ids."
+    why: Loading deferred to _compile_prompt_helper separates concerns between template rendering and compilation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L235-L265
+  - what: "Role prefixes (System:, User:, Assistant:) are detected case-insensitively (via lowercasing), while message role fields output lowercase role names."
+    why: LiteLLM's implementation matches on line.lower().startswith('system:') and outputs role field with 'system', 'user', 'assistant' in lowercase.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L341-L350
+  - what: "Blank lines (stripped empty) do not contribute to message content and do not trigger role transitions in _parse_prompt_to_messages."
+    why: LiteLLM skips blank lines entirely during parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L335-L338
+  - what: >-
+      _parse_prompt_to_messages wraps a non-empty template with no role prefix into a single message with role "user" and content being the full stripped template.
+    why: LiteLLM's fallback treats unprefixed non-empty templates as single user messages using the whole template.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L379-L381
+  - what: "_parse_prompt_to_messages returns empty list when template is blank or whitespace-only, not a user message with empty content."
+    why: LiteLLM skips blank lines and returns empty list if nothing remains after stripping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L379-L382
+  - what: "Optional parameters (temperature, max_tokens, top_p, frequency_penalty, presence_penalty) are included if present in metadata, including null values."
+    why: LiteLLM checks `if param in prompt_metadata` to include values even when None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L461-L470
+  - what: "prompt_label and prompt_version parameters are part of the signature for interface compatibility but are never used."
+    why: LiteLLM includes these for parity with other backends, but BitBucket uses only prompt_id and prompt_variables.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L425-L432
+out_of_scope:
+  - "Function: BitBucketPromptManager.pre_call_hook, post_call_hook, get_available_prompts, reload_prompts. Owner: source defines these but they are not part of the open-source completion path. B4058 owns the actual completion-hook adapters."
+  - "Function: BitBucketPromptManager.get_chat_completion_prompt, async_get_chat_completion_prompt. Owner: B4058. These are upper completion-hook adapters that call PromptManagementBase orchestration."
+  - "Module: BitBucketTemplateManager, BitBucketClient file fetching, template rendering. Owner: B4055."
+pitfalls:
+  - "BitBucketPromptManager.__init__ accepts bitbucket_config and optional prompt_id but never constructs BitBucketTemplateManager. The property access defers construction until the prompt_manager property is first accessed."
+  - "get_prompt_template does not call _load_prompt_from_bitbucket; it only renders templates already in prompt_manager.prompts. Missing templates raise ValueError with exact message `Prompt template '{prompt_id}' not found`."
+  - "_compile_prompt_helper loads missing prompts by calling _load_prompt_from_bitbucket if prompt_id is not in prompt_manager.prompts, but get_prompt_template never does."
+  - "Role prefixes are matched case-insensitively: line.lower().startswith('system:'), line.lower().startswith('user:'), line.lower().startswith('assistant:'), but the message role field is always the literal lowercase 'system', 'user', or 'assistant', regardless of how the prefix was capitalized in the template."
+  - "_parse_prompt_to_messages skips blank lines entirely (line.strip() empty). A blank line does not contribute content or create a role transition."
+  - "_parse_prompt_to_messages returns a single-item list with role 'user' and full content if no role markers exist and the template is not empty. For empty/whitespace-only templates, it returns an empty list."
+  - "The five optional parameters (temperature, max_tokens, top_p, frequency_penalty, presence_penalty) are included if present in metadata, even with null/None values. The check is `if param in prompt_metadata`, not `if param and prompt_metadata.get(param)`."
+  - "_compile_prompt_helper wraps any exception raised during prompt loading or parsing in ValueError with message 'Error compiling prompt '{prompt_id}': {e}'."
+  - "prompt_initializer_registry maps SupportedPromptIntegrations.BITBUCKET.value (the string value, not the enum) to the initializer function. Access via integration_name as a string key."
+  - "prompt_initializer extracts bitbucket_config from litellm_params and raises ValueError with message 'bitbucket_config is required for BitBucket prompt integration' if missing."
+  - "Label and version parameters in _compile_prompt_helper are part of the signature for interface compatibility with other backends but are never consumed."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Noma legacy scan policy and mutations
 status: todo
 depends_on: [B173, B917]
-file: null
+file: tasks/B3780-noma-scan-policy.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/noma/noma.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/noma.py"

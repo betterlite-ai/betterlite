@@ -1,0 +1,190 @@
+id: B3762
+title: Cisco inspection calls and nonstreaming lifecycle hooks
+description: >-
+  Construct CiscoAIDefenseGuardrail instances and implement the lifecycle hooks
+  that perform chat and MCP HTTP inspections, connecting them to the common
+  verdict engine. Implement the constructor initializer (api_key, api_base,
+  inspection_type, enabled_rules, timeout settings, configuration resolution),
+  the three synchronous hooks (async_pre_call_hook for input inspection,
+  async_moderation_hook for mid-call inspection, async_post_call_success_hook
+  for nonstreaming output inspection), and the HTTP inspection orchestration
+  (_inspect_chat and _post_inspection) that builds payloads, sends requests
+  with correct headers, parses responses, and delegates verdict finalization
+  to shared logic. Preserve disabled redirects on inspection requests (fastapi
+  HTTPException detail payload) and separate JSON-RPC MCP envelope handling
+  in request bodies.
+
+  The streaming output hook (async_post_call_streaming_iterator_hook) remains
+  out of scope; streaming hooks buffer chunks and apply verdicts but do not
+  change the core inspection request/response cycle. The MCP post-tool hook
+  lives on the mixin in cisco_ai_defense_mcp.py and is registered separately.
+
+  Configuration normalization, verdict records, redaction application, and
+  metadata attachment all belong to prerequisites. This part owns only the
+  guardrail initialization and the request/response inspection workflow that
+  feeds the verdict engine with the right message shapes and carries forward
+  the inspection surface context (chat vs. mcp, input vs. output).
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/cisco_inspection.rs
+    - crates/betterlite-guardrails/src/cisco_inspection/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/cisco-inspection/**
+    - tools/oracle/fuzz/corpus/helper_case/cisco-inspection-*
+    - tools/oracle/helpers/b3762.py
+    - tools/oracle/helpers/b3762/**
+    - tools/oracle/src/helpers/guardrails/b3762.rs
+    - tools/oracle/src/helpers/guardrails/b3762/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L137-L241
+    why: __init__ initializes api_key, api_base, inspection_type, enabled_rules, timeout, and validates config choices via helpers from B3759.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L293-L343
+    why: async_pre_call_hook filters by inspection_type, guards on should_run_guardrail, dispatches to _inspect_chat or _inspect_mcp_request, adds header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L345-L383
+    why: async_moderation_hook (during_call) filters by inspection_type, guards on event_type, same dispatch as pre_call, adds header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L385-L417
+    why: async_post_call_success_hook filters mcp (returns early), guards on post_call event_type, extracts response messages, builds conversation, calls _inspect_chat with direction=output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L752-L784
+    why: _inspect_chat calls _build_chat_payload (from B3759), calls _post_inspection, delegates to _finalize_inspection with verdict response and ScanContext.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L802-L849
+    why: _post_inspection builds headers, sends POST with json payload and timeout, handles httpx errors (status, timeout, request, JSON parse) wrapped as CiscoAIDefenseGuardrailAPIError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L851-L857
+    why: _build_headers returns CISCO_API_KEY_HEADER, Content-Type, Accept, User-Agent with litellm_version.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L287-L319
+    why: _inspect_mcp_request builds MCP request payload, calls _post_inspection, delegates to _finalize_inspection with surface="mcp", direction="input".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L321-L359
+    why: _inspect_mcp_response builds MCP response payload, calls _post_inspection, delegates to _finalize_inspection with surface="mcp", direction="output".
+
+dod:
+  - text: >-
+      __init__ accepts api_key (or CISCO_AI_DEFENSE_API_KEY env var), api_base
+      (or CISCO_AI_DEFENSE_API_BASE env var, default CISCO_DEFAULT_API_BASE),
+      inspection_type (or env var, default "chat"), enabled_rules, timeout, and
+      uses _resolve_choice/_coerce_timeout/_infer_inspection_type_from_mode/
+      _normalize_rule helpers to normalize. Raises CiscoAIDefenseGuardrailMissingSecrets
+      when api_key is absent. Calls parent CustomGuardrail.__init__ with supported hooks.
+    proof: [inspection-tests]
+  - text: >-
+      async_pre_call_hook filters on _surface_matches(is_mcp), returns data
+      unchanged if surface mismatch or should_run_guardrail fails. On match,
+      calls _inspect_chat (for chat) or _inspect_mcp_request (for mcp) with
+      request messages/arguments, then adds guardrail header and returns data.
+    proof: [inspection-tests]
+  - text: >-
+      async_moderation_hook (during_call) has same surface/run guards and dispatch
+      as async_pre_call_hook. Both use GuardrailEventHooks.pre_call/during_call for chat,
+      pre_mcp_call/during_mcp_call for mcp.
+    proof: [inspection-tests]
+  - text: >-
+      async_post_call_success_hook returns response early if inspection_type != "chat".
+      Extracts response messages via _extract_response_messages, builds conversation by
+      prepending request messages, calls _inspect_chat with direction="output" and
+      response_obj. Returns response after adding header.
+    proof: [inspection-tests]
+  - text: >-
+      _inspect_chat calls _build_chat_payload (from B3759), posts to
+      {api_base}{inspect_path}, catches exceptions and dispatches to
+      _handle_api_error, delegates verdict response to _finalize_inspection
+      with _ScanContext(surface="chat", direction=direction).
+    proof: [inspection-tests]
+  - text: >-
+      _post_inspection builds headers via _build_headers, calls
+      client.build_request("POST", url, headers, json=payload, timeout=self.timeout),
+      client.send(request, follow_redirects=False). All errors (HTTP status, timeout,
+      network, JSON parse) are wrapped as CiscoAIDefenseGuardrailAPIError and raised.
+    proof: [inspection-tests]
+  - text: >-
+      _build_headers returns dict with CISCO_API_KEY_HEADER (api_key value),
+      Content-Type (application/json), Accept (application/json), User-Agent
+      (litellm/{litellm_version}).
+    proof: [inspection-tests]
+  - text: >-
+      _inspect_mcp_request builds MCP request payload via _build_mcp_request_payload (from B3761),
+      calls _post_inspection, catches exceptions and dispatches to _handle_api_error,
+      delegates verdict response to _finalize_inspection with _ScanContext(surface="mcp", direction="input").
+      When payload builder returns None, logs debug and returns {}, skipping inspection.
+    proof: [inspection-tests]
+  - text: >-
+      _inspect_mcp_response builds MCP response payload via _build_mcp_response_payload (from B3761),
+      calls _post_inspection, catches exceptions and dispatches to _handle_api_error,
+      delegates verdict response to _finalize_inspection with _ScanContext(surface="mcp", direction="output").
+      When payload builder returns None, logs debug and returns {}, skipping inspection.
+    proof: [inspection-tests]
+  - text: >-
+      _inspect_mcp_request returns {} without calling _post_inspection when
+      _build_mcp_request_payload returns None.
+    proof: [inspection-tests]
+  - text: >-
+      _inspect_mcp_response returns {} without calling _post_inspection when
+      _build_mcp_response_payload returns None.
+    proof: [inspection-tests]
+  - text: >-
+      All _post_inspection failures (HTTP status, timeout, network, JSON parse)
+      wrap uniformly into CiscoAIDefenseGuardrailAPIError, route through _handle_api_error,
+      and delegate final verdict logic to _finalize_inspection.
+    proof: [inspection-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: inspection-tests
+      why: The cisco inspection module tests fail, do not exist, or do not exercise hook dispatch and payload building.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_inspection::)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/cisco-inspection/constructor-initializes-config.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/pre-call-hook-extracts-messages.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/moderation-hook-same-dispatch.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/post-call-hook-output-direction.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/post-call-hook-ignores-mcp.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/inspect-chat-sends-request.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/inspect-chat-handles-api-error.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/inspect-mcp-request-sends-request.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/inspect-mcp-request-skips-on-missing-payload.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/inspect-mcp-response-sends-request.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/inspect-mcp-response-skips-on-missing-payload.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/post-inspection-disables-redirects.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/post-inspection-timeout-handling.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/post-inspection-all-errors-wrap.yaml
+  - tools/oracle/cases/helpers/cisco-inspection/build-headers-api-key.yaml
+
+deviations:
+  - what: >-
+      All _post_inspection failures (HTTP status errors, timeouts, network errors,
+      JSON parse errors) wrap uniformly into CiscoAIDefenseGuardrailAPIError, which
+      is caught by _inspect_chat and _inspect_mcp_request/response and routed through
+      _handle_api_error for fallback_on_error policy handling.
+    why: >-
+      Uniform error handling ensures consistent fallback behavior across all transport
+      failure modes. The verdict engine (_finalize_inspection) only processes successful
+      responses; error policy decisions are deferred to _handle_api_error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L814-L849
+
+out_of_scope:
+  - Configuration normalization, mode inference, record definitions, and supported_hooks list; those belong to B3759.
+  - Building chat inspection payloads (_build_chat_payload, _build_metadata, _build_config); those belong to B3759.
+  - Verdict envelope parsing, action normalization, sanitized payload extraction, MCP argument decoding; those belong to B3758.
+  - Request and response redaction application; those belong to B3757.
+  - Verdict finalization, decision logging, metadata attachment to request, error fallback policy, and block payload building; those belong to B3760.
+  - Building MCP request/response payloads (_build_mcp_request_payload, _build_mcp_response_payload), MCP post-tool hook (async_post_mcp_tool_call_hook), and MCP output replacement; those belong to B3761.
+  - Message and tool-argument extraction from requests/responses; those belong to B3756.
+  - Streaming output hook (async_post_call_streaming_iterator_hook); that buffers and applies verdicts to streamed chunks.
+  - HTTP client setup and async handler acquisition; those are framework dependencies (H).
+  - CustomGuardrail base class initialization; that belongs to the framework (F).
+  - should_run_guardrail filtering by event_type and metadata; that belongs to the guardrail base (F).
+
+pitfalls:
+  - The async_handler is acquired via get_async_httpx_client with llm_provider=httpxSpecialProvider.GuardrailCallback; it is not instantiated in this task.
+  - _post_inspection sends with follow_redirects=False to prevent following inspector API redirects; this is deliberate, unlike normal HTTP clients.
+  - Surface matching must check inspection_type against is_mcp (inferred from call_type), not consult request shape; call_type is the proxy's routing decision, not caller-controlled.
+  - _inspect_mcp_request and _inspect_mcp_response are inherited from _CiscoAIDefenseMcpMixin via multiple inheritance in the class declaration, following the same inspection and error-handling pattern as _inspect_chat.
+  - _post_inspection raises CiscoAIDefenseGuardrailAPIError for all transport failures; _inspect_chat and MCP variants catch it and dispatch to _handle_api_error for policy handling, never re-raising.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,10 @@
+kind: helper
+name: cisco-rewrite-message-string-content
+call:
+  cisco_conversation:
+    function: rewrite
+    input: [{role: user, content: x, id: m1}, {role: assistant, content: y}]
+    sanitized_text: clean
+env: {}
+compare:
+  ignore: []

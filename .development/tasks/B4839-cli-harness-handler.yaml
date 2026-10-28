@@ -1,0 +1,107 @@
+id: B4839
+title: Drive CLI harness turns and install private session assets
+description: >-
+  Implement CLIHarnessHandler in crates/betterlite-harness, which spawns and manages
+  CLI-based agent runtimes (Claude Code, Codex, OpenCode). The handler validates the
+  binary is present, prepares a private directory with config files and cached directories,
+  streams JSON-delimited events from stdout, collects stderr into a bounded ring buffer,
+  and cleans up processes on disconnection. Complete the BaseHarnessHandler protocol with
+  async start(), turn(), stop() methods, native_session_id(), and resume().
+
+  start() calls config.validate_environment, checks the binary exists via sandbox.which(),
+  creates a private temp directory, calls config.transform_session_setup to build config
+  and file lists, creates symbolic links for persisted cache directories (with 'sh -c'
+  scripts that fail safely), writes config files and skills to the sandbox, and stores
+  the setup and private directory for later turns.
+
+  turn() assembles a turn request, spawns the process with env and cwd, establishes stdin,
+  reads stdout in HARNESS_STREAM_READ_CHUNK_BYTES chunks to avoid the StreamReader's 64KiB
+  limit, decodes each line as JSON with decode_json_line, streams parsed events through
+  config.transform_stream_line, tracks native session ids from the state, collects stderr
+  asynchronously into a deque with maxlen=HARNESS_STDERR_TAIL_LINES (40 lines), and on
+  early exit kills the process. Finally, calls config.transform_turn_response with the
+  accumulated state, exit code and stderr tail, then sets ctx.final_text and ctx.output_json.
+
+  Implement async helpers: iter_stream_lines (read chunks until EOF, yield newline-split
+  lines), drain_stderr (stream stderr lines into a bounded ring, decoding UTF-8 with
+  replacement), send_stdin (write and close), private_dir_for (call sandbox.tempdir()),
+  sandbox_path (prepend private_dir if path is relative), persist_dir (run shell script
+  that links directories to ~/.cache/litellm-harness/<subpath>), and copy_skills (read
+  skill files and write them to the sandbox with OS separators converted to forward slashes).
+
+  Add a cargo-fuzz target at crates/betterlite-harness/fuzz/fuzz_targets/cli_jsonl_framing.rs
+  that feeds arbitrary bytes to iter_stream_lines, and seed its corpus with JSON lines from
+  the turn() test cases (each chunk arriving separately, then arriving in one read, then split
+  mid-line, then with no newline at the end). Replay the corpus in a normal test named
+  replays_the_cli_jsonl_framing_corpus that parses every file without a panic or hang.
+
+  Every behavior at the pinned LiteLLM commit is present. Shell script linking may fail
+  gracefully with debug logging. Process shutdown is owned by sandbox.exec; this handler
+  only calls proc.kill() on early exit from turn().
+scope:
+  paths:
+    - crates/betterlite-harness/src/cli_handler.rs
+    - crates/betterlite-harness/src/cli_handler/**
+    - crates/betterlite-harness/fuzz/fuzz_targets/cli_jsonl_framing.rs
+    - crates/betterlite-harness/fuzz/corpus/cli_jsonl_framing/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/cli_handler.py#L28-L88
+    why: Helper functions (iter_stream_lines, drain_stderr, send_stdin, private_dir_for, sandbox_path, persist_dir, copy_skills) and the PERSIST_DIR_SCRIPT
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/cli_handler.py#L91-L162
+    why: CLIHarnessHandler class with start, turn, stop, native_session_id, resume methods
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2221-L2222
+    why: HARNESS_STDERR_TAIL_LINES (40) and HARNESS_STREAM_READ_CHUNK_BYTES (64 KiB) constants
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/base.py#L15-L43
+    why: BaseHarnessHandler protocol that CLIHarnessHandler implements
+dod:
+  - text: CLIHarnessHandler stores the config, private dir, setup, native session id and current process; start() validates the binary exists and prepares the private directory.
+    proof: [cli-handler-tests]
+  - text: Every turn spawns a process, streams stdout JSON lines without truncation, collects stderr in a bounded ring, and yields events from config.transform_stream_line.
+    proof: [cli-handler-tests]
+  - text: Early process exit kills the subprocess, and process shutdown is idempotent.
+    proof: [cli-handler-tests]
+  - text: Session resumption preserves the native session id across turns when config.get_native_session_id updates state.
+    proof: [cli-handler-tests]
+  - text: stdin is closed before stdout is read, unblocking the subprocess.
+    proof: [cli-handler-tests]
+  - text: stderr is collected asynchronously and does not block event processing.
+    proof: [cli-handler-tests]
+  - text: Every helper function preserves LiteLLM's semantics. iter_stream_lines reads chunks until EOF. drain_stderr appends to a deque. send_stdin encodes, writes and closes. persist_dir runs a shell script safely. copy_skills resolves the skill name and converts OS separators to forward slashes.
+    proof: [cli-handler-tests]
+  - text: The cargo-fuzz target crates/betterlite-harness/fuzz/fuzz_targets/cli_jsonl_framing.rs exists, replays a nonempty corpus, and every file parses without a panic or hang.
+    proof: [cli-jsonl-framing-corpus]
+  - text: A fuzz corpus seed covers chunks arriving separately, in one read, split mid-line and without a trailing newline.
+    proof: [cli-jsonl-framing-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cli-handler-tests
+      why: CLI handler tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^cli_handler::/) - test(replays_the_cli_jsonl_framing_corpus)'
+    - id: cli-jsonl-framing-corpus
+      why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+      run: test -f crates/betterlite-harness/fuzz/fuzz_targets/cli_jsonl_framing.rs && test -n "$(ls -A crates/betterlite-harness/fuzz/corpus/cli_jsonl_framing)" && cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(replays_the_cli_jsonl_framing_corpus)'
+oracle_cases: []
+deviations:
+  - what: Shell script linking with persist_dir logs failures at debug level and continues; cache persistence is optional.
+    why: LiteLLM logs errors from subprocess failures and does not block on cache unavailability; betterlite's verbose_logger preserves that behavior.
+  - what: Process shutdown on early turn() exit calls proc.kill(), leaving the sandbox to track process group cleanup.
+    why: The LocalSandbox (B4832) owns process group cleanup; CLIHarnessHandler signals early exit but does not manage SIGTERM/SIGKILL timing or session groups.
+out_of_scope:
+  - Harness-specific config transformations. Each harness implements transform_session_setup, transform_turn_request, create_stream_state, transform_stream_line, get_native_session_id and transform_turn_response in its own config (B4834–B4839 parts).
+  - Skill file format validation beyond SKILL.md presence check (owned by read_skill_files in B4831).
+  - Logging beyond debug-level messages for setup failures.
+  - Process group isolation and SIGTERM/SIGKILL handling (owned by LocalSandbox in B4832).
+pitfalls:
+  - iter_stream_lines must yield buffered partial lines on EOF, not lose them; test with input that has no trailing newline.
+  - drain_stderr appends decoded lines to a deque with maxlen; oldest lines are silently dropped when the buffer is full.
+  - Process stdout is read before wait() is called; if the process fills stdout and blocks, turn() blocks on draining chunks. Never change the order.
+  - The native_session_id is captured from state after every line parse; config.get_native_session_id may return None early in the turn.
+  - A process that closes stderr before stdout will not deadlock because drain_stderr is concurrent; ensure both streams are drained.
+  - PERSIST_DIR_SCRIPT uses shell variable substitution with HOME fallback; it runs in the sandbox and must reference paths the sandbox can create.
+  - Skill names are resolved with os.path.realpath before use, so symlink targets must be readable; the copy loop includes os.sep replacement for Windows compatibility even on Unix.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

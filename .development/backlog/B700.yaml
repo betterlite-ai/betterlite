@@ -1,7 +1,7 @@
 id: B700
 milestone: M4 keys, spend and management
 title: Native Postgres access and transaction test support
-status: todo
+status: done
 depends_on: [B000, B171, B860]
 file: tasks/B700-postgres-store.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/models/base.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 257

@@ -1,0 +1,157 @@
+id: B3912
+title: Langfuse prompt links and child observations
+description: >-
+  Build child observation methods in crates/betterlite-logging that attach prompts
+  to generation parameters and create spans for guardrail and provider-specific
+  metadata below a generation. The four functions operate on injected dependencies
+  (tracing client, parent observation, metadata records, prompt API client) and
+  return typed results without acquiring credentials or constructing a logger.
+
+  Implement `_log_guardrail_information_as_span` to iterate guardrail_information
+  records from a StandardLoggingPayload, create a child span for each with name
+  "guardrail", and capture guardrail_name, guardrail_mode and masked_entity_count
+  as metadata. Preserve start_time and end_time from the guardrail entry. Do nothing
+  when guardrail_information is absent, empty, not a list, or a list entry is not
+  a dict; errors are logged and iteration continues.
+
+  Implement `_add_prompt_to_generation_params` to attach prompt objects to a
+  generation_params dict in order of precedence. When user_prompt is None and
+  prompt_management_metadata is None, return generation_params unchanged with no
+  "prompt" key written (no-op branch). When user_prompt is a dict with type "chat"
+  or "text", wrap it in ChatPromptClient or TextPromptClient from langfuse.model.
+  When user_prompt is a dict with version and prompt keys (raw Langfuse prompt
+  object), detect whether prompt is a string (text) or list (chat) and construct
+  Prompt_Text or Prompt_Chat; preserve Pydantic field detection for labels and tags
+  conditionally when both exist. When prompt_management_metadata is present and
+  prompt_integration equals "langfuse", call langfuse_client.get_prompt by
+  prompt_id (non-blocking on failure, logs debug only). Otherwise (user_prompt is
+  not a dict, or prompt_management_metadata is not None but prompt_integration !=
+  "langfuse"), assign raw user_prompt to generation_params["prompt"], including
+  None with no validation. Return the modified generation_params dict.
+
+  Implement `log_provider_specific_information_as_span` to iterate hidden_params in
+  the enrichments dict and create spans for vertex_ai_grounding_metadata. If
+  vertex_ai_grounding_metadata is a list, iterate each element: dict elements
+  trigger one span per key-value pair (with key as the span name and value as input);
+  non-dict elements get one span named "vertex_ai_grounding_metadata" with the
+  element as input. If not a list (including dict at top level), create one span
+  named "vertex_ai_grounding_metadata" with the whole value as input. Call
+  `_end_grounding_span` for each span to construct and immediately end it.
+
+  Implement helper `_end_grounding_span` to create a child span with the supplied
+  name, set input to the value argument using observation_attributes, and immediately
+  end the span without awaiting any async operation. This helper captures the span
+  creation/closure pattern without depending on generation assembly (B3906).
+scope:
+  paths:
+    - crates/betterlite-logging/src/langfuse_child_observations.rs
+    - crates/betterlite-logging/src/langfuse_child_observations/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1093-L1148
+    why: _log_guardrail_information_as_span; iterate guardrails and create child spans with metadata preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1151-L1218
+    why: _add_prompt_to_generation_params; attach prompt objects, detect type/content shape, handle API fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1221-L1247
+    why: log_provider_specific_information_as_span; iterate hidden params and create grounding spans for Vertex AI metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1249-L1258
+    why: _end_grounding_span; create and immediately end a child span with input attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570-L3616
+    why: StandardLoggingPayload.guardrail_information field carries list of guardrail records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3180-L3194
+    why: StandardLoggingMetadata.prompt_management_metadata field within StandardLoggingPayload.metadata, carrying prompt_id, prompt_variables and prompt_integration.
+dod:
+  - text: _log_guardrail_information_as_span returns early when standard_logging_object
+      is None, when guardrail_information is empty or missing, or when guardrail_information
+      is not a list; no spans are created in any case.
+    proof: [guardrail-empty-tests]
+  - text: _log_guardrail_information_as_span creates a child span per guardrail dict entry
+      with name "guardrail", attaches start_time from entry, and captures guardrail_name,
+      guardrail_mode and masked_entity_count in metadata.
+    proof: [guardrail-dict-tests]
+  - text: _log_guardrail_information_as_span skips non-dict entries with a debug log
+      and calls span.end() with guardrail end_time after creating each span.
+    proof: [guardrail-dict-tests]
+  - text: _add_prompt_to_generation_params pops prompt from clean_metadata; when user_prompt
+      is None and prompt_management_metadata is None, returns generation_params unchanged
+      with no "prompt" key written (no-op branch).
+    proof: [prompt-no-op-tests]
+  - text: _add_prompt_to_generation_params dispatches on dict user_prompt type field
+      ("chat" or "text") to create ChatPromptClient or TextPromptClient, and handles
+      version/prompt dicts for Prompt_Chat (list) and Prompt_Text (string) with
+      conditional labels and tags insertion based on model fields.
+    proof: [prompt-dict-tests]
+  - text: _add_prompt_to_generation_params fetches via langfuse_client.get_prompt when
+      prompt_management_metadata is not None and prompt_integration equals "langfuse",
+      logs debug message on exception without blocking, and returns generation_params
+      with no prompt key on fetch failure.
+    proof: [prompt-rest-tests]
+  - text: _add_prompt_to_generation_params assigns raw user_prompt (which may be None
+      or non-dict values) to generation_params["prompt"] in the final else branch when
+      user_prompt is not a dict and either prompt_management_metadata is None or
+      prompt_integration is not "langfuse".
+    proof: [prompt-fallback-tests]
+  - text: log_provider_specific_information_as_span extracts hidden_params from enrichments
+      and returns early if hidden_params is None.
+    proof: [grounding-hidden-tests]
+  - text: log_provider_specific_information_as_span handles vertex_ai_grounding_metadata
+      as list of dicts (creates span per key/value pair), list of non-dicts (creates one
+      span per element), and single non-list value (creates one span).
+    proof: [grounding-list-tests]
+  - text: _end_grounding_span creates a child span with supplied name, sets input attribute
+      to value, and ends the span immediately without explicit end_time argument.
+    proof: [grounding-span-tests]
+checks:
+  optional: []
+  commands:
+    - id: guardrail-empty-tests
+      why: _log_guardrail_information_as_span does not handle empty, missing or non-list guardrail_information
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::(guardrail_empty|guardrail_none|guardrail_non_list)/)'
+    - id: guardrail-dict-tests
+      why: Guardrail dict entries do not create child spans with correct metadata or timing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::(guardrail_dict|guardrail_skip|guardrail_end_time)/)'
+    - id: prompt-no-op-tests
+      why: _add_prompt_to_generation_params does not implement the no-op branch when both user_prompt and prompt_management_metadata are None
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::prompt_no_op/)'
+    - id: prompt-dict-tests
+      why: Dict prompts with type field do not create ChatPromptClient or TextPromptClient correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::(prompt_type|prompt_version|prompt_labels|prompt_tags)/)'
+    - id: prompt-rest-tests
+      why: REST prompt fetch via prompt_management_metadata does not handle langfuse integration or fetch errors correctly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::(prompt_rest|prompt_fetch_error)/)'
+    - id: prompt-fallback-tests
+      why: Fallback assignment of raw user_prompt does not occur in final else branch
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::prompt_fallback/)'
+    - id: grounding-hidden-tests
+      why: log_provider_specific_information_as_span does not extract hidden_params or return early when None
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::grounding_hidden/)'
+    - id: grounding-list-tests
+      why: Vertex AI grounding metadata list iteration does not create correct spans for dicts, non-dicts and single values
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::(grounding_list|grounding_dict|grounding_scalar)/)'
+    - id: grounding-span-tests
+      why: _end_grounding_span does not create child span with input attribute or does not end immediately
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_child_observations::grounding_span/)'
+oracle_cases: []
+deviations:
+  - what: Prompt validation failures (Prompt_Text/Prompt_Chat construction) are logged as errors and treated non-blocking; the generation parameters are returned unchanged.
+    why: LiteLLM logs validation errors and proceeds without attaching a prompt; betterlite preserves this behavior to avoid breaking generation on invalid prompt metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1206-L1208
+  - what: Langfuse API prompt fetch failures are logged as non-blocking debug messages and the generation parameters are returned unchanged.
+    why: LiteLLM treats prompt fetch errors as non-blocking to prevent missing a generation due to API unavailability; betterlite preserves this defensive posture.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1209-L1213
+out_of_scope:
+  - Observation attributes, trace/generation identity and span timing are owned by B3901.
+  - Langfuse API client construction and prompt caching are owned by B3904.
+  - StandardLoggingPayload guardrail and prompt record normalization are owned by B254.
+  - Generation assembly, trace composition and calling these child-observation functions are owned by B3906.
+pitfalls:
+  - Guardrail span creation is non-blocking when guardrail_information is missing, empty, not a list, or when any list entry is not a dict; errors are logged and iteration continues on each element.
+  - Pydantic field detection (model_fields vs __fields__) is conditional; labels and tags attributes are only added if both fields exist in the prompt model definition.
+  - Langfuse-managed prompt fetch via get_prompt is non-blocking; a non-blocking debug message is logged on failure and generation parameters remain unchanged.
+  - Grounding list iteration creates per-key spans for dict elements and one vertex_ai_grounding_metadata span for non-dict elements; a top-level dict (not in a list) gets one vertex_ai_grounding_metadata span with the whole dict as input.
+  - _end_grounding_span immediately ends a span after creation; no await or async task spawning is involved.
+  - User-supplied prompts with "type" field take precedence over prompt_management_metadata; the type check happens before the API fetch.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

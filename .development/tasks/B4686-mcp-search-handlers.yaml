@@ -1,0 +1,210 @@
+id: B4686
+title: Authorized MCP search and tool invocation handlers
+description: >-
+  Build the five virtual-tool handlers in betterlite-server::mcp::search_handlers with typed
+  caller scope and result envelopes. Resolve accessible tools afresh for opaque IDs, validate
+  invocation arguments against the served schema, and preserve auth headers, attribution,
+  requested server identity and guardrail context through execution.
+
+  handle_agent_search resolves agents accessible to the user, calls semantic search against
+  them with top_k clamped to at least one, and returns a JSON result array or an error.
+  Calls check_feature_access_for_user("agents") before search; other errors return is_error
+  text results.
+
+  handle_skill_search resolves skills available to the user, calls semantic search with
+  top_k clamped to at least one and at most MAX_SKILL_SEARCH_TOP_K, and returns a JSON
+  result array or an error. Other failures warn and return is_error text results.
+
+  handle_mcp_tool_search searches MCP tools after listing those accessible to the user,
+  with optional semantic ranking if embedding_model is configured. Validates config and
+  embedding requirements; returns JSON search results or is_error text.
+
+  handle_mcp_proxy_tool dispatches three virtual proxy tools: MCP_PROXY_SEARCH_TOOL_NAME
+  for semantic ranking, MCP_PROXY_SCHEMA_TOOL_NAME for tool schema retrieval, and
+  MCP_PROXY_CALL_TOOL_NAME for tool invocation. Resolves opaque tool_id to the
+  corresponding accessible tool, validates JSON schema for call arguments, and returns
+  MCP search/schema results or delegates to handle_mcp_tool_call.
+
+  handle_mcp_tool_call checks authorization for the requested server(s). When mcp_servers
+  are explicitly requested but resolve to no allowed servers, it calls raise_denied_scoped_mcp_access
+  with detail before raising HTTP 403. When no servers are allowed and no local-tool fallback exists,
+  it raises HTTP 403. Executes the tool via the operations layer and preserves guardrail_context
+  through to execute_mcp_tool. Unknown or unauthorized IDs and invalid arguments return MCP is_error
+  text results. Config or embedding failures become tool errors, not keyword fallback.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/search_handlers.rs
+    - crates/betterlite-server/src/mcp/search_handlers/**
+    - tools/oracle/cases/helpers/search-handlers/**
+    - tools/oracle/helpers/b4686.py
+    - tools/oracle/helpers/b4686/**
+    - tools/oracle/src/helpers/server/b4686.rs
+    - tools/oracle/src/helpers/server/b4686/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L386-L417
+    why: handle_agent_search checks feature access, searches agents, and returns JSON or error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L420-L450
+    why: handle_skill_search searches skills with clamped top_k and returns JSON or error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L453-L500
+    why: handle_mcp_tool_search lists accessible tools and searches with optional semantic ranking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L503-L591
+    why: handle_mcp_proxy_tool dispatches search, schema and call tools by name with ID resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L594-L649
+    why: handle_mcp_tool_call checks server access, validates args and executes MCP tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L377-L383
+    why: _text_tool_result wraps JSON or error strings in MCP CallToolResult format with is_error field.
+
+dod:
+  - text: handle_agent_search calls check_feature_access_for_user("agents"), searches accessible agents with top_k clamped to at least one, and returns JSON results or is_error text.
+    proof: [search-handlers-tests, agent-search-feature-check, agent-search-top-k]
+  - text: handle_skill_search resolves available skills, searches with top_k clamped to [1, MAX_SKILL_SEARCH_TOP_K], and returns JSON results or is_error text.
+    proof: [search-handlers-tests, skill-search-top-k-bounds]
+  - text: handle_mcp_tool_search lists accessible MCP tools, validates config and embedding model requirements, and searches with optional semantic ranking.
+    proof: [search-handlers-tests, mcp-tool-search-config, mcp-tool-search-optional-ranking]
+  - text: handle_mcp_proxy_tool dispatches MCP_PROXY_SEARCH_TOOL_NAME, MCP_PROXY_SCHEMA_TOOL_NAME and MCP_PROXY_CALL_TOOL_NAME by name with opaque tool_id resolution.
+    proof: [search-handlers-tests, proxy-tool-dispatch, proxy-tool-id-resolution]
+  - text: handle_mcp_proxy_tool's search branch validates config and embedding model requirements, returning is_error text for invalid mcp_tool_search_settings() result or when embedding_model is set without llm_router, mirroring handle_mcp_tool_search's own checks.
+    proof: [search-handlers-tests, proxy-tool-search-config, proxy-tool-search-embedding]
+  - text: handle_mcp_proxy_tool validates tool call arguments against the served JSON schema and returns MCP is_error text on validation failure.
+    proof: [search-handlers-tests, proxy-tool-schema-validation]
+  - text: handle_mcp_tool_call checks authorization for requested_server(s), raises HTTP 403 before dispatch when no accessible servers exist and no local-tool fallback is available.
+    proof: [search-handlers-tests, mcp-tool-call-auth-check]
+  - text: When mcp_servers are explicitly requested, handle_mcp_tool_call calls raise_denied_scoped_mcp_access with per-reason detail before raising HTTP 403.
+    proof: [search-handlers-tests, mcp-tool-call-scoped-denial]
+  - text: handle_mcp_tool_call returns MCP is_error text for unknown tool IDs, invalid arguments, config errors and embedding failures, not keyword fallback.
+    proof: [search-handlers-tests, mcp-tool-call-error-handling]
+  - text: New oracle helper operation for search handlers integrates with pinned LiteLLM behavior and replays case corpus.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: search-handlers-types
+      why: Handler types, CallToolResult or result enum missing
+      run: grep -q 'fn handle_agent_search' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'fn handle_skill_search' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'fn handle_mcp_tool_search' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'fn handle_mcp_proxy_tool' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'fn handle_mcp_tool_call' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: search-handlers-tests
+      why: Handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::search_handlers::tests::/) - test(/replays_the_/)'
+    - id: agent-search-feature-check
+      why: handle_agent_search does not check feature access for agents
+      run: grep -qE 'check_feature_access|agents' crates/betterlite-server/src/mcp/search_handlers.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::search_handlers::tests::.*agent.*feature/)'
+    - id: agent-search-top-k
+      why: handle_agent_search does not clamp top_k to at least one
+      run: grep -qE 'max\(.*1\)|\.max\(1\)' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: skill-search-top-k-bounds
+      why: handle_skill_search does not clamp top_k to [1, MAX_SKILL_SEARCH_TOP_K]
+      run: grep -qE 'min\(.*max\(.*1\)' crates/betterlite-server/src/mcp/search_handlers.rs || grep -qE 'MAX_SKILL_SEARCH_TOP_K' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: mcp-tool-search-config
+      why: handle_mcp_tool_search does not validate config and embedding requirements
+      run: grep -qE 'mcp_tool_search_settings|ValidationError' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: mcp-tool-search-optional-ranking
+      why: handle_mcp_tool_search does not support optional semantic ranking
+      run: grep -qE 'if.*embedding_model|SemanticToolRanker|rank_mcp_tools' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: proxy-tool-dispatch
+      why: handle_mcp_proxy_tool does not dispatch by MCP proxy tool name
+      run: grep -q 'MCP_PROXY_SEARCH_TOOL_NAME' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'MCP_PROXY_SCHEMA_TOOL_NAME' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'MCP_PROXY_CALL_TOOL_NAME' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: proxy-tool-id-resolution
+      why: handle_mcp_proxy_tool does not resolve opaque tool_id to accessible tool
+      run: grep -qE 'mcp_proxy_tool_id|tools_by_id' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: proxy-tool-search-config
+      why: handle_mcp_proxy_tool's search branch does not validate mcp_tool_search_settings() for config errors
+      run: grep -qE 'mcp_tool_search_settings|ValidationError' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'proxy-tool-search-config-invalid.yaml' tools/oracle/cases/helpers/search-handlers/*.yaml
+    - id: proxy-tool-search-embedding
+      why: handle_mcp_proxy_tool's search branch does not check embedding_model without llm_router
+      run: grep -qE 'embedding_model.*llm_router|llm_router.*embedding_model' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'proxy-tool-search-embedding' tools/oracle/cases/helpers/search-handlers/*.yaml
+    - id: proxy-tool-schema-validation
+      why: handle_mcp_proxy_tool does not validate call arguments against JSON schema
+      run: grep -qE 'validate|JsonSchemaValidationError|input_schema' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: mcp-tool-call-auth-check
+      why: handle_mcp_tool_call does not check authorization before dispatch
+      run: grep -q '_get_allowed_mcp_servers' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q '_list_mcp_tools' crates/betterlite-server/src/mcp/search_handlers.rs && grep -q 'raise_denied_scoped_mcp_access' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: mcp-tool-call-error-handling
+      why: handle_mcp_tool_call does not return MCP is_error text on validation failure
+      run: grep -qE '_text_tool_result.*is_error' crates/betterlite-server/src/mcp/search_handlers.rs
+    - id: mcp-tool-call-scoped-denial
+      why: handle_mcp_tool_call does not call raise_denied_scoped_mcp_access for explicit server denial
+      run: grep -q 'raise_denied_scoped_mcp_access' crates/betterlite-server/src/mcp/search_handlers.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::b4686::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails
+      run: test -f tools/oracle/helpers/b4686.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or HelperCase decoder fails replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/search-handlers-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/search-handlers/agent-search-basic.yaml
+  - tools/oracle/cases/helpers/search-handlers/agent-search-feature-denied.yaml
+  - tools/oracle/cases/helpers/search-handlers/agent-search-top-k-clamp.yaml
+  - tools/oracle/cases/helpers/search-handlers/skill-search-basic.yaml
+  - tools/oracle/cases/helpers/search-handlers/skill-search-top-k-bounds.yaml
+  - tools/oracle/cases/helpers/search-handlers/mcp-tool-search-config-valid.yaml
+  - tools/oracle/cases/helpers/search-handlers/mcp-tool-search-config-invalid.yaml
+  - tools/oracle/cases/helpers/search-handlers/mcp-tool-search-optional-ranking.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-search-by-name.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-search-hardcoded-top-k.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-search-config-invalid.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-search-embedding-without-router.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-schema-by-id.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-call-validate-schema.yaml
+  - tools/oracle/cases/helpers/search-handlers/proxy-tool-unknown-id.yaml
+  - tools/oracle/cases/helpers/search-handlers/mcp-tool-call-auth-check.yaml
+  - tools/oracle/cases/helpers/search-handlers/mcp-tool-call-scoped-denial.yaml
+  - tools/oracle/cases/helpers/search-handlers/mcp-tool-call-no-accessible-servers.yaml
+
+deviations:
+  - what: "handle_agent_search returns MCP text tool results (is_error flag) instead of structured OpenAI Assistants response objects."
+    why: "Betterlite's MCP virtual tools operate through the MCP CallToolResult wire format, not through the proxy's agent endpoints. Search results are serialized as JSON strings wrapped in CallToolResult, consistent with other MCP tool handlers."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L386-L417
+  - what: "Config or embedding failures in handle_mcp_tool_search return is_error text results instead of silently falling back to keyword search."
+    why: "Betterlite preserves LiteLLM's semantics when semantic ranking is configured: config errors or embedding failures prevent search and return error text. If the caller wants graceful fallback, it must be added by a task that owns that layer."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L469-L500
+
+out_of_scope:
+  - Agent search implementation and accessible_agents resolver; owned by agent endpoints.
+  - Skill search implementation; owned by skills handler.
+  - MCP tool listing and server enumeration (_list_mcp_tools, _get_allowed_mcp_servers).
+  - MCP tool execution and server dispatch (execute_mcp_tool, _dispatch_virtual_mcp_tool).
+  - Denial and error handling for unresolved permissions (raise_denied_scoped_mcp_access).
+  - Tool call result serialization (complete_call_tool_result).
+  - Semantic tool ranking and virtual schema definitions; owned by B4684.
+  - Authentication and identity resolution; owned by B732.
+  - RBAC feature checks for other features; owned by B864.
+
+pitfalls:
+  - Only handle_mcp_tool_call receives an optional guardrail_context parameter, which
+    it must preserve through to execute_mcp_tool. It carries filter metadata, allowed_tools
+    narrowing and mask decisions from the semantic pre-hook. handle_mcp_proxy_tool does not
+    receive or forward guardrail_context when delegating to handle_mcp_tool_call.
+  - handle_mcp_proxy_tool dispatches three distinct virtual tools by checking the name
+    parameter against MCP_PROXY_* constants. An unknown name within the proxy scope raises
+    HTTP 400 with HTTPException; this is different from MCP is_error text results returned
+    to the client for semantic reasons (config errors, invalid args).
+  - Config validation errors in handle_mcp_tool_search and handle_mcp_proxy_tool's search
+    branch return a ValidationError; check isinstance before converting to text, since a valid
+    config returns a settings object. The embedding model is optional but when it is set,
+    llm_router must exist or an error is returned.
+  - handle_mcp_proxy_tool's MCP_PROXY_SEARCH_TOOL_NAME branch validates mcp_tool_search_settings()
+    and checks embedding_model without llm_router, returning is_error text on either failure.
+    This mirrors handle_mcp_tool_search's config checks and must be tested separately.
+  - _text_tool_result is a simple wrapper that creates an MCP CallToolResult with either
+    plain JSON strings or error messages. The is_error flag determines whether the MCP SDK
+    treats the result as a success or failure. Use it consistently across all handlers.
+  - JSON validation for proxy tool call arguments must use jsonschema.validate against the
+    tool's served input_schema. Handle JsonSchemaValidationError and return an is_error
+    result with the validation message; do not raise HTTPException.
+  - Authorization failures in handle_mcp_tool_call raise HTTP 403 with FastAPI HTTPException
+    before execute_mcp_tool is called. This is an HTTP contract, not an MCP tool result;
+    the client receives a gateway error, not a tool error. Only when the key has no accessible
+    servers should the 403 be raised; if servers are present but not authorized, let the
+    execute layer handle it.
+  - handle_mcp_proxy_tool's MCP_PROXY_SEARCH_TOOL_NAME branch uses a hardcoded top_k=5
+    (not caller-supplied) for semantic ranking; the proxy schema and call branches preserve
+    caller arguments through their delegations.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

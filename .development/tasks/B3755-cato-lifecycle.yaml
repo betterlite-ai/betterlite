@@ -1,0 +1,84 @@
+id: B3755
+title: Cato lifecycle hooks and Lakera threshold checks
+description: >-
+  Build Cato lifecycle hooks and Lakera threshold decision helpers.
+
+  Cato Networks lifecycle hooks (`async_pre_call_hook`, `async_moderation_hook`, `async_post_call_success_hook`,
+  `async_post_call_streaming_iterator_hook` and their helpers) inspect requests and responses at each stage,
+  call `call_cato_guardrail` to send messages to Cato's API, handle block/anonymize actions and redact
+  responses back to the caller. Websocket streaming connects to Cato's output analyzer, consumes verified
+  chunks and block signals, and propagates sender failures and cancellation.
+
+  Lakera AI (`_check_response_flagged`) provides legacy score/flag decision logic independent of B107's
+  moderation call site. The method compares prompt_injection and jailbreak scores against configured
+  `category_thresholds`, and returns a block decision when flagged is true with no thresholds set.
+
+  Register helper operation `lakera_moderation_threshold_check` to verify that a Lakera response above a
+  configured threshold blocks the request.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/cato/**
+    - crates/betterlite-guardrails/src/lakera.rs
+    - crates/betterlite-config/src/sections/cato_lifecycle.rs
+    - crates/betterlite-config/src/sections/cato_lifecycle/**
+    - crates/betterlite-guardrails/src/lakera/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/__init__.py#L11-L29
+    why: Cato Networks guardrail initialization and registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L158-L192
+    why: "Cato lifecycle entry points: async_pre_call_hook and async_moderation_hook."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L290-L338
+    why: "Cato pre_call and moderation inspection: call_cato_guardrail and _handle_block_action."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L429-L480
+    why: "Cato post_call output inspection: call_cato_guardrail_on_output and _handle_block_action_on_output."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L573-L679
+    why: "Cato output redaction and streaming: _inspect_output_text, async_post_call_success_hook, async_post_call_streaming_iterator_hook, _await_cato_message and forward_the_stream_to_cato."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L74-L113
+    why: Lakera _check_response_flagged method with score threshold comparison and flagged status handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L202-L204
+    why: LakeraCategoryThresholds configuration for prompt_injection and jailbreak score thresholds.
+dod:
+  - text: Cato pre_call and moderation hooks call call_cato_guardrail with inspection messages, handle block action by raising a 400 error, and handle anonymize action by redacting the request.
+    proof: [cato-lifecycle-tests]
+  - text: Cato post_call_success_hook and async_post_call_streaming_iterator_hook inspect and redact response fragments, propagate block actions as 400 errors and handle websocket connection failures and stream sender failures.
+    proof: [cato-lifecycle-tests]
+  - text: Cato websocket streaming consumes verified_chunks, passes them through, yields on done signal and raises on blocking_message from the upstream Cato service.
+    proof: [cato-lifecycle-tests]
+  - text: Lakera _check_response_flagged method compares prompt_injection and jailbreak scores against configured thresholds and returns block decision when flagged is true with no thresholds set.
+    proof: [lakera-moderation-tests, lakera-threshold-helper]
+  - text: Every mutant in the Cato and Lakera lifecycle logic is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cato-lifecycle-tests
+      why: Cato lifecycle hooks tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/cato_lifecycle/)'
+    - id: lakera-moderation-tests
+      why: Lakera moderation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/lakera_moderation/)'
+    - id: lakera-threshold-helper
+      why: the lakera_moderation_threshold_check oracle helper does not exist or fails its tests
+      run: test -f tools/oracle/helpers/b3755.py && test -f tools/oracle/src/helpers/guardrails/b3755.rs && grep -q "lakera_moderation_threshold_check" tools/oracle/src/helpers/guardrails/b3755.rs
+oracle_cases: []
+deviations:
+  - what: Cato and Lakera guardrails are initialized and invoked through the betterlite-guardrails module, not loaded as Python callbacks.
+    why: betterlite is Rust; guardrail dispatch is built into the proxy request handling, not registered as callbacks.
+  - what: Enabled roles for Lakera are loaded at proxy startup from the guardrail config, not dynamically from litellm.guardrail_name_config_map at request time.
+    why: betterlite loads all configuration before startup and does not mutate it per request.
+out_of_scope:
+  - Lakera v2 API (lakera_ai_v2.py); only the v1 implementation is ported.
+  - Cato inspection message flattening and request redaction primitives; those are covered by B3754.
+  - The proxy hook entry points that route guardrail events to individual guardrails.
+  - The websocket transport layer (websockets crate); betterlite builds guardrail-specific websocket logic on top.
+pitfalls:
+  - Environment variable lookup for CATO_API_KEY must happen at guardrail initialization time, not at hook invocation time, so a changed env var does not affect running proxies.
+  - Lakera tool_calls extraction must handle nested function structures; iterate tool_calls and extract function.arguments from each tool dict.
+  - The moderation_check mode in Lakera is "pre_call" or "in_parallel"; "in_parallel" must queue the check without blocking the proxy response.
+  - Lakera category_scores are floats (0.0 to 1.0); thresholds are floats; comparisons must be >= not >.
+  - Enabled roles must be case-insensitive; LiteLLM accepts "System", "User", "Assistant" but normalizes to lowercase role values.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

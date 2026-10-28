@@ -2,8 +2,8 @@ id: B3668
 milestone: M6 guardrails
 title: Chat guardrail request and completed-response rewrites
 status: todo
-depends_on: [B3661, B3663, B3664, B3665, B3667, B2227]
-file: null
+depends_on: [B3661, B3663, B3664, B3665, B3667, B2227, B3246]
+file: tasks/B3668-chat-guardrail-rewrites.yaml
 covers:
   - "litellm/llms/openai/chat/guardrail_translation/handler.py"
 parent: B104

@@ -1,0 +1,10 @@
+kind: helper
+name: cisco-rewrite-flat-parts
+call:
+  cisco_conversation:
+    function: rewrite
+    input: [{type: input_image, image_url: "https://x"}, {type: input_text, text: x}, {type: input_text, text: y}]
+    sanitized_text: clean
+env: {}
+compare:
+  ignore: []

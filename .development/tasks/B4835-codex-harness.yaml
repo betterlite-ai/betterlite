@@ -75,6 +75,7 @@ scope:
     - tools/oracle/src/helpers/harness/b4835.rs
     - tools/oracle/src/helpers/harness/b4835/**
     - crates/betterlite-harness/src/transformation/**
+    - crates/betterlite-harness/src/sandbox/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py

@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Filter and batch Vantage CSV uploads
 status: todo
 depends_on: [B173, B3061]
-file: null
+file: tasks/B3064-vantage-delivery.yaml
 covers:
   - "litellm/integrations/focus/destinations/vantage_destination.py"
 parent: B073
