@@ -5,7 +5,11 @@ use std::collections::BTreeMap;
 
 #[rstest::rstest]
 #[case::loads_network_mock("", None, false)]
-#[case::loads_network_mock_explicit_false("litellm_settings:\n  network_mock: false\n", None, false)]
+#[case::loads_network_mock_explicit_false(
+    "litellm_settings:\n  network_mock: false\n",
+    None,
+    false
+)]
 #[case::loads_network_mock_explicit_true("litellm_settings:\n  network_mock: true\n", None, true)]
 fn openai_mock_transport_config_cases(
     #[case] source: &str,
