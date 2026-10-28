@@ -53,29 +53,35 @@ pub struct BedrockError {
 impl fmt::Debug for BedrockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BedrockError")
+            .field(
+                "error",
+                &redacted_pairs(self.error.headers.as_deref().unwrap_or(&[])),
+            )
             .field("headers", &redacted_headers(self.headers.as_ref()))
             .field("response_headers", &redacted_pairs(&self.response_headers))
+            .field("response_body", &self.response_body)
             .finish()
     }
 }
 
-fn redacted_pairs<'pairs>(pairs: &'pairs [(String, String)]) -> Vec<(&'pairs str, &'static str)> {
+fn redacted_pairs(pairs: &[(String, String)]) -> Vec<(&str, &'static str)> {
     pairs
         .iter()
         .map(|(name, _)| (name.as_str(), "[REDACTED]"))
         .collect()
 }
 
-fn redacted_headers<'headers>(
-    headers: Option<&'headers ErrorHeaders>,
-) -> Option<Vec<(&'headers str, &'static str)>> {
-    headers.map(|headers| match headers {
-        ErrorHeaders::Http(pairs) => redacted_pairs(pairs),
-        ErrorHeaders::Mapping(entries) => entries
-            .iter()
-            .map(|(name, _)| (name.as_str(), "[REDACTED]"))
-            .collect(),
-    })
+fn redacted_headers(headers: Option<&ErrorHeaders>) -> Option<Vec<(&str, &'static str)>> {
+    match headers {
+        None => None,
+        Some(ErrorHeaders::Http(pairs)) => Some(redacted_pairs(pairs)),
+        Some(ErrorHeaders::Mapping(entries)) => Some(
+            entries
+                .iter()
+                .map(|(name, _)| (name.as_str(), "[REDACTED]"))
+                .collect(),
+        ),
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
