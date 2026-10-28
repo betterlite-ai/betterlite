@@ -29,3 +29,10 @@ fn replays_the_otlp_decode_corpus() {
     drop(decode_otlp(b"{}", None, None));
     drop(decode_otlp(b"[]", None, None));
 }
+
+#[test]
+fn decodes_a_valid_span_payload() {
+    let rows = decode_otlp(br#"[{"trace_id":"trace","span_id":"span"}]"#, None, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].trace_id, "trace");
+}
