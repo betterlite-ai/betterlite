@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
 
 use super::stream::Item;
 use super::{CodexHarnessConfig, CodexStreamState};
@@ -11,7 +10,6 @@ use crate::events::Event;
 use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, ReasoningEffort};
 use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
 use crate::sandbox::local::LocalSandbox;
-use crate::sandbox::{CompletedRun, Sandbox, SandboxCommand};
 use crate::transformation::{BaseCLIHarnessConfig as _, BaseHarnessConfig as _};
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
 
@@ -84,8 +82,9 @@ fn stream_tool_call_precedes_result() {
 )]
 fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] is_error: bool) {
     let item: Item = serde_json::from_str(raw).unwrap();
+    let projection = super::stream::tool_projection(&item);
     assert_eq!(
-        super::stream::tool_output(&item),
+        (projection.output, projection.is_error),
         (expected.to_owned(), is_error)
     );
 }
@@ -94,17 +93,17 @@ fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] i
 fn mcp_object_result_is_compact_json() {
     let item: Item =
         serde_json::from_str(r#"{"type":"mcp_tool_call","result":{"ok":true,"n":1}}"#).unwrap();
-    let (output, is_error) = super::stream::tool_output(&item);
-    assert_eq!(output, r#"{"n":1,"ok":true}"#);
-    assert!(!is_error);
+    let projection = super::stream::tool_projection(&item);
+    assert_eq!(projection.output, r#"{"n":1,"ok":true}"#);
+    assert!(!projection.is_error);
 }
 
 #[test]
 fn missing_mcp_arguments_are_null() {
     let item: Item = serde_json::from_str(r#"{"type":"mcp_tool_call","tool":"list"}"#).unwrap();
-    let (_, _, input, _) = super::stream::tool_input(&item);
+    let projection = super::stream::tool_projection(&item);
     assert_eq!(
-        serde_json::to_string(&input).unwrap(),
+        serde_json::to_string(&projection.input).unwrap(),
         r#"{"arguments":null}"#
     );
 }
@@ -114,8 +113,11 @@ fn missing_mcp_arguments_are_null() {
 #[case::missing(r#"{"type":"file_change","id":"f1"}"#)]
 fn missing_or_null_changes_are_empty_array(#[case] raw: &str) {
     let item: Item = serde_json::from_str(raw).unwrap();
-    let (_, _, input, _) = super::stream::tool_input(&item);
-    assert_eq!(serde_json::to_string(&input["changes"]).unwrap(), "[]");
+    let projection = super::stream::tool_projection(&item);
+    assert_eq!(
+        serde_json::to_string(&projection.input["changes"]).unwrap(),
+        "[]"
+    );
 }
 
 #[test]
@@ -349,105 +351,33 @@ fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
     (root, context)
 }
 
-struct ContainerSandbox(LocalSandbox);
-
-impl Sandbox for ContainerSandbox {
-    type Process = <LocalSandbox as Sandbox>::Process;
-
-    fn workdir(&self) -> &str {
-        self.0.workdir()
-    }
-
-    fn is_container(&self) -> bool {
-        true
-    }
-
-    async fn exec(&self, command: &SandboxCommand) -> Result<Self::Process, HarnessError> {
-        self.0.exec(command).await
-    }
-
-    async fn run(
-        &self,
-        command: &SandboxCommand,
-        timeout: Duration,
-        max_output_bytes: usize,
-    ) -> Result<CompletedRun, HarnessError> {
-        self.0.run(command, timeout, max_output_bytes).await
-    }
-
-    async fn read(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>, HarnessError> {
-        self.0.read(path, max_bytes).await
-    }
-
-    async fn write(&self, path: &str, data: &[u8]) -> Result<(), HarnessError> {
-        self.0.write(path, data).await
-    }
-
-    fn host_url(&self, port: u16) -> String {
-        self.0.host_url(port)
-    }
-
-    async fn which(&self, binary: &str) -> Result<Option<String>, HarnessError> {
-        self.0.which(binary).await
-    }
-
-    async fn snapshot(&self) -> Result<BTreeMap<String, String>, HarnessError> {
-        self.0.snapshot().await
-    }
-
-    async fn tempdir(&self) -> Result<String, HarnessError> {
-        self.0.tempdir().await
-    }
-
-    async fn close(&self) -> Result<(), HarnessError> {
-        self.0.close().await
-    }
-}
-
 #[rstest::rstest]
-#[case::read_only_first_turn(PermissionMode::ReadOnly, false, false, &["--sandbox", "read-only"])]
-#[case::full_first_turn(PermissionMode::Full, false, false, &["--sandbox", "workspace-write"])]
-#[case::read_only_resumed(PermissionMode::ReadOnly, true, false, &["-c", "sandbox_mode=\"read-only\""])]
-#[case::full_resumed(PermissionMode::Full, true, false, &["-c", "sandbox_mode=\"workspace-write\""])]
+#[case::read_only_first_turn(PermissionMode::ReadOnly, None, false, &["--sandbox", "read-only"])]
+#[case::full_first_turn(PermissionMode::Full, None, false, &["--sandbox", "workspace-write"])]
+#[case::read_only_resumed(PermissionMode::ReadOnly, Some("thread-1"), false, &["-c", "sandbox_mode=\"read-only\""])]
+#[case::full_resumed(PermissionMode::Full, Some("thread-1"), false, &["-c", "sandbox_mode=\"workspace-write\""])]
 #[case::full_container(
     PermissionMode::Full,
-    false,
+    None,
     true,
     &["--dangerously-bypass-approvals-and-sandbox"]
 )]
 #[case::read_only_container_still_sandboxes(
     PermissionMode::ReadOnly,
-    false,
+    None,
     true,
     &["--sandbox", "read-only"]
 )]
 fn permission_args_match_mode_and_container(
     #[case] permissions: PermissionMode,
-    #[case] resumed: bool,
+    #[case] native_session_id: Option<&str>,
     #[case] is_container: bool,
     #[case] expected: &[&str],
 ) {
-    let (_root, mut plain) = session_context();
-    plain.settings.permissions = permissions;
-    if is_container {
-        let container = ContainerSandbox(plain.sandbox);
-        let context = SessionContext {
-            harness: plain.harness,
-            sandbox: container,
-            session_id: plain.session_id,
-            settings: plain.settings,
-            outcome: plain.outcome,
-        };
-        assert_eq!(
-            super::permissions::permission_args(&context, resumed),
-            expected
-        );
-    } else {
-        assert_eq!(
-            super::permissions::permission_args(&plain, resumed),
-            expected
-        );
-    }
+    assert_eq!(
+        super::permissions::permission_args(permissions, is_container, native_session_id),
+        expected
+    );
 }
 
 #[test]

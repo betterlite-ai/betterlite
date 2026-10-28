@@ -32,7 +32,7 @@ use features::feature_overrides;
 use permissions::permission_args;
 use provider::provider_overrides;
 use stream::{CodexStreamState, ItemEventKind, StreamEvent};
-use stream_events::{record_error, record_thread_id, record_turn_failed, transform_item_event};
+use stream_events::{record_thread_id, record_turn_failed, transform_item_event};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CodexHarnessConfig;
@@ -134,7 +134,11 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
             argv.extend(["-m".to_owned(), model.clone()]);
         }
         argv.extend(config::pairs("-c", &provider_overrides(context)?));
-        argv.extend(permission_args(context, turn.native_session_id.is_some()));
+        argv.extend(permission_args(
+            context.settings.permissions,
+            context.sandbox.is_container(),
+            turn.native_session_id,
+        ));
         argv.extend(config::pairs("-c", &feature_overrides(context, &options)));
         argv.extend(config::pairs("-c", &config_overrides(&options.config)?));
         if turn.setup.files.contains_key(CODEX_SCHEMA_FILENAME) {
@@ -180,7 +184,11 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
                 transform_item_event(item, ItemEventKind::Completed, state)
             }
             StreamEvent::Error { message } => {
-                record_error(message, state);
+                state.error = Some(
+                    message
+                        .filter(|text| !text.is_empty())
+                        .unwrap_or_else(|| "codex reported an error".to_owned()),
+                );
                 Vec::new()
             }
             StreamEvent::TurnFailed { error } => {
