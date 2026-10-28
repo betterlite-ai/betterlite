@@ -48,9 +48,15 @@ impl Walker<'_> {
                 if let Value::String(text) = node {
                     self.charge(text.len())?;
                 }
+                if let Value::Number(number) = node {
+                    self.charge(number.as_str().len())?;
+                }
                 let output = self.scalar(node, context);
                 if let Value::String(text) = &output {
                     self.charge(text.len())?;
+                }
+                if let Value::Number(number) = &output {
+                    self.charge(number.as_str().len())?;
                 }
                 Some(output)
             }

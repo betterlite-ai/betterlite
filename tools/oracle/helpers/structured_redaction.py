@@ -1,5 +1,4 @@
 import json
-from collections.abc import Callable
 from typing import TypeAlias, cast
 
 from litellm.litellm_core_utils.sensitive_data_masker import (
@@ -24,9 +23,7 @@ def class_call(function: Json, data: Json, excluded: Json) -> Json:
     if function == "mask":
         return cast(Json, masker.mask(data))
     if function == "mask_value" and isinstance(data, str):
-        method = "_mask_value"
-        mask_value = cast(Callable[[str], str], getattr(masker, method))
-        return mask_value(data)
+        return masker._mask_value(data)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     excluded_keys = names(excluded)
     if function == "is_sensitive_key" and isinstance(data, str):
         return masker.is_sensitive_key(data, excluded_keys)

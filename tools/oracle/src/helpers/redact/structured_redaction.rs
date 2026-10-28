@@ -54,7 +54,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let masker = SensitiveDataMasker::new();
+        let masker = SensitiveDataMasker::default();
         let result = match input {
             Input::MaskSensitiveStructure { data } => mask_sensitive_structure(data),
             Input::MaskCredentialsInPayload { data } => mask_credentials_in_payload(data),

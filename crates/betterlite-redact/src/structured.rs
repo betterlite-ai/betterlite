@@ -26,13 +26,6 @@ pub struct SensitiveDataMasker {
 }
 
 impl SensitiveDataMasker {
-    #[must_use]
-    pub fn new() -> Self {
-        let extra_patterns = Vec::<String>::new();
-        let overrides = ["cost"];
-        Self::with_patterns(extra_patterns, overrides)
-    }
-
     pub fn with_patterns<I, J>(extra_patterns: I, overrides: J) -> Self
     where
         I: IntoIterator,
@@ -65,12 +58,6 @@ impl SensitiveDataMasker {
             mask_short_values: true,
             max_work: MAX_WORK,
         }
-    }
-
-    fn error_masker() -> Self {
-        let mut masker = Self::new();
-        masker.visible_suffix = 0;
-        masker
     }
 
     #[must_use]
@@ -130,19 +117,28 @@ impl SensitiveDataMasker {
 
 impl Default for SensitiveDataMasker {
     fn default() -> Self {
-        Self::new()
+        Self::with_patterns(Vec::<String>::new(), ["cost"])
     }
 }
 
 #[must_use]
 pub fn mask_sensitive_structure(data: &Value) -> Value {
-    let masker = SensitiveDataMasker::error_masker();
+    let defaults = SensitiveDataMasker::default();
+    let masker = SensitiveDataMasker {
+        sensitive_patterns: defaults.sensitive_patterns,
+        non_sensitive_overrides: defaults.non_sensitive_overrides,
+        visible_prefix: defaults.visible_prefix,
+        visible_suffix: 0,
+        mask_char: defaults.mask_char,
+        mask_short_values: defaults.mask_short_values,
+        max_work: defaults.max_work,
+    };
     masker.mask(data)
 }
 
 #[must_use]
 pub fn mask_credentials_in_payload(data: &Value) -> Value {
-    let masker = SensitiveDataMasker::new();
+    let masker = SensitiveDataMasker::default();
     let mut walker = walk::Walker {
         masker: &masker,
         kind: walk::Kind::Payload,

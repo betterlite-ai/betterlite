@@ -9,7 +9,7 @@ pub fn mask_sensitive_keys(
     data: &Map<String, Value>,
     sensitive_fields: &BTreeSet<String>,
 ) -> Value {
-    let masker = SensitiveDataMasker::new();
+    let masker = SensitiveDataMasker::default();
     let mut walker = walk::Walker {
         masker: &masker,
         kind: walk::Kind::Exact(sensitive_fields),
@@ -24,7 +24,7 @@ pub fn mask_sensitive_keys(
 
 #[must_use]
 pub fn redact_credentials_in_payload(data: &Map<String, Value>) -> Value {
-    let masker = SensitiveDataMasker::new();
+    let masker = SensitiveDataMasker::default();
     let mut walker = walk::Walker {
         masker: &masker,
         kind: walk::Kind::Redact,

@@ -54,6 +54,9 @@ use std::collections::BTreeSet;
 #[case::byte_boundary(Kind::Payload, 10, 4, "\"x\"", "\"x\"")]
 #[case::byte_equal(Kind::Payload, 10, 3, "\"x\"", "\"x\"")]
 #[case::byte_exhausted(Kind::Payload, 10, 2, "\"x\"", "\"REDACTED\"")]
+#[case::number_bytes(Kind::Payload, 10, 5, "12345", "\"REDACTED\"")]
+#[case::number_equal(Kind::Payload, 10, 11, "12345", "12345")]
+#[case::number_output(Kind::Payload, 10, 10, "12345", "\"REDACTED\"")]
 #[case::zero_work(Kind::Payload, 10, 0, "{}", "\"REDACTED\"")]
 #[case::key_bytes(Kind::Payload, 10, 2, r#"{"abc":null}"#, "\"REDACTED\"")]
 #[case::exact(Kind::Exact(&BTreeSet::from(["token".to_owned()])), 10, 100, r#"{"token":"short","other":"short"}"#, r#"{"token":"*****","other":"short"}"#)]
@@ -67,7 +70,7 @@ fn structured_redaction_behavior_tests_behavior(
     #[case] expected: &str,
 ) {
     let input: Payload = serde_json::from_str(source).unwrap();
-    let masker = SensitiveDataMasker::new();
+    let masker = SensitiveDataMasker::default();
     let mut walker = Walker {
         masker: &masker,
         kind,

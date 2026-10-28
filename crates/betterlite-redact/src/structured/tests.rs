@@ -11,7 +11,7 @@ use super::{
 };
 
 fn parse(source: &str) -> Value {
-    serde_json::from_str(source).expect("valid JSON fixture")
+    super::parse::parse_payload(source.as_bytes()).expect("valid JSON fixture")
 }
 
 #[rstest]
@@ -20,6 +20,10 @@ fn parse(source: &str) -> Value {
     parse(r#"{"api_key":"sk-1***************", "model":"gpt-4o", "input_cost_per_token":0.1}"#)
 )]
 #[case::short_secret(parse(r#"{"token":"short"}"#), parse(r#"{"token":"shor*"}"#))]
+#[case::numeric_spelling(
+    parse(r#"{"token":1.50,"key":1.0e20}"#),
+    parse(r#"{"token":"***","key":"1e+2*"}"#)
+)]
 #[case::tenancy(
     parse(r#"{"oci_tenancy":"secret"}"#),
     parse(r#"{"oci_tenancy":"secr**"}"#)
@@ -49,10 +53,18 @@ fn structured_redaction_behavior_tests_behavior(#[case] input: Value, #[case] ex
     assert_eq!(actual, expected);
 }
 
+#[test]
+fn preserves_large_integer_payloads() {
+    let source = r#"{"plain":123456789012345678901234567890}"#;
+    let payload = parse(source);
+    assert_eq!(mask_sensitive_structure(&payload).to_string(), source);
+    assert_eq!(mask_credentials_in_payload(&payload).to_string(), source);
+}
+
 #[rstest]
 #[case::payload_depth(10, mask_credentials_in_payload)]
 #[case::redact_depth(101, |data: &Value| redact_credentials_in_payload(data.as_object().unwrap()))]
-#[case::hard_depth(100, |data: &Value| SensitiveDataMasker::new().mask_dict(data.as_object().unwrap(), 0, usize::MAX, &[]))]
+#[case::hard_depth(100, |data: &Value| SensitiveDataMasker::default().mask_dict(data.as_object().unwrap(), 0, usize::MAX, &[]))]
 fn structured_redaction_bounds(#[case] depth: usize, #[case] mask: fn(&Value) -> Value) {
     let mut input = parse(r#"{"api_key":"secret"}"#);
     let mut expected = Value::String("REDACTED".to_owned());
@@ -99,8 +111,8 @@ fn custom_patterns_and_overrides_are_local() {
     let masker = SensitiveDataMasker::with_patterns(["connection"], ["cost"]);
     assert!(masker.is_sensitive_key("mongodb_connection_string", &[]));
     assert!(!masker.is_sensitive_key("input_cost_per_token", &[]));
-    assert!(!SensitiveDataMasker::new().is_sensitive_key("mongodb_connection_string", &[]));
-    assert!(SensitiveDataMasker::new().is_sensitive_key("\u{212a}ey", &[]));
+    assert!(!SensitiveDataMasker::default().is_sensitive_key("mongodb_connection_string", &[]));
+    assert!(SensitiveDataMasker::default().is_sensitive_key("\u{212a}ey", &[]));
     assert!(
         !SensitiveDataMasker::with_patterns(["connection"], Vec::<String>::new())
             .is_sensitive_key("input_cost_per_token", &[])
@@ -109,7 +121,7 @@ fn custom_patterns_and_overrides_are_local() {
 
 #[test]
 fn excluded_keys_are_honored_by_mask_dict() {
-    let masker = SensitiveDataMasker::new();
+    let masker = SensitiveDataMasker::default();
     let excluded = vec!["api_key".to_owned()];
     let input = parse(r#"{"api_key":"secret-value"}"#);
     let output = masker.mask_dict(input.as_object().expect("object"), 0, 10, &excluded);
@@ -121,7 +133,7 @@ fn excluded_keys_are_honored_by_mask_dict() {
 #[case::sequence(r#"{"nested":[{"api_key":"secret"}]}"#)]
 fn mask_dict_fails_closed_at_depth(#[case] source: &str) {
     let input = parse(source);
-    let masker = SensitiveDataMasker::new();
+    let masker = SensitiveDataMasker::default();
     let output = masker.mask_dict(input.as_object().unwrap(), 0, 1, &[]);
     assert_eq!(output, parse(r#"{"nested":"REDACTED"}"#));
     assert_eq!(input, parse(source));

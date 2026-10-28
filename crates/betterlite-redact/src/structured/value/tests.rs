@@ -26,10 +26,16 @@ fn structured_redaction_behavior_tests_behavior(
     #[case] short: bool,
     #[case] expected: &str,
 ) {
-    let mut masker = SensitiveDataMasker::new();
-    masker.visible_prefix = prefix;
-    masker.visible_suffix = suffix;
-    masker.mask_short_values = short;
+    let defaults = SensitiveDataMasker::default();
+    let masker = SensitiveDataMasker {
+        sensitive_patterns: defaults.sensitive_patterns,
+        non_sensitive_overrides: defaults.non_sensitive_overrides,
+        visible_prefix: prefix,
+        visible_suffix: suffix,
+        mask_char: defaults.mask_char,
+        mask_short_values: short,
+        max_work: defaults.max_work,
+    };
     assert_eq!(masker.mask_value(input), expected);
 }
 
@@ -46,8 +52,15 @@ fn mask_value_bounds(
     #[case] mask: &str,
     #[case] expected: &str,
 ) {
-    let mut masker = SensitiveDataMasker::new();
-    masker.mask_char = mask.to_owned();
-    masker.max_work = work;
+    let defaults = SensitiveDataMasker::default();
+    let masker = SensitiveDataMasker {
+        sensitive_patterns: defaults.sensitive_patterns,
+        non_sensitive_overrides: defaults.non_sensitive_overrides,
+        visible_prefix: defaults.visible_prefix,
+        visible_suffix: defaults.visible_suffix,
+        mask_char: mask.to_owned(),
+        mask_short_values: defaults.mask_short_values,
+        max_work: work,
+    };
     assert_eq!(masker.mask_value(input), expected);
 }

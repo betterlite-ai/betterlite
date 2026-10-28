@@ -6,7 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 thiserror.workspace = true
 
 [dev-dependencies]
