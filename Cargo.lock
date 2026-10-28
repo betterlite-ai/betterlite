@@ -1321,6 +1321,7 @@ dependencies = [
 name = "betterlite-streaming"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "rstest",
  "serde",
  "serde_json",
