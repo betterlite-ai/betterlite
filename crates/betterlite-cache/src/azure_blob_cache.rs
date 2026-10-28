@@ -155,20 +155,17 @@ impl AzureBlobCache {
 }
 
 fn is_container_already_exists(error: &AzureError) -> bool {
-    if error.http_status() != Some(StatusCode::Conflict) {
-        return false;
-    }
-    matches!(
-        error.kind(),
-        ErrorKind::HttpResponse {
-            error_code: Some(code),
-            ..
-        } if code == StorageErrorCode::ContainerAlreadyExists.as_ref()
-    )
+    let status = StatusCode::Conflict;
+    is_error(error, status, &StorageErrorCode::ContainerAlreadyExists)
 }
 
 fn is_blob_not_found(error: &AzureError) -> bool {
-    if error.http_status() != Some(StatusCode::NotFound) {
+    let status = StatusCode::NotFound;
+    is_error(error, status, &StorageErrorCode::BlobNotFound)
+}
+
+fn is_error(error: &AzureError, status: StatusCode, storage_code: &StorageErrorCode) -> bool {
+    if error.http_status() != Some(status) {
         return false;
     }
     matches!(
@@ -176,7 +173,7 @@ fn is_blob_not_found(error: &AzureError) -> bool {
         ErrorKind::HttpResponse {
             error_code: Some(code),
             ..
-        } if code == StorageErrorCode::BlobNotFound.as_ref()
+        } if code == storage_code.as_ref()
     )
 }
 
