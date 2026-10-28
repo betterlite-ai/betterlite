@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use serde_json::value::RawValue;
 
 use super::{
@@ -30,11 +31,10 @@ fn object_fields(
     value: &RawValue,
     path: &str,
 ) -> Result<BTreeMap<String, Box<RawValue>>, PriceFieldError> {
-    let object =
-        serde_json::from_str(value.get()).map_err(|_error| PriceFieldError::NotNumber {
-            path: path.to_owned(),
-        })?;
-    Ok(object)
+    serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotObject {
+        path: path.to_owned(),
+        source,
+    })
 }
 
 fn optional_decimal(
@@ -42,11 +42,10 @@ fn optional_decimal(
     name: &str,
     path: &str,
 ) -> Result<Option<Decimal>, PriceFieldError> {
-    let parsed = object
+    object
         .get(name)
         .map(|raw_value| decimal_at(path, raw_value))
-        .transpose()?;
-    Ok(parsed)
+        .transpose()
 }
 
 fn provider_specific(value: &RawValue) -> Result<ProviderSpecificPricing, PriceFieldError> {
@@ -91,14 +90,78 @@ fn sample(value: &RawValue) -> Result<SamplePricing, PriceFieldError> {
 }
 
 fn off_peak(value: &RawValue) -> Result<OffPeakPricing, PriceFieldError> {
-    let values = decimal_map("off_peak_pricing", value)?;
-    Ok(OffPeakPricing { values })
+    let raw_fields: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotObject {
+            path: "off_peak_pricing".to_owned(),
+            source,
+        })?;
+    for name in [
+        "input_cost_per_token",
+        "output_cost_per_token",
+        "cache_read_input_token_cost",
+    ] {
+        if let Some(raw) = raw_fields.get(name) {
+            let path = format!("off_peak_pricing.{name}");
+            decimal_at(&path, raw.as_ref())?;
+        }
+    }
+    let object: OffPeakWire =
+        serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotObject {
+            path: "off_peak_pricing".to_owned(),
+            source,
+        })?;
+    let mut values = BTreeMap::new();
+    if let Some(price) = object.input_cost_per_token {
+        values.insert("input_cost_per_token".to_owned(), price);
+    }
+    if let Some(price) = object.output_cost_per_token {
+        values.insert("output_cost_per_token".to_owned(), price);
+    }
+    if let Some(price) = object.cache_read_input_token_cost {
+        values.insert("cache_read_input_token_cost".to_owned(), price);
+    }
+    Ok(OffPeakPricing {
+        values,
+        windows: object.windows,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OffPeakWire {
+    input_cost_per_token: Option<Decimal>,
+    output_cost_per_token: Option<Decimal>,
+    cache_read_input_token_cost: Option<Decimal>,
+    #[serde(rename = "hours_utc")]
+    _hours_utc: Option<HoursUtc>,
+    windows: Option<Vec<PriceWindow>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(untagged)]
+enum HoursUtc {
+    One(String),
+    Many(Vec<String>),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct PriceWindow {
+    hours_utc: HoursUtc,
+    weekdays: Vec<Weekday>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(untagged)]
+enum Weekday {
+    Name(String),
+    Number(u8),
 }
 
 fn tiers(value: &RawValue) -> Result<Vec<TierPricing>, PriceFieldError> {
     let entries: Vec<BTreeMap<String, Box<RawValue>>> =
-        serde_json::from_str(value.get()).map_err(|_error| PriceFieldError::NotNumber {
+        serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotArray {
             path: "tiered_pricing".to_owned(),
+            source,
         })?;
     entries
         .into_iter()
@@ -110,20 +173,30 @@ fn tiers(value: &RawValue) -> Result<Vec<TierPricing>, PriceFieldError> {
                 let path = format!("tiered_pricing[{index}].{name}");
                 match name.as_str() {
                     "range" => {
-                        let bounds: Vec<Box<RawValue>> = serde_json::from_str(raw.get())
-                            .map_err(|_error| PriceFieldError::NotNumber { path: path.clone() })?;
-                        range = bounds
-                            .into_iter()
-                            .map(|bound| decimal_at(&path, bound.as_ref()))
-                            .collect::<Result<_, _>>()?;
+                        range = parse_bounds(&path, raw.as_ref())?;
                     }
                     _ if PriceField::from_wire(&name).is_some() => {
                         values.insert(name, decimal_at(&path, raw.as_ref())?);
                     }
-                    _ => {}
+                    "max_results_range" => {
+                        range = parse_bounds(&path, raw.as_ref())?;
+                    }
+                    _ => return Err(PriceFieldError::UnknownTier { path }),
                 }
             }
             Ok(TierPricing { values, range })
         })
+        .collect()
+}
+
+fn parse_bounds(path: &str, value: &RawValue) -> Result<Vec<Decimal>, PriceFieldError> {
+    let bounds: Vec<Box<RawValue>> =
+        serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotArray {
+            path: path.to_owned(),
+            source,
+        })?;
+    bounds
+        .into_iter()
+        .map(|bound| decimal_at(path, bound.as_ref()))
         .collect()
 }

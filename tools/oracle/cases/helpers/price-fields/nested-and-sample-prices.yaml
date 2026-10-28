@@ -5,7 +5,9 @@ call:
     sample_spec:
       computer_use_input_cost_per_1k_tokens: 0.00001
       file_search_cost_per_1k_calls: 0.003
+      file_search_cost_per_gb_per_day: 0.0001
     metadata:
       original_pricing_per_hour: 1.25
+      original_pricing_per_minute: 0.020833333333333333
 compare: {ignore: []}
 env: {}

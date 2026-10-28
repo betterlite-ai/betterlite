@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-use std::str::FromStr as _;
-
 use rust_decimal::Decimal;
 use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 
-mod nested;
+pub mod nested;
 use nested::apply_nested;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -39,31 +37,38 @@ pub enum PriceField {
     Other,
 }
 
+const PRICE_PREFIXES: &[(&str, PriceField)] = &[
+    ("cache_creation_", PriceField::CacheCreation),
+    ("cache_read_", PriceField::CacheRead),
+    ("input_cost_per_audio", PriceField::AudioInput),
+    ("output_cost_per_audio", PriceField::AudioOutput),
+    ("input_cost_per_image", PriceField::ImageInput),
+    ("output_cost_per_image", PriceField::ImageOutput),
+    ("input_cost_per_video", PriceField::VideoInput),
+    ("output_cost_per_video", PriceField::VideoOutput),
+    ("annotation_", PriceField::Annotation),
+    ("citation_", PriceField::Citation),
+    ("code_interpreter_", PriceField::CodeInterpreter),
+    ("computer_use_", PriceField::ComputerUse),
+    ("file_search_", PriceField::FileSearch),
+    ("vector_store_", PriceField::VectorStore),
+    ("search_context_", PriceField::SearchContext),
+    ("google_maps_", PriceField::GoogleMaps),
+    ("ocr_", PriceField::Ocr),
+    ("guardrail_", PriceField::Guardrail),
+    ("input_", PriceField::Input),
+    ("output_", PriceField::Output),
+];
+
 impl PriceField {
     fn from_wire(name: &str) -> Option<Self> {
-        let prefixes = [
-            ("cache_creation_", Self::CacheCreation),
-            ("cache_read_", Self::CacheRead),
-            ("input_cost_per_audio", Self::AudioInput),
-            ("output_cost_per_audio", Self::AudioOutput),
-            ("input_cost_per_image", Self::ImageInput),
-            ("output_cost_per_image", Self::ImageOutput),
-            ("input_cost_per_video", Self::VideoInput),
-            ("output_cost_per_video", Self::VideoOutput),
-            ("annotation_", Self::Annotation),
-            ("citation_", Self::Citation),
-            ("code_interpreter_", Self::CodeInterpreter),
-            ("computer_use_", Self::ComputerUse),
-            ("file_search_", Self::FileSearch),
-            ("vector_store_", Self::VectorStore),
-            ("search_context_", Self::SearchContext),
-            ("google_maps_", Self::GoogleMaps),
-            ("ocr_", Self::Ocr),
-            ("guardrail_", Self::Guardrail),
-            ("input_", Self::Input),
-            ("output_", Self::Output),
-        ];
-        if let Some((_, field)) = prefixes.iter().find(|(prefix, _)| name.starts_with(prefix)) {
+        if name == "output_vector_size" {
+            return None;
+        }
+        if let Some((_, field)) = PRICE_PREFIXES
+            .iter()
+            .find(|(prefix, _)| name.starts_with(prefix))
+        {
             return Some(field.clone());
         }
         let contains = [
@@ -114,6 +119,7 @@ pub struct SamplePricing {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OffPeakPricing {
     pub values: BTreeMap<String, Decimal>,
+    pub windows: Option<Vec<nested::PriceWindow>>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TierPricing {
@@ -125,8 +131,27 @@ pub struct TierPricing {
 pub enum PriceFieldError {
     #[error("price field {path} must be a JSON number")]
     NotNumber { path: String },
-    #[error("price field {path} is not a valid decimal: {value}")]
-    InvalidDecimal { path: String, value: String },
+    #[error("price field {path} is not a valid decimal: {value}: {source}")]
+    InvalidDecimal {
+        path: String,
+        value: String,
+        #[source]
+        source: rust_decimal::Error,
+    },
+    #[error("price field {path} must be a JSON object: {source}")]
+    NotObject {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("price field {path} must be a JSON array: {source}")]
+    NotArray {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("unknown tier field {path}")]
+    UnknownTier { path: String },
     #[error("price field {path} must not be null")]
     Null { path: String },
     #[error("price fields JSON is invalid: {source}")]
@@ -189,9 +214,15 @@ pub(super) fn decimal_at(path: &str, value: &RawValue) -> Result<Decimal, PriceF
             path: path.to_owned(),
         });
     }
-    Decimal::from_str(lexeme).map_err(|_error| PriceFieldError::InvalidDecimal {
+    let decimal = if lexeme.contains(['e', 'E']) {
+        Decimal::from_scientific(lexeme)
+    } else {
+        Decimal::from_str_exact(lexeme)
+    };
+    decimal.map_err(|source| PriceFieldError::InvalidDecimal {
         path: path.to_owned(),
         value: lexeme.to_owned(),
+        source,
     })
 }
 
@@ -200,8 +231,9 @@ pub(super) fn decimal_map(
     value: &RawValue,
 ) -> Result<BTreeMap<String, Decimal>, PriceFieldError> {
     let object: BTreeMap<String, Box<RawValue>> =
-        serde_json::from_str(value.get()).map_err(|_error| PriceFieldError::NotNumber {
+        serde_json::from_str(value.get()).map_err(|source| PriceFieldError::NotObject {
             path: path.to_owned(),
+            source,
         })?;
     object
         .into_iter()
