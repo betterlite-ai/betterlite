@@ -2,10 +2,10 @@ id: B3841
 milestone: M7 observability
 title: OTel request identity and baggage projections
 status: todo
-depends_on: [B3840]
-file: null
+depends_on: [B3840, B3892]
+file: tasks/B3841-otel-request-identity.yaml
 covers:
-  - "litellm/integrations/otel/model/{metadata,baggage,trace_controls,utils}.py"
+  - "litellm/integrations/otel/model/{metadata,baggage}.py"
 parent: B110
 split_from: B110
 resolution: null

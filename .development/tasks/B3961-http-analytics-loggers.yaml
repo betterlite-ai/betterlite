@@ -1,0 +1,305 @@
+id: B3961
+title: Athina Greenscale and PromptLayer event delivery
+description: >-
+  Implement three small, synchronous event adapters for HTTP analytics services over the shared
+  outbound transport. Each logger reads a single API key from environment, forwards it in
+  outbound headers or request bodies, and handles service-specific metadata filtering, time units
+  and error swallowing without re-raising.
+
+  Athina logger reads ATHINA_API_KEY and ATHINA_BASE_URL (default https://log.athina.ai) from B002;
+  POSTs to /api/v1/log/inference with athina-api-key header and JSON body containing model,
+  request, response, token usage, latency and additional metadata fields (environment, prompt_slug,
+  customer_id, customer_user_id, session_id, external_reference_id, context, expected_response,
+  user_query, tags, user_feedback, model_options, custom_attributes extracted from litellm_params.metadata).
+  Skip streaming calls that lack complete_streaming_response in kwargs; log the assembled response
+  in non-streaming mode and the buffered completion_response in streaming mode.
+
+  Greenscale logger reads GREENSCALE_API_KEY and GREENSCALE_ENDPOINT (no default) from B002;
+  POSTs to the configured GREENSCALE_ENDPOINT with api-key header and JSON body containing modelId,
+  input/outputTokenCount, timestamp (UTC ISO 8601), invocationLatency (milliseconds) and tags array.
+  Extract greenscale_project and greenscale_application metadata to top-level data fields; collect
+  remaining greenscale_* prefixed metadata keys as tag objects with key/value pairs.
+
+  PromptLayer logger reads PROMPTLAYER_API_KEY from B002; implements a two-step process. First,
+  POST to https://api.promptlayer.com/rest/track-request with function_name="openai.ChatCompletion.create",
+  kwargs dict, tags list, request_response (pydantic BaseModel converted to dict via model_dump()),
+  request_start_time and request_end_time (integer seconds since Unix epoch), and api_key.
+  Extract pl_tags from litellm_params.metadata for the tags field. If the first request succeeds
+  (success=true in response) and request_id exists, conditionally POST to https://api.promptlayer.com/rest/track-metadata
+  with request_id, api_key and remaining metadata (pl_tags removed) only when metadata dict is non-empty.
+
+  Use B173 for module_level_client.post calls. Build on B002's environment lookup for
+  ATHINA_API_KEY, ATHINA_BASE_URL, GREENSCALE_API_KEY, GREENSCALE_ENDPOINT, PROMPTLAYER_API_KEY.
+  Every call swallows exceptions; log errors via print_verbose but never re-raise.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/http_analytics_loggers.rs
+    - crates/betterlite-logging/src/http_analytics_loggers/**
+    - tools/oracle/cases/logging/http-analytics/**
+    - tools/oracle/helpers/b3961.py
+    - tools/oracle/helpers/b3961/**
+    - tools/oracle/src/helpers/logging/b3961.rs
+    - tools/oracle/src/helpers/logging/b3961/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/athina.py#L8-L31
+    why: AthinaLogger.__init__ reads ATHINA_API_KEY, ATHINA_BASE_URL (default https://log.athina.ai), builds athina-api-key header, defines additional_keys list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/athina.py#L33-L85
+    why: "log_event checks stream flag and complete_streaming_response, builds payload with model, request, response, token usage, latency, additional metadata from litellm_params.metadata, POSTs to /api/v1/log/inference with athina-api-key header, logs errors without re-raise."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/greenscale.py#L10-L18
+    why: GreenscaleLogger.__init__ reads GREENSCALE_API_KEY and GREENSCALE_ENDPOINT, builds api-key header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/greenscale.py#L20-L60
+    why: "log_event builds payload with modelId, input/outputTokenCount, UTC timestamp, invocationLatency, extracts greenscale_project/application to fields and remaining greenscale_* keys to tags array, POSTs to GREENSCALE_ENDPOINT, logs errors without re-raise."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_layer.py#L14-L16
+    why: PromptLayerLogger.__init__ reads PROMPTLAYER_API_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_layer.py#L18-L83
+    why: "log_event converts pydantic BaseModel response to dict, collects pl_tags and metadata from litellm_params, POSTs to https://api.promptlayer.com/rest/track-request with function_name=openai.ChatCompletion.create, kwargs, tags, request_response dict, integer-second timestamps, api_key; on success with request_id, conditionally POSTs metadata to https://api.promptlayer.com/rest/track-metadata only if metadata is non-empty."
+
+dod:
+  - text: "AthinaLogger initializes with ATHINA_API_KEY, ATHINA_BASE_URL (default https://log.athina.ai) and additional_keys list; builds athina-api-key header."
+    proof: [athina-init-test, athina-init-oracle]
+
+  - text: "Athina log_event skips streaming calls without complete_streaming_response in kwargs; logs complete_streaming_response in streaming mode and response_obj in non-streaming mode."
+    proof: [athina-streaming-test, athina-streaming-oracle]
+
+  - text: "Athina log_event extracts response_time from start_time and end_time as milliseconds, extracts prompt from messages if present, extracts tools and functions from optional_params, extracts additional metadata keys from litellm_params.metadata."
+    proof: [athina-payload-test, athina-payload-oracle]
+
+  - text: "Athina log_event POSTs to /api/v1/log/inference endpoint with athina-api-key header and JSON body (using default=str serializer). On any status code, logs response via print_verbose and does not re-raise."
+    proof: [athina-post-test, athina-post-oracle]
+
+  - text: "GreenscaleLogger initializes with GREENSCALE_API_KEY and GREENSCALE_ENDPOINT; raises exception if GREENSCALE_ENDPOINT is None."
+    proof: [greenscale-init-test, greenscale-init-oracle]
+
+  - text: "Greenscale log_event extracts modelId, inputTokenCount, outputTokenCount from response usage; sets timestamp to UTC ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)."
+    proof: [greenscale-timestamp-test, greenscale-timestamp-oracle]
+
+  - text: "Greenscale log_event extracts invocationLatency from start_time and end_time as milliseconds; extracts greenscale_project and greenscale_application to top-level fields and remaining greenscale_* prefixed keys to tags array with key/value objects."
+    proof: [greenscale-metadata-test, greenscale-metadata-oracle]
+
+  - text: "Greenscale log_event POSTs to GREENSCALE_ENDPOINT with api-key header and JSON body (using default=str serializer). On any status code, logs response via print_verbose and does not re-raise."
+    proof: [greenscale-post-test, greenscale-post-oracle]
+
+  - text: "PromptLayerLogger initializes with PROMPTLAYER_API_KEY from environment."
+    proof: [promptlayer-init-test, promptlayer-init-oracle]
+
+  - text: "PromptLayer log_event converts pydantic BaseModel response to dict via model_dump() or passes dict as-is; collects pl_tags from litellm_params.metadata as tags list and remaining metadata as dict (pl_tags removed)."
+    proof: [promptlayer-conversion-test, promptlayer-conversion-oracle]
+
+  - text: "PromptLayer log_event POSTs to https://api.promptlayer.com/rest/track-request with function_name=openai.ChatCompletion.create, kwargs (model and messages from kwargs plus optional_params), tags array, request_response dict, request_start_time and request_end_time as integer seconds, and api_key."
+    proof: [promptlayer-track-request-test, promptlayer-track-request-oracle]
+
+  - text: "PromptLayer track-request POST response includes request_id on success; if request_id exists and metadata dict is non-empty, conditionally POST to https://api.promptlayer.com/rest/track-metadata with request_id, api_key and metadata."
+    proof: [promptlayer-track-metadata-test, promptlayer-track-metadata-oracle]
+
+  - text: "PromptLayer log_event swallows all exceptions and logs them via print_verbose without re-raising. Athina and Greenscale also swallow exceptions with print_verbose logging."
+    proof: [http-analytics-error-test, http-analytics-error-oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: athina-init-test
+      why: Athina initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::athina.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: athina-streaming-test
+      why: Athina streaming response handling tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::athina.*stream($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: athina-payload-test
+      why: Athina payload building tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::athina.*payload($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: athina-post-test
+      why: Athina POST request tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::athina.*post($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: greenscale-init-test
+      why: Greenscale initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::greenscale.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: greenscale-timestamp-test
+      why: Greenscale timestamp and token extraction tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::greenscale.*time($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: greenscale-metadata-test
+      why: Greenscale metadata extraction and tags building tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::greenscale.*metadata($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: greenscale-post-test
+      why: Greenscale POST request tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::greenscale.*post($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: promptlayer-init-test
+      why: PromptLayer initialization tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::promptlayer.*init($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: promptlayer-conversion-test
+      why: PromptLayer response conversion and metadata extraction tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::promptlayer.*convert($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: promptlayer-track-request-test
+      why: PromptLayer track-request POST tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::promptlayer.*request($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: promptlayer-track-metadata-test
+      why: PromptLayer track-metadata POST tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::promptlayer.*metadata($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: athina-init-oracle
+      why: Missing Athina initialization oracle cases
+      run: grep -rlq 'athina.*api.*key\|athina.*base.*url\|athina.*additional' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: athina-streaming-oracle
+      why: Missing Athina streaming response oracle cases
+      run: grep -rlq 'stream.*response\|complete_streaming_response\|athina.*skip' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: athina-payload-oracle
+      why: Missing Athina payload building oracle cases
+      run: grep -rlq 'athina.*payload\|response_time\|prompt.*messages\|tools.*functions' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: athina-post-oracle
+      why: Missing Athina POST oracle cases
+      run: grep -rlq '/api/v1/log/inference\|athina-api-key.*header\|athina.*post' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: greenscale-init-oracle
+      why: Missing Greenscale initialization oracle cases
+      run: grep -rlq 'greenscale.*api.*key\|greenscale.*endpoint' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: greenscale-timestamp-oracle
+      why: Missing Greenscale timestamp oracle cases
+      run: grep -rlq 'UTC.*ISO.*8601\|YYYY-MM-DD\|invocation.*latency\|milliseconds' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: greenscale-metadata-oracle
+      why: Missing Greenscale metadata extraction oracle cases
+      run: grep -rlq 'greenscale_project\|greenscale_application\|greenscale.*tags\|key.*value.*pair' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: greenscale-post-oracle
+      why: Missing Greenscale POST oracle cases
+      run: grep -rlq 'api-key.*header\|greenscale.*endpoint.*post' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: promptlayer-init-oracle
+      why: Missing PromptLayer initialization oracle cases
+      run: grep -rlq 'promptlayer.*api.*key\|PromptLayerLogger' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: promptlayer-conversion-oracle
+      why: Missing PromptLayer response conversion oracle cases
+      run: grep -rlq 'model_dump\|pydantic.*basemodel\|pl_tags\|promptlayer.*metadata' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: promptlayer-track-request-oracle
+      why: Missing PromptLayer track-request oracle cases
+      run: grep -rlq 'track-request\|api.promptlayer.com\|openai.ChatCompletion.create\|request_start_time\|request_end_time\|integer.*seconds' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: promptlayer-track-metadata-oracle
+      why: Missing PromptLayer track-metadata oracle cases
+      run: grep -rlq 'track-metadata\|request_id\|metadata.*conditional\|non-empty.*metadata' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+    - id: http-analytics-error-test
+      why: Error handling tests missing or failing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^http_analytics_loggers::(athina|greenscale|promptlayer).*error($|::)/) - test(replays_the_helper_case_corpus)'
+
+    - id: http-analytics-error-oracle
+      why: Missing error handling oracle cases
+      run: grep -rlq 'exception.*swallow\|print_verbose.*error\|no.*re-raise' tools/oracle/cases/logging/http-analytics/ || exit 1
+
+oracle_cases:
+  - tools/oracle/cases/logging/http-analytics/athina-initialization.yaml
+  - tools/oracle/cases/logging/http-analytics/athina-streaming-skip.yaml
+  - tools/oracle/cases/logging/http-analytics/athina-payload-building.yaml
+  - tools/oracle/cases/logging/http-analytics/athina-post-endpoint.yaml
+  - tools/oracle/cases/logging/http-analytics/greenscale-initialization.yaml
+  - tools/oracle/cases/logging/http-analytics/greenscale-timestamp-utc.yaml
+  - tools/oracle/cases/logging/http-analytics/greenscale-metadata-extraction.yaml
+  - tools/oracle/cases/logging/http-analytics/greenscale-post-endpoint.yaml
+  - tools/oracle/cases/logging/http-analytics/promptlayer-initialization.yaml
+  - tools/oracle/cases/logging/http-analytics/promptlayer-response-conversion.yaml
+  - tools/oracle/cases/logging/http-analytics/promptlayer-track-request-post.yaml
+  - tools/oracle/cases/logging/http-analytics/promptlayer-track-metadata-conditional.yaml
+  - tools/oracle/cases/logging/http-analytics/http-analytics-exception-handling.yaml
+
+deviations:
+  - what: >-
+      Athina skips logging entirely when stream=true and complete_streaming_response is not in kwargs.
+      This differs from Greenscale and PromptLayer, which log all successful responses regardless of
+      streaming mode.
+    why: >-
+      The source explicitly checks for streaming and complete_streaming_response (lines 39-46),
+      returning early if streaming without the buffered response. This is the exact source behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/athina.py#L39-L46
+
+  - what: >-
+      Greenscale requires GREENSCALE_ENDPOINT to be set; the logger raises an exception at runtime
+      if the endpoint is None, unlike Athina and PromptLayer which have defaults or accept None.
+    why: >-
+      The source checks "if self.greenscale_logging_url is None" in log_event and raises
+      Exception (line 48), making this a runtime validation, not an initialization time check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/greenscale.py#L47-L48
+
+  - what: >-
+      Greenscale uses UTC ISO 8601 timestamp format (YYYY-MM-DDTHH:MM:SSZ) while Athina and PromptLayer
+      use milliseconds/integer seconds respectively.
+    why: >-
+      The source calls datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") (line 28),
+      producing a literal ISO 8601 formatted string for each log event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/greenscale.py#L28
+
+  - what: >-
+      PromptLayer converts pydantic BaseModel responses to dict via model_dump() if the response is
+      a BaseModel instance, passing dicts unchanged, then sends the result in the request_response field.
+    why: >-
+      The source checks "isinstance(response_obj, BaseModel)" and calls response_obj.model_dump()
+      if true (lines 44-45), ensuring the JSON body contains a dict, not a model instance.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_layer.py#L44-L45
+
+  - what: >-
+      PromptLayer sends request_start_time and request_end_time as integer seconds (Unix timestamp),
+      not milliseconds or datetime objects. Both timestamps are computed using int(timestamp()).
+    why: >-
+      The source calls int(start_time.timestamp()) and int(end_time.timestamp()) (lines 54-55),
+      which returns integer seconds since epoch, not milliseconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_layer.py#L54-L55
+
+  - what: >-
+      PromptLayer always sends function_name="openai.ChatCompletion.create" as a literal string,
+      regardless of the actual completion method or provider used.
+    why: >-
+      The source hardcodes "openai.ChatCompletion.create" in the track-request POST (line 50).
+      This is not derived from the call context but sent as a fixed string for all calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_layer.py#L50
+
+  - what: >-
+      PromptLayer only sends the track-metadata request if three conditions are met: the first
+      track-request succeeds (success=true in response), the response includes a request_id, and
+      the metadata dict is non-empty after removing pl_tags.
+    why: >-
+      The source checks 'if "request_id" in response_json' (line 70) and then 'if metadata:' (line 71)
+      inside the success block. Metadata is built by removing pl_tags and keeping all other
+      litellm_params.metadata keys (lines 36-37). No POST occurs if either condition fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_layer.py#L70-L79
+
+out_of_scope:
+  - B002 owns environment variable lookup and default value injection for ATHINA_API_KEY, ATHINA_BASE_URL, GREENSCALE_API_KEY, GREENSCALE_ENDPOINT, PROMPTLAYER_API_KEY.
+  - B173 owns pooled HTTP client and module_level_client.post execution.
+  - Exception handling that calls print_verbose is preserved as-is from the source; no additional logging or retry logic is added beyond the source behavior.
+
+pitfalls:
+  - The oracle helper at tools/oracle/src/helpers/logging/b3961.rs is pre-registered by the skeleton; do not add it to registry files.
+  - Athina skips the entire log_event when streaming without complete_streaming_response; this is not a fallback to response_obj, but an early return.
+  - Greenscale's GREENSCALE_ENDPOINT check happens at runtime in log_event, not at initialization; the logger initializes with None if the env var is missing.
+  - Greenscale extracts greenscale_project and greenscale_application to top-level data fields; other greenscale_* keys go to tags array with key/value objects, not direct inclusion.
+  - PromptLayer's response conversion uses model_dump() only if isinstance(response_obj, BaseModel); dicts pass through unchanged (line 45 is a no-op for dicts).
+  - PromptLayer's first POST endpoint is https://api.promptlayer.com/rest/track-request (literal, with path /rest/track-request).
+  - PromptLayer's request_response field is a dict built from pydantic BaseModel.model_dump() or passed unchanged from dict responses.
+  - PromptLayer's second POST endpoint is https://api.promptlayer.com/rest/track-metadata (literal, with path /rest/track-metadata), only called if request_id exists and metadata dict is non-empty.
+  - PromptLayer's track-metadata request only occurs if request_id exists in the first response and metadata dict is non-empty; an empty metadata dict does not trigger a second POST.
+  - All three loggers swallow exceptions via try/except and log to print_verbose; exceptions do not bubble up to the caller.
+  - Athina's additional_keys list includes 13 specific metadata field names; only these keys from litellm_params.metadata are added to the payload.
+  - PromptLayer uses "openai.ChatCompletion.create" as a literal string, not a reflection of the actual call type or provider.
+  - PromptLayer's pl_tags extraction is a list (not a single tag); it is placed in the top-level "tags" field of the track-request POST.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

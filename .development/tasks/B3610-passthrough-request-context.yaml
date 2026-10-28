@@ -1,0 +1,414 @@
+id: B3610
+title: Pass-through request metadata and failure relay
+description: >-
+  Prepare request logging metadata, callback provenance and bounded upstream error previews,
+  then replay consumed prefixes before the rest of a failed response. Keep trace context and
+  team callback setup reusable by HTTP and WebSocket lifecycles.
+
+  Implement _init_kwargs_for_pass_through_endpoint to extract litellm_params from the request
+  body, merge authenticated-key metadata with request-supplied metadata, stamp internal keys
+  (user_api_key, parent_otel_span, budget_reservation, model_access_groups), skip per-model
+  budget tracking on user-defined pass-through routes, and return a typed kwargs dict with
+  litellm_params, call_type, litellm_call_id and passthrough_logging_payload. Preserve the
+  behavior that SESSION_ID_OMITTED_METADATA_KEY is not user-clobberable, and model_call_details
+  holds the passthrough_logging_payload for later logging.
+
+  Implement _carry_guardrail_logging_info to copy guardrail logging entries from hook_data
+  to request_data when guardrails block; missing guardrail data is a no-op. Extract the
+  standard_logging_guardrail_information from guardrail_data, call get_or_create_metadata_bucket,
+  and initialize the target metadata list via setdefault only if missing; new entries are
+  silently discarded if the key is already populated.
+
+  Implement _build_passthrough_failure_request_payload to merge parsed_body, kwargs, logging_obj
+  and custom_llm_provider into a single request_data dict passed to post_call_failure_hook;
+  supply upstream_usage only when both response_cost and combined_usage_object are needed.
+  If model is missing from kwargs, copy it from parsed_body. Write custom_llm_provider to the
+  payload when supplied and the key is absent.
+
+  Implement _TeamCallbackWiring as a frozen dataclass with success_callbacks, failure_callbacks
+  and logging_kwargs fields (all mutable-ok for Logging.__init__). Implement _resolve_team_callback_wiring
+  to call _get_dynamic_logging_metadata, validate callback_vars for env references, build
+  logging_kwargs with callback_vars and TRUSTED_CALLBACK_VARS_FIELD, and return early on
+  any exception without breaking the passthrough request.
+
+  Implement _truncate_upstream_error_body to limit error messages to PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS
+  with a (truncated at X chars) suffix. Implement _sanitize_upstream_error_body to replace
+  non-printable characters with spaces and collapse whitespace sequences to one space.
+
+  Implement _PrefixReplayStream(httpx.AsyncByteStream) to yield a byte prefix, then relay
+  the rest of an async iterator without buffering; aclose() closes the upstream response.
+  Implement _no_more_chunks as a no-op async generator. Implement _read_error_body_preview
+  to collect chunks until PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS bytes are read or
+  the iterator ends, returning (bytes, rest_iterator); on httpx.HTTPError, log warning and
+  return (partial, _no_more_chunks()).
+
+  Implement _headers_without_body_framing to return a new httpx.Headers dict excluding
+  content-encoding and content-length headers. Implement _error_body_preview_and_relay
+  to read a limited preview of response bytes, decode with fallback to replace on invalid
+  UTF-8, and return the preview text plus a _PrefixReplayStream wrapper that replays
+  prefix + rest without the body-framing headers.
+
+  Implement _log_passthrough_upstream_failure to log upstream 4xx/5xx with truncated and
+  sanitized preview at warning level, skip logging if response.status_code < 400, substitute
+  REDACTED_BY_LITELLM for upstream_error_body when should_redact_message_logging applies,
+  synthesize an HTTPException with the (possibly redacted) body in its detail, call
+  post_call_failure_hook with the exception (logged at warning level when hook fails),
+  and return a wrapped response that relays the body bytes.
+
+  Implement _relay_reporting_failures as an async generator that yields chunks from
+  the input stream; on exception, call post_call_failure_hook only if upstream_status < 400
+  (no double-logging for upstream failures), and re-raise the exception. Catch exceptions
+  from the hook itself and continue, since a broken logging config must not mask stream errors.
+
+  Implement _update_metadata_with_tags_in_header to read 'tags' and 'x-litellm-tags'
+  headers (comma-separated, stripped), and extend the metadata['tags'] list; skip the key
+  entirely if no tags are found. Implement _with_trace_context to call inject_trace_context
+  (imported from litellm.integrations.otel) or return a copy of headers if the import fails.
+
+scope:
+  paths:
+  - crates/betterlite-http/src/lib.rs
+  - crates/betterlite-http/src/passthrough.rs
+  - crates/betterlite-http/src/passthrough/**
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/tests.rs
+  - crates/betterlite-server/src/passthrough.rs
+  - crates/betterlite-server/src/passthrough/**
+  - tools/oracle/cases/passthrough/**
+  lint_tables: false
+
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L578-L668
+  why: >-
+    _init_kwargs_for_pass_through_endpoint extracts and merges litellm_params, metadata,
+    internal keys, and deployment model info; skips per-model budgets on user-defined routes.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L748-L769
+  why: >-
+    _carry_guardrail_logging_info copies standard_logging_guardrail_information from
+    guardrail_data to request_data's metadata via setdefault.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L771-L800
+  why: >-
+    _build_passthrough_failure_request_payload merges parsed_body, kwargs, logging_obj,
+    custom_llm_provider and optional upstream_usage into a single request_data dict.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L803-L862
+  why: >-
+    _TeamCallbackWiring dataclass, _resolve_team_callback_wiring callback resolution
+    and error handling.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L864-L939
+  why: >-
+    _truncate_upstream_error_body, _sanitize_upstream_error_body, _PrefixReplayStream,
+    _no_more_chunks, _read_error_body_preview, _headers_without_body_framing,
+    _error_body_preview_and_relay.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L941-L1019
+  why: >-
+    _log_passthrough_upstream_failure logs 4xx/5xx with truncation and sanitization,
+    synthesizes HTTPException, calls post_call_failure_hook; _relay_reporting_failures
+    relays chunks and handles mid-stream errors.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1891-L1915
+  why: >-
+    _update_metadata_with_tags_in_header reads tags and x-litellm-tags headers,
+    comma-separated and stripped, extends metadata['tags'] list.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2303-L2308
+  why: >-
+    _with_trace_context calls inject_trace_context or returns a copy of headers
+    on import failure.
+
+dod:
+- text: >-
+    _init_kwargs_for_pass_through_endpoint extracts litellm_params, merges client
+    and authenticated metadata, stamps internal keys, skips per-model budgets on
+    user-defined routes, and returns a typed kwargs dict.
+  proof:
+  - init-kwargs-cases
+- text: >-
+    _carry_guardrail_logging_info initializes standard_logging_guardrail_information via
+    setdefault only if missing; new entries are silently discarded when the key is already populated.
+  proof:
+  - carry-guardrail-cases
+- text: >-
+    _build_passthrough_failure_request_payload merges parsed_body, kwargs, logging_obj,
+    custom_llm_provider and optional upstream_usage into a single request_data dict for
+    post_call_failure_hook, writing custom_llm_provider when supplied and the key is absent.
+  proof:
+  - build-failure-payload-cases
+- text: >-
+    _TeamCallbackWiring dataclass is frozen with success_callbacks, failure_callbacks
+    and logging_kwargs fields; all are mutable-ok for Logging.__init__.
+  proof:
+  - team-callback-wiring-cases
+- text: >-
+    _resolve_team_callback_wiring calls _get_dynamic_logging_metadata, validates callback_vars,
+    builds logging_kwargs with TRUSTED_CALLBACK_VARS_FIELD, and returns early on exception
+    without breaking the passthrough request.
+  proof:
+  - resolve-team-callback-cases
+- text: >-
+    _truncate_upstream_error_body limits error messages to PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS
+    with (truncated at X chars) suffix; _sanitize_upstream_error_body replaces non-printable
+    characters with spaces and collapses whitespace.
+  proof:
+  - truncate-sanitize-cases
+- text: >-
+    _PrefixReplayStream yields a byte prefix, then relays the rest of an async iterator
+    without buffering; aclose() closes the upstream response.
+  proof:
+  - prefix-replay-stream-cases
+- text: >-
+    _no_more_chunks is a no-op async generator; _read_error_body_preview collects chunks
+    until the byte budget is reached or the iterator ends; on httpx.HTTPError, logs warning
+    and returns (partial, _no_more_chunks()).
+  proof:
+  - read-error-body-cases
+- text: >-
+    _headers_without_body_framing returns a new httpx.Headers dict excluding content-encoding
+    and content-length; _error_body_preview_and_relay reads a limited preview, decodes with
+    UTF-8 fallback, and returns (preview_text, wrapped_response).
+  proof:
+  - error-body-preview-cases
+- text: >-
+    _log_passthrough_upstream_failure logs 4xx/5xx upstream errors at warning level with
+    truncation and sanitization, synthesizes HTTPException, calls post_call_failure_hook
+    (logged at warning on failure), returns wrapped response that relays bytes.
+  proof:
+  - log-upstream-failure-cases
+- text: >-
+    When should_redact_message_logging applies, _log_passthrough_upstream_failure substitutes
+    REDACTED_BY_LITELLM for the preview text; the redacted detail flows into both the logged
+    warning and the HTTPException detail returned to the caller.
+  proof:
+  - log-upstream-failure-redaction-cases
+- text: >-
+    _relay_reporting_failures yields chunks; on exception, calls post_call_failure_hook
+    only if upstream_status < 400; hooks that fail are caught and logged without masking
+    the stream error.
+  proof:
+  - relay-reporting-failures-cases
+- text: >-
+    _update_metadata_with_tags_in_header reads 'tags' and 'x-litellm-tags' headers,
+    comma-separated and stripped, extends metadata['tags']; skips key if no tags found.
+  proof:
+  - update-metadata-tags-cases
+- text: >-
+    _with_trace_context calls inject_trace_context or returns a header copy on import failure.
+  proof:
+  - with-trace-context-cases
+- text: >-
+    Rust function identifiers stay under 30 characters per clear-names; long Python function names
+    are preserved in doc comments or test names. Imported constant names (SESSION_ID_OMITTED_METADATA_KEY,
+    PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS, REDACTED_BY_LITELLM, TRUSTED_CALLBACK_VARS_FIELD)
+    match LiteLLM exactly. Parameter names in Rust match LiteLLM exactly.
+  proof:
+  - litellm-name-tests
+
+checks:
+  optional: []
+  commands:
+  - id: init-kwargs-cases
+    why: >-
+      _init_kwargs_for_pass_through_endpoint tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_init_kwargs($|::)/) - test(/replays_the_/)'
+  - id: carry-guardrail-cases
+    why: >-
+      _carry_guardrail_logging_info tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_carry_guardrail($|::)/) - test(/replays_the_/)'
+  - id: build-failure-payload-cases
+    why: >-
+      _build_passthrough_failure_request_payload tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_build_failure_payload($|::)/) - test(/replays_the_/)'
+  - id: team-callback-wiring-cases
+    why: >-
+      _TeamCallbackWiring dataclass tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::team_callback_wiring($|::)/)'
+  - id: resolve-team-callback-cases
+    why: >-
+      _resolve_team_callback_wiring tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_resolve_team_callback($|::)/) - test(/replays_the_/)'
+  - id: truncate-sanitize-cases
+    why: >-
+      _truncate_upstream_error_body and _sanitize_upstream_error_body tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_error_body_(truncate|sanitize)($|::)/) - test(/replays_the_/)'
+  - id: prefix-replay-stream-cases
+    why: >-
+      _PrefixReplayStream tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-http --no-tests=fail
+      -E 'test(/::prefix_replay_stream($|::)/) - test(/replays_the_/)'
+  - id: read-error-body-cases
+    why: >-
+      _no_more_chunks and _read_error_body_preview tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_read_error_body($|::)/) - test(/replays_the_/)'
+  - id: error-body-preview-cases
+    why: >-
+      _headers_without_body_framing and _error_body_preview_and_relay tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_error_body_preview($|::)/) - test(/replays_the_/)'
+  - id: log-upstream-failure-cases
+    why: >-
+      _log_passthrough_upstream_failure tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_log_upstream_failure($|::)/) - test(/replays_the_/)'
+  - id: log-upstream-failure-redaction-cases
+    why: >-
+      redaction branch in _log_passthrough_upstream_failure tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_log_upstream_failure_redacted($|::)/)'
+  - id: relay-reporting-failures-cases
+    why: >-
+      _relay_reporting_failures tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_relay_failures($|::)/) - test(/replays_the_/)'
+  - id: update-metadata-tags-cases
+    why: >-
+      _update_metadata_with_tags_in_header tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_update_metadata_tags($|::)/) - test(/replays_the_/)'
+  - id: with-trace-context-cases
+    why: >-
+      _with_trace_context tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_with_trace_context($|::)/) - test(/replays_the_/)'
+  - id: litellm-name-tests
+    why: >-
+      function names, constant names or parameter names do not match LiteLLM exactly
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_request_context($|::)/)'
+
+oracle_cases: []
+
+deviations:
+- what: >-
+    Trace context injection is a no-op when the litellm.integrations.otel module is not
+    available; headers are returned unchanged. betterlite does not mandate OpenTelemetry
+    integration; it is optional.
+  why: >-
+    This follows LiteLLM's behavior exactly. Tracing is an optional feature, and gateways
+    must not require external instrumentation.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2303-L2308
+- what: >-
+    Callback resolution logs exceptions at error level but continues without dynamic callbacks,
+    since a broken logging config must not break the upstream passthrough request. The websocket
+    is already accepted by the time this runs.
+  why: >-
+    This follows LiteLLM's behavior. Callback validation failures are recoverable; the
+    request proceeds without those callbacks rather than failing the customer's call.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L828-L841
+
+out_of_scope:
+- >-
+  The SESSION_ID_OMITTED_METADATA_KEY constant is imported from a shared logging module
+  (owned by B206); this task calls it but does not define it.
+- >-
+  The LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key and
+  LiteLLMProxyRequestSetup.get_logged_api_key methods are imported from auth modules
+  (owned by B1106); this task calls them but does not implement them.
+- >-
+  The request_dispatched_to_pass_through_endpoint function is imported from a shared
+  logging module (owned by B746); this task calls it in _init_kwargs_for_pass_through_endpoint
+  to skip budget tracking on user-defined routes.
+- >-
+  The get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket functions
+  are imported from a shared metadata module (owned by B206); this task calls them
+  in _carry_guardrail_logging_info.
+- >-
+  The _get_dynamic_logging_metadata function is imported from a shared callback metadata
+  module (owned by B1109); this task calls it in _resolve_team_callback_wiring.
+- >-
+  The should_redact_message_logging function is imported from a shared redaction module
+  (owned by B188); this task calls it in _log_passthrough_upstream_failure to substitute
+  the upstream_error_body with REDACTED_BY_LITELLM, affecting both the logged warning and
+  the HTTPException detail returned to the caller.
+- >-
+  The TRUSTED_CALLBACK_VARS_FIELD constant is imported from litellm/types/litellm_params.py
+  (owned by B120); validate_no_callback_env_reference is imported from logging callback modules;
+  this task uses them but does not implement them.
+- >-
+  The PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS constant is defined in a shared module;
+  this task reads it but does not define it.
+- >-
+  The REDACTED_BY_LITELLM constant and verbose_proxy_logger are imported from shared logging
+  modules; this task uses them but does not define them.
+- >-
+  The proxy_logging_obj global is accessed from litellm.proxy.proxy_server; this task calls
+  its post_call_failure_hook method in _log_passthrough_upstream_failure and _relay_reporting_failures.
+
+pitfalls:
+- >-
+  The _init_kwargs_for_pass_through_endpoint function must set internal keys AFTER merging
+  client-supplied metadata, so a request body that mirrors user_api_key, parent_otel_span,
+  etc. cannot clobber the authenticated values. Stamp them on _metadata after the merge.
+- >-
+  The per-model budget tracking is skipped only on user-defined pass-through routes, not on
+  built-in provider routes. Use request_dispatched_to_pass_through_endpoint to distinguish them.
+- >-
+  The _carry_guardrail_logging_info function uses setdefault() to initialize the target list
+  only if missing; if the key is already populated, new entries are silently discarded, never appended.
+- >-
+  The _resolve_team_callback_wiring function must not raise exceptions even if callback
+  resolution fails; catch all exceptions, log at error level, and return an empty _TeamCallbackWiring.
+  The websocket is already accepted by the time this runs, so failures cannot be returned to the caller.
+- >-
+  The _truncate_upstream_error_body and _sanitize_upstream_error_body functions are applied
+  independently; always sanitize before truncating (sanitize first, then truncate the result)
+  to avoid preserving non-printable characters at the truncation point.
+- >-
+  The _error_body_preview_and_relay function must handle UTF-8 decoding errors gracefully
+  with errors='replace', not errors='ignore', so invalid sequences are visible as replacement
+  characters rather than silently dropped.
+- >-
+  The _read_error_body_preview function must check total bytes AFTER appending each chunk,
+  not before, so it collects at least one chunk even if the first chunk exceeds the budget.
+- >-
+  The _headers_without_body_framing function uses .lower() on header names for case-insensitive
+  comparison; httpx.Headers.raw is a list of (name_bytes, value_bytes) tuples, not dicts.
+- >-
+  The _log_passthrough_upstream_failure function logs upstream errors at warning level (not error),
+  must skip logging if status_code < 400, and must substitute REDACTED_BY_LITELLM for the error
+  body when should_redact_message_logging applies; the redacted text flows into both the logged
+  warning and the HTTPException detail.
+- >-
+  The _relay_reporting_failures function must call post_call_failure_hook only if upstream_status < 400,
+  so it does not double-log upstream failures that _log_passthrough_upstream_failure already logged.
+- >-
+  The _update_metadata_with_tags_in_header function reads both 'tags' and 'x-litellm-tags' headers
+  and concatenates them; both are comma-separated and must be stripped before extending the list.
+  Do not create the 'tags' key if neither header is present.
+- >-
+  The _with_trace_context function calls inject_trace_context with parent_span passed through,
+  not parent_span=parent_span if the function signature changed.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

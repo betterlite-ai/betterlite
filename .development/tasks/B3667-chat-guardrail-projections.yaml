@@ -1,0 +1,291 @@
+id: B3667
+title: Chat guardrail extraction and block framing
+description: >-
+  Extract and restore chat text, images and function-tool calls without disturbing
+  unrelated message fields. Build block SSE frames with the observed stream identity
+  and preserved usage reporting.
+
+  Implement message extraction and rewriting for chat guardrail scoping: extract text
+  content (string or list of text/image blocks), images, and tool-call function
+  parameters from request messages, returning task index mappings for guardrail
+  application. Apply guardrailed text responses and tool calls back to original
+  messages. For response handling, extract text, images, and tool calls from completed
+  Choices or streamed StreamingChoices, handle both dict and object tool-call formats,
+  and apply guardrailed responses back by choice index.
+
+  Support streaming: combine all delta.content chunks per (choice_idx, content_idx)
+  tuple to rebuild complete texts, produce deterministic tool-call fingerprints for
+  deduplication, detect stream termination from finish_reason presence. Provide stream
+  helpers: extract choices field from chunk items, extract tool_calls and legacy
+  function_call from delta field, determine when streaming has ended.
+
+  Build block SSE frames: standalone frames with role delta when stream_started=false
+  (buffered/pre-stream block), continuation frames with content-only delta when
+  stream_started=true (sampled/mid-stream block). Both frame types include usage
+  extracted from the original response inside the ModifyResponseException, or zero
+  tokens when usage is missing. Extract and reuse upstream stream identity (id, created,
+  model) from successfully relayed chunks, synthesizing new values (uuid4 id, current
+  timestamp, exc.model) when responses_so_far is empty or contains no id.
+
+  Preserve silent-drop behavior for invalid tool-call objects (those missing required
+  attributes) and empty/None content. sse_error_payload is externally supplied by the
+  unified dispatcher.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/extraction.rs
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/extraction/**
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/block_framing.rs
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/block_framing/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L235-L256
+    why: _not_run_reason detection for empty-or-image-only content after scoping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L257-L268
+    why: extract_request_tool_names from tools[] and functions[] arrays (name extraction).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L270-L330
+    why: _extract_inputs message content extraction for text, images, and tool_calls; role filtering via role_out_of_guardrail_scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L331-L381
+    why: _apply_guardrail_responses_to_input_texts and _apply_guardrail_responses_to_input_tool_calls (message rewriting by mapping).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L715-L718
+    why: _narrowed_to_choice filtering response.choices by index.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L720-L730
+    why: build_stream_error_items using sse_error_payload for error serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L732-L756
+    why: _accumulate_string_content_by_choice_index per-choice delta.content concatenation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L840-L854
+    why: _streamed_tool_call_fingerprints and _first_choice_has_finished (stream state predicates).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L856-L904
+    why: _combine_streaming_texts reconstruction from delta.content per choice_idx, including list content accumulation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L906-L934
+    why: _has_text_content detection for string content and tool_calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L936-L996
+    why: _extract_output_text_images_and_tool_calls from response Choices or StreamingChoices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L998-L1021
+    why: _convert_tool_call_to_dict object-to-dict conversion with fallback for dict input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L1023-L1085
+    why: _apply_guardrail_responses_to_output_texts and _apply_guardrail_responses_to_output_tool_calls (response rewriting).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L1281-L1411
+    why: _check_streaming_has_ended, build_block_sse_chunks, block TypedDict declarations, _chat_sse_chunk, _stream_chunk_choices, _streamed_delta_tool_calls, _blocked_stream_identity.
+
+dod:
+  - text: _not_run_reason returns "no scannable content after message scoping" when any text or tool_call content exists after scoping; returns None when texts and tool_calls are both empty but images exist (images-only, never scanned); returns "no scannable content" when texts, tool_calls and images are all empty.
+    proof: [not-run-reason-cases]
+  - text: extract_request_tool_names collects all function.name values from tools[].function and all name values from functions[], preserving order.
+    proof: [tool-name-extraction-cases]
+  - text: _extract_inputs populates texts_to_check, images_to_check, and tool_calls_to_check with content filtered by role_out_of_guardrail_scope, mapping indices into text_task_mappings and tool_call_task_mappings.
+    proof: [input-extraction-cases]
+  - text: >-
+      _apply_guardrail_responses_to_input_texts applies guarded text responses
+      back to messages by (msg_idx, content_idx) mapping, handling both string
+      content and list content items.
+    proof: [input-text-rewrite-cases]
+  - text: _apply_guardrail_responses_to_input_tool_calls applies guardrailed tool_calls back to input messages by (msg_idx, tool_call_idx) mapping.
+    proof: [input-tool-rewrite-cases]
+  - text: _narrowed_to_choice returns a response copy with choices filtered to a single index.
+    proof: [narrowed-to-choice-cases]
+  - text: build_stream_error_items returns one-element sequence with sse_error_payload-formatted error chunk.
+    proof: [error-items-cases]
+  - text: _accumulate_string_content_by_choice_index returns dict mapping choice.index to concatenated string delta.content, skipping non-string content.
+    proof: [accumulate-string-cases]
+  - text: _streamed_tool_call_fingerprints returns tuple of fingerprints from _streamed_delta_tool_calls per choice across all responses_so_far.
+    proof: [tool-fingerprint-cases]
+  - text: _first_choice_has_finished returns true if any first choice across responses_so_far has finish_reason != None.
+    proof: [first-choice-finish-cases]
+  - text: >-
+      _combine_streaming_texts maps (choice_idx, content_idx) to concatenated
+      text from list content or (choice_idx, None) to concatenated text from
+      string content.
+    proof: [combine-texts-cases]
+  - text: _has_text_content returns true when response (ModelResponse or ModelResponseStream) contains non-None string content or non-empty tool_calls.
+    proof: [has-text-cases]
+  - text: _extract_output_text_images_and_tool_calls populates texts, images, and tool_calls lists from Choices or StreamingChoices content, using _convert_tool_call_to_dict to handle tool_call objects.
+    proof: [output-extraction-cases]
+  - text: _convert_tool_call_to_dict returns dict when input is already dict, converts object with id and function attributes to dict (type defaults to "function" when absent), and returns None for invalid objects (no logging).
+    proof: [tool-call-convert-cases]
+  - text: _apply_guardrail_responses_to_output_texts applies text responses back to response.choices[choice_idx].message.content by (choice_idx, content_idx) mapping.
+    proof: [output-text-rewrite-cases]
+  - text: _apply_guardrail_responses_to_output_tool_calls updates response.choices[choice_idx].message.tool_calls[tool_call_idx] with guardrailed function.arguments and function.name.
+    proof: [output-tool-rewrite-cases]
+  - text: _check_streaming_has_ended returns true once any choice across responses_so_far has finish_reason != None.
+    proof: [streaming-ended-cases]
+  - text: >-
+      build_block_sse_chunks returns two bytes chunks (message then final) with
+      observed upstream stream identity (id, created, model) or synthesized
+      identity (uuid.uuid4(), time.time(), exc.model) when responses_so_far is
+      empty, using standalone delta (role + content) for pre-stream blocks and
+      continuation delta (content only) for mid-stream blocks.
+    proof: [block-sse-cases]
+  - text: Block chunk final frame includes usage (prompt_tokens, completion_tokens, total_tokens) extracted from blocked_chat_stream_usage.
+    proof: [block-usage-cases]
+  - text: >-
+      _chat_sse_chunk encodes payload dict as JSON with "data: " prefix and
+      "\n\n" suffix.
+    proof: [chat-sse-chunk-cases]
+  - text: _stream_chunk_choices returns tuple of choices from stream_item_field(item, "choices") when it is a Sequence (not str/bytes), returns empty tuple otherwise.
+    proof: [stream-chunk-choices-cases]
+  - text: _streamed_delta_tool_calls returns tuple of tool_calls and legacy function_call from delta via stream_item_items and stream_item_field.
+    proof: [streamed-delta-tool-cases]
+  - text: >-
+      _blocked_stream_identity returns (chunk_id, created, model) by searching
+      responses_so_far for first item with id, or synthesizes all three when
+      responses_so_far is empty or contains no id.
+    proof: [blocked-identity-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: not-run-reason-cases
+      why: _not_run_reason filtering tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::(not_run_reason|scoping)/)'
+    - id: tool-name-extraction-cases
+      why: extract_request_tool_names tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::extract_tool_names/)'
+    - id: input-extraction-cases
+      why: _extract_inputs tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::(extract_input|message_extraction)/)'
+    - id: input-text-rewrite-cases
+      why: _apply_guardrail_responses_to_input_texts tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_input_text/)'
+    - id: input-tool-rewrite-cases
+      why: _apply_guardrail_responses_to_input_tool_calls tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_input_tool/)'
+    - id: narrowed-to-choice-cases
+      why: _narrowed_to_choice tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::narrowed_to_choice/)'
+    - id: error-items-cases
+      why: build_stream_error_items tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::error_items/)'
+    - id: accumulate-string-cases
+      why: _accumulate_string_content_by_choice_index tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::accumulate_string/)'
+    - id: tool-fingerprint-cases
+      why: _streamed_tool_call_fingerprints tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::tool_fingerprints/)'
+    - id: first-choice-finish-cases
+      why: _first_choice_has_finished tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::first_choice_finish/)'
+    - id: combine-texts-cases
+      why: _combine_streaming_texts tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::combine_texts/)'
+    - id: has-text-cases
+      why: _has_text_content tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::has_text/)'
+    - id: output-extraction-cases
+      why: _extract_output_text_images_and_tool_calls tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::extract_output/)'
+    - id: tool-call-convert-cases
+      why: _convert_tool_call_to_dict tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::convert_tool_call/)'
+    - id: output-text-rewrite-cases
+      why: _apply_guardrail_responses_to_output_texts tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_output_text/)'
+    - id: output-tool-rewrite-cases
+      why: _apply_guardrail_responses_to_output_tool_calls tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_output_tool/)'
+    - id: streaming-ended-cases
+      why: _check_streaming_has_ended tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::streaming_ended/)'
+    - id: block-sse-cases
+      why: build_block_sse_chunks tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::(block_sse|block_chunks)/)'
+    - id: block-usage-cases
+      why: block sse chunks usage field tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::block_usage/)'
+    - id: chat-sse-chunk-cases
+      why: _chat_sse_chunk encoding tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::sse_chunk/)'
+    - id: stream-chunk-choices-cases
+      why: _stream_chunk_choices filtering tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::stream_choices/)'
+    - id: streamed-delta-tool-cases
+      why: _streamed_delta_tool_calls tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::delta_tool_calls/)'
+    - id: blocked-identity-cases
+      why: _blocked_stream_identity tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::blocked_identity/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Invalid tool_call objects (those with missing id, function, or other required attributes) are silently dropped from texts_to_check without logging during _extract_inputs and _extract_output_text_images_and_tool_calls.
+    why: LiteLLM drops invalid objects without logging to avoid noisy warnings for malformed streamed data. betterlite preserves this silent-failure behavior.
+  - what: >-
+      _combine_streaming_texts reconstructs text per (choice_idx, content_idx)
+      tuple from all chunks' delta.content, which may diverge from the original
+      message structure if list content boundaries shift during streaming.
+    why: >-
+      This reconstruction supports guardrail application to streaming responses;
+      the choice-based grouping matches how unified guardrails consume text for
+      scanning, not how the client views final structure.
+  - what: _blocked_stream_identity always uses stream_item_field to extract id, created, and model from responses_so_far, never trusting exc.original_response for those fields.
+    why: The exception may not carry complete response metadata, so observed stream identity from successfully relayed chunks is authoritative for block replacement.
+
+out_of_scope:
+  - get_structured_messages (B3668) owned by chat request/response orchestration.
+  - process_input_messages (B3668) owned by chat request/response orchestration.
+  - process_output_response (B3668) owned by chat request/response orchestration.
+  - process_output_streaming_response (B3669) owned by chat streaming orchestration.
+  - _process_streaming_block_only (B3669) owned by chat streaming block-only scans.
+  - _process_ended_stream (B3668) owned by chat ended-stream rewrite machinery.
+  - _rebuild_ended_stream_per_choice (B3668) owned by chat ended-stream rewrite machinery.
+  - _process_streaming_transform (B3669) owned by chat incremental transform scans.
+  - get_streaming_scan_key (B3669) owned by chat streaming scan key projection.
+  - _apply_guardrail_responses_to_output_streaming (B3669, handler.py:1199) owned by chat streaming/ended-stream rewrite machinery.
+  - _string_choice_contents (B3668) owned by chat ended-stream rewrite machinery.
+  - _write_ended_stream_text_rewrites (B3668) owned by chat ended-stream text rewrite.
+  - _function_tool_call_shapes (B3668) owned by chat ended-stream tool call rewrite.
+  - _function_tool_call_fragments (B3668) owned by chat ended-stream tool call rewrite.
+  - _write_ended_stream_tool_call_rewrites (B3668) owned by chat ended-stream tool call rewrite.
+  - sse_error_payload (litellm/proxy/common_request_processing.py) is external and supplied by the unified guardrail dispatcher or B3687 direct-apply path.
+  - role_out_of_guardrail_scope predicate (B3663) is supplied by message-scoping; this task only calls it.
+  - blocked_chat_stream_usage (B3663) extracts usage from completed-response metadata; this task only calls it for block-frame building.
+  - stream_item_field and stream_item_items helpers are supplied by B3663; this task uses them for generic stream traversal.
+  - ChatCompletionToolParam and Choices/StreamingChoices types are LiteLLM's wire types; this task only manipulates them.
+  - The unified guardrail dispatcher (B3680) consumes these extraction/rewriting functions; this task does not orchestrate them.
+
+pitfalls:
+  - >-
+    _extract_inputs requires pre-allocated lists (texts_to_check,
+    images_to_check, tool_calls_to_check) that it mutates in place; callers
+    must pass empty lists every call.
+  - >-
+    text_task_mappings appends (msg_idx, content_idx_or_none) where
+    content_idx_or_none is None for string content and int for
+    list[content_item] index; the None value is distinct from 0.
+  - >-
+    tool_call_task_mappings appends (msg_idx, tool_call_idx) with no optional
+    element; all indices are int.
+  - >-
+    _combine_streaming_texts keying on (choice.index, content_idx) requires
+    choice.index to exist and be an int; if missing or None, code must default
+    to 0.
+  - >-
+    _accumulate_string_content_by_choice_index uses getattr(choice, "index", 0)
+    with fallback to 0; choice indices that are None or missing still accumulate
+    under index 0.
+  - >-
+    _convert_tool_call_to_dict returns None for invalid objects, leaving gaps in
+    tool_calls_to_check if some objects fail conversion; tool_call_task_mappings
+    indices still correspond to the pre-conversion list.
+  - >-
+    _blocked_stream_identity synthesizes id as "chatcmpl-" + uuid4 str, created
+    as int(time.time()), and reuses model from exc; if no upstream id is found,
+    the synthetic id differs from every previous chunk.
+  - >-
+    build_block_sse_chunks standalone_delta includes role="assistant" only when
+    stream_started=false; continuation delta never includes role, only content.
+  - >-
+    Block final chunk finish_reason is always "content_filter" (string literal),
+    not the original finish_reason or exc.status.
+  - >-
+    stream_item_field and stream_item_items are generic helpers that may return
+    None, empty tuple, or unexpected types; callers must check types before
+    iterating.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

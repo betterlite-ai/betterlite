@@ -43,4 +43,5 @@ pub mod vertex_embedding_binding;
 pub mod vertex_media_dispatch;
 pub mod vertex_partner_dispatch;
 pub mod vertex_service_dispatch;
+pub mod video_selection;
 pub mod xai_mistral;

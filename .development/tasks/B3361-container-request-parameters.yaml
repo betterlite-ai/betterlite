@@ -1,0 +1,148 @@
+id: B3361
+title: Container request parameters and provider selection
+description: >-
+  Build betterlite-core container parameter filtering, managed-ID decoding and conditional
+  response-ID encoding, plus the three-provider selector. Preserve the explicit-provider
+  override rule, an already supplied model ID, and the difference between routing metadata
+  and an ordinary direct SDK call.
+
+  Owned functions: decode_managed_container_id_for_request decodes a LiteLLM-managed
+  container ID (with routing metadata for provider and model_id) and returns the original
+  container_id, resolved custom_llm_provider, and updated litellm_params. Decoding extracts
+  response_id, custom_llm_provider and model_id from the managed ID; the provider override
+  applies only when input provider is "openai" and decoded provider is non-null; model_id
+  is filled only when not already set in litellm_params.
+
+  ContainerRequestUtils.get_requested_container_create_optional_param extracts valid
+  creation parameters from passed_params: expires_after, file_ids, extra_headers, extra_body.
+  Null values are dropped. get_optional_params_container_create filters extracted creation
+  params through the provider's supported_params and maps them. Mapping uses
+  map_openai_params with drop_params=False.
+
+  ContainerRequestUtils.get_requested_container_list_optional_param extracts valid list
+  parameters from passed_params: after, limit, order, extra_headers, extra_query. Null
+  values are dropped.
+
+  ContainerRequestUtils.encode_container_id_in_response encodes response_obj.id with
+  provider/model metadata when routing metadata is present: either litellm_metadata contains
+  model_info.id (router/proxy usage) OR extra_body contains target_model_names (model-specific
+  routing). Direct SDK calls with explicit custom_llm_provider and no routing hints return
+  raw IDs. When encoding, extract model_id from litellm_metadata["model_info"]["id"] if
+  present; if not present but target_model_names exists, use first model name (string split
+  on comma or list element) as model_id. Encoding uses B903's _build_container_id with
+  provider, model_id, and container_id.
+
+  ProviderConfigManager.get_provider_container_config returns the appropriate provider
+  config: OpenAIContainerConfig for LlmProviders.OPENAI, AzureContainerConfig for
+  LlmProviders.AZURE or LlmProviders.AZURE_TEXT, or None for other providers.
+scope:
+  paths:
+    - crates/betterlite-core/src/containers/**
+    - crates/betterlite-core/src/lib.rs
+    - tools/oracle/cases/containers/request-parameters/**
+    - tools/oracle/helpers/b3361.py
+    - tools/oracle/helpers/b3361/**
+    - tools/oracle/src/helpers/core_ops/b3361.rs
+    - tools/oracle/src/helpers/core_ops/b3361/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L12-L33
+    why: decode_managed_container_id_for_request function decoding managed container IDs with routing metadata extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L40-L58
+    why: ContainerRequestUtils.get_requested_container_create_optional_param extracting valid creation parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L60-L74
+    why: get_optional_params_container_create filtering and mapping creation parameters through provider config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L76-L95
+    why: ContainerRequestUtils.get_requested_container_list_optional_param extracting valid list parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L97-L158
+    why: encode_container_id_in_response encoding response IDs with provider/model metadata based on routing context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9727-L9743
+    why: ProviderConfigManager.get_provider_container_config selecting OpenAI or Azure provider configs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/containers/main.py#L1-L10
+    why: ContainerCreateOptionalRequestParams and ContainerListOptionalRequestParams type definitions.
+dod:
+  - text: >-
+      decode_managed_container_id_for_request decodes managed container IDs: provider-prefixed
+      IDs from router usage return (original_id, provider, updated_params); non-encoded IDs
+      return (input_id, input_provider, input_params). Provider override applies only when
+      input provider is "openai" and decoded provider is non-null. Model ID is added only
+      when not already set in litellm_params.
+    proof: [decode-container-id]
+  - text: >-
+      get_requested_container_create_optional_param extracts only valid creation parameters
+      (expires_after, file_ids, extra_headers, extra_body) and drops null values.
+    proof: [extract-create-params]
+  - text: >-
+      get_optional_params_container_create filters creation params through provider's
+      supported params and maps them via map_openai_params.
+    proof: [filter-create-params]
+  - text: >-
+      get_requested_container_list_optional_param extracts only valid list parameters
+      (after, limit, order, extra_headers, extra_query) and drops null values.
+    proof: [extract-list-params]
+  - text: >-
+      encode_container_id_in_response encodes response IDs with provider/model metadata
+      when routing metadata is present (model_info.id or target_model_names). Direct SDK
+      calls without routing metadata return raw IDs. First model from target_model_names
+      is used as model_id when model_info.id is absent.
+    proof: [encode-response-id]
+  - text: >-
+      get_provider_container_config returns OpenAIContainerConfig for openai, AzureContainerConfig
+      for azure/azure_text, and None for other providers.
+    proof: [provider-config]
+checks:
+  optional: []
+  commands:
+    - id: decode-container-id
+      why: managed container IDs are not decoded correctly or routing metadata is lost
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::decode_managed_container_id/)'
+    - id: extract-create-params
+      why: creation parameters are not extracted correctly or invalid params are included
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::(extract_create|get_requested_container_create)/)'
+    - id: filter-create-params
+      why: creation parameters are not filtered or mapped through provider config
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::filter_create_params/)'
+    - id: extract-list-params
+      why: list parameters are not extracted correctly or invalid params are included
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::(extract_list|get_requested_container_list)/)'
+    - id: encode-response-id
+      why: response IDs are not encoded with metadata or routing detection is incorrect
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::encode_container_id/)'
+    - id: provider-config
+      why: provider config selection does not return correct type or fails on invalid provider
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::provider_config/)'
+oracle_cases:
+  - tools/oracle/cases/containers/request-parameters/decode-managed-id-with-metadata.yaml
+  - tools/oracle/cases/containers/request-parameters/decode-unencoded-id.yaml
+  - tools/oracle/cases/containers/request-parameters/provider-override-on-openai.yaml
+  - tools/oracle/cases/containers/request-parameters/model-id-already-set.yaml
+  - tools/oracle/cases/containers/request-parameters/extract-create-parameters.yaml
+  - tools/oracle/cases/containers/request-parameters/filter-unsupported-create-params.yaml
+  - tools/oracle/cases/containers/request-parameters/extract-list-parameters.yaml
+  - tools/oracle/cases/containers/request-parameters/encode-with-model-info-id.yaml
+  - tools/oracle/cases/containers/request-parameters/encode-with-target-model-names.yaml
+  - tools/oracle/cases/containers/request-parameters/encode-direct-sdk-no-routing.yaml
+  - tools/oracle/cases/containers/request-parameters/provider-config-openai.yaml
+  - tools/oracle/cases/containers/request-parameters/provider-config-azure.yaml
+  - tools/oracle/cases/containers/request-parameters/provider-config-unsupported.yaml
+deviations:
+  - what: >-
+      Rust implementation uses owned types and Option instead of Python's None values
+      and dict access. Provider config returns Option<Box<dyn BaseContainerConfig>> instead
+      of None.
+    why: Rust type system requires explicit nullable representation and owned data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9728-L9743
+out_of_scope:
+  - "litellm/responses/utils.py: B903 owns ResponsesAPIRequestUtils._decode_container_id and _build_container_id."
+  - "litellm/llms/base_llm/containers/transformation.py: B522 owns OpenAIContainerConfig and B547 owns AzureContainerConfig implementations; B3360 owns the abstract interface."
+  - "litellm/containers/__init__.py: B3368 owns the package exports and initialization."
+pitfalls:
+  - Provider override only applies when input provider is "openai" and decoded provider is non-null; other providers reject the override and use input provider.
+  - Model ID is filled only when the input litellm_params does not already have a "model_id" key; pre-set model IDs are never overwritten by decoded values.
+  - Container ID encoding requires both a routing hint (model_info.id or target_model_names) to activate; direct SDK calls with explicit provider and no routing hints skip encoding entirely.
+  - target_model_names in extra_body must be split on comma if string (with strip applied to each part) or treated as list; the first element becomes model_id.
+  - Null and empty string provider/model values in decoded metadata are preserved in encoding (no special handling); they encode as "None" and empty strings respectively in the encoded ID.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,230 @@
+id: B3158
+title: Persist ROI settings and expose admin configuration
+description: >-
+  Build stored-settings loading, encrypted secret updates, public readiness projection and GET/PUT
+  `/roi-calculator/settings` in `betterlite-server::roi_settings`. Preserve read-only-admin access,
+  write-admin checks, encrypted-secret reuse, token clearing when the GitHub origin changes,
+  explicit-null URL rejection, validation errors and model-name sorting. Settings are stored in
+  the config repository with key `roi_calculator_settings` and loaded as `_StoredSettings`, a
+  pydantic model with `ConfigDict(extra="ignore")` that holds github_api_url (default `https://api.github.com`),
+  github_token (default empty, encrypted when saved), estimator_key (default empty, encrypted),
+  repos (tuple, default empty), estimator_model (default empty), estimator_prompt (default `DEFAULT_PROMPT`),
+  backfill_days (int, default 7, validated 1-3650), update_interval_minutes (float, default 1440,
+  validated 0-43200), and identity_map (mapping, default empty). Decryption errors raise 500 with
+  "Stored ROI Calculator settings are invalid." The public response includes available_models (sorted
+  unique router model names), ready flag (true when repos and estimator_model are set and model exists),
+  has_github_token and has_estimator_key (boolean flags without values), and all user-visible settings.
+  Token is cleared (set to empty encrypted string) when github_api_url changes, checked by stripping
+  trailing slashes. Requests to update with null github_api_url return 422. Validation failures in
+  ROISettings construction on PUT return 422 with pydantic error details. Missing database returns 500
+  with "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection
+  string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys" error.
+scope:
+  paths:
+    - crates/betterlite-server/src/roi_settings.rs
+    - crates/betterlite-server/src/roi_settings/tests.rs
+    - tools/oracle/cases/management/roi_settings/**
+    - tools/oracle/helpers/b3158.py
+    - tools/oracle/helpers/b3158/**
+    - tools/oracle/src/helpers/server/b3158.rs
+    - tools/oracle/src/helpers/server/b3158/**
+    - crates/betterlite-server/src/roi_settings/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L66-85
+    why: Data classes _RouterEstimatorParams, _RouterEstimatorModelInfo and _RouterEstimatorDeployment for typed deployment parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L87-95
+    why: _read_admin auth check for proxy admin and proxy admin view-only roles, returning 403 otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L98-103
+    why: _write_admin auth check for proxy admin only, returning 403 for view-only or non-admin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L106-116
+    why: get_roi_config_repository loads ConfigRepository from prisma_client or returns 500 if None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L131-137
+    why: _estimator_models_from_deployments parses and filters deployment list, skipping entries without a model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L140-149
+    why: _estimator_model extracts model from deployment, trying base_model field first, then model, then custom provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L152-158
+    why: _router_estimator_models gets deployments from router model list or returns empty tuple if router is None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L161-166
+    why: _router_models reads sorted unique model names from router or returns empty tuple, validated through TypeAdapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L169-176
+    why: _load_stored_settings reads from config repository by key or returns default _StoredSettings, raises 500 on validation error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L179-197
+    why: _load_settings decrypts tokens and constructs ROISettings, raises 500 on validation error, logs no warnings on crypto failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L200-217
+    why: _save_settings stores encrypted settings with github_token and estimator_key values encrypted, identity_map preserved as-is.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L220-227
+    why: _load_report loads ROIReport from repository by key or returns None, raises 500 on validation error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L230-245
+    why: _public_settings returns response with models, ready flag, has_github_token and has_estimator_key, default_prompt and all user settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L320-329
+    why: GET /roi-calculator/settings route, read-admin dependency, returns ROISettingsResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L332-388
+    why: PUT /roi-calculator/settings route with ROISettingsUpdate patch, write-admin dependency, null-URL 422, URL-change token clearing, validation 422, returns ROISettingsResponse.
+dod:
+  - text: Data classes _RouterEstimatorParams, _RouterEstimatorModelInfo and _RouterEstimatorDeployment parse router deployment objects with ConfigDict(extra="ignore", from_attributes=True).
+    proof: [deployment-class-cases]
+  - text: _estimator_models_from_deployments parses deployment objects via TypeAdapter and returns a tuple of EstimatorModel (model name, custom_llm_provider), skipping entries without a model.
+    proof: [estimator-models-cases]
+  - text: _estimator_model extracts the model field from a _RouterEstimatorDeployment by checking deployment.model_info.base_model first, then parameters.base_model, then parameters.model, returning None if all are absent.
+    proof: [estimator-model-cases]
+  - text: _router_estimator_models calls llm_router.get_model_list with the supplied model_name and returns a tuple of EstimatorModel for matching deployments, or empty tuple if llm_router is None.
+    proof: [router-estimator-models-cases]
+  - text: _router_models calls llm_router.get_model_names, validates result via TypeAdapter, sorts unique values and returns a tuple of sorted model names, or empty tuple if llm_router is None.
+    proof: [router-models-cases]
+  - text: _read_admin allows proxy admin and proxy admin view-only roles, returns 403 Forbidden for other roles.
+    proof: [read-admin-cases]
+  - text: _write_admin allows proxy admin only, returns 403 Forbidden for view-only or non-admin.
+    proof: [write-admin-cases]
+  - text: get_roi_config_repository loads ConfigRepository with use_writer=True or returns 500 with "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys" when prisma_client is None.
+    proof: [config-repository-cases]
+  - text: _load_stored_settings reads the "roi_calculator_settings" parameter from ConfigRepository, returns default _StoredSettings if None, raises 500 "Stored ROI Calculator settings are invalid." on validation error.
+    proof: [load-stored-cases]
+  - text: _load_settings decrypts github_token and estimator_key using decrypt_value_helper with key "roi_calculator_settings", constructs ROISettings, returns 500 "Stored ROI Calculator settings are invalid." on validation error without logging.
+    proof: [load-settings-cases]
+  - text: _save_settings encrypts github_token and estimator_key using encrypt_value_helper, stores as _StoredSettings via set_param with key "roi_calculator_settings".
+    proof: [save-settings-cases]
+  - text: _public_settings returns sorted unique router model names as available_models, ready flag true only when repos and estimator_model are both set and estimator_model appears in available_models.
+    proof: [public-settings-cases]
+  - text: _load_report reads the "roi_calculator_report" parameter from ConfigRepository, returns None if absent, raises 500 "Stored ROI Calculator report is invalid." on validation error.
+    proof: [load-report-cases]
+  - text: GET /roi-calculator/settings requires read-admin, returns 200 with public settings.
+    proof: [get-route-cases]
+  - text: PUT /roi-calculator/settings requires write-admin, returns 422 if patch contains explicit null github_api_url.
+    proof: [put-null-url-cases]
+  - text: PUT clears github_token (both plaintext and encrypted) when github_api_url changes, detected by rstrip("/") comparison.
+    proof: [put-url-change-token-clear]
+  - text: PUT preserves github_token when URL does not change and token not supplied.
+    proof: [put-url-same-token-preserve]
+  - text: PUT encrypts new token when supplied, uses empty string for missing or falsy token.
+    proof: [put-token-encryption-cases]
+  - text: PUT validates reconstructed ROISettings and returns 422 with pydantic error details on validation failure.
+    proof: [put-validation-cases]
+  - text: PUT returns 500 when ConfigRepository is None or when loading existing settings fails.
+    proof: [put-db-error-cases]
+checks:
+  optional: []
+  commands:
+    - id: deployment-class-cases
+      why: Deployment data class tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::deployment_/)'
+    - id: estimator-models-cases
+      why: _estimator_models_from_deployments tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::estimator_models/)'
+    - id: estimator-model-cases
+      why: _estimator_model extraction tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::estimator_model/)'
+    - id: router-estimator-models-cases
+      why: _router_estimator_models tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::router_estimator_models/)'
+    - id: router-models-cases
+      why: _router_models tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::router_models/)'
+    - id: read-admin-cases
+      why: read-admin role check tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::read_admin/)'
+    - id: write-admin-cases
+      why: write-admin role check tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::write_admin/)'
+    - id: config-repository-cases
+      why: config repository loading tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::config_repository/)'
+    - id: load-stored-cases
+      why: stored settings loading tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::load_stored/)'
+    - id: load-settings-cases
+      why: settings loading and decryption tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::load_settings/)'
+    - id: save-settings-cases
+      why: settings saving and encryption tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::save_settings/)'
+    - id: public-settings-cases
+      why: public settings projection and model sorting tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::public_settings/)'
+    - id: load-report-cases
+      why: _load_report loading and validation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::load_report/)'
+    - id: get-route-cases
+      why: GET /roi-calculator/settings route tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::get_route/)'
+    - id: put-null-url-cases
+      why: PUT with null URL tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_null_url/)'
+    - id: put-url-change-token-clear
+      why: PUT URL change token clearing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_url_change/)'
+    - id: put-url-same-token-preserve
+      why: PUT URL unchanged token preservation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_url_same/)'
+    - id: put-token-encryption-cases
+      why: PUT token encryption tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_token/)'
+    - id: put-validation-cases
+      why: PUT validation and error handling tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_validation/)'
+    - id: put-db-error-cases
+      why: PUT database error handling tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_db_error/)'
+oracle_cases:
+  - tools/oracle/cases/management/roi_settings/get-settings-read-admin-200.yaml
+  - tools/oracle/cases/management/roi_settings/get-settings-non-admin-403.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-write-admin-200.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-view-only-403.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-null-url-422.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-db-not-connected-500.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-validation-error-422.yaml
+  - tools/oracle/cases/management/roi_settings/get-settings-db-not-connected-500.yaml
+  - tools/oracle/cases/management/roi_settings/get-settings-invalid-stored-500.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-invalid-stored-500.yaml
+deviations:
+  - what: Decryption failures for github_token or estimator_key do not log a warning and return the result of decrypt_value_helper unchanged.
+    why: LiteLLM decrypts secrets silently without logging; betterlite preserves this behavior to avoid logging partial or corrupted secrets.
+  - what: Invalid stored settings that fail ValidationError raise HTTP 500 immediately without attempting fallback or partial recovery.
+    why: A stored value that cannot deserialize to _StoredSettings indicates database corruption or a configuration issue; returning 500 signals the operator to investigate.
+  - what: The ready flag checks whether estimator_model is a member of available_models by exact string match; it does not attempt to resolve aliases or provider prefixes.
+    why: The model list from the router is the source of truth; only configured models in that list are valid for the estimator.
+out_of_scope:
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:119-120` (`get_roi_sync_manager`) — owned by B076,
+    the umbrella that composes the sync manager instance.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:123-124` (`get_github_transport`) — owned by B3161,
+    which injects the GitHub transport when testing connections.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:248-254` (`_gateway_key`) — owned by B3161,
+    used for estimator completion callbacks.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:257-265` (`_gateway_http_client`) — owned by B3161,
+    used for in-process HTTP dispatch.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:268-270` (`_gateway_transport`) — owned by B3161,
+    caches the ASGI transport for in-process completion.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:273-285` (`_completion_caller`) — owned by B3161,
+    implements the completion callback for estimator injection.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:296-309` (`_test_estimator_access`) — owned by B3161,
+    tests estimator key access.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:312-317` (`_spend_reader`) — owned by B3161,
+    supplies the spend callback to the sync runner.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:391-416` (`get_roi_calculator_repositories`) — owned by B3161,
+    lists repositories via the GitHub client.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:419-596` and L620-652 (`reset_roi_calculator_setup`) — owned by B076,
+    the sync/report/identity-map/reset routes and setup-reset handler.
+  - >-
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:599-617` (`test_roi_calculator_connections`) — owned by B3161,
+    tests GitHub and estimator connections.
+pitfalls:
+  - Token is cleared by comparing rstrip("/") results, so "https://api.github.com/" and "https://api.github.com" are the same URL.
+  - Decryption that returns an empty string is treated as no secret; encryption of an empty string produces an empty encrypted value.
+  - model_fields_set from pydantic allows detection of which fields the client sent; a missing field uses the current value, not the default.
+  - _StoredSettings uses ConfigDict(extra="ignore") to allow new fields from the router without breaking deserialization.
+  - The ready flag requires an exact model name match; it does not infer or resolve model aliases.
+  - Validation errors from ROISettings construction are converted to pydantic error details by exc.errors(include_context=False).
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2
