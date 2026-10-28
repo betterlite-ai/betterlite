@@ -66,10 +66,10 @@ fn wrong_aad_fails_authentication() {
         ciphertext: PYTHON_CIPHERTEXT.to_owned(),
         tag: PYTHON_TAG.to_owned(),
     };
-    assert!(matches!(
-        app.decrypt_json(&envelope, None),
-        Err(AppCryptoError::Seal { .. })
-    ));
+    let error = app.decrypt_json(&envelope, None).unwrap_err();
+    assert!(matches!(error, AppCryptoError::Seal { .. }));
+    // cryptography's InvalidTag carries no text of its own; str(error) is "".
+    assert_eq!(error.to_string(), "");
 }
 
 #[rstest]

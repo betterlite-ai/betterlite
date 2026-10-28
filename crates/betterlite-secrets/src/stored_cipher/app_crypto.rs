@@ -33,7 +33,8 @@ pub enum AppCryptoError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the ciphertext failed authentication under this key")]
+    // cryptography's InvalidTag carries no message of its own; str(error) is "".
+    #[error("")]
     Seal {
         #[source]
         source: aes_gcm::Error,
