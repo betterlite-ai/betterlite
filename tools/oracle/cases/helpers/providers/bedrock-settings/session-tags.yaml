@@ -1,0 +1,12 @@
+kind: helper
+name: session-tags
+call:
+  bedrock_settings:
+    settings:
+      deployments:
+        - aws_session_tags: [{Key: team, Value: search}, {Key: app, Value: chat}]
+        - aws_session_tags: [{Key: 1}, {Value: false}]
+        - {}
+      environment: {}
+env: {}
+compare: {ignore: []}
