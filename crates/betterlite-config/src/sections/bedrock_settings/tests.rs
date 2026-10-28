@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{AwsSettings, SessionTagValue};
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::{ConfigError, ConfigLoader, parse_view};
 
 type Read = fn(&AwsSettings) -> Option<String>;
 
@@ -141,7 +141,7 @@ fn bedrock_settings_config_cases(
 
 #[test]
 fn raw_configuration_debug_redacts_credentials() {
-    let (raw, _) = crate::loader::parse_view::<super::Raw>(
+    let (raw, _) = parse_view::<super::Raw>(
         "model_list:\n- litellm_params:\n    aws_access_key_id: raw-key\n    aws_secret_access_key: raw-secret\n",
     )
     .unwrap();
