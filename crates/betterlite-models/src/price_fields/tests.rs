@@ -17,11 +17,13 @@ use std::path::Path;
     r#"{"input_cost_per_token":999999999999999999999999999999999999999999999999}"#,
     "input_cost_per_token"
 )]
-#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"sample_spec":{"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
+#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"sample_spec":{"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"search_context_cost_per_query":{"search_context_size_high":0.01},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
 #[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "tiered_pricing[0].unknown_price")]
 #[case::null(r#"{"input_cost_per_token":null}"#, "must not be null")]
 #[case::string(r#"{"input_cost_per_token":"0.1"}"#, "must be a JSON number")]
 #[case::boolean(r#"{"input_cost_per_token":true}"#, "must be a JSON number")]
+#[case::array(r#"{"input_cost_per_token":[]}"#, "must be a JSON number")]
+#[case::object(r#"{"input_cost_per_token":{}}"#, "must be a JSON number")]
 fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] expected: &str) {
     let raw: Result<Box<RawValue>, _> = serde_json::from_str(source);
     let parsed = match raw {
@@ -62,6 +64,10 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
         assert_eq!(
             parsed_value.off_peak.unwrap().values["input_cost_per_token"].to_string(),
             "0.0000002"
+        );
+        assert_eq!(
+            parsed_value.search_context["search_context_size_high"].to_string(),
+            "0.01"
         );
         assert_eq!(parsed_value.tiers.len(), 1);
         assert_eq!(parsed_value.tiers[0].range.len(), 2);
