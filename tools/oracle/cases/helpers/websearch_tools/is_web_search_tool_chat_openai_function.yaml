@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-chat-openai-function
+call: {websearch_tool_records: {function: is_web_search_tool_chat_completion, tool: {type: function, function: {name: litellm_web_search}}}}
+env: {}
+compare: {ignore: []}

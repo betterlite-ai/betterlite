@@ -1,0 +1,13 @@
+kind: helper
+name: cisco-rewrite-message-list-content
+call:
+  cisco_conversation:
+    function: rewrite
+    input:
+      - {role: user, content: [{type: input_text, text: first}], id: m1}
+      - {role: assistant, content: [{type: output_text, text: reply}]}
+      - {role: user, content: [{type: input_image, image_url: "https://x"}]}
+    sanitized_text: clean
+env: {}
+compare:
+  ignore: []
