@@ -3,10 +3,13 @@ import uuid
 from typing import TypeAlias
 from unittest import mock
 
+import aiohttp
 import httpx
-
 import litellm
-from litellm.llms.custom_httpx.mock_transport import MockOpenAITransport, _chat_completion_json
+from litellm.llms.custom_httpx.mock_transport import (
+    MockOpenAITransport,
+    _chat_completion_json,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
+)
 from litellm.llms.openai.common_utils import BaseOpenAILLM
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -24,13 +27,15 @@ def _reply_literals(input_value: dict[str, Json]) -> Json:
         mock.patch.object(time, "time", return_value=float(clock)),
         mock.patch.object(uuid, "uuid4", return_value=uuid.UUID(identifier)),
     ):
-        return _chat_completion_json(model)
+        return _chat_completion_json(model)  # pyright: ignore[reportUnknownVariableType]
 
 
 def _probe_outcome(content: str) -> Json:
-    request = httpx.Request("POST", "http://mock.test/v1/chat/completions", content=content.encode())
+    request = httpx.Request("POST", "http://mock.test/v1/completions", content=content.encode())
     try:
-        model, stream = MockOpenAITransport._parse_request(request)
+        model, stream = MockOpenAITransport._parse_request(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            request
+        )
     except AttributeError as error:
         return {"error": str(error)}
     return {"model": model, "stream": stream}
@@ -56,7 +61,8 @@ def _request_decoder(input_value: dict[str, Json]) -> Json:
 def _classify(client: httpx.AsyncClient | httpx.Client, supplied: object | None) -> str:
     if supplied is not None and client is supplied:
         return "supplied"
-    if isinstance(client._transport, MockOpenAITransport):
+    transport = client._transport  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if isinstance(transport, MockOpenAITransport):
         return "mock"
     return "default"
 
@@ -64,25 +70,30 @@ def _classify(client: httpx.AsyncClient | httpx.Client, supplied: object | None)
 def _selection_outcome(scenario: Json) -> str:
     expected = {"kind", "network_mock", "client_session_supplied", "shared_session_supplied"}
     if not isinstance(scenario, dict) or set(scenario) != expected:
-        raise ValueError("each selection scenario needs kind, network_mock, client_session_supplied, and shared_session_supplied")
+        raise ValueError("each selection scenario needs kind, network_mock, client_session_supplied, and shared_session_supplied")  # noqa: E501
     kind = scenario["kind"]
     network_mock = scenario["network_mock"]
     client_supplied = scenario["client_session_supplied"]
     shared_supplied = scenario["shared_session_supplied"]
     if kind not in ("async", "sync"):
         raise ValueError("kind must be async or sync")
-    if not isinstance(network_mock, bool) or not isinstance(client_supplied, bool) or not isinstance(shared_supplied, bool):
-        raise ValueError("network_mock, client_session_supplied, and shared_session_supplied must be bools")
+    flags = (network_mock, client_supplied, shared_supplied)
+    if not all(isinstance(flag, bool) for flag in flags):
+        raise ValueError("network_mock, client_session_supplied, and shared_session_supplied must be bools")  # noqa: E501
     with mock.patch.object(litellm, "network_mock", network_mock):
         if kind == "async":
             supplied = httpx.AsyncClient() if client_supplied else None
-            shared = object() if shared_supplied else None
+            shared = aiohttp.ClientSession() if shared_supplied else None
             with mock.patch.object(litellm, "aclient_session", supplied):
-                client = BaseOpenAILLM._get_async_http_client(shared_session=shared)
+                client = BaseOpenAILLM._get_async_http_client(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                    shared_session=shared
+                )
         else:
             supplied = httpx.Client() if client_supplied else None
             with mock.patch.object(litellm, "client_session", supplied):
-                client = BaseOpenAILLM._get_sync_http_client()
+                client = BaseOpenAILLM._get_sync_http_client()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if client is None:
+        raise ValueError("expected a mock-selected http client but got None")
     return _classify(client, supplied)
 
 
