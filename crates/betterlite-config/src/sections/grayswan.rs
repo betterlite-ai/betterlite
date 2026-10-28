@@ -89,14 +89,17 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let base = parameters.api_base.filter(|value| !value.is_empty()).map_or_else(
-            || {
-                Ok(lookup
-                    .lookup("GRAYSWAN_API_BASE")
-                    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
-            },
-            |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
-        )?;
+        let base = parameters
+            .api_base
+            .filter(|value| !value.is_empty())
+            .map_or_else(
+                || {
+                    Ok(lookup
+                        .lookup("GRAYSWAN_API_BASE")
+                        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
+                },
+                |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
+            )?;
         let violation_threshold = parameters.violation_threshold.map_or_else(
             || {
                 Ok(lookup
@@ -164,4 +167,3 @@ where
         .lookup("GRAYSWAN_REASONING_MODE")
         .filter(|text| matches!(text.as_str(), "off" | "hybrid" | "thinking"))
 }
-

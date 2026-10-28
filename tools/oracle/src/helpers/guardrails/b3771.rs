@@ -34,8 +34,7 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let metadata_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(metadata_json)
         .map_err(|error| failure(error.to_string()))?;
     let merged = extract_user_api_key_metadata(Some(&litellm_values), Some(&metadata_values));
-    let serialized =
-        serde_json::to_value(merged).map_err(|error| failure(error.to_string()))?;
+    let serialized = serde_json::to_value(merged).map_err(|error| failure(error.to_string()))?;
     let object = serialized.as_object().cloned().unwrap_or_default();
     Ok(serde_json::Value::Object(
         object
