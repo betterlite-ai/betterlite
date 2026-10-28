@@ -17,8 +17,16 @@ use std::path::Path;
     r#"{"input_cost_per_token":999999999999999999999999999999999999999999999999}"#,
     "input_cost_per_token"
 )]
+#[case::overprecision_exponent(
+    r#"{"input_cost_per_token":0.12345678901234567890123456789e-1}"#,
+    "input_cost_per_token"
+)]
+#[case::overflow_exponent(
+    r#"{"input_cost_per_token":999999999999999999999999999999e10}"#,
+    "input_cost_per_token"
+)]
 #[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"sample_spec":{"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"search_context_cost_per_query":{"search_context_size_high":0.01},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
-#[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "tiered_pricing[0].unknown_price")]
+#[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "unknown field `unknown_price`")]
 #[case::null(r#"{"input_cost_per_token":null}"#, "must not be null")]
 #[case::string(r#"{"input_cost_per_token":"0.1"}"#, "must be a JSON number")]
 #[case::boolean(r#"{"input_cost_per_token":true}"#, "must be a JSON number")]
@@ -62,27 +70,63 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
             "0.003"
         );
         assert_eq!(
-            parsed_value.off_peak.unwrap().values["input_cost_per_token"].to_string(),
+            parsed_value
+                .off_peak
+                .unwrap()
+                .input_cost_per_token
+                .unwrap()
+                .to_string(),
             "0.0000002"
         );
         assert_eq!(
-            parsed_value.search_context["search_context_size_high"].to_string(),
+            parsed_value
+                .search_context
+                .unwrap()
+                .search_context_size_high
+                .unwrap()
+                .to_string(),
             "0.01"
         );
         assert_eq!(parsed_value.tiers.len(), 1);
-        assert_eq!(parsed_value.tiers[0].range.len(), 2);
-        assert_eq!(parsed_value.tiers[0].range[1].to_string(), "256000");
+        assert_eq!(parsed_value.tiers[0].range.as_ref().unwrap().len(), 2);
+        assert_eq!(
+            parsed_value.tiers[0].range.as_ref().unwrap()[1].to_string(),
+            "256000"
+        );
     } else if expected.contains('_') || expected.contains("must") {
         assert!(parsed.unwrap_err().to_string().contains(expected));
     } else {
         let parsed_value = parsed.unwrap();
-        let value = parsed_value
-            .values
-            .values()
-            .next()
-            .and_then(|group| group.values().next())
-            .unwrap();
-        assert_eq!(value.to_string(), expected);
+        assert_eq!(
+            parsed_value
+                .values
+                .input_token
+                .or(parsed_value.values.output_token)
+                .unwrap()
+                .to_string(),
+            expected
+        );
+    }
+}
+
+#[rstest]
+fn model_price_types_inventory_covers_pinned_fixtures() {
+    for fixture in [
+        "model_prices_and_context_window.json",
+        "model_prices_and_context_window.schema.json",
+    ] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join(fixture);
+        let source = fs::read_to_string(path).unwrap();
+        let entries: std::collections::BTreeMap<String, Box<RawValue>> =
+            serde_json::from_str(&source).unwrap();
+        for (name, value) in entries {
+            if name == "sample_spec" || name == "fallback_generalizations" {
+                continue;
+            }
+            PriceFields::parse(value.as_ref()).unwrap();
+        }
     }
 }
 
