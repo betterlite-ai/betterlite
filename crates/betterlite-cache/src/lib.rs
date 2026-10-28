@@ -1,3 +1,4 @@
+pub mod azure_blob_cache;
 pub mod backend;
 pub mod cache_key;
 pub mod codec;
