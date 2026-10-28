@@ -1,10 +1,9 @@
-use std::collections::BTreeSet;
+#[cfg(test)]
+mod tests;
 
-use betterlite_config::sections::content_filter_records::CodeBlockActionTaken;
+pub const MASK_PLACEHOLDER: &str = "[CODE_BLOCK_REDACTED]";
 
-pub(crate) const MASK_PLACEHOLDER: &str = "[CODE_BLOCK_REDACTED]";
-
-pub(crate) const NON_EXECUTABLE_TAGS: &[&str] = &[
+const NON_EXECUTABLE_TAGS: [&str; 7] = [
     "text",
     "plaintext",
     "plain",
@@ -14,73 +13,51 @@ pub(crate) const NON_EXECUTABLE_TAGS: &[&str] = &[
     "result",
 ];
 
-fn normalize_language(tag: &str) -> String {
-    let normalized = tag.trim().to_ascii_lowercase();
-    match normalized.as_str() {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LanguageMatch {
+    Listed,
+    BlockAll,
+    Unlisted,
+}
+
+#[must_use]
+pub fn normalize_language(tag: &str) -> String {
+    let lowered = tag.trim().to_lowercase();
+    match lowered.as_str() {
         "js" => "javascript".to_owned(),
         "py" => "python".to_owned(),
         "sh" => "bash".to_owned(),
         "ts" => "typescript".to_owned(),
-        _ => normalized,
+        _ => lowered,
     }
 }
 
-pub(crate) fn is_blocked_language(
-    tag: &str,
-    blocked_languages: Option<&[String]>,
-    block_all: bool,
-) -> bool {
-    if block_all {
-        return true;
+// An empty list means LiteLLM's block_all mode, where every tag counts as blocked
+#[must_use]
+pub fn match_language(tag: &str, blocked_languages: &[String]) -> LanguageMatch {
+    if blocked_languages.is_empty() {
+        return LanguageMatch::BlockAll;
     }
     let normalized = normalize_language(tag);
-    blocked_languages.is_some_and(|languages| {
-        languages
-            .iter()
-            .map(|language| normalize_language(language))
-            .any(|language| language == normalized)
-    })
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum ConfidenceMode {
-    Explicit,
-    All,
-    None,
-}
-
-pub(crate) fn confidence_for_block(tag: &str, mode: ConfidenceMode) -> f64 {
-    if matches!(mode, ConfidenceMode::Explicit) {
-        return 1.0;
-    }
-    if matches!(mode, ConfidenceMode::All) {
-        let normalized = normalize_language(tag);
-        if NON_EXECUTABLE_TAGS.contains(&normalized.as_str()) {
-            return 0.5;
-        }
-        return 1.0;
-    }
-    0.0
-}
-
-pub(crate) fn normalized_blocked_languages(languages: Option<&[String]>) -> BTreeSet<String> {
-    let mut normalized = BTreeSet::new();
-    for language in languages.unwrap_or_default() {
-        normalized.insert(normalize_language(language));
-    }
-    normalized
-}
-
-pub(crate) fn action_for_confidence(
-    blocked: bool,
-    confidence: f64,
-    threshold: f64,
-) -> CodeBlockActionTaken {
-    if !blocked {
-        CodeBlockActionTaken::Allow
-    } else if confidence >= threshold {
-        CodeBlockActionTaken::Block
+    if blocked_languages
+        .iter()
+        .any(|language| normalize_language(language) == normalized)
+    {
+        LanguageMatch::Listed
     } else {
-        CodeBlockActionTaken::LogOnly
+        LanguageMatch::Unlisted
+    }
+}
+
+#[must_use]
+pub fn confidence_for_block(tag: &str, language_match: LanguageMatch) -> f64 {
+    match language_match {
+        LanguageMatch::BlockAll
+            if NON_EXECUTABLE_TAGS.contains(&normalize_language(tag).as_str()) =>
+        {
+            0.5
+        }
+        LanguageMatch::Listed | LanguageMatch::BlockAll => 1.0,
+        LanguageMatch::Unlisted => 0.0,
     }
 }

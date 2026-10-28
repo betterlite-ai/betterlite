@@ -1,4 +1,7 @@
-pub(crate) const _NO_EXECUTION_PHRASES: &[&str] = &[
+#[cfg(test)]
+mod tests;
+
+pub const NO_EXECUTION_PHRASES: &[&str] = &[
     "don't run",
     "do not run",
     "don't execute",
@@ -49,7 +52,7 @@ pub(crate) const _NO_EXECUTION_PHRASES: &[&str] = &[
     "show how to parse stdout",
 ];
 
-pub(crate) const _EXECUTION_REQUEST_PHRASES: &[&str] = &[
+pub const EXECUTION_REQUEST_PHRASES: &[&str] = &[
     "run this ",
     "run these ",
     "execute this ",
@@ -158,17 +161,21 @@ pub(crate) const _EXECUTION_REQUEST_PHRASES: &[&str] = &[
     "list saved passwords",
 ];
 
-pub(crate) fn has_no_execution_intent(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    _NO_EXECUTION_PHRASES
+#[must_use]
+pub fn has_no_execution_intent(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    NO_EXECUTION_PHRASES
         .iter()
         .any(|phrase| lower.contains(phrase))
-        && !has_execution_intent(text)
+        && !EXECUTION_REQUEST_PHRASES
+            .iter()
+            .any(|phrase| lower.contains(phrase))
 }
 
-pub(crate) fn has_execution_intent(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    _EXECUTION_REQUEST_PHRASES
+#[must_use]
+pub fn has_execution_intent(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    EXECUTION_REQUEST_PHRASES
         .iter()
         .any(|phrase| lower.contains(phrase))
 }
