@@ -1,0 +1,7 @@
+kind: helper
+name: input-absent
+call:
+  b3721:
+    step: {"format": {"source": "INPUT"}}
+env: {}
+compare: {ignore: []}

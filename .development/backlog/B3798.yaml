@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: TypeSafe tool exchange checks
 status: todo
 depends_on: [B173, B224]
-file: null
+file: tasks/B3798-typesafe-exchanges.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/typesafe.py"

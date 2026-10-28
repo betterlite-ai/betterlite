@@ -1,0 +1,108 @@
+id: B3271
+title: Search tool database registry
+description: >-
+  Build `betterlite-db::search_tools` to manage search-tool CRUD over the existing typed Postgres repository.
+  Preserve serialized parameter fields as JSON strings, ISO-8601 timestamps, descending creation order for list reads,
+  and reconnect retry for find_many. Keep the separate lookup and delete operations, and create's reconstruction
+  from caller input without inventing an encompassing transaction.
+
+  Implement five methods in SearchToolRegistry: add_search_tool_to_db (persist a typed SearchTool, set timestamps
+  and id), delete_search_tool_from_db (lookup first, raise on missing, delete and return name), update_search_tool_in_db
+  (persist field updates, return result with ISO timestamps), get_all_search_tools_from_db (find_many with descending
+  created_at order, reconnect retry, return SearchTool typed list), and get_search_tool_by_id_from_db (lookup one by id,
+  return typed SearchTool or None).
+
+  Serialize litellm_params and search_tool_info as JSON strings with safe_dumps, which passes credentials through
+  unchanged for persistence; do not redact. Convert Prisma timestamps to ISO format in every returned dict.
+scope:
+  paths:
+    - crates/betterlite-db/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L17-L48
+    why: SearchToolRecord protocol, SearchToolTableClient protocol, and table factory functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L51-L77
+    why: SearchToolRegistry class, __init__, and _convert_prisma_to_dict static method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L82-L118
+    why: add_search_tool_to_db method, with caller input reconstruction and timestamp assignment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L120-L149
+    why: delete_search_tool_from_db method, with exact error message and success response shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L151-L183
+    why: update_search_tool_in_db method and ISO timestamp conversion in result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L185-L216
+    why: get_all_search_tools_from_db with find_many order, reconnect retry, and SearchTool reconstruction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L218-L244
+    why: get_search_tool_by_id_from_db lookup, None return on missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/__init__.py#L1-L7
+    why: Package exports, including SearchToolRegistry from the registry module.
+dod:
+  - text: SearchToolRecord and SearchToolTableClient protocols define the Prisma table contracts with async CRUD methods and iterator support.
+    proof: [protocols]
+  - text: add_search_tool_to_db serializes litellm_params and search_tool_info to JSON strings using safe_dumps, sets created_at and updated_at to datetime.now(timezone.utc), persists the tool, and returns the input with search_tool_id, created_at and updated_at as ISO strings.
+    proof: [create-tests]
+  - text: >-
+      delete_search_tool_from_db looks up the tool by id and raises "Error deleting search tool from DB: Search tool
+      with ID {search_tool_id} not found" if the tool does not exist.
+    proof: [delete-tests, delete-error-message]
+  - text: delete_search_tool_from_db on success returns a dict with "message"="Search tool {search_tool_id} deleted successfully" and "search_tool_name" set to the deleted tool's name.
+    proof: [delete-tests, delete-success-response]
+  - text: update_search_tool_in_db serializes litellm_params and search_tool_info, sets updated_at to datetime.now(timezone.utc), updates the database row, and returns a dict with ISO-formatted created_at and updated_at.
+    proof: [update-tests]
+  - text: get_all_search_tools_from_db calls find_many with order={created_at:"desc"}, wraps the call with call_with_db_reconnect_retry, converts each Prisma result to dict, and returns a list of typed SearchTool objects.
+    proof: [list-tests, list-order]
+  - text: get_search_tool_by_id_from_db looks up one tool by id, converts its Prisma result to dict with ISO timestamps, returns a typed SearchTool or None if not found.
+    proof: [byid-tests]
+  - text: _convert_prisma_to_dict converts created_at and updated_at datetime objects to ISO-8601 format strings and returns a dict.
+    proof: [convert-tests]
+  - text: Every mutant in the registry is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: protocols
+      why: SearchToolRecord or SearchToolTableClient protocol tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::(record|table_client)/)'
+    - id: create-tests
+      why: add_search_tool_to_db tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::(create|add)/)'
+    - id: delete-tests
+      why: delete_search_tool_from_db tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::delete/)'
+    - id: delete-error-message
+      why: delete_search_tool_from_db error message does not match the exact LiteLLM text
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::delete.*not_found/)'
+    - id: delete-success-response
+      why: delete_search_tool_from_db success response format or keys do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::delete.*success/)'
+    - id: update-tests
+      why: update_search_tool_in_db tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::update/)'
+    - id: list-tests
+      why: get_all_search_tools_from_db tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::(list|get_all)/)'
+    - id: list-order
+      why: get_all_search_tools_from_db does not return results in descending created_at order
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::.*(order|desc)/)'
+    - id: byid-tests
+      why: get_search_tool_by_id_from_db tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::(get_by_id|byid)/)'
+    - id: convert-tests
+      why: _convert_prisma_to_dict timestamp conversion tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^search_tools::convert/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "get_search_tool_by_name_from_db at litellm/proxy/search_endpoints/search_tool_registry.py:246-272: no caller at the pin (14 lines). Build no implementation or test cases."
+  - "AvailableSearchProvider at litellm/types/search.py:73-77: no caller at the pin (3 lines, owned by B3270 for path accounting)."
+  - "ProxyConfig._init_search_tools_in_db, parse_search_tools, and reload_search_tools_from_db: config orchestration and proxy setup owned elsewhere."
+  - "Database schema and Prisma client: provided by existing infrastructure. This task uses SearchToolsRepository and PrismaClient as they are."
+pitfalls:
+  - "litellm_params and search_tool_info are serialized as JSON strings with safe_dumps, which persists credentials unchanged (no redaction). This preserves the secret-bearing data at rest."
+  - "Timestamps from datetime.now(timezone.utc).isoformat() produce UTC offset +00:00, not Z. Match LiteLLM's exact format in tests."
+  - "Created_at never changes after insert; updated_at advances only on update, not list reads."
+  - "Descending order for list results uses order={created_at:\"desc\"} via find_many, not a separate sort."
+  - "find_many call is wrapped with call_with_db_reconnect_retry for list reads only, not for single-row operations."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,8 +2,8 @@ id: B3610
 milestone: M5 api families
 title: Pass-through request metadata and failure relay
 status: todo
-depends_on: [B3605, B188, B206, B746, B1106, B1109]
-file: null
+depends_on: [B3605, B120, B188, B206, B746, B1106, B1109]
+file: tasks/B3610-passthrough-request-context.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
 parent: B102

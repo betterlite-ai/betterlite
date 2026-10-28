@@ -3,7 +3,7 @@ milestone: M7 observability
 title: LangSmith credentials and run payloads
 status: todo
 depends_on: [B002, B188, B254]
-file: null
+file: tasks/B3911-langsmith-payloads.yaml
 covers:
   - "litellm/integrations/langsmith.py"
   - "litellm/types/integrations/langsmith.py"

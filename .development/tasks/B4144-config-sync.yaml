@@ -1,0 +1,70 @@
+id: B4144
+title: Publish config changes and coordinate subscriber reloads
+description: >-
+  Add config change publishing and subscriber coordination for fleet-wide config resyncing via Redis pubsub.
+  When a database table betterlite syncs (litellm_proxymodeltable, litellm_credentialstable, litellm_guardrailstable, litellm_policytable, litellm_policyattachmenttable, litellm_managedvectorstorestable, litellm_managedvectorstoreindextable, litellm_mcpservertable, litellm_agentstable, litellm_prompttable, litellm_searchtoolstable, litellm_ssoconfig, litellm_cacheconfig, litellm_configoverrides, litellm_uisettings) changes, a message publishes to the Redis channel litellm_proxy.config_change (or {namespace}:litellm_proxy.config_change if coordination_redis has a namespace).
+  The published message is a JSON object with an object_type field set to the table name.
+  Subscribers listen on that channel with a debounce of 1.0 second, jitter up to 5.0 seconds, and a minimum resync interval of 10 seconds to cap the fleet-wide reload rate.
+  When a message arrives, the subscriber drains pending messages, sleeps for debounce plus random jitter, waits for the minimum resync interval to pass since the last resync, then runs a list of resync callbacks.
+  If any callback fails, the subscriber logs a warning but continues with the next callback.
+  Subscribe failures backoff exponentially: 5 seconds initially, doubling up to 60 seconds, resetting when subscription succeeds.
+  The subscriber is an async task the server owns and stops on shutdown.
+  Dependencies are injected through constructors: a RedisCache from coordination_redis config (B360), a time source (time.monotonic for production, testable through a clock argument), a random source (for jitter), and a list of async resync callbacks the server provides.
+  A helper publishes on behalf of table writes: wrap_table_actions_for_config_sync intercepts Prisma create, create_many, update, update_many, upsert, delete and delete_many calls and publishes after each write completes.
+scope:
+  paths:
+    - crates/betterlite-redis/src/config_sync.rs
+    - crates/betterlite-redis/src/config_sync/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L1-284
+    why: The complete implementation of config change publishing and subscriber coordination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L30-70
+    why: Constants and sets defining the channel name, debounce, jitter, resync intervals, and synced tables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L92-98
+    why: The _ConfigChangeMessage dataclass and the published message JSON shape with object_type field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L101-122
+    why: Publish functions and how they route through the coordination_redis_cache global.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L125-160
+    why: The _PublishOnWriteActions wrapper and wrap_table_actions_for_config_sync factory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L163-254
+    why: The ConfigSyncSubscriber class with debounce, jitter, minimum resync interval, backoff, and callback execution.
+dod:
+  - text: A config change message publishes to the Redis channel with object_type set to the synced table name.
+    proof: [config-sync-unit-tests]
+  - text: The subscriber backoffs exponentially from 5s to 60s on subscription failures and resets on success.
+    proof: [config-sync-unit-tests]
+  - text: The subscriber debounces inbound messages by 1.0 second, adds jitter up to 5.0 seconds, and enforces a 10 second minimum interval between resyncs.
+    proof: [config-sync-unit-tests]
+  - text: The subscriber drains pending messages when one arrives and runs each resync callback, logging a warning if any callback fails.
+    proof: [config-sync-unit-tests]
+  - text: The wrap_table_actions_for_config_sync factory publishes on behalf of create, create_many, update, update_many, upsert, delete and delete_many table actions.
+    proof: [config-sync-unit-tests]
+  - text: A table not in the synced list is returned unwrapped, not wrapped.
+    proof: [config-sync-unit-tests]
+checks:
+  optional: []
+  commands:
+    - id: config-sync-unit-tests
+      why: the config sync module tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^config_sync::)'
+oracle_cases: []
+deviations:
+  - what: betterlite skips parsing and validation of the published pubsub message body, matching LiteLLM's behavior.
+    why: At the pinned commit, LiteLLM's ConfigSyncSubscriber._consume (line 244-253) never parses or decodes the message body; it only checks that the message is not None before proceeding. Neither side validates the message content.
+out_of_scope:
+  - Table write filtering or hooks beyond the synced table list.
+  - Per-deployment or per-fleet config versions.
+  - Conflict resolution when multiple instances publish concurrent changes.
+pitfalls:
+  - The constants CONFIG_SYNC_DEBOUNCE_SECONDS, CONFIG_SYNC_JITTER_MAX_SECONDS and CONFIG_SYNC_MIN_RESYNC_INTERVAL_SECONDS are in seconds as floats. Tokio asyncio.sleep takes a Duration; use Duration::from_secs_f64.
+  - The backoff calculation doubles the previous backoff each time; use min(backoff * 2, _BACKOFF_MAX_SECONDS) to cap it.
+  - A failed resync callback must not stop the subscriber loop. Catch exceptions on each callback, log and continue.
+  - The minimum resync interval check uses monotonic time, not wall clock time. Use a clock trait argument for testability.
+  - LiteLLM's jitter is uniform(0, max); do not accidentally use a normal distribution.
+  - Drain and subscribe messages both return on timeout (1 second in LiteLLM); a None timeout means "no message", not "error".
+  - The subscriber task must be cancelled cleanly on shutdown. Hold it in a JoinSet the server drains, not a detached spawn.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

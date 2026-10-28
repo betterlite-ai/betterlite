@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "system-map-metadata", "call": {"builtin_prompts": {"family": "system_map", "messages": [{"role": "system", "content": "s"}, {"role": "assistant", "content": "a", "name": "named", "tool_calls": [], "extra": {"enabled": true}}]}}, "env": {}, "compare": {"ignore": []}}

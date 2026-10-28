@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Translate Claude Code sessions and stream events
 status: todo
 depends_on: [B4830, B4831]
-file: null
+file: tasks/B4834-claude-code-harness.yaml
 covers:
   - "litellm/llms/claude_code/**"
 parent: B143

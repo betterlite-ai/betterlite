@@ -1,0 +1,133 @@
+id: B4573
+title: CLI PKCE discovery, loopback callback and token exchange
+description: >-
+  Build PKCE protocol primitives and the bounded loopback callback server for betterlite-management-cli.
+  Implement OAuth 2.1 authorization code flow with PKCE S256 against the proxy's own authorization server
+  (discovered at /.well-known/litellm-cli-auth), using a public client on a loopback redirect and registering
+  the CLI with the proxy's registration endpoint. Validate issuer and origin against the base URL (RFC 8414
+  section 3.3), reject endpoints outside the origin, verify S256 support and verify the contract structure.
+  Client registration sends JSON with client_name, redirect_uris, grant_types, response_types and
+  token_endpoint_auth_method=none; POST requests reject redirects (307/308). The module provides PKCE pair
+  generation (64-byte verifier, S256 challenge), authorization URL construction, code-to-token redemption,
+  token refresh and revocation. Loopback callback server listens on 127.0.0.1:0, validates state (rejecting
+  stray requests and path mismatches with 400), settles only on state match with code or error, and times out
+  connections after 5 seconds. All HTTP operations timeout at 15 seconds. Token responses parse as Pydantic
+  models with access_token, expires_in, refresh_token, user_id and team_id fields; PkceCredential captures
+  expires_at=now()+expires_in. Revocation failures distinguish permanent (PkceFailure on status !=200 except
+  503) from transient (RevocationUnavailable on 503). Error details extract from response JSON: first
+  error_description, then error, then detail, or full body (200 char limit) as fallback. Transport, entropy,
+  clock, browser opener and loopback infrastructure are injected for testability. The module owns shared
+  outcome and credential records (PkceFailure, RevocationUnavailable, PkceCredential, CallbackCode,
+  CallbackDenied); B4574 uses them for renewal/revocation coordination and B4575 matches PkceFailure and
+  RevocationUnavailable on logout.
+scope:
+  paths:
+    - crates/betterlite-cli/src/pkce_login.rs
+    - crates/betterlite-cli/src/pkce_login/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L1-L49
+    why: Imports, constants, CliAuthContract, _RegisteredClient and _TokenResponse Pydantic models with field validation (access_token/refresh_token min_length, expires_in positive).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L67-L102
+    why: Outcome dataclasses PkceFailure, RevocationUnavailable, PkceCredential, CallbackCode, CallbackDenied and CallbackOutcome union type owned here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L104-L116
+    why: Http Protocol with get and post signatures for dependency injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L118-L150
+    why: LoopbackServer HTTPServer subclass with __init__, redirect_uri property, get_request timeout setup and wait polling loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L152-L192
+    why: _CallbackHandler request handler with do_GET state/code validation, log_message suppression, _respond with cache-control header and _first helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L194-L250
+    why: discover_cli_auth contract fetching and validation, _endpoints_outside origin checks, _origin RFC 8414 normalization with explicit port, _canonical_url identity check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L253-L273
+    why: _ClientRegistration TypedDict, _form helper creating immutable mapping, _refused_redirect detecting 307/308 and extracting Location.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L276-L305
+    why: register_client POST with JSON payload and response validation, pkce_pair verifier generation and S256 sha256 digest base64url encoding without padding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L307-L346
+    why: authorize_url query building with response_type, code_challenge_method S256, resource, redeem_code wrapping _token_request for authorization code grant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L349-L401
+    why: refresh_credential wrapping _token_request for refresh token grant, _token_request common form encoding/POST/redirect check with 200 status and expires_at calculation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L404-L434
+    why: revoke_credential POST with token_type_hint, distinguishing 503 as RevocationUnavailable, _ERROR_BODY TypeAdapter and _error_detail extraction from error_description/error/detail fields.
+  - url: https://datatracker.ietf.org/doc/html/rfc9126
+    why: OAuth 2.0 Proof Key for Public Clients (PKCE) S256 and verifier generation.
+  - url: https://datatracker.ietf.org/doc/html/rfc8414#section-3.3
+    why: Authorization Server Metadata issuer and origin identity check (RFC 8414 section 3.3).
+dod:
+  - text: LoopbackServer listens on 127.0.0.1 with OS-assigned port and exposes redirect_uri property returning http://127.0.0.1:<port>/callback.
+    proof: [loopback-server]
+  - text: Callback GET handler validates state before checking error or code, rejects 404 (non-callback paths) and 400 (state mismatch), settles CallbackCode or CallbackDenied only on state match.
+    proof: [callback-validation]
+  - text: discover_cli_auth fetches /.well-known/litellm-cli-auth, validates CliAuthContract Pydantic model, checks S256 in code_challenge_methods_supported, validates issuer and origin equivalence, and rejects endpoints outside the origin.
+    proof: [discovery-validation]
+  - text: Client registration sends JSON POST with client_name, redirect_uris tuple, grant_types, response_types and token_endpoint_auth_method="none", rejects redirects (307/308).
+    proof: [client-registration]
+  - text: PKCE pair generates 64-byte URL-safe verifier and S256 challenge (sha256 digest, base64url-encoded without padding).
+    proof: [pkce-generation]
+  - text: Code redemption and refresh send form-encoded POST with code/code_verifier or refresh_token, enforce 15-second timeout and reject redirects before checking status 200.
+    proof: [token-requests]
+  - text: Revocation responses distinguish permanent failure (status !=200 except 503) as PkceFailure, transient server error (status 503) as RevocationUnavailable.
+    proof: [revocation-503]
+  - text: Token responses parse as _TokenResponse with expires_in field; PkceCredential captures expires_at=now()+expires_in.
+    proof: [token-expiry]
+  - text: Error detail extraction tries error_description, then error, then detail, then full response body (200 char limit) from JSON response.
+    proof: [error-detail]
+  - text: All HTTP operations (discovery, registration, token, revocation) timeout at 15 seconds and propagate requests.RequestException to PkceFailure.
+    proof: [http-timeout]
+  - text: Origin normalization (scheme, hostname, explicit port) makes https://example.com and https://example.com:443 compare equal.
+    proof: [origin-normalization]
+checks:
+  optional: []
+  commands:
+    - id: loopback-server
+      why: LoopbackServer is not correctly implemented or does not expose redirect_uri property
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::loopback/)'
+    - id: callback-validation
+      why: callback handler does not validate state before error/code or does not settle outcome correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::callback/)'
+    - id: discovery-validation
+      why: discovery does not validate contract format, S256 support or origin/issuer equivalence
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::discover/)'
+    - id: client-registration
+      why: client registration does not send correct JSON or does not reject redirects
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::register/)'
+    - id: pkce-generation
+      why: PKCE pair does not generate verifier and S256 challenge correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::pkce_pair/)'
+    - id: token-requests
+      why: token request does not use form encoding, timeout or rejects redirects
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::token/)'
+    - id: revocation-503
+      why: revocation response 503 is not distinguished as RevocationUnavailable
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::revoke/)'
+    - id: token-expiry
+      why: token response does not capture expires_at correctly or expires_in is not validated positive
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::expires/)'
+    - id: error-detail
+      why: error detail does not extract from error_description, error or detail fields
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::error/)'
+    - id: http-timeout
+      why: HTTP operations do not timeout at 15 seconds or do not propagate RequestException
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::http/)'
+    - id: origin-normalization
+      why: origin normalization does not make scheme://host:port explicit or compare ports correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::origin/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - CliTokenData TypedDict definition (auth.py); imported under TYPE_CHECKING only as a forward reference.
+  - Browser opening via webbrowser.open; accepted as an injected callable.
+  - Terminal output via print; accepted as an injected callable.
+  - Management client HTTP implementation; Http is a Protocol and the real requests client is injected.
+  - Token storage, keyring and local credential retrieval; handled by B4574 and B4575.
+  - CLI installation and invocation from the root command tree; B4585 handles registration and dispatch.
+pitfalls:
+  - LoopbackServer sets self.timeout=1 in __init__ so handle_request does not block forever; connection_timeout_seconds sets per-connection socket timeout separately.
+  - _origin normalizes explicit ports (port or 443/80 default) so https://example.com and https://example.com:443 compare equal via _canonical_url.
+  - _refused_redirect must be checked before status code on every POST, because 307/308 would otherwise bypass the check and be treated as success.
+  - State validation must come before error or code checks in callback handler, so a stray callback with an error parameter does not settle the wrong outcome.
+  - Revocation endpoint returns 200 on success even for already-revoked tokens; 503 is a transient server error (revocation unavailable right now), not permanent failure.
+  - _TOKEN_RESPONSE and _ERROR_BODY TypeAdapters validate Pydantic schemas on response.json(), so KeyError or ValidationError become PkceFailure.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

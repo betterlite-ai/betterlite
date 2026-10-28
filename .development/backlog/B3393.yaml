@@ -2,8 +2,8 @@ id: B3393
 milestone: M5 api families
 title: Skill listing and provider-specific pagination
 status: todo
-depends_on: [B185, B186, B198, B247, B3390, B3391]
-file: null
+depends_on: [B157, B185, B186, B198, B247, B3390, B3391]
+file: tasks/B3393-skills-list.yaml
 covers:
   - "litellm/skills/main.py"
 parent: B095

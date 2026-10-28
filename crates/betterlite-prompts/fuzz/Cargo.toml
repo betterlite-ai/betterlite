@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-prompts-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-prompts = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "tool_arguments"
+path = "fuzz_targets/tool_arguments.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Configure response cache backends and callback lifecycle
 status: todo
 depends_on: [B002, B189, B2226, B360, B4290, B4291, B4296]
-file: null
+file: tasks/B4299-response-cache-configuration.yaml
 covers:
   - "litellm/caching/caching.py"
 parent: B125

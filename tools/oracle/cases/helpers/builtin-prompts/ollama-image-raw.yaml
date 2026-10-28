@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "ollama-image-raw", "call": {"builtin_prompts": {"family": "ollama_image", "model": "QQ==", "messages": []}}, "env": {}, "compare": {"ignore": []}}

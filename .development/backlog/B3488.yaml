@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Execute native GenAI HTTP requests
 status: todo
 depends_on: [B3480, B3487, B173, B206, B249, B2402, B1368]
-file: null
+file: tasks/B3488-genai-http.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
 parent: B098

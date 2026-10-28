@@ -1,0 +1,75 @@
+id: B3335
+title: Video character transport
+description: >-
+  Implement character creation and retrieval handlers in betterlite-core for multipart character creation and character lookup.
+  Both operations support sync and async variants through a dispatcher pattern that returns a coroutine when _is_async=True.
+  Character creation submits multipart form data with name and video file, forwards the timeout parameter to the HTTP POST call,
+  and invokes the response transform after status checking. Character lookup retrieves a character by ID via GET, omits the per-send
+  timeout from the HTTP call despite the public function accepting one, and invokes the response transform after status checking.
+  Client selection uses _get_httpx_client for sync (with ssl_verify from litellm_params) and get_async_httpx_client for async,
+  falling back to provided clients when given. Both handlers validate the environment, retrieve the API base URL, invoke pre_call logging,
+  and use _handle_error for exception handling.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_character_transport.rs
+    - crates/betterlite-core/src/api/video_character_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7736-L7818
+    why: video_create_character_handler multipart character creation with timeout forwarding and response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7820-L7890
+    why: async_video_create_character_handler async multipart POST with response conversion
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7892-L7959
+    why: video_get_character_handler character lookup via GET without per-send timeout
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7961-L8017
+    why: async_video_get_character_handler async GET lookup with response conversion
+dod:
+  - text: Character creation and lookup handlers exist with sync and async variants.
+    proof: [character-transport-tests]
+  - text: Creation submits multipart form data with name and video file.
+    proof: [character-transport-tests]
+  - text: Creation forwards timeout from the public function to the HTTP POST call.
+    proof: [character-transport-tests]
+  - text: Lookup retrieves character by ID via GET request and omits per-send timeout from HTTP call.
+    proof: [character-transport-tests]
+  - text: Both handlers validate environment, retrieve complete URL and invoke pre_call logging before HTTP calls.
+    proof: [character-transport-tests]
+  - text: Response conversion is invoked after status checking in both creation and lookup.
+    proof: [character-transport-tests]
+  - text: Client selection uses _get_httpx_client (sync) and get_async_httpx_client (async) with ssl_verify from litellm_params when no client is provided.
+    proof: [character-transport-tests]
+  - text: Both sync handlers dispatch to their async counterparts when _is_async=True.
+    proof: [character-transport-tests]
+  - text: Error handling uses _handle_error for exception conversion.
+    proof: [character-transport-tests]
+checks:
+  optional: []
+  commands:
+    - id: character-transport-tests
+      why: character handler tests fail, do not exist, or behavior tests do not cover creation/lookup or timeout handling
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_character_transport::/)'
+oracle_cases: []
+deviations:
+  - what: Character creation forwards timeout to the HTTP POST call, while character lookup omits per-send timeout from GET despite both public functions accepting a timeout parameter.
+    why: This mirrors LiteLLM's asymmetric timeout handling in the transport layer; the timeouts are set by the calling function, but only creation's HTTP call receives the timeout value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7810
+out_of_scope:
+  - Character call orchestration and mocking (owned by B3341).
+  - Provider-specific character request/response transformations (owned by B525 for OpenAI and B526 for OpenAI edits, B1362 for Vertex, B1364 for Gemini; others for their respective providers).
+  - HTTP client lifecycle and pool policy (owned by B173).
+  - Error conversion from HTTP responses (owned by B2402).
+  - Pre-call logging beyond the call to logging_obj.pre_call (owned by B249).
+  - Character ID encoding and decoding for proxy routing (owned by B672).
+pitfalls:
+  - Character creation uses multipart form data (files parameter in httpx.post) while lookup uses query parameters. Ensure file handling is correct for creation and params handling for lookup.
+  - Character lookup omits timeout from the HTTP GET call (no timeout parameter passed to sync_httpx_client.get or async_httpx_client.get), even though the public function accepts timeout; do not add it.
+  - Character creation forwards timeout to the POST call; preserve this distinction from lookup.
+  - Both sync handlers must check _is_async flag and return the result of calling their async counterpart when True.
+  - Client type checking must distinguish HTTPHandler from AsyncHTTPHandler using isinstance, not None checks, since both are Optional and fallback clients differ by type.
+  - Both handlers call logging_obj.pre_call with input=character_id (for lookup) or input=name (for creation), additional_args with api_base and headers.
+  - transform_video_create_character_request returns a tuple (url, files_list); transform_video_get_character_request returns a tuple (url, params).
+  - Response conversion happens after raise_for_status() in both sync and async variants.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

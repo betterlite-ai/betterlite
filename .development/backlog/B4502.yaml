@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Read Lens activity samples and verify stored evidence
 status: todo
 depends_on: [B4500]
-file: null
+file: tasks/B4502-lens-sources.yaml
 covers:
   - "litellm/proxy/lens/sources.py"
 parent: B132

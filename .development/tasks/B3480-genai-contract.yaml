@@ -1,0 +1,77 @@
+id: B3480
+title: Native GenAI records and provider contract
+description: >-
+  Build the native Google GenAI operation contract and API projections on top of B1368's provider records.
+  Define Rust types for GenerateContentResponse, GenerateContentConfigDict, GenerateContentRequestDict, ContentListUnion and ToolConfigDict.
+  Use conditional compilation with #[cfg(feature = "google-genai")] to import the real SDK types when available, and provide fallback types (serde_json::Value or generic dicts) when the SDK is unavailable, preserving the runtime dictionary fallback pattern.
+  Implement a trait with methods get_supported_generate_content_optional_params, map_generate_content_optional_params, validate_environment, transform_generate_content_request and transform_generate_content_response.
+  Include concrete method get_generate_content_request_top_level_fields returning the four native REST passthrough fields in camelCase order (safetySettings, toolConfig, cachedContent, labels).
+  Implement get_error_class to construct errors with status code, message and headers, delegating to B2202's BaseLLMException.
+  Preserve the _hidden_params field for storing response metadata without exposing it in the external response object.
+  This task defines the contract below B1368's provider implementations; B3483 onwards call these methods.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/genai.rs
+    - crates/betterlite-vertex/src/genai/**
+    - tools/oracle/cases/genai/generate-content-response-sdk-construction.yaml
+    - tools/oracle/cases/genai/generate-content-response-dict-fallback.yaml
+    - tools/oracle/cases/genai/generate-content-config-dict-sdk-construction.yaml
+    - tools/oracle/cases/genai/generate-content-config-dict-fallback.yaml
+    - tools/oracle/cases/genai/generate-content-request-dict-sdk-construction.yaml
+    - tools/oracle/cases/genai/generate-content-request-dict-fallback.yaml
+    - tools/oracle/cases/genai/top-level-fields-order-and-spelling.yaml
+    - tools/oracle/cases/genai/get-error-class-status-message-headers.yaml
+    - tools/oracle/cases/genai/hidden-params-default-empty-dict.yaml
+    - tools/oracle/helpers/b3480.py
+    - tools/oracle/helpers/b3480/**
+    - tools/oracle/src/helpers/vertex/b3480.rs
+    - tools/oracle/src/helpers/vertex/b3480/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/google_genai/main.py#L1-55
+    why: Runtime/type-checking declarations and the four fallback constructors when google.genai is unavailable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/google_genai/transformation.py#L25-216
+    why: BaseGoogleGenAIGenerateContentConfig trait with all contract methods and the get_generate_content_request_top_level_fields method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/google_genai/transformation.py#L198-216
+    why: get_error_class implementation using BaseLLMException.
+dod:
+  - text: All five types match LiteLLM on construction and field access when the SDK is available and when it is absent.
+    proof: [oracle]
+  - text: get_generate_content_request_top_level_fields returns the four camelCase fields in order (safetySettings, toolConfig, cachedContent, labels).
+    proof: [behavior-tests]
+  - text: get_error_class constructs an exception with the exact status_code, message and headers, passed through to B2202's BaseLLMException.
+    proof: [behavior-tests]
+  - text: Both SDK-typed and dict-fallback construction paths work when google.genai is available and when it is not.
+    proof: [oracle]
+  - text: The _hidden_params field defaults to an empty dict on construction and is preserved through all paths.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Type construction, field access, get_error_class pass-through or _hidden_params behavior are incomplete or fail
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^genai_contract(::|$)/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+  - tools/oracle/cases/genai/generate-content-response-sdk-construction.yaml
+  - tools/oracle/cases/genai/generate-content-response-dict-fallback.yaml
+  - tools/oracle/cases/genai/generate-content-config-dict-sdk-construction.yaml
+  - tools/oracle/cases/genai/generate-content-config-dict-fallback.yaml
+  - tools/oracle/cases/genai/generate-content-request-dict-sdk-construction.yaml
+  - tools/oracle/cases/genai/generate-content-request-dict-fallback.yaml
+  - tools/oracle/cases/genai/top-level-fields-order-and-spelling.yaml
+  - tools/oracle/cases/genai/get-error-class-status-message-headers.yaml
+  - tools/oracle/cases/genai/hidden-params-default-empty-dict.yaml
+deviations: []
+out_of_scope:
+  - B1368 owns provider-specific implementations of the trait methods.
+  - B3483 onwards own the callers of these contracts.
+  - get_config (litellm/llms/base_llm/google_genai/transformation.py:31-48) has no caller at the pin and is not built; it returns all class attributes excluding __/_ prefixed names, functions, classmethods, staticmethods and None values, but this classmethod is unreachable at the pinned commit.
+pitfalls:
+  - The four top-level fields are spelled in camelCase (safetySettings, toolConfig, cachedContent, labels), not snake_case, because they pass verbatim to Google's API.
+  - The _hidden_params field is constructed as {} by default, never None, and its own field may be used to store response metadata without exposing it externally.
+  - SDK-typed paths use the real google.genai types (via conditional imports); dict-fallback paths use plain dicts or serde_json::Value. Both construction paths must work when the SDK is or is not available.
+  - get_error_class passes status_code, message and headers directly to BaseLLMException constructor with those exact parameter names.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,248 @@
+id: B4655
+title: MCP redirect trust and dashboard session admission
+description: >-
+  Build session admission from the UI dashboard cookie and redirect_uri trust policies for MCP OAuth flows.
+  When users grant BYOK credentials through the dashboard, accept the signed ``token`` cookie to re-authorize
+  those writes without re-login. When MCP clients register or complete OAuth flows, only accept redirect URIs
+  that point back to the proxy's own origin (same-origin protection), to a loopback address (RFC 8252 native
+  client pattern), or to an ops-trusted first-party host listed in ``MCP_TRUSTED_REDIRECT_ORIGINS``. Native
+  clients with custom schemes may use allowlisted private-use URIs set in ``MCP_TRUSTED_NATIVE_REDIRECT_URIS``.
+
+
+  Production ownership, including trust policy and cookie session handling: litellm/proxy/_experimental/mcp_server/oauth_utils.py:
+  validate_loopback_redirect_uri (L239-275; 37 source lines), validate_redirect_uri_shape (L454-493; 40 source
+  lines), validate_trusted_redirect_uri (L615-646; 32 source lines), and supporting helpers _parse_redirect_uri_for_validation
+  (L428-436; 9 source lines), _strip_default_port (L277-307; 31 source lines), _parse_trusted_redirect_origins
+  (L309-337; 29 source lines), _matches_trusted_origin_entry (L339-355; 17 source lines), is_loopback_redirect_host
+  (L438-452; 15 source lines), _trusted_redirect_uri_is_allowed (L507-527; 21 source lines), _origin_label (L82-85;
+  4 source lines). litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: _user_id_from_session_cookie
+  (L85-89; 5 source lines), _session_identity_from_cookie (L91-132; 42 source lines), _session_key_is_live (L134-172;
+  39 source lines), _byok_session_auth (L174-185; 12 source lines).
+
+
+  The HTTP request cookie is parsed as an HS256 JWT using the proxy master key. Decode the signed ``token``
+  claim and validate its structure (type, login_method, user_id, optional key); reject any token that identifies
+  itself as a non-UI type (e.g. ``type=="byok_session"``), or lacks the ``login_method`` claim (required for UI tokens
+  only). A missing or invalid cookie, signature failure, missing expiry, or type mismatch returns (None, None).
+  Absent master_key, return (None, None) without attempting decode. The decoded user_id and optional ``key`` claim
+  are returned for session liveness checks. Sessions expire at the ``exp`` claim; PyJWT enforces this when present.
+  A DB-backed session key (starting with ``sk-``) is re-resolved to detect revoked/logged-out sessions; blob tokens
+  (older cookies with no ``key`` claim) are trusted on their bounded 10-minute signature lifetime.
+
+
+  Redirect policies applied to the ``redirect_uri`` parameter in BYOK authorization requests:
+
+  1. BYOK endpoints only (lines 239-275): native MCP clients must use loopback (http://localhost or 127.0.0.0/8).
+     Rejects non-http(s) schemes and any fragment. Accepts ``localhost`` literally and any IPv4/IPv6 loopback address.
+
+  2. Shared discoverable endpoints: same-origin (matching the proxy's resolved origin), loopback, ops-trusted https
+     hosts from ``MCP_TRUSTED_REDIRECT_ORIGINS`` (env var, comma-separated, supporting wildcard subdomains like
+     ``*.example.com``), or allowlisted private-use/custom-scheme native URIs from ``MCP_TRUSTED_NATIVE_REDIRECT_URIS``.
+     Same-origin comparison strips default ports for the scheme (443 for https, 80 for http) so ``https://host:443``
+     matches ``https://host``. PROXY_BASE_URL (env var, explicit https origin) overrides request-header origin detection.
+     Untrusted proxies (X-Forwarded-* disabled or caller not in mcp_trusted_proxy_ranges) use only the literal request
+     origin and the allowlists; trusted proxies may trust X-Forwarded-Proto/Host/Port. Native callbacks match on exact
+     URI (lowercased scheme, netloc, path) or prefix match with a trailing ``*`` that must end with ``/`` to avoid
+     ``/callback*`` matching ``/callback-2``. Rejects query strings (allowlist bypass), fragments, userinfo (credentials
+     in URL), backslashes in the host, and non-http(s) schemes that are not allowlisted.
+
+
+  Build the production modules in betterlite-mcp (a new crate in crates/betterlite-mcp/ for MCP-specific logic)
+  and include session codec and redirect trust modules. Build named domain submodules with adjacent tests.rs files.
+  Keep modules under 300 lines.
+
+
+  B2316 owns password validation and credentials handling. B738 supplies the session key liveness check via
+  get_key_object. B743 owns request header parsing that calls these redirect validators. B1223 owns the
+  separate UI session token generation flow (the builder side), not cookie admission here. This task creates
+  the betterlite-mcp/fuzz workspace since no other task owns it.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT fallback.
+
+
+  This task owns the outside-byte boundary decode_session_cookie(&[u8]) -> Result<SessionCookie, DecodeError>
+  for the untrusted JWT token bytes from the HTTP cookie (HS256 with master key, claims validation).
+  Production calls this decoder before session liveness checks; the cargo-fuzz target decode_session_cookie calls
+  that same function. Seed valid tokens (signed with master key, with and without optional ``key`` claim),
+  truncated tokens, wrong-algorithm tokens, missing-exp tokens, missing-claim tokens, tampered payloads,
+  non-JWT input and invalid base64. Add decode_session_cookie::tests::replays_the_decode_session_cookie_corpus.
+  Create crates/betterlite-mcp/fuzz with a workspace Cargo.toml and register the decode_session_cookie target.
+
+
+  Sizing: session identity functions own 98 source lines, redirect validators own 243 source lines.
+  Allow 180 production, 200 behavior tests, 50 redirect integration tests, 40 helper adapters, 60 decoder/fuzz,
+  20 wiring and 70 config lines, 620 changed lines within a 700-line gate. Only repository fixture/corpus/lock
+  exclusions apply. Do not duplicate dependency implementations.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/session_admission.rs
+    - crates/betterlite-mcp/src/session_admission/**
+    - crates/betterlite-mcp/src/redirect_trust.rs
+    - crates/betterlite-mcp/src/redirect_trust/**
+    - crates/betterlite-mcp/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/session-admission/**
+    - tools/oracle/fuzz/corpus/helper_case/session-admission-*
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/decode_session_cookie.rs
+    - crates/betterlite-mcp/fuzz/corpus/decode_session_cookie/**
+    - tools/oracle/helpers/b4655.py
+    - tools/oracle/helpers/b4655/**
+    - tools/oracle/src/helpers/mcp/b4655.rs
+    - tools/oracle/src/helpers/mcp/b4655/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L85-L89
+    why: Own _user_id_from_session_cookie; extract user_id from cookie-based session.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L132
+    why: Own _session_identity_from_cookie; decode and validate HS256 JWT from ``token`` cookie, reject
+      non-UI types and enforce exp claim.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L134-L172
+    why: Own _session_key_is_live; resolve db-backed session key to detect revocation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L174-L185
+    why: Own _byok_session_auth; FastAPI dependency that requires live session cookie.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L239-L275
+    why: Own validate_loopback_redirect_uri; native MCP clients must redirect to loopback only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L277-L307
+    why: Own _strip_default_port; normalize netloc for same-origin comparison and allowlist matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
+    why: Own _parse_trusted_redirect_origins; parse MCP_TRUSTED_REDIRECT_ORIGINS env var.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L339-L355
+    why: Own _matches_trusted_origin_entry; check redirect_uri against allowlisted hosts (with wildcard support).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L82-L85
+    why: Own _origin_label; format origin string for error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L428-L436
+    why: Own _parse_redirect_uri_for_validation; parse and validate redirect_uri as URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L438-L452
+    why: Own is_loopback_redirect_host; detect loopback addresses (IPv4 127.0.0.0/8 and IPv6 ::1).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L454-L493
+    why: Own validate_redirect_uri_shape; hygiene checks common to all redirect policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L507-L527
+    why: Own _trusted_redirect_uri_is_allowed; check against same-origin, loopback and ops allowlists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L615-L646
+    why: Own validate_trusted_redirect_uri; shared entry point for redirect trust policies.
+
+dod:
+  - text: 'Session cookie tokens interoperate with the pin; named cases: cookie_missing, cookie_invalid,
+      cookie_wrong_signature, cookie_missing_exp, cookie_expired, cookie_wrong_type, cookie_missing_login_method,
+      cookie_missing_user_id, cookie_empty_user_id, cookie_with_optional_key, cookie_blob_token_no_key,
+      cookie_sk_key_revoked and cookie_valid_with_key.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: 'Redirect URI policies work for every listed case: loopback_native_callback, same_origin_proxy,
+      loopback_ipv4_loopback, loopback_ipv6_loopback, loopback_localhost, loopback_non_loopback_rejected,
+      loopback_fragment_rejected, loopback_no_scheme, trusted_https_allowlisted_origin, trusted_wildcard_subdomain,
+      trusted_loopback_fallback, trusted_same_origin_normalized_port, trusted_native_callback_prefix_match,
+      trusted_native_callback_fragment_rejected, trusted_native_callback_query_rejected, trusted_native_callback_userinfo_rejected,
+      trusted_proxy_base_url_overrides_header and trusted_untrusted_proxy_ignores_headers.'
+    proof:
+      - behavior-tests
+      - redirect-integration-tests
+  - text: The production decode_session_cookie decoder is used by the service and its fuzz target and rejects
+      malformed/invalid input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^session_admission::tests::/)
+        or test(/^redirect_trust::tests::/) - test(/replays_the_/)'
+    - id: redirect-integration-tests
+      why: Integration tests for redirect trust policies are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^redirect_trust::(integration_tests|tests)::.*redirect/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4655.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/session-admission-*")"
+        && grep -rlq "session_admission" tools/oracle/fuzz/corpus/helper_case/session-admission-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-mcp/fuzz/fuzz_targets/decode_session_cookie.rs && grep -q "decode_session_cookie"
+        crates/betterlite-mcp/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-mcp/fuzz/corpus/decode_session_cookie)" && cargo nextest run --locked -p betterlite-mcp
+        --no-tests=fail -E 'test(replays_the_decode_session_cookie_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/session-admission/cookie-missing.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-invalid-token.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-wrong-signature.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-missing-exp.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-expired.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-wrong-type.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-missing-login-method.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-missing-user-id.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-empty-user-id.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-with-key-claim.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-blob-token-no-key.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-sk-key-revoked.yaml
+  - tools/oracle/cases/helpers/session-admission/cookie-valid-basic.yaml
+
+deviations:
+  - what: Session identity extraction returns typed (user_id, session_key) tuples or None rather than
+      raising exceptions, deferring validation to the FastAPI dependency layer for cleaner composition
+      with async liveness checks.
+    why: Separating the decode step from policy enforcement allows unit testing the decoder independently
+      and makes async key resolution optional rather than required.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L132
+  - what: Redirect trust policies are organized as separate Rust functions for each policy (loopback,
+      same-origin, trusted origins) rather than merged into a single large validator, matching domain
+      separation from oauth_utils.py but structured for modular testing.
+    why: Allow independent unit testing of each policy and clearer composition in route handlers that
+      may apply different policies to different OAuth flows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L615-L646
+
+out_of_scope:
+  - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4654 owns resolve_upstream_resource (L688-729),
+    build_upstream_oauth2_token_request (L731-750+), and all RFC 8707 resource identifier logic.'
+  - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4654 owns validate_redirect_uri_shape for
+    native-callback matching and validate_trusted_redirect_uri when called from user_api_key_auth_mcp.'
+  - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4650 owns get_request_base_url (L138-178; 41 source lines),
+    well_known_root_suffix (L180-190; 11 source lines), TOKEN_NO_CACHE_HEADERS constant, and PROXY_BASE_URL resolution.
+    These are owned separately for credential carrier setup, not redirect validation.'
+  - 'litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: Multiple route handlers and stores
+    are owned by B4677 (consent page), B4678 (metadata and code exchange) and B4676 (token grants). This
+    task owns only the session admission and trust policies they depend on.'
+  - 'litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: _purge_expired_codes (L70-75),
+    _verify_pkce (L58-63), _oauth_token_error (L77-83), _build_authorize_html (L187-200+) are owned by B4678.'
+
+pitfalls:
+  - 'The JWT decode must reject any token with type=="byok_session", since the MCP /token endpoint also
+    signs tokens with master_key (type="byok_session") and a leaked one could be replayed as a UI cookie
+    to re-authorize BYOK writes. The login_method claim distinguishes UI tokens from MCP tokens.'
+  - 'Session key liveness is async; the _session_identity_from_cookie decoder itself is sync but the
+    FastAPI dependency _byok_session_auth is async and calls _session_key_is_live after decoding. Tests
+    must mock the async resolution or use a test database.'
+  - 'Redirect URI validation for loopback addresses requires checking the full 127.0.0.0/8 range and
+    IPv6 ::1, not just the literal string "127.0.0.1". Use a proper IP parsing library and is_loopback
+    property rather than string matching.'
+  - 'Default port stripping (443 for https, 80 for http) is critical for same-origin comparison: a load
+    balancer may set X-Forwarded-Port: 443 even when the client URL has no explicit port, and mismatching
+    this breaks BYOK authorization for proxies behind HTTPS ingress.'
+  - 'PROXY_BASE_URL takes precedence over X-Forwarded-* headers for origin determination in redirect validation.
+    Untrusted proxies never use X-Forwarded-* even when set, preserving the loopback + allowlist fallback.
+    Mixing these two rules in one function creates TOCTOU bugs.'
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: security

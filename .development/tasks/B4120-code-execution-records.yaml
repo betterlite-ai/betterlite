@@ -1,0 +1,258 @@
+id: B4120
+title: Code execution tool records arguments and metadata filtering
+description: >-
+  Build typed tool shapes, result extraction, follow-up filtering and metadata-marker transformations shared
+  by code interception. Preserve the distinction between Responses and chat tools, exact code-execution name
+  litellm_code_execution, first-choice chat parsing and the permissive display-only _parse_code fallback. Fuzz
+  its JSON decoder to catch malformed arguments.
+
+  These helpers normalize tool calls and response items across Responses and Chat Completions dialects, filtering
+  metadata markers that track interception state between request boundaries. Keep responses as dict/object pairs, handle
+  None fields gracefully, and reject non-object JSON in _parse_code without panicking. Preserve tool call IDs from
+  call_id or id fields; when both are missing use the source ID.
+
+  Responses dialect: tool calls carry call_id and arguments directly. Chat Completions: calls are nested in message.tool_calls
+  with id and function.arguments, and tool results are ChatCompletionToolMessage dicts with tool_call_id and content.
+  Agent follow-up filtering removes agentic-loop metadata and logging globals that a later agent should not inherit.
+
+  Owned metadata fields: _code_interpreter_interception_active (boolean), _code_interpreter_interception_sandbox_key
+  (string or None), _code_interpreter_interception_session_scoped (boolean), _code_interpreter_interception_converted_stream
+  (boolean). Write them to litellm_metadata and strip them on follow-up so their markers do not leak to the model.
+
+scope:
+  paths:
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/code_execution_records.rs
+  - crates/betterlite-openai/src/code_execution_records/**
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/code_execution_arguments.rs
+  - crates/betterlite-openai/fuzz/corpus/code_execution_arguments/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L142-L187
+  why: Module helper functions for tool call normalization, session ID and identity extraction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L306-L385
+  why: Metadata filtering, metadata writing, function tool/choice construction, tool_choice targeting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L569-L644
+  why: Container ID and sandbox-key extraction, agentic tool calls projection, agentic-loop kwargs filtering, follow-up tools and optional params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L677-L693
+  why: Code interpreter calls merging, code parsing fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L790-L826
+  why: Message normalization, Responses and Chat Completions tool-call extraction.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L828-L890
+  why: Tool-call normalization, assistant message building, ModelResponse conversion, code-execution call detection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L1-L139
+  why: Type definitions and constants for tool shapes, metadata keys, cache settings and protocol contracts.
+dod:
+- text: _output_item_type extracts type field from dict or object, returning None when missing.
+  proof:
+  - helpers-output-item-type
+- text: _response_output extracts output field (array or empty list) from dict or object response.
+  proof:
+  - helpers-response-output
+- text: _tool_call_arguments converts arguments to string, preserving empty string for None and stringifying non-strings.
+  proof:
+  - helpers-tool-call-arguments
+- text: _narrow_tool_call normalizes tool calls to CodeExecutionToolCall with id/call_id copied if string, name set to litellm_code_execution.
+  proof:
+  - helpers-narrow-tool-call
+- text: _extract_session_id finds session_id in metadata or litellm_metadata dicts, returning None if absent or non-string.
+  proof:
+  - helpers-extract-session-id
+- text: _extract_identity finds user_api_key_hash in kwargs, returning empty string if absent or non-string.
+  proof:
+  - helpers-extract-identity
+- text: _strip_interception_metadata removes _code_interpreter_interception_* and max_agentic_loops keys from litellm_metadata,
+    dropping the metadata dict if empty after filtering.
+  proof:
+  - metadata-stripping
+- text: _write_interception_metadata writes _code_interpreter_interception_active, _code_interpreter_interception_sandbox_key,
+    _code_interpreter_interception_session_scoped and _code_interpreter_interception_converted_stream to litellm_metadata,
+    preserving other keys.
+  proof:
+  - metadata-writing
+- text: _get_function_parameters returns CodeExecutionFunctionParameters with code property and required field.
+  proof:
+  - function-parameters
+- text: _get_function_tool returns ResponsesFunctionTool for Responses calls or ChatCompletionFunctionTool for Chat Completions,
+    both with litellm_code_execution name and "Execute python code in a sandbox and return stdout." description.
+  proof:
+  - function-tool-shape
+- text: _get_function_tool_choice returns ResponsesFunctionToolChoice or ChatCompletionFunctionToolChoice shape per call type,
+    both targeting litellm_code_execution.
+  proof:
+  - function-tool-choice-shape
+- text: _tool_choice_targets_code_interpreter detects type or name fields matching "code_interpreter" or "litellm_code_execution",
+    or nested function.name matching litellm_code_execution.
+  proof:
+  - tool-choice-detection
+- text: _container_id extracts id field from container handle, returning None if absent or non-string.
+  proof:
+  - container-id-extraction
+- text: _agentic_tool_calls narrows each tool_call dict in tools["tool_calls"] list using _narrow_tool_call.
+  proof:
+  - agentic-tool-calls
+- text: _extract_sandbox_key extracts _code_interpreter_interception_sandbox_key from kwargs, returning None if absent or non-string.
+  proof:
+  - sandbox-key-extraction
+- text: _filter_agentic_loop_kwargs removes litellm_logging_obj, acompletion and interception-internal-prefixed keys from kwargs.
+  proof:
+  - agentic-loop-kwargs-filtering
+- text: _get_followup_tools replaces code_interpreter tools with function tools in the follow-up tool list, preserving others.
+  proof:
+  - followup-tools
+- text: _get_followup_optional_params removes tools key and tool_choice only when it targets code_interpreter.
+  proof:
+  - followup-optional-params
+- text: _normalize_messages converts string messages to [{role user content}] list, copies lists, returns empty list for other types.
+  proof:
+  - messages-normalization
+- text: _extract_code_execution_tool_calls finds type=="function_call" and name==litellm_code_execution items in response output array.
+  proof:
+  - responses-tool-call-extraction
+- text: _extract_chat_completion_code_execution_tool_calls converts response to ModelResponse, finds tool_calls in first choice message,
+    normalizes each matching litellm_code_execution call.
+  proof:
+  - chat-tool-call-extraction
+- text: _normalize_chat_completion_tool_call builds CodeExecutionToolCall from ChatCompletionMessageToolCall, stringifying dict arguments,
+    returning None for non-code-execution tools.
+  proof:
+  - chat-tool-call-normalization
+- text: _build_chat_completion_assistant_message builds ChatCompletionAssistantMessage with role assistant and transformed tool calls,
+    each with nested function.name and string arguments.
+  proof:
+  - assistant-message-building
+- text: _to_model_response accepts ModelResponse directly or constructs from dict, returning None on TypeError/ValidationError.
+  proof:
+  - model-response-conversion
+- text: _is_code_execution_call detects type=="function_call" and name==litellm_code_execution in dict or object.
+  proof:
+  - code-execution-detection
+- text: _metadata_sandbox_key extracts sandbox_key from metadata mapping, returning None if absent or non-string.
+  proof:
+  - metadata-sandbox-key
+- text: _merge_code_interpreter_calls inserts code_interpreter_calls before first message-type item in output array,
+    returning None if output is not a list.
+  proof:
+  - merge-code-interpreter-calls
+- text: _parse_code decodes arguments as JSON, extracts code field, returns empty string on parse error without panicking.
+  proof:
+  - code-parsing-fallback
+- text: The cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/code_execution_arguments.rs feeds arbitrary bytes to _parse_code and tests that it never panics, and replays_the_code_execution_arguments_corpus parses every file in the fuzz corpus without panic or test failure.
+  proof:
+  - code-parse-fuzz-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helpers-output-item-type
+    why: _output_item_type is missing or does not extract type field from dict and object.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::helpers::output_item_type/)'
+  - id: helpers-response-output
+    why: _response_output is missing or does not extract output array from dict and object.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::helpers::response_output/)'
+  - id: helpers-tool-call-arguments
+    why: _tool_call_arguments is missing or does not convert arguments to string preserving None as empty string.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::helpers::tool_call_arguments/)'
+  - id: helpers-narrow-tool-call
+    why: _narrow_tool_call is missing or does not normalize to CodeExecutionToolCall with id/call_id preserved and name set to litellm_code_execution.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::helpers::narrow_tool_call/)'
+  - id: helpers-extract-session-id
+    why: _extract_session_id is missing or does not find session_id in metadata/litellm_metadata.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::helpers::extract_session_id/)'
+  - id: helpers-extract-identity
+    why: _extract_identity is missing or does not find user_api_key_hash in kwargs.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::helpers::extract_identity/)'
+  - id: metadata-stripping
+    why: _strip_interception_metadata is missing or does not remove interception markers from litellm_metadata.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::metadata_filtering::strip/)'
+  - id: metadata-writing
+    why: _write_interception_metadata is missing or does not write markers to litellm_metadata.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::metadata_filtering::write/)'
+  - id: function-parameters
+    why: _get_function_parameters is missing or does not return schema with code property.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::tool_shapes::function_parameters/)'
+  - id: function-tool-shape
+    why: _get_function_tool is missing or does not return correct shape per call type.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::tool_shapes::function_tool/)'
+  - id: function-tool-choice-shape
+    why: _get_function_tool_choice is missing or does not return correct shape per call type.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::tool_shapes::function_tool_choice/)'
+  - id: tool-choice-detection
+    why: _tool_choice_targets_code_interpreter is missing or does not detect code_interpreter/litellm_code_execution targets.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::tool_shapes::tool_choice_detection/)'
+  - id: container-id-extraction
+    why: _container_id is missing or does not extract id field from container handle.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::container_extraction::container_id/)'
+  - id: agentic-tool-calls
+    why: _agentic_tool_calls is missing or does not narrow tool calls from tools dict.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::tool_calls::agentic_tool_calls/)'
+  - id: sandbox-key-extraction
+    why: _extract_sandbox_key is missing or does not extract sandbox key from kwargs.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::container_extraction::sandbox_key/)'
+  - id: agentic-loop-kwargs-filtering
+    why: _filter_agentic_loop_kwargs is missing or does not remove logging globals and interception metadata.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::followup_filtering::agentic_loop_kwargs/)'
+  - id: followup-tools
+    why: _get_followup_tools is missing or does not replace code_interpreter with function tools.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::followup_filtering::tools/)'
+  - id: followup-optional-params
+    why: _get_followup_optional_params is missing or does not filter optional params correctly.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::followup_filtering::optional_params/)'
+  - id: messages-normalization
+    why: _normalize_messages is missing or does not convert messages to list format.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::responses_dialect::normalize_messages/)'
+  - id: responses-tool-call-extraction
+    why: _extract_code_execution_tool_calls is missing or does not extract tool calls from response output.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::responses_dialect::extract_tool_calls/)'
+  - id: chat-tool-call-extraction
+    why: _extract_chat_completion_code_execution_tool_calls is missing or does not extract from ModelResponse.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::chat_dialect::extract_tool_calls/)'
+  - id: chat-tool-call-normalization
+    why: _normalize_chat_completion_tool_call is missing or does not convert to CodeExecutionToolCall.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::chat_dialect::normalize_tool_call/)'
+  - id: assistant-message-building
+    why: _build_chat_completion_assistant_message is missing or does not build correct message shape.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::chat_dialect::build_assistant_message/)'
+  - id: model-response-conversion
+    why: _to_model_response is missing or does not convert dict/ModelResponse without panicking.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::chat_dialect::to_model_response/)'
+  - id: code-execution-detection
+    why: _is_code_execution_call is missing or does not detect function_call type with litellm_code_execution name.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::responses_dialect::is_code_execution_call/)'
+  - id: metadata-sandbox-key
+    why: _metadata_sandbox_key is missing or does not extract sandbox_key from metadata mapping.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::metadata_filtering::sandbox_key/)'
+  - id: merge-code-interpreter-calls
+    why: _merge_code_interpreter_calls is missing or does not insert calls before first message-type item.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::responses_dialect::merge_calls/)'
+  - id: code-parsing-fallback
+    why: _parse_code is missing or does not return empty string on JSON parse error without panicking.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^code_execution_records::code_parsing::parse_code/)'
+  - id: code-parse-fuzz-corpus
+    why: the fuzz target, corpus or replays_the_code_execution_arguments_corpus test is missing or fails.
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/code_execution_arguments.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/code_execution_arguments)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_code_execution_arguments_corpus)'
+oracle_cases: []
+deviations:
+- what: _parse_code returns empty string for any JSON parse error, including malformed JSON, missing code field, and non-string code values.
+  why: Display-only parsing trades strictness for resilience so the loop doesn't crash on malformed arguments; the execution path (_run_tool_call) parses again strictly and rejects errors.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L688-L706
+out_of_scope:
+- Sandbox provider implementations, container lifecycle and code execution (B4121).
+- Configuration, deployment hooks, agentic loop gates and plan construction (B4122).
+- Tool call detection across response formats beyond extraction; B4111 recognizes intercepted tool names.
+- Message record definitions (ChatCompletionAssistantMessage, ChatCompletionToolMessage); B004 owns ModelResponse and chat wire types.
+- Metadata marker storage and constant definitions (B004 for marker constants that predate this task).
+pitfalls:
+- _narrow_tool_call always sets name to litellm_code_execution regardless of input; do not preserve original tool name.
+- _parse_code is intentionally permissive and never panics on invalid JSON. Its match is a fallback; _run_tool_call parses strictly.
+- _extract_session_id checks both metadata and litellm_metadata keys, not just one; keep the preference order.
+- _to_model_response catches ValidationError (Pydantic v2) not ValueError; check the correct exception type.
+- _merge_code_interpreter_calls inserts before the first message-type item, not at a fixed position; find the insertion point dynamically.
+- Tool call IDs in CodeExecutionToolCall come from either id or call_id field with call_id as fallback; never invent or overwrite them.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

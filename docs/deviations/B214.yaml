@@ -1,0 +1,11 @@
+task: B214
+deviations:
+  - what: The Ollama image converter rejects HTTP acquisition and accepts supplied inline data only.
+    why: B214 defers URL acquisition pending the shared B177/B183 SSRF-safe decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L176-L194
+  - what: Prompt rendering limits serialized messages to 64 KiB and returned text to 1 MiB.
+    why: B214 requires bounded owned output; LiteLLM does not impose these helper-level limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L62-L373
+  - what: Tool arguments reject bare NaN and Infinity tokens.
+    why: The typed JSON parser accepts JSON numbers; Python additionally accepts these nonstandard literals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L250-L269

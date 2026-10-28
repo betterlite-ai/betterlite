@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "ollama-negative-and-delete-character", "call": {"builtin_prompts": {"family": "ollama", "model": "model", "messages": [{"role": "assistant", "content": "", "tool_calls": [{"id": "\u007f", "type": "function", "function": {"name": "f", "arguments": "-1e400"}}]}]}}, "env": {}, "compare": {"ignore": []}}

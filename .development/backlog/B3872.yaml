@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prometheus budget label catalog and schema selection
 status: todo
 depends_on: [B3870, B3871, B002]
-file: null
+file: tasks/B3872-prometheus-label-schema.yaml
 covers:
   - "litellm/types/integrations/prometheus.py"
 parent: B111

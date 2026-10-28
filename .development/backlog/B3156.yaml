@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: ROI cache records and partial-source handling
 status: todo
 depends_on: [B3150, B3152, B3153, B3154, B725]
-file: null
+file: tasks/B3156-roi-pull-cache.yaml
 covers:
   - "litellm/proxy/roi_calculator/pull_cache.py"
   - "litellm/proxy/roi_calculator/sync.py"

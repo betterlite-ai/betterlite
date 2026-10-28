@@ -1,0 +1,227 @@
+id: B3663
+title: Guardrail message scope, rewrite slots and blocked usage
+description: >-
+  Build shared utilities for message scoping and text-rewrite preservation across
+  guardrail endpoints. Implement blocked usage projection for chat, Responses and
+  Anthropic stream shapes, stream-chunk fingerprinting and skip-flag helpers.
+  Preserve untouched message regions during scoped rewrites and distinguish an
+  unappliable request rewrite from a delivered rewrite.
+
+  Build Rust modules in crates/betterlite-guardrails and crates/betterlite-server:
+  - StreamChunkEvents function parsing Anthropic SSE chunk events from bytes/str/dict.
+  - BlockedUsage functions: blocked_response_usage (prompt/completion tokens from original
+    response object or Anthropic stream chunks), blocked_responses_api_usage (ResponseAPIUsage
+    variant for Responses shape), blocked_chat_stream_usage (tuple of prompt/completion tokens
+    for chat completions stream), blocked_responses_stream_usage (ResponseAPIUsage for
+    Responses stream).
+  - StreamItemField function extracting a named field from dict/dataclass items.
+  - StreamItemFingerprint function building a deterministic JSON string from a stream item.
+  - StreamItemItems function extracting a sequence field from an item as a tuple.
+  - TextSlotHelpers: message_slot_texts (strings from content str or text-part list),
+    message_text_slot_count (count of text slots), message_with_slot_texts (rewrite slots in
+    place if counts match exactly, return None on mismatch).
+  - ScopedMessageIndices function returning message indices not filtered by skip flags/scan-only
+    scope.
+  - MessageRole function extracting role string from a message dict.
+  - ToolNameExtraction: openai_tool_name (flat or function.name from OpenAI tool),
+    anthropic_tool_names (tuple of flat name and function.name from Anthropic tool),
+    anthropic_tool_name (first name from anthropic_tool_names).
+  - MergeReturnedTools function: union of request tools and guardrail-returned tools,
+    keyed by name, preserving request tools and appending only new returned tool names.
+  - MergeGuardrailedMessages function: substitute guardrail-returned scoped messages back
+    into the full conversation at their original positions, with extras appended and removed
+    items dropped.
+  - SkipFlagHelpers: effective_skip_system_message_for_guardrail (per-guardrail or global
+    flag), effective_skip_tool_message_for_guardrail, filter_messages_by_skip_flags (tuple
+    of filtered messages and bool indicating changes), effective_scan_only_tool_results_for_guardrail.
+  - RoleOutOfScope predicate: true when role is filtered by skip flags or scan-only scope.
+  - UnappliableRequestRewrite exception with guardrail_name field, reporting that a guardrail
+    rewrote the request in a way the endpoint cannot apply.
+
+  Build Rust modules in crates/betterlite-server/src/guardrail_message_scope.rs:
+  - content_to_text function collapsing message content (str or list-of-parts) to plain text,
+    joining text parts with blank-line separators and skipping non-text parts.
+  - is_all_text_parts predicate: true when content is a non-empty part list holding only
+    text parts.
+  - merge_rewritten_text_parts function: flatten an all-text part list into one part carrying
+    new_text, preserving the first part's fields and the last declared cache_control breakpoint.
+  - assistant_text_from_response function extracting the assistant's natural-language text
+    from model response across chat, Anthropic and Responses shapes.
+  - is_fastapi_http_exception predicate: true when exception is HTTPException with a
+    blocked status code.
+  - enrich_http_exception_with_guardrail_context function: attach guardrail_name and
+    event_hook to an HTTPException's detail dict if present.
+  - pre_call_rejection function: construct a 400 HTTPException or GuardrailRaisedException
+    with the rejection message and guardrail name.
+  - can_modify_guardrails predicate: false when team metadata sets guardrails.modify_guardrails
+    to false.
+  - should_proceed_based_on_metadata function: check if a guardrail should be applied based
+    on request metadata guardrails dict (guardrail_name -> bool, where false skips the
+    guardrail).
+
+  Every default value, literal token count, usage field fallback and empty-content path
+  a downstream caller observes gets a named oracle case. Block-only rewrites distinguish
+  pre-call (no original_response) from mid-stream (list of chunks) usage. Fallback to LiteLLM
+  mode is implicit: when skip flags are absent, guardrails see the full message list unchanged.
+  Skip system and tool message flags come from per-guardrail litellm_params (set during
+  initialization in B3680) or fall back to the global litellm module attributes; betterlite
+  config defaults take priority in the unified runtime.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_message_scope.rs
+    - crates/betterlite-guardrails/src/guardrail_message_scope/**
+    - crates/betterlite-server/src/guardrail_message_scope.rs
+    - crates/betterlite-server/src/guardrail_message_scope/**
+    - tools/oracle/cases/helpers/guardrail-message-scope/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-message-scope-*
+    - tools/oracle/helpers/b3663.py
+    - tools/oracle/helpers/b3663/**
+    - tools/oracle/src/helpers/guardrails/b3663.rs
+    - tools/oracle/src/helpers/guardrails/b3663/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L13-L126
+    why: Anthropic stream chunk parsing, blocked usage extraction from response/stream shapes, and Responses shape passthrough for ResponseAPIUsage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L129-L192
+    why: Stream item field/fingerprint/items helpers and blocked usage for responses/chat streams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L194-L279
+    why: Skip flag helpers, message filtering and scoped message indices by role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L280-L334
+    why: Tool name extraction and merge logic for returned and request tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L336-L430
+    why: Message merge logic, text slot helpers and UnappliableRequestRewrite exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/content_text.py#L21-L96
+    why: Content-to-text flattening, text-part predicates, text-part merge and response text extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/exception_utils.py#L7-L40
+    why: FastAPI HTTPException detection, guardrail context enrichment and pre-call rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_helpers.py#L13-L67
+    why: Team metadata guardrail modification check and per-call guardrail selection by metadata.
+
+dod:
+  - text: Anthropic SSE chunk parsing handles str, bytes and dict items, splitting on "\n\n" and "data:" prefixes and parsing JSON payloads.
+    proof: [stream-chunk-tests]
+  - text: Blocked usage projection reads usage from response objects, Anthropic stream chunks and chat/Responses stream lists, with fallback to zero tokens on missing usage.
+    proof: [blocked-usage-tests, oracle]
+  - text: Stream item fingerprints produce deterministic JSON strings, invariant to field order and serialization of non-string values.
+    proof: [fingerprint-tests]
+  - text: Message slot texts preserve text-part lists and string content, merge rewrites one text per slot, and return None when slot counts mismatch.
+    proof: [text-slot-tests, oracle]
+  - text: Scoped message indices filter by skip flags and scan-only scope, distinguishing system/tool/other roles and preserving order.
+    proof: [scoped-indices-tests]
+  - text: Tool name extraction reads OpenAI flat/function names and Anthropic flat/function names from provider-specific tool shapes.
+    proof: [tool-name-tests]
+  - text: Merge returned tools preserves request tools by name and appends only new returned tool names, deduplicating within the returned list.
+    proof: [merge-tools-tests]
+  - text: Merge scoped messages restores guardrail-returned messages to their original positions, appends extras after the last scoped index and removes dropped originals.
+    proof: [merge-messages-tests]
+  - text: HTTPException detection and context enrichment work only when FastAPI is installed; pre-call rejection falls back to GuardrailRaisedException when FastAPI is missing.
+    proof: [exception-tests, oracle]
+  - text: Guardrail selection checks request metadata and team metadata, with per-guardrail flags (guardrail_name -> false) and team modification locks.
+    proof: [selection-tests, oracle]
+  - text: Content-to-text flattening joins text parts with blank-line separators while skipping non-text parts; is_all_text_parts gates true only for non-empty part lists; merge_rewritten_text_parts preserves first-part fields and the last cache_control breakpoint; assistant_text_from_response extracts text from chat/Anthropic/Responses response shapes.
+    proof: [content-text-tests, oracle]
+  - text: UnappliableRequestRewrite exception reports guardrail_name and message naming the guardrail and stating the request was rejected rather than sent unrewritten.
+    proof: [rewrite-exception-tests]
+  - text: Every mutant in the message-scope module is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: stream-chunk-tests
+      why: Chunk parsing drops lines without "data:" or fails on invalid JSON.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::stream_chunk_events::/)'
+    - id: blocked-usage-tests
+      why: Usage projection misses fields or uses wrong fallbacks for response/stream shapes.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::blocked_usage::/)'
+    - id: fingerprint-tests
+      why: Fingerprints are not deterministic or vary with field order.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::fingerprint::/)'
+    - id: text-slot-tests
+      why: Text slot merge succeeds on mismatched counts or modifies non-text parts.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::text_slot::/)'
+    - id: scoped-indices-tests
+      why: Scoped indices include out-of-scope roles or drop in-scope messages.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::scoped_indices::/)'
+    - id: tool-name-tests
+      why: Tool name extraction misses provider formats or returns wrong names.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::tool_names::/)'
+    - id: merge-tools-tests
+      why: Tool merge drops request tools or duplicates returned tool names.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::merge_tools::/)'
+    - id: merge-messages-tests
+      why: Message merge puts returned messages at wrong indices or does not append extras.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::merge_messages::/)'
+    - id: exception-tests
+      why: Exception context enrichment fails when FastAPI is absent or attaches wrong fields.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::exception::/)'
+    - id: selection-tests
+      why: Guardrail selection ignores metadata, does not respect false flags or team locks.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::selection::/)'
+    - id: content-text-tests
+      why: Content-to-text join logic fails, part type checking is wrong, cache_control merge drops breakpoints, or response extraction misses shapes.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::content_text::/)'
+    - id: rewrite-exception-tests
+      why: UnappliableRequestRewrite exception fails to construct with guardrail_name or carries wrong message format.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::unappliable_rewrite::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-parse-data-prefix.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-multiline-blocks.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-skip-invalid-json.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/blocked-usage-chat-stream-no-final-usage.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/blocked-usage-responses-stream-completed-event.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/blocked-usage-fallback-to-zero.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/message-slot-text-part-join.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/message-slot-mismatch-returns-none.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/scoped-indices-skip-system-and-tool.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/scoped-indices-scan-only-tool-results.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/tool-name-openai-flat-and-function.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/tool-name-anthropic-dual-names.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/merge-tools-preserve-request-duplicates.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/merge-messages-append-extras-after-last-scoped.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/fastapi-exception-detail-dict-enrichment.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/pre-call-rejection-400-status.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/metadata-guardrails-per-name-flags.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/metadata-team-modify-guardrails-lock.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/content-to-text-part-list-join.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/is-all-text-parts-empty-list.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/merge-text-parts-cache-control-last.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/assistant-text-from-chat-response.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/assistant-text-from-anthropic-response.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/assistant-text-from-responses-output.yaml
+  - tools/oracle/cases/helpers/guardrail-message-scope/unappliable-request-rewrite-exception.yaml
+
+deviations:
+  - what: LiteLLM checks per-guardrail litellm_params.skip_system_message_in_guardrail and skip_tool_message_in_guardrail fields, falling back to the global litellm.skip_system_message_in_guardrail and skip_tool_message_in_guardrail module attributes; betterlite reads these only during unified initialization (B3680) and passes resolved flags in per-call context.
+    why: Unified initialization centralizes configuration, and per-call flags avoid shared global state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L194-L209
+  - what: Guardrail metadata selection returns false (skip guardrail) when guardrails key is missing from request metadata; LiteLLM returns true (apply guardrail) when metadata is missing entirely.
+    why: Explicit false is safer than implicit true for security, matching B3665's strict-mode default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_helpers.py#L26-L67
+
+out_of_scope:
+  - B3661 supplies StreamingScanKey and StreamTransformSink types; this task uses them without redefining.
+  - B3664 owns apply_guardrail invocation logic; scoped messages here are inputs to that function, not callers of it.
+  - B3665 supplies effective skip/scan-only field getters on guardrail records; this task calls those to check effective behavior.
+  - The get_attribute_or_key utility (used by assistant_text_from_response) is owned by B206 and imported here as-is.
+  - FastAPI HTTPException handling requires FastAPI installation; when absent, fallback to GuardrailRaisedException owned by B206.
+  - LiteLLM guardrail_name_config_map is owned elsewhere; should_proceed_based_on_metadata calls into it to look up guardrail callbacks.
+
+pitfalls:
+  - Anthropic SSE parsing treats "[DONE]" payloads as empty and skips them, not as completion markers.
+  - blocked_chat_stream_usage scans the stream backwards to find the last chunk with usage (which may be omitted if stream_options.include_usage is false).
+  - message_with_slot_texts returns None (not an error) when slot counts mismatch, so callers must check the return value.
+  - merge_rewritten_text_parts only ever runs on all-text part lists (gated by is_all_text_parts check) and must keep the LAST declared cache_control breakpoint, not the first, since each breakpoint caches the prefix ending at that part. A merged part that loses the last breakpoint silently changes cache semantics.
+  - Scoped message indices preserve the order of the original message list; a subset of 4 out of 10 messages returns indices [1, 3, 7, 8], not [0, 1, 2, 3].
+  - anthropic_tool_names returns a tuple of both flat name and function.name when both are present, so a tool with two identical names appears twice in the tuple.
+  - merge_returned_tools_into_request_tools uses the provided callable to extract names, so it never parses tool structure; the caller is responsible for providing the right extractor.
+  - effective_skip_system_message_for_guardrail returns false (do not skip) when neither per-guardrail nor global flag is set, treating absence as permission to scan.
+  - A team with metadata.guardrails.modify_guardrails = false cannot modify guardrails through the API, but the check happens at the API boundary, not at invocation time.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

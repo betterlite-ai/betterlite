@@ -1,0 +1,5 @@
+kind: helper
+name: search-outcome-error-codes
+call: {websearch_tool_records: {function: search_outcome_error_codes}}
+env: {}
+compare: {ignore: []}

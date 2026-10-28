@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Scheduled job staggering and process state
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B4172-scheduled-job-stagger.yaml
 covers:
   - "litellm/proxy/common_utils/scheduled_job_stagger.py"
   - "litellm/proxy/common_utils/proxy_state.py"

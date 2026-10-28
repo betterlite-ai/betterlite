@@ -1,0 +1,152 @@
+id: B3802
+title: Custom guardrail compilation and execution deadlines
+description: >-
+  Build the RestrictedPython compilation boundary and bounded execution lifecycle for custom guardrail code.
+  The sandbox compiler accepts user-supplied guardrail source and transforms it with AsyncAwareTransformer,
+  which extends RestrictedPython to permit async def, await, async for and async with nodes while keeping
+  all security restrictions for attribute access, dunder names, imports and dangerous builtins.
+  Every while loop is rewritten to call _budget_ok_() before each test, every for loop and comprehension
+  checks the budget per item through _getiter_, and all execution paths raise ExecutionInterrupted when
+  the deadline passes.
+
+  Compile custom code once and cache the bytecode; recompilation on every call is the anti-pattern.
+  compile_sandboxed returns a CodeType; calling it raises SyntaxError on syntax errors or forbidden
+  constructs. build_sandbox_globals returns the execution globals dict, including primitives, RestrictedPython
+  guards and the budget functions.
+
+  For synchronous guardrail code: call_with_timeout runs the code on a worker thread and waits from sync context,
+  intercepting ExecutionInterrupted as ExecutionTimeoutError. The worker sets its thread id in _InterruptGate
+  and a polling loop calls PyThreadState_SetAsyncExc to inject ExecutionInterrupted when the wall-clock deadline passes.
+  After the deadline, a thread still running is logged as stuck (in a C call, for example) but the caller gets its
+  timeout on schedule.
+
+  For async guardrail code: call_off_loop_with_timeout runs the code on a worker thread and awaits without blocking
+  the event loop. The same deadline and interrupt mechanisms apply. When a task is cancelled before the worker finishes,
+  spawn a daemon thread to keep interrupting it so its exit is guaranteed.
+
+  For awaiting a pending future on the event loop itself: await_with_timeout gives the pending a task, sets the deadline
+  in a context variable, and cancels the task repeatedly if it reaches the deadline without finishing. The task's
+  _contain coroutine catches ExecutionInterrupted as ExecutionTimeoutError and converts other BaseException subclasses
+  (SystemExit, etc.) to SandboxExit so they cannot stop the event loop.
+
+  Preserve the 1-second interrupt grace period, 50-millisecond polling interval, and shared deadline context variable.
+  The source's CPython interruption via ctypes.pythonapi is the fallback when code swallows cancellation; the runtime
+  mechanism requires an architect decision before implementation (U7).
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/custom_code_execution.rs
+    - crates/betterlite-guardrails/src/custom_code_execution/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L32-L123
+    why: ExecutionTimeoutError and SandboxExit exception types, deadline context variable and wall-clock budget checking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L73-L161
+    why: _InterruptGate for thread-safe interrupt targeting and _start_worker thread spawning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L163-L231
+    why: call_with_timeout for sync code, call_off_loop_with_timeout for off-loop async, and await_with_timeout for event-loop futures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L42-L84
+    why: AsyncAwareTransformer extending RestrictedPython with async support and while-loop budget injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L157
+    why: _inplacevar_ for augmented assignments, _build_sandbox_builtins, build_sandbox_globals and compile_sandboxed.
+
+dod:
+  - text: compile_sandboxed accepts valid guardrail source and returns bytecode; raises SyntaxError on invalid syntax or forbidden constructs (import, exec, dunder access).
+    proof: [sandbox-compilation-tests]
+  - text: build_sandbox_globals returns a dict with RestrictedPython guards (_getattr_, _getitem_, _getiter_, _write_, _inplacevar_, _budget_ok_), primitives and safe builtins.
+    proof: [sandbox-globals-tests]
+  - text: Async def, await, async for and async with are allowed by AsyncAwareTransformer; class definitions, imports and exec remain forbidden.
+    proof: [sandbox-async-compilation-tests]
+  - text: Every while loop body is guarded by _budget_ok_() so the loop stops at the deadline; the rewrite preserves the original test condition.
+    proof: [sandbox-while-loop-tests]
+  - text: >-
+      Every for loop and comprehension checks the budget per item through _getiter_ (budgeted_iter).
+      A for loop or comprehension running past the deadline raises ExecutionInterrupted, surfaced as ExecutionTimeoutError at the call boundary.
+      Example: for x in range(1000000) running past deadline raises ExecutionInterrupted mid-iteration.
+    proof: [sandbox-for-loop-tests]
+  - text: call_with_timeout runs fn on a worker thread and returns the result or raises ExecutionTimeoutError if the deadline passes; worker thread id is tracked in _InterruptGate.
+    proof: [bounded-sync-execution-tests]
+  - text: call_off_loop_with_timeout runs fn on a worker thread and awaits without blocking the event loop; same deadline/interrupt mechanism applies.
+    proof: [bounded-offloop-execution-tests]
+  - text: await_with_timeout awaits a pending future on the event loop with a deadline; cancels and raises ExecutionTimeoutError when the deadline passes.
+    proof: [bounded-eventloop-execution-tests]
+  - text: ExecutionInterrupted caught at the code boundary becomes ExecutionTimeoutError with the original timeout value.
+    proof: [execution-timeout-error-tests]
+  - text: SandboxExit wraps BaseException subclasses so they cannot stop the event loop; message includes exception type and value.
+    proof: [sandbox-exit-error-tests]
+  - text: _InterruptGate tracks thread id safely with a lock; interrupt returns false if the gate is closed, preventing stale thread id hits.
+    proof: [interrupt-gate-tests]
+  - text: _inplacevar_ implements augmented assignment (+=, -=, etc.) by dispatching through operator module; raises SyntaxError for unsupported operators.
+    proof: [inplacevar-tests]
+  - text: _past_deadline returns true when the deadline context variable is set and monotonic time has passed it; used internally for budget checking.
+    proof: [deadline-context-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: sandbox-compilation-tests
+      why: compile_sandboxed must accept valid code and reject forbidden constructs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^sandbox_compilation::/)' 2>&1 | head -100 || true
+    - id: sandbox-globals-tests
+      why: build_sandbox_globals must include all required guards and primitives
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^sandbox_globals::/)' 2>&1 | head -100 || true
+    - id: sandbox-async-compilation-tests
+      why: AsyncAwareTransformer must allow async constructs while blocking imports and exec
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^sandbox_async::/)' 2>&1 | head -100 || true
+    - id: sandbox-while-loop-tests
+      why: while loops must be rewritten with budget checks before the test
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^sandbox_while_loop::/)' 2>&1 | head -100 || true
+    - id: sandbox-for-loop-tests
+      why: for loops and comprehensions must check the budget per item through budgeted_iter
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^sandbox_for_loop::/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^budgeted_iter::/)' 2>&1 | head -100 || true
+    - id: bounded-sync-execution-tests
+      why: call_with_timeout must run code on a worker thread with deadline enforcement
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^execution_sync_bounded::/)' 2>&1 | head -100 || true
+    - id: bounded-offloop-execution-tests
+      why: call_off_loop_with_timeout must await without blocking the event loop
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^execution_offloop_bounded::/)' 2>&1 | head -100 || true
+    - id: bounded-eventloop-execution-tests
+      why: await_with_timeout must give pending a deadline on the event loop and cancel when time passes
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^execution_eventloop_bounded::/)' 2>&1 | head -100 || true
+    - id: execution-timeout-error-tests
+      why: ExecutionInterrupted must be caught and converted to ExecutionTimeoutError with the original timeout
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^execution_timeout_error::/)' 2>&1 | head -100 || true
+    - id: sandbox-exit-error-tests
+      why: BaseException subclasses must be wrapped in SandboxExit so they cannot escape to the event loop
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^execution_sandbox_exit::/)' 2>&1 | head -100 || true
+    - id: interrupt-gate-tests
+      why: _InterruptGate must safely track thread id and prevent stale hits after close
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^interrupt_gate::/)' 2>&1 | head -100 || true
+    - id: inplacevar-tests
+      why: _inplacevar_ must dispatch augmented assignments through operator module
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^inplacevar::/)' 2>&1 | head -100 || true
+    - id: deadline-context-tests
+      why: deadline context variable must be set and checked consistently across sync/async boundaries
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^deadline_context::/)' 2>&1 | head -100 || true
+
+oracle_cases: []
+deviations:
+  - what: CPython thread interruption via ctypes.pythonapi.PyThreadState_SetAsyncExc is the fallback when code swallows cancellation.
+    why: Robust bounded execution requires a mechanism to interrupt code stuck in a native call; the implementation choice (ctypes, subprocess limits, safe-fork style, or rejection of blocking calls entirely) is deferred as U7.
+
+out_of_scope:
+  - "B3801 owns get_custom_code_primitives, which is included in build_sandbox_globals. RestrictedPython library integration and its specific guards are external dependencies."
+  - "RestrictedPython AST node rewriting details beyond AsyncAwareTransformer extensions. compile_restricted is a library call, not a betterlite implementation."
+  - "Event loop integration details beyond what await_with_timeout and call_off_loop_with_timeout provide; Tokio spawning and task management stay with the guardrail dispatcher."
+  - "Custom execution framework initialization, guardrail configuration, and result handling (B3803 builds those with the compilation boundary)."
+  - "Production logging, metrics and observability around execution; this module logs only stuck threads after interruption attempts fail."
+
+pitfalls:
+  - compile_sandboxed rejects imports, exec, eval and class definitions outright via RestrictedPython; catching SyntaxError is the only way to know why.
+  - Budget checks happen at loop entry and per-item, not for infinite recursion; deeply nested function calls will not be interrupted until a loop or iteration is reached.
+  - ExecutionInterrupted is a BaseException, not Exception, so sandboxed code's bare except clauses cannot swallow it; only except BaseException catches it.
+  - _InterruptGate.interrupt uses ctypes.pythonapi which is not portable; the runtime mechanism requires an architect decision.
+  - Long-running C calls (regex, network, crypto) run past the deadline until they return; the timeout is advisory at that point, not guaranteed.
+  - Daemon worker threads started by call_with_timeout and call_off_loop_with_timeout will be terminated on process exit; cleanup is not guaranteed.
+  - The deadline context variable is set per-call and not thread-safe across concurrent guardrail executions in the same worker thread context.
+  - await_with_timeout creates a new Task in a copied context, so thread-local state changes in _contain are not visible to the caller.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

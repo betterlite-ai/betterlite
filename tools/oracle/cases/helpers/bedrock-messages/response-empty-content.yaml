@@ -1,0 +1,7 @@
+kind: helper
+name: response-empty-content
+call:
+  b3721:
+    step: {"mask_response": {"response": {"choices": [{"message": {"content": ""}}, {"delta": {"content": ""}}, {"text": ""}, {"message": {"content": "answer"}}]}, "masked_texts": ["MASK"]}}
+env: {}
+compare: {ignore: []}

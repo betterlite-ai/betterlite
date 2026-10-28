@@ -1,0 +1,137 @@
+id: B4262
+title: Proxy route inspection records
+description: >-
+  Build native route-description projection for ordinary and mounted routes. Implement
+  GetRoutes as a static utility that inspects FastAPI routes and produces route information
+  dictionaries with path, methods, name, and endpoint fields, retaining null fields where
+  attributes are missing.
+
+  get_app_routes accepts a regular route and its endpoint function, extracts path, methods,
+  name and endpoint (or None if no endpoint is present), and returns a single RouteInfo
+  record in a list.
+
+  get_routes_for_mounted_app traverses a mounted ASGI sub-application, prefixing each
+  sub-route's path with the mount prefix (with the right trailing-slash handling via
+  mount_path.rstrip("/") + sub_route_path), falls back to ["GET", "POST"] when methods
+  are not available, skips sub-routes without an endpoint or nested app, marks matched
+  routes with mounted_app: True, and returns an empty list if the mount has no routes.
+
+  _mounted_sub_route_info handles the per-route logic: safe access to path, methods and
+  name attributes with null fallback, safe endpoint-name extraction via _safe_get_endpoint_name,
+  and construction of the complete RouteInfo dict.
+
+  _safe_get_endpoint_name safely extracts the __name__ attribute from an endpoint function
+  or class, catches all exceptions, logs failures to verbose_logger.exception with the
+  endpoint object for context, and returns None on error.
+
+  Define NamedEndpoint as a Protocol requiring __name__, and RouteInfo as a TypedDict with
+  path (str|None), methods (Sequence[str]|None), name (str|None), endpoint (str|None),
+  and optional mounted_app (bool).
+
+  Inject logging; do not read config, database or environment during route inspection.
+  The eventual server route calls these helpers to enumerate its registered routes rather
+  than these functions calling server startup code.
+scope:
+  paths:
+  - crates/betterlite-server/src/routes/**
+  - crates/betterlite-server/src/route_inspection.rs
+  - tools/oracle/fuzz/corpus/helper_case/route_inspection-*
+  - tools/oracle/cases/helpers/route_inspection/**
+  - Cargo.lock
+  - tools/oracle/helpers/b4262.py
+  - tools/oracle/helpers/b4262/**
+  - tools/oracle/src/helpers/server/b4262.rs
+  - tools/oracle/src/helpers/server/b4262/**
+  - crates/betterlite-server/src/route_inspection/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/get_routes.py#L14-L24
+  why: Owns NamedEndpoint Protocol and RouteInfo TypedDict with all fields
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/get_routes.py#L26-L41
+  why: Owns GetRoutes.get_app_routes static method
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/get_routes.py#L43-L59
+  why: Owns GetRoutes.get_routes_for_mounted_app static method with mount prefix joining
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/get_routes.py#L61-L73
+  why: Owns _mounted_sub_route_info static method and mounted_app marker
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/get_routes.py#L75-L90
+  why: Owns _safe_get_endpoint_name static method with exception logging
+dod:
+- text: >-
+    get_app_routes accepts a BaseRoute and a NamedEndpoint, extracts path, methods, name
+    and endpoint (via __name__ if the route has an endpoint), constructs a RouteInfo dict,
+    returns it in a single-item list. If the route has no endpoint attribute, endpoint is None.
+    Methods returns the route.methods attribute or None if the attribute is absent.
+  proof: [route-inspection-tests, oracle, helper-python]
+- text: >-
+    get_routes_for_mounted_app accepts a BaseRoute with a mounted ASGI app, returns an empty
+    list if the mount has no routes attribute or if sub_app is None, otherwise returns a list
+    of RouteInfo dicts from _mounted_sub_route_info for each sub-route that has an endpoint
+    or nested app attribute.
+  proof: [route-inspection-tests, oracle, helper-python]
+- text: >-
+    _mounted_sub_route_info extracts sub-route path, methods (defaulting to ["GET", "POST"]),
+    name and endpoint name, joins mount_path.rstrip("/") + sub_route_path, marks the record
+    with mounted_app: True, returns None if endpoint_func and nested app are both missing.
+  proof: [route-inspection-tests, oracle, helper-python]
+- text: >-
+    _safe_get_endpoint_name checks for __name__ first, falls back to endpoint_function.__class__.__name__,
+    catches all exceptions, logs them to verbose_logger.exception with the endpoint object,
+    and returns None on exception.
+  proof: [route-inspection-tests, oracle, helper-python]
+- text: >-
+    NamedEndpoint is a Protocol defining an object with a __name__ attribute; RouteInfo is a
+    TypedDict with path (str|None), methods (Sequence[str]|None), name (str|None), endpoint
+    (str|None), and mounted_app (optional bool, present only for mounted routes).
+  proof: [route-inspection-tests, oracle]
+- text: Route inspection helpers and their oracle adapters are independently executed.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: route-inspection-tests
+    why: route inspection projection, mount prefix joining or endpoint-name extraction is untested
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^route_inspection::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: the route inspection helper adapters cannot run independently
+    run: test -f tools/oracle/helpers/b4262.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: no added route_inspection operation reaches the helper decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/route_inspection-*)" && grep -qE '^[[:space:]]+route_inspection:' tools/oracle/fuzz/corpus/helper_case/route_inspection-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: route inspection helpers add no oracle inputs
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/route_inspection)"
+oracle_cases:
+- tools/oracle/cases/helpers/route_inspection/get-app-routes-basic.yaml
+- tools/oracle/cases/helpers/route_inspection/get-app-routes-no-endpoint.yaml
+- tools/oracle/cases/helpers/route_inspection/get-app-routes-no-methods.yaml
+- tools/oracle/cases/helpers/route_inspection/get-routes-for-mounted-app-basic.yaml
+- tools/oracle/cases/helpers/route_inspection/get-routes-for-mounted-app-no-routes.yaml
+- tools/oracle/cases/helpers/route_inspection/get-routes-for-mounted-app-missing-app.yaml
+- tools/oracle/cases/helpers/route_inspection/mounted-sub-route-info-with-methods.yaml
+- tools/oracle/cases/helpers/route_inspection/mounted-sub-route-info-default-methods.yaml
+- tools/oracle/cases/helpers/route_inspection/mounted-sub-route-info-path-join.yaml
+- tools/oracle/cases/helpers/route_inspection/mounted-sub-route-info-no-endpoint.yaml
+- tools/oracle/cases/helpers/route_inspection/safe-get-endpoint-name-function.yaml
+- tools/oracle/cases/helpers/route_inspection/safe-get-endpoint-name-class.yaml
+- tools/oracle/cases/helpers/route_inspection/safe-get-endpoint-name-exception.yaml
+deviations: []
+out_of_scope:
+- >-
+  verbose_logger is LiteLLM's module-level logger instance; betterlite accepts
+  a logger injected through the function interface or uses the default tracing infrastructure,
+  following the dependency injection pattern, so logging behavior is testable.
+- >-
+  The eventual proxy_server.get_routes route (litellm/proxy/proxy_server.py:19900-19921) that
+  calls these helpers remains unassigned and must be registered only by its eventual route owner.
+  These helpers do not call route handlers.
+pitfalls:
+- 'The oracle helper for this task is pre-registered as b4262 in the server group. Replace the stub Op in tools/oracle/src/helpers/server/b4262.rs with an impl Helper, and write run in tools/oracle/helpers/b4262.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'Mount prefix joining: mount_path.rstrip("/") + sub_route_path produces the correct result. An empty mount_path gives just sub_route_path. A mount_path like /v1/ with sub_route_path /models produces /v1/models, not /v1//models.'
+- 'Missing-method fallback to ["GET", "POST"] applies only to sub-routes; regular routes inherit their methods from the BaseRoute as-is (may be None).'
+- 'The endpoint attribute check in get_routes_for_mounted_app: if route.endpoint is None but route.app (a nested app) exists, that route still counts and passes through _mounted_sub_route_info.'
+- '_safe_get_endpoint_name returns None on exception, not a fallback like "unknown". The verbose_logger.exception call provides the context for debugging.'
+- 'The RouteInfo dict retains None values; all fields are present except the optional mounted_app, which is only added for mounted routes.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

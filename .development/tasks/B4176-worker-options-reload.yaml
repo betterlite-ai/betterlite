@@ -1,0 +1,107 @@
+id: B4176
+title: HTTP worker options and development reload
+description: >-
+  Build typed listener, recycle and reload settings in betterlite-config consumed by the server adapter,
+  and keep option construction below the CLI dispatcher so tests can compare settings without starting
+  workers. Host defaults to 0.0.0.0, port to 4000, keepalive_timeout to 30 seconds,
+  timeout_worker_healthcheck to 30 seconds, max_requests_before_restart to absent. Implement reload
+  development mode with watch directories and includes mirroring LiteLLM's uvicorn reload kwargs
+  (*.py, .env, config basename), fallback to polling with extra paths, and a .env override warning.
+  Warn when unsupported Uvicorn options appear on the CLI (timeout_worker_healthcheck,
+  limit_max_requests_jitter), but accept them without mutation of process environment. Preserve option
+  precedence: explicit flag, then environment variable, then default. Server header is always false,
+  log_config precedence is explicit, then JSON_LOGS, then LITELLM_LOG. Max requests jitter only applies
+  when max_requests is set. From LiteLLM's ProxyInitializationHelpers class methods, extract pure
+  settings builders: resolve_uvicorn_settings, apply_max_requests_jitter, resolve_reload_options,
+  patch_reload_extra_paths, configure_dev_reload, and resolve_loop_type. Reload watches current
+  directory, config parent if distinct, plus *.py, .env and config basename. Never mutate std::env;
+  native settings build data structures the caller passes to the worker process.
+scope:
+  paths:
+    - crates/betterlite-server/src/worker_options.rs
+    - crates/betterlite-server/src/worker_options/**
+    - crates/betterlite-config/src/sections/worker_options_reload.rs
+    - crates/betterlite-config/src/sections/worker_options_reload/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L282-L325
+    why: _get_default_unvicorn_init_args, the primary uvicorn argument builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L327-L353
+    why: _apply_uvicorn_max_requests_jitter, the max_requests and jitter handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L355-L374
+    why: _get_reload_options, the reload file watch configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L376-L415
+    why: _patch_statreload_extra_paths, the StatReload monkey patch for .env and config watches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L417-L433
+    why: _configure_dev_reload, the full reload setup with LITELLM_DEV_ENV_HOT_RELOAD and .env warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L653-L658
+    why: _get_loop_type, the platform-dependent event loop selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L632-L655
+    why: resolve_log_level, the log level parser called by _get_default_unvicorn_init_args.
+dod:
+  - text: UvicornSettings, ReloadSettings and LoopType types exist in betterlite-config and are loaded from config sections worker_options and dev_reload.
+    proof: [config-types]
+  - text: resolve_uvicorn_settings builds settings with precedence log_config > JSON_LOGS env > LITELLM_LOG, server_header always false, and applies timeout_worker_healthcheck when set, warning on unsupported uvicorn versions.
+    proof: [uvicorn-settings-tests]
+  - text: apply_max_requests_jitter applies limit_max_requests_jitter when max_requests is set, warns when max_requests is absent; limit_max_requests_jitter is accepted, warned about by literal flag name, and ignored (betterlite has no uvicorn to introspect).
+    proof: [jitter-warning-tests]
+  - text: resolve_reload_options watches the current directory, config parent if distinct, *.py, .env, and the config basename.
+    proof: [reload-options-tests]
+  - text: patch_reload_extra_paths patches StatReload.iter_py_files and is idempotent.
+    proof: [reload-patch-tests]
+  - text: configure_dev_reload logs the .env override warning without mutating process environment, and accepts reload with development overrides applied.
+    proof: [dev-reload-tests]
+  - text: resolve_loop_type returns None on Windows/Cygwin/CLI and "uvloop" elsewhere.
+    proof: [loop-type-tests]
+  - text: No native code mutates std::env or process environment variables in the worker_options module or the worker_options_reload config section.
+    proof: [environment-immutable-check]
+checks:
+  optional: []
+  commands:
+    - id: config-types
+      why: the config types do not exist or do not load worker_options and dev_reload from config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::worker_options_reload::/)'
+    - id: uvicorn-settings-tests
+      why: resolve_uvicorn_settings tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/worker_options_uvicorn_settings_/)'
+    - id: jitter-warning-tests
+      why: apply_max_requests_jitter tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/worker_options_jitter_/)'
+    - id: reload-options-tests
+      why: resolve_reload_options tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/reload_options_/)'
+    - id: reload-patch-tests
+      why: patch_reload_extra_paths tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/reload_patch_/)'
+    - id: dev-reload-tests
+      why: configure_dev_reload tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/dev_reload_/)'
+    - id: loop-type-tests
+      why: resolve_loop_type tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/loop_type_/)'
+    - id: environment-immutable-check
+      why: gateway code mutates process environment in the worker_options module or the worker_options_reload section
+      run: >-
+        ! grep -rq "std::env::set_var" crates/betterlite-server/src/worker_options.rs crates/betterlite-server/src/worker_options crates/betterlite-config/src/sections/worker_options_reload.rs crates/betterlite-config/src/sections/worker_options_reload 2>/dev/null
+oracle_cases: []
+deviations:
+  - what: betterlite runs on axum/tokio and does not use uvicorn, so timeout_worker_healthcheck and limit_max_requests_jitter are never honored, only warned about and ignored.
+    why: betterlite cannot introspect an installed uvicorn package; it accepts these flags for compatibility but has no effect to apply. The warnings use literal flag names from LiteLLM without version checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L316-L353
+  - what: Native settings do not mutate the process environment. LITELLM_DEV_ENV_HOT_RELOAD setting stays in a config field, not in std::env.
+    why: In Python, os.environ.set_var affects the reloader's subprocess. Rust cannot safely mutate the process environment, and the setting can be passed as a data structure instead. When B4175 wires the CLI to B003, it supplies the resolved settings as arguments, not by mutating globals.
+out_of_scope:
+  - Worker process forking and subprocess lifecycle. That belongs to B4177.
+  - Calling uvicorn or other worker frameworks directly. Settings construction stays pure and framework-independent.
+  - The full CLI handler for reload/worker flags. B4175 constructs the settings from user input, not this task.
+  - Request logging or any logger/backend integration. Those come from B012 and later tasks.
+pitfalls:
+  - LiteLLM's reload options use basename-only patterns for uvicorn's glob resolution, so absolute paths are rejected by watchfiles. Use pathlib to resolve to absolute for the extra-paths set, but pass only basenames to uvicorn's reload_includes.
+  - Max requests jitter only applies when max_requests_before_restart is set; the warning still fires if only jitter is provided.
+  - Uvicorn's StatReload.iter_py_files is monkey-patched idempotently in LiteLLM; subsequent calls accumulate paths in a mutable set on the class.
+  - Reload watches the config parent directory only if it is distinct from the current working directory; same-directory config is not added twice.
+  - When config_path is not provided, reload watches only the current directory and ["*.py", ".env"] (no config basename).
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

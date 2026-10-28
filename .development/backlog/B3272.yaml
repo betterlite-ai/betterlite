@@ -2,8 +2,8 @@ id: B3272
 milestone: M5 api families
 title: Search call preparation and execution
 status: todo
-depends_on: [B3270, B185, B186, B247, B198]
-file: null
+depends_on: [B3270, B157, B185, B186, B247, B198, B3276]
+file: tasks/B3272-search-execution.yaml
 covers:
   - "litellm/search/main.py"
 parent: B091

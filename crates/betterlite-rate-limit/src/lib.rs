@@ -1,7 +1,13 @@
+pub mod atomic_counter;
+pub mod concurrency_gauges;
 pub mod dynamic_callbacks;
 pub mod dynamic_priority;
 pub mod identity_descriptors;
+pub mod post_call_settlement;
 pub mod project_admission;
+pub mod reconciliation_operations;
 pub mod session_iteration_limits;
+pub mod settlement_and_rollback;
 pub mod token_adjustments;
+pub mod token_reservations;
 pub mod usage_resolution;
