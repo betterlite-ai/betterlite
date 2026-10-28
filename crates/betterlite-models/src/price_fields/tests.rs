@@ -226,14 +226,8 @@ fn price_window_treats_absent_weekdays_as_every_day() {
 #[case::name_friday(r#""Fri""#, Weekday::Friday)]
 #[case::name_saturday(r#""SATURDAY""#, Weekday::Saturday)]
 #[case::name_sunday(r#""sun""#, Weekday::Sunday)]
-fn weekday_accepts_schema_representations(
-    #[case] source: &str,
-    #[case] expected: Weekday,
-) {
-    assert_eq!(
-        serde_json::from_str::<Weekday>(source).unwrap(),
-        expected
-    );
+fn weekday_accepts_schema_representations(#[case] source: &str, #[case] expected: Weekday) {
+    assert_eq!(serde_json::from_str::<Weekday>(source).unwrap(), expected);
 }
 
 #[rstest]

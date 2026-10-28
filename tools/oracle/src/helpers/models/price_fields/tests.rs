@@ -49,7 +49,7 @@ fn rejects_invalid_typed_input(#[case] source: &str) {
 }
 
 #[rstest]
-#[case::float(json!({"input_cost_per_token": 0.1}), "must be a JSON number")]
+#[case::float(json!({"input_cost_per_token": 0.1_f64}), "must be a JSON number")]
 #[case::overprecision(
     json!({"source": "{\"input_cost_per_token\":0.123456789012345678901234567891}"}),
     "exceeds decimal precision"
