@@ -85,10 +85,17 @@ fn parse_message(value: &serde_json::Value) -> Option<UiMessage> {
         .and_then(serde_json::Value::as_array)
         .map(|values| parse_calls(values))
         .unwrap_or_default();
-    let role_name = wrapped
-        .get("role")
-        .or_else(|| wrapped.get("type"))
-        .and_then(serde_json::Value::as_str);
+    let explicit_role = wrapped.get("role").and_then(serde_json::Value::as_str);
+    let typed_role = wrapped
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .filter(|role| {
+            matches!(
+                *role,
+                "system" | "user" | "assistant" | "tool" | "human" | "ai"
+            )
+        });
+    let role_name = explicit_role.or(typed_role);
     if role_name.is_none() && calls.is_empty() {
         return None;
     }

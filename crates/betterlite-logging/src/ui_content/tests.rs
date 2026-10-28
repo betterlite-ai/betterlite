@@ -38,3 +38,11 @@ fn fields_and_tool_calls_are_projected() {
 fn plain_is_text() {
     assert!(matches!(to_ui_content("plain"), UiContent::Text { .. }));
 }
+
+#[test]
+fn unknown_message_type_is_not_a_chat_message() {
+    assert!(matches!(
+        to_ui_content(r#"[{"type":"custom","content":"value"}]"#),
+        UiContent::Text { .. }
+    ));
+}
