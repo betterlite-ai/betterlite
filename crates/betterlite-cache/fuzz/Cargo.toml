@@ -12,6 +12,13 @@ betterlite-cache = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "azure_blob_cache_body"
+path = "fuzz_targets/azure_blob_cache_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "s3_cache_body"
 path = "fuzz_targets/s3_cache_body.rs"
 test = false
