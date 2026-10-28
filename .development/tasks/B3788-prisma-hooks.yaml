@@ -1,0 +1,176 @@
+id: B3788
+title: Prisma AIRS legacy and streaming hooks
+description: >-
+  Build pre/post call hooks and buffered/raw streaming scan paths for Palo Alto Networks Prisma AIRS using the
+  shared scan service from B3786 and content extraction from B3787. Preserve scan deduplication via call_id tracking,
+  blocking when a raw stream cannot safely apply a returned mask, and exact LiteLLM hook ordering/error behavior.
+
+  Pre-call hook (async_pre_call_hook):
+  - Check should_run_guardrail (B3789); if false, return data unmodified.
+  - Call _check_and_mark_scanned to deduplicate scans and synthesize call_id if missing (with warning).
+  - Extract prompt text via _extract_prompt_from_request (messages list or prompt field).
+  - Call _call_panw_api (B3786) with is_response=false, metadata from _prepare_metadata_from_request (B3786).
+  - On allow+masked_text and mask_request_content, apply _apply_masking_to_messages or update prompt field.
+  - On block, extract error via _build_error_detail (B3786), raise HTTPException(400).
+  - On allow or mask, call add_guardrail_to_applied_guardrails_header and return None (allow through).
+  - Transient errors call _handle_api_error_with_logging (B3786) and return unmodified (fail-open).
+  - Log guardrail information with timestamps and call _record_scan_id (B3786) on allow.
+
+  Post-call hook (async_post_call_success_hook):
+  - Check if response is ModelResponse; pass through non-ModelResponse objects unmodified.
+  - Check should_run_guardrail; return response unmodified if false.
+  - Call _check_and_mark_scanned to deduplicate.
+  - Extract response text via _extract_response_text (B3787); warn and return if no content.
+  - Call _call_panw_api with is_response=true.
+  - On allow+masked_text, apply _apply_masking_to_response (B3787, in-place).
+  - On block, extract error, raise HTTPException(400).
+  - On block+masked_text and mask_response_content, apply masking instead of blocking, return response.
+  - Log success or intervention with duration and scan_id.
+
+  Raw streaming scanner (_scan_raw_streaming_text):
+  - Scan text from non-ModelResponse streaming chunks (/v1/messages raw SSE, /v1/responses Pydantic events).
+  - Warn and log guardrail information on scan; raise HTTPException(400) on block.
+  - Note: response masking is not supported on raw streaming (raw SSE bytes cannot be reliably reconstructed).
+    If mask_response_content is configured, log warning and block instead of masking.
+  - Transient errors call _handle_api_error_with_logging (B3786) and return (fail-open).
+  - Always block errors raise inside _handle_api_error_with_logging.
+
+  Streaming hook (async_post_call_streaming_iterator_hook):
+  - Check should_run_guardrail for post_call; if false, pass through unchanged.
+  - Call _check_and_mark_scanned to prevent duplicate scans on same call_id.
+  - Collect all chunks from the response iterator.
+  - If chunks are bytes (Anthropic SSE from /v1/messages), extract text via _extract_text_from_sse_bytes (B3787),
+    call _scan_raw_streaming_text and yield original chunks unmodified.
+  - If chunks are non-ModelResponse events (from /v1/responses), extract text via _extract_text_from_streaming_events (B3787),
+    call _scan_raw_streaming_text and yield original chunks.
+  - Otherwise, use stream_chunk_builder (B2227) to assemble complete ModelResponse.
+  - Call _scan_and_process_streaming_response to scan assembled response and apply masking.
+  - On transient/always-block errors, handle via _handle_api_error_with_logging, yield original chunks and return.
+  - On successful scan with content_was_modified=true, use MockResponseIterator to yield reassembled chunks.
+  - On successful scan with content_was_modified=false, yield original chunks.
+  - On block, build error via _build_error_detail (B3786) and yield as SSE JSON error frame.
+  - Catch HTTPException and yield as SSE error; catch generic exceptions and yield generic error frame.
+
+  Helpers:
+  - _check_and_mark_scanned: Check litellm_metadata[f"_panw_{scan_type}_scanned_{call_id}"] and mark if not present.
+    Synthesize call_id if missing (warn). Return True if already scanned, False otherwise.
+  - _extract_prompt_from_request: Extract from messages (chat completion) first, fall back to prompt field
+    (text completion, handle string/list forms).
+  - _scan_and_process_streaming_response: Scan assembled response, return (content_was_modified, response, scan_result).
+    Apply masking if action=allow+masked_text, or block+masked_text+mask_response_content. Return early for
+    transient/always-block errors.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/panw_prisma_airs/hooks.rs
+    - crates/betterlite-guardrails/src/panw_prisma_airs/hooks/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L939-L1055
+    why: "_scan_raw_streaming_text: raw streaming text scanning with response masking unsupported warning"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L997-L1055
+    why: "_check_and_mark_scanned: call_id deduplication and synthesis; _extract_prompt_from_request: message/prompt extraction"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1057-L1176
+    why: "async_pre_call_hook: pre-call scan, deduplication, masking, error handling and guardrail logging"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1178-L1292
+    why: "async_post_call_success_hook: post-call response scan with masking on allow/block"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1294-L1356
+    why: "_scan_and_process_streaming_response: scan assembled response, apply masking, return modification status"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1358-L1479
+    why: "async_post_call_streaming_iterator_hook: stream chunk collection, raw vs ModelResponse handling, reassembly and error yields"
+
+dod:
+  - text: "async_pre_call_hook runs should_run_guardrail, deduplicates via _check_and_mark_scanned, extracts prompt from messages or prompt field, calls _call_panw_api, and returns None on allow or blocks with HTTPException(400)."
+    proof: [prisma-hooks-pre-call-tests]
+  - text: "async_post_call_success_hook checks ModelResponse type, deduplicates, extracts response text, masks on allow+masked_text and mask_request_content, blocks on action=block without mask, returns response unmodified on allow."
+    proof: [prisma-hooks-post-call-tests]
+  - text: "_scan_raw_streaming_text scans raw bytes/event text from /v1/messages or /v1/responses, warns and blocks if mask_response_content configured, raises HTTPException(400) on block."
+    proof: [prisma-hooks-raw-streaming-tests]
+  - text: "_check_and_mark_scanned uses call_id to track pre/post/streaming scans separately, synthesizes call_id if missing, returns true if already scanned."
+    proof: [prisma-hooks-deduplication-tests]
+  - text: "_extract_prompt_from_request extracts text from messages list, falls back to prompt string or list, returns empty string if not found."
+    proof: [prisma-hooks-prompt-extraction-tests]
+  - text: "async_post_call_streaming_iterator_hook collects all chunks, routes to _scan_raw_streaming_text for bytes/events, uses stream_chunk_builder for ModelResponse, yields original chunks if unmodified or MockResponseIterator if modified."
+    proof: [prisma-hooks-streaming-tests]
+  - text: "_scan_and_process_streaming_response scans assembled response, applies masking based on action and mask_*_content, returns (content_was_modified, response, scan_result)."
+    proof: [prisma-hooks-streaming-assembly-tests]
+  - text: "Streaming hook yields HTTPException errors as SSE JSON error frames and logs generic exceptions before yielding generic error frame."
+    proof: [prisma-hooks-streaming-error-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: prisma-hooks-pre-call-tests
+      why: "Pre-call scan, deduplication, masking, or error handling is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_pre_call($|::)/)'
+    - id: prisma-hooks-post-call-tests
+      why: "Post-call response scan, type checking, or masking is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_post_call($|::)/)'
+    - id: prisma-hooks-raw-streaming-tests
+      why: "Raw streaming text scanning or response masking warning/blocking is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_raw_streaming($|::)/)'
+    - id: prisma-hooks-deduplication-tests
+      why: "Scan deduplication via call_id or call_id synthesis is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_deduplication($|::)/)'
+    - id: prisma-hooks-prompt-extraction-tests
+      why: "Prompt extraction from messages or prompt field is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_prompt_extraction($|::)/)'
+    - id: prisma-hooks-streaming-tests
+      why: "Streaming chunk collection, routing to raw/assembled handlers, or output iteration is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_streaming($|::)/)'
+    - id: prisma-hooks-streaming-assembly-tests
+      why: "Streaming response assembly, scan, masking, and modification tracking is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_streaming_assembly($|::)/)'
+    - id: prisma-hooks-streaming-error-tests
+      why: "Streaming error frames or generic exception handling is missing or incorrect"
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::prisma_hooks_streaming_error($|::)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Raw streaming paths (/v1/messages with bytes, /v1/responses with Pydantic events) cannot reliably
+      apply response masking because the returned masked text cannot be safely embedded back into raw
+      SSE bytes or event structures. When mask_response_content=True, the hook logs warning and blocks instead.
+    why: >-
+      SSE format does not support arbitrary byte insertion/replacement. Masked content cannot be reliably
+      embedded into the stream structure without corrupting frame boundaries or losing subsequent chunks.
+      LiteLLM preserves the same behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L973-L981
+
+out_of_scope:
+  - "B3786 owns _call_panw_api, _build_error_detail, _get_masked_text, _handle_api_error_with_logging, _prepare_metadata_from_request, _record_scan_id and constructor initialization."
+  - "B3787 owns content extraction (_extract_text_from_messages, _extract_response_text, _extract_text_from_sse_bytes, _extract_text_from_streaming_events) and masking (_apply_masking_to_messages, _apply_masking_to_response, _apply_mcp_masking)."
+  - "B3789 owns should_run_guardrail and unified text/tool selection."
+  - "B2227 owns stream_chunk_builder and buffered chunk assembly."
+  - "U1 framework contracts (guardrail exceptions, observation/logging, message extraction helpers) and U2 streaming reconstruction (MockResponseIterator, convert_model_response_to_streaming) remain unassigned."
+
+pitfalls:
+  - Test names must match the filter patterns (prisma_hooks_*) to be selected; filters use alternation and must
+    not break between modules.
+  - _check_and_mark_scanned uses a metadata dict key that includes both call_id and scan_type, so pre/post/streaming
+    scans are tracked separately on the same call_id.
+  - Call_id synthesis happens in _check_and_mark_scanned, not in the hooks themselves; this is called before masking
+    decisions to ensure consistent call_id for all scans on a request.
+  - Raw streaming paths from /v1/messages (bytes) and /v1/responses (Pydantic events) must be handled separately
+    before attempting to assemble as ModelResponse.
+  - mask_response_content configured on raw streaming paths logs warning and blocks instead of masking, because
+    returned masked text cannot be applied to raw SSE bytes/events.
+  - MockResponseIterator must only be used if content_was_modified=true; otherwise yield original chunks to preserve
+    streaming timing and semantics.
+  - 'SSE error frames in the streaming hook are JSON objects wrapped with "data: " and "\n\n", not raised exceptions.'
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

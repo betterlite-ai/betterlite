@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Proxy route inspection records
 status: todo
 depends_on: []
-file: null
+file: tasks/B4262-route-inspection.yaml
 covers:
   - "litellm/proxy/common_utils/get_routes.py"
 parent: B124

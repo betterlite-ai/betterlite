@@ -1,0 +1,9 @@
+kind: helper
+name: structured-sensitive-keys
+call:
+  structured_redaction:
+    function: mask_sensitive_structure
+    data: {api_key: sk-1234567890abcdef, oci_tenancy: secret, model: gpt-4o, input_cost_per_token: 0.1}
+env: {}
+compare:
+  ignore: []

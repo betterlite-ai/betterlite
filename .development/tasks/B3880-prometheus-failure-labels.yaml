@@ -1,0 +1,244 @@
+id: B3880
+title: Prometheus failure identity and cardinality checks
+description: >-
+  Resolve failure status, safe exception/provider labels, authenticated identity fallback
+  and bounded requested-model labels. Keep the invalid-key filter available to SDK/deployment
+  emitters while the proxy-failure hook still counts rejected requests with a cleared key hash.
+
+  Extract HTTP status codes from enum_values.status_code, exception.code, exception.status_code,
+  or kwargs["exception"] in that order, returning None when unresolvable. Validate 401
+  responses and auth-error patterns (virtual key expected, expected to start with 'sk-',
+  authentication error, invalid api key, api key not valid) to identify requests that should
+  skip all metrics rather than emit with a missing key label.
+
+  For deployment failures, extract label values (api_key_alias, user_email, team, team_alias,
+  hashed_api_key, client_ip, user_agent) by cascading through standard_logging_payload metadata,
+  litellm_params metadata, and user_api_key_auth fallback. Nested identity getters resolve
+  each label independently while merging sources. Return None for each label when absent after
+  fallback.
+
+  For exception attribution, extract the class name with optional legacy prometheus_exception_class_name
+  marker to preserve dashboard compatibility; special-case BudgetExceededError to avoid
+  provider-prefixed rendering that would break back-compat. Prefix the class name with the
+  uppercased llm_provider when present and not already handled.
+
+  Bound requested_model label cardinality to router-recognized names (model names, deployment
+  ids, aliases, routing groups, team public-model names, and matched via global or team
+  wildcard/pattern routes), collapsing unrecognized client-supplied strings to "other" while
+  passing through router_originated values when no proxy router exists. Return None when
+  requested_model is None. Rate-limit labels (category, rate_limit_type) are validated
+  through error validation enums before emission.
+
+  For provider attribution before deployment resolution, try the resolved custom_llm_provider
+  on litellm_params first, then any provider on standard_logging_payload (partial/stream
+  recovery), then infer from the model name via get_llm_provider, returning None if the
+  model cannot be parsed. When extraction fails, a diagnostic debug log is emitted and None
+  is returned without affecting request/failure handling.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus/failure.rs
+    - crates/betterlite-logging/src/prometheus/failure/**
+    - tools/oracle/cases/helpers/prometheus-failure/**
+    - tools/oracle/helpers/b3880.py
+    - tools/oracle/helpers/b3880/**
+    - tools/oracle/src/helpers/logging/b3880.rs
+    - tools/oracle/src/helpers/logging/b3880/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L100-L100
+    why: UNRECOGNIZED_REQUESTED_MODEL_LABEL constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L209-L249
+    why: "_get_proxy_llm_router, _bounded_requested_model_label label cardinality bounding."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2426-L2478
+    why: "_extract_status_code extraction from multiple sources."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2479-L2516
+    why: "_is_invalid_api_key_request 401 detection and auth-error pattern matching."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2518-L2560
+    why: "_should_skip_metrics_for_invalid_key centralized invalid-key filtering."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2562-L2597
+    why: "_extract_api_provider_from_request_data best-effort provider for client-side failures."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2599-L2606
+    why: "_extract_api_provider_from_exception RateLimitError llm_provider extraction."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2695-L2792
+    why: "_safe_get, _extract_deployment_failure_label_values and five nested identity getters."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3374-L3411
+    why: "_get_exception_class_name legacy prometheus_exception_class_name and BudgetExceededError special case."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3413-L3432
+    why: "_extract_rate_limit_labels category and rate_limit_type validation."
+
+dod:
+  - text: >-
+      Status code extraction tries enum_values.status_code first (converted to int), then
+      exception.status_code or exception.code (converted to int), then kwargs["exception"]'s
+      status_code or code (converted to int), returning None if all fail or conversion raises.
+    proof: [status-code-extraction]
+  - text: >-
+      Invalid API key detection returns true on 401, or when the exception message lowercased
+      contains "virtual key expected", "expected to start with 'sk-'", "authentication error",
+      "invalid api key", or "api key not valid", then returns false. Debug logging records skipped metrics.
+    proof: [invalid-key-detection]
+  - text: >-
+      Deployment failure label extraction cascades through standard_logging_payload.metadata
+      (dict or object), litellm_params.metadata, and user_api_key_auth fallback, with five
+      nested getters for api_key_alias, user_email, team_id, team_alias, and hashed_api_key,
+      each reading its own path independently. Client IP and user agent merge standard payload
+      and litellm_params sources.
+    proof: [deployment-failure-labels]
+  - text: >-
+      Exception class name honors prometheus_exception_class_name attribute when set, preserves
+      "BudgetExceededError" without provider prefix, and otherwise prefixes the class name with
+      uppercased llm_provider and a dot (e.g., "Openai.RateLimitError").
+    proof: [exception-class-name]
+  - text: >-
+      Requested-model cardinality is bounded: returns None when requested_model is None,
+      returns an empty string unchanged, returns "other" when requested_model is not a string,
+      checks router.is_recognized_model and team_public_model_names, tests pattern_router.route
+      and all team_pattern_routers.route, and collapses unrecognized client strings to "other"
+      unless router_originated is true.
+    proof: [bounded-model-label, bounded-model-non-string-collapse]
+  - text: >-
+      Rate-limit labels extract category and rate_limit_type from exception and validate them
+      through validate_rate_limit_category and validate_rate_limit_type, returning None, None
+      when the exception is None.
+    proof: [rate-limit-labels]
+  - text: >-
+      _extract_api_provider_from_exception returns None for non-RateLimitError exceptions,
+      returns None when llm_provider is unset or equals "litellm_proxy", and returns the
+      llm_provider value when present and not equal to the fallback placeholder.
+    proof: [provider-from-exception, provider-from-exception-oracle]
+  - text: >-
+      Provider attribution tries custom_llm_provider on litellm_params, then standard_logging_payload,
+      then infers from model via get_llm_provider, returning None without breaking on BadRequestError
+      or unexpected exceptions (logged at debug).
+    proof: [provider-attribution]
+
+checks:
+  optional: []
+  commands:
+    - id: status-code-extraction
+      why: Status code must extract from multiple sources in priority order.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::extract_status_code::/)'
+    - id: invalid-key-detection
+      why: Invalid API key detection must recognize 401 and auth-error patterns.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::invalid_key::/)'
+    - id: deployment-failure-labels
+      why: Deployment failure labels must cascade through metadata sources with nested getters.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::deployment_labels::/)'
+    - id: exception-class-name
+      why: Exception class name must honor legacy markers and preserve BudgetExceededError.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::exception_name::/)'
+    - id: bounded-model-label
+      why: Requested-model label must bound cardinality while allowing router_originated values.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::model_cardinality::/)'
+    - id: rate-limit-labels
+      why: Rate-limit labels must extract and validate category and type.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::rate_limit::/)'
+    - id: provider-attribution
+      why: Provider attribution must cascade through sources and infer from model.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::provider::/)'
+    - id: provider-from-exception
+      why: Rate-limit exception provider extraction must handle unset, fallback and real providers.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::provider_from_exception::/)'
+    - id: provider-from-exception-oracle
+      why: Oracle cases for provider-from-exception with unset/fallback/real llm_provider variants must replay through the helper.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3880::provider_from_exception/)'
+    - id: bounded-model-non-string-collapse
+      why: Non-string requested_model must collapse to "other".
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(prometheus_failure::model_cardinality::non_string_collapse)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3880::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new failure labels decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-failure)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-failure/status-code-extraction-enum-first.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/status-code-extraction-exception-fallback.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/invalid-key-401-status.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/invalid-key-auth-error-pattern.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/deployment-labels-payload-cascade.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/exception-class-legacy-marker.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/exception-class-budget-special-case.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/bounded-model-recognized.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/bounded-model-unrecognized-collapses.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/bounded-model-non-string-collapse.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/bounded-model-router-originated-pass.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/rate-limit-validation.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/provider-attribution-model-fallback.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/provider-from-exception-unset.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/provider-from-exception-fallback.yaml
+  - tools/oracle/cases/helpers/prometheus-failure/provider-from-exception-real.yaml
+
+deviations:
+  - what: >-
+      The _get_proxy_llm_router function imports llm_router from litellm.proxy.proxy_server
+      as an optional ambient global. In betterlite, router catalog view is passed as an optional
+      injected parameter instead, keeping logging independent of server and allowing test mocking.
+    why: >-
+      Ambient globals break isolation and make testing harder. Betterlite's dependency injection
+      pattern passes the router view through method parameters rather than importing globals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L209-L214
+  - what: >-
+      Invalid API key requests skip all metrics emission in betterlite (they do not enter
+      the metrics callbacks), whereas LiteLLM's filter occurs later during failure event processing.
+      The SDK/deployment success/failure emitters receive the invalid-key predicate for conditional use.
+    why: >-
+      Catching invalid authentication early prevents any metrics inference on sensitive requests.
+      The filter function is exposed to callers that do not go through the proxy failure hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2518-L2560
+  - what: >-
+      Rate-limit exception provider attribution returns None when llm_provider is unset or equals
+      PROXY_LLM_PROVIDER_FALLBACK ("litellm_proxy"), following LiteLLM's existing behavior of not
+      emitting the fallback placeholder value as a label.
+    why: >-
+      PROXY_LLM_PROVIDER_FALLBACK is an internal sentinel value that indicates the provider could not be determined
+      at error time. Emitting it as a label would leak this internal detail into user-facing metrics cardinality.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2599-L2606
+
+out_of_scope:
+  - Status code validation logic (determining success vs failure); owned by B184.
+  - Rate-limit error category and type enum definitions and parsing; owned by B184.
+  - Router model catalog lookup and pattern matching; owned by B367.
+  - Model group projection for callback metadata; owned by B3891.
+  - Provider resolution via get_llm_provider; owned by B174.
+  - Label value sanitization and formatting; owned by B3870.
+  - Prometheus metrics registry and collector operations; owned by B3874.
+
+pitfalls:
+  - >-
+      _bounded_requested_model_label with no proxy router returns the raw value for
+      router_originated=true (SDK emitters), but collapses unrecognized strings to "other"
+      when router_originated=false (proxy emitters). The distinction is critical to avoid
+      unbounded label cardinality from proxy requests while trusting the SDK's own models.
+  - >-
+      Exception class name extraction reads prometheus_exception_class_name via getattr
+      without a fastapi import to keep this core module free of transitive dependencies.
+      Legacy back-compat labels must be honored exactly; overriding them breaks dashboards.
+  - >-
+      BudgetExceededError is special-cased to avoid rendering it as (e.g.) "Openai.BudgetExceededError"
+      even when llm_provider is set, because the error system attached the field for unified
+      handling but the dashboards expect the plain name.
+  - >-
+      Provider attribution cascades model→custom_llm_provider→standard_logging and stops at
+      the first non-None value. get_llm_provider is only called if model is available and
+      prior sources returned None; BadRequestError and unexpected exceptions log at debug
+      and return None without breaking metrics.
+  - >-
+      Identity fallback in deployment_failure_label_values reads user_api_key_auth from
+      metadata["user_api_key_auth"], which the proxy injects and is skipped in the merge.
+      Each nested getter (api_key_alias, user_email, etc.) tries standard_logging → litellm_params
+      → user_api_key_auth independently, allowing partial recovery from partially-populated sources.
+  - >-
+      Rate-limit label validation returns (None, None) when the exception is None, and runs
+      each exception field (category, rate_limit_type) through its validation function.
+      Third-party exceptions that declare .category/.rate_limit_type cannot leak invalid
+      values into Prometheus; only known enum members pass validation.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

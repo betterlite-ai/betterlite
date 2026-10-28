@@ -2,7 +2,8 @@ id: B4351
 title: Store response cache objects in Azure Blob Storage
 description: >-
   Build crates/betterlite-cache::azure_blob module with the Azure Blob response-cache backend,
-  loading configuration through betterlite-config and storing cache entries in Azure Blob Storage.
+  loading configuration through betterlite-config (the azure_blob_cache section, registered as a
+  stub) and storing cache entries in Azure Blob Storage.
   The module exports AzureBlobCache struct with synchronous and asynchronous operations.
   Configuration comes from litellm_settings.cache_params keys: azure_account_url (required),
   azure_blob_container (required). Both parameters are passed to this constructor as account_url
@@ -19,6 +20,10 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-cache/**
+    - crates/betterlite-config/src/sections/azure_blob_cache.rs
+    - crates/betterlite-config/src/sections/azure_blob_cache/**
+    - crates/betterlite-config/src/sections/s3_response_cache.rs
+    - crates/betterlite-config/src/sections/s3_response_cache/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L11-112
@@ -27,8 +32,10 @@ references:
     why: "Cache.__init__ signature; azure_account_url and azure_blob_container are constructor parameters at lines 95-96, passed through cache_params."
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L284-288
     why: "AzureBlobCache is instantiated with account_url and container parameters from Cache.__init__."
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6308-L6312
-    why: "cache_params assembly from litellm_settings; Cache is instantiated with **cache_params."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6304-L6314
+    why: "The proxy builds a cache only when litellm_settings.cache is true; cache_params assembly from litellm_settings; Cache is instantiated with **cache_params."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L82
+    why: "Cache.__init__ defaults type to local, so cache_params without a type never builds an Azure Blob or S3 cache."
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py
     why: "The BaseCache interface; AzureBlobCache does not call get_ttl or invoke __init__."
   - url: https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.blobserviceclient
@@ -73,6 +80,12 @@ dod:
       azure_account_url and azure_blob_container are both required.
     proof: [config-azure]
   - text: >-
+      The azure_blob_cache section yields settings only when litellm_settings.cache is true and
+      cache_params.type is azure-blob, and s3_response_cache only when the type is s3. Any other
+      type, a missing type or cache left unset yields None in both, so a Redis or local cache config
+      loads without Azure or S3 keys.
+    proof: [config-azure]
+  - text: >-
       A blob-body decoder has a cargo-fuzz target at crates/betterlite-cache/fuzz/fuzz_targets/azure_blob_cache_body.rs
       and replays_the_azure_blob_cache_body_corpus parses every file in its corpus without a panic.
     proof: [azure-fuzz-corpus]
@@ -83,8 +96,8 @@ checks:
       why: the cache or Azure tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^azure_blob_cache::/)'
     - id: config-azure
-      why: Azure Blob settings are not loaded through betterlite-config or azure_account_url and azure_blob_container are not required
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^azure.*config/)'
+      why: Azure Blob settings are not loaded through betterlite-config, azure_account_url and azure_blob_container are not required, or a section builds settings for another cache type
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::(azure_blob_cache|s3_response_cache)::/)'
     - id: azure-fuzz-corpus
       why: the Azure Blob cache body fuzz target or its corpus is missing, or replaying the corpus fails
       run: test -f crates/betterlite-cache/fuzz/fuzz_targets/azure_blob_cache_body.rs && test -n "$(ls -A crates/betterlite-cache/fuzz/corpus/azure_blob_cache_body)" && cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(replays_the_azure_blob_cache_body_corpus)'
@@ -99,7 +112,7 @@ deviations:
 out_of_scope:
   - "The response-cache facade and integration. This task only builds the storage backend."
   - "The flush_cache method; it has no caller at the pinned commit."
-  - "Other cache backends (Redis, in-memory, S3, GCS)."
+  - "Other cache backends (Redis, in-memory, S3, GCS). The only S3 change is the cache type check in its config section."
   - "Cache strategy, TTL inheritance from general_settings or response headers."
   - "Container-wide deletion or management routes."
 pitfalls:

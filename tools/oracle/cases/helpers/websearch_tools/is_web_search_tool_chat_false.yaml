@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-chat-false
+call: {websearch_tool_records: {function: is_web_search_tool_chat_completion, tool: {type: web_search_20250305, name: web_search}}}
+env: {}
+compare: {ignore: []}

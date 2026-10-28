@@ -1,0 +1,146 @@
+id: B4116
+title: Configure search interception and rewrite outgoing tools
+description: >-
+  Build callback configuration and pre-call/pre-request tool conversion for websearch interception, retaining the Bedrock-favoring absence-provider default ['bedrock'], explicit empty-list behavior, feature/deployment ceiling precedence and forced-tool-name rewriting. Preserve the different Chat Completions and Responses function shapes and conversion of intercepted streams to buffered calls. The WebSearchInterceptionLogger CustomLogger handles init, YAML loading and initialization from proxy config, followed by two request hooks that detect and rewrite native web_search tools to litellm_web_search before the upstream call, and a helper that resyncs forced tool_choice when the tool names change. Stream-to-non-stream conversion happens in both hooks to buffer the search interception; converted_stream flag travels so a later post-hook can restore the original response shape. When a request carries an Anthropic-native web_search_* tool (detected by type prefix "web_search_"), the hooks set WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY flag so downstream code knows to emit native web_search_tool_result blocks in the final response instead of synthetic text.
+scope:
+  paths:
+    - crates/betterlite-websearch/src/websearch_request_hooks.rs
+    - crates/betterlite-websearch/src/websearch_request_hooks/**
+    - crates/betterlite-config/src/sections/websearch_request_hooks.rs
+    - crates/betterlite-config/src/sections/websearch_request_hooks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L256-L289
+    why: WebSearchInterceptionLogger.__init__ and _validated_max_agentic_loops, with enabled_providers default and max_agentic_loops validation from B4110.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L519-L564
+    why: from_config_yaml classmethod to initialize from config dictionary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1970-L2010
+    why: initialize_from_proxy_config static method, called by callback_utils for registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L420-L495
+    why: async_pre_call_deployment_hook converts native web_search tools to LiteLLM standard; handles both chat completions and responses API shapes; marks requests with Anthropic-native tools for native block emission; converts stream=True to stream=False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L497-L517
+    why: _convert_responses_tools helper for Responses API tool shape conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L566-L572
+    why: _tool_name helper to extract tool name from both Anthropic and OpenAI/function wrapper shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L574-L590
+    why: _sync_forced_tool_choice to repoint forced tool_choice when web_search is renamed to litellm_web_search.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L592-L675
+    why: async_pre_request_hook for pre-request tool conversion, stream buffering and native block flag setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L203-L204
+    why: _as_str_mapping helper for safe metadata casting.
+dod:
+  - text: >-
+      WebSearchInterceptionLogger.from_config_yaml parses WebSearchInterceptionConfig dict,
+      converts provider strings to enum values where possible, and returns a configured logger
+      instance with enabled_providers defaulting to ['bedrock'] when absent or None.
+    proof: [config-load-tests, config-load-roundtrip]
+  - text: >-
+      WebSearchInterceptionLogger.__init__ validates max_agentic_loops through the B4110 validator,
+      defaulting to None (inherit from common loop ceiling), rejecting bool and values below one.
+    proof: [config-load-tests, ceiling-validation]
+  - text: >-
+      Both async_pre_call_deployment_hook (for chat completions) and async_pre_request_hook
+      convert native Anthropic web_search_* tools (type startswith "web_search_") and custom shapes
+      to litellm_web_search (Chat Completions format) using get_litellm_web_search_tool_openai from B4111.
+    proof: [hook-tests, chat-tool-conversion]
+  - text: >-
+      async_pre_call_deployment_hook detects Responses API context and converts tools to
+      litellm_web_search (Responses format) using get_litellm_web_search_tool_responses from B4111.
+    proof: [hook-tests, responses-tool-conversion]
+  - text: >-
+      Both hooks detect native Anthropic web_search_* tools and set WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY
+      flag on kwargs when any tool is Anthropic-native, so the final response includes
+      web_search_tool_result blocks instead of synthetic text.
+    proof: [hook-tests, native-blocks-flag]
+  - text: >-
+      Both hooks convert stream=True to stream=False and set _websearch_interception_converted_stream flag
+      on kwargs when the request would be streamed, so responses can be buffered for interception.
+    proof: [hook-tests, stream-conversion]
+  - text: >-
+      _sync_forced_tool_choice rewrites tool_choice when its name matches a tool that was converted,
+      pointing it at litellm_web_search, and leaves tool_choice unchanged when it already names
+      a converted tool or is not a forced-tool dict.
+    proof: [hook-tests, tool-choice-rewrite]
+  - text: >-
+      Hooks only modify kwargs when the provider is in enabled_providers list (or enabled_providers is None),
+      when request has tools, and when at least one tool is a web_search tool; otherwise return None.
+    proof: [hook-tests, provider-filter]
+  - text: >-
+      initialize_from_proxy_config reads websearch_interception_params from litellm_settings or
+      callback_specific_params['websearch_interception'] and passes it to from_config_yaml.
+    proof: [config-init-tests]
+  - text: >-
+      Deployment hook reads max_agentic_loops from deployment kwargs and uses caller-supplied value if present,
+      falling back to instance max_agentic_loops only when deployment value is None.
+    proof: [hook-tests]
+  - text: >-
+      Both hooks leave the flag _websearch_interception_emit_native_blocks unset on kwargs
+      when no Anthropic-native web_search_* tool is present.
+    proof: [hook-tests, native-blocks-flag]
+checks:
+  optional: []
+  commands:
+    - id: config-load-tests
+      why: websearch interception config loading tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::websearch_request_hooks::/) - test(/roundtrip/)'
+    - id: config-load-roundtrip
+      why: websearch config cannot roundtrip through YAML or defaults are wrong
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::websearch_request_hooks::.*roundtrip/)'
+    - id: ceiling-validation
+      why: max_agentic_loops validation does not reject bool or values below one, or does not default correctly
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::websearch_request_hooks::.*(validation|default)/)'
+    - id: hook-tests
+      why: websearch request hook tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks/)'
+    - id: chat-tool-conversion
+      why: Chat Completions tool conversion to litellm_web_search (function format) does not work
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks.*(chat|deployment).*convert/)'
+    - id: responses-tool-conversion
+      why: Responses API tool conversion to litellm_web_search (flat function format) does not work
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks.*responses.*convert/)'
+    - id: native-blocks-flag
+      why: native-blocks flag is not set when Anthropic web_search_* tools are detected, or is incorrectly set when no native tool is present
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks.*(native|blocks|flag)/)'
+    - id: stream-conversion
+      why: stream=True is not converted to stream=False, or _websearch_interception_converted_stream flag is not set
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks.*stream/)'
+    - id: tool-choice-rewrite
+      why: _sync_forced_tool_choice does not repoint web_search to litellm_web_search, or changes unchanged tool_choice
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks.*choice/)'
+    - id: provider-filter
+      why: hooks modify requests for providers not in enabled_providers, or modify requests without web_search tools
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_request_hooks.*(filter|skip)/)'
+    - id: config-init-tests
+      why: initialize_from_proxy_config does not load from the expected locations or fails to initialize
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::websearch_request_hooks::.*init/)'
+oracle_cases: []
+deviations:
+  - what: enabled_providers defaults to ['bedrock'] when the config key is absent or None (LiteLLM only enables bedrock by default, not all providers).
+    why: Bedrock's Messages API cannot execute web_search natively, so interception is always needed there; other providers handle web_search natively or will be explicitly enabled per deployment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L276-L279
+  - what: Empty-list enabled_providers [''] or [] means "no providers enabled" (no interception happens), not "all providers".
+    why: Users who list empty can explicitly disable interception; None is the affordance for "all providers" if needed later, matching Python's truthiness.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L276-L279
+  - what: WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY is "_websearch_interception_emit_native_blocks" (private underscore prefix ensures it is stripped before follow-up kwargs).
+    why: The flag is internal signaling between hooks and the agentic loop; it must not reach the upstream call or the final response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L87
+out_of_scope:
+  - CustomLogger registration and dispatch mechanics; callback_utils.py owns the initialization call.
+  - Execution of searches (B4115 handles _execute_search and related search provider calls).
+  - Response transformation and native block injection (B4113/B4118 handle those); this task only flags the request.
+  - Provider capability detection (ProviderConfigManager.get_provider_anthropic_messages_config() exists externally).
+  - get_llm_provider exists in B174; this task uses it to resolve provider from model name.
+  - is_anthropic_native_web_search_tool and get_litellm_web_search_tool* functions are in B4111; this task uses them.
+  - validated_max_agentic_loops exists in B4110; this task uses it for validation.
+pitfalls:
+  - WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY uses underscore prefix so it is stripped before upstream calls; do not remove the underscore or the flag will reach the provider.
+  - enabled_providers defaults to ['bedrock'] in __init__, not ['all_providers'] or None; an empty list disables all providers, None would enable all (future affordance).
+  - Both hooks call validated_max_agentic_loops when max_agentic_loops is passed; the deployment hook respects deployment-level max_agentic_loops over instance value, so test both precedence cases.
+  - is_web_search_tool and is_anthropic_native_web_search_tool come from different modules; is_web_search_tool detects all shapes, is_anthropic_native_web_search_tool only detects type:"web_search_*" (with prefix underscore excluded).
+  - _tool_name handles both Anthropic (tool.name) and OpenAI function wrapper (tool.function.name) shapes; both hooks pass converted tools to _sync_forced_tool_choice, so test on both shapes.
+  - _convert_responses_tools is a helper method, not a callback hook; it is called directly from async_pre_call_deployment_hook only on Responses paths.
+  - async_pre_call_deployment_hook is "deployment" scope (runs on model deployment before routing); async_pre_request_hook is "request" scope (runs per request). Both fire but on different paths, so test both separately.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

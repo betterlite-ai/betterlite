@@ -8,6 +8,7 @@ pub mod cohere_rerank_guardrail;
 pub mod compatible_providers;
 pub mod cost;
 pub mod decisions;
+pub mod diagnostic_snapshots;
 pub mod dispatch;
 pub mod duration;
 pub mod dynamic_limits;
