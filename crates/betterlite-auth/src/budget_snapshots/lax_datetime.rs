@@ -1,59 +1,41 @@
 mod tests;
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt;
+use serde::{Deserialize, Serialize};
 
-/// `LiteLLM`'s lax `datetime | None` fields: an RFC 3339 string, a bare date, a
-/// space-separated naive string, or a Unix-second timestamp.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+// RFC 3339, a bare date, a space-separated naive string, or a Unix-second timestamp.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
+#[serde(try_from = "LaxDateTimeRaw")]
 pub enum LaxDateTime {
     Offset(DateTime<FixedOffset>),
     Naive(NaiveDateTime),
 }
 
-impl<'de> Deserialize<'de> for LaxDateTime {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_any(LaxDateTimeVisitor)
-    }
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LaxDateTimeRaw {
+    Str(String),
+    I64(i64),
+    U64(u64),
 }
 
-struct LaxDateTimeVisitor;
+impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
+    type Error = String;
 
-impl Visitor<'_> for LaxDateTimeVisitor {
-    type Value = LaxDateTime;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("an RFC 3339 datetime, a date, or a Unix timestamp")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        parse_lax_datetime(v).ok_or_else(|| E::custom("invalid datetime"))
-    }
-
-    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        timestamp_to_utc(v).ok_or_else(|| E::custom("timestamp out of range"))
-    }
-
-    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        i64::try_from(v)
-            .ok()
-            .and_then(timestamp_to_utc)
-            .ok_or_else(|| E::custom("timestamp out of range"))
+    fn try_from(raw: LaxDateTimeRaw) -> Result<Self, Self::Error> {
+        match raw {
+            LaxDateTimeRaw::Str(value) => {
+                parse_lax_datetime(&value).ok_or_else(|| format!("invalid datetime: {value}"))
+            }
+            LaxDateTimeRaw::I64(seconds) => {
+                timestamp_to_utc(seconds).ok_or_else(|| "timestamp out of range".to_owned())
+            }
+            LaxDateTimeRaw::U64(seconds) => i64::try_from(seconds)
+                .ok()
+                .and_then(timestamp_to_utc)
+                .ok_or_else(|| "timestamp out of range".to_owned()),
+        }
     }
 }
 
