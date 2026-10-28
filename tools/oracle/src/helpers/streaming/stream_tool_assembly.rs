@@ -37,9 +37,7 @@ const fn error_class(error: &AssemblyError) -> &str {
         AssemblyError::EmptyFunctionInput | AssemblyError::MissingFirstChoice => "IndexError",
         AssemblyError::MissingFirstFunction
         | AssemblyError::MissingFirstFunctionName
-        | AssemblyError::MissingFunctionArguments => {
-            "AttributeError"
-        }
+        | AssemblyError::MissingFunctionArguments => "AttributeError",
         AssemblyError::InvalidArguments => "TypeError",
     }
 }
