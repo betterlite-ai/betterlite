@@ -1,3 +1,4 @@
+import asyncio
 import time
 import uuid
 from typing import TypeAlias
@@ -67,6 +68,33 @@ def _classify(client: httpx.AsyncClient | httpx.Client, supplied: object | None)
     return "default"
 
 
+async def _async_client(
+    *, network_mock: bool, supplied_kind: str
+) -> tuple[httpx.AsyncClient | None, httpx.AsyncClient | None]:
+    supplied = httpx.AsyncClient() if supplied_kind == "client" else None
+    shared = aiohttp.ClientSession() if supplied_kind == "shared" else None
+    with (
+        mock.patch.object(litellm, "network_mock", network_mock),
+        mock.patch.object(litellm, "aclient_session", supplied),
+    ):
+        client = BaseOpenAILLM._get_async_http_client(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            shared_session=shared
+        )
+    return client, supplied
+
+
+def _sync_client(
+    *, network_mock: bool, supplied_kind: str
+) -> tuple[httpx.Client | None, httpx.Client | None]:
+    supplied = httpx.Client() if supplied_kind == "client" else None
+    with (
+        mock.patch.object(litellm, "network_mock", network_mock),
+        mock.patch.object(litellm, "client_session", supplied),
+    ):
+        client = BaseOpenAILLM._get_sync_http_client()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return client, supplied
+
+
 def _selection_outcome(scenario: Json) -> str:
     expected = {"kind", "network_mock", "supplied"}
     if not isinstance(scenario, dict) or set(scenario) != expected:
@@ -80,18 +108,12 @@ def _selection_outcome(scenario: Json) -> str:
         raise ValueError("network_mock must be a bool")
     if supplied_kind not in ("none", "client", "shared"):
         raise ValueError("supplied must be none, client, or shared")
-    with mock.patch.object(litellm, "network_mock", network_mock):
-        if kind == "async":
-            supplied = httpx.AsyncClient() if supplied_kind == "client" else None
-            shared = aiohttp.ClientSession() if supplied_kind == "shared" else None
-            with mock.patch.object(litellm, "aclient_session", supplied):
-                client = BaseOpenAILLM._get_async_http_client(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                    shared_session=shared
-                )
-        else:
-            supplied = httpx.Client() if supplied_kind == "client" else None
-            with mock.patch.object(litellm, "client_session", supplied):
-                client = BaseOpenAILLM._get_sync_http_client()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if kind == "async":
+        client, supplied = asyncio.run(
+            _async_client(network_mock=network_mock, supplied_kind=supplied_kind)
+        )
+    else:
+        client, supplied = _sync_client(network_mock=network_mock, supplied_kind=supplied_kind)
     if client is None:
         raise ValueError("expected a mock-selected http client but got None")
     return _classify(client, supplied)
