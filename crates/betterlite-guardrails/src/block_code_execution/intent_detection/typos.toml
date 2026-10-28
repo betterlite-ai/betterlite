@@ -1,0 +1,3 @@
+[default.extend-words]
+# Kelvin sign U+212A lowercases to "k"; the literal "chec" + Kelvin sign spells "check".
+chec = "chec"
