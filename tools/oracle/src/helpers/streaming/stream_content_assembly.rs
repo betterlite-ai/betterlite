@@ -5,7 +5,7 @@ use betterlite_streaming::stream_content_assembly::{
 use serde::Deserialize;
 use serde_json::json;
 
-#[cfg(test)]
+#[path = "stream_content_assembly/tests.rs"]
 mod tests;
 
 #[derive(Debug, Deserialize)]

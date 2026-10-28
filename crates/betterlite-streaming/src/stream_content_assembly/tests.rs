@@ -1,10 +1,18 @@
+#![cfg(test)]
+
 use super::*;
 use rstest::rstest;
 use std::fs;
+use std::io::Error;
 use std::path::Path;
 
 fn parse_chunks(source: &str) -> Vec<Chunk> {
-    serde_json::from_str(source).unwrap()
+    let parsed: Vec<Chunk> = serde_json::from_str(source).unwrap();
+    if parsed.is_empty() {
+        Vec::new()
+    } else {
+        parsed
+    }
 }
 
 #[rstest]
@@ -87,8 +95,12 @@ fn case_1_audio_base64_decoder() {
 #[test]
 fn replays_the_stream_content_assembly_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/stream_content_assembly");
-    for entry in fs::read_dir(root).unwrap() {
-        let fragment = fs::read_to_string(entry.unwrap().path()).unwrap();
-        drop(decode_stream_audio_fragment(&fragment, DEFAULT_AUDIO_LIMIT));
-    }
+    fs::read_dir(root)
+        .unwrap()
+        .try_for_each(|entry| {
+            let fragment = fs::read_to_string(entry.unwrap().path()).unwrap();
+            drop(decode_stream_audio_fragment(&fragment, DEFAULT_AUDIO_LIMIT));
+            Ok::<(), Error>(())
+        })
+        .unwrap();
 }

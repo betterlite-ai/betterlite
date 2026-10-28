@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use crate::case::{HelperCase, parse_helper_case};
 use std::fs;
 use std::path::Path;

@@ -8,8 +8,8 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4.9"
 betterlite-streaming = { path = ".." }
+libfuzzer-sys = "0.4.9"
 
 [[bin]]
 name = "stream_content_assembly"

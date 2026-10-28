@@ -206,7 +206,11 @@ impl ThinkingState {
     }
 
     fn finish(self) -> Option<Vec<ThinkingBlock>> {
-        (!self.blocks.is_empty()).then_some(self.blocks)
+        if self.blocks.is_empty() {
+            None
+        } else {
+            Some(self.blocks)
+        }
     }
 }
 
@@ -265,10 +269,11 @@ impl AudioState {
 
 impl ExpiryValue {
     const fn is_falsey(&self) -> bool {
-        matches!(
+        let is_falsey = matches!(
             self,
             Self::Boolean(false) | Self::Signed(0) | Self::Unsigned(0)
-        )
+        );
+        is_falsey
     }
 }
 
@@ -293,5 +298,5 @@ pub fn decode_stream_audio_fragment(
     Ok(decoded)
 }
 
-#[cfg(test)]
+#[path = "stream_content_assembly/tests.rs"]
 mod stream_content_assembly_cases;
