@@ -17,7 +17,7 @@ use std::path::Path;
     r#"{"input_cost_per_token":999999999999999999999999999999999999999999999999}"#,
     "input_cost_per_token"
 )]
-#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]}}"#, "nested")]
+#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]}}"#, "nested")]
 #[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "tiered_pricing[0].unknown_price")]
 #[case::null(r#"{"input_cost_per_token":null}"#, "must not be null")]
 #[case::string(r#"{"input_cost_per_token":"0.1"}"#, "must be a JSON number")]
@@ -33,6 +33,11 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
         assert_eq!(
             parsed_value.provider_specific.us.unwrap().to_string(),
             "0.000000000000000001"
+        );
+        assert_eq!(parsed_value.guardrail_units.len(), 1);
+        assert_eq!(
+            parsed_value.guardrail_units["contentPolicyUnits"].to_string(),
+            "0.0000001"
         );
         assert_eq!(
             parsed_value.metadata.per_minute.unwrap().to_string(),
