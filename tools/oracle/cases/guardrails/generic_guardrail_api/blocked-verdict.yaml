@@ -2,4 +2,4 @@ kind: helper
 name: blocked-verdict
 call: {b3771: {action: BLOCK, score: 0.5}}
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own wording"}]}
+compare: {ignore: [{pointer: /error, why: "betterlite reports a typed provider error"}]}

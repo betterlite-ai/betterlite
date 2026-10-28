@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use super::{
@@ -12,7 +14,11 @@ use secrecy::SecretString;
 fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
     let settings = GraySwanSettings {
         on_flagged_action: action,
-        ..GraySwanSettings::default()
+        violation_threshold: 0.5,
+        reasoning_mode: None,
+        categories: None,
+        policy_id: None,
+        fail_open: true,
     };
     GraySwanGuardrail::new(
         SecretString::from("secret"),

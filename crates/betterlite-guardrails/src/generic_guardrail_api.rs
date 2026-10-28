@@ -49,10 +49,13 @@ impl GenericGuardrailAPIError {
     }
 
     const fn is_unreachable(&self) -> bool {
-        matches!(
-            self,
-            Self::Timeout { .. } | Self::Request { .. } | Self::HttpStatus { .. }
-        )
+        match self {
+            Self::Timeout { .. } | Self::Request { .. } | Self::HttpStatus { .. } => true,
+            Self::Blocked { .. }
+            | Self::InvalidHeader { .. }
+            | Self::ResponseTooLarge { .. }
+            | Self::ResponseJson { .. } => false,
+        }
     }
 }
 
@@ -72,9 +75,10 @@ impl GenericGuardrailAPI {
         api_base: &str,
         settings: GenericGuardrailAPISettings,
     ) -> Self {
+        let resolved_base = normalize_api_base(api_base);
         Self {
             api_key,
-            api_base: normalize_api_base(api_base),
+            api_base: resolved_base,
             settings,
             client: reqwest::Client::default(),
             timeout: DEFAULT_TIMEOUT,
@@ -89,9 +93,10 @@ impl GenericGuardrailAPI {
         client: reqwest::Client,
         timeout: Duration,
     ) -> Self {
+        let resolved_base = normalize_api_base(api_base);
         Self {
             api_key,
-            api_base: normalize_api_base(api_base),
+            api_base: resolved_base,
             settings,
             client,
             timeout,
@@ -113,11 +118,8 @@ impl GenericGuardrailAPI {
         &self,
         request: GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
-        let original = passthrough_response(&request);
-        match self.call_api(&request).await {
-            Ok(response) => enforce_response(response),
-            Err(error) => self.handle_error(error, original),
-        }
+        let shown = request.clone();
+        self.apply_guardrail_with_original(shown, &request).await
     }
 
     pub async fn apply_guardrail_with_original(
@@ -241,12 +243,16 @@ fn request_error(source: reqwest::Error) -> GenericGuardrailAPIError {
 }
 
 fn passthrough_response(request: &GenericGuardrailAPIRequest) -> GenericGuardrailAPIResponse {
+    let texts = request.texts.clone();
+    let images = request.images.clone();
+    let tools = request.tools.clone();
+    let structured_messages = request.structured_messages.clone();
     GenericGuardrailAPIResponse {
         action: GuardrailResponseAction::None,
-        texts: request.texts.clone(),
-        images: request.images.clone(),
-        tools: request.tools.clone(),
-        structured_messages: request.structured_messages.clone(),
+        texts,
+        images,
+        tools,
+        structured_messages,
         blocked_reason: None,
         stream_holdback_chars: None,
     }
@@ -280,5 +286,5 @@ fn enforce_response(
     Ok(response)
 }
 
-#[cfg(test)]
+#[path = "generic_guardrail_api/tests.rs"]
 mod tests;

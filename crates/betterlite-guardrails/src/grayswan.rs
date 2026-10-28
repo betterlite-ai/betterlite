@@ -116,9 +116,10 @@ impl GraySwanGuardrail {
         api_base: Option<String>,
         settings: GraySwanSettings,
     ) -> Self {
+        let resolved_base = api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         Self {
             api_key,
-            api_base: api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
+            api_base: resolved_base,
             settings,
             client: reqwest::Client::default(),
             timeout: DEFAULT_TIMEOUT,
@@ -133,9 +134,10 @@ impl GraySwanGuardrail {
         client: reqwest::Client,
         timeout: Duration,
     ) -> Self {
+        let resolved_base = api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         Self {
             api_key,
-            api_base: api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
+            api_base: resolved_base,
             settings,
             client,
             timeout,
@@ -302,5 +304,5 @@ fn request_error(source: reqwest::Error) -> GraySwanGuardrailAPIError {
     }
 }
 
-#[cfg(test)]
+#[path = "grayswan/tests.rs"]
 mod tests;

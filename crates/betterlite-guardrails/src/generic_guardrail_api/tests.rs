@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use super::extract_user_api_key_metadata;
@@ -32,7 +34,10 @@ fn generic_guardrail_error_policy_is_explicit() {
     let settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
         unreachable_fallback: Some(UnreachableFallback::FailOpen),
         fail_on_error: Some(false),
-        ..GuardrailOptions::default()
+        provider_params: None,
+        streaming_end_of_stream_only: None,
+        streaming_sampling_rate: None,
+        streaming_transform_mode: None,
     }));
     assert!(!settings.fail_on_error);
     assert_eq!(settings.unreachable_fallback, UnreachableFallback::FailOpen);
@@ -43,7 +48,10 @@ fn generic_guardrail_fail_on_error_override_unreachable() {
     let settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
         unreachable_fallback: Some(UnreachableFallback::FailClosed),
         fail_on_error: Some(true),
-        ..GuardrailOptions::default()
+        provider_params: None,
+        streaming_end_of_stream_only: None,
+        streaming_sampling_rate: None,
+        streaming_transform_mode: None,
     }));
     assert!(settings.fail_on_error);
     assert_eq!(

@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 
 use betterlite_guardrails::generic_guardrail_api::extract_user_api_key_metadata;
-use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanResponse, GraySwanSettings, OnFlaggedAction};
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::grayswan::{
+    GraySwanGuardrail, GraySwanResponse, GraySwanSettings, OnFlaggedAction,
+};
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -32,11 +34,18 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .map_err(|error| failure(error.to_string()))?;
     let metadata_values = serde_json::from_value::<BTreeMap<String, Option<String>>>(metadata_json)
         .map_err(|error| failure(error.to_string()))?;
-    serde_json::to_value(extract_user_api_key_metadata(
+    let serialized = serde_json::to_value(extract_user_api_key_metadata(
         Some(&litellm_values),
         Some(&metadata_values),
     ))
-        .map_err(|error| failure(error.to_string()))
+    .map_err(|error| failure(error.to_string()))?;
+    let object = serialized.as_object().cloned().unwrap_or_default();
+    Ok(serde_json::Value::Object(
+        object
+            .into_iter()
+            .filter(|(_, item)| !item.is_null())
+            .collect(),
+    ))
 }
 
 fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
@@ -51,7 +60,10 @@ fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
         GraySwanSettings {
             on_flagged_action: action,
             violation_threshold: 0.5,
-            ..GraySwanSettings::default()
+            reasoning_mode: None,
+            categories: None,
+            policy_id: None,
+            fail_open: true,
         },
     );
     let response = GraySwanResponse {
@@ -71,12 +83,13 @@ fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
 }
 
 fn failure(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+    let error = crate::helpers::HelperError {
         class: "GuardrailError".to_owned(),
         status: Some(400),
         error_type: Some(Some("invalid_request_error".to_owned())),
         param: None,
         code: None,
         message,
-    })
+    };
+    Box::new(error)
 }
