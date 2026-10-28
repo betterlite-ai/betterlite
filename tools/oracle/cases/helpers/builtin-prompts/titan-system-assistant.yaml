@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "titan-system-assistant", "call": {"builtin_prompts": {"family": "titan", "messages": [{"role": "system", "content": "s"}, {"role": "assistant", "content": "a"}], "model": "injected-model"}}, "env": {}, "compare": {"ignore": []}}

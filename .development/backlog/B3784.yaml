@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Ovalix checkpoint corrections
 status: todo
 depends_on: [B002, B173, B189]
-file: null
+file: tasks/B3784-ovalix-checkpoints.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/ovalix/**"
   - "litellm/types/proxy/guardrails/guardrail_hooks/ovalix.py"

@@ -25,4 +25,9 @@ pub(crate) struct Command {
         description = "Run only after every other check passed. A gate that is already red skips it, so slow checks such as mutants never run on unfinished work."
     )]
     pub(crate) after_green: bool,
+    #[serde(default)]
+    #[schemars(
+        description = "Run while holding a lock in the git common directory, so gates in other worktrees of this clone wait their turn instead of running it at the same time. For tools such as cargo deny that lock a cache in the home directory and give up after a short wait."
+    )]
+    pub(crate) one_at_a_time: bool,
 }

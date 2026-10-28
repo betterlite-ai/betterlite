@@ -1,0 +1,111 @@
+id: B4172
+title: Scheduled job staggering and process state
+description: >-
+  Build typed configuration and application of deterministic schedule offsets for the proxy's background jobs, keeping different jobs and different replicas on different firing instants.
+  Add ScheduledJobStaggerSettings to betterlite-config and extend its loader to parse general_settings.scheduled_job_stagger, warning and defaulting on invalid input.
+  Implement the offset calculation algorithm: hash sha256(job_id + NUL + identity) and use the first eight bytes big-endian modulo the window.
+  Preserve staggerable job detection (interval jobs always, cron jobs only if their id is in LiteLLM's default list, jobs with explicit next_run_time are never shifted).
+  Preserve window bounds: interval jobs offset by at most one period, cron jobs by at most their leader-election span (monthly-report/fallback-stats 3600s, PTU 900s).
+  Clamp operator overrides to the job's dedup horizon minus one when they would separate replicas beyond the dedup span.
+  Build the _OffsetTrigger wrapper that composes with any trigger, delegating to the base trigger with a shifted clock.
+  Implement the scheduler sweep that modifies each eligible job's trigger before the scheduler starts, and the callback that logs job submissions with their scheduled vs actual start times.
+  Build ProxyState with get/set methods for process-local variables like spend_logs_row_count, initialized to zero.
+  Identity defaults to configured value or POD_NAME env var or HOSTNAME env var or socket.gethostname() or a UUID.
+  Do not check enabled in stagger_trigger itself; its caller controls that.
+scope:
+  paths:
+    - crates/betterlite/src/scheduled_job_stagger.rs
+    - crates/betterlite/src/scheduled_job_stagger/**
+    - crates/betterlite/src/proxy_state.rs
+    - crates/betterlite/src/proxy_state/**
+    - tools/oracle/cases/scheduled-job-stagger/**
+    - crates/betterlite-config/src/sections/scheduled_job_stagger.rs
+    - crates/betterlite-config/src/sections/scheduled_job_stagger/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/scheduled_job_stagger.py
+    why: The full scheduled job stagger module with offset calculation and job modification logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_state.py
+    why: The ProxyState class with get/set methods for process state variables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2665-L2695
+    why: ScheduledJobStaggerSettings Pydantic model with defaults and field descriptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5132-L5137
+    why: ProxyStateVariables TypedDict defining spend_logs_row_count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1865
+    why: DEFAULT_STAGGER_WINDOW_SECONDS constant value of 300.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/scheduled_job_stagger.py#L65-L71
+    why: DEFAULT_CRON_DEDUPE_SECONDS mapping for default LiteLLM cron job ids and their horizons.
+dod:
+  - text: betterlite-config loads general_settings.scheduled_job_stagger through the config loader and returns ScheduledJobStaggerSettings with defaults enabled=true, window=300 seconds, identity absent, offsets empty.
+    proof: [config-stagger-defaults]
+  - text: "Invalid scheduled_job_stagger config warns and falls back to defaults instead of failing startup (e.g. general_settings.scheduled_job_stagger.window_seconds: -1 logs a warning and uses the default 300)."
+    proof: [config-stagger-invalid]
+  - text: offset_seconds(job_id, identity, window_seconds) returns a stable value in [0, window_seconds) using sha256(job_id + NUL + identity) big-endian modulo window, and returns 0 for window_seconds <= 0.
+    proof: [offset-calculation]
+  - text: resolve_stagger_identity detects hostname from configured value or POD_NAME or HOSTNAME or socket.gethostname() or a UUID, including the process PID in the result.
+    proof: [identity-resolution]
+  - text: Interval jobs are always staggerable; cron jobs only if their id is one of MONTHLY_SPEND_REPORT_JOB_ID, PROMETHEUS_FALLBACK_STATS_JOB_ID, PTU_ROLLUP_JOB_ID; jobs with explicit next_run_time are never staggerable.
+    proof: [staggerable-detection]
+  - text: Window bounds are job-specific and minimum with settings.window_seconds, the interval period if the job is an interval trigger, and DEFAULT_CRON_DEDUPE_SECONDS.get(job_id); interval jobs never offset by more than one period, cron jobs never by more than their dedup horizon.
+    proof: [window-bound]
+  - text: Operator overrides in settings.offsets are clamped to the job's dedup horizon minus one if they would exceed that horizon, with a warning logged.
+    proof: [override-clamping]
+  - text: apply_scheduled_job_stagger modifies every eligible job's trigger before the scheduler starts, warns if the scheduler is already running, respects settings.enabled, and returns a mapping of applied offsets including zeroes.
+    proof: [apply-stagger]
+  - text: ProxyState.get_proxy_state_variable and set_proxy_state_variable manage spend_logs_row_count starting at zero, with type-safe access.
+    proof: [proxy-state-tests]
+  - text: attach_job_timing_logger registers a callback that logs each job submission with scheduled and actual start times, computing the delay.
+    proof: [job-timing-logger]
+  - text: Every mutant in the stagger and state implementations is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-stagger-defaults
+      why: config loading and default values tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::scheduled_job_stagger::(config|defaults)/)'
+    - id: config-stagger-invalid
+      why: invalid config warning and fallback tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::scheduled_job_stagger::(invalid|warn)/)'
+    - id: offset-calculation
+      why: offset_seconds calculation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::(offset|calculation)/)'
+    - id: identity-resolution
+      why: resolve_stagger_identity tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::identity/)'
+    - id: staggerable-detection
+      why: staggerable job detection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::staggerable/)'
+    - id: window-bound
+      why: window bound minimum tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::window/)'
+    - id: override-clamping
+      why: operator override clamping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::(clamp|override)/)'
+    - id: apply-stagger
+      why: apply_scheduled_job_stagger tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::apply/)'
+    - id: job-timing-logger
+      why: attach_job_timing_logger tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^scheduled_job_stagger::timing/)'
+    - id: proxy-state-tests
+      why: proxy state get/set tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^proxy_state::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The job registration, scheduler lifecycle and calling convention: apply_scheduled_job_stagger is a pure function that modifies triggers, not a server startup step."
+  - "The callback integration with FastAPI or any HTTP framework. attach_job_timing_logger is framework-agnostic."
+  - The actual jobs' behavior; staggering only shifts their fire times.
+pitfalls:
+  - "offset_seconds uses sha256 digest[:8].from_bytes(big_endian) % window, not random offsets. The hashing is stable per process for logging and reproducibility."
+  - "resolve_stagger_identity includes os.getpid(), which changes across restarts, so offsets change too. That is intentional: it stops a simultaneous rollout from converging onto the same instant."
+  - "_is_staggerable checks hasattr(job, \"next_run_time\"), not job.trigger.next_run_time; APScheduler stores this on the job object."
+  - "_window_for uses min() on a filtered tuple. If every limit is None (no period, no default cron horizon), the job has no staggerable trigger and should not reach this code; the caller must check _is_staggerable first."
+  - "_clamped_override warns about \"replica duplication\" when override >= horizon, but the problem is jobs that fire while another is still running. An override of horizon-1 is the safe fallback, not horizon."
+  - "_OffsetTrigger delegates with shifted clock arguments but returns a result shifted back; a trigger that does its own rounding (e.g., cron with minute granularity) will round the shifted time, not the rounded time shifted. The shifted behavior preserves the trigger's original semantics."
+  - "Logging identity, window and applied offsets happens once during apply_scheduled_job_stagger; if a second caller applies stagger to the same scheduler, the log is not repeated."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

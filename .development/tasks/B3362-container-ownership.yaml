@@ -1,0 +1,203 @@
+id: B3362
+title: Container ownership and filtered pagination
+description: >-
+  Implement the container ownership service in betterlite-core::api::container_ownership.
+  Own every complete function in the references, including cache-key encoding, owner
+  recording with identity validation, admin bypass with identity requirement, stored-ID
+  recovery for native upstream IDs, access control checks, and owner-filtered pagination
+  over at most five upstream pages of 100.
+
+  Use B1018's resource-scope functions to extract caller identity, B726's repository
+  table operations to read/write the managed-object table, B732's Principal/AuthContext
+  type for callers, and B2226's InMemoryCache with its exact TTL/expiry behavior. Cache
+  entries distinguish "no owner" from "cache miss" with sentinels; caches are keyed
+  by caller scope for filtering but indexed by container IDs for access checks. Owner
+  scopes extract unique identity tokens; different users never share a row but intersecting
+  scope sets auto-correct on the 60-second TTL. Admin-created containers with identity
+  are tracked; truly identity-less calls reject with HTTP 403. List pagination fetches
+  upstream pages of 100 until the caller's requested limit is reached or 5 pages are
+  exhausted. B904 supplies container ID collection from Responses output; the service's
+  record callback is injected later by the routes.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/container_ownership.rs
+  - crates/betterlite-core/src/api/container_ownership/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L27-L54
+  why: Cache constants, sentinel values, list pagination defaults, and fetch callback type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L57-L75
+  why: Cache-key encoding preserves collision avoidance via JSON sorting; ID decoding delegates to B903 and overrides provider for managed responses.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L78-L102
+  why: Forwarding params recovery uses stored ID for native upstream IDs when direct decode yields no model_id.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L104-L143
+  why: Response extraction and provider resolution from nested _hidden_params; Prisma client lazy binding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L146-L249
+  why: Owner recording batch logic and create/update paths preserve caller identity check and cache invalidation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L252-L334
+  why: Owner and stored-ID retrieval with cache sentinels; access checks with admin bypass and ownership verification.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L337-L430
+  why: Pagination list assembly from upstream pages, owned-container filtering, and recursion termination on page limits.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L433-L455
+  why: Public list entry point assembles allowed IDs, fetches pages in batches, and constructs response with pagination metadata.
+dod:
+- text: record_container_owner rejects a response with no id field by logging a warning and returning
+    the response unchanged; ownership is not tracked for this container.
+  proof: [container-ownership-no-id]
+- text: record_container_owner rejects a prisma_client unavailable condition by logging a warning and
+    returning the response unchanged; ownership is not tracked when the database is inaccessible.
+  proof: [container-ownership-prisma-unavailable]
+- text: record_container_owners_from_responses_response logs a warning and continues to the next container
+    when any single container in a batch fails to record; one container's failure does not abort the batch.
+  proof: [container-ownership-batch-exception]
+- text: >-
+    record_container_owner rejects a caller with no owner scope (no user_id/team_id/org_id/api_key)
+    with HTTPException(status_code=403, detail="Unable to record container ownership: caller has no identity scope.").
+    Admin status alone does not exempt from this check.
+  proof: [container-ownership-identity-less]
+- text: >-
+    record_container_owner rejects an existing row with file_purpose != "container" with HTTPException(status_code=500,
+    detail="Unable to track container"), signaling an internal consistency problem.
+  proof: [container-ownership-conflicting-purpose]
+- text: >-
+    record_container_owner rejects access to an existing row with created_by differing from the caller's
+    owner scope with HTTPException(status_code=403, detail="Forbidden").
+  proof: [container-ownership-forbidden-update]
+- text: >-
+    owner_cache_sentinel stores "__litellm_container_no_owner__" when a container has
+    no owner, distinct from a cache miss returning None. Calling _get_container_owner twice
+    for an untracked container hits the DB once, caches the sentinel, and second call returns
+    None without a DB hit. Caches expire after 60 seconds; any cache operation (get/set/delete)
+    reads its TTL value and removes expired entries.
+  proof: [ownership-tests, unit-cache]
+- text: >-
+    stored_id_cache_sentinel stores "__litellm_container_no_stored_id__" for containers with
+    no unified_object_id on the row or when the row is missing. Boolean checks distinguish
+    sentinel from actual stored IDs. Cache TTL is 60 seconds with the same expiry behavior.
+  proof: [ownership-tests, unit-cache]
+- text: >-
+    cache_key_sorting encodes owner_scopes=["team_2","user_1"] as JSON of the sorted list
+    ["team_2","user_1"] to preserve alphabetical order. JSON encoding escapes separators
+    that might appear in scope tokens. Two callers with identical sorted scopes share the same
+    allow-set cache entry. Empty scopes yield empty allow-set.
+  proof: [ownership-tests, unit-cache]
+- text: >-
+    decode_container_id calls B903's _decode_container_id for the container_id argument.
+    When decoded provider differs from the supplied custom_llm_provider and custom_llm_provider=="openai",
+    use the decoded provider instead. Original container ID is the "response_id" key from decoding,
+    defaulting to the input if decoding yields no response_id.
+  proof: [ownership-tests]
+- text: >-
+    get_stored_container_id for an untracked container returns None. For a tracked native ID
+    (e.g., Azure cntr_<hex> with no decoded model_id), returns the unified_object_id from the DB
+    or cache. Stored ID is then decoded to extract model_id for forwarding. Decode yields no
+    model_id again and returns None without error.
+  proof: [ownership-tests]
+- text: >-
+    assert_user_can_access_container calls decode_container_id_for_ownership; if the caller is
+    proxy_admin (from B1018), return immediately without ownership check. Otherwise fetch the owner
+    and call user_can_access_resource_owner (from B1018); if it returns false, reject with HTTP 403
+    "Forbidden". Untracked containers are admin-only.
+  proof: [ownership-tests]
+- text: >-
+    list_owned_containers_scope_filtering gathers all managed_object rows with file_purpose="container"
+    and created_by in the caller's owner_scopes (from B1018), stores the set of model_object_ids, and
+    filters upstream pages to include only those ids. Pagination asks for limit+1 items to detect
+    has_more; returns at most limit items with has_more=true iff result exceeded limit or upstream
+    has_more=true. Default limit is 20; list params are declared in the route, not mutable here.
+  proof: [ownership-tests]
+- text: >-
+    list_pagination_bounds fetches at most 5 pages of 100 items upstream. Stops early if result
+    reaches needed items or upstream has_more=false or last page is empty. If upstream_last_id exists
+    and has_more=true, fetch next page with after=upstream_last_id. Empty upstream response yields
+    empty list and has_more=false.
+  proof: [ownership-tests]
+- text: >-
+    Container ID with provider decode: container_id="resp_openai:azure:...;model_id:m;response_id:c"
+    and custom_llm_provider="openai" decode as provider="azure" (overridden from response envelope).
+    Forwarding params include model_id="m" when decoded; without model_id in envelope, fetch stored_id
+    and re-decode.
+  proof: [ownership-tests]
+- text: >-
+    Empty provider in response defaults to "openai" per _custom_llm_provider_from_responses_response.
+    Null provider and null model in owner records store the string values as JSON (handled by serde).
+  proof: [ownership-tests]
+- text: >-
+    Admin-bypass list ignores owner check and returns all containers via direct query.
+    Scopes are empty for identity-less callers; is_proxy_admin returns false. Auth-keyed admin
+    returns non-empty scopes and proceeds with ownership filtering.
+  proof: [ownership-tests]
+checks:
+  optional: []
+  commands:
+  - id: ownership-tests
+    why: cache sentinels, identity checks, or pagination bounds change
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_ownership::/)'
+  - id: unit-cache
+    why: cache TTL or expiry behavior differs
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_ownership::tests::cache_/)'
+  - id: container-ownership-no-id
+    why: response with no id field is not logged and skipped as required
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::container_ownership.*no_id/)'
+  - id: container-ownership-prisma-unavailable
+    why: prisma_client unavailable condition is not logged and skipped as required
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::container_ownership.*prisma_unavailable/)'
+  - id: container-ownership-batch-exception
+    why: batch exception handling does not continue after per-container failure
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::container_ownership.*batch_exception/)'
+  - id: container-ownership-identity-less
+    why: identity-less caller is not rejected with 403
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::container_ownership.*identity_less/)'
+  - id: container-ownership-conflicting-purpose
+    why: conflicting file_purpose is not rejected with 500
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::container_ownership.*conflicting_purpose/)'
+  - id: container-ownership-forbidden-update
+    why: forbidden update to existing row is not rejected with 403
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::container_ownership.*forbidden_update/)'
+oracle_cases: []
+deviations:
+- what: >-
+    Pagination does not fetch pages in parallel; the upstream fetch callback is awaited sequentially
+    per page.
+  why: >-
+    Python implementation also awaits fetch callbacks sequentially (see ownership.py line 414-430
+    recursive _collect_owned_containers). Preserving this behavior avoids races on the page cursor
+    and simplifies reasoning about the fetch callback's state.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L405-L430
+- what: >-
+    Record creation does not provide transaction rollback when DB write fails after the caller's
+    scope cache is deleted. The cache invalidation is best-effort and does not roll back on DB error.
+  why: >-
+    Python implementation has the same non-transactional behavior. Ownership rows are created/updated
+    without an atomic begin/commit block (Python prisma.create/update are individual async calls
+    with no enclosing transaction). Cache deletion before the DB write (line 247-248) means a failure
+    leaves the cache stale; the 60-second TTL recovers it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L240-L248
+- what: >-
+    Stored-ID lookup does not validate that the unified_object_id on the row matches the encoding
+    produced by B3361's encode_container_id_in_response. If an encoded ID is stored but later decode
+    logic changes, the recovery uses the stale stored value.
+  why: >-
+    Python implementation stores the unified_object_id from record_container_owner (line 223, 231)
+    without encoding validation. Recovery in get_container_forwarding_params (line 93-100) decodes
+    the stored value; if encoding rules change, stale stored values decode with old logic until
+    their 60-second cache entry expires or the row is re-created.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L282-L314
+out_of_scope:
+- B903 owns _decode_container_id in responses/utils.py; use it through B3361's decode_managed_container_id_for_request.
+- B904 owns collect_container_ids_from_responses_response; the service calls it to extract IDs from responses.
+- B1018 owns get_primary_resource_owner_scope, get_resource_owner_scopes, is_proxy_admin, user_can_access_resource_owner in managed_resource_store.
+- B726 owns ManagedObjectRepository and table.find_unique, find_first, find_many, create, update in auxiliary_repository.
+- B732 owns Principal/AuthContext and request authentication.
+- B2226 owns InMemoryCache construction and get_cache, set_cache, delete_cache behavior.
+- The fetch_page callback is injected by B3369 (container list operations); container_ownership.rs declares its type and waits for injection, never calls it directly.
+pitfalls:
+- "Cache sentinels like \"__litellm_container_no_owner__\" must distinguish cached None from cache miss. InMemoryCache.get_cache returns None for both; the sentinel is stored as the cached value itself to discriminate them. Boolean checks must match against the literal string, not pattern-match on an enum."
+- "Admin bypass does not exempt identity checks in record_container_owner: identity-less master-key auth (no user_id/team_id/org_id/api_key) rejects with HTTP 403 regardless of admin status. Admin-created containers still require an identity scope on the ownership row."
+- "Pagination over at most 5 pages means 500 upstream items max; if a caller requests limit=20 and fetches 2 pages of 100, the result carries at most 20 items and has_more reflects whether 500+ upstream items exist. Asking for limit+1 items prevents a false has_more when the exact limit is reached."
+- "Cache invalidation on create/update deletes only the caller's specific scope-keyed entry. Two different callers with the same sorted scope tuple share the same cache entry; if one creates a container, the shared entry is dropped. Intersecting but non-identical scope sets have separate entries and do not auto-update until their TTL expires."
+- "Stored-ID recovery is keyed on (original_container_id, custom_llm_provider): the native provider ID and resolved provider from the response envelope, not the incoming container_id which may be managed/encoded."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

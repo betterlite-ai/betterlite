@@ -1,0 +1,131 @@
+id: B4834
+title: Translate Claude Code sessions and stream events
+description: >-
+  Build Claude Code's private config/env, permission flags, resume argv and event parser.
+  Implement ClaudeCodeHarnessConfig that validates credential/config conflicts, builds
+  session argv with permission modes and model overrides, and parses stream-json events.
+  Preserve synthetic/subagent traffic suppression via parent_tool_use_id checks,
+  result-event success checks and structured-output extraction, including tool_approval=False
+  and the permission mode constants. Manage MANAGED_ENV_KEYS (ANTHROPIC_BASE_URL,
+  ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_SMALL_FAST_MODEL,
+  CLAUDE_CONFIG_DIR) so options.env cannot override them, and MANAGED_CONFIG_KEYS (env,
+  apiKeyHelper, model, permissions, awsAuthRefresh, awsCredentialExport, forceLoginMethod)
+  so options.config cannot override them. Build argv with --permission-mode values mapping
+  ("read-only"→plan, "ask"→default, "edit"→acceptEdits, "full"→bypassPermissions), resolve
+  session model group for ANTHROPIC_MODEL/ANTHROPIC_SMALL_FAST_MODEL background calls,
+  and suppress disallowed tools via --disallowedTools. Parse stream-json events suppressing
+  parent_tool_use_id traffic, extract text/reasoning/tool_call/tool_result from assistant/user/system/result
+  events, normalize tool names through NATIVE_TO_NORMALIZED, detect session_id from init
+  subtype and result events, and capture structured_output. Extract final text from result_text
+  (one result event) or joined text_parts, detect errors from exit_code/result_seen/is_error,
+  and select reason from result_text or joined errors before building the error message.
+  Extract final structured output first from structured_output dict via json.dumps, or otherwise
+  via last_json_object(final_text). Use three STATIC_ENV keys (DISABLE_TELEMETRY, DISABLE_ERROR_REPORTING,
+  DISABLE_AUTOUPDATER) and CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, and set CLAUDE_CONFIG_DIR
+  to the private dir to prevent reading repo .claude/settings.json or user keychain/login.
+  Build STRUCTURED_OUTPUT_INSTRUCTION constant formatting output schema into instructions.
+  Build persisted_dirs mapping ("projects"→claude_code/projects) for session reuse. The
+  binary is "claude", install hint is "npm install -g @anthropic-ai/claude-code", and
+  capabilities are tool_approval=False, structured_output=True, tool_filtering=True,
+  history=False, custom_tools=False, skills=True, resume=True, permission_modes={read-only,
+  edit, full}.
+scope:
+  paths:
+    - crates/betterlite-harness/src/providers/claude_code.rs
+    - crates/betterlite-harness/src/providers/claude_code/**
+    - tools/oracle/cases/claude_code/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/claude_code/harness/transformation.py#L1-L390
+    why: Own entire transformation module; preserve event parsing, config validation, argv building and structured output handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/options.py#L10-L14
+    why: ClaudeCodeOptions dataclass defines config and env fields; validate against MANAGED_ENV_KEYS and MANAGED_CONFIG_KEYS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L1-L214
+    why: "Event/Harness/Capabilities (lines 165-174)/Text/Reasoning/ToolCall/ToolResult constructors,
+         Harness enum values, and Event type alias (line 162)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L34-L151
+    why: BaseCLIHarnessConfig base class, HarnessSessionSetup/HarnessTurnRequest/HarnessTurnResponse/HarnessTurnError types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/utils.py#L21-L116
+    why: Helper functions for tool name normalization, JSON extraction, and stderr tail text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/claude_code/harness/test_transformation.py
+    why: Unit tests covering event parsing, config validation, argv building, structured output extraction and stream handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/claude_code/harness/fixtures/
+    why: Five JSONL fixtures (api_error, max_turns, resume_turn, structured_output, success_tools) recorded from Claude Code 2.1.285.
+dod:
+  - text: ClaudeCodeHarnessConfig validates that ClaudeCodeOptions.env/config do not set or override managed keys, and raises OptionsMismatch with the key names.
+    proof: [claude-code-validation-tests]
+  - text: Session argv includes --permission-mode value from permission mode mapping and --disallowedTools from native tool names, with model override env vars for background calls.
+    proof: [claude-code-argv-tests]
+  - text: Stream-json assistant/user/system/result events are parsed into Text/Reasoning/ToolCall/ToolResult/Compaction events, suppressing parent_tool_use_id traffic and synthetic model errors.
+    proof: [claude-code-parsing-tests]
+  - text: Tool call events normalize tool names through NATIVE_TO_NORMALIZED and synthesize tool results from tool_result blocks in user events.
+    proof: [claude-code-parsing-tests]
+  - text: Session init and result events extract session_id, and result events extract structured_output field or trigger JSON extraction from final text.
+    proof: [claude-code-parsing-tests]
+  - text: Turn success is determined from exit_code, result_seen, and is_error, and error message is built from result_text/errors/stderr before raising HarnessTurnError.
+    proof: [claude-code-response-tests]
+  - text: "Structured output is extracted first from structured_output dict via json.dumps, otherwise via
+           last_json_object(final_text); transform_turn_response produces only output_json, with schema
+           validation (parse_output) owned by B4844."
+    proof: [claude-code-response-tests]
+  - text: Every JSONL fixture from LiteLLM is copied byte-for-byte under tools/oracle/cases/claude_code/fixtures/.
+    proof: [claude-code-fixtures-pinned]
+  - text: Every oracle helper case parses the matching fixture and verifies event sequences.
+    proof: [claude-code-oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: claude-code-validation-tests
+      why: Config and env key conflicts are uncaught or silently accepted.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^claude_code.*validation/)'
+    - id: claude-code-argv-tests
+      why: Session argv construction misses permission modes or native tool name conversion.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^claude_code.*argv/)'
+    - id: claude-code-parsing-tests
+      why: Stream-json event parsing skips suppression, tool normalization or field extraction.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^claude_code.*parsing/)'
+    - id: claude-code-response-tests
+      why: Turn response handling misses error detection or structured output extraction.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^claude_code.*response/)'
+    - id: claude-code-fixtures-pinned
+      why: a JSONL fixture is missing or differs from LiteLLM's file at the pinned commit
+      run: >-
+        test -d tools/oracle/cases/claude_code/fixtures && test "$(ls tools/oracle/cases/claude_code/fixtures | wc -l)" -ge 5
+        && cd tools/oracle/cases/claude_code/fixtures && sha256sum --check --quiet <<'SUMS'
+        0bd1e79cafad2283fde1e9242778028068741c86b465978165689632a83484c7  api_error.jsonl
+        8e01bd3077cead95d898a874ee52fee9dd258ccc7359881804475fd1eb0cadb4  max_turns.jsonl
+        ac9704ace6824cabdc19bb424ebe703e57762d381990f4d5592d97c30160b65b  resume_turn.jsonl
+        d892705ed3ec6f0f73058d5de508dde093e39a077697e53ffbead4f0744d6df5  structured_output.jsonl
+        d9fd49f9826320e6cf7baacc5c841019d338710f0776c0a417556446654d07c3  success_tools.jsonl
+        SUMS
+    - id: claude-code-oracle-cases
+      why: oracle helper cases for Claude Code event parsing are missing, invalid, or fail to run
+      run: >-
+        test -d tools/oracle/cases/claude_code/fixtures &&
+        test -f tools/oracle/cases/claude_code/api_error.yaml &&
+        test -f tools/oracle/cases/claude_code/max_turns.yaml &&
+        test -f tools/oracle/cases/claude_code/resume_turn.yaml &&
+        test -f tools/oracle/cases/claude_code/structured_output.yaml &&
+        test -f tools/oracle/cases/claude_code/success_tools.yaml &&
+        cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/claude_code/*.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B4830 owns event_list, Harness enum, Capabilities dataclass, Event/Text/Reasoning/ToolCall/ToolResult constructors and Sandbox.host_url contract.
+  - B4831 owns normalize_tool_name, native_tool_names, stderr_tail_text, last_json_object helpers.
+  - B4844 owns parse_output schema validation (litellm/harness/runtime.py:247-255); this task produces output_json only.
+  - Base harness container/environment/permissions setup is owned by B4830 (SessionContext, Sandbox) and infrastructure tasks.
+pitfalls:
+  - Synthetic model messages (model == "<synthetic>") are CLI-generated error text never surfaced as text events, only via result event.
+  - Parent_tool_use_id marks subagent traffic that must be suppressed even when the event is otherwise valid.
+  - Session_id appears in both system init events and result events; result event takes precedence for resume.
+  - MANAGED_ENV_KEYS and MANAGED_CONFIG_KEYS rejection must list the exact clashing keys, not just say "managed".
+  - Permission modes are mapped case-sensitively through PERMISSION_MODES; unknown modes pass through, not rejected here.
+  - >-
+    Structured output extraction is a two-step process: if isinstance(state.structured_output, dict)
+    then json.dumps(structured_output), else last_json_object(state.final_text); final_text already
+    prefers result_text over joined text_parts.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,92 @@
+id: B3481
+title: Interaction records and billing eligibility
+description: >-
+  Build Rust types for the Google Interactions API and the background polling and billing logic LiteLLM uses to track costs for async interactions.
+  The Interactions API lets a caller create an interaction with background=true to return immediately with status in_progress and no usage block. The proxy then schedules a background poll task to fetch the interaction until it reaches a terminal status (completed, failed, cancelled, incomplete, budget_exceeded, or requires_action), and bills the call only once with the final usage.
+  Build crates/betterlite-interactions as the module for all interactions logic. It reads the Interactions API response types from litellm/types/interactions/generated.py (a Pydantic auto-generated OpenAPI client) and implements the polling, billing and budget reservation release logic that litellm/interactions/background_cost_polling.py defines.
+  An interaction reaching requires_action is terminal and billable, but unanswerable by the caller (the API has no resume operation). A later call with previous_interaction_id points at it and bills itself separately, so a requires_action interaction is settled and billed where it stops, not polled until timeout.
+  Deleting an interaction makes every subsequent poll fail. The delete path must settle any pending poll for that interaction before dispatching the delete (fetching its state, billing if it is terminal with usage, else releasing the budget reservation), and a settlement gate makes the poll task and delete path mutually exclusive so it is billed exactly once.
+  Interaction creates that return in_progress with background=true defer releasing the budget reservation until the poll task settles them (either with a success event billing the final usage, or by releasing the reservation on timeout or if the interaction terminates without billable output), so a reserved-but-unpaid interaction does not block other requests.
+  A GET poll or delete that arrives while polling is live settles the background interaction immediately instead of waiting for the background task, then continues with the delete or returns its state without a usage block (polls are never billed, ever). The delete path settles the interaction before dispatching the delete, and settles it by fetching, billing if terminal with usage, else releasing. A poll that finds a terminal status with usage bills once; a poll that finds a terminal status without usage or times out releases the reservation.
+scope:
+  paths:
+    - crates/betterlite-interactions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/__init__.py
+    why: The Interactions API types exported for callers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py
+    why: The full type definitions for the Interactions API response, auto-generated from the OpenAPI spec at https://ai.google.dev/static/api/interactions.openapi.json.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py
+    why: The background polling, settlement, billing and budget reservation release logic for background interactions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2606-L2700
+    why: The logging integration that handles interactions API responses and calls async_log_background_interaction_completion when a background interaction settles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: Polling interval and timeout constants for background interaction cost polling.
+  - url: https://ai.google.dev/gemini-api/docs/interactions
+    why: Google Interactions API documentation and behavior.
+dod:
+  - text: Interactions API response types are typed Rust structs matching LiteLLM's Pydantic models, with serde derives for JSON deserialization.
+    proof: [types-tests]
+  - text: Background polling never blocks, and poll tasks are tracked and cancelled on shutdown.
+    proof: [polling-intervals-backoff]
+  - text: A settlement gate ensures an interaction is billed or released exactly once, even when the poll task and delete path race to settle.
+    proof: [settlement-exactly-once]
+  - text: Every interaction status is handled correctly; requires_action is billable and terminal, in_progress and queued are pollable, and every terminal status settles the billing or reservation.
+    proof: [terminal-vs-pollable]
+  - text: Polling intervals double from initial to max, respecting the timeout, and give up with a warning after the timeout expires.
+    proof: [polling-intervals-backoff]
+  - text: A missing usage block is expected for non-terminal statuses, requires_action, failed, cancelled, incomplete and budget_exceeded, but raises a cost-tracking alarm if it is missing from completed or requires_action responses.
+    proof: [usage-expected-predicate]
+  - text: Deleting an interaction settles its pending poll before dispatching the delete.
+    proof: [settle-before-delete-ordering]
+checks:
+  optional: []
+  commands:
+    - id: types-tests
+      why: Interactions API response types deserialize and match LiteLLM's structure for all required status and content fields
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^types::.*tests::/) and not test(/replays/)'
+    - id: polling-intervals-backoff
+      why: Poll intervals double from initial to maximum, respecting timeout as a hard boundary; last interval may be shorter if time runs short
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/polling.*interval/)' || cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^polling::tests::/) and not test(/replays/)'
+    - id: terminal-vs-pollable
+      why: Terminal status set (completed, failed, cancelled, incomplete, budget_exceeded, requires_action) and pollable set (in_progress, queued) are correctly classified and routed to settlement or continued polling
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^polling::tests::.*status/) and not test(/replays/)'
+    - id: settlement-exactly-once
+      why: Settlement gate prevents double-billing and double-release when poll task and delete path race to claim settlement under concurrent execution
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^polling::tests::.*settlement/) and not test(/replays/)'
+    - id: usage-expected-predicate
+      why: Missing usage is expected for in_progress, queued, failed, cancelled, incomplete and budget_exceeded; missing usage raises an alarm for completed and requires_action
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/missing.*usage/)' || cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^polling::tests::.*usage/) and not test(/replays/)'
+    - id: settle-before-delete-ordering
+      why: Delete operation fetches current state with create credentials, bills if terminal with usage, else releases reservation; settlement flag makes poll and delete mutually exclusive
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^deletion::tests::/) and not test(/replays/)'
+oracle_cases: []
+deviations:
+  - what: Background polling is built with explicit async tasks that must be cancelled on server shutdown, using a JoinSet the server owns.
+    why: LiteLLM keeps a global dict of running polls and relies on Python GC; betterlite avoids globals and ensures cleanup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L241
+  - what: Polling intervals and timeouts are config values injected into polling contexts, not globals read from litellm.constants.
+    why: Dependencies come in through constructors; betterlite reads config once and passes values to callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+  - what: Settlement uses an Arc<Mutex<bool>> flag on the logging object, not a dict entry, and settlement is claimed with a compare-and-swap to avoid subtle timing bugs.
+    why: Dict mutation is not atomic; Rust's type system enforces exclusive access to the flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L102-L111
+out_of_scope:
+  - The full litellm_logging.py file. This task owns only the interactions-related methods that call async_log_background_interaction_completion and track InteractionsAPIResponse objects. The logging integration is built elsewhere by a task that depends on this one.
+  - Billing and budget reservation logic itself. This task only calls functions provided by the logging system to settle interactions with their final cost; the task that owns budget tracking (B3003 or later) implements the actual reservations and releases.
+  - Interactions route handlers and request/response transformation. Those are owned by tasks that implement the /interactions routes and handle request validation and response assembly.
+  - The admin dashboard and user-facing interactions management. Those are not part of the interactions API's internal polling logic.
+pitfalls:
+  - LiteLLM's _ACTIVE_POLLS is a global dict that lives for the lifetime of the process. Use a JoinSet the server owns instead, so polling tasks are cancelled cleanly on shutdown.
+  - "The settlement gate _claim_settlement sets a flag if it is not already set and returns whether the claimer owns the settlement. Both the poll task and delete path can call it, and whichever claims first is solely responsible for billing or release. The flag is not atomic in Python and can be read as settled by one task while another is setting it; use a compare-and-swap or check-then-set under a lock that stays held through the write."
+  - asyncio.sleep inside poll loops blocks the whole event loop in Python. Rust awaits are cooperative, so tokio::time::sleep is safe and returns control to the runtime between iterations.
+  - Polling intervals double until they hit the maximum, then stay at maximum. The loop yields intervals where the elapsed time plus the next interval does not exceed the timeout, so the last interval might be smaller than the max if time runs short.
+  - "A response with status requires_action means the model asked for a tool call. The caller answers by creating a new interaction with previous_interaction_id pointing at it. The first interaction is terminal and billable there; polling it again would be wrong. The proxy's success callback checks is_pollable_background_interaction, which returns false for requires_action."
+  - "Missing usage is expected for in_progress, queued, failed, cancelled, incomplete and budget_exceeded, but an alarm fires if completed or requires_action arrives without it. LiteLLM checks this in a cost-tracking diagnostic that logs the issue but does not fail the call. betterlite does the same: log a warning but continue."
+  - A poll that times out without reaching a terminal status logs an error if the last status it saw was not in the pollable or terminal sets (a bad state), or a warning otherwise, and releases the budget reservation.
+  - "Batch polling: LiteLLM groups polls by (provider, interaction_id) so one fetch operation satisfies many poll tasks waiting for the same interaction. Do not implement batching in the initial version; each poll task fetches independently. Batching is a later optimization."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

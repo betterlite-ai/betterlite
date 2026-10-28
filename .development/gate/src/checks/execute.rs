@@ -1,9 +1,12 @@
+mod tests;
+
 use std::fs::{self, File};
 use std::path::Path;
 use std::process::ExitStatus;
 
 use crate::checks::Outcome;
 use crate::error::GateError;
+use crate::git::common_dir;
 use crate::process::check_command;
 use crate::spec::command::Command;
 
@@ -67,7 +70,22 @@ pub(crate) fn execute(
     environment: &[(&str, String)],
 ) -> Result<Outcome, GateError> {
     let log_path = log_dir.join(format!("{}.log", command.id));
+    let turn = if command.one_at_a_time {
+        let path = common_dir(root)?
+            .join("betterlite")
+            .join(format!("{}.lock", command.id));
+        let file = File::create(&path).map_err(|source| GateError::Write {
+            path: path.clone(),
+            source,
+        })?;
+        file.lock()
+            .map_err(|source| GateError::Lock { path, source })?;
+        Some(file)
+    } else {
+        None
+    };
     let status = run_logged(root, &log_path, command, environment)?;
+    drop(turn);
     if status.success() {
         return Ok(Outcome::Pass);
     }

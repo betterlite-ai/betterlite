@@ -1,0 +1,168 @@
+id: B3977
+title: Rubrik sampled logs and unsampled block records
+description: >-
+  Build sampled terminal log events and unsampled moderation-block records
+  with shared correlation IDs. Rubrik distinguishes two logging paths:
+  sampled success/failure events that respect the configured sampling rate,
+  and unsampled block records that bypass sampling to ensure every policy
+  violation is logged.
+
+  Implement sampled logging. _prepare_log_payload samples based on
+  sampling_rate (default 1.0 / never drop), then deep-copies the
+  standard_logging_object from kwargs, applies correlation ID by overwriting
+  the response id with litellm_call_id, and prepends the system prompt from
+  call_details if present. _enqueue_log_event calls _prepare_log_payload,
+  returns early if sampling drops it, then appends and maybe flushes the
+  queue. async_log_success_event checks the _rubrik_blocked flag in kwargs
+  and skips logging if the request was moderation-blocked. async_log_failure_event
+  logs standard LLM failures (non-block exceptions) identically to the success
+  path.
+
+  Implement unsampled block logging. async_post_call_failure_hook receives
+  ModifyResponseException from the guardrail, guards by guardrail_name to
+  avoid double-handling when multiple instances are registered, pops the
+  stashed _rubrik_logging_obj from request_data, then calls
+  _build_and_enqueue_block_event. _build_and_enqueue_block_event extracts
+  call_details from logging_obj, builds the block failure payload (catching
+  only AttributeError, ImportError, KeyError, TypeError), then appends
+  without dropping (blocks are never sampled). _prepare_block_failure_payload
+  checks call_details["standard_logging_object"]: if present, deep-copy it
+  to _copy_block_payload_base; if absent (prompt block or timing race),
+  use _build_fallback_payload. Overwrite the response field with
+  "ModifyResponseException: <message>", apply correlation ID, and prepend
+  system prompt. _build_fallback_payload reads model/optional_params/messages
+  from call_details, model_group and model from the same model field, sets
+  model_id to empty string, converts start_time datetime to Unix float,
+  uses that float for all time fields, builds metadata via _caller_metadata,
+  sets status to "failure". _caller_metadata defers the import of
+  LiteLLMProxyRequestSetup and calls get_sanitized_user_information_from_key.
+  _copy_block_payload_base is a static wrapper around safe_deep_copy for
+  the copied base payload.
+
+  Preserve the stashed-context guardrail-name check so multiple Rubrik
+  instances do not race on the pop. Keep _rubrik_blocked set until request
+  state dies, preventing delayed success callbacks from logging blocked
+  content -- never pop it in _build_and_enqueue_block_event even though the
+  success handler is deferred.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/rubrik_event_logging.rs
+    - crates/betterlite-logging/src/rubrik_event_logging/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L769-L781
+    why: _prepare_log_payload samples, deep-copies standard_logging_object, applies correlation ID, and prepends system prompt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L808-L820
+    why: _enqueue_log_event calls _prepare_log_payload, returns on sample drop, appends and maybe flushes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L822-L831
+    why: async_log_success_event checks _rubrik_blocked flag and skips on block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L833-L839
+    why: async_log_failure_event logs standard LLM failures via _enqueue_log_event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L841-L885
+    why: async_post_call_failure_hook guards by guardrail_name, pops stashed logging_obj, calls _build_and_enqueue_block_event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L887-L922
+    why: _build_and_enqueue_block_event builds and enqueues block failure payload without sampling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L924-L993
+    why: _prepare_block_failure_payload uses copied standard_logging_object or fallback, sets response to exception text, applies correlation ID, prepends system prompt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L995-L997
+    why: _copy_block_payload_base wraps safe_deep_copy for the base payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L999-L1016
+    why: _caller_metadata defers LiteLLMProxyRequestSetup import and returns caller identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1018-L1045
+    why: _build_fallback_payload constructs schema-compliant payload from call_details and user_api_key_dict.
+
+dod:
+  - text: >-
+      _prepare_log_payload samples based on sampling_rate, returning None on drop,
+      otherwise deep-copying standard_logging_object, applying correlation ID by setting
+      payload["id"] to litellm_call_id, and prepending system prompt from call_details.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      _enqueue_log_event calls _prepare_log_payload with kwargs and event_type,
+      returns early if payload is None, appends and maybe flushes via
+      _append_and_maybe_flush, and catches all exceptions logging at error level.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      async_log_success_event checks the blocked flag in kwargs and logs verbose
+      debug before returning when the request was moderation-blocked.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      async_log_failure_event calls _enqueue_log_event with failure event type
+      for standard LLM failures.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      async_post_call_failure_hook checks if original_exception is
+      ModifyResponseException and returns early if not, guards by matching
+      guardrail names, pops stashed logging_obj from request_data with None
+      default, warns and returns if None.
+    proof: [rubrik-event-logging-tests]
+  - text: async_post_call_failure_hook calls _build_and_enqueue_block_event with logging_obj, original_exception, call_id (None), and user_api_key_dict.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      _build_and_enqueue_block_event extracts call_details from logging_obj,
+      calls _prepare_block_failure_payload, catches specific exception types
+      (AttributeError, ImportError, KeyError, TypeError) and logs at error
+      level then returns.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      _build_and_enqueue_block_event never pops the blocked flag from
+      call_details even though success handler is deferred.
+    proof: [rubrik-event-logging-tests]
+  - text: _build_and_enqueue_block_event calls _append_and_maybe_flush to enqueue without dropping block events.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      _prepare_block_failure_payload checks for standard_logging_object in
+      call_details and uses _copy_block_payload_base if present, otherwise
+      uses _build_fallback_payload.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      _prepare_block_failure_payload sets payload["response"] to
+      the exception class name and message combined.
+    proof: [rubrik-event-logging-tests]
+  - text: _prepare_block_failure_payload applies correlation ID and prepends system prompt before returning.
+    proof: [rubrik-event-logging-tests]
+  - text: _copy_block_payload_base deep-copies the base standard_logging_payload using safe_deep_copy.
+    proof: [rubrik-event-logging-tests]
+  - text: _caller_metadata defers import of LiteLLMProxyRequestSetup and calls get_sanitized_user_information_from_key with user_api_key_dict.
+    proof: [rubrik-event-logging-tests]
+  - text: >-
+      _build_fallback_payload reads model, model_group from call_details, sets
+      model_id to empty string, uses optional_params or empty mapping, converts
+      start_time to Unix float for all time fields, gets metadata via
+      _caller_metadata, sets status to failure, gets messages from call_details
+      or empty tuple.
+    proof: [rubrik-event-logging-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: rubrik-event-logging-tests
+      why: Rubrik event logging tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_event_logging::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: _caller_metadata defers import of LiteLLMProxyRequestSetup from litellm.proxy.litellm_pre_call_utils and requires the caller identity mapping contract.
+    why: The import is deferred to avoid pulling proxy-only dependencies into the SDK-side rubrik.py module during guardrail discovery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1014-L1016
+
+out_of_scope:
+  - Deferred success callback execution and task scheduling (_defer_async_logging in litellm.Logging).
+  - CustomGuardrail.__init__ contract (assigned to unplanned B104).
+  - ModifyResponseException type definition and exception handling (handled by B184).
+
+pitfalls:
+  - _rubrik_blocked is never popped in _build_and_enqueue_block_event, even though the success handler is deferred; the flag dies with model_call_details when the request completes.
+  - async_post_call_failure_hook must guard by original_exception.guardrail_name to avoid double-handling when multiple Rubrik instances are registered and only one raised the block.
+  - _prepare_block_failure_payload must catch only specific exception types (AttributeError, ImportError, KeyError, TypeError) to avoid masking unexpected errors.
+  - _build_fallback_payload converts datetime to Unix float using timestamp() method because httpx json= uses stdlib json.dumps with no custom encoder.
+  - Sampled logging returns None early when sampling_rate drops the event; _enqueue_log_event must return early without appending.
+  - The fallback path is used when standard_logging_object is absent (prompt blocks or race conditions), never copied from elsewhere.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

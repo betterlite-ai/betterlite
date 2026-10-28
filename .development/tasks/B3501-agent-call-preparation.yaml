@@ -1,0 +1,74 @@
+id: B3501
+title: Prepare managed-agent providers and outbound header precedence
+description: >-
+  Build case-insensitive header merging for A2A agent calls and provider selection for native Gemini agents.
+  The merge_agent_headers function overlays static headers (admin-configured per agent) onto dynamic headers (from the incoming request), with static headers winning all collisions and case-insensitive matching on header names. It is called independently by A2A proxy endpoints and the completion bridge handler before agent requests leave the gateway.
+  The get_provider_agents_api_config function returns a Gemini-specific provider config or None if the provider does not support native agent creation.
+  The _get_agents_api_config helper wraps the above and raises BadRequestError if the provider is unsupported.
+  The _make_logging_obj function creates a per-call logging context with metadata and optional parameters, using B247's Logging.update_from_kwargs to populate the log object with call type, provider, model and optional params like agent name. This function is called by the agent creation, listing, retrieval and deletion pipeline to prepare logging metadata.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/agents.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/utils.py#L11-L53
+    why: merge_agent_headers and get_provider_agents_api_config implementations, including case-insensitive header comparison and Gemini provider dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L58-L89
+    why: _get_agents_api_config and _make_logging_obj helper functions for provider validation and per-call logging metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py
+    why: Agent response types and creation/deletion/listing/retrieval result structures used in logging and error handling.
+
+dod:
+  - text: merge_agent_headers merges dynamic and static header mappings with case-insensitive header-name comparison, static headers winning, and returns None if the merged result is empty.
+    proof: [header-merge]
+  - text: get_provider_agents_api_config returns GeminiAgentsConfig (from B1392) for custom_llm_provider="gemini" and None for any other provider.
+    proof: [provider-config]
+  - text: _get_agents_api_config calls get_provider_agents_api_config and raises litellm.BadRequestError if config is None, with a message listing the proxy endpoint as the fallback for unsupported providers.
+    proof: [provider-validation]
+  - text: _make_logging_obj calls B247's Logging.update_from_kwargs to populate logging metadata with model, custom_llm_provider, call_type and optional_params including agent name or similar identifiers.
+    proof: [logging-metadata]
+
+checks:
+  optional: []
+  commands:
+    - id: header-merge
+      why: Header merging does not correctly handle case-insensitive comparison or static header precedence.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::(header_merge|merge_agent_headers)/)'
+    - id: provider-config
+      why: Provider selection does not return the correct config for Gemini or returns non-None for other providers.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::(provider_config|get_provider)/)'
+    - id: provider-validation
+      why: _get_agents_api_config does not raise BadRequestError for unsupported providers or error message is incorrect.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::(provider_validation|unsupported_provider)/)'
+    - id: logging-metadata
+      why: _make_logging_obj does not populate logging metadata correctly or does not use B247's update_from_kwargs.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::(logging_metadata|make_logging)/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Header name comparison is case-insensitive while preserving the static side's casing when written to the merged result.
+    why: HTTP headers are case-insensitive per RFC 7230; betterlite tracks header names as Rust strings and compares lowercased copies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/utils.py#L22-L35
+  - what: An empty merged header map is returned as None, not as an empty dict.
+    why: Callers downstream can optionally apply headers only if present; None signals no override needed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/utils.py#L37
+
+out_of_scope:
+  - The full litellm_logging.py file. This task owns only the call to B247's Logging.update_from_kwargs with agent-specific optional_params.
+  - Agent HTTP request/response handling and credential validation. B3502 and B3503 handle the HTTP dispatch and receive already-built provider config and logging object from the call pipeline.
+  - Caller pipeline for _get_agents_api_config and _make_logging_obj. B3504 and B3505 call these functions to prepare provider config and logging metadata before delegating agent operations to B3502/B3503.
+  - Upstream A2A routing and header merging integration. B4788, B4802 and B4809 call merge_agent_headers independently before agent requests; this task is independent and callable by any downstream task that needs header merging or provider selection.
+
+pitfalls:
+  - Header name comparison is case-insensitive (HTTP spec) but the merged result preserves the casing of the static side, not the dynamic side. If both sides have the same header with different cases, the static one wins and its casing is preserved.
+  - An empty merge (no dynamic headers and no static headers, or both empty) returns None, not an empty dict. Callers checking `if headers:` will skip None correctly.
+  - LiteLLM checks `if custom_llm_provider == LlmProviders.GEMINI.value` but betterlite uses string "gemini" or reads it from config. Ensure the enum variant matches or use string comparison.
+  - The BadRequestError message should direct users to the proxy POST /v1/agents endpoint for unsupported providers, matching LiteLLM's guidance.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

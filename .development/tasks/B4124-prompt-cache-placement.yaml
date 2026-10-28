@@ -1,0 +1,164 @@
+id: B4124
+title: Place prompt cache breakpoints across messages and system
+description: >-
+  Build ordered injection for Chat Completions and native Messages, preserving existing client marks,
+  system-message precedence and reserved tool-config slots. Keep the provisional Responses carry-forward
+  behavior and OpenAI explicit-dialect exclusions, including assistant messages and unsupported content-block types.
+
+  This task owns the message-level placement logic that injects cache-control marks (Anthropic dialect)
+  or prompt-cache-breakpoint marks (OpenAI dialect) into typed message objects, respecting per-message
+  and per-role targeting, skipping assistant messages in OpenAI mode, and enforcing the 4-block provider
+  limit. It imports already-counted capacity info (reserved blocks, external breakpoints) and applies
+  configured injection points in order, stopping when the budget is exhausted. When points defer to a
+  later pass (role-targeted with no index in Chat Completions), it carries them forward with the
+  carry-forward flag set. For the native Messages route, it also places marks on the system block,
+  converting string system to a structured block when needed.
+
+  Build in `betterlite-prompts::cache_placement` and `betterlite-prompts::cache_placement/**`.
+  Preserve index conversion (negative indices, out-of-bounds skips), role-based targeting, the
+  stop-when-full guard with warning logs, OpenAI's content-block-type restrictions (text, image,
+  image_url, file, input_audio, input_text, input_image, input_file), and assistant-message skip
+  semantics. The system-block placement converts string systems to AnthropicSystemMessageContent
+  text blocks and applies marks to the last eligible block. Responses carry-forward keeps the
+  remaining points in kwargs for the bridge to apply when it builds the chat messages. The config
+  order precedence matters: when slots fill, earlier points in the sequence are applied first, later
+  ones are skipped or carried forward.
+
+scope:
+  paths:
+    - crates/betterlite-prompts/src/cache_placement.rs
+    - crates/betterlite-prompts/src/cache_placement/**
+    - tools/oracle/cases/helpers/cache-placement/**
+    - tools/oracle/fuzz/corpus/helper_case/cache-placement-*
+    - tools/oracle/helpers/b4124.py
+    - tools/oracle/helpers/b4124/**
+    - tools/oracle/src/helpers/prompts/b4124.rs
+    - tools/oracle/src/helpers/prompts/b4124/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L182-L280
+    why: Own get_chat_completion_prompt; preserve injection-point order, carry_unmatched flag semantics, and stop-when-full guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L379-L431
+    why: Own _apply_message_injections; preserve limit-reached break, client-mark skipping and per-point role targeting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L433-L470
+    why: Own _resolve_target_indices; preserve index conversion (string and int), negative index wrapping and out-of-bounds silence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L487-L514
+    why: Own _safe_insert_cache_control_in_message; preserve dialect check and last-block-only semantics for lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L516-L542
+    why: Own _insert_prompt_cache_breakpoint_in_message; preserve assistant-role skip, string-to-block conversion and last-eligible-block search.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L544-L553
+    why: Own _system_block_with_breakpoint; preserve dialect-based marker selection and immutable block copying.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L555-L631
+    why: Own apply_to_anthropic_messages_request; preserve system-message precedence, system-to-block conversion and remaining-points carryover.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py
+    why: ChatCompletionCachedContent, ChatCompletionTextObject, PromptCacheBreakpoint types and their wire contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py
+    why: AnthropicSystemMessageContent and other Anthropic message shape types.
+dod:
+  - text: >-
+      Index resolution handles string and int indices, negative wraparound, and out-of-bounds
+      silently (no injection, no error). Role-based targeting returns all matching indices in the
+      message list. When a point specifies both index and role, only index is used.
+    proof: [behavior-tests]
+  - text: >-
+      Message injection respects the limit, skipping injection when max_blocks is reached.
+      Client-marked messages (existing cache_control or prompt_cache_breakpoint) are preserved
+      without overwriting. The used-block count is incremented only when injection actually applies
+      a mark that was not present. A warning is logged once when the limit is first exceeded.
+    proof: [behavior-tests]
+  - text: >-
+      Anthropic dialect places cache_control dicts on message top level (string content) or on the
+      last content-list block. OpenAI dialect places prompt_cache_breakpoint on eligible content blocks
+      (text, image, image_url, file, input_audio, input_text, input_image, input_file). Assistant messages
+      are skipped entirely in OpenAI mode.
+    proof: [behavior-tests]
+  - text: >-
+      Every message with string content is converted to a single-block text list whenever the request
+      carries any injection points, independent of dialect and of whether that message is targeted for
+      injection.
+    proof: [behavior-tests]
+  - text: >-
+      Native Messages route: system string is converted to AnthropicSystemMessageContent text block
+      when applying a system-role-targeted point. System marks have priority in the budget (applied
+      first if there is capacity). Remaining non-message points are returned for downstream handlers.
+    proof: [behavior-tests]
+  - text: >-
+      Chat Completions carry-forward: role-targeted points with no index are held back unconditionally
+      when the carry_unmatched flag is set, independent of whether a message of the targeted role is
+      currently present in the list. They are returned in kwargs for a later pass. All other remaining
+      points are carried forward.
+    proof: [behavior-tests]
+  - text: >-
+      In OpenAI dialect, once a message injection adds a breakpoint, prompt_cache_options is set to
+      mode 'explicit' unless already present in non_default_params.
+    proof: [behavior-tests]
+  - text: Config order precedence is preserved; earlier points win when slots fill.
+    proof: [behavior-tests]
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case seed replays.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Message and system-block placement must preserve ordering, limits, dialect semantics and client marks.
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^cache_placement::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4124.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/cache-placement-*)" && grep -rlq "cache_placement" tools/oracle/fuzz/corpus/helper_case/cache-placement-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cache-placement/index-resolution.yaml
+  - tools/oracle/cases/helpers/cache-placement/role-targeting.yaml
+  - tools/oracle/cases/helpers/cache-placement/anthropic-dialect-placement.yaml
+  - tools/oracle/cases/helpers/cache-placement/openai-dialect-placement.yaml
+  - tools/oracle/cases/helpers/cache-placement/client-mark-preservation.yaml
+  - tools/oracle/cases/helpers/cache-placement/block-limit-enforcement.yaml
+  - tools/oracle/cases/helpers/cache-placement/system-block-conversion.yaml
+  - tools/oracle/cases/helpers/cache-placement/carry-forward-behavior.yaml
+deviations: []
+out_of_scope:
+  - 'litellm/integrations/anthropic_cache_control_hook.py: B4123 owns _validated_object_mapping (L78-L82),
+    _validated_object_list (L85-L89), supports_openai_prompt_cache_breakpoint (L92-L100),
+    _model_map_prompt_cache_breakpoint_flag (L103-L108), targets_openai_api (L111-L121),
+    _carries_cache_breakpoint (L124-L125), _tool_carries_cache_breakpoint (L128-L131),
+    _chat_transform_drops_tool_cache_control (L134-L137), _accepts_prompt_cache_breakpoint (L138-L139),
+    _request_value (L152-L157), _request_user_agent (L159-L173), _request_system (L175-L180),
+    _targets_openai_prompt_cache_breakpoint (L282-L293), _resolve_provider (L295-L304),
+    count_request_cache_breakpoints (L306-L311), count_external_cache_breakpoints (L313-L336),
+    count_external_cache_breakpoints_on_messages_route (L338-L352), _blocks_reserved_outside_messages (L354-L367),
+    _points_with_a_slot_left (L369-L377), _count_cache_control_blocks (L472-L480),
+    _message_has_cache_control (L482-L485), _default_control (L633-L645), _stamped_for_prompt_hook (L647-L667),
+    _stamped_with_dialect (L669-L685), _stamped (L687-L689), _request_has_cache_control (L691-L715).
+    B4125 owns get_default_injection_points (L717-L763), messages_with_default_injections (L765-L812),
+    maybe_seed_default_injection_points (L814-L862), maybe_inject_cache_control (L938-L1008).
+    B4126 owns integration_name (L1010-L1013), should_run_prompt_management (L1015-L1022),
+    _compile_prompt_helper (L1024-L1040), async_compile_prompt_helper (L1042-L1059),
+    async_get_chat_completion_prompt (L1061-L1090), should_use_anthropic_cache_control_hook (L1092-L1096),
+    get_custom_logger_for_anthropic_cache_control_hook (L1098-L1112).
+    B2204 owns record_gateway_injection (L864-L936).'
+  - Default injection-point selection and config loader integration; B4125 handles defaults.
+  - Callback registration and prompt-management hook dispatch; B4126 handles those.
+pitfalls:
+  - 'Index resolution uses the original provided index in the error log but applies the normalized
+    one (with negative wraparound) to the list. Out-of-bounds indices fail silently without logging.'
+  - 'Negative indices wrap using len(messages) semantics (e.g., -1 = last message, -2 = second-to-last).
+    An index like -100 on a 3-message list resolves to 0 after wrapping but stays out of bounds and is skipped.'
+  - 'OpenAI content-block types form a closed set: text, image, image_url, file, input_audio, input_text,
+    input_image, input_file. Other types (video, pdf, etc.) do not accept prompt_cache_breakpoint and are
+    skipped even if targeted by a point. The search finds the last eligible block, not the last block overall.'
+  - 'String message content in OpenAI mode becomes [{type: "text", text: original_string}], not passed through
+    with_prompt_cache_breakpoint on a text-typed dict; the wrapper function handles the conversion.'
+  - 'System-string-to-block conversion happens only when a system-role point applies and system is not yet
+    a list. A system that is already a list has the breakpoint applied to its last block if eligible.'
+  - 'Remaining points are forwarded only if they are non-empty. The Messages route applies system marks with
+    highest priority and reserves capacity in the budget for tool_config and other external points.'
+  - 'The oracle helper for this task is pre-registered as b4124 in the prompts group. Replace the
+    stub Op in tools/oracle/src/helpers/prompts/b4124.rs with an impl Helper, and write run in
+    tools/oracle/helpers/b4124.py. The registry files (helpers/mod.rs, the group files, dispatch.py)
+    are not this task''s to edit.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

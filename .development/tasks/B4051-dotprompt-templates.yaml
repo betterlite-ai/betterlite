@@ -1,0 +1,153 @@
+id: B4051
+title: Dotprompt loading and sandboxed template rendering
+description: >-
+  Add crates/betterlite-prompts crate for local prompt file management, JSON loading and Jinja2 rendering.
+  Build the PromptTemplate struct to hold content, metadata, model, input schemas, output format/schema and optional params.
+  Build PromptManager to load .prompt files from a directory using nonrecursive glob, parse YAML frontmatter (---\n...\n---\n),
+  store and retrieve templates with version lookup support, and render templates with a sandboxed Jinja2 environment.
+  Support loading from JSON data structures and converting between .prompt file format and JSON.
+  Implement input validation against schemas with Python type mapping (string, integer, number, float, boolean, array, object and their aliases).
+  Export _get_prompt_data_from_dotprompt_content to parse templates from database-stored content.
+  Preserve the nonrecursive directory scan with silent skip on per-file errors and per-record parse failures,
+  the exact .v suffix splitting rule for version lookup, the ImmutableSandboxedEnvironment configuration for Handlebars-style templates,
+  and the extraction of restricted keys (model, input, output) and optional params from metadata.
+  Use Jinja2's select_autoescape for string templates and maintain immutable sandbox restrictions.
+  Fuzz file/frontmatter/JSON/template inputs to ensure parser robustness.
+scope:
+  paths:
+    - crates/betterlite-prompts/Cargo.toml
+    - crates/betterlite-prompts/src/dotprompt_templates.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/**
+    - crates/betterlite-prompts/fuzz/fuzz_targets/dotprompt_templates.rs
+    - crates/betterlite-prompts/fuzz/corpus/dotprompt_templates/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L1-L52
+    why: _PromptFileJson TypedDict, strip_version_suffix function, PromptTemplate.__init__.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L58-L317
+    why: PromptManager class with __init__, _load_prompts, _load_prompts_from_json, _load_prompt_file, _parse_frontmatter, render, _validate_input, _get_python_type, get_prompt, reload_prompts and add_prompt methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L319-L334
+    why: prompt_file_to_json conversion method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L359-L375
+    why: get_all_prompts_as_json and load_prompts_from_json_data methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/__init__.py#L30-L43
+    why: _get_prompt_data_from_dotprompt_content function for parsing database-stored dotprompt content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/README.md
+    why: Dotprompt specification documentation and API reference.
+  - url: https://docs.rs/serde_json/latest/serde_json/
+    why: JSON serialization for template data structures.
+  - url: https://docs.rs/serde_yaml/latest/serde_yaml/
+    why: YAML frontmatter parsing from template files.
+  - url: https://docs.rs/minijinja/latest/minijinja/
+    why: Jinja2-compatible templating engine with sandbox support.
+dod:
+  - text: PromptTemplate struct holds content, metadata dict, template_id, and extracts model, input_schema, output_format, output_schema and optional_params from metadata.
+    proof: [dotprompt-template-tests]
+  - text: strip_version_suffix splits on ".v" suffix and returns the base name if the version is all digits, else None.
+    proof: [dotprompt-version-tests]
+  - text: PromptManager.__init__ accepts optional prompt_directory, prompt_data dict and prompt_file, and loads from directory if provided with nonrecursive glob for *.prompt files.
+    proof: [dotprompt-loading-tests]
+  - text: "PromptManager.__init__ with prompt_file but no prompt_id raises ValueError with the exact message: 'prompt_id is required when prompt_file is provided'."
+    proof: [dotprompt-loading-tests]
+  - text: "_load_prompts raises ValueError with the exact message 'Prompt directory does not exist: <path>' when the directory does not exist or is falsy."
+    proof: [dotprompt-loading-tests]
+  - text: Per-file errors during directory load are caught and skipped silently; per-record errors in JSON load are skipped without stopping the load.
+    proof: [dotprompt-loading-tests]
+  - text: >-
+      _load_prompts_from_json branches on prompt_data shape: passing prompt_id="x" with {"content": "template", "metadata": {...}} registers one template under "x";
+      passing {"a": {"content": "...", "metadata": {...}}, "b": {...}} registers two templates under "a" and "b" keys.
+    proof: [dotprompt-loading-tests]
+  - text: _parse_frontmatter splits on ^---\s*\n(.*?)\n---\s*\n with YAML parsing, returns frontmatter dict and content, and treats invalid YAML as an error.
+    proof: [dotprompt-frontmatter-tests]
+  - text: render() retrieves the template, validates input against input_schema if present, renders with Jinja2 from_string using the sandboxed environment, and raises ValueError on render errors.
+    proof: [dotprompt-render-tests]
+  - text: "render() raises KeyError with the exact message \"Prompt '<prompt_id>'<version_suffix> not found. Available prompts: <list>\" when get_prompt returns None."
+    proof: [dotprompt-render-tests]
+  - text: _validate_input checks each variable type against the schema and raises ValueError on mismatch using _get_python_type mapping.
+    proof: [dotprompt-validation-tests]
+  - text: _get_python_type maps schema type strings (string/str, integer/int, number, float, boolean/bool, array/list, object/dict) to Python types, case-insensitive, defaulting to str.
+    proof: [dotprompt-validation-tests]
+  - text: get_prompt() looks for versioned ID first (prompt_id.vN), then direct match, then strips version from prompt_id and looks for the base.
+    proof: [dotprompt-version-tests]
+  - text: reload_prompts() clears stored prompts and reloads them from the configured prompt_directory.
+    proof: [dotprompt-reload-tests]
+  - text: add_prompt(prompt_id, content, metadata) creates and stores a PromptTemplate with the supplied content, metadata and template_id.
+    proof: [dotprompt-reload-tests]
+  - text: load_prompts_from_json_data(prompt_data) merges JSON-supplied prompts into the existing store via _load_prompts_from_json.
+    proof: [dotprompt-reload-tests]
+  - text: prompt_file_to_json reads a .prompt file, parses frontmatter, returns JSON with content and metadata keys.
+    proof: [dotprompt-conversion-tests]
+  - text: get_all_prompts_as_json returns a dict mapping prompt_id to {content, metadata} for all loaded templates.
+    proof: [dotprompt-conversion-tests]
+  - text: _get_prompt_data_from_dotprompt_content parses dotprompt content string and returns {content, metadata} dict for database-stored templates.
+    proof: [dotprompt-content-tests]
+  - text: "PromptManager uses ImmutableSandboxedEnvironment with Handlebars delimiters ({{ }}, {% %}, {# #}), select_autoescape for html/xml, and immutable restrictions are enforced."
+    proof: [dotprompt-sandbox-tests]
+  - text: The crate has a cargo-fuzz target at crates/betterlite-prompts/fuzz/fuzz_targets/dotprompt_templates.rs seeded with file/frontmatter/JSON/template fixtures, and replays_the_dotprompt_templates_corpus loads every corpus file without panic.
+    proof: [dotprompt-fuzz-corpus]
+  - text: Every mutant in the loader and rendering code is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: dotprompt-template-tests
+      why: PromptTemplate struct or property tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::template/)'
+    - id: dotprompt-version-tests
+      why: strip_version_suffix or version lookup tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::version/)'
+    - id: dotprompt-loading-tests
+      why: directory or JSON loading tests fail or do not exist, including __init__ error cases
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::loading/)'
+    - id: dotprompt-reload-tests
+      why: reload_prompts, add_prompt and load_prompts_from_json_data tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::reload/)'
+    - id: dotprompt-frontmatter-tests
+      why: frontmatter parsing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::frontmatter/)'
+    - id: dotprompt-render-tests
+      why: template rendering and render error tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::render/)'
+    - id: dotprompt-validation-tests
+      why: input validation and type mapping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::validation/)'
+    - id: dotprompt-conversion-tests
+      why: JSON conversion tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::conversion/)'
+    - id: dotprompt-content-tests
+      why: database content parsing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::content/)'
+    - id: dotprompt-sandbox-tests
+      why: sandbox environment configuration tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::sandbox/)'
+    - id: dotprompt-fuzz-corpus
+      why: the dotprompt fuzz target or corpus is missing, or replaying the corpus fails
+      run: test -f crates/betterlite-prompts/fuzz/fuzz_targets/dotprompt_templates.rs && test "$(ls crates/betterlite-prompts/fuzz/corpus/dotprompt_templates 2>/dev/null | wc -l)" -ge 4 && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_dotprompt_templates_corpus)'
+oracle_cases: []
+deviations:
+  - what: Per-file load errors during directory scan are caught and skipped silently rather than stopping the load or warning.
+    why: LiteLLM behavior at the pinned commit; strict error handling is a future refinement controlled by configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L109-L124
+  - what: Invalid YAML in frontmatter raises ValueError during parsing instead of being logged and skipped.
+    why: LiteLLM behavior at the pinned commit; inline YAML errors surface during parse, not silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L179-L198
+out_of_scope:
+  - "PromptManager.list_prompts: no caller at the pin outside tests/examples"
+  - "PromptManager.get_prompt_metadata: no caller at the pin outside tests/examples"
+  - "PromptManager.json_to_prompt_file: no caller at the pin outside tests/examples"
+  - "PromptTemplate.__repr__: no caller at the pin in runtime paths"
+  - Custom Python extension execution through litellm_logging or user hooks; this task is purely about file and template loading.
+  - The integration with completion hooks and compiler dispatch; B4052 owns the DotpromptManager that uses these types.
+  - Caching and in-memory registry management; those belong to the compiler and router tasks.
+pitfalls:
+  - PromptTemplate.__init__ must extract restricted_keys (model, input, output) from metadata and store everything else in optional_params.
+  - strip_version_suffix uses rpartition(".v"), so it handles only the rightmost .v and checks that version is isdigit(); "prompt.v1.v2" returns "prompt.v1" as the base.
+  - _parse_frontmatter uses re.DOTALL and matches ^---\s*\n...\n---\s*\n; the newline after the closing --- is part of the delimiter and does not appear in template_content.
+  - ImmutableSandboxedEnvironment disallows mutation of caller-supplied objects, so templates cannot assign to context variables or call methods on mutable types.
+  - Jinja2 from_string() uses the loader's environment, not a fresh one; tests must use the same jinja_env instance.
+  - The schema type mapping is case-insensitive and defaults to str for unknown types; "Number" and "STRING" both work.
+  - Frontmatter that is invalid YAML raises a ValueError immediately; there is no fallback to treating it as content.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,161 @@
+id: B3722
+title: Bedrock guardrail decisions and usage tracing
+description: >-
+  Build guardrail-block classification that distinguishes BLOCKED from ANONYMIZED
+  actions, sanitized assessment details for HTTP error responses, and one
+  logical-call telemetry record that accumulates usage across chunked content
+  and preserves cost via B1667's pricing functions. When the Bedrock response
+  carries an AWS exception marker inside Output.__type at HTTP 200, treat that
+  as a technical failure, not a policy intervention. When disable_exception_on_block
+  is true, return a ModifyResponseException with the guardrail's suggested
+  replacement output text; otherwise return HTTPException with a 400 status,
+  the guardrail identifier, version, and sanitized blocked assessments.
+
+  Implement _redact_assessment_match_fields to redact match/regex fields from
+  assessment lists before returning them to clients, preserving policy labels
+  and metadata. Implement _should_raise_guardrail_blocked_exception to walk all
+  assessment policies and return true only when any BLOCKED action is found;
+  ANONYMIZED and NONE actions do not raise an exception. Implement
+  _extract_blocked_assessments to emit a flat list of {policy, matches} dicts
+  from the response's assessment tree, selecting only BLOCKED entries and
+  retaining category, type, action, name, match and score fields where present.
+
+  Implement _extract_violation_category_names to collect only non-sensitive policy
+  labels (topic name, content-filter type, PII entity type, named-regex name) for
+  telemetry attributes, never raw match content. Implement _check_bedrock_response_for_exception
+  to detect the AWS exception marker by trying response.json(), then content/text
+  fallbacks with UTF-8 decode and JSON parse, returning false on any decode error.
+  Implement _get_bedrock_guardrail_response_status to map HTTP 200 with exception
+  to "guardrail_failed_to_respond", HTTP 200 with BLOCKED action to
+  "guardrail_intervened", HTTP 200 with no intervention to "success", and all
+  other status codes to "guardrail_failed_to_respond".
+
+  Implement _build_tracing_detail to emit violation_categories, guardrail_action,
+  guardrail_usage, guardrail_cost and guardrail_cost_by_unit fields by calling
+  _extract_violation_category_names and _usage_tracing_detail, skipping empty maps.
+  Implement _usage_tracing_detail to call bedrock_guardrail_cost_by_unit with
+  usage units and region, returning guardrail_cost_by_unit, guardrail_usage and
+  guardrail_cost from B1667's guardrail_cost_total. Implement the three logging
+  functions to add tracing details to request_data and call the unresolved
+  CustomGuardrail.add_standard_logging_guardrail_information_to_request_data with
+  status, duration and end time. _log_apply_guardrail_attempt sums completed_chunk_usages
+  before the block into one consolidated cost record. _log_apply_guardrail_success
+  preserves the merged response's embedded exception marker when deciding status.
+  _log_apply_guardrail_failure sums any billed usages and wraps the error detail
+  in an error key.
+
+  Implement _get_http_exception_for_blocked_guardrail to extract output text from
+  the response's outputs array, returning ModifyResponseException when
+  disable_exception_on_block is true or HTTPException with 400 status, "Violated guardrail policy"
+  error, guardrail_response with the output text, and redacted assessments from
+  _extract_blocked_assessments when present. The error-body JSON fallback inside
+  _check_bedrock_response_for_exception is a real decoder to fuzz, so it lives
+  here as-is, attempting to parse content/text with UTF-8 and JSON without
+  intermediate buffering.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/bedrock_decisions.rs
+    - crates/betterlite-guardrails/src/bedrock_decisions/**
+    - tools/oracle/cases/helpers/bedrock-decisions/**
+    - tools/oracle/fuzz/corpus/helper_case/bedrock-decisions-*
+    - tools/oracle/helpers/b3722.py
+    - tools/oracle/helpers/b3722/**
+    - tools/oracle/src/helpers/guardrails/b3722.rs
+    - tools/oracle/src/helpers/guardrails/b3722/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L210-L219
+    why: _redact_assessment_match_fields redacts match fields from assessments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1280-L1387
+    why: Logging functions sum usage across chunks and preserve exception markers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2092-L2148
+    why: Exception detection and status classification including AWS exception markers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2176-L2486
+    why: Tracing detail, usage accounting, violation extraction, and HTTP exception construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2411-L2486
+    why: "BLOCKED vs ANONYMIZED action detection and assessment tree iteration."
+dod:
+  - text: "_should_raise_guardrail_blocked_exception returns true only when action is GUARDRAIL_INTERVENED and at least one BLOCKED action is found in assessments; ANONYMIZED and NONE actions return false."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "_extract_blocked_assessments walks all policy types and emits BLOCKED entries with policy, category, type, action and optional match/name/score fields, preserving customWords and managedWordLists structure."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "_extract_violation_category_names collects non-sensitive labels only (name/type), never raw match content, skipping entries without names."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "_check_bedrock_response_for_exception detects AWS exception markers in Output.__type by trying json(), content/text fallbacks and UTF-8 decode, returning false on any parse error."
+    proof: [bedrock-decision-boundaries, bedrock-decisions-fuzz-corpus]
+  - text: "_get_bedrock_guardrail_response_status maps 200 with exception to failed, 200 with BLOCKED to intervened, 200 with no intervention to success, and non-200 to failed."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "_build_tracing_detail and _usage_tracing_detail emit violation_categories, guardrail_action, guardrail_usage, guardrail_cost and guardrail_cost_by_unit, skipping empty maps."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "_log_apply_guardrail_attempt sums completed_chunk_usages with the blocking call, _success preserves merged-response exception markers, and _failure wraps error in error key."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "_get_http_exception_for_blocked_guardrail returns ModifyResponseException when disable_exception_on_block is true, else HTTPException with 400, redacted assessments, and output text."
+    proof: [bedrock-decision-behaviors, bedrock-decisions-oracle]
+  - text: "The response-body JSON decoder handles content, text and json() fallbacks without intermediate buffering and never panics on decode errors."
+    proof: [bedrock-decision-boundaries, bedrock-decisions-fuzz-corpus, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: bedrock-decision-behaviors
+      why: Bedrock decision classification, status mapping or logging tests are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::bedrock_decision_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: bedrock-decision-boundaries
+      why: Response parsing, exception detection or error-handling boundary tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::bedrock_decision_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b3722.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: bedrock-decisions-fuzz-corpus
+      why: The bedrock_decisions helper fuzz target or its corpus is missing, or replaying the corpus fails
+      run: grep -rlq 'bedrock_decisions:' tools/oracle/fuzz/corpus/helper_case/bedrock-decisions-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: bedrock-decisions-oracle
+      why: Oracle cases exercising decision classification, status mapping and exception construction are missing or fail
+      run: test -d tools/oracle/cases/helpers/bedrock-decisions && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/bedrock-decisions)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/bedrock-decisions
+oracle_cases:
+  - tools/oracle/cases/helpers/bedrock-decisions/blocked-action-raises-exception.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/anonymized-action-does-not-raise.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/no-intervention-returns-false.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/extract-blocked-assessments-topic-policy.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/extract-blocked-assessments-content-policy.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/extract-blocked-assessments-word-policy.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/extract-blocked-assessments-pii-policy.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/extract-blocked-assessments-grounding-policy.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/violation-names-never-include-match.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/exception-marker-detection-json-parse.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/exception-marker-detection-content-fallback.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/exception-marker-detection-text-fallback.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/exception-marker-malformed-json-returns-false.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/status-200-with-exception-is-failed.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/status-200-intervened-is-intervened.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/status-200-clean-is-success.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/status-non-200-is-failed.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/tracing-detail-with-violation-categories.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/tracing-detail-with-guardrail-action.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/tracing-detail-with-usage-and-cost.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/http-exception-with-redacted-assessments.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/modify-response-exception-when-disable-on-block.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/logging-attempt-sums-chunk-usage.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/logging-success-preserves-exception-marker.yaml
+  - tools/oracle/cases/helpers/bedrock-decisions/logging-failure-wraps-error.yaml
+deviations:
+  - what: The response-body JSON decoder in _check_bedrock_response_for_exception uses Rust's serde_json parser, which may behave differently on invalid UTF-8 sequences or deeply nested structures than Python's json module.
+    why: Rust's standard library has different error handling semantics; the fallback to false on any decode error preserves the source's safe behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2100-L2118
+out_of_scope:
+  - CustomGuardrail base class and add_standard_logging_guardrail_information_to_request_data method in litellm/integrations/custom_guardrail.py, owned by B164.
+  - Recursive redaction via redact_nested_match_and_regex_keys in litellm/litellm_core_utils/core_helpers.py, owned by B104; the calling site _redact_assessment_match_fields requires this function.
+  - ModifyResponseException construction in litellm/integrations, owned by B104; the calling site _get_http_exception_for_blocked_guardrail requires this wire type.
+  - The ApplyGuardrail and InvokeGuardrailChecks request/response records are B3720's responsibility.
+  - Chunking, splitting and content merging are B3720's responsibility.
+  - Message selection and masking are B3721's responsibility.
+  - Transport, signing and error parsing are B3723's responsibility.
+pitfalls:
+  - The response-body JSON fallback must try json() first, then content with UTF-8 decode, then text with UTF-8 decode, and return false on any exception rather than panicking.
+  - "Bedrock can return explicit JSON null in assessments fields; use `.get(key) or []` not `.get(key, [])` to distinguish null from missing."
+  - "The output text may contain multiple entries; loop through outputs and concatenate all text fields, not just the first."
+  - Violation category names must skip entries that only carry a match field (bare customWords without a name, unnamed regexes), preserving only labeled categories.
+  - "The __type field may contain the word Exception but not at the top level; look for it only inside Output.__type."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

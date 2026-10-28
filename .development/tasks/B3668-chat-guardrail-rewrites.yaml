@@ -1,0 +1,232 @@
+id: B3668
+title: Chat guardrail request and completed-response rewrites
+description: >-
+  Apply guardrails to scoped chat requests and completed responses, rewriting
+  text and tool calls in original messages and response choices. Rebuild ended
+  streams separately for each choice, refusing tool rewrites that cannot be
+  faithfully delivered rather than silently emitting stale tool arguments.
+
+  Implement message rewriting handlers: apply guardrail text responses and
+  tool calls back to request messages by (msg_idx, content_idx) mapping,
+  handling both string and list content. Apply guardrails to completed
+  ModelResponse objects: extract text, images, and tool calls per choice,
+  apply guardrail responses by choice index, and update message content
+  in place.
+
+  Support ended-stream reconstruction: gather all text from completed-stream
+  responses grouped by choice, build standalone choice contents lists,
+  detect undeliverable tool call rewrites and rebuild the full stream per
+  choice as a sequence of delta chunks using stream_chunk_builder. Preserve
+  stream order and choice indices while reconstructing response chunks.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/rewrites.rs
+    - crates/betterlite-server/src/guardrails/chat_guardrail_translation/rewrites/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L88-L233
+    why: get_structured_messages and process_input_messages request processing with text and tool-call extraction and rewriting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L383-L488
+    why: process_output_response for completed ModelResponse with text and tool-call extraction and application.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L642-L713
+    why: _process_ended_stream and _rebuild_ended_stream_per_choice for buffered response reconstruction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L1087-L1197
+    why: _string_choice_contents, _write_ended_stream_text_rewrites, _function_tool_call_shapes, _function_tool_call_fragments, _write_ended_stream_tool_call_rewrites for ended-stream text and tool call rewriting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L1199-L1279
+    why: _apply_guardrail_responses_to_output_streaming for streaming response rewriting with choice-based handling.
+
+dod:
+  - text: >-
+      process_input_messages extracts text content (string or list of text/image blocks),
+      images, and tool-call function parameters from request messages, returning task index
+      mappings for guardrail application. Calls guardrail.apply_guardrail with structured
+      messages and tools when present.
+    proof: [input-process-cases]
+  - text: >-
+      _apply_guardrail_responses_to_input_texts applies guarded text responses back to
+      messages by (msg_idx, content_idx) mapping, handling both string content and
+      list content items with proper index access.
+    proof: [input-text-rewrite-cases]
+  - text: >-
+      _apply_guardrail_responses_to_input_tool_calls applies guardrailed tool_calls back
+      to input messages by (msg_idx, tool_call_idx) mapping, replacing tool calls in place.
+    proof: [input-tool-rewrite-cases]
+  - text: >-
+      process_output_response extracts text, images, and tool calls from completed response
+      choices, applies guardrail to all extracted content, and rewrites response choices
+      in place by choice index.
+    proof: [output-process-cases]
+  - text: >-
+      _apply_guardrail_responses_to_output_texts applies text responses back to
+      response.choices[choice_idx].message.content by (choice_idx, content_idx) mapping,
+      handling string and list content types.
+    proof: [output-text-rewrite-cases]
+  - text: >-
+      _apply_guardrail_responses_to_output_tool_calls updates response.choices[choice_idx].message.tool_calls
+      with guardrailed function.arguments and function.name.
+    proof: [output-tool-rewrite-cases]
+  - text: >-
+      _process_ended_stream gathers all text per choice from responses_so_far, detects
+      undeliverable tool rewrites, and calls _rebuild_ended_stream_per_choice for each
+      choice index present in the stream.
+    proof: [ended-stream-gather-cases]
+  - text: >-
+      _rebuild_ended_stream_per_choice builds a sequence of ModelResponseStream chunks
+      for a single choice_idx using stream_chunk_builder, applying text and tool rewrites
+      from guardrailed outputs, preserving stream order and excluding undeliverable rewrites.
+    proof: [ended-stream-rebuild-cases]
+  - text: >-
+      _string_choice_contents returns a list of (choice_idx, content) tuples where content
+      is accumulated text per choice from responses_so_far, keyed by choice.index or 0.
+    proof: [string-choice-cases]
+  - text: >-
+      _write_ended_stream_text_rewrites applies text rewrites to choice contents and
+      uses stream_chunk_builder to emit text deltas per choice, blanking subsequent
+      deltas after the first rewrite per choice.
+    proof: [text-rewrite-stream-cases]
+  - text: >-
+      _function_tool_call_shapes returns a dict mapping choice_idx to a list of
+      (tool_call_idx, function_name, arguments_len) tuples from responses_so_far per choice.
+    proof: [tool-shapes-cases]
+  - text: >-
+      _function_tool_call_fragments returns undeliverable tool call rewrite reasons when
+      guardrailed tool-call count, order or function names differ from the streamed shapes,
+      or when argument lengths cannot be faithfully reconstructed across delta chunks.
+    proof: [tool-fragments-cases]
+  - text: >-
+      _write_ended_stream_tool_call_rewrites applies guardrailed tool calls to stream
+      events using stream_chunk_builder, skipping undeliverable rewrites with
+      UndeliverableStreamRewrite reasons recorded.
+    proof: [tool-rewrite-stream-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: input-process-cases
+      why: process_input_messages tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::(process_input|input_messages)/)'
+    - id: input-text-rewrite-cases
+      why: _apply_guardrail_responses_to_input_texts tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_input_text/)'
+    - id: input-tool-rewrite-cases
+      why: _apply_guardrail_responses_to_input_tool_calls tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_input_tool/)'
+    - id: output-process-cases
+      why: process_output_response tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::(process_output|output_response)/)'
+    - id: output-text-rewrite-cases
+      why: _apply_guardrail_responses_to_output_texts tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_output_text/)'
+    - id: output-tool-rewrite-cases
+      why: _apply_guardrail_responses_to_output_tool_calls tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_output_tool/)'
+    - id: ended-stream-gather-cases
+      why: _process_ended_stream gathering and choice detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::ended_stream_gather/)'
+    - id: ended-stream-rebuild-cases
+      why: _rebuild_ended_stream_per_choice reconstruction tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::rebuild_ended_stream/)'
+    - id: string-choice-cases
+      why: _string_choice_contents accumulation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::string_choice_contents/)'
+    - id: text-rewrite-stream-cases
+      why: _write_ended_stream_text_rewrites stream building tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::write_text_rewrites/)'
+    - id: tool-shapes-cases
+      why: _function_tool_call_shapes detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::tool_call_shapes/)'
+    - id: tool-fragments-cases
+      why: _function_tool_call_fragments undeliverability detection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::tool_call_fragments/)'
+    - id: tool-rewrite-stream-cases
+      why: _write_ended_stream_tool_call_rewrites stream emission tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::write_tool_rewrites/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "get_structured_messages (B3667): extract message list for guardrail scoping."
+  - "_not_run_reason (B3667): detection for empty-or-image-only content after scoping."
+  - "extract_request_tool_names (B3667): collection from tools[] and functions[]."
+  - "_extract_inputs (B3667): message content extraction for text, images, tool_calls."
+  - "_extract_output_text_images_and_tool_calls (B3667): response choice content extraction."
+  - "_convert_tool_call_to_dict (B3667): object-to-dict conversion for tool calls."
+  - "_narrowed_to_choice (B3667): response copy filtering to single choice."
+  - "build_stream_error_items (B3667): error serialization with sse_error_payload."
+  - "_accumulate_string_content_by_choice_index (B3667): delta.content string concatenation."
+  - "_streamed_tool_call_fingerprints (B3667): fingerprint derivation from delta tool calls."
+  - "_first_choice_has_finished (B3667): stream termination detection."
+  - "_combine_streaming_texts (B3667): text reconstruction per (choice_idx, content_idx)."
+  - "_has_text_content (B3667): content presence detection."
+  - "_check_streaming_has_ended (B3667): finish_reason stream-end check."
+  - "build_block_sse_chunks (B3667): block frame building with upstream identity."
+  - "_chat_sse_chunk (B3667): JSON encoding with 'data: ' prefix and '\\n\\n' suffix."
+  - "_stream_chunk_choices (B3667): choices field extraction from stream items."
+  - "_streamed_delta_tool_calls (B3667): delta tool_calls and function_call extraction."
+  - "_blocked_stream_identity (B3667): stream identity extraction or synthesis."
+  - "role_out_of_guardrail_scope predicate (B3663): supplied for message role filtering."
+  - "scoped_structured_message_indices (B3663): supplied for guardrail API message filtering."
+  - "scoped_message_merge function (B3663): supplied for merging guardrailed scoped messages."
+  - "merge_returned_tools_into_request_tools (B3663): supplied for tool-result-only scan merging."
+  - "merge_guardrailed_scoped_messages (B3663): supplied for partial-scope message reconstruction."
+  - "blocked_chat_stream_usage (B3663): supplied for block frame usage extraction."
+  - "stream_item_field and stream_item_items (B3663): helpers for generic stream traversal."
+  - "effective_skip_system_message_for_guardrail (B3665): supplied for system-skip policy."
+  - "effective_skip_tool_message_for_guardrail (B3665): supplied for tool-message skip policy."
+  - "effective_scan_only_tool_results_for_guardrail (B3665): supplied for tool-result-only scan policy."
+  - "structured_messages_cover_full_request (B3665): supplied for full-request coverage check."
+  - "stream_chunk_builder (B2227): supplied for rebuilding ended-stream chunks per choice."
+
+pitfalls:
+  - >-
+    process_input_messages requires pre-allocated lists for texts, images, and tool_calls
+    that are mutated in place during extraction; callers must pass empty lists every call.
+  - >-
+    text_task_mappings appends (msg_idx, content_idx_or_none) where content_idx_or_none
+    is None for string content and int for list[content_item] index; the None value is
+    distinct from 0 and must be checked explicitly.
+  - >-
+    tool_call_task_mappings appends (msg_idx, tool_call_idx) with no optional element;
+    all indices are int and correspond to pre-extraction list positions.
+  - >-
+    process_output_response filters content by choice index; choice.index may be None,
+    which should default to 0 for indexing purposes.
+  - >-
+    _apply_guardrail_responses_to_output_texts may receive a guardrailed_texts list
+    that is shorter or longer than text_task_mappings if the guardrail returns fewer
+    or more texts than extracted; mismatch means the rewrite is unappliable.
+  - >-
+    _apply_guardrail_responses_to_output_tool_calls must verify that guardrailed tool
+    calls match the number and order of extracted tool_calls; mismatches are silent
+    no-ops and the original tool calls remain in the response.
+  - >-
+    _process_ended_stream operates on a completed stream where finish_reason is set;
+    it gathers text per choice and detects tool rewrites that cannot be faithfully
+    reconstructed across delta chunks.
+  - >-
+    _rebuild_ended_stream_per_choice uses stream_chunk_builder which maintains sequence
+    state per choice; multiple choices must call it separately, not in parallel.
+  - >-
+    _string_choice_contents accumulates text from responses_so_far; if choice.index
+    is None or missing, default to index 0 for accumulation.
+  - >-
+    _function_tool_call_shapes must match the streamed tool-call structure before
+    determining deliverability; tool_call_idx, function.name and argument lengths
+    must all match the pre-rewrite shape for a rewrite to be deliverable.
+  - >-
+    _write_ended_stream_text_rewrites applies text rewrites using stream_chunk_builder;
+    the builder handles delta sequencing, but the rewrite must be applied to the choice's
+    first text-carrying chunk and blanked in subsequent chunks.
+  - >-
+    Undeliverable tool-call rewrites are not silently dropped; UndeliverableStreamRewrite
+    reasons must be recorded and returned alongside the rebuilt stream for logging.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
