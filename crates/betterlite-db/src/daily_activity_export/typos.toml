@@ -1,0 +1,3 @@
+[default.extend-identifiers]
+# The organization table alias must match the pinned LiteLLM SQL.
+ot = "ot"

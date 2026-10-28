@@ -1,0 +1,61 @@
+kind: helper
+name: literal-search-and-metadata
+call:
+  daily_activity_export:
+    cases:
+      search_backslash_percent_underscore_literal:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "\\%_"
+        limit: 101
+      search_empty_and_whitespace:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: ""
+        limit: 1
+      search_whitespace_not_trimmed:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "  "
+        limit: 2
+      search_active_and_deleted_alias_user_email:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "old@example.test"
+        limit: 3
+      search_outer_scope_retained:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["owner", ""], "exclude_entity_ids": ["excluded"], "api_keys": ["key", ""], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "existing", "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "alias"
+        limit: 4
+      search_union_does_not_multiply_spend:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": ["key", "key"], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "shared"
+        limit: 5
+      search_sentinel_and_null_excluded:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "__ptu_flat_cost__"
+        limit: 6
+      search_numeric_spend_tie_order:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": null, "exclude_entity_ids": [], "api_keys": null, "start_date": "2026-08-01", "end_date": "2026-08-05", "model": null, "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "key"
+        limit: 7
+      all_search_ranking_bind_orders:
+        scope: {"table": "litellm_dailyuserspend", "entity_id_field": "user_id", "entity_ids": ["owner", ""], "exclude_entity_ids": ["excluded"], "api_keys": ["key", ""], "start_date": "2026-08-01", "end_date": "2026-08-05", "model": "existing", "timezone_offset_minutes": null, "include_current_utc_day": false}
+        utc_now: "2026-08-06T00:30:00Z"
+        function: "search"
+        search: "'; DROP TABLE keys; --"
+        limit: 8
+env: {}
+compare: {ignore: []}
