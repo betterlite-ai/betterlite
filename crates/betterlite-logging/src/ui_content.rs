@@ -249,5 +249,8 @@ fn required_text<'json>(
     fields: &'json IndexMap<String, Json>,
     key: &str,
 ) -> Result<&'json str, Invalid> {
-    fields.get(key).map_or(Ok(""), as_text)
+    match fields.get(key) {
+        None => Ok(""),
+        Some(value) => as_text(value),
+    }
 }
