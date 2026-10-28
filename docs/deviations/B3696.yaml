@@ -1,5 +1,8 @@
 task: B3696
 deviations:
+  - what: "Competitor tokens shared by different canonical competitors cause a typed configuration error instead of overwriting an earlier mapping."
+    why: "Rejecting ambiguous configuration prevents aliases and competitor names from silently resolving to the wrong competitor."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L75-L87"
   - what: "normalize accepts typed strings; non-string inputs cannot reach the function instead of returning an empty string."
     why: "Rust validates the text type at the API boundary."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L23-L31"

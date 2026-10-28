@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn run_comparison() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run_with("Is AC better than our brand?", competitor);
     assert_eq!(result.intent.as_deref(), Some("competitor_comparison"));
     assert_eq!(result.confidence, Some(0.75_f64));
@@ -14,7 +14,7 @@ fn run_comparison() {
 
 #[test]
 fn run_category_ranking() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run("What is the best airline?");
     assert_eq!(result.intent.as_deref(), Some("category_ranking"));
     assert_eq!(result.confidence, Some(0.65_f64));
@@ -22,7 +22,7 @@ fn run_category_ranking() {
 
 #[test]
 fn run_literal_boundaries() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     assert_eq!(
         checker.run("best airlineish").intent.as_deref(),
         Some("other")
@@ -33,7 +33,7 @@ fn run_literal_boundaries() {
 fn run_multiple_brands() {
     let mut configured = config();
     configured.brand_self.push("second brand".to_owned());
-    let checker = BaseCompetitorIntentChecker::new(&configured);
+    let checker = BaseCompetitorIntentChecker::new(&configured).unwrap();
     assert_eq!(
         checker
             .run("our brand and second brand")
@@ -45,7 +45,7 @@ fn run_multiple_brands() {
 
 #[test]
 fn run_safe_default() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run("acme and ac are better");
     assert_eq!(result.intent.as_deref(), Some("other"));
     assert_eq!(result.confidence, Some(0.0_f64));
@@ -93,7 +93,7 @@ fn run_thresholds(
         ("log_only".to_owned(), "refuse".to_owned()),
         ("other".to_owned(), "refuse".to_owned()),
     ]);
-    let checker = BaseCompetitorIntentChecker::new(&settings);
+    let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
     let result = checker.run_with("ac is better", competitor);
     assert_eq!(result.intent.as_deref(), Some(intent));
     assert_eq!(result.action_hint.as_deref(), Some(action));
@@ -105,7 +105,7 @@ fn run_thresholds(
 #[case::no_comparison("ac is fine")]
 #[case::substring("ac is bestest")]
 fn run_without_comparison(#[case] text: &str) {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run_with(text, competitor);
     assert_eq!(
         result.intent.as_deref(),
@@ -124,7 +124,7 @@ fn run_disambiguation(
     #[case] intent: &str,
     #[case] evidence_count: usize,
 ) {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run_with("ACME", |text, token| {
         assert_eq!(text, "acme");
         assert_eq!(token, "acme");
@@ -141,7 +141,7 @@ fn run_disambiguation(
 
 #[test]
 fn run_low_confidence_evidence() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run_with("acme", |_text, _token| {
         (super::Meaning::Competitor, 0.45_f64)
     });
@@ -160,7 +160,7 @@ fn run_custom_words_and_policy() {
     settings
         .policy
         .insert("category_ranking".to_owned(), "refuse".to_owned());
-    let checker = BaseCompetitorIntentChecker::new(&settings);
+    let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
     let result = checker.run("prefer an airline");
     assert_eq!(result.action_hint.as_deref(), Some("refuse"));
     assert_eq!(
@@ -172,7 +172,7 @@ fn run_custom_words_and_policy() {
 
 #[test]
 fn run_deduplicated_entities() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let result = checker.run_with("our brand vs ac and acme", competitor);
     assert_eq!(
         result.entities.get("competitors"),

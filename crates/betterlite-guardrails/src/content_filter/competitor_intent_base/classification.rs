@@ -1,27 +1,28 @@
 use super::configuration::Settings;
 use super::matching::{build_competitor_maps, find_matches, normalized_set, resolve_matches};
-use super::{BaseCompetitorIntentChecker, Meaning, has_words, normalize, word_boundary_match};
+use super::{
+    BaseCompetitorIntentChecker, Error, Meaning, has_words, normalize, word_boundary_match,
+};
 use betterlite_config::sections::content_filter_records::overrides::{
     CompetitorIntentEvidenceEntry, CompetitorIntentResult,
 };
 use std::collections::BTreeMap;
 
 impl BaseCompetitorIntentChecker {
-    #[must_use]
-    pub fn new(config: &Settings) -> Self {
+    pub fn new(config: &Settings) -> Result<Self, Error> {
         let brand_self = config
             .brand_self
             .iter()
             .filter(|value| !value.is_empty())
             .map(|value| value.trim().to_lowercase())
             .collect();
-        let (competitor_canonical, competitor_tokens) = build_competitor_maps(config);
+        let (competitor_canonical, competitor_tokens) = build_competitor_maps(config)?;
         let other_meaning = normalized_set(&config.locations);
         let ambiguous = competitor_tokens
             .intersection(&other_meaning)
             .cloned()
             .collect();
-        Self {
+        Ok(Self {
             brand_self,
             competitor_canonical,
             competitor_tokens,
@@ -43,7 +44,7 @@ impl BaseCompetitorIntentChecker {
                 .filter(|word| !word.is_empty())
                 .map(|word| word.trim().to_lowercase())
                 .collect(),
-        }
+        })
     }
 
     pub(super) const fn classify_ambiguous(_text: &str, _token: &str) -> (Meaning, f64) {

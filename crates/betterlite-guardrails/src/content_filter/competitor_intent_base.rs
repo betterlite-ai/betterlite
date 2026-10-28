@@ -97,7 +97,13 @@ fn word_boundary_match(text: &str, token: &str) -> bool {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum Error {
+pub enum Error {
+    #[error("competitor {competitor:?} uses token {token:?} already mapped to {existing:?}")]
+    TokenCollision {
+        competitor: String,
+        token: String,
+        existing: String,
+    },
     #[error("invalid signal pattern")]
     Pattern {
         #[source]

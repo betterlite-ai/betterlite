@@ -1,8 +1,10 @@
 use super::configuration::Settings;
 use super::{
-    BaseCompetitorIntentChecker, Meaning, OTHER_MEANING_THRESHOLD, normalize, word_boundary_match,
+    BaseCompetitorIntentChecker, Error, Meaning, OTHER_MEANING_THRESHOLD, normalize,
+    word_boundary_match,
 };
 use betterlite_config::sections::content_filter_records::overrides::CompetitorIntentEvidenceEntry;
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[must_use]
@@ -77,7 +79,7 @@ pub(super) fn normalized_set(values: &[String]) -> BTreeSet<String> {
 
 pub(super) fn build_competitor_maps(
     config: &Settings,
-) -> (BTreeMap<String, String>, BTreeSet<String>) {
+) -> Result<(BTreeMap<String, String>, BTreeSet<String>), Error> {
     let mut canonical_map = BTreeMap::new();
     let mut tokens = BTreeSet::new();
     for competitor in &config.competitors {
@@ -86,7 +88,7 @@ pub(super) fn build_competitor_maps(
         }
         let canonical = competitor.trim().to_lowercase();
         tokens.insert(canonical.clone());
-        canonical_map.insert(canonical.clone(), canonical.clone());
+        insert_canonical(&mut canonical_map, canonical.clone(), &canonical)?;
         for alias in config
             .competitor_aliases
             .get(&canonical)
@@ -96,9 +98,31 @@ pub(super) fn build_competitor_maps(
             let token = alias.trim().to_lowercase();
             if !token.is_empty() {
                 tokens.insert(token.clone());
-                canonical_map.insert(token, canonical.clone());
+                insert_canonical(&mut canonical_map, token, &canonical)?;
             }
         }
     }
-    (canonical_map, tokens)
+    Ok((canonical_map, tokens))
+}
+
+fn insert_canonical(
+    canonical_map: &mut BTreeMap<String, String>,
+    token: String,
+    canonical: &str,
+) -> Result<(), Error> {
+    match canonical_map.entry(token) {
+        Entry::Occupied(entry) => {
+            if entry.get() != canonical {
+                return Err(Error::TokenCollision {
+                    competitor: canonical.to_owned(),
+                    token: entry.key().clone(),
+                    existing: entry.get().clone(),
+                });
+            }
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(canonical.to_owned());
+        }
+    }
+    Ok(())
 }

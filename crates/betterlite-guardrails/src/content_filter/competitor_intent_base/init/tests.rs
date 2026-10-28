@@ -3,9 +3,35 @@
 use super::BaseCompetitorIntentChecker;
 use super::tests::config;
 
+#[rstest::rstest]
+#[case::shared_alias("shared", " SHARED ", "shared")]
+#[case::alias_before_name(" Beta ", "other", "beta")]
+#[case::name_before_alias("other", " ALPHA ", "alpha")]
+fn init_token_collision(
+    #[case] first_alias: &str,
+    #[case] second_alias: &str,
+    #[case] expected_token: &str,
+) {
+    let mut settings = config();
+    settings.competitors = vec!["Alpha".to_owned(), "Beta".to_owned()];
+    settings.competitor_aliases = std::collections::BTreeMap::from([
+        ("alpha".to_owned(), vec![first_alias.to_owned()]),
+        ("beta".to_owned(), vec![second_alias.to_owned()]),
+    ]);
+    let error = BaseCompetitorIntentChecker::new(&settings).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("competitor \"beta\" uses token {expected_token:?} already mapped to \"alpha\"")
+    );
+    assert!(
+        matches!(error, super::Error::TokenCollision { competitor, token, existing }
+        if competitor == "beta" && token == expected_token && existing == "alpha")
+    );
+}
+
 #[test]
 fn init() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     assert!((checker.threshold_high - 0.70_f64).abs() < f64::EPSILON);
     assert!((checker.threshold_medium - 0.45_f64).abs() < f64::EPSILON);
     assert!((checker.threshold_low - 0.30_f64).abs() < f64::EPSILON);
@@ -24,7 +50,7 @@ fn init_configuration() {
     }"#,
     )
     .unwrap();
-    let checker = BaseCompetitorIntentChecker::new(&settings);
+    let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
     assert_eq!(checker.brand_self, ["our brand"]);
     assert_eq!(checker.competitor_tokens.len(), 3);
     assert!(checker.ambiguous.contains("acme"));
@@ -47,7 +73,7 @@ fn init_configuration() {
 #[test]
 fn init_empty_comparison_defaults() {
     let settings = serde_json::from_str(r#"{"comparison_words": []}"#).unwrap();
-    let checker = BaseCompetitorIntentChecker::new(&settings);
+    let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
     assert_eq!(checker.comparison_words.len(), 9);
 }
 
@@ -67,7 +93,7 @@ fn init_blank_entries() {
     }"#,
     )
     .unwrap();
-    let checker = BaseCompetitorIntentChecker::new(&settings);
+    let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
     assert_eq!(checker.brand_self, [""]);
     assert_eq!(checker.domain_words, [""]);
     assert!(checker.ambiguous.contains(""));

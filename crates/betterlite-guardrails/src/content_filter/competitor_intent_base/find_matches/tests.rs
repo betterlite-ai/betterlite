@@ -6,7 +6,7 @@ use super::tests::config;
 
 #[test]
 fn canonical_and_alias() {
-    let checker = BaseCompetitorIntentChecker::new(&config());
+    let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     let matches = find_matches(&checker, "Acme and AC");
     assert_eq!(matches.len(), 2);
     assert!(matches.iter().all(|(_, canonical, _)| canonical == "acme"));
@@ -18,9 +18,14 @@ fn find_matches_deduplicates() {
     configured.competitors.push("Acme".to_owned());
     configured.competitor_aliases.insert(
         "acme".to_owned(),
-        vec!["AC".to_owned(), "AC".to_owned(), "ace".to_owned()],
+        vec![
+            "AC".to_owned(),
+            " ac ".to_owned(),
+            "ace".to_owned(),
+            " ACME ".to_owned(),
+        ],
     );
-    let checker = BaseCompetitorIntentChecker::new(&configured);
+    let checker = BaseCompetitorIntentChecker::new(&configured).unwrap();
     assert_eq!(
         find_matches(&checker, "@cme AC ac ace acmeish"),
         vec![
@@ -35,6 +40,6 @@ fn find_matches_deduplicates() {
 fn find_matches_unicode() {
     let mut configured = config();
     configured.competitors = vec!["\u{d1}o\u{f1}o Airways".to_owned()];
-    let checker = BaseCompetitorIntentChecker::new(&configured);
+    let checker = BaseCompetitorIntentChecker::new(&configured).unwrap();
     assert_eq!(find_matches(&checker, "\u{d1}O\u{d1}O AIRWAYS").len(), 1);
 }
