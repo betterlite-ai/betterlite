@@ -99,17 +99,35 @@ fn dates_keep_offset_and_naive_forms() {
     let offset = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
     assert!(matches!(
         offset.budget_reset_at,
-        Some(SnapshotDateTime::Offset(_))
+        Some(LaxDateTime::Offset(_))
     ));
     metadata.insert(
         String::from("user_api_key_team_budget_reset_at"),
         raw(r#""2026-01-01T12:00:00""#),
     );
     let naive = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-    assert!(matches!(
-        naive.budget_reset_at,
-        Some(SnapshotDateTime::Naive(_))
-    ));
+    assert!(matches!(naive.budget_reset_at, Some(LaxDateTime::Naive(_))));
+}
+
+#[rstest]
+#[case::snapshot_date_accepts_int_timestamp("1700000000", true)]
+#[case::snapshot_date_accepts_naive_space_separated(r#""2026-01-01 12:00:00""#, false)]
+#[case::snapshot_date_accepts_date_only(r#""2026-01-01""#, false)]
+fn snapshot_date_accepts_lax_forms(#[case] raw_reset_at: &str, #[case] is_offset: bool) {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        String::from("user_api_key_team_budget_reset_at"),
+        raw(raw_reset_at),
+    );
+    metadata.insert(
+        String::from("user_api_key_team_table_max_budget"),
+        raw("null"),
+    );
+    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(
+        matches!(snapshot.budget_reset_at, Some(LaxDateTime::Offset(_))),
+        is_offset
+    );
 }
 
 #[rstest]

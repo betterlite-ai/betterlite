@@ -1,6 +1,7 @@
+pub mod lax_datetime;
 mod tests;
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use lax_datetime::LaxDateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -50,13 +51,6 @@ pub trait BudgetSnapshot: Serialize + for<'de> Deserialize<'de> + Sized {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum SnapshotDateTime {
-    Offset(DateTime<FixedOffset>),
-    Naive(NaiveDateTime),
-}
-
 fn normalized(
     metadata: &BTreeMap<String, Box<RawValue>>,
     aliases: &[(&str, &str)],
@@ -82,7 +76,7 @@ pub struct KeyBudgetSnapshot {
         alias = "budget_reset_at",
         deserialize_with = "Option::deserialize"
     )]
-    pub budget_reset_at: Option<SnapshotDateTime>,
+    pub budget_reset_at: Option<LaxDateTime>,
 }
 
 impl BudgetSnapshot for KeyBudgetSnapshot {
@@ -97,7 +91,7 @@ pub struct TeamBudgetSnapshot {
         alias = "budget_reset_at",
         deserialize_with = "Option::deserialize"
     )]
-    pub budget_reset_at: Option<SnapshotDateTime>,
+    pub budget_reset_at: Option<LaxDateTime>,
     #[serde(
         rename = "user_api_key_team_table_max_budget",
         alias = "max_budget",
@@ -120,7 +114,7 @@ pub struct UserBudgetSnapshot {
         alias = "budget_reset_at",
         deserialize_with = "Option::deserialize"
     )]
-    pub budget_reset_at: Option<SnapshotDateTime>,
+    pub budget_reset_at: Option<LaxDateTime>,
     #[serde(
         rename = "user_api_key_user_table_max_budget",
         alias = "max_budget",

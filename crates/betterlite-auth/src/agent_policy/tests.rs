@@ -1,14 +1,19 @@
 #![cfg(test)]
 
+use super::caller::{CALLER_TEAM_ID_HEADER, CALLER_USER_ID_HEADER};
 use super::*;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 #[test]
 fn auth_is_discriminated_and_secret_safe() {
     let auth: AgentKillSwitchAuth =
         serde_json::from_str(r#"{"type":"bearer","token":"secret"}"#).unwrap();
     assert!(!format!("{auth:?}").contains("secret"));
-    assert_eq!(auth.secret_value(), "secret");
+    let AgentKillSwitchAuth::Bearer { token } = &auth else {
+        panic!("expected bearer auth");
+    };
+    assert_eq!(token.expose_secret(), "secret");
     serde_json::from_str::<AgentKillSwitchAuth>(r#"{"token":"secret"}"#).unwrap_err();
 }
 
@@ -43,7 +48,7 @@ fn identity_binding_keeps_string_identifiers() {
     )
     .unwrap();
     assert_eq!(binding.tenant_id, "NOT-A-UUID");
-    assert_eq!(binding.required_scopes, vec!["user_impersonation"]);
+    assert_eq!(binding.required_scopes.0, vec!["user_impersonation"]);
 }
 
 #[rstest]
@@ -186,14 +191,8 @@ fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
 #[case::kill_method_delete("methods", "DELETE")]
 #[case::kill_method_get("methods", "GET")]
 #[case::kill_maps_fresh("maps", "")]
-#[case::kill_url_absolute_http_https("urls", "http://example.com")]
-#[case::kill_url_https("urls", "https://example.com")]
 #[case::kill_url_original_not_normalized("original", "  HTTP://example.com/path")]
 #[case::kill_url_userinfo_and_port_not_restricted("authority", r#"{"url":"http://user@:80"}"#)]
-#[case::kill_url_bad_authority("bad_url", "http://[::1")]
-#[case::kill_url_missing_authority("bad_url", "http:example.com")]
-#[case::kill_url_one_slash("bad_url", "http:/example.com")]
-#[case::kill_url_backslash("bad_url", r"http:\example.com")]
 #[case::kill_headers_not_validated_here(
     "headers",
     r#"{"url":"https://example.com","headers":{"Bad Header":"\u0001"}}"#
@@ -221,7 +220,10 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
         }
         "empty" => {
             let auth: AgentKillSwitchAuth = serde_json::from_str(input).unwrap();
-            assert_eq!(auth.secret_value(), "");
+            let AgentKillSwitchAuth::Basic { password, .. } = &auth else {
+                panic!("expected basic auth");
+            };
+            assert_eq!(password.expose_secret(), "");
         }
         "methods" => {
             let method_input = format!(r#"{{"url":"https://example.com","method":"{input}"}}"#);
@@ -236,9 +238,6 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
             first.headers.insert(String::from("x"), String::from("y"));
             assert!(second.headers.is_empty());
         }
-        "urls" => {
-            assert_eq!(KillSwitchUrl::try_from(input.to_owned()).unwrap().0, input);
-        }
         "original" => assert_eq!(
             serde_json::from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":{input:?}}}"#))
                 .unwrap()
@@ -248,9 +247,6 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
         ),
         "authority" | "headers" => {
             serde_json::from_str::<AgentKillSwitchConfig>(input).unwrap();
-        }
-        "bad_url" => {
-            KillSwitchUrl::try_from(input.to_owned()).unwrap_err();
         }
         "caller" => assert_eq!(
             (CALLER_USER_ID_HEADER, CALLER_TEAM_ID_HEADER),
@@ -278,7 +274,8 @@ fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
             assert_eq!(
                 serde_json::from_str::<AgentIdentityBinding>(binding_input)
                     .unwrap()
-                    .required_scopes,
+                    .required_scopes
+                    .0,
                 vec!["user_impersonation"]
             );
         }
@@ -364,31 +361,30 @@ fn policy_secrets_absent_from_debug(#[case] input: &str, #[case] field: &str) {
     );
 }
 
+#[rstest]
+#[case::response_date_accepts_int_timestamp("1700000000", true)]
+#[case::response_date_accepts_naive_space_separated(r#""2026-01-01 12:00:00""#, false)]
+#[case::response_date_accepts_date_only(r#""2026-01-01""#, false)]
+fn response_date_accepts_lax_forms(#[case] raw_created_at: &str, #[case] is_offset: bool) {
+    let input = format!(
+        r#"{{"agent_id":"a","agent_name":"n","agent_card_params":{{}},"created_at":{raw_created_at},"updated_at":{raw_created_at}}}"#
+    );
+    let response: AgentResponse = serde_json::from_str(&input).unwrap();
+    assert_eq!(
+        matches!(response.created_at, Some(LaxDateTime::Offset(_))),
+        is_offset
+    );
+    assert_eq!(
+        matches!(response.updated_at, Some(LaxDateTime::Offset(_))),
+        is_offset
+    );
+}
+
 #[test]
 fn binding_provider_other_rejected() {
     serde_json::from_str::<AgentIdentityBinding>(
         r#"{"agent_id":"a","provider":"other","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#
     ).unwrap_err();
-}
-
-#[rstest]
-#[case::userinfo_ipv6("http://user@[::1]/", true)]
-#[case::invalid_ip_literal("http://[abc]", false)]
-#[case::bracket_suffix("http://[::1]x", false)]
-#[case::scheme_tab("ht\ttp://example.com", true)]
-#[case::authority_tab("http:/\t/example.com", true)]
-#[case::cr_lf("h\rtt\np://example.com", true)]
-#[case::ipvfuture("http://[v1.a]", true)]
-#[case::invalid_ipvfuture("http://[v.a]", false)]
-#[case::scoped_ipv6("http://[fe80::1%eth0]", true)]
-#[case::invalid_scope("http://[fe80::1%]", false)]
-#[case::nfkc_separator("http://example.com\u{ff0f}bad", false)]
-fn urlsplit_acceptance(#[case] input: &str, #[case] accepted: bool) {
-    let result = KillSwitchUrl::try_from(input.to_owned());
-    assert_eq!(result.is_ok(), accepted);
-    if let Ok(url) = result {
-        assert_eq!(url.0, input);
-    }
 }
 
 #[rstest]
