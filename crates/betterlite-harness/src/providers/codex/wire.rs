@@ -150,9 +150,10 @@ fn builtin_projection(
     output: String,
     is_error: bool,
 ) -> ToolProjection {
+    let owned_native_name = native_name.to_owned();
     ToolProjection {
         name: name.to_owned(),
-        native_name: native_name.to_owned(),
+        native_name: owned_native_name,
         input,
         builtin: true,
         output,
