@@ -1,14 +1,14 @@
 id: B682
 milestone: M3 providers
 title: AWS deployment settings and environment snapshot
-status: todo
+status: done
 depends_on: [B002, B171, B2202]
 file: tasks/B682-bedrock-settings.yaml
 covers:
   - "litellm/llms/bedrock/common_utils.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 286
