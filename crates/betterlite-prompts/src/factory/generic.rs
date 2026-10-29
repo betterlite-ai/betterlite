@@ -8,11 +8,12 @@ pub(super) fn fallback(
     messages: &[Message],
     now: DateTime<Utc>,
 ) -> Result<Output, FactoryError> {
-    try_generic(lower, messages, now).or_else(|_| {
-        builtin::default_pt(messages)
-            .map(Output::Text)
-            .map_err(FactoryError::from)
-    })
+    if let Ok(output) = try_generic(lower, messages, now) {
+        return Ok(output);
+    }
+    builtin::default_pt(messages)
+        .map(Output::Text)
+        .map_err(FactoryError::from)
 }
 
 fn try_generic(

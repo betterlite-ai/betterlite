@@ -49,28 +49,28 @@ fn prompt_factory_dispatches_ollama() {
     assert!(matches!(output, Output::Ollama(_)));
 }
 
-#[test]
-fn prompt_factory_delegates_installed_adapters() {
-    let cases = [
-        ("mistral-large", "mistral", "mistral_transform"),
-        ("some-model", "perplexity", "perplexity"),
-        ("some-model", "azure_text", "azure_text"),
-        ("some-model", "watsonx", "watsonx"),
-        ("claude-3-opus", "anthropic", "anthropic_messages"),
-    ];
-    for (model, provider, operation) in cases {
-        let error = prompt_factory(
-            model,
-            &messages(r#"[{"role":"user","content":"hi"}]"#),
-            Some(provider),
-            clock(),
-        )
-        .unwrap_err();
-        assert!(matches!(
-            error,
-            FactoryError::Unsupported { operation: found } if found == operation
-        ));
-    }
+#[rstest]
+#[case::mistral("mistral-large", "mistral", "mistral_transform")]
+#[case::perplexity("some-model", "perplexity", "perplexity")]
+#[case::azure_text("some-model", "azure_text", "azure_text")]
+#[case::watsonx("some-model", "watsonx", "watsonx")]
+#[case::anthropic("claude-3-opus", "anthropic", "anthropic_messages")]
+fn prompt_factory_delegates_installed_adapters(
+    #[case] model: &str,
+    #[case] provider: &str,
+    #[case] operation: &str,
+) {
+    let error = prompt_factory(
+        model,
+        &messages(r#"[{"role":"user","content":"hi"}]"#),
+        Some(provider),
+        clock(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        FactoryError::Unsupported { operation: found } if found == operation
+    ));
 }
 
 #[rstest]

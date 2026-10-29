@@ -13,7 +13,7 @@ mod tests;
 pub enum Output {
     Text(String),
     Ollama(OllamaPrompt),
-    /// `LiteLLM`'s generic branch falls off its if/elif chain with no return for this model shape.
+    // LiteLLM's generic branch falls off its if/elif chain with no return for this model shape.
     None,
 }
 
@@ -63,9 +63,12 @@ fn anthropic(lower: &str, messages: &[Message]) -> Result<Output, FactoryError> 
 }
 
 fn clarifai(lower: &str, messages: &[Message]) -> Option<Result<Output, FactoryError>> {
-    lower.contains("claude").then(|| {
+    if !lower.contains("claude") {
+        return None;
+    }
+    Some(
         builtin::claude(messages)
             .map(Output::Text)
-            .map_err(FactoryError::from)
-    })
+            .map_err(FactoryError::from),
+    )
 }
