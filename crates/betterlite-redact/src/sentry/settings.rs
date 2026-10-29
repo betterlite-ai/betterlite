@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::num::ParseFloatError;
 
 use super::fixture;
 
@@ -23,9 +24,15 @@ pub struct SentryInitOptions {
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum SettingsError {
     #[error("SENTRY_API_TRACE_RATE is not a valid float")]
-    InvalidTraceRate,
+    InvalidTraceRate {
+        #[source]
+        source: ParseFloatError,
+    },
     #[error("SENTRY_API_SAMPLE_RATE is not a valid float")]
-    InvalidSampleRate,
+    InvalidSampleRate {
+        #[source]
+        source: ParseFloatError,
+    },
 }
 
 #[must_use]
@@ -37,12 +44,12 @@ pub fn send_default_pii_from_env(env: &BTreeMap<String, String>) -> bool {
 fn parse_rate(
     env: &BTreeMap<String, String>,
     key: &str,
-    on_error: SettingsError,
+    build_error: impl Fn(ParseFloatError) -> SettingsError,
 ) -> Result<f64, SettingsError> {
     match env.get(key) {
         None => Ok(1.0),
         Some(raw) if raw.is_empty() => Ok(1.0),
-        Some(raw) => raw.trim().parse::<f64>().map_err(|_parse_error| on_error),
+        Some(raw) => raw.trim().parse::<f64>().map_err(build_error),
     }
 }
 
@@ -69,16 +76,12 @@ pub fn build_sentry_init_options(
     let send_default_pii = send_default_pii_from_env(env);
     Ok(SentryInitOptions {
         dsn: env.get("SENTRY_DSN").cloned(),
-        traces_sample_rate: parse_rate(
-            env,
-            "SENTRY_API_TRACE_RATE",
-            SettingsError::InvalidTraceRate,
-        )?,
-        sample_rate: parse_rate(
-            env,
-            "SENTRY_API_SAMPLE_RATE",
-            SettingsError::InvalidSampleRate,
-        )?,
+        traces_sample_rate: parse_rate(env, "SENTRY_API_TRACE_RATE", |source| {
+            SettingsError::InvalidTraceRate { source }
+        })?,
+        sample_rate: parse_rate(env, "SENTRY_API_SAMPLE_RATE", |source| {
+            SettingsError::InvalidSampleRate { source }
+        })?,
         send_default_pii,
         environment: env
             .get("SENTRY_ENVIRONMENT")

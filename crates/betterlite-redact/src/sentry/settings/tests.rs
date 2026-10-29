@@ -61,11 +61,17 @@ fn configured_env_values_are_carried_through() {
 fn malformed_rate_values_fail_with_typed_errors() {
     let trace_error =
         build_sentry_init_options(&env(&[("SENTRY_API_TRACE_RATE", "not-a-float")])).unwrap_err();
-    assert!(matches!(trace_error, SettingsError::InvalidTraceRate));
+    assert!(matches!(
+        trace_error,
+        SettingsError::InvalidTraceRate { .. }
+    ));
 
     let sample_error =
         build_sentry_init_options(&env(&[("SENTRY_API_SAMPLE_RATE", "not-a-float")])).unwrap_err();
-    assert!(matches!(sample_error, SettingsError::InvalidSampleRate));
+    assert!(matches!(
+        sample_error,
+        SettingsError::InvalidSampleRate { .. }
+    ));
 }
 
 #[test]
