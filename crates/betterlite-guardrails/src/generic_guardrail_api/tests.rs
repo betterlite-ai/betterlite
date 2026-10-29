@@ -207,7 +207,7 @@ fn generic_guardrail_handle_error_propagates_an_unreachable_error_with_fail_clos
         "http://example",
     );
     let error = GenericGuardrailAPIError::HttpStatus {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
+        status: StatusCode::SERVICE_UNAVAILABLE,
     };
     let fallback = GenericGuardrailAPIResponse {
         texts: Some(vec!["fallback".to_owned()]),
@@ -223,11 +223,11 @@ fn generic_guardrail_handle_error_propagates_an_unreachable_error_with_fail_clos
 #[test]
 fn generic_guardrail_handle_error_falls_open_for_an_unreachable_error_with_fail_open_configured() {
     let instance = api(
-        settings(false, UnreachableFallback::FailOpen),
+        settings(true, UnreachableFallback::FailOpen),
         "http://example",
     );
     let error = GenericGuardrailAPIError::HttpStatus {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
+        status: StatusCode::SERVICE_UNAVAILABLE,
     };
     let fallback = GenericGuardrailAPIResponse {
         texts: Some(vec!["fallback".to_owned()]),
