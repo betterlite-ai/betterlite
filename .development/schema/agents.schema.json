@@ -16,6 +16,12 @@
         "$ref": "#/$defs/Runner"
       }
     },
+    "vendors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vendor"
+      }
+    },
     "worktrees": {
       "description": "Directory for task worktrees, relative to the repository root.",
       "type": "string",
@@ -25,6 +31,7 @@
   "additionalProperties": false,
   "required": [
     "worktrees",
+    "vendors",
     "runners",
     "roles",
     "policy"
@@ -41,6 +48,12 @@
     "Policy": {
       "type": "object",
       "properties": {
+        "limit_retry_minutes": {
+          "description": "Minutes a vendor stays skipped after one of its runs hit the usage limit. The next run after that tries it again.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
         "max_blocked_reports": {
           "description": "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung.",
           "type": "integer",
@@ -53,14 +66,26 @@
           "format": "uint32",
           "minimum": 0
         },
+        "max_parallel": {
+          "description": "Runs at once on each vendor that sets no max_parallel of its own. A run waits for a free seat.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
         "max_review_rounds": {
           "description": "Review rounds before a task goes back to the architect.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0
         },
+        "max_worker_attempts": {
+          "description": "Worker attempts across the whole ladder. A run that hits a usage limit doesn't count, so skipped rungs leave their attempts to the rungs after them.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
         "review_by_other_vendor": {
-          "description": "The reviewer always runs on a different vendor than the worker whose change it reads.",
+          "description": "The reviewer runs on a different vendor than the worker whose change it reads. When every such reviewer is at its usage limit, one on the worker's vendor runs.",
           "type": "boolean"
         },
         "writable": {
@@ -74,6 +99,9 @@
       "additionalProperties": false,
       "required": [
         "review_by_other_vendor",
+        "max_worker_attempts",
+        "limit_retry_minutes",
+        "max_parallel",
         "max_review_rounds",
         "max_blocked_reports",
         "max_hook_blocks",
@@ -89,7 +117,7 @@
           "minLength": 1
         },
         "ladder": {
-          "description": "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out.",
+          "description": "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out, and skips a rung whose vendor is at its usage limit.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Rung"
@@ -185,7 +213,9 @@
           "minLength": 1
         },
         "vendor": {
-          "$ref": "#/$defs/Vendor"
+          "description": "The id of the vendor whose account runs this CLI.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
         }
       },
       "additionalProperties": false,
@@ -198,10 +228,34 @@
       ]
     },
     "Vendor": {
-      "type": "string",
-      "enum": [
-        "openai",
-        "anthropic"
+      "description": "An account that runs agents. Each runner names one, so a new CLI is one vendor and its runners.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "limit_markers": {
+          "description": "Text the vendor's CLI prints when the account is out of usage. A run that ends without an answer and prints one in its last lines marks the vendor, and every ladder skips it for limit_retry_minutes.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_parallel": {
+          "description": "Runs at once on this vendor. Without it the policy's max_parallel applies.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "limit_markers"
       ]
     }
   }
