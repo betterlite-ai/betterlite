@@ -1,0 +1,12 @@
+kind: helper
+name: error-class-badrequest-body-fields
+call:
+  error_class:
+    family: bad_request
+    message: "'messages' is a required property"
+    model: gpt-4
+    provider: openai
+    body_type: invalid_request_error
+    body_param: messages
+env: {}
+compare: {ignore: []}

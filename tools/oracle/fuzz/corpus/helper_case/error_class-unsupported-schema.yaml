@@ -1,0 +1,11 @@
+kind: helper
+name: error-class-unsupported-schema
+call:
+  error_class:
+    family: json_schema_validation
+    model: gpt-4
+    provider: openai
+    raw_response: '{"bad": true}'
+    schema: '{"type": "object"}'
+env: {}
+compare: {ignore: []}
