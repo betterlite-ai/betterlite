@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
-use super::fixture;
 use super::pattern::{self, PatternError, Patterns};
 
 pub(super) const MAX_SCRUB_DEPTH: usize = 64;
@@ -25,16 +24,7 @@ pub enum EventValue {
     Object(BTreeMap<String, Self>),
 }
 
-pub fn scrub_event(event: &EventValue, send_default_pii: bool) -> Result<EventValue, PatternError> {
-    scrub_event_with_key_lengths(
-        event,
-        send_default_pii,
-        fixture::MINIMUM_CUSTOM_KEY_LENGTH,
-        fixture::GENERATED_KEY_LENGTH,
-    )
-}
-
-pub fn scrub_event_with_key_lengths(
+pub fn scrub_event(
     event: &EventValue,
     send_default_pii: bool,
     custom_key_minimum: usize,

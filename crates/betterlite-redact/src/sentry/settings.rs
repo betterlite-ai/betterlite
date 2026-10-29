@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::num::{ParseFloatError, ParseIntError};
+use std::str::FromStr;
 
 use super::fixture;
 
@@ -55,28 +56,19 @@ pub fn send_default_pii_from_env(env: &BTreeMap<String, String>) -> bool {
     raw.is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
 }
 
-fn parse_rate(
+fn parse_env_value<T, E>(
     env: &BTreeMap<String, String>,
     key: &str,
-    build_error: fn(ParseFloatError) -> SettingsError,
-) -> Result<f64, SettingsError> {
-    match env.get(key) {
-        None => Ok(1.0),
-        Some(raw) if raw.is_empty() => Ok(1.0),
-        Some(raw) => raw.trim().parse::<f64>().map_err(build_error),
-    }
-}
-
-fn parse_key_length(
-    env: &BTreeMap<String, String>,
-    key: &str,
-    default: usize,
-    build_error: fn(ParseIntError) -> SettingsError,
-) -> Result<usize, SettingsError> {
+    default: T,
+    build_error: fn(E) -> SettingsError,
+) -> Result<T, SettingsError>
+where
+    T: FromStr<Err = E>,
+{
     match env.get(key) {
         None => Ok(default),
         Some(raw) if raw.is_empty() => Ok(default),
-        Some(raw) => raw.trim().parse::<usize>().map_err(build_error),
+        Some(raw) => raw.trim().parse::<T>().map_err(build_error),
     }
 }
 
@@ -103,10 +95,10 @@ pub fn build_sentry_init_options(
     let send_default_pii = send_default_pii_from_env(env);
     Ok(SentryInitOptions {
         dsn: env.get("SENTRY_DSN").cloned(),
-        traces_sample_rate: parse_rate(env, "SENTRY_API_TRACE_RATE", |source| {
+        traces_sample_rate: parse_env_value(env, "SENTRY_API_TRACE_RATE", 1.0, |source| {
             SettingsError::InvalidTraceRate { source }
         })?,
-        sample_rate: parse_rate(env, "SENTRY_API_SAMPLE_RATE", |source| {
+        sample_rate: parse_env_value(env, "SENTRY_API_SAMPLE_RATE", 1.0, |source| {
             SettingsError::InvalidSampleRate { source }
         })?,
         send_default_pii,
@@ -118,13 +110,13 @@ pub fn build_sentry_init_options(
             denylist: event_scrubber_denylist(send_default_pii),
             recursive: true,
         },
-        custom_key_minimum: parse_key_length(
+        custom_key_minimum: parse_env_value(
             env,
             MINIMUM_CUSTOM_KEY_LENGTH_ENV,
             fixture::MINIMUM_CUSTOM_KEY_LENGTH,
             |source| SettingsError::InvalidCustomKeyMinimum { source },
         )?,
-        generated_key_bytes: parse_key_length(
+        generated_key_bytes: parse_env_value(
             env,
             GENERATED_KEY_LENGTH_ENV,
             fixture::GENERATED_KEY_LENGTH,

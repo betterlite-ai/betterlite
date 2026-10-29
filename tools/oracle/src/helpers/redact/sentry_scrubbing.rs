@@ -4,6 +4,9 @@ use betterlite_redact::sentry::pattern::scrub as scrub_text;
 use betterlite_redact::sentry::scrub::{EventValue, scrub_event};
 use betterlite_redact::sentry::settings::{build_sentry_init_options, send_default_pii_from_env};
 
+const DEFAULT_CUSTOM_KEY_MINIMUM: usize = 16;
+const DEFAULT_GENERATED_KEY_BYTES: usize = 16;
+
 #[derive(serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
@@ -108,8 +111,13 @@ fn decode_and_scrub_event(
     send_default_pii: bool,
 ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
     let typed = decode_event(event, event_json)?;
-    let scrubbed = scrub_event(&typed, send_default_pii)
-        .map_err(|error| as_helper_error("PatternError", error.to_string()))?;
+    let scrubbed = scrub_event(
+        &typed,
+        send_default_pii,
+        DEFAULT_CUSTOM_KEY_MINIMUM,
+        DEFAULT_GENERATED_KEY_BYTES,
+    )
+    .map_err(|error| as_helper_error("PatternError", error.to_string()))?;
     serde_json::to_value(scrubbed)
         .map_err(|error| as_helper_error("InvalidEvent", error.to_string()))
 }
