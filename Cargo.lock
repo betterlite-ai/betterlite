@@ -962,6 +962,8 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -970,6 +972,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "unicode-general-category",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1135,9 +1139,13 @@ dependencies = [
  "fancy-regex",
  "indexmap 2.14.2",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "serde_repr",
+ "serde_with",
  "speedate",
  "thiserror",
  "tracing",

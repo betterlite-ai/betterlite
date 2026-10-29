@@ -1,0 +1,11 @@
+kind: helper
+name: option-spelling-long
+call:
+  database_url_policy:
+    function: pg_options_with_timeouts
+    existing_options: "--statement_timeout=100"
+    statement_timeout: 5
+    lock_timeout: null
+env: {}
+compare:
+  ignore: []

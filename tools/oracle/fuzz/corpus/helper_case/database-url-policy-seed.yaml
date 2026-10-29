@@ -1,0 +1,10 @@
+kind: helper
+name: database-url-policy-seed
+call:
+  database_url_policy:
+    function: add_missing_query_params
+    url: "postgresql://h/db?a=1"
+    params: [["b", "2"]]
+env: {}
+compare:
+  ignore: []
