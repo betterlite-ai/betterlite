@@ -1,0 +1,11 @@
+kind: helper
+name: with-query-value
+call:
+  database_url_policy:
+    function: with_query_value
+    url: "postgresql://h/db?k=old1&k=old2&j=3"
+    key: "k"
+    value: "new"
+env: {}
+compare:
+  ignore: []

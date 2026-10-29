@@ -1,0 +1,5 @@
+kind: helper
+name: gcp-token-caching
+call: {redis_credentials: {function: gcp_token_caching, service_account: projects/-/serviceAccounts/redis@example.iam.gserviceaccount.com}}
+env: {}
+compare: {ignore: []}

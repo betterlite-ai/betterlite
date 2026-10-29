@@ -1,0 +1,9 @@
+kind: helper
+name: str-to-bool-padded-true
+call:
+  database_url_policy:
+    function: str_to_bool
+    value: " true "
+env: {}
+compare:
+  ignore: []
