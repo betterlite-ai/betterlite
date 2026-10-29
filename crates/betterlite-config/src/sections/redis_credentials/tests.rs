@@ -80,8 +80,7 @@ fn azure_ad_token_gates_on_strict_true(#[case] token: &str, #[case] expect_enabl
 
 #[test]
 fn azure_ad_token_resolves_os_environ_reference() {
-    let source =
-        "litellm_settings:\n  cache_params:\n    azure_redis_ad_token: os.environ/AZURE_AD_TOKEN_FLAG\n";
+    let source = "litellm_settings:\n  cache_params:\n    azure_redis_ad_token: os.environ/AZURE_AD_TOKEN_FLAG\n";
     let mut environment = BTreeMap::new();
     environment.insert("AZURE_AD_TOKEN_FLAG".to_owned(), "true".to_owned());
     environment.insert("AZURE_CLIENT_ID".to_owned(), "client".to_owned());
