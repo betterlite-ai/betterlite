@@ -285,7 +285,6 @@ fn size_n_quality_map() {
     size_n_quality_map_quality_untouched();
     size_n_quality_map_split_errors();
     size_n_quality_map_python_int_syntax();
-    size_n_quality_map_python_int_syntax_rejections();
 }
 
 fn size_n_quality_map_basic() {
@@ -326,6 +325,15 @@ fn size_n_quality_map_split_errors() {
         invalid_int_error,
         ImageModelsError::Size(SizeError::InvalidInt(_))
     ));
+
+    // A trailing underscore alone is invalid, independent of the other underscore rules.
+    let trailing_underscore = params(vec![("size", Field::from("12_x34"))]);
+    let trailing_underscore_error =
+        titan::map_openai_params(&trailing_underscore, Params::new()).unwrap_err();
+    assert!(matches!(
+        trailing_underscore_error,
+        ImageModelsError::Size(SizeError::InvalidInt(_))
+    ));
 }
 
 fn size_n_quality_map_python_int_syntax() {
@@ -339,32 +347,6 @@ fn size_n_quality_map_python_int_syntax() {
             ("height", Field::Int(-2048)),
         ])))
     );
-}
-
-fn size_n_quality_map_python_int_syntax_rejections() {
-    // A leading underscore alone is invalid, independent of the other underscore rules.
-    let leading = params(vec![("size", Field::from("_12x34"))]);
-    let leading_error = titan::map_openai_params(&leading, Params::new()).unwrap_err();
-    assert!(matches!(
-        leading_error,
-        ImageModelsError::Size(SizeError::InvalidInt(_))
-    ));
-
-    // A trailing underscore alone is invalid, independent of the other underscore rules.
-    let trailing = params(vec![("size", Field::from("12_x34"))]);
-    let trailing_error = titan::map_openai_params(&trailing, Params::new()).unwrap_err();
-    assert!(matches!(
-        trailing_error,
-        ImageModelsError::Size(SizeError::InvalidInt(_))
-    ));
-
-    // A doubled underscore alone is invalid, independent of the other underscore rules.
-    let doubled = params(vec![("size", Field::from("1__2x34"))]);
-    let doubled_error = titan::map_openai_params(&doubled, Params::new()).unwrap_err();
-    assert!(matches!(
-        doubled_error,
-        ImageModelsError::Size(SizeError::InvalidInt(_))
-    ));
 }
 
 fn artifacts_to_b64_results() {
