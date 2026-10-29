@@ -3,7 +3,9 @@ use betterlite_models::cost_usage::interactions::record::{
     InteractionsUsage, is_interactions_usage_object,
 };
 use betterlite_models::cost_usage::interactions::transform::transform_interactions_usage;
-use betterlite_models::cost_usage::transcription::{TranscriptionUsage, transform_transcription_usage};
+use betterlite_models::cost_usage::transcription::{
+    TranscriptionUsage, transform_transcription_usage,
+};
 use betterlite_models::cost_usage::{CompletionDetails, CostUsage, PromptDetails};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -28,7 +30,10 @@ impl crate::helpers::Helper for Op {
         let transcription: Vec<Value> = input
             .transcription
             .iter()
-            .map(|usage| cost_usage_json(transform_transcription_usage(usage)))
+            .map(|usage| {
+                transform_transcription_usage(usage)
+                    .map_or(Value::Null, |cost| cost_usage_to_value(&cost))
+            })
             .collect();
         let interactions: Vec<Value> = input
             .interactions
@@ -77,38 +82,32 @@ fn cost_usage_error(error: CostUsageError) -> Box<HelperError> {
     })
 }
 
-fn cost_usage_json(usage: Option<CostUsage>) -> Value {
-    usage.as_ref().map_or(Value::Null, cost_usage_to_value)
-}
-
 fn cost_usage_to_value(usage: &CostUsage) -> Value {
+    let prompt_details = usage.prompt_details.map(|details: PromptDetails| {
+        json!({
+            "text_tokens": details.text_tokens,
+            "audio_tokens": details.audio_tokens,
+            "image_tokens": details.image_tokens,
+            "video_tokens": details.video_tokens,
+            "web_search_requests": details.web_search_requests,
+        })
+    });
+    let completion_details = usage.completion_details.map(|details: CompletionDetails| {
+        json!({
+            "text_tokens": details.text_tokens,
+            "audio_tokens": details.audio_tokens,
+            "image_tokens": details.image_tokens,
+            "video_tokens": details.video_tokens,
+            "reasoning_tokens": details.reasoning_tokens,
+        })
+    });
     json!({
         "prompt_tokens": usage.prompt_tokens,
         "completion_tokens": usage.completion_tokens,
         "total_tokens": usage.total_tokens,
-        "prompt_details": usage.prompt_details.map(prompt_details_to_value),
-        "completion_details": usage.completion_details.map(completion_details_to_value),
+        "prompt_details": prompt_details,
+        "completion_details": completion_details,
         "cache_read_tokens": usage.cache_read_tokens,
-    })
-}
-
-fn prompt_details_to_value(details: PromptDetails) -> Value {
-    json!({
-        "text_tokens": details.text_tokens,
-        "audio_tokens": details.audio_tokens,
-        "image_tokens": details.image_tokens,
-        "video_tokens": details.video_tokens,
-        "web_search_requests": details.web_search_requests,
-    })
-}
-
-fn completion_details_to_value(details: CompletionDetails) -> Value {
-    json!({
-        "text_tokens": details.text_tokens,
-        "audio_tokens": details.audio_tokens,
-        "image_tokens": details.image_tokens,
-        "video_tokens": details.video_tokens,
-        "reasoning_tokens": details.reasoning_tokens,
     })
 }
 

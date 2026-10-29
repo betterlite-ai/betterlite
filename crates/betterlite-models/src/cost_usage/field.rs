@@ -12,6 +12,9 @@ pub(super) enum Field<T> {
 
 impl<T> Field<T> {
     pub(super) const fn is_present(&self) -> bool {
-        matches!(self, Self::Present(_))
+        match self {
+            Self::Present(_) => true,
+            Self::Absent => false,
+        }
     }
 }

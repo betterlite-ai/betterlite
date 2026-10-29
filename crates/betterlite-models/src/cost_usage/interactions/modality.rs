@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
-use std::fmt;
 
 use serde::Deserialize;
-use serde::de::{Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::de::IgnoredAny;
 use serde_json::value::RawValue;
 
 use crate::cost_usage::error::CostUsageError;
@@ -18,75 +17,24 @@ fn modality_field_name(modality: &str) -> Option<&'static str> {
     }
 }
 
-/// A `modality` value read leniently: only an actual JSON string selects a field,
-/// any other JSON shape (including a missing key) resolves to no recognized field.
-#[derive(Debug, Clone, Default)]
+// Only an actual JSON string selects a field; any other shape resolves to no recognized field.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(from = "RawModalityName")]
 struct ModalityName(Option<String>);
 
-impl<'de> Deserialize<'de> for ModalityName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_any(ModalityNameVisitor)
-    }
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum RawModalityName {
+    Str(Box<str>),
+    Other(Box<IgnoredAny>),
 }
 
-struct ModalityNameVisitor;
-
-impl<'de> Visitor<'de> for ModalityNameVisitor {
-    type Value = ModalityName;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a modality name")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
-        Ok(ModalityName(Some(v.to_owned())))
-    }
-
-    fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
-        Ok(ModalityName(Some(v)))
-    }
-
-    fn visit_bool<E>(self, _v: bool) -> Result<Self::Value, E> {
-        Ok(ModalityName(None))
-    }
-
-    fn visit_i64<E>(self, _v: i64) -> Result<Self::Value, E> {
-        Ok(ModalityName(None))
-    }
-
-    fn visit_u64<E>(self, _v: u64) -> Result<Self::Value, E> {
-        Ok(ModalityName(None))
-    }
-
-    fn visit_f64<E>(self, _v: f64) -> Result<Self::Value, E> {
-        Ok(ModalityName(None))
-    }
-
-    fn visit_unit<E>(self) -> Result<Self::Value, E> {
-        Ok(ModalityName(None))
-    }
-
-    fn visit_none<E>(self) -> Result<Self::Value, E> {
-        Ok(ModalityName(None))
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        while seq.next_element::<IgnoredAny>()?.is_some() {}
-        Ok(ModalityName(None))
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-        Ok(ModalityName(None))
+impl From<RawModalityName> for ModalityName {
+    fn from(raw: RawModalityName) -> Self {
+        match raw {
+            RawModalityName::Str(value) => Self(Some(String::from(value))),
+            RawModalityName::Other(_ignored) => Self(None),
+        }
     }
 }
 
@@ -104,13 +52,7 @@ struct ModalityEntryRecord {
     tokens: TokenCount,
 }
 
-pub(crate) fn as_refs(entries: Option<&Vec<Box<RawValue>>>) -> Vec<&RawValue> {
-    entries.into_iter().flatten().map(Box::as_ref).collect()
-}
-
-/// Sums token counts per recognized modality field. A field stays present once any
-/// entry recognizes it, even when the resulting sum is zero. A non-mapping entry is
-/// a transformation error rather than a silently skipped one.
+// A non-mapping entry is a transformation error, never silently skipped.
 pub(crate) fn modality_token_sums(
     entries: &[&RawValue],
 ) -> Result<BTreeMap<&'static str, i64>, CostUsageError> {

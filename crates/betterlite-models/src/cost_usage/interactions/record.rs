@@ -4,10 +4,6 @@ use serde_json::value::RawValue;
 use crate::cost_usage::field::Field;
 use crate::cost_usage::token_count::TokenCount;
 
-/// The caller-parsed Google Interactions API usage block.
-///
-/// Fields the transform never reads for their value, only their presence, still carry
-/// a `TokenCount` so a `Field::Present(_)` match covers a key set to any value, including `null`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct InteractionsUsage {
@@ -27,9 +23,7 @@ pub struct InteractionsUsage {
     pub(super) grounding_tool_count: Option<Vec<Box<RawValue>>>,
 }
 
-/// Recognizes the Interactions shape: `total_input_tokens` or `total_output_tokens`
-/// present, with neither `prompt_tokens` nor `input_tokens` present, even when the
-/// disqualifying key's value is `null`.
+// A present prompt_tokens or input_tokens disqualifies, even when its value is null.
 #[must_use]
 pub const fn is_interactions_usage_object(usage: &InteractionsUsage) -> bool {
     if usage.prompt_tokens.is_present() || usage.input_tokens.is_present() {

@@ -12,9 +12,7 @@ struct GoogleSearchEntry {
     count: TokenCount,
 }
 
-/// Sums integer counts from mapping entries whose `type` is exactly `google_search`.
-/// A non-mapping entry, or one whose type does not match, is skipped rather than
-/// treated as an error: only the modality aggregation crashes on a bad shape.
+// Skips a non-mapping or non-matching entry rather than erroring on it.
 pub(crate) fn google_search_query_count(entries: &[&RawValue]) -> Result<i64, CostUsageError> {
     let mut total = 0_i64;
     for entry in entries {

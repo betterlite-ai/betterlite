@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
+use serde_json::value::RawValue;
+
 use super::cache::subtract_cached_from_input;
-use super::modality::{as_refs, modality_token_sums};
+use super::modality::modality_token_sums;
 use super::record::{InteractionsUsage, field_value};
 use super::search::google_search_query_count;
 use crate::cost_usage::error::CostUsageError;
@@ -14,14 +16,39 @@ struct ModalitySums {
 }
 
 fn compute_modality_sums(usage: &InteractionsUsage) -> Result<ModalitySums, CostUsageError> {
-    let mut input_entries = as_refs(usage.input_tokens_by_modality.as_ref());
-    input_entries.extend(as_refs(usage.tool_use_tokens_by_modality.as_ref()));
+    let mut input_entries: Vec<&RawValue> = usage
+        .input_tokens_by_modality
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .map(Box::as_ref)
+        .collect();
+    input_entries.extend(
+        usage
+            .tool_use_tokens_by_modality
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .map(Box::as_ref),
+    );
     let input_sums_raw = modality_token_sums(&input_entries)?;
 
-    let cached_entries = as_refs(usage.cached_tokens_by_modality.as_ref());
+    let cached_entries: Vec<&RawValue> = usage
+        .cached_tokens_by_modality
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .map(Box::as_ref)
+        .collect();
     let cached_sums = modality_token_sums(&cached_entries)?;
 
-    let output_entries = as_refs(usage.output_tokens_by_modality.as_ref());
+    let output_entries: Vec<&RawValue> = usage
+        .output_tokens_by_modality
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .map(Box::as_ref)
+        .collect();
     let output = modality_token_sums(&output_entries)?;
 
     let total_cached_tokens = usage.total_cached_tokens.0;
@@ -41,8 +68,7 @@ struct TokenTotals {
     reasoning: i64,
 }
 
-/// `total_tokens` keeps an explicit, truthy value as-is; a falsy one (including `0`)
-/// is replaced by the prompt+completion sum, never both.
+// A falsy total_tokens (including 0) is replaced by the prompt+completion sum.
 fn compute_token_totals(usage: &InteractionsUsage) -> Result<TokenTotals, CostUsageError> {
     let reasoning = if usage.total_reasoning_tokens.0 != 0 {
         usage.total_reasoning_tokens.0
@@ -88,7 +114,7 @@ fn build_prompt_details(
         audio_tokens: input_sums.get("audio_tokens").copied(),
         image_tokens: input_sums.get("image_tokens").copied(),
         video_tokens: input_sums.get("video_tokens").copied(),
-        web_search_requests: Some(web_search_requests),
+        web_search_requests: (web_search_requests != 0).then_some(web_search_requests),
     })
 }
 
@@ -104,7 +130,7 @@ fn build_completion_details(
         audio_tokens: output_sums.get("audio_tokens").copied(),
         image_tokens: output_sums.get("image_tokens").copied(),
         video_tokens: output_sums.get("video_tokens").copied(),
-        reasoning_tokens: Some(reasoning_tokens),
+        reasoning_tokens: (reasoning_tokens != 0).then_some(reasoning_tokens),
     })
 }
 
@@ -113,7 +139,13 @@ pub fn transform_interactions_usage(
 ) -> Result<CostUsage, CostUsageError> {
     let sums = compute_modality_sums(usage)?;
     let totals = compute_token_totals(usage)?;
-    let search_entries = as_refs(usage.grounding_tool_count.as_ref());
+    let search_entries: Vec<&RawValue> = usage
+        .grounding_tool_count
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .map(Box::as_ref)
+        .collect();
     let web_search_requests = google_search_query_count(&search_entries)?;
 
     Ok(CostUsage {

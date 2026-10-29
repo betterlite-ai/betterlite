@@ -2,10 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::cost_usage::error::CostUsageError;
 
-/// If any cached modality was recognized, even with a zero sum, each existing input
-/// modality is reduced by its matching cached count and clamped at zero. Otherwise a
-/// truthy `total_cached_tokens` is subtracted only from an existing `text_tokens`
-/// field; neither branch creates a modality the input sums did not already have.
+// Falls back to subtracting total_cached_tokens from text_tokens only when no modality was recognized.
 pub(crate) fn subtract_cached_from_input(
     input_sums: &BTreeMap<&'static str, i64>,
     cached_sums: &BTreeMap<&'static str, i64>,

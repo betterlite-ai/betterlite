@@ -1,14 +1,9 @@
 use serde::Deserialize;
-use serde::de::{self, Deserializer};
 
 use super::{CostUsage, PromptDetails};
 
-/// A caller-owned, already-typed transcription usage object.
-///
-/// Recognition is the Rust type system: a raw dictionary that merely carries
-/// `type: "tokens"` is never this type. The `Tokens` payload is boxed so its size
-/// does not dwarf the `Duration` variant's.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "RawTranscriptionUsage")]
 pub enum TranscriptionUsage {
     Duration { seconds: f64 },
     Tokens(Box<TranscriptionTokens>),
@@ -21,11 +16,7 @@ enum TranscriptionUsageKind {
     Tokens,
 }
 
-// A flat intermediate shape, not `#[serde(tag = "type")]` directly on the public enum:
-// serde's internally tagged enum support buffers each variant's fields through its own
-// `Content` type before matching the tag, and that buffer does not round-trip a
-// `serde_json` `arbitrary_precision` number back into a bare `f64` field, failing with
-// "invalid type: map, expected f64". A plain struct field needs no such buffering.
+// Flat, not `#[serde(tag = "type")]` on the public enum: tagged-enum buffering loses an `arbitrary_precision` number cast to `f64`.
 #[derive(Debug, Clone, Deserialize)]
 struct RawTranscriptionUsage {
     #[serde(rename = "type")]
@@ -37,32 +28,22 @@ struct RawTranscriptionUsage {
     input_token_details: Option<TranscriptionTokenDetails>,
 }
 
-impl<'de> Deserialize<'de> for TranscriptionUsage {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw = RawTranscriptionUsage::deserialize(deserializer)?;
+impl TryFrom<RawTranscriptionUsage> for TranscriptionUsage {
+    type Error = &'static str;
+
+    fn try_from(raw: RawTranscriptionUsage) -> Result<Self, Self::Error> {
         match raw.kind {
             TranscriptionUsageKind::Duration => {
-                let seconds = raw
-                    .seconds
-                    .ok_or_else(|| de::Error::missing_field("seconds"))?;
+                let seconds = raw.seconds.ok_or("missing field `seconds`")?;
                 Ok(Self::Duration { seconds })
             }
             TranscriptionUsageKind::Tokens => {
-                let input_tokens = raw
-                    .input_tokens
-                    .ok_or_else(|| de::Error::missing_field("input_tokens"))?;
-                let output_tokens = raw
-                    .output_tokens
-                    .ok_or_else(|| de::Error::missing_field("output_tokens"))?;
-                let total_tokens = raw
-                    .total_tokens
-                    .ok_or_else(|| de::Error::missing_field("total_tokens"))?;
+                let input_tokens = raw.input_tokens.ok_or("missing field `input_tokens`")?;
+                let output_tokens = raw.output_tokens.ok_or("missing field `output_tokens`")?;
+                let total_tokens = raw.total_tokens.ok_or("missing field `total_tokens`")?;
                 let input_token_details = raw
                     .input_token_details
-                    .ok_or_else(|| de::Error::missing_field("input_token_details"))?;
+                    .ok_or("missing field `input_token_details`")?;
                 Ok(Self::Tokens(Box::new(TranscriptionTokens {
                     input_tokens,
                     output_tokens,
@@ -88,8 +69,7 @@ pub struct TranscriptionTokenDetails {
     pub text_tokens: i64,
 }
 
-/// Duration usage carries no token counts, so it transforms to `None` and the caller
-/// keeps billing it by duration. Token usage copies its counts without recomputing them.
+// Duration usage carries no token counts, so it transforms to None instead of zeros.
 #[must_use]
 pub fn transform_transcription_usage(usage: &TranscriptionUsage) -> Option<CostUsage> {
     let TranscriptionUsage::Tokens(tokens) = usage else {
@@ -102,7 +82,9 @@ pub fn transform_transcription_usage(usage: &TranscriptionUsage) -> Option<CostU
         prompt_details: Some(PromptDetails {
             text_tokens: Some(tokens.input_token_details.text_tokens),
             audio_tokens: Some(tokens.input_token_details.audio_tokens),
-            ..PromptDetails::default()
+            image_tokens: None,
+            video_tokens: None,
+            web_search_requests: None,
         }),
         completion_details: None,
         cache_read_tokens: None,

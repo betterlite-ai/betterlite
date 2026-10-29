@@ -106,6 +106,29 @@ fn absent_modality_sums_and_zero_cache_leave_prompt_details_absent() {
 }
 
 #[test]
+fn zero_web_search_requests_is_none_even_with_other_prompt_details() {
+    let usage = parse(
+        r#"{"total_input_tokens":0,"total_output_tokens":0,
+        "input_tokens_by_modality":[{"modality":"document","tokens":4}],
+        "tool_use_tokens_by_modality":[{"modality":"text","tokens":6}]}"#,
+    );
+    let cost = transform_interactions_usage(&usage).expect("valid usage");
+    let details = cost.prompt_details.expect("modality sums are present");
+    assert_eq!(details.web_search_requests, None);
+}
+
+#[test]
+fn zero_reasoning_tokens_is_none_even_with_other_completion_details() {
+    let usage = parse(
+        r#"{"total_input_tokens":0,"total_output_tokens":0,
+        "output_tokens_by_modality":[{"modality":"text","tokens":4}]}"#,
+    );
+    let cost = transform_interactions_usage(&usage).expect("valid usage");
+    let details = cost.completion_details.expect("output sums are present");
+    assert_eq!(details.reasoning_tokens, None);
+}
+
+#[test]
 fn recognized_zero_modality_sum_keeps_prompt_details_present() {
     let usage = parse(
         r#"{"total_input_tokens":0,"total_output_tokens":0,

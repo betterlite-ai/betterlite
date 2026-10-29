@@ -4,8 +4,6 @@ pub mod interactions;
 mod token_count;
 pub mod transcription;
 
-/// A billing projection a caller copies into its own `Usage` record. Not a wire type:
-/// callers own how it gets serialized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CostUsage {
     pub prompt_tokens: i64,
