@@ -1,3 +1,4 @@
+use super::python_repr::format_float;
 use super::url_codec::{
     SplitUrl, UrlSplitError, parse_qs, parse_qsl, urlencode_doseq, urlencode_pairs, urlsplit,
     urlunsplit,
@@ -13,19 +14,12 @@ pub enum QueryValue {
 }
 
 impl QueryValue {
-    fn to_param_string(&self) -> String {
+    #[must_use]
+    pub fn to_param_string(&self) -> String {
         match self {
             Self::Text(text) => text.clone(),
             Self::Integer(number) => number.to_string(),
-            // Matches Python's str(float): a whole number still carries ".0".
-            Self::Float(number) => {
-                let fixed = number.to_string();
-                if fixed.contains('.') {
-                    fixed
-                } else {
-                    format!("{fixed}.0")
-                }
-            }
+            Self::Float(number) => format_float(*number),
         }
     }
 }
@@ -43,14 +37,13 @@ pub(super) const CONNECTION_PARAM_KEYS: [&str; 6] = [
 
 const PRISMA_TLS_PARAM_KEYS: [&str; 3] = ["sslmode", "sslcert", "sslaccept"];
 
-// A configured value passes through unchanged; only a missing one gets the default.
 #[must_use]
 pub fn idle_lifetime_params(configured: Option<QueryValue>) -> Vec<(String, QueryValue)> {
     let value = configured.unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT));
     vec![("max_idle_connection_lifetime".to_owned(), value)]
 }
 
-// Returns url unchanged when nothing is added.
+// Must return the exact bytes the operator configured: re-serializing could reorder duplicate keys or change percent-escape case.
 pub fn add_missing_query_params(
     url: &str,
     params: &[(String, QueryValue)],
@@ -72,7 +65,6 @@ pub fn add_missing_query_params(
     Ok(urlunsplit(&SplitUrl { query, ..parsed }))
 }
 
-// The pool/timeout allowlist the reader may inherit.
 #[must_use]
 pub fn reader_shareable_params(params: &[(String, QueryValue)]) -> Vec<(String, QueryValue)> {
     let kept: Vec<(String, QueryValue)> = params
@@ -95,7 +87,6 @@ fn last_duplicate_wins(pairs: Vec<(String, String)>) -> Vec<(String, QueryValue)
     deduped
 }
 
-// The reader-shareable subset already on url.
 pub fn connection_params_from_url(url: &str) -> Result<Vec<(String, QueryValue)>, UrlSplitError> {
     let parsed = urlsplit(url)?;
     let deduped = last_duplicate_wins(parse_qsl(&parsed.query, false));
@@ -117,7 +108,6 @@ pub fn token_refresh_params_from_url(
     Ok(last_duplicate_wins(kept))
 }
 
-// The first nonblank value for key, or "".
 pub fn url_query_value(raw_url: Option<&str>, key: &str) -> Result<String, UrlSplitError> {
     let Some(url) = raw_url.filter(|value| !value.is_empty()) else {
         return Ok(String::new());
@@ -130,7 +120,6 @@ pub fn url_query_value(raw_url: Option<&str>, key: &str) -> Result<String, UrlSp
         .unwrap_or_default())
 }
 
-// Every old occurrence of key is removed, then one replacement is appended.
 pub fn with_query_value(url: &str, key: &str, value: &str) -> Result<String, UrlSplitError> {
     let parsed = urlsplit(url)?;
     let mut pairs: Vec<(String, String)> = parse_qsl(&parsed.query, false)
@@ -142,15 +131,33 @@ pub fn with_query_value(url: &str, key: &str, value: &str) -> Result<String, Url
     Ok(urlunsplit(&SplitUrl { query, ..parsed }))
 }
 
+// Either a single value or a doseq list, matching the dict[str, str | int | float | list] LiteLLM passes to urlencode(doseq=True).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
+pub enum AppendQueryParam {
+    Scalar(QueryValue),
+    List(Vec<QueryValue>),
+}
+
+impl AppendQueryParam {
+    fn to_param_strings(&self) -> Vec<String> {
+        match self {
+            Self::Scalar(value) => vec![value.to_param_string()],
+            Self::List(values) => values.iter().map(QueryValue::to_param_string).collect(),
+        }
+    }
+}
+
 fn update_query_groups(
     base: Vec<(String, Vec<String>)>,
-    updates: &[(String, Vec<String>)],
+    updates: &[(String, AppendQueryParam)],
 ) -> Vec<(String, Vec<String>)> {
     let mut result = base;
-    for (key, values) in updates {
+    for (key, value) in updates {
+        let values = value.to_param_strings();
         match result.iter_mut().find(|(existing, _)| existing == key) {
-            Some((_, slot)) => slot.clone_from(values),
-            None => result.push((key.clone(), values.clone())),
+            Some((_, slot)) => *slot = values,
+            None => result.push((key.clone(), values)),
         }
     }
     result
@@ -167,7 +174,7 @@ const EMPTY_URL_WARNING: &str =
 // Unlike add_missing_query_params, blank existing values are dropped and a supplied key's values overwrite any existing list.
 pub fn append_query_params(
     raw_url: Option<&str>,
-    params: &[(String, Vec<String>)],
+    params: &[(String, AppendQueryParam)],
 ) -> Result<AppendOutcome, UrlSplitError> {
     let Some(url) = raw_url.filter(|value| !value.is_empty()) else {
         return Ok(AppendOutcome {
@@ -190,7 +197,7 @@ const SECRET_QUERY_KEYS: [&str; 2] = ["password", "sslpassword"];
 #[must_use]
 pub fn append_query_params_diagnostic(
     raw_url: Option<&str>,
-    params: &[(String, Vec<String>)],
+    params: &[(String, AppendQueryParam)],
 ) -> (String, String) {
     let redacted_url = raw_url.map_or_else(|| "None".to_owned(), redact_credentials);
     let mut redacted_params = String::from("{");
@@ -214,6 +221,10 @@ fn redact_credentials(url: &str) -> String {
         return "REDACTED".to_owned();
     };
     if parsed.netloc.is_empty() {
+        return "REDACTED".to_owned();
+    }
+    // An unencoded '/', '?' or '#' in the password truncates the netloc early, so a leftover '@' past it still carries credentials.
+    if parsed.path.contains('@') || parsed.query.contains('@') || parsed.fragment.contains('@') {
         return "REDACTED".to_owned();
     }
     let netloc = match parsed.netloc.rsplit_once('@') {
