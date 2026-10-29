@@ -68,7 +68,7 @@ use std::path::Path;
     r#"{"input_cost_per_token":999999999999999999999999999999e10}"#,
     "input_cost_per_token"
 )]
-#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"sample_spec":{"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003},"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"search_context_cost_per_query":{"search_context_size_high":0.01},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
+#[case::nested(r#"{"provider_specific_entry":{"us":0.000000000000000001},"guardrail_cost_per_unit":{"contentPolicyUnits":0.0000001},"metadata":{"original_pricing_per_minute":0.020833333333333333},"computer_use_input_cost_per_1k_tokens":0.00001,"file_search_cost_per_1k_calls":0.003,"off_peak_pricing":{"input_cost_per_token":0.0000002,"windows":[{"hours_utc":"00:00-01:00","weekdays":["monday",2]}]},"search_context_cost_per_query":{"search_context_size_high":0.01},"tiered_pricing":[{"input_cost_per_token":0.00000005,"range":[0,256000]}]}"#, "nested")]
 #[case::unknown_tier(r#"{"tiered_pricing":[{"input_cost_per_token":5e-8,"max_results_range":[0,25],"unknown_price":0.5}]}"#, "unknown field `unknown_price`")]
 #[case::extreme_exponent(r#"{"input_cost_per_token":1e-2147483648}"#, "input_cost_per_token")]
 #[case::nested_null(
@@ -131,16 +131,18 @@ fn assert_nested_top_level_fields(parsed_value: &PriceFields) {
     );
     assert_eq!(
         parsed_value
-            .sample_spec
-            .computer_use_input
+            .values
+            .other
+            .computer_input_1k
             .unwrap()
             .to_string(),
         "0.00001"
     );
     assert_eq!(
         parsed_value
-            .sample_spec
-            .file_search_calls
+            .values
+            .other
+            .file_search_1k_calls
             .unwrap()
             .to_string(),
         "0.003"
@@ -226,6 +228,15 @@ fn rejects_invalid_nested_prices(#[case] source: &str) {
     let raw: Box<RawValue> = serde_json::from_str(source).unwrap();
     let error = PriceFields::parse(raw.as_ref()).unwrap_err();
     assert!(error.to_string().contains("input_cost_per_token"));
+}
+
+#[test]
+fn rejects_a_window_without_hours_utc() {
+    let raw: Box<RawValue> =
+        serde_json::from_str(r#"{"off_peak_pricing":{"windows":[{"weekdays":["monday"]}]}}"#)
+            .unwrap();
+    let error = PriceFields::parse(raw.as_ref()).unwrap_err();
+    assert!(error.to_string().contains("missing field `hours_utc`"));
 }
 
 #[test]

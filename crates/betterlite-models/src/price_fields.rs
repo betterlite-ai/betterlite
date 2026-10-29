@@ -47,7 +47,6 @@ pub struct PriceFields {
     )]
     pub guardrail_units: BTreeMap<String, Decimal>,
     pub metadata: nested::MetadataPricing,
-    pub sample_spec: nested::SamplePricing,
     #[serde(rename = "off_peak_pricing")]
     pub off_peak: Option<nested::OffPeakPricing>,
     #[serde(rename = "search_context_cost_per_query")]

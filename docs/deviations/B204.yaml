@@ -9,3 +9,9 @@ deviations:
   - what: An unrecognized weekday name or an out-of-range weekday number is a parse error instead of a silently skipped window.
     why: LiteLLM's _normalize_weekday returns None for bad input and lets the window match no day; the no-silent-drops rule requires an error instead of a price window that quietly stops applying.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L454-L461
+  - what: An unknown key inside a tier, off-peak or search-context price block is a parse error instead of being silently accepted and ignored.
+    why: LiteLLM reads these blocks as untyped dicts, so an unrecognized key is read nowhere in the _is_off_peak rule loop and silently dropped; the no-silent-drops rule requires an error instead of a price field that is silently never applied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L495-L521
+  - what: A price window with no hours_utc is a parse error instead of a silently inert window.
+    why: LiteLLM's _is_off_peak loop reads rule.get("hours_utc"), finds it empty and does continue, so a window missing hours_utc is tolerated and just never matches; the no-silent-drops rule requires an error instead of a price window that silently never applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L511-L516

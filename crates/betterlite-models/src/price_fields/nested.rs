@@ -27,36 +27,6 @@ pub struct MetadataPricing {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct SamplePricing {
-    #[serde(
-        rename = "computer_use_input_cost_per_1k_tokens",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
-    )]
-    pub computer_use_input: Option<Decimal>,
-    #[serde(
-        rename = "computer_use_output_cost_per_1k_tokens",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
-    )]
-    pub computer_use_output: Option<Decimal>,
-    #[serde(
-        rename = "file_search_cost_per_1k_calls",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
-    )]
-    pub file_search_calls: Option<Decimal>,
-    #[serde(
-        rename = "file_search_cost_per_gb_per_day",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
-    )]
-    pub file_search_storage: Option<Decimal>,
-    #[serde(
-        rename = "vector_store_cost_per_gb_per_day",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
-    )]
-    pub vector_store_storage: Option<Decimal>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
 pub struct OffPeakPricing {
     #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
     pub input_cost_per_token: Option<Decimal>,

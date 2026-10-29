@@ -47,13 +47,6 @@ def _fixed_keys(prefix: str, source: dict[str, Json], keys: list[str]) -> dict[s
 _GROUP_KEYS = {
     "provider_specific_entry": ["us", "fast"],
     "metadata": ["original_pricing_per_hour", "original_pricing_per_minute"],
-    "sample_spec": [
-        "computer_use_input_cost_per_1k_tokens",
-        "computer_use_output_cost_per_1k_tokens",
-        "file_search_cost_per_1k_calls",
-        "file_search_cost_per_gb_per_day",
-        "vector_store_cost_per_gb_per_day",
-    ],
     "search_context_cost_per_query": [
         "search_context_size_low",
         "search_context_size_medium",
@@ -65,7 +58,6 @@ _EXCLUDED_KEYS = {
     "provider_specific_entry",
     "guardrail_cost_per_unit",
     "metadata",
-    "sample_spec",
     "off_peak_pricing",
     "search_context_cost_per_query",
     "tiered_pricing",
@@ -168,7 +160,6 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
         input_value = cast(dict[str, Json], json.loads(source, parse_float=Decimal))
     provider = _object("provider_specific_entry", input_value.get("provider_specific_entry", {}))
     metadata = _object("metadata", input_value.get("metadata", {}))
-    sample = _object("sample_spec", input_value.get("sample_spec", {}))
     return cast(
         dict[str, Json],
         {
@@ -178,7 +169,6 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
             ),
             "guardrail_cost_per_unit": _guardrail_cost_per_unit(input_value),
             "metadata": _fixed_keys("metadata", metadata, _GROUP_KEYS["metadata"]),
-            "sample_spec": _fixed_keys("sample_spec", sample, _GROUP_KEYS["sample_spec"]),
             "off_peak_pricing": _off_peak_pricing(input_value),
             "search_context_cost_per_query": _search_context_cost_per_query(input_value),
             "tiered_pricing": _tiered_pricing(input_value),
