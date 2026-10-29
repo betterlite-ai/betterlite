@@ -31,8 +31,8 @@ struct RawFields {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Settings {
-    pub cfg_scale: Option<f64>,
-    pub seed: Option<i64>,
+    pub cfg_scale: Option<i64>,
+    pub seed: Option<f64>,
     pub steps: Option<i64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
@@ -83,14 +83,9 @@ where
         raw.cfg_scale,
         &format!("{prefix}.cfg_scale"),
         lookup,
-        parse_float,
-    )?;
-    let seed = resolve_number(
-        raw.seed,
-        &format!("{prefix}.seed"),
-        lookup,
         parse_signed_integer,
     )?;
+    let seed = resolve_number(raw.seed, &format!("{prefix}.seed"), lookup, parse_float)?;
     let steps = resolve_number(
         raw.steps,
         &format!("{prefix}.steps"),

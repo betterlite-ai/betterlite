@@ -100,6 +100,6 @@ fn second_deployment_wins_over_the_first() {
     .unwrap();
     assert_eq!(
         config.sections.bedrock_other_image_models.cfg_scale,
-        Some(7.0_f64)
+        Some(7_i64)
     );
 }
