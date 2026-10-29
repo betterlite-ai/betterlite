@@ -98,7 +98,7 @@ fn run_step(
 ) -> Value {
     match step {
         CallbackSecretStep::Strip { metadata } => strip_callback_config(metadata),
-        CallbackSecretStep::Encrypt { metadata } => encrypt_callback_vars(metadata, cipher, extra),
+        CallbackSecretStep::Encrypt { metadata } => encrypt_callback_vars(metadata, cipher),
         CallbackSecretStep::Decrypt { metadata } => decrypt_callback_vars(metadata, cipher),
         CallbackSecretStep::Sensitive { key } => Value::Bool(is_sensitive_callback_key(key, extra)),
     }

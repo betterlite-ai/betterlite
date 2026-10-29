@@ -71,7 +71,7 @@ fn deep_copy_no_mutation() {
     let original = sample_metadata();
     let snapshot = original.clone();
     let codec = cipher(Some("salt-one"));
-    drop(encrypt_callback_vars(&original, &codec, &BTreeSet::new()));
+    drop(encrypt_callback_vars(&original, &codec));
     drop(decrypt_callback_vars(&original, &codec));
     drop(strip_callback_config(&original));
     assert_eq!(original, snapshot);
@@ -80,7 +80,7 @@ fn deep_copy_no_mutation() {
 #[test]
 fn logging_and_callback_settings_slots() {
     let codec = cipher(Some("salt-one"));
-    let encrypted = encrypt_callback_vars(&sample_metadata(), &codec, &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&sample_metadata(), &codec);
     let logging_vars = &encrypted["logging"][0]["callback_vars"]["api_key"];
     assert!(
         logging_vars
@@ -104,12 +104,12 @@ fn malformed_slots_ignored() {
     let scalar_logging =
         json!({"logging": "not-a-list", "callback_settings": {"callback_vars": "not-a-dict"}});
     assert_eq!(
-        encrypt_callback_vars(&scalar_logging, &codec, &BTreeSet::new()),
+        encrypt_callback_vars(&scalar_logging, &codec),
         scalar_logging
     );
     let mixed_entries =
         json!({"logging": [{"callback_vars": {"api_key": "sk-secret"}}, "not_a_dict", 7_i32]});
-    let encrypted = encrypt_callback_vars(&mixed_entries, &codec, &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&mixed_entries, &codec);
     assert_eq!(encrypted["logging"][1], json!("not_a_dict"));
     assert_eq!(encrypted["logging"][2], json!(7_i32));
 }
@@ -117,14 +117,14 @@ fn malformed_slots_ignored() {
 #[test]
 fn nested_values_not_recursed() {
     let metadata = json!({"callback_settings": {"callback_vars": {"api_key": {"nested_api_key": "sk-secret"}}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
     assert_eq!(encrypted, metadata);
 }
 
 #[test]
 fn secret_manager_not_encrypted() {
     let metadata = json!({"secret_manager_settings": {"aws_access_key_id": "AKIA-secret"}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
     assert_eq!(encrypted, metadata);
 }
 
@@ -143,21 +143,15 @@ fn sensitive_key_selection(#[case] key: &str, #[case] extra: &[&str], #[case] ex
 fn empty_and_non_string() {
     let codec = cipher(Some("salt-one"));
     let empty = json!({"callback_settings": {"callback_vars": {"api_key": ""}}});
-    assert_eq!(
-        encrypt_callback_vars(&empty, &codec, &BTreeSet::new()),
-        empty
-    );
+    assert_eq!(encrypt_callback_vars(&empty, &codec), empty);
     let number = json!({"callback_settings": {"callback_vars": {"api_key": 7_i32}}});
-    assert_eq!(
-        encrypt_callback_vars(&number, &codec, &BTreeSet::new()),
-        number
-    );
+    assert_eq!(encrypt_callback_vars(&number, &codec), number);
 }
 
 #[test]
 fn nonsensitive_unchanged() {
     let metadata = json!({"callback_settings": {"callback_vars": {"region": "us-east-1"}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
     assert_eq!(encrypted, metadata);
 }
 
@@ -165,22 +159,22 @@ fn nonsensitive_unchanged() {
 fn prefix_without_validation() {
     let marked = json!("litellm_enc::not-even-base64*garbage");
     let metadata = json!({"callback_settings": {"callback_vars": {"api_key": marked}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
     assert_eq!(encrypted, metadata);
 }
 
 #[test]
 fn salt_rotation_idempotence() {
     let metadata = json!({"callback_settings": {"callback_vars": {"api_key": "sk-secret"}}});
-    let once = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
-    let twice = encrypt_callback_vars(&once, &cipher(Some("salt-two")), &BTreeSet::new());
+    let once = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
+    let twice = encrypt_callback_vars(&once, &cipher(Some("salt-two")));
     assert_eq!(once, twice);
 }
 
 #[test]
 fn successful_encrypt_prefix() {
     let metadata = json!({"callback_settings": {"callback_vars": {"api_key": "sk-secret"}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
     let value = encrypted["callback_settings"]["callback_vars"]["api_key"]
         .as_str()
         .unwrap();
@@ -191,7 +185,7 @@ fn successful_encrypt_prefix() {
 #[test]
 fn encryption_error_plaintext_silent() {
     let metadata = json!({"callback_settings": {"callback_vars": {"api_key": "sk-secret"}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(None), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(None));
     assert_eq!(encrypted, metadata);
 }
 
@@ -208,7 +202,6 @@ fn decrypt_ignores_key_sensitivity() {
     let encrypted = encrypt_callback_vars(
         &json!({"callback_settings": {"callback_vars": {"api_key": "sk-secret"}}}),
         &codec,
-        &BTreeSet::new(),
     );
     let marked = encrypted["callback_settings"]["callback_vars"]["api_key"].clone();
     let metadata = json!({"callback_settings": {"callback_vars": {"region": marked}}});
@@ -268,7 +261,7 @@ impl SecretDiagnostics for CapturingDiagnostics {
 fn secret_debug_redaction() {
     let plaintext = "sk-super-secret-value";
     let metadata = json!({"callback_settings": {"callback_vars": {"api_key": plaintext}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")), &BTreeSet::new());
+    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
     let ciphertext = encrypted["callback_settings"]["callback_vars"]["api_key"]
         .as_str()
         .unwrap()

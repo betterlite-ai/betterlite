@@ -37,16 +37,12 @@ pub fn is_sensitive_callback_key(key: &str, extra: &BTreeSet<String>) -> bool {
     SensitiveDataMasker::default().is_sensitive_key(key, &[])
 }
 
-pub fn encrypt_callback_vars<N, D>(
-    metadata: &Payload,
-    cipher: &StoredCipher<N, D>,
-    extra: &BTreeSet<String>,
-) -> Payload
+pub fn encrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let transform = |key: &str, value: &Payload| encrypt_if_plaintext(key, value, cipher, extra);
+    let transform = |key: &str, value: &Payload| encrypt_if_plaintext(key, value, cipher);
     transform_callback_vars(metadata, transform)
 }
 
@@ -97,12 +93,7 @@ where
     }
 }
 
-fn encrypt_if_plaintext<N, D>(
-    key: &str,
-    value: &Payload,
-    cipher: &StoredCipher<N, D>,
-    extra: &BTreeSet<String>,
-) -> Payload
+fn encrypt_if_plaintext<N, D>(key: &str, value: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
     N: NonceSource,
     D: SecretDiagnostics,
@@ -110,7 +101,7 @@ where
     let Some(text) = value.as_str() else {
         return value.clone();
     };
-    if text.is_empty() || !is_sensitive_callback_key(key, extra) {
+    if text.is_empty() || !is_sensitive_callback_key(key, &BTreeSet::new()) {
         return value.clone();
     }
     if text.starts_with(CALLBACK_VAR_ENCRYPTED_PREFIX) {
@@ -126,7 +117,6 @@ where
     }
 }
 
-// Port of callback_utils._decrypt_or_passthrough: a failed open keeps the marked value and logs at debug level.
 fn decrypt_or_passthrough<N, D>(key: &str, value: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
     D: SecretDiagnostics,
