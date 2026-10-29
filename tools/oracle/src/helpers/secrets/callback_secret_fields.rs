@@ -3,8 +3,7 @@ use std::collections::BTreeSet;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_secrets::callback_vars::{
-    decrypt_callback_vars, encrypt_callback_vars, is_sensitive_callback_key,
-    strip_callback_config,
+    decrypt_callback_vars, encrypt_callback_vars, is_sensitive_callback_key, strip_callback_config,
 };
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
