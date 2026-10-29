@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use axum::http::request::Parts;
 use std::collections::BTreeMap;
 use std::io::{Error, Write as _};
 use std::net::TcpListener;
@@ -20,6 +21,7 @@ use tokio::sync::oneshot;
 use crate::OracleError;
 use crate::case::UpstreamAnswer;
 use crate::http::MAX_BODY;
+use crate::multipart_oracle::request::answer_body;
 use crate::routing_mock_scripts::{
     CallGuard, CallOutcome, MockScript, Outcome, ProviderCall, Recording, Ticket, redact,
 };
@@ -123,11 +125,34 @@ async fn handle(
     if parts.method == "GET" && parts.uri.path() == "/v1/models" {
         return Ok(Response::new(Body::from(r#"{"object":"list","data":[]}"#)));
     }
-    let bytes = time::timeout(Duration::from_secs(30), to_bytes(body, MAX_BODY))
-        .await
-        .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
-        .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
-    let text = str::from_utf8(&bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+    let bytes = read_body(&state, body).await?;
+    let captured = capture_request(&parts, &bytes)?;
+    let admitted = state
+        .lock()
+        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
+        .admit(captured);
+    let ticket = admitted.map_err(|error| fail(&state, error))?;
+    play(state, ticket).await
+}
+
+async fn read_body(state: &Arc<Mutex<Recording>>, body: Body) -> Result<Vec<u8>, StatusCode> {
+    let bytes = time::timeout(
+        Duration::from_secs(30),
+        to_bytes(body, MAX_BODY.saturating_add(1)),
+    )
+    .await
+    .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
+    .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
+    if bytes.len() > MAX_BODY {
+        return Err(fail(
+            state,
+            Error::other("captured body exceeds 16777216 bytes"),
+        ));
+    }
+    Ok(bytes.to_vec())
+}
+
+fn capture_request(parts: &Parts, bytes: &[u8]) -> Result<ProviderRequest, StatusCode> {
     let mut headers = parts
         .headers
         .iter()
@@ -140,18 +165,21 @@ async fn handle(
         .collect::<Result<BTreeMap<_, _>, str::Utf8Error>>()
         .map_err(|_source| StatusCode::BAD_REQUEST)?;
     redact(&mut headers);
-    let captured = ProviderRequest {
+    let raw_body = headers.get("content-type").is_some_and(|value| {
+        value.starts_with("multipart/form-data") || value.starts_with("application/octet-stream")
+    });
+    let body = if raw_body {
+        Value::Array(bytes.iter().map(|byte| Value::from(*byte)).collect())
+    } else {
+        let text = str::from_utf8(bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+        serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned()))
+    };
+    Ok(ProviderRequest {
         method: parts.method.to_string(),
         path: parts.uri.to_string(),
         headers,
-        body: serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned())),
-    };
-    let admitted = state
-        .lock()
-        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
-        .admit(captured);
-    let ticket = admitted.map_err(|error| fail(&state, error))?;
-    play(state, ticket).await
+        body,
+    })
 }
 
 async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<Body>, StatusCode> {
@@ -196,8 +224,13 @@ fn fail(state: &Mutex<Recording>, error: Error) -> StatusCode {
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
-fn reply(answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
-    let body = if let Some(json) = answer.body {
+fn reply(mut answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
+    let body = if let Some((content_type, bytes)) = answer_body(&answer).map_err(Error::other)? {
+        answer
+            .headers
+            .insert("content-type".to_owned(), content_type);
+        bytes
+    } else if let Some(json) = answer.body {
         serde_json::to_vec(&json).map_err(Error::other)?
     } else {
         let mut bytes = Vec::new();

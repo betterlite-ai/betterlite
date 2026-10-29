@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "custom-responses", "call": {"tool_arguments": {"mode": "convert_custom_tool_format_to_responses_shape", "format_obj": {"type": "grammar", "grammar": {"definition": "g", "syntax": "lark"}}}}, "env": {}, "compare": {"ignore": []}}

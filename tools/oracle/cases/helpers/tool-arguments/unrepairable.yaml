@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "unrepairable", "call": {"tool_arguments": {"mode": "parse_tool_call_arguments", "arguments": "{not json", "tool_name": "my_tool"}}, "env": {}, "compare": {"ignore": [{"pointer": "/error/message", "why": "betterlite writes its own message"}]}}

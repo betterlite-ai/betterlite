@@ -1,0 +1,12 @@
+kind: helper
+name: stability1-text-prompts
+call:
+  bedrock_other_image_models:
+    stability1_text_prompts:
+      non_default: {size: "640x512"}
+      optional_params: {user: ignored-user, width: 999}
+      text: "line one\nline two"
+      settings: {cfg_scale: 7, seed: 42, steps: 30}
+env: {}
+compare:
+  ignore: []
