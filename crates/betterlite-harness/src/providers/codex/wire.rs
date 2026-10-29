@@ -5,10 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::payloads::python_json::OrderedJson;
 use crate::types::JsonObject;
 
 use super::ScalarJson;
-use python_json::PyValue;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct FileChangeEntry {
@@ -77,7 +77,7 @@ pub(crate) enum Item {
         #[serde(default)]
         arguments: Option<Value>,
         #[serde(default)]
-        result: Option<PyValue>,
+        result: Option<OrderedJson>,
         #[serde(default)]
         error: Option<Value>,
         #[serde(default)]
@@ -98,9 +98,6 @@ pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
             .then(|| super::StreamEvent::TurnFailed { error: None })
     })
 }
-
-#[path = "python_json.rs"]
-mod python_json;
 
 #[path = "tool_projection.rs"]
 mod tool_projection;

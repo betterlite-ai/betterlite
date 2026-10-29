@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
+use crate::payloads::python_json::{OrderedJson, python_json_text};
 use crate::types::JsonObject;
 
 use super::FileChangeEntry;
 use super::Item;
-use super::python_json::{PyValue, python_json_text};
 
 pub(crate) struct ToolProjection {
     pub(crate) name: String,
@@ -122,7 +122,7 @@ fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProje
 
 fn mcp_tool_projection(
     call: (Option<&str>, Option<&str>, Option<&Value>),
-    outcome: (Option<&PyValue>, Option<&Value>, Option<&str>),
+    outcome: (Option<&OrderedJson>, Option<&Value>, Option<&str>),
 ) -> ToolProjection {
     let (server, tool, arguments) = call;
     let (result, error, status) = outcome;
@@ -159,7 +159,7 @@ fn mcp_tool_input(
 }
 
 fn mcp_tool_output(
-    result: Option<&PyValue>,
+    result: Option<&OrderedJson>,
     error: Option<&Value>,
     status: Option<&str>,
 ) -> (String, bool) {
@@ -170,17 +170,17 @@ fn mcp_tool_output(
     )
 }
 
-fn mcp_result_text(result: Option<&PyValue>) -> String {
-    let Some(value) = result.filter(|value| !matches!(value, PyValue::Null)) else {
+fn mcp_result_text(result: Option<&OrderedJson>) -> String {
+    let Some(value) = result.filter(|value| !matches!(value, OrderedJson::Null)) else {
         return String::new();
     };
     match value {
-        PyValue::Text(text) => text.clone(),
-        other @ (PyValue::Null
-        | PyValue::Bool(_)
-        | PyValue::Number(_)
-        | PyValue::List(_)
-        | PyValue::Object(_)) => python_json_text(other),
+        OrderedJson::Text(text) => text.clone(),
+        other @ (OrderedJson::Null
+        | OrderedJson::Bool(_)
+        | OrderedJson::Number(_)
+        | OrderedJson::List(_)
+        | OrderedJson::Object(_)) => python_json_text(other).unwrap_or_default(),
     }
 }
 
