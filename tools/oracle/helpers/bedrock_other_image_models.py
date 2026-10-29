@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Protocol, cast
+from typing import Protocol, TypeAlias, cast
 
 from litellm.llms.bedrock.image_generation.amazon_nova_canvas_transformation import (
     AmazonNovaCanvasConfig,
@@ -17,15 +17,14 @@ from litellm.llms.bedrock.image_generation.amazon_titan_transformation import (
 )
 from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGeneration
 from litellm.types.utils import ImageResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
-type ConfigClass = (
-    type[AmazonTitanImageGenerationConfig]
-    | type[AmazonStabilityConfig]
-    | type[AmazonStability3Config]
-    | type[AmazonNovaCanvasConfig]
-)
+ConfigClass: TypeAlias = type[
+    AmazonTitanImageGenerationConfig
+    | AmazonStabilityConfig
+    | AmazonStability3Config
+    | AmazonNovaCanvasConfig
+]
 
 
 class FamilyName(StrEnum):
@@ -46,36 +45,36 @@ FAMILY_NAMES: dict[ConfigClass, FamilyName] = {value: key for key, value in CONF
 
 class ImageConfig(Protocol):
     def map_openai_params(
-        self, non_default_params: dict[str, Json], optional_params: dict[str, Json]
-    ) -> dict[str, Json]: ...
+        self, non_default_params: dict[str, JsonValue], optional_params: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]: ...
     def transform_request_body(
-        self, text: str, optional_params: dict[str, Json]
-    ) -> dict[str, Json]: ...
+        self, text: str, optional_params: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]: ...
     def transform_response_dict_to_openai_response(
-        self, model_response: ImageResponse, response_dict: dict[str, Json]
+        self, model_response: ImageResponse, response_dict: dict[str, JsonValue]
     ) -> ImageResponse: ...
 
 
 class TitanCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    non_default: dict[str, Json] = {}
-    optional_params: dict[str, Json] = {}
+    non_default: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
     text: str = ""
 
 
 class SettingsCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    cfg_scale: Json = None
-    seed: Json = None
-    steps: Json = None
-    width: Json = None
-    height: Json = None
+    cfg_scale: JsonValue = None
+    seed: JsonValue = None
+    steps: JsonValue = None
+    width: JsonValue = None
+    height: JsonValue = None
 
 
 class Stability1Call(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    non_default: dict[str, Json] = {}
-    optional_params: dict[str, Json] = {}
+    non_default: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
     text: str = ""
     settings: SettingsCall = SettingsCall()
 
@@ -83,27 +82,27 @@ class Stability1Call(BaseModel):
 class TextParamsCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = ""
-    optional_params: dict[str, Json] = {}
+    optional_params: dict[str, JsonValue] = {}
 
 
 class SizeQualityCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
     family: FamilyName | None = None
-    non_default: dict[str, Json] = {}
-    optional_params: dict[str, Json] = {}
+    non_default: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
 
 
 class ArtifactsCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
     family: FamilyName | None = None
-    response_body: dict[str, Json] = {}
+    response_body: dict[str, JsonValue] = {}
 
 
 class ProviderErrorCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
     family: FamilyName | None = None
-    response_body: dict[str, Json] | None = None
-    optional_params: dict[str, Json] = {}
+    response_body: dict[str, JsonValue] | None = None
+    optional_params: dict[str, JsonValue] = {}
     text: str = ""
 
 
@@ -112,8 +111,8 @@ class SelectionCall(BaseModel):
     model: str | None = None
 
 
-def to_json(value: object) -> Json:
-    return cast("Json", json.loads(json.dumps(value)))
+def to_json(value: object) -> JsonValue:
+    return cast("JsonValue", json.loads(json.dumps(value)))
 
 
 def family_or_stability1(name: FamilyName | None) -> FamilyName:
@@ -128,14 +127,14 @@ def as_image_config(cls: ConfigClass) -> ImageConfig:
     return cast(ImageConfig, cls())
 
 
-def images_from(model_response: ImageResponse) -> Json:
+def images_from(model_response: ImageResponse) -> JsonValue:
     return {
         "created": model_response.created,
         "data": [{"b64_json": image.b64_json} for image in model_response.data or []],
     }
 
 
-def titan_image_body(argument: Json) -> Json:
+def titan_image_body(argument: JsonValue) -> JsonValue:
     call = TitanCall.model_validate(argument)
     config = as_image_config(AmazonTitanImageGenerationConfig)
     mapped = config.map_openai_params(dict(call.non_default), dict(call.optional_params))
@@ -143,7 +142,7 @@ def titan_image_body(argument: Json) -> Json:
     return to_json(body)
 
 
-def stability1_text_prompts(argument: Json) -> Json:
+def stability1_text_prompts(argument: JsonValue) -> JsonValue:
     call = Stability1Call.model_validate(argument)
     settings = call.settings
     AmazonStabilityConfig(
@@ -159,7 +158,7 @@ def stability1_text_prompts(argument: Json) -> Json:
     return to_json(body)
 
 
-def stability3_prompt(argument: Json) -> Json:
+def stability3_prompt(argument: JsonValue) -> JsonValue:
     call = TextParamsCall.model_validate(argument)
     config = as_image_config(AmazonStability3Config)
     mapped = config.map_openai_params({}, dict(call.optional_params))
@@ -167,21 +166,21 @@ def stability3_prompt(argument: Json) -> Json:
     return to_json(body)
 
 
-def nova_canvas_task_body(argument: Json) -> Json:
+def nova_canvas_task_body(argument: JsonValue) -> JsonValue:
     call = TextParamsCall.model_validate(argument)
     config = as_image_config(AmazonNovaCanvasConfig)
     body = config.transform_request_body(call.text, dict(call.optional_params))
     return to_json(body)
 
 
-def size_n_quality_map(argument: Json) -> Json:
+def size_n_quality_map(argument: JsonValue) -> JsonValue:
     call = SizeQualityCall.model_validate(argument)
     config = as_image_config(config_class(call.family))
     mapped = config.map_openai_params(dict(call.non_default), dict(call.optional_params))
     return to_json(mapped)
 
 
-def artifacts_to_b64_results(argument: Json) -> Json:
+def artifacts_to_b64_results(argument: JsonValue) -> JsonValue:
     call = ArtifactsCall.model_validate(argument)
     config = as_image_config(config_class(call.family))
     model_response = config.transform_response_dict_to_openai_response(
@@ -190,7 +189,7 @@ def artifacts_to_b64_results(argument: Json) -> Json:
     return images_from(model_response)
 
 
-def image_provider_error(argument: Json) -> Json:
+def image_provider_error(argument: JsonValue) -> JsonValue:
     call = ProviderErrorCall.model_validate(argument)
     config = as_image_config(config_class(call.family))
     if call.response_body is not None:
@@ -202,13 +201,13 @@ def image_provider_error(argument: Json) -> Json:
     return to_json(body)
 
 
-def image_family_selection(argument: Json) -> Json:
+def image_family_selection(argument: JsonValue) -> JsonValue:
     call = SelectionCall.model_validate(argument)
     cls = BedrockImageGeneration.get_config_class(call.model)
     return FAMILY_NAMES[cls].value
 
 
-HANDLERS: dict[str, Callable[[Json], Json]] = {
+HANDLERS: dict[str, Callable[[JsonValue], JsonValue]] = {
     "titan_image_body": titan_image_body,
     "stability1_text_prompts": stability1_text_prompts,
     "stability3_prompt": stability3_prompt,
@@ -220,6 +219,6 @@ HANDLERS: dict[str, Callable[[Json], Json]] = {
 }
 
 
-def run(input_value: dict[str, Json]) -> Json:
+def run(input_value: dict[str, JsonValue]) -> JsonValue:
     name, argument = next(iter(input_value.items()))
     return HANDLERS[name](argument)
