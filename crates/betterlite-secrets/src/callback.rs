@@ -35,19 +35,17 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    transform_callback_vars(metadata, |key, value| {
-        encrypt_if_plaintext(key, value, cipher, extra)
-    })
+    let transform = |key: &str, value: &Payload| encrypt_if_plaintext(key, value, cipher, extra);
+    transform_callback_vars(metadata, transform)
 }
 
 // Port of callback_utils.decrypt_callback_vars.
-pub fn decrypt_callback_vars<N: NonceSource, D: SecretDiagnostics>(
-    metadata: &Payload,
-    cipher: &StoredCipher<N, D>,
-) -> Payload {
-    transform_callback_vars(metadata, |key, value| {
-        decrypt_or_passthrough(key, value, cipher)
-    })
+pub fn decrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
+where
+    D: SecretDiagnostics,
+{
+    let transform = |key: &str, value: &Payload| decrypt_or_passthrough(key, value, cipher);
+    transform_callback_vars(metadata, transform)
 }
 
 // Port of callback_utils._transform_callback_vars: visits logging[*].callback_vars and callback_settings.callback_vars.
@@ -123,7 +121,6 @@ where
 // Port of callback_utils._decrypt_or_passthrough: a failed open keeps the marked value and logs at debug level.
 fn decrypt_or_passthrough<N, D>(key: &str, value: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
-    N: NonceSource,
     D: SecretDiagnostics,
 {
     let Some(text) = value.as_str() else {

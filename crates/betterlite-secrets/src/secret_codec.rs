@@ -111,7 +111,13 @@ where
             Algorithm::XSalsa20Poly1305 => sealed,
         })
     }
+}
 
+// decrypt_value and its callers never draw a nonce, so this impl needs no NonceSource bound.
+impl<N, D> StoredCipher<N, D>
+where
+    D: SecretDiagnostics,
+{
     pub fn decrypt_value<T>(
         &self,
         value: StoredValue<T>,
