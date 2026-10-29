@@ -231,11 +231,13 @@ fn nova_canvas_task_body_text_image_and_color_guided() {
             )])),
         ),
     ]);
-    let color_guided_body =
-        nova::transform_request_body("ignored", color_guided_params).unwrap();
+    let color_guided_body = nova::transform_request_body("ignored", color_guided_params).unwrap();
     assert_eq!(
         color_guided_body.get("colorGuidedGenerationParams"),
-        Some(&Field::from(params(vec![("text", Field::from("explicit"))])))
+        Some(&Field::from(params(vec![(
+            "text",
+            Field::from("explicit")
+        )])))
     );
 }
 
@@ -251,7 +253,10 @@ fn nova_canvas_task_body_inpainting() {
 
 fn nova_canvas_task_body_unsupported() {
     // Any other task type raises NotImplementedError; an explicit taskType=None is also unsupported.
-    for (task_type, expected_message) in [(Field::from("OUTPAINTING"), "OUTPAINTING"), (Field::Null, "None")] {
+    for (task_type, expected_message) in [
+        (Field::from("OUTPAINTING"), "OUTPAINTING"),
+        (Field::Null, "None"),
+    ] {
         let optional_params = params(vec![("taskType", task_type)]);
         let error = nova::transform_request_body("a cat", optional_params).unwrap_err();
         let ImageModelsError::TaskTypeUnsupported(message) = error else {
