@@ -37,20 +37,21 @@ fn selection_respects_exclusive_lower_inclusive_upper(
     assert_eq!(output["selected_range"], json!([lower_value, upper_value]));
 }
 
-#[test]
-fn a_gap_and_a_point_above_every_range_both_fall_back_to_the_last_tier() {
+#[rstest]
+#[case::in_the_gap(150_i64)]
+#[case::above_every_range(1000_i64)]
+fn a_gap_and_a_point_above_every_range_both_fall_back_to_the_last_tier(#[case] tokens: i64) {
     let tiers = r#"[{"range":[0,100],"input_cost_per_token":1},{"range":[200,300],"input_cost_per_token":2}]"#;
-    for tokens in [150_i64, 1000_i64] {
-        let request = input(tiers, tokens, "input_cost_per_token", None);
-        let output = Op::run(&request).expect("selection succeeds");
-        assert_eq!(output["selected_range"], json!([200_i64, 300_i64]));
-        assert_eq!(output["rate"], "2");
-    }
+    let request = input(tiers, tokens, "input_cost_per_token", None);
+    let output = Op::run(&request).expect("selection succeeds");
+    assert_eq!(output["selected_range"], json!([200_i64, 300_i64]));
+    assert_eq!(output["rate"], "2");
 }
 
 #[test]
 fn ties_on_the_first_endpoint_keep_the_original_order() {
-    let tiers = r#"[{"range":[0,100],"input_cost_per_token":1},{"range":[0,50],"input_cost_per_token":2}]"#;
+    let tiers =
+        r#"[{"range":[0,100],"input_cost_per_token":1},{"range":[0,50],"input_cost_per_token":2}]"#;
     let request = input(tiers, 30, "input_cost_per_token", None);
     let output = Op::run(&request).expect("selection succeeds");
     assert_eq!(output["selected_range"], json!([0_i64, 100_i64]));
