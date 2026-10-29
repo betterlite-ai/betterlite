@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use deadpool_postgres::GenericClient;
+use tokio_postgres::error::SqlState;
 use tokio_postgres::types::ToSql;
 
 use super::queue::{BudgetIdFilter, CascadeEntry, LinkedResetFilter, LinkedWrite, SpendResetEntry};
@@ -21,15 +22,24 @@ pub enum CommitError {
 
 fn classify_commit_failure(source: tokio_postgres::Error) -> CommitError {
     let db_error = backend(source);
-    match db_error {
-        DbError::UniqueViolation { .. } | DbError::SqlState { .. } => {
-            CommitError::Rejected(db_error)
+    match &db_error {
+        DbError::SqlState {
+            code:
+                SqlState::CONNECTION_EXCEPTION
+                | SqlState::CONNECTION_DOES_NOT_EXIST
+                | SqlState::CONNECTION_FAILURE
+                | SqlState::ADMIN_SHUTDOWN
+                | SqlState::CRASH_SHUTDOWN,
+            ..
         }
-        DbError::NoDbConnected
+        | DbError::NoDbConnected
         | DbError::Pool { .. }
         | DbError::Backend { .. }
         | DbError::InvalidRecord { .. }
         | DbError::CreateNull => CommitError::OutcomeUnknown(db_error),
+        DbError::UniqueViolation { .. } | DbError::SqlState { .. } => {
+            CommitError::Rejected(db_error)
+        }
     }
 }
 
