@@ -35,7 +35,16 @@ pub fn parse_tool_call_arguments(
                 source: parse_error,
             })
         },
-        Ok,
+        |repaired| {
+            tracing::warn!(
+                tool_name = tool_name.unwrap_or("<unknown>"),
+                context = context.unwrap_or("unknown context"),
+                argument_length = arguments.len(),
+                arguments,
+                "repaired truncated tool call arguments"
+            );
+            Ok(repaired)
+        },
     )
 }
 

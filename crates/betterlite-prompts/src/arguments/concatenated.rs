@@ -20,7 +20,14 @@ pub fn split_concatenated_json(raw: &str) -> Vec<Object> {
         match item {
             Ok(Json::Object(object)) => objects.push(object),
             Ok(_) => objects.push(Object::new()),
-            Err(_) => break,
+            Err(error) => {
+                tracing::warn!(
+                    complete_objects = objects.len(),
+                    %error,
+                    "discarding unparsable tool-call arguments tail"
+                );
+                break;
+            }
         }
     }
     objects
