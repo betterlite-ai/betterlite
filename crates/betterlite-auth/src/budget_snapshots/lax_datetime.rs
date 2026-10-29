@@ -20,9 +20,26 @@ enum LaxDateTimeRaw {
 }
 
 #[derive(Debug, Error)]
-#[error("invalid datetime: {value}")]
-pub struct LaxDateTimeError {
-    value: String,
+#[error("{0}")]
+pub struct LaxDateTimeConfigError(speedate::ConfigError);
+
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub struct LaxDateTimeParseError(speedate::ParseError);
+
+#[derive(Debug, Error)]
+pub enum LaxDateTimeError {
+    #[error("invalid microseconds precision overflow configuration")]
+    Config {
+        #[source]
+        source: LaxDateTimeConfigError,
+    },
+    #[error("invalid datetime: {value}")]
+    Parse {
+        value: String,
+        #[source]
+        source: LaxDateTimeParseError,
+    },
 }
 
 impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
@@ -33,7 +50,13 @@ impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
             LaxDateTimeRaw::Text(text) => text,
             LaxDateTimeRaw::Number(number) => number.to_string(),
         };
-        parse_lax_datetime(&text).ok_or(LaxDateTimeError { value: text })
+        let config = build_config().map_err(|source| LaxDateTimeError::Config {
+            source: LaxDateTimeConfigError(source),
+        })?;
+        parse_lax_datetime(&text, &config).map_err(|source| LaxDateTimeError::Parse {
+            value: text,
+            source: LaxDateTimeParseError(source),
+        })
     }
 }
 
@@ -48,16 +71,17 @@ fn build_config() -> Result<DateTimeConfig, speedate::ConfigError> {
         .build())
 }
 
-fn parse_lax_datetime(text: &str) -> Option<LaxDateTime> {
-    let config = build_config().ok()?;
-    let parsed = DateTime::parse_str_with_config(text, &config)
-        .or_else(|_| {
-            let date = Date::parse_str(text)?;
-            DateTime::parse_str_with_config(&format!("{date}T00:00:00"), &config)
-        })
-        .ok()?;
+fn parse_lax_datetime(
+    text: &str,
+    config: &DateTimeConfig,
+) -> Result<LaxDateTime, speedate::ParseError> {
+    let parsed = DateTime::parse_str_with_config(text, config).or_else(|error| {
+        Date::parse_str(text)
+            .and_then(|date| DateTime::parse_str_with_config(&format!("{date}T00:00:00"), config))
+            .map_err(|_date_error| error)
+    })?;
     let formatted = parsed.to_string();
-    Some(if parsed.time.tz_offset.is_some() {
+    Ok(if parsed.time.tz_offset.is_some() {
         LaxDateTime::Offset(formatted)
     } else {
         LaxDateTime::Naive(formatted)

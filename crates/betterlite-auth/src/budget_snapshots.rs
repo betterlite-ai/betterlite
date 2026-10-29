@@ -57,13 +57,12 @@ fn normalized(
 ) -> BTreeMap<String, Box<RawValue>> {
     let mut object = metadata.clone();
     for (native, alias) in aliases {
-        if let Some(alias_value) = object.get(*alias).cloned() {
+        if object.contains_key(*alias) {
             object.remove(*native);
-            object.insert(String::from(*alias), alias_value);
-        } else if let Some(native_value) = object.remove(*native) {
+            continue;
+        }
+        if let Some(native_value) = object.remove(*native) {
             object.insert(String::from(*alias), native_value);
-        } else {
-            object.remove(*native);
         }
     }
     object
