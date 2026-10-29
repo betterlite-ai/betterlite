@@ -3,6 +3,3 @@ deviations:
   - what: Policy spend, budgets, and search scores reject nonfinite or out-of-Decimal-range values.
     why: The native numeric policy forbids floating-point storage; ordinary finite values retain source defaults and signs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L314-L339
-  - what: LaxDateTime accepts RFC 3339 strings, bare dates, space-separated naive strings, and whole-second Unix timestamps, but not float timestamps, millisecond/microsecond/nanosecond auto-scaled timestamps, or pydantic-core's year-9999 upper bound.
-    why: Pydantic's lax datetime coercion (pydantic-core) auto-detects timestamp scale from magnitude and accepts fractional seconds; betterlite accepts the whole-second integer form LiteLLM actually carries on these fields and leaves the rarer forms unimplemented rather than porting pydantic-core's scale-detection heuristic.
-    link: https://github.com/pydantic/pydantic-core/blob/main/src/input/datetime.rs
