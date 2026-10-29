@@ -4,8 +4,9 @@ use std::str::{self, Utf8Error};
 use std::time::Duration;
 
 use crate::OracleError;
-use crate::case::Request;
-use reqwest::blocking::{Client, ClientBuilder};
+use crate::case::{Request, RequestBody};
+use crate::multipart_oracle::request::request_body;
+use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
 
@@ -46,10 +47,10 @@ pub(crate) fn send(
     for (name, value) in &request.headers {
         outgoing = outgoing.header(name, value);
     }
-    if !request.body.is_null() {
-        outgoing = outgoing.body(serde_json::to_vec(&request.body).map_err(OracleError::HttpBody)?);
-    }
-    let incoming = outgoing.send().map_err(OracleError::HttpRequest)?;
+    let body = request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
+    let incoming = with_body(outgoing, body)
+        .send()
+        .map_err(OracleError::HttpRequest)?;
     let status = incoming.status().as_u16();
     let headers = incoming
         .headers()
@@ -85,10 +86,29 @@ pub(crate) fn ready(client: &Client, base: &str) -> Result<bool, OracleError> {
     Ok(response.status() == reqwest::StatusCode::OK)
 }
 
+fn with_body(outgoing: RequestBuilder, body: RequestBody) -> RequestBuilder {
+    match body {
+        RequestBody::Empty => outgoing,
+        RequestBody::Json(bytes) => outgoing.body(bytes),
+        RequestBody::Raw {
+            content_type,
+            bytes,
+        } => outgoing.header("content-type", content_type).body(bytes),
+    }
+}
+
 pub(crate) fn parse_body(
     headers: &BTreeMap<String, String>,
     bytes: &[u8],
 ) -> Result<Value, OracleError> {
+    if headers
+        .get("content-type")
+        .is_some_and(|value| value.starts_with("application/octet-stream"))
+    {
+        return Ok(Value::Array(
+            bytes.iter().map(|byte| Value::from(*byte)).collect(),
+        ));
+    }
     let text = str::from_utf8(bytes).map_err(OracleError::HttpText)?;
     if headers
         .get("content-type")

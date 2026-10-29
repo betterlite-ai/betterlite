@@ -1,14 +1,14 @@
 id: B204
 milestone: M1 openai data plane
 title: Typed model price fields and exact decimal parsing
-status: todo
+status: done
 depends_on: [B004, B171]
 file: tasks/B204-model-price-types.yaml
 covers:
   - "model_prices_and_context_window.schema.json"
 parent: B013
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 303

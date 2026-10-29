@@ -39,4 +39,18 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "multipart_oracle"
+path = "fuzz_targets/multipart_oracle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "multipart_capture"
+path = "fuzz_targets/multipart_capture.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

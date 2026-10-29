@@ -1,0 +1,10 @@
+kind: helper
+name: append-query-params-empty-url
+call:
+  database_url_policy:
+    function: append_query_params
+    url: null
+    params: []
+env: {}
+compare:
+  ignore: []

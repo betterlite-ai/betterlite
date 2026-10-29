@@ -1,0 +1,51 @@
+use crate::price_fields::price_struct;
+use serde::{Deserialize, Serialize};
+
+price_struct! {
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+    #[serde(default)]
+    pub struct OutputPricing {
+        output_audio_token: "output_cost_per_audio_token",
+        output_character: "output_cost_per_character",
+        output_character_over_128k: "output_cost_per_character_above_128k_tokens",
+        output_image: "output_cost_per_image",
+        output_image_half_k: "output_cost_per_image_0.5K",
+        output_image_1024: "output_cost_per_image_1024",
+        output_image_1536: "output_cost_per_image_1536",
+        output_image_1k: "output_cost_per_image_1K",
+        output_image_2k: "output_cost_per_image_2K",
+        output_image_4k: "output_cost_per_image_4K",
+        output_image_512: "output_cost_per_image_512",
+        output_image_token: "output_cost_per_image_token",
+        output_pixel: "output_cost_per_pixel",
+        output_reasoning_token: "output_cost_per_reasoning_token",
+        output_second: "output_cost_per_second",
+        output_second_1080p: "output_cost_per_second_1080p",
+        output_second_2k: "output_cost_per_second_2k",
+        output_second_480p: "output_cost_per_second_480p",
+        output_second_4k: "output_cost_per_second_4k",
+        output_second_720p: "output_cost_per_second_720p",
+        output_second_768p: "output_cost_per_second_768p",
+        output_token: "output_cost_per_token",
+        output_token_over_128k: "output_cost_per_token_above_128k_tokens",
+        output_token_over_200k: "output_cost_per_token_above_200k_tokens",
+        output_token_over_200k_batch: "output_cost_per_token_above_200k_tokens_batches",
+        output_over_200k_priority: "output_cost_per_token_above_200k_tokens_priority",
+        output_token_over_256k: "output_cost_per_token_above_256k_tokens",
+        output_token_over_272k: "output_cost_per_token_above_272k_tokens",
+        output_token_over_272k_batch: "output_cost_per_token_above_272k_tokens_batches",
+        output_token_over_272k_flex: "output_cost_per_token_above_272k_tokens_flex",
+        output_over_272k_priority: "output_cost_per_token_above_272k_tokens_priority",
+        output_over_272k_ultra: "output_cost_per_token_above_272k_tokens_ultrafast",
+        output_token_over_32k: "output_cost_per_token_above_32k_tokens",
+        output_token_over_512k: "output_cost_per_token_above_512k_tokens",
+        output_token_balanced: "output_cost_per_token_balanced",
+        output_token_batch: "output_cost_per_token_batches",
+        output_token_flex: "output_cost_per_token_flex",
+        output_token_priority: "output_cost_per_token_priority",
+        output_token_ultrafast: "output_cost_per_token_ultrafast",
+        output_video_second: "output_cost_per_video_per_second",
+        output_video_token: "output_cost_per_video_token",
+        output_dbu_token: "output_dbu_cost_per_token",
+    }
+}
