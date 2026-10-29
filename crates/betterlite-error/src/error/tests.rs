@@ -169,6 +169,22 @@ fn rate_limit_metadata_drops_unsafe_headers_before_they_become_allowed() {
 }
 
 #[test]
+fn rate_limit_details_debug_names_the_header_but_not_its_secret_value() {
+    let details = RateLimitDetails {
+        context: context("slow down"),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::from([(
+            "set-cookie".to_owned(),
+            "session=leaked-cookie-value".to_owned(),
+        )]),
+    };
+    let debug_text = format!("{details:?}");
+    assert!(debug_text.contains("set-cookie"));
+    assert!(!debug_text.contains("leaked-cookie-value"));
+}
+
+#[test]
 fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
     let class = ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
         current_cost: Decimal::new(125, 1),
