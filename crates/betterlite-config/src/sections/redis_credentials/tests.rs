@@ -8,7 +8,7 @@ use secrecy::ExposeSecret as _;
 use super::aws::AwsSettings;
 use super::azure::AzureCredential;
 use super::{Provider, ProviderWarning};
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(source: &str, environment: BTreeMap<String, String>) -> super::Settings {
     ConfigLoader {
@@ -35,6 +35,13 @@ fn resolves_gcp_from_environment_with_precedence_over_azure() {
     assert_eq!(gcp.token_ttl_seconds, 3300);
     assert_eq!(settings.warnings, vec![ProviderWarning::GcpOutranksAzure]);
     assert!(settings.environment_snapshot["REDIS_GCP_SERVICE_ACCOUNT"]);
+}
+
+#[test]
+fn empty_gcp_service_account_in_config_falls_back_to_unset() {
+    let source = "litellm_settings:\n  cache_params:\n    gcp_service_account: \"\"\n";
+    let settings = load(source, BTreeMap::new());
+    assert!(settings.provider.is_none());
 }
 
 #[test]
@@ -109,6 +116,20 @@ fn azure_username_survives_with_provider_active() {
 }
 
 #[test]
+fn empty_redis_username_with_azure_active_stays_unset() {
+    let mut environment = BTreeMap::new();
+    environment.insert("REDIS_AZURE_AD_TOKEN".to_owned(), "true".to_owned());
+    environment.insert("AZURE_CLIENT_ID".to_owned(), "client".to_owned());
+    environment.insert("REDIS_USERNAME".to_owned(), String::new());
+    let settings = load("{}", environment);
+    let Some(Provider::Azure(azure)) = settings.provider else {
+        panic!("expected an azure provider");
+    };
+    assert_eq!(azure.username, None);
+    assert_eq!(settings.username, None);
+}
+
+#[test]
 fn gcp_outranks_aws_and_warns() {
     let mut environment = BTreeMap::new();
     environment.insert(
@@ -133,26 +154,43 @@ fn azure_outranks_aws_and_warns() {
 }
 
 #[rstest]
-#[case("aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    ssl: true\n")]
-#[case("aws_iam_region: eu-west-1\n    aws_iam_cache_name: cache\n    ssl: true\n")]
-#[case("aws_iam_region: eu-west-1\n    aws_iam_user_name: app\n    ssl: true\n")]
 #[case(
-    "aws_iam_user_name: \"\"\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n    ssl: true\n"
+    "aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    ssl: true\n",
+    "aws_iam_region"
 )]
 #[case(
-    "aws_iam_user_name: app\n    aws_iam_cache_name: \"\"\n    aws_iam_region: eu-west-1\n    ssl: true\n"
+    "aws_iam_region: eu-west-1\n    aws_iam_cache_name: cache\n    ssl: true\n",
+    "aws_iam_user_name"
 )]
 #[case(
-    "aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: \"\"\n    ssl: true\n"
+    "aws_iam_region: eu-west-1\n    aws_iam_user_name: app\n    ssl: true\n",
+    "aws_iam_cache_name"
 )]
-fn aws_requires_every_setting(#[case] remaining: &str) {
+#[case(
+    "aws_iam_user_name: \"\"\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n    ssl: true\n",
+    "aws_iam_user_name"
+)]
+#[case(
+    "aws_iam_user_name: app\n    aws_iam_cache_name: \"\"\n    aws_iam_region: eu-west-1\n    ssl: true\n",
+    "aws_iam_cache_name"
+)]
+#[case(
+    "aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: \"\"\n    ssl: true\n",
+    "aws_iam_region"
+)]
+fn aws_requires_every_setting(#[case] remaining: &str, #[case] missing: &str) {
     let source =
         format!("litellm_settings:\n  cache_params:\n    aws_iam_auth: true\n    {remaining}");
-    ConfigLoader {
+    let error = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(&source)
     .unwrap_err();
+    let ConfigError::MissingEnvironment { variable, path } = error else {
+        panic!("expected a missing-environment error, got {error:?}");
+    };
+    assert_eq!(variable, missing);
+    assert_eq!(path, format!("litellm_settings.cache_params.{missing}"));
 }
 
 #[test]
@@ -207,11 +245,16 @@ fn aws_iam_auth_config_false_overrides_environment_true() {
 #[test]
 fn aws_requires_tls_via_ssl_flag() {
     let source = "litellm_settings:\n  cache_params:\n    aws_iam_auth: true\n    aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n";
-    ConfigLoader {
+    let error = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(source)
     .unwrap_err();
+    let ConfigError::InvalidScalar { path, value } = error else {
+        panic!("expected an invalid-scalar error, got {error:?}");
+    };
+    assert_eq!(path, "litellm_settings.cache_params.ssl");
+    assert!(!value);
 }
 
 #[test]

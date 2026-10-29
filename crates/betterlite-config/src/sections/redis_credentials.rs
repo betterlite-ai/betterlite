@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -32,7 +32,7 @@ struct RawSettings {
     aws_iam_region: Option<String>,
     aws_iam_serverless: Option<ScalarBool>,
     ssl: Option<ScalarBool>,
-    url: Option<String>,
+    url: Option<SecretString>,
     username: Option<String>,
     password: Option<SecretString>,
 }
@@ -78,7 +78,7 @@ impl Section for Raw {
         let settings = self.litellm_settings.cache_params;
         let environment_snapshot = environment_snapshot(lookup);
         let (provider, warnings) = resolve_providers(&settings, lookup)?;
-        let (url, username, password) = resolve_connection(&settings, lookup, provider.as_ref());
+        let (url, username, password) = resolve_connection(&settings, lookup, provider.as_ref())?;
 
         Ok(Settings {
             provider,
@@ -91,23 +91,32 @@ impl Section for Raw {
     }
 }
 
+type ConnectionFields = (Option<SecretString>, Option<String>, Option<SecretString>);
+
 fn resolve_connection<L>(
     settings: &RawSettings,
     lookup: &L,
     provider: Option<&Provider>,
-) -> (Option<SecretString>, Option<String>, Option<SecretString>)
+) -> Result<ConnectionFields, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let configured_url = settings.url.clone().or_else(|| lookup.lookup("REDIS_URL"));
-    match provider {
+    let configured_url = settings
+        .url
+        .clone()
+        .or_else(|| lookup.lookup("REDIS_URL").map(SecretString::from));
+    Ok(match provider {
         Some(Provider::Azure(azure)) => (
-            configured_url.map(|value| SecretString::from(url_without_userinfo(&value))),
+            configured_url
+                .map(|value| url_without_userinfo(&value))
+                .transpose()?,
             azure.username.clone(),
             None,
         ),
         Some(_) => (
-            configured_url.map(|value| SecretString::from(url_without_userinfo(&value))),
+            configured_url
+                .map(|value| url_without_userinfo(&value))
+                .transpose()?,
             None,
             None,
         ),
@@ -120,9 +129,9 @@ where
                 .password
                 .clone()
                 .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
-            (configured_url.map(SecretString::from), username, password)
+            (configured_url, username, password)
         }
-    }
+    })
 }
 
 fn environment_snapshot<L>(lookup: &L) -> BTreeMap<String, bool>
@@ -181,21 +190,16 @@ fn coerces_to_true(setting: &ScalarBool) -> bool {
     }
 }
 
-fn url_without_userinfo(url: &str) -> String {
-    let (scheme, rest) = url
-        .split_once("://")
-        .map_or((None, url), |(url_scheme, remainder)| {
-            (Some(url_scheme), remainder)
-        });
-    let netloc_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let (netloc_with_userinfo, tail) = rest.split_at(netloc_end);
-    let netloc = netloc_with_userinfo
-        .rsplit_once('@')
-        .map_or(netloc_with_userinfo, |(_, host)| host);
-    scheme.map_or_else(
-        || format!("{netloc}{tail}"),
-        |url_scheme| format!("{url_scheme}://{netloc}{tail}"),
-    )
+fn url_without_userinfo(url: &SecretString) -> Result<SecretString, ConfigError> {
+    let mut parsed = url::Url::parse(url.expose_secret()).map_err(|_parse_error| invalid_url())?;
+    parsed.set_username("").map_err(|()| invalid_url())?;
+    parsed.set_password(None).map_err(|()| invalid_url())?;
+    Ok(SecretString::from(parsed.to_string()))
+}
+
+fn invalid_url() -> ConfigError {
+    let path = "litellm_settings.cache_params.url".to_owned();
+    ConfigError::InvalidScalar { path, value: false }
 }
 
 #[path = "redis_credentials/aws.rs"]

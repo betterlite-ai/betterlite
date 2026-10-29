@@ -20,6 +20,7 @@ where
     let gcp_service_account = settings
         .gcp_service_account
         .clone()
+        .filter(|value| !value.is_empty())
         .or_else(|| lookup.lookup("REDIS_GCP_SERVICE_ACCOUNT"));
     let gcp_ssl_ca_certs = settings
         .gcp_ssl_ca_certs

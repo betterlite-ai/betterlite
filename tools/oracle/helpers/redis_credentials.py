@@ -80,12 +80,22 @@ class _StubAzureCredential:
         pass
 
 
+class _StubAzureIdentityModule(types.ModuleType):
+    DefaultAzureCredential: type[_StubAzureCredential]
+    ManagedIdentityCredential: type[_StubAzureCredential]
+    ClientSecretCredential: type[_StubAzureCredential]
+
+    def __init__(self) -> None:
+        super().__init__("azure.identity")
+        self.DefaultAzureCredential = type("DefaultAzureCredential", (_StubAzureCredential,), {})
+        self.ManagedIdentityCredential = type(
+            "ManagedIdentityCredential", (_StubAzureCredential,), {}
+        )
+        self.ClientSecretCredential = type("ClientSecretCredential", (_StubAzureCredential,), {})
+
+
 def _stub_azure_identity_module() -> types.ModuleType:
-    stub = types.ModuleType("azure.identity")
-    stub.DefaultAzureCredential = type("DefaultAzureCredential", (_StubAzureCredential,), {})  # type: ignore[attr-defined]
-    stub.ManagedIdentityCredential = type("ManagedIdentityCredential", (_StubAzureCredential,), {})  # type: ignore[attr-defined]
-    stub.ClientSecretCredential = type("ClientSecretCredential", (_StubAzureCredential,), {})  # type: ignore[attr-defined]
-    return stub
+    return _StubAzureIdentityModule()
 
 
 def azure_credential_selection(

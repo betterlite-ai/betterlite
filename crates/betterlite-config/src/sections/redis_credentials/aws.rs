@@ -1,6 +1,8 @@
+use secrecy::{ExposeSecret as _, SecretString};
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 
-use super::{RawSettings, ScalarBool, coerces_to_true, ssl_enabled};
+use super::{RawSettings, ScalarBool, coerces_to_true, invalid_url, ssl_enabled};
 
 const ELASTICACHE_TOKEN_TTL_SECONDS: u64 = 900;
 
@@ -41,8 +43,11 @@ where
     let cache_name = non_empty(settings.aws_iam_cache_name.clone())
         .or_else(|| non_empty(lookup.lookup("REDIS_AWS_IAM_CACHE_NAME")))
         .ok_or_else(|| missing_setting("aws_iam_cache_name"))?;
-    let url = settings.url.clone().or_else(|| lookup.lookup("REDIS_URL"));
-    if !uses_tls(url.as_deref(), ssl_enabled(settings, lookup)) {
+    let url = settings
+        .url
+        .clone()
+        .or_else(|| lookup.lookup("REDIS_URL").map(SecretString::from));
+    if !uses_tls(url.as_ref(), ssl_enabled(settings, lookup))? {
         return Err(ConfigError::InvalidScalar {
             path: "litellm_settings.cache_params.ssl".to_owned(),
             value: false,
@@ -65,13 +70,13 @@ where
     })
 }
 
-fn uses_tls(url: Option<&str>, ssl_enabled: bool) -> bool {
-    let scheme_is_rediss = url.map(|value| {
-        value
-            .split_once("://")
-            .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("rediss"))
-    });
-    scheme_is_rediss.unwrap_or(ssl_enabled)
+fn uses_tls(configured_url: Option<&SecretString>, ssl_enabled: bool) -> Result<bool, ConfigError> {
+    let Some(present_url) = configured_url else {
+        return Ok(ssl_enabled);
+    };
+    let parsed =
+        url::Url::parse(present_url.expose_secret()).map_err(|_parse_error| invalid_url())?;
+    Ok(parsed.scheme().eq_ignore_ascii_case("rediss"))
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {

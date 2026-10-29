@@ -43,7 +43,9 @@ where
                 .map(SecretString::from)
         })
         .or_else(|| lookup.lookup("AZURE_CLIENT_SECRET").map(SecretString::from));
-    let username = lookup.lookup("REDIS_USERNAME");
+    let username = lookup
+        .lookup("REDIS_USERNAME")
+        .filter(|value| !value.is_empty());
     let credential = if client_id.is_some() && tenant_id.is_some() && client_secret.is_some() {
         AzureCredential::ClientSecret
     } else if client_id.is_some() {
