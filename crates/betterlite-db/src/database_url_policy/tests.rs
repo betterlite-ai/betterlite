@@ -143,22 +143,69 @@ fn pool_optional_omission() {
     let params = build_db_connection_url_params(10, PoolTimeouts::default(), false, &[]);
     assert_eq!(
         params,
-        vec![("connection_limit".to_owned(), QueryValue::Integer(10))]
+        vec![(
+            "connection_limit".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Integer(10))
+        )]
     );
 }
 
 #[test]
 fn extra_params_override() {
     let extra = vec![
-        ("connection_limit".to_owned(), QueryValue::Integer(99)),
-        ("new_key".to_owned(), QueryValue::Text("v".to_owned())),
+        (
+            "connection_limit".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Integer(99)),
+        ),
+        (
+            "new_key".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Text("v".to_owned())),
+        ),
     ];
     let params = build_db_connection_url_params(10, PoolTimeouts::default(), false, &extra);
     assert_eq!(
         params,
         vec![
-            ("connection_limit".to_owned(), QueryValue::Integer(99)),
-            ("new_key".to_owned(), QueryValue::Text("v".to_owned())),
+            (
+                "connection_limit".to_owned(),
+                AppendQueryParam::Scalar(QueryValue::Integer(99))
+            ),
+            (
+                "new_key".to_owned(),
+                AppendQueryParam::Scalar(QueryValue::Text("v".to_owned()))
+            ),
+        ]
+    );
+}
+
+#[test]
+fn extra_params_accept_bool_and_list() {
+    let extra = vec![
+        ("ssl".to_owned(), AppendQueryParam::Bool(true)),
+        (
+            "tags".to_owned(),
+            AppendQueryParam::List(vec![
+                QueryValue::Text("a".to_owned()),
+                QueryValue::Text("b".to_owned()),
+            ]),
+        ),
+    ];
+    let params = build_db_connection_url_params(10, PoolTimeouts::default(), false, &extra);
+    assert_eq!(
+        params,
+        vec![
+            (
+                "connection_limit".to_owned(),
+                AppendQueryParam::Scalar(QueryValue::Integer(10))
+            ),
+            ("ssl".to_owned(), AppendQueryParam::Bool(true)),
+            (
+                "tags".to_owned(),
+                AppendQueryParam::List(vec![
+                    QueryValue::Text("a".to_owned()),
+                    QueryValue::Text("b".to_owned()),
+                ])
+            ),
         ]
     );
 }
@@ -411,6 +458,18 @@ fn bracketed_hostname_and_ipv4_are_errors() {
     assert_eq!(unsupported_db_scheme(ipv6_url), Ok(None));
 }
 
+// Python's _checknetloc rejects a non-ASCII netloc that NFKC-normalizes into a separator: here
+// U+FF1A (FULLWIDTH COLON) collapses to ':', which could smuggle a host/port split past a reader
+// that only inspected the pre-normalization text.
+#[test]
+fn nfkc_homoglyph_netloc_is_an_error() {
+    let url = "postgresql://evil\u{ff1a}host/db";
+    assert_eq!(
+        unsupported_db_scheme(url),
+        Err(UrlSplitError::InvalidNfkcNetloc)
+    );
+}
+
 #[test]
 fn token_boolean_spellings() {
     let truthy = ["1", "on", "t", "true", "y", "yes", "TRUE", " True "];
@@ -549,6 +608,23 @@ fn native_url_debug_redaction_covers_query_secrets() {
     assert!(!debug.contains("tls-secret"));
     assert!(debug.contains("other"));
     assert!(debug.contains('1'));
+}
+
+// An unencoded '/' in the path pushes a leftover '@' credential past the netloc, where it would
+// otherwise land unredacted in the database field and leak through Debug.
+#[test]
+fn native_url_rejects_credentials_past_netloc() {
+    let error = decode_database_url(b"postgresql://admin:12345/xyz@host/db").unwrap_err();
+    assert!(matches!(error, DbError::CredentialsPastNetloc));
+    let message = error.to_string();
+    assert!(!message.contains("admin"));
+    assert!(!message.contains("xyz"));
+}
+
+#[test]
+fn native_url_decodes_percent_encoded_database_name() {
+    let endpoint = decode_database_url(b"postgresql://h/my%2Ddb").unwrap();
+    assert_eq!(endpoint.database, "my-db");
 }
 
 // An unencoded '/' in the password pushes the real '@' past where urlsplit stops scanning the netloc.
