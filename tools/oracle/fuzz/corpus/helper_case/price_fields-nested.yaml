@@ -1,0 +1,7 @@
+kind: helper
+name: price-fields-nested
+call:
+  price_fields:
+    source: '{"off_peak_pricing":{"input_cost_per_token":0.00000015,"windows":[{"hours_utc":"00:00-00:00","weekdays":["saturday"]}]}}'
+compare: {ignore: []}
+env: {}

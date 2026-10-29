@@ -1,14 +1,14 @@
 id: B4835
 milestone: M9 agents and mcp
 title: Translate Codex configuration, turns and JSONL events
-status: todo
+status: done
 depends_on: [B4830, B4831]
 file: tasks/B4835-codex-harness.yaml
 covers:
   - "litellm/llms/codex/**"
 parent: B143
 split_from: B143
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 302
