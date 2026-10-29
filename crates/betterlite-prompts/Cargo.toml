@@ -7,7 +7,10 @@ publish.workspace = true
 
 [dependencies]
 betterlite-logging = { path = "../betterlite-logging" }
+chrono.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+minijinja = { version = "3.0.4", features = ["builtins", "fuel", "serde"] }
+minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
 serde.workspace = true
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
 thiserror.workspace = true

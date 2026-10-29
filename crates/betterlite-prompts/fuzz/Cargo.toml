@@ -9,7 +9,15 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-prompts = { path = ".." }
+chrono = "0.4.45"
 libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "prompt_template"
+path = "fuzz_targets/prompt_template.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "tool_arguments"
