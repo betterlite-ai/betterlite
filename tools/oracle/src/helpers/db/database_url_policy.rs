@@ -25,21 +25,9 @@ impl crate::helpers::Helper for Op {
             Input::ReaderShareableParams { params } => {
                 Ok(params_value(&reader_shareable_params(params)))
             }
-            Input::ConnectionParamsFromUrl { url } => {
-                value_error(connection_params_from_url(url), |params| {
-                    params_value(&params)
-                })
-            }
-            Input::TokenRefreshParamsFromUrl { url } => {
-                value_error(token_refresh_params_from_url(url), |params| {
-                    params_value(&params)
-                })
-            }
-            Input::UnsupportedDbScheme { database_url } => {
-                value_error(unsupported_db_scheme(database_url), |scheme| {
-                    scheme.map_or(serde_json::Value::Null, serde_json::Value::String)
-                })
-            }
+            Input::ConnectionParamsFromUrl { url } => run_connection_params_from_url(url),
+            Input::TokenRefreshParamsFromUrl { url } => run_token_refresh_params_from_url(url),
+            Input::UnsupportedDbScheme { database_url } => run_unsupported_db_scheme(database_url),
             Input::UnsupportedDbSchemeMessage { env_var, scheme } => Ok(serde_json::Value::String(
                 unsupported_db_scheme_message(env_var, scheme),
             )),
@@ -89,6 +77,24 @@ fn run_append_query_params(
     let outcome = append_query_params(url, params)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(serde_json::json!({ "url": outcome.url, "warning": outcome.warning }))
+}
+
+fn run_connection_params_from_url(url: &str) -> crate::helpers::HelperResult {
+    value_error(connection_params_from_url(url), |params| {
+        params_value(&params)
+    })
+}
+
+fn run_token_refresh_params_from_url(url: &str) -> crate::helpers::HelperResult {
+    value_error(token_refresh_params_from_url(url), |params| {
+        params_value(&params)
+    })
+}
+
+fn run_unsupported_db_scheme(database_url: &str) -> crate::helpers::HelperResult {
+    value_error(unsupported_db_scheme(database_url), |scheme| {
+        scheme.map_or(serde_json::Value::Null, serde_json::Value::String)
+    })
 }
 
 fn value_error<T>(
@@ -186,13 +192,29 @@ fn timeout_error(error: &TimeoutError) -> Box<crate::helpers::HelperError> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    IdleLifetimeParams { configured: Option<QueryValue> },
-    AddMissingQueryParams { url: String, params: Vec<(String, QueryValue)> },
-    ReaderShareableParams { params: Vec<(String, QueryValue)> },
-    ConnectionParamsFromUrl { url: String },
-    TokenRefreshParamsFromUrl { url: String },
-    UnsupportedDbScheme { database_url: String },
-    UnsupportedDbSchemeMessage { env_var: String, scheme: String },
+    IdleLifetimeParams {
+        configured: Option<QueryValue>,
+    },
+    AddMissingQueryParams {
+        url: String,
+        params: Vec<(String, QueryValue)>,
+    },
+    ReaderShareableParams {
+        params: Vec<(String, QueryValue)>,
+    },
+    ConnectionParamsFromUrl {
+        url: String,
+    },
+    TokenRefreshParamsFromUrl {
+        url: String,
+    },
+    UnsupportedDbScheme {
+        database_url: String,
+    },
+    UnsupportedDbSchemeMessage {
+        env_var: String,
+        scheme: String,
+    },
     BuildDbConnectionUrlParams {
         connection_limit: i64,
         pool_timeout: Option<QueryValue>,
@@ -206,9 +228,24 @@ pub(crate) enum Input {
         statement_timeout: Option<ConfiguredSeconds>,
         lock_timeout: Option<ConfiguredSeconds>,
     },
-    UrlQueryValue { url: Option<String>, key: String },
-    WithQueryValue { url: String, key: String, value: String },
-    AppendQueryParams { url: Option<String>, params: Vec<(String, AppendQueryParam)> },
-    TokenAuthFlagEnabled { value: Option<FlagValue>, env_var: String },
-    StrToBool { value: Option<String> },
+    UrlQueryValue {
+        url: Option<String>,
+        key: String,
+    },
+    WithQueryValue {
+        url: String,
+        key: String,
+        value: String,
+    },
+    AppendQueryParams {
+        url: Option<String>,
+        params: Vec<(String, AppendQueryParam)>,
+    },
+    TokenAuthFlagEnabled {
+        value: Option<FlagValue>,
+        env_var: String,
+    },
+    StrToBool {
+        value: Option<String>,
+    },
 }
