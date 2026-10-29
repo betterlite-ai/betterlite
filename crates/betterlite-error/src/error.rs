@@ -1,15 +1,18 @@
-use std::collections::BTreeMap;
 use std::io::Error as IoError;
 
-use crate::envelope::{WireField, is_unsafe_header_name};
-use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
+use crate::envelope::WireField;
 
 pub mod details;
+pub mod metadata;
 mod tests;
 
 use details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
     RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
+};
+use metadata::{
+    ErrorMetadata, RetryMetadata, budget_exceeded_metadata, build_metadata, rate_limit_metadata,
+    schema_validation_metadata,
 };
 
 // the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
@@ -84,29 +87,6 @@ impl ErrorContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
-pub struct RetryMetadata {
-    pub max_retries: Option<u32>,
-    pub num_retries: Option<u32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct ErrorMetadata {
-    pub status_code: u16,
-    pub model: Option<String>,
-    pub provider: Option<String>,
-    #[serde(rename = "type")]
-    pub error_type: WireField,
-    pub param: WireField,
-    pub code: WireField,
-    pub retry: RetryMetadata,
-    pub rate_limit_category: Option<RateLimitCategory>,
-    pub rate_limit_dimension: Option<RateLimitDimension>,
-    pub allowed_response_headers: BTreeMap<String, String>,
-    // getattr(e, "code", None) in proxy_server.py; distinct from `code`, which always stringifies the status
-    pub openai_code: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
 pub enum ErrorClass {
@@ -165,87 +145,18 @@ impl ErrorClass {
             Self::MidStreamFallback(mid) => (&mid.context, mid.original_status.0, Null, Null, No),
             Self::RateLimit(details) => return rate_limit_metadata(details),
             Self::BudgetExceeded(details) => return budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => return guardrail_metadata(details),
+            Self::GuardrailRaised(details) => {
+                return build_metadata(
+                    details.status_code,
+                    (None, None),
+                    (MISSING, MISSING),
+                    RetryMetadata::default(),
+                );
+            }
             Self::JsonSchemaValidation(details) => return schema_validation_metadata(details),
         };
         ctx.metadata(status, default_type, default_param, body)
     }
-}
-
-fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
-    let identity = (Some(details.model.clone()), Some(details.provider.clone()));
-    build_metadata(
-        500,
-        identity,
-        (WireField::Null, WireField::Null),
-        RetryMetadata::default(),
-    )
-}
-
-fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
-    let identity = (None, None);
-    build_metadata(
-        details.status_code,
-        identity,
-        (WireField::MISSING, WireField::MISSING),
-        RetryMetadata::default(),
-    )
-}
-
-fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
-    let mut metadata = build_metadata(
-        details.status_code,
-        (None, Some(details.provider.clone())),
-        (WireField::MISSING, WireField::MISSING),
-        RetryMetadata::default(),
-    );
-    metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
-    metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
-    metadata
-}
-
-fn build_metadata(
-    status_code: u16,
-    identity: (Option<String>, Option<String>),
-    wire: (WireField, WireField),
-    retry: RetryMetadata,
-) -> ErrorMetadata {
-    let (model, provider) = identity;
-    let (error_type, param) = wire;
-    let code = WireField::Text(status_code.to_string());
-    ErrorMetadata {
-        status_code,
-        model,
-        provider,
-        error_type,
-        param,
-        code,
-        retry,
-        rate_limit_category: None,
-        rate_limit_dimension: None,
-        allowed_response_headers: BTreeMap::new(),
-        openai_code: None,
-    }
-}
-
-fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
-    let mut metadata = details.context.metadata(
-        429,
-        WireField::Text("throttling_error".to_owned()),
-        WireField::Null,
-        BodyOverride::TypeLiteral,
-    );
-    // litellm.RateLimitError.__init__ sets self.code = "429" as a literal, after the base openai.APIError body handling
-    metadata.openai_code = Some("429".to_owned());
-    metadata.rate_limit_category = Some(details.category);
-    metadata.rate_limit_dimension = details.dimension;
-    metadata.allowed_response_headers = details
-        .headers
-        .clone()
-        .into_iter()
-        .filter(|(name, _)| !is_unsafe_header_name(name))
-        .collect();
-    metadata
 }
 
 // the #[source] cause stays reachable for logging; classify() only ever hands the client a bounded message
