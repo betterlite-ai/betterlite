@@ -97,101 +97,93 @@ pub enum ErrorClass {
 impl ErrorClass {
     #[must_use]
     pub fn metadata(&self) -> ErrorMetadata {
-        if let Some((context, status, error_type, param)) = plain_context_status(self) {
-            return context.metadata(status, error_type, param);
+        match self {
+            Self::Authentication(context) => context.metadata(401, WireField::Null, WireField::Null),
+            Self::NotFound(context) => context.metadata(404, WireField::Null, WireField::Null),
+            Self::PermissionDenied(context) => context.metadata(403, WireField::Null, WireField::Null),
+            Self::BadRequest(context)
+            | Self::ContextWindowExceeded(context)
+            | Self::ContentPolicyViolation(context) => {
+                context.metadata(400, WireField::Null, WireField::Null)
+            }
+            Self::UnprocessableEntity(context) => {
+                context.metadata(422, WireField::Null, WireField::Null)
+            }
+            Self::ServiceUnavailable(context) => context.metadata(503, WireField::Null, WireField::Null),
+            Self::BadGateway(context) => context.metadata(502, WireField::Null, WireField::Null),
+            Self::InternalServer(context) => context.metadata(
+                500,
+                WireField::Text("internal_server_error".to_owned()),
+                WireField::Null,
+            ),
+            Self::ApiConnection(context) | Self::ApiResponseValidation(context) => {
+                context.metadata(500, WireField::Null, WireField::Null)
+            }
+            // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
+            Self::UnsupportedParams(context) => {
+                context.metadata(400, WireField::MISSING, WireField::Null)
+            }
+            Self::Unclassified(context) => context.metadata(500, WireField::MISSING, WireField::MISSING),
+            Self::Timeout(details) => timeout_metadata(details),
+            Self::Api(details) => {
+                details
+                    .context
+                    .metadata(details.status, WireField::Null, WireField::Null)
+            }
+            Self::RateLimit(details) => rate_limit_metadata(details),
+            Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
+            Self::GuardrailRaised(details) => guardrail_metadata(details),
+            Self::MidStreamFallback(details) => mid_stream_fallback_metadata(details),
+            Self::JsonSchemaValidation(details) => schema_validation_metadata(details),
         }
-        details_metadata(self)
     }
 }
 
-type PlainStatus<'a> = (&'a ErrorContext, u16, WireField, WireField);
-
-fn plain_context_status(class: &ErrorClass) -> Option<PlainStatus<'_>> {
-    let (context, status, error_type, param) = match class {
-        ErrorClass::Authentication(context) => (context, 401, WireField::Null, WireField::Null),
-        ErrorClass::NotFound(context) => (context, 404, WireField::Null, WireField::Null),
-        ErrorClass::PermissionDenied(context) => {
-            (context, 403, WireField::Null, WireField::Null)
-        }
-        ErrorClass::BadRequest(context)
-        | ErrorClass::ContextWindowExceeded(context)
-        | ErrorClass::ContentPolicyViolation(context) => {
-            (context, 400, WireField::Null, WireField::Null)
-        }
-        ErrorClass::UnprocessableEntity(context) => {
-            (context, 422, WireField::Null, WireField::Null)
-        }
-        ErrorClass::ServiceUnavailable(context) => {
-            (context, 503, WireField::Null, WireField::Null)
-        }
-        ErrorClass::BadGateway(context) => (context, 502, WireField::Null, WireField::Null),
-        ErrorClass::InternalServer(context) => (
-            context,
-            500,
-            WireField::Text("internal_server_error".to_owned()),
-            WireField::Null,
-        ),
-        ErrorClass::ApiConnection(context) | ErrorClass::ApiResponseValidation(context) => {
-            (context, 500, WireField::Null, WireField::Null)
-        }
-        // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
-        ErrorClass::UnsupportedParams(context) => {
-            (context, 400, WireField::MISSING, WireField::Null)
-        }
-        ErrorClass::Unclassified(context) => {
-            (context, 500, WireField::MISSING, WireField::MISSING)
-        }
-        _ => return None,
-    };
-    Some((context, status, error_type, param))
+fn timeout_metadata(details: &TimeoutDetails) -> ErrorMetadata {
+    let status = details.original_status.unwrap_or(408);
+    details
+        .context
+        .metadata(status, WireField::Null, WireField::Null)
 }
 
-fn details_metadata(class: &ErrorClass) -> ErrorMetadata {
-    match class {
-        ErrorClass::Timeout(details) => {
-            let status = details.original_status.unwrap_or(408);
-            details
-                .context
-                .metadata(status, WireField::Null, WireField::Null)
-        }
-        ErrorClass::Api(details) => details
-            .context
-            .metadata(details.status, WireField::Null, WireField::Null),
-        ErrorClass::RateLimit(details) => rate_limit_metadata(details),
-        ErrorClass::BudgetExceeded(details) => {
-            let mut metadata = bare_metadata(
-                details.status_code,
-                None,
-                details.provider.clone(),
-                WireField::MISSING,
-                WireField::MISSING,
-            );
-            metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
-            metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
-            metadata
-        }
-        ErrorClass::GuardrailRaised(details) => bare_metadata(
-            details.status_code,
-            None,
-            None,
-            WireField::MISSING,
-            WireField::MISSING,
-        ),
-        ErrorClass::MidStreamFallback(details) => {
-            let status = details.original_status.unwrap_or(503);
-            details
-                .context
-                .metadata(status, WireField::Null, WireField::Null)
-        }
-        ErrorClass::JsonSchemaValidation(details) => bare_metadata(
-            500,
-            Some(details.model.clone()),
-            Some(details.provider.clone()),
-            WireField::Null,
-            WireField::Null,
-        ),
-        _ => unreachable!("plain_context_status already handles every Box<ErrorContext> variant"),
-    }
+fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
+    let mut metadata = bare_metadata(
+        details.status_code,
+        None,
+        details.provider.clone(),
+        WireField::MISSING,
+        WireField::MISSING,
+    );
+    metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
+    metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
+    metadata
+}
+
+fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
+    bare_metadata(
+        details.status_code,
+        None,
+        None,
+        WireField::MISSING,
+        WireField::MISSING,
+    )
+}
+
+fn mid_stream_fallback_metadata(details: &MidStreamFallbackDetails) -> ErrorMetadata {
+    let status = details.original_status.unwrap_or(503);
+    details
+        .context
+        .metadata(status, WireField::Null, WireField::Null)
+}
+
+fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
+    bare_metadata(
+        500,
+        Some(details.model.clone()),
+        Some(details.provider.clone()),
+        WireField::Null,
+        WireField::Null,
+    )
 }
 
 fn bare_metadata(
