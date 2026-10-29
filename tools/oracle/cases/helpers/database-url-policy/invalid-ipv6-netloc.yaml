@@ -1,0 +1,9 @@
+kind: helper
+name: invalid-ipv6-netloc
+call:
+  database_url_policy:
+    function: unsupported_db_scheme
+    database_url: "postgresql://u:p@[::1/db"
+env: {}
+compare:
+  ignore: []
