@@ -59,7 +59,7 @@ impl ModelFields {
     }
 
     #[must_use]
-    pub fn provider_projection(&self) -> ProviderProjection<'_> {
+    pub const fn provider_projection(&self) -> ProviderProjection<'_> {
         let litellm_provider = self.metadata.litellm_provider.as_str();
         ProviderProjection {
             litellm_provider,
