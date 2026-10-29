@@ -1,74 +1,65 @@
 mod tests;
 
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use std::num::TryFromIntError;
+use serde_json::Number;
+use speedate::{Date, DateTime, DateTimeConfig, TimeConfig, TimestampUnit};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-#[serde(try_from = "LaxDateTimeRaw")]
+#[serde(untagged, try_from = "LaxDateTimeRaw")]
 pub enum LaxDateTime {
-    Offset(DateTime<FixedOffset>),
-    Naive(NaiveDateTime),
+    Offset(String),
+    Naive(String),
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum LaxDateTimeRaw {
-    Str(String),
-    I64(i64),
-    U64(u64),
+    Text(String),
+    Number(Number),
 }
 
 #[derive(Debug, Error)]
-pub enum LaxDateTimeError {
-    #[error("invalid datetime: {value}")]
-    Invalid { value: String },
-    #[error("timestamp out of range: {seconds}")]
-    OutOfRange { seconds: i64 },
-    #[error("timestamp out of range")]
-    TooLarge {
-        #[source]
-        source: TryFromIntError,
-    },
+#[error("invalid datetime: {value}")]
+pub struct LaxDateTimeError {
+    value: String,
 }
 
 impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
     type Error = LaxDateTimeError;
 
     fn try_from(raw: LaxDateTimeRaw) -> Result<Self, Self::Error> {
-        match raw {
-            LaxDateTimeRaw::Str(value) => {
-                parse_lax_datetime(&value).ok_or(LaxDateTimeError::Invalid { value })
-            }
-            LaxDateTimeRaw::I64(seconds) => {
-                timestamp_to_utc(seconds).ok_or(LaxDateTimeError::OutOfRange { seconds })
-            }
-            LaxDateTimeRaw::U64(seconds) => {
-                let signed = i64::try_from(seconds)
-                    .map_err(|source| LaxDateTimeError::TooLarge { source })?;
-                timestamp_to_utc(signed).ok_or(LaxDateTimeError::OutOfRange { seconds: signed })
-            }
-        }
+        let text = match raw {
+            LaxDateTimeRaw::Text(text) => text,
+            LaxDateTimeRaw::Number(number) => number.to_string(),
+        };
+        parse_lax_datetime(&text).ok_or(LaxDateTimeError { value: text })
     }
 }
 
-fn timestamp_to_utc(seconds: i64) -> Option<LaxDateTime> {
-    let utc = DateTime::from_timestamp(seconds, 0)?;
-    let offset = FixedOffset::east_opt(0)?;
-    Some(LaxDateTime::Offset(utc.with_timezone(&offset)))
+fn build_config() -> DateTimeConfig {
+    let time_config = TimeConfig::builder()
+        .unix_timestamp_offset(Some(0_i32))
+        .microseconds_precision_overflow_behavior("truncate".parse().unwrap_or_default())
+        .build();
+    DateTimeConfig::builder()
+        .timestamp_unit(TimestampUnit::Infer)
+        .time_config(time_config)
+        .build()
 }
 
-fn parse_lax_datetime(value: &str) -> Option<LaxDateTime> {
-    if let Ok(offset) = DateTime::parse_from_rfc3339(value) {
-        return Some(LaxDateTime::Offset(offset));
-    }
-    for format in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(value, format) {
-            return Some(LaxDateTime::Naive(naive));
-        }
-    }
-    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
-    date.and_hms_opt(0, 0, 0).map(LaxDateTime::Naive)
+fn parse_lax_datetime(text: &str) -> Option<LaxDateTime> {
+    let config = build_config();
+    let parsed = DateTime::parse_str_with_config(text, &config)
+        .or_else(|_| {
+            let date = Date::parse_str(text)?;
+            DateTime::parse_str_with_config(&format!("{date}T00:00:00"), &config)
+        })
+        .ok()?;
+    let formatted = parsed.to_string();
+    Some(if parsed.time.tz_offset.is_some() {
+        LaxDateTime::Offset(formatted)
+    } else {
+        LaxDateTime::Naive(formatted)
+    })
 }

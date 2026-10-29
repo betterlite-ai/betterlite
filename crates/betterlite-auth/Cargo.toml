@@ -12,6 +12,7 @@ secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+speedate = "0.18.0"
 thiserror.workspace = true
 unicode-normalization = "0.1.26"
 uuid = { version = "1.29.0", features = ["serde"] }
