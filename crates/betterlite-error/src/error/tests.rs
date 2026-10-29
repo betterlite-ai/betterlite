@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error as _;
+use std::io::{Error as IoError, ErrorKind};
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -224,12 +225,12 @@ fn json_schema_validation_keeps_the_model_and_provider_identity() {
     assert_eq!(metadata.provider, Some("openai".to_owned()));
 }
 
-// a builder error from an unparseable port: synchronous, no network, and a real reqwest::Error
-fn transport_cause() -> reqwest::Error {
-    reqwest::Client::default()
-        .get("http://host:not-a-port/")
-        .build()
-        .unwrap_err()
+fn timeout_cause() -> IoError {
+    IoError::new(ErrorKind::TimedOut, "deadline exceeded")
+}
+
+fn transport_cause() -> IoError {
+    IoError::new(ErrorKind::ConnectionRefused, "connection refused")
 }
 
 fn parse_cause(marker: &str) -> serde_json::Error {
@@ -241,13 +242,13 @@ fn taxonomy_timeout_preserves_its_source() {
     let error = TaxonomyError::Timeout {
         provider: "openai".to_owned(),
         model: Some("gpt-4".to_owned()),
-        cause: transport_cause(),
+        cause: timeout_cause(),
     };
     let source = error.source().expect("a timeout keeps its cause");
-    let reqwest_error = source
-        .downcast_ref::<reqwest::Error>()
-        .expect("the cause stays a reqwest::Error");
-    assert!(reqwest_error.is_builder());
+    let io_error = source
+        .downcast_ref::<IoError>()
+        .expect("the cause stays a std::io::Error");
+    assert_eq!(io_error.kind(), ErrorKind::TimedOut);
 }
 
 #[test]
@@ -258,10 +259,10 @@ fn taxonomy_transport_preserves_its_source() {
         cause: transport_cause(),
     };
     let source = error.source().expect("a transport failure keeps its cause");
-    let reqwest_error = source
-        .downcast_ref::<reqwest::Error>()
-        .expect("the cause stays a reqwest::Error");
-    assert!(reqwest_error.is_builder());
+    let io_error = source
+        .downcast_ref::<IoError>()
+        .expect("the cause stays a std::io::Error");
+    assert_eq!(io_error.kind(), ErrorKind::ConnectionRefused);
 }
 
 #[test]

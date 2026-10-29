@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::Error as IoError;
 
 use crate::envelope::{WireField, filter_unsafe_headers};
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
@@ -203,14 +204,14 @@ pub enum TaxonomyError {
         provider: String,
         model: Option<String>,
         #[source]
-        cause: reqwest::Error,
+        cause: IoError,
     },
     #[error("the connection to {provider} failed")]
     Transport {
         provider: String,
         model: Option<String>,
         #[source]
-        cause: reqwest::Error,
+        cause: IoError,
     },
     #[error("the response from {provider} could not be parsed")]
     Parse {
