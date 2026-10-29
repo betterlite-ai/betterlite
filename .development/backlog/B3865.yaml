@@ -1,14 +1,14 @@
 id: B3865
 milestone: M7 observability
 title: OTLP ingest normalization and trace response types
-status: todo
+status: done
 depends_on: []
 file: tasks/B3865-otlp-normalization.yaml
 covers:
   - "litellm/tracing/{decode,messages,ui_format,types}.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 291

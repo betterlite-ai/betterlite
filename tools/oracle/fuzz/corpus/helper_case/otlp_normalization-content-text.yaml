@@ -1,0 +1,8 @@
+kind: helper
+name: otlp_content_text_mixed
+call:
+  otlp_normalization:
+    content_text: {content: '[{"type": "text", "text": "a"}, {"type": "image_url", "image_url": {"url": "u", "detail": "é"}}, {"type": "text", "text": null}]'}
+env: {}
+compare:
+  ignore: []
