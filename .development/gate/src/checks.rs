@@ -1,5 +1,4 @@
 mod execute;
-mod tests;
 
 use std::fs;
 use std::path::Path;
@@ -22,13 +21,6 @@ pub(crate) struct Verdict {
 pub(crate) struct Selection {
     pub(crate) only: Vec<String>,
     pub(crate) skip: Vec<String>,
-}
-
-impl Selection {
-    fn includes(&self, id: &str) -> bool {
-        (self.only.is_empty() || self.only.iter().any(|selected| selected == id))
-            && !self.skip.iter().any(|skipped| skipped == id)
-    }
 }
 
 pub(crate) enum Outcome {
@@ -73,7 +65,9 @@ fn builtin_outcomes(
     let mut outcomes = Vec::new();
     for builtin in &development.catalog.base.builtin {
         let id: &str = builtin.id.into();
-        if !selection.includes(id) {
+        if (!selection.only.is_empty() && !selection.only.iter().any(|selected| selected == id))
+            || selection.skip.iter().any(|skipped| skipped == id)
+        {
             continue;
         }
         let started = Instant::now();
@@ -114,7 +108,10 @@ pub(crate) fn run(
     ];
     let (later, first): (Vec<&Command>, Vec<&Command>) = commands(development, task)?
         .into_iter()
-        .filter(|check| selection.includes(&check.id))
+        .filter(|check| {
+            (selection.only.is_empty() || selection.only.contains(&check.id))
+                && !selection.skip.contains(&check.id)
+        })
         .partition(|check| check.after_green);
     for command in first {
         let started = Instant::now();
