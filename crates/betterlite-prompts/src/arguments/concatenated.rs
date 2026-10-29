@@ -56,15 +56,9 @@ fn keep_object(kept: &mut Vec<Object>, exceeded: &mut bool, count: usize, object
         if kept.first() == Some(&object) {
             return;
         }
-        if count > 2 {
-            let previous_count = count.saturating_sub(1);
-            if previous_count > MAX_SALVAGED_ARGUMENT_OBJECTS {
-                *exceeded = true;
-                return;
-            }
-            let first = kept.first().cloned().unwrap_or_default();
-            *kept = vec![first; previous_count];
-        }
+        let run_length = count.saturating_sub(1);
+        let first = kept.first().cloned().unwrap_or_default();
+        *kept = vec![first; run_length];
     }
     if kept.len() >= MAX_SALVAGED_ARGUMENT_OBJECTS {
         *exceeded = true;
