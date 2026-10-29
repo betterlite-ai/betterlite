@@ -44,16 +44,18 @@ fn span_spend(row: &SpanQueryRow, spend_rows: &[SpendRow]) -> (Option<String>, O
 #[must_use]
 pub fn span_from_row(row: &SpanQueryRow, trace_start_ns: i64, spend_rows: &[SpendRow]) -> Span {
     let (litellm_request_id, spend) = span_spend(row, spend_rows);
+    let offset_ns = Decimal::from(row.start_ns.saturating_sub(trace_start_ns));
+    let duration_ns = Decimal::from(row.duration_ns);
+    #[rustfmt::skip]
+    let start_offset_ms = offset_ns.checked_div(Decimal::from(NANOS_PER_MS)).unwrap_or_default();
     Span {
         span_id: row.span_id.clone(),
         parent_span_id: row.parent_span_id.clone(),
         name: row.name.clone(),
         span_type: row.span_type,
         agent: row.agent.clone(),
-        start_offset_ms: Decimal::from(row.start_ns.saturating_sub(trace_start_ns))
-            .checked_div(Decimal::from(NANOS_PER_MS))
-            .unwrap_or_default(),
-        duration_ms: Decimal::from(row.duration_ns)
+        start_offset_ms,
+        duration_ms: duration_ns
             .checked_div(Decimal::from(NANOS_PER_MS))
             .unwrap_or_default(),
         status: status_from_code(&row.status),
@@ -171,16 +173,7 @@ fn summary_time_bounds_ms(bounds: &TraceBounds) -> (i64, i64) {
     (start_ms, duration_ms)
 }
 
-struct SummaryCounts {
-    span_count: i64,
-    agent_count: i64,
-    agent_invocations: i64,
-    llm_calls: i64,
-    tool_calls: i64,
-    error_count: i64,
-}
-
-fn summary_counts(spans: &[Span], agents: &[AgentNode]) -> SummaryCounts {
+fn summary_counts(spans: &[Span], agents: &[AgentNode]) -> (i64, i64, i64, i64, i64, i64) {
     let agent_invocations = agents
         .iter()
         .map(|agent| agent.invocations)
@@ -206,14 +199,16 @@ fn summary_counts(spans: &[Span], agents: &[AgentNode]) -> SummaryCounts {
             .count(),
     )
     .unwrap_or(i64::MAX);
-    SummaryCounts {
-        span_count: i64::try_from(spans.len()).unwrap_or(i64::MAX),
-        agent_count: i64::try_from(agents.len()).unwrap_or(i64::MAX),
+    let span_count = i64::try_from(spans.len()).unwrap_or(i64::MAX);
+    let agent_count = i64::try_from(agents.len()).unwrap_or(i64::MAX);
+    (
+        span_count,
+        agent_count,
         agent_invocations,
         llm_calls,
         tool_calls,
         error_count,
-    }
+    )
 }
 
 fn trace_summary(
@@ -222,7 +217,8 @@ fn trace_summary(
     context: &TraceSummaryContext<'_>,
 ) -> TraceSummary {
     let (input_tokens, output_tokens) = token_totals(spans);
-    let counts = summary_counts(spans, agents);
+    let (span_count, agent_count, agent_invocations, llm_calls, tool_calls, error_count) =
+        summary_counts(spans, agents);
     let (start_ms, duration_ms) = summary_time_bounds_ms(context.bounds);
     let root = spans
         .iter()
@@ -247,12 +243,12 @@ fn trace_summary(
             .checked_div(Decimal::from(NANOS_PER_MS))
             .unwrap_or_default(),
         status: root.map_or(SpanStatus::Unset, |span| span.status),
-        span_count: counts.span_count,
-        agent_count: counts.agent_count,
-        agent_invocations: counts.agent_invocations,
-        llm_calls: counts.llm_calls,
-        tool_calls: counts.tool_calls,
-        error_count: counts.error_count,
+        span_count,
+        agent_count,
+        agent_invocations,
+        llm_calls,
+        tool_calls,
+        error_count,
         input_tokens,
         output_tokens,
         models: distinct_models(spans),
