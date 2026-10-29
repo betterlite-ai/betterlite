@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::error::Error as StdError;
+use std::error::Error as _;
 
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use super::details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
@@ -152,8 +153,8 @@ fn rate_limit_metadata_drops_unsafe_headers_before_they_become_allowed() {
 #[test]
 fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
     let class = ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
-        current_cost: 12.5,
-        max_budget: 10.0,
+        current_cost: Decimal::new(125, 1),
+        max_budget: Decimal::from(10_i32),
         message: None,
         provider: Some("openai".to_owned()),
         entity_type: Some("key".to_owned()),
@@ -223,59 +224,70 @@ fn json_schema_validation_keeps_the_model_and_provider_identity() {
     assert_eq!(metadata.provider, Some("openai".to_owned()));
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("{0}")]
-struct UpstreamFailure(&'static str);
+// a builder error from an unparseable port: synchronous, no network, and a real reqwest::Error
+fn transport_cause() -> reqwest::Error {
+    reqwest::Client::default()
+        .get("http://host:not-a-port/")
+        .build()
+        .unwrap_err()
+}
+
+fn parse_cause(marker: &str) -> serde_json::Error {
+    serde_json::from_str::<u32>(&format!("\"{marker}\"")).unwrap_err()
+}
 
 #[test]
 fn taxonomy_timeout_preserves_its_source() {
-    let cause: Box<dyn StdError + Send + Sync> = Box::new(UpstreamFailure("socket read timed out"));
     let error = TaxonomyError::Timeout {
         provider: "openai".to_owned(),
         model: Some("gpt-4".to_owned()),
-        cause,
+        cause: transport_cause(),
     };
     let source = error.source().expect("a timeout keeps its cause");
-    assert_eq!(source.to_string(), "socket read timed out");
+    let reqwest_error = source
+        .downcast_ref::<reqwest::Error>()
+        .expect("the cause stays a reqwest::Error");
+    assert!(reqwest_error.is_builder());
 }
 
 #[test]
 fn taxonomy_transport_preserves_its_source() {
-    let cause: Box<dyn StdError + Send + Sync> = Box::new(UpstreamFailure("connection reset"));
     let error = TaxonomyError::Transport {
         provider: "anthropic".to_owned(),
         model: None,
-        cause,
+        cause: transport_cause(),
     };
     let source = error.source().expect("a transport failure keeps its cause");
-    assert_eq!(source.to_string(), "connection reset");
+    let reqwest_error = source
+        .downcast_ref::<reqwest::Error>()
+        .expect("the cause stays a reqwest::Error");
+    assert!(reqwest_error.is_builder());
 }
 
 #[test]
 fn taxonomy_parse_preserves_its_source() {
-    let cause: Box<dyn StdError + Send + Sync> =
-        Box::new(UpstreamFailure("unexpected end of JSON"));
+    let cause = parse_cause("unexpected-end-of-json");
     let error = TaxonomyError::Parse {
         provider: "azure".to_owned(),
         model: None,
         cause,
     };
     let source = error.source().expect("a parse failure keeps its cause");
-    assert_eq!(source.to_string(), "unexpected end of JSON");
+    assert!(source.to_string().contains("unexpected-end-of-json"));
 }
 
 #[test]
 fn taxonomy_client_message_never_includes_the_cause_text() {
-    let secret = "super secret upstream stack trace";
-    let cause: Box<dyn StdError + Send + Sync> = Box::new(UpstreamFailure(secret));
-    let error = TaxonomyError::Transport {
+    let secret = "super-secret-upstream-marker";
+    let cause = parse_cause(secret);
+    let error = TaxonomyError::Parse {
         provider: "openai".to_owned(),
         model: None,
         cause,
     };
     let class = error.classify();
-    let ErrorClass::ApiConnection(context) = &class else {
-        panic!("Transport classifies as ApiConnection");
+    let ErrorClass::ApiResponseValidation(context) = &class else {
+        panic!("Parse classifies as ApiResponseValidation");
     };
     assert!(!context.message.contains(secret));
     assert!(!error.to_string().contains(secret));

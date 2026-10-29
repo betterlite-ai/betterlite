@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::error::Error as StdError;
 
 use crate::envelope::{WireField, filter_unsafe_headers};
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
@@ -34,8 +33,7 @@ impl ErrorContext {
         build_metadata(
             status_code,
             (self.model.clone(), self.provider.clone()),
-            error_type,
-            param,
+            (error_type, param),
             retry,
         )
     }
@@ -47,7 +45,7 @@ pub struct RetryMetadata {
     pub num_retries: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct ErrorMetadata {
     pub status_code: u16,
     pub model: Option<String>,
@@ -62,7 +60,7 @@ pub struct ErrorMetadata {
     pub allowed_response_headers: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
 pub enum ErrorClass {
     Authentication(Box<ErrorContext>),
@@ -104,11 +102,10 @@ impl ErrorClass {
             Self::UnprocessableEntity(ctx) => ctx.metadata(422, WireField::Null, WireField::Null),
             Self::ServiceUnavailable(ctx) => ctx.metadata(503, WireField::Null, WireField::Null),
             Self::BadGateway(ctx) => ctx.metadata(502, WireField::Null, WireField::Null),
-            Self::InternalServer(ctx) => ctx.metadata(
-                500,
-                WireField::Text("internal_server_error".to_owned()),
-                WireField::Null,
-            ),
+            Self::InternalServer(ctx) => {
+                let error_type = WireField::Text("internal_server_error".to_owned());
+                ctx.metadata(500, error_type, WireField::Null)
+            }
             Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => {
                 ctx.metadata(500, WireField::Null, WireField::Null)
             }
@@ -117,15 +114,22 @@ impl ErrorClass {
             Self::Unclassified(ctx) => ctx.metadata(500, WireField::MISSING, WireField::MISSING),
             Self::Timeout(details) => timeout_metadata(details),
             Self::Api(details) => {
-                details
-                    .context
-                    .metadata(details.status, WireField::Null, WireField::Null)
+                let ctx = &details.context;
+                ctx.metadata(details.status, WireField::Null, WireField::Null)
             }
             Self::RateLimit(details) => rate_limit_metadata(details),
             Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => guardrail_metadata(details),
+            Self::GuardrailRaised(details) => ErrorMetadata {
+                status_code: details.status_code,
+                code: WireField::Text(details.status_code.to_string()),
+                ..ErrorMetadata::default()
+            },
             Self::MidStreamFallback(details) => mid_stream_fallback_metadata(details),
-            Self::JsonSchemaValidation(details) => schema_validation_metadata(details),
+            Self::JsonSchemaValidation(details) => {
+                let identity = (Some(details.model.clone()), Some(details.provider.clone()));
+                let wire = (WireField::Null, WireField::Null);
+                build_metadata(500, identity, wire, RetryMetadata::default())
+            }
         }
     }
 }
@@ -141,8 +145,7 @@ fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
     let mut metadata = build_metadata(
         details.status_code,
         (None, details.provider.clone()),
-        WireField::MISSING,
-        WireField::MISSING,
+        (WireField::MISSING, WireField::MISSING),
         RetryMetadata::default(),
     );
     metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
@@ -157,31 +160,14 @@ fn mid_stream_fallback_metadata(details: &MidStreamFallbackDetails) -> ErrorMeta
         .metadata(status, WireField::Null, WireField::Null)
 }
 
-fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
-    let retry = RetryMetadata::default();
-    build_metadata(
-        details.status_code,
-        (None, None),
-        WireField::MISSING,
-        WireField::MISSING,
-        retry,
-    )
-}
-
-fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
-    let retry = RetryMetadata::default();
-    let identity = (Some(details.model.clone()), Some(details.provider.clone()));
-    build_metadata(500, identity, WireField::Null, WireField::Null, retry)
-}
-
 fn build_metadata(
     status_code: u16,
     identity: (Option<String>, Option<String>),
-    error_type: WireField,
-    param: WireField,
+    wire: (WireField, WireField),
     retry: RetryMetadata,
 ) -> ErrorMetadata {
     let (model, provider) = identity;
+    let (error_type, param) = wire;
     let code = WireField::Text(status_code.to_string());
     ErrorMetadata {
         status_code,
@@ -217,21 +203,21 @@ pub enum TaxonomyError {
         provider: String,
         model: Option<String>,
         #[source]
-        cause: Box<dyn StdError + Send + Sync>,
+        cause: reqwest::Error,
     },
     #[error("the connection to {provider} failed")]
     Transport {
         provider: String,
         model: Option<String>,
         #[source]
-        cause: Box<dyn StdError + Send + Sync>,
+        cause: reqwest::Error,
     },
     #[error("the response from {provider} could not be parsed")]
     Parse {
         provider: String,
         model: Option<String>,
         #[source]
-        cause: Box<dyn StdError + Send + Sync>,
+        cause: serde_json::Error,
     },
 }
 

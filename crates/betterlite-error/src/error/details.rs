@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use rust_decimal::Decimal;
+
 use super::ErrorContext;
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
@@ -28,10 +30,12 @@ pub struct ApiDetails {
     pub status: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BudgetExceededDetails {
-    pub current_cost: f64,
-    pub max_budget: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub current_cost: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub max_budget: Decimal,
     #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
