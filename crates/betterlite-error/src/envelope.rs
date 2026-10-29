@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use crate::error::ErrorMetadata;
-
 mod tests;
 
 // the externally tagged default: a fieldless variant serializes to its own name as a bare string
@@ -24,6 +22,12 @@ impl WireField {
     pub const MISSING: Self = Self::Missing(NoneMarker::None);
 }
 
+impl Default for WireField {
+    fn default() -> Self {
+        Self::MISSING
+    }
+}
+
 // never the Debug dump of the underlying cause
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ErrorObject {
@@ -37,19 +41,6 @@ pub struct ErrorObject {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ErrorResponse {
     pub error: ErrorObject,
-}
-
-impl ErrorObject {
-    #[must_use]
-    pub fn from_metadata(metadata: &ErrorMetadata, message: String) -> Self {
-        let code = metadata.code.clone();
-        Self {
-            message,
-            error_type: metadata.error_type.clone(),
-            param: metadata.param.clone(),
-            code,
-        }
-    }
 }
 
 const BARE_RATE_LIMIT_HEADERS: [&str; 4] = [
@@ -123,30 +114,35 @@ pub fn project_provider_headers(
 
 // UNSAFE_PROXY_RESPONSE_HEADERS, plus the raw-and-prefixed cookie/CORS deviation
 #[must_use]
-pub fn filter_unsafe_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    let mut kept = BTreeMap::new();
-    for (name, value) in headers {
-        let lower = name.to_lowercase();
-        let unsafe_raw = HTTP_FRAMING_HEADERS.contains(&lower.as_str())
-            || BROWSER_SECURITY_HEADERS.contains(&lower.as_str());
-        let unsafe_prefixed = lower
-            .strip_prefix(LLM_PROVIDER_PREFIX)
-            .is_some_and(|rest| COOKIE_AND_CORS_HEADERS.contains(&rest));
-        if !unsafe_raw && !unsafe_prefixed {
-            kept.insert(name, value);
-        }
-    }
-    kept
+pub fn is_unsafe_header_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let unsafe_raw = HTTP_FRAMING_HEADERS.contains(&lower.as_str())
+        || BROWSER_SECURITY_HEADERS.contains(&lower.as_str());
+    let unsafe_prefixed = lower
+        .strip_prefix(LLM_PROVIDER_PREFIX)
+        .is_some_and(|rest| COOKIE_AND_CORS_HEADERS.contains(&rest));
+    unsafe_raw || unsafe_prefixed
 }
 
-// explicit_headers (a headers= kwarg, e.g. RateLimitError) bypasses projection; response_headers goes through project_provider_headers first
+#[must_use]
+pub fn filter_unsafe_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    headers
+        .into_iter()
+        .filter(|(name, _)| !is_unsafe_header_name(name))
+        .collect()
+}
+
+// explicit_headers (a headers= kwarg, e.g. RateLimitError) bypasses projection; response_headers goes through project_provider_headers first.
+// getattr(e, "headers", None) or {} treats an explicitly empty map the same as a missing one
 #[must_use]
 pub fn allowed_response_headers(
-    explicit_headers: Option<&BTreeMap<String, String>>,
+    explicit_headers: &BTreeMap<String, String>,
     response_headers: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let raw = explicit_headers
-        .cloned()
-        .unwrap_or_else(|| project_provider_headers(response_headers));
+    let raw = if explicit_headers.is_empty() {
+        project_provider_headers(response_headers)
+    } else {
+        explicit_headers.clone()
+    };
     filter_unsafe_headers(raw)
 }

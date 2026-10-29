@@ -73,10 +73,8 @@ fn error_types_error_type_tests_behavior(
     let actual = match operation {
         Operation::Filter => filter_unsafe_headers(map(input)),
         Operation::Project => project_provider_headers(&map(input)),
-        Operation::AllowedFromResponse => allowed_response_headers(None, &map(input)),
-        Operation::AllowedFromExplicit => {
-            allowed_response_headers(Some(&map(input)), &BTreeMap::new())
-        }
+        Operation::AllowedFromResponse => allowed_response_headers(&BTreeMap::new(), &map(input)),
+        Operation::AllowedFromExplicit => allowed_response_headers(&map(input), &BTreeMap::new()),
     };
     assert_eq!(actual, map(expected));
 }
