@@ -26,6 +26,7 @@ pub struct SpanQueryRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceListRow {
     pub trace_id: String,
+    pub trace_ref: String,
     pub name: String,
     pub service: String,
     pub input_preview: String,

@@ -39,6 +39,7 @@ fn base_list_row() -> TraceListRow {
     let (team_id, api_key_hash) = unscoped_ids();
     TraceListRow {
         trace_id: "trace-1".to_owned(),
+        trace_ref: "ref-1".to_owned(),
         name: "root".to_owned(),
         service: "svc".to_owned(),
         input_preview: "hello".to_owned(),
@@ -85,6 +86,7 @@ fn projects_a_trace_summary_from_a_list_row() {
     let row = base_list_row();
     let summary = trace_summary_from_row(&row, &[]);
     assert_eq!(summary.trace_id, "trace-1");
+    assert_eq!(summary.trace_ref, Some("ref-1".to_owned()));
     assert_eq!(summary.status, SpanStatus::Ok);
     assert_eq!(summary.agent_invocations, row.agent_count);
     assert_eq!(summary.error_count, 0);
@@ -92,8 +94,17 @@ fn projects_a_trace_summary_from_a_list_row() {
 }
 
 #[test]
+fn projects_a_trace_summary_falling_back_from_a_zero_agent_invocations_count() {
+    let mut row = base_list_row();
+    row.agent_invocations = Some(0);
+    row.agent_count = 4;
+    let summary = trace_summary_from_row(&row, &[]);
+    assert_eq!(summary.agent_invocations, 4);
+}
+
+#[test]
 fn trace_from_rows_is_none_for_an_empty_trace() {
-    assert_eq!(trace_from_rows("trace-1", &[], &[]), None);
+    assert_eq!(trace_from_rows("trace-1", &[], "ref-1", &[]), None);
 }
 
 #[test]
@@ -124,7 +135,8 @@ fn trace_from_rows_aggregates_spans_into_a_trace() {
     tool.start_ns = 4_000_000;
     tool.duration_ns = 1_000_000;
 
-    let trace = trace_from_rows("trace-1", &[root, llm, tool], &[]).expect("trace");
+    let trace = trace_from_rows("trace-1", &[root, llm, tool], "ref-1", &[]).expect("trace");
+    assert_eq!(trace.summary.trace_ref, Some("ref-1".to_owned()));
     assert_eq!(trace.summary.span_count, 3);
     assert_eq!(trace.summary.agent_count, 1);
     assert_eq!(trace.summary.llm_calls, 1);

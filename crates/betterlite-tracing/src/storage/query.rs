@@ -14,6 +14,7 @@ pub struct ListTracesQuery {
 pub struct TraceSpansQuery {
     pub scope: TraceScope,
     pub trace_id: String,
+    pub trace_ref: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +22,7 @@ pub struct SpanDetailQuery {
     pub scope: TraceScope,
     pub trace_id: String,
     pub span_id: String,
+    pub trace_ref: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +30,7 @@ pub struct SpanErrorQuery {
     pub scope: TraceScope,
     pub trace_id: String,
     pub span_id: String,
+    pub trace_ref: String,
     pub error_offset: u64,
     pub error_version: String,
 }
