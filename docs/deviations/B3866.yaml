@@ -4,8 +4,8 @@ deviations:
     why: The spend log is optional for tracing; spans are queryable even when spend is unavailable. LiteLLM does the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py#L306
   - what: get_span_error paginates by UTF-8 byte offset instead of Python's code-point offset (len() on a str).
-    why: The task description specifies the offset as "the byte position in the full message"; Rust strings are naturally byte-indexed, and error messages are ASCII-dominant in practice, so this matches the task's own spec rather than LiteLLM's character-based arithmetic.
+    why: The task explicitly requires byte positions, including for multi-byte UTF-8 messages; pagination therefore advances by the encoded message length rather than the number of Unicode code points.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py#L396
   - what: AGENT_TRACING_LIST_PAGE_SIZE is resolved by the caller; this crate does not read the environment override.
-    why: Environment access belongs at the configuration boundary, so the config crate owns reading AGENT_TRACING_LIST_PAGE_SIZE and passes the resolved page size into TraceStore.
+    why: Repository rules restrict environment access to the config crate. TraceStore accepts the resolved page_size from its caller; configuration integration must supply the environment override or the default of 50.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L60
