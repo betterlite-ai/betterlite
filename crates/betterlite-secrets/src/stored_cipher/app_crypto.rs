@@ -3,7 +3,7 @@ use aes_gcm::{Aes256Gcm, KeyInit as _};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_redact::structured::Payload as Json;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret as _, SecretSlice};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -66,8 +66,8 @@ pub struct Envelope {
 }
 
 impl AppCrypto {
-    pub fn new(master_key: &SecretString) -> Result<Self, AppCryptoError> {
-        let bytes = master_key.expose_secret().as_bytes();
+    pub fn new(master_key: &SecretSlice<u8>) -> Result<Self, AppCryptoError> {
+        let bytes = master_key.expose_secret();
         if bytes.len() != KEY_LEN {
             return Err(AppCryptoError::KeyLength {
                 length: bytes.len(),
@@ -112,23 +112,15 @@ impl AppCrypto {
         direction: Direction,
     ) -> Result<Vec<u8>, AppCryptoError> {
         let aes_nonce = aes_gcm::Nonce::from(nonce);
-        let payload = aead_payload(msg, aad);
+        let payload = AeadPayload {
+            msg,
+            aad: aad.unwrap_or(b""),
+        };
         let sealed = match direction {
             Direction::Encrypt => self.cipher.encrypt(&aes_nonce, payload),
             Direction::Decrypt => self.cipher.decrypt(&aes_nonce, payload),
         };
         sealed.map_err(|source| AppCryptoError::Seal { source })
-    }
-}
-
-fn aead_payload<'input>(
-    msg: &'input [u8],
-    aad: Option<&'input [u8]>,
-) -> AeadPayload<'input, 'input> {
-    let aad_bytes = aad.unwrap_or(b"");
-    AeadPayload {
-        msg,
-        aad: aad_bytes,
     }
 }
 

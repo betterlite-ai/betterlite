@@ -4,10 +4,11 @@ use std::fs;
 use std::path::Path;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use serde_json::json;
 
 use super::app_crypto::{AppCrypto, AppCryptoError, Envelope};
+use crate::error::SecretError;
 use crate::secret_codec::diagnostics::TracingDiagnostics;
 use crate::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 
@@ -21,13 +22,13 @@ const PYTHON_CIPHERTEXT: &str = "PCC3Of/F8zetY/Wpi8laGfS5pUk=";
 const PYTHON_TAG: &str = "STjChyLSESSELTqg5wuL+g==";
 const AAD: &[u8] = b"caller-prefix";
 
-fn key_secret(bytes: &[u8; 32]) -> SecretString {
-    SecretString::from(str::from_utf8(bytes).unwrap())
+fn key_secret(bytes: &[u8; 32]) -> SecretSlice<u8> {
+    SecretSlice::from(bytes.to_vec())
 }
 
 #[test]
 fn rejects_a_key_that_is_not_32_bytes() {
-    let short = SecretString::from("too-short");
+    let short = SecretSlice::from(b"too-short".to_vec());
     assert!(matches!(
         AppCrypto::new(&short),
         Err(AppCryptoError::KeyLength {
@@ -35,6 +36,16 @@ fn rejects_a_key_that_is_not_32_bytes() {
             expected: 32
         })
     ));
+}
+
+#[test]
+fn accepts_a_key_that_is_not_utf8() {
+    let non_utf8 = SecretSlice::from(vec![0xff_u8; 32]);
+    let app = AppCrypto::new(&non_utf8).unwrap();
+    let data = json!({"a": 1_i64});
+    let envelope = app.encrypt_json(&data, None).unwrap();
+    let opened = app.decrypt_json(&envelope, None).unwrap();
+    assert_eq!(opened, data);
 }
 
 #[test]
@@ -119,7 +130,7 @@ fn decode_stored_secret_rejects_invalid_utf8() {
 #[test]
 fn decode_secret_map_accepts_a_plaintext_map() {
     let cipher = fuzz_cipher();
-    let map = cipher.decode_secret_map(br#"{"a":"1"}"#).unwrap();
+    let map = cipher.decode_secret_map(br#"{"a":"1"}"#).unwrap().unwrap();
     assert_eq!(
         map.get("a").map(|value| value.expose_secret().to_owned()),
         Some("1".to_owned())
@@ -129,7 +140,10 @@ fn decode_secret_map_accepts_a_plaintext_map() {
 #[test]
 fn decode_secret_map_rejects_a_wrong_field_type() {
     let cipher = fuzz_cipher();
-    assert!(cipher.decode_secret_map(br#"{"a":1}"#).is_none());
+    assert!(matches!(
+        cipher.decode_secret_map(br#"{"a":1}"#),
+        Err(SecretError::MapDecode { .. })
+    ));
 }
 
 #[test]
@@ -147,7 +161,9 @@ fn replays_the_stored_secret_corpus() {
         if tag.is_multiple_of(2) {
             cipher.decode_stored_secret(bytes).is_some()
         } else {
-            cipher.decode_secret_map(bytes).is_some()
+            cipher
+                .decode_secret_map(bytes)
+                .is_ok_and(|decoded| decoded.is_some())
         }
     });
     assert_eq!((seeds.len(), opened.count()), (5, 3));
