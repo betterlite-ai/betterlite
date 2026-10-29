@@ -103,8 +103,7 @@ fn mcp_object_result_is_python_json_dumps() {
     else {
         panic!("expected a ToolResult event, got {events:?}");
     };
-    // the line arrives as a JsonObject (a BTreeMap), so the result object's keys are
-    // already sorted by the time they reach json.dumps; see docs/deviations/B4835.yaml
+    // the line arrives as a JsonObject (a BTreeMap), so result keys are already sorted; see docs/deviations/B4835.yaml
     assert_eq!(output, r#"{"n": 1, "ok": true}"#);
     assert!(!is_error);
 }
