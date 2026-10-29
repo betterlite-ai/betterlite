@@ -22,7 +22,8 @@ pub enum CommitError {
 }
 
 fn to_f64(value: Decimal) -> Result<f64, CommitError> {
-    value.to_f64().ok_or(CommitError::Money { value })
+    let converted = value.to_f64();
+    converted.ok_or(CommitError::Money { value })
 }
 
 async fn run_statement<C>(
@@ -33,17 +34,15 @@ async fn run_statement<C>(
 where
     C: GenericClient + Sync,
 {
-    client
-        .query_opt(sql, params)
-        .await
-        .map_err(|source| CommitError::Statement(backend(source)))
+    let result = client.query_opt(sql, params).await;
+    result.map_err(|source| CommitError::Statement(backend(source)))
 }
 
 fn bind_params(params: &[Box<dyn ToSql + Sync + Send>]) -> Vec<&(dyn ToSql + Sync)> {
-    params
+    let refs = params
         .iter()
-        .map(|value| -> &(dyn ToSql + Sync) { value.as_ref() })
-        .collect()
+        .map(|value| -> &(dyn ToSql + Sync) { value.as_ref() });
+    refs.collect()
 }
 
 pub struct SpendResetBatch {

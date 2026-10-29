@@ -67,11 +67,13 @@ pub struct LinkedSpendResetWrites {
 
 impl LinkedSpendResetWrites {
     pub fn queue_spend_zero(&mut self, filter: LinkedResetFilter) {
-        self.queued.push(LinkedWrite::Zero(filter));
+        let write = LinkedWrite::Zero(filter);
+        self.queued.push(write);
     }
 
     pub fn queue_spend_decrement(&mut self, filter: LinkedResetFilter, amount: Decimal) {
-        self.queued.push(LinkedWrite::Decrement(filter, amount));
+        let write = LinkedWrite::Decrement(filter, amount);
+        self.queued.push(write);
     }
 }
 
@@ -88,9 +90,10 @@ pub struct BudgetWindowWrites {
 
 impl BudgetWindowWrites {
     pub fn queue_window_advance(&mut self, budget_id: &str, budget_reset_at: DateTime<Utc>) {
-        self.queued.push(WindowAdvance {
+        let advance = WindowAdvance {
             budget_id: budget_id.to_owned(),
             budget_reset_at,
-        });
+        };
+        self.queued.push(advance);
     }
 }
