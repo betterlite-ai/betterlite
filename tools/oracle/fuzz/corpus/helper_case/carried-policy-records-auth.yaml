@@ -1,0 +1,9 @@
+kind: helper
+name: carried-policy-records-auth
+call:
+  carried_policy_records:
+    function: kill_auth
+    value: {type: api_key, api_key: corpus-secret}
+env: {}
+compare:
+  ignore: []

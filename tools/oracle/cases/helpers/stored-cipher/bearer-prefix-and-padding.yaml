@@ -1,0 +1,20 @@
+kind: helper
+name: stored-cipher-bearer-prefix-and-padding
+call:
+  secret_codec:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    steps:
+      - {op: encrypt_bearer, value: payload, prefix: litellm_login_}
+      - {op: encrypt_bearer, value: "", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8", prefix: other_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8=", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_AAECAwQFBgcICQoLo1nHfnhTvgR3dDrQSldam-gVqoGVzw8==", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "litellm_login_", prefix: litellm_login_}
+      - {op: decrypt_bearer, value: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L", prefix: "v2:gcm:"}
+env: {}
+compare:
+  ignore: []

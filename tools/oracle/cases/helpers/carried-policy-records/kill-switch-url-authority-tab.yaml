@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-url-authority-tab
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "http:/\t/example.com"}
+env: {}
+compare:
+  ignore: []
