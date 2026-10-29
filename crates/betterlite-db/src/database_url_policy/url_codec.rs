@@ -235,8 +235,7 @@ fn quote_plus(text: &str) -> String {
 // Matches urllib.parse.unquote_plus: percent_decode leaves a bad escape as a literal '%', like CPython.
 fn unquote_plus(text: &str) -> String {
     let space_separated = text.replace('+', " ");
-    let bytes: Vec<u8> = percent_decode(space_separated.as_bytes()).collect();
-    decode_percent_bytes(bytes)
+    decode_percent_bytes(percent_decode(space_separated.as_bytes()).collect())
 }
 
 // Replicates bytes.decode("utf-8", errors="replace") without the workspace's banned String::from_utf8_lossy.

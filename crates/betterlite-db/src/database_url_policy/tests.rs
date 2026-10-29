@@ -489,6 +489,10 @@ fn malformed_url_bytes() {
         Err(DbError::MalformedPercentEscape { .. })
     ));
     assert!(matches!(
+        decode_database_url(b"postgresql://user%+1@host/db"),
+        Err(DbError::MalformedPercentEscape { .. })
+    ));
+    assert!(matches!(
         decode_database_url(b"localhost/db"),
         Err(DbError::MissingScheme)
     ));
