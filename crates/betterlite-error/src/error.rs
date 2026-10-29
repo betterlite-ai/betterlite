@@ -11,10 +11,7 @@ use details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
     RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
-use metadata::{
-    ErrorMetadata, RetryMetadata, budget_exceeded_metadata, guardrail_raised_metadata,
-    json_schema_validation_metadata, rate_limit_metadata,
-};
+use metadata::{ErrorMetadata, Family, RetryMetadata, family_metadata, rate_limit_metadata};
 
 // the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -151,15 +148,15 @@ impl ErrorClass {
                     .metadata(timeout.original_status.0, Null, Null, Absent)
             }
             Self::RateLimit(details) => rate_limit_metadata(details),
-            Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
+            Self::BudgetExceeded(details) => family_metadata(&Family::Budget(details)),
             Self::Api(api) => api.context.metadata(api.status, Null, Null, Full),
             Self::MidStreamFallback(fallback) => {
                 fallback
                     .context
                     .metadata(fallback.original_status.0, Null, Null, Absent)
             }
-            Self::GuardrailRaised(details) => guardrail_raised_metadata(details),
-            Self::JsonSchemaValidation(details) => json_schema_validation_metadata(details),
+            Self::GuardrailRaised(details) => family_metadata(&Family::Guardrail(details)),
+            Self::JsonSchemaValidation(details) => family_metadata(&Family::Schema(details)),
         }
     }
 }

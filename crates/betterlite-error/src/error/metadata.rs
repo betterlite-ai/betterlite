@@ -73,49 +73,51 @@ pub(super) fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
     metadata
 }
 
-pub(super) fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
-    ErrorMetadata {
-        status_code: details.status_code,
-        model: None,
-        provider: Some(details.provider.clone()),
-        error_type: WireField::MISSING,
-        param: WireField::MISSING,
-        code: details.status_code.to_string(),
-        retry: RetryMetadata::default(),
-        rate_limit_category: Some(RateLimitCategory::LitellmRateLimit),
-        rate_limit_dimension: Some(RateLimitDimension::Budget),
-        allowed_response_headers: BTreeMap::new(),
-        openai_code: None,
-    }
+// the three families with no ErrorContext to build from, kept as one match so their fields never read as duplicate functions
+pub(super) enum Family<'details> {
+    Budget(&'details BudgetExceededDetails),
+    Guardrail(&'details GuardrailDetails),
+    Schema(&'details SchemaValidationDetails),
 }
 
-pub(super) fn guardrail_raised_metadata(details: &GuardrailDetails) -> ErrorMetadata {
+pub(super) fn family_metadata(input: &Family<'_>) -> ErrorMetadata {
+    let (status_code, model, provider, error_type, rate_limit_category, rate_limit_dimension) =
+        match input {
+            Family::Budget(budget) => (
+                budget.status_code,
+                None,
+                Some(budget.provider.clone()),
+                WireField::MISSING,
+                Some(RateLimitCategory::LitellmRateLimit),
+                Some(RateLimitDimension::Budget),
+            ),
+            Family::Guardrail(guardrail) => (
+                guardrail.status_code,
+                None,
+                None,
+                WireField::MISSING,
+                None,
+                None,
+            ),
+            Family::Schema(schema) => (
+                500,
+                Some(schema.model.clone()),
+                Some(schema.provider.clone()),
+                WireField::Null,
+                None,
+                None,
+            ),
+        };
     ErrorMetadata {
-        status_code: details.status_code,
-        model: None,
-        provider: None,
-        error_type: WireField::MISSING,
-        param: WireField::MISSING,
-        code: details.status_code.to_string(),
+        status_code,
+        model,
+        provider,
+        error_type: error_type.clone(),
+        param: error_type,
+        code: status_code.to_string(),
         retry: RetryMetadata::default(),
-        rate_limit_category: None,
-        rate_limit_dimension: None,
-        allowed_response_headers: BTreeMap::new(),
-        openai_code: None,
-    }
-}
-
-pub(super) fn json_schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
-    ErrorMetadata {
-        status_code: 500,
-        model: Some(details.model.clone()),
-        provider: Some(details.provider.clone()),
-        error_type: WireField::Null,
-        param: WireField::Null,
-        code: 500.to_string(),
-        retry: RetryMetadata::default(),
-        rate_limit_category: None,
-        rate_limit_dimension: None,
+        rate_limit_category,
+        rate_limit_dimension,
         allowed_response_headers: BTreeMap::new(),
         openai_code: None,
     }
