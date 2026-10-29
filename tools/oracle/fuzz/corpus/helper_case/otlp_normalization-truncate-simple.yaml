@@ -1,0 +1,8 @@
+kind: helper
+name: otlp_truncate_simple
+call:
+  otlp_normalization:
+    truncate: {value: ["short value"]}
+env: {}
+compare:
+  ignore: []
