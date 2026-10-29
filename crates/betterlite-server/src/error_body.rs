@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use serde::Serialize;
+mod tests;
 pub(crate) enum AuthenticationFailure {
     Missing,
     Invalid,
