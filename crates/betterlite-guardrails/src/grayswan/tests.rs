@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
+use std::time::Duration;
 
 use axum::Router;
 use axum::routing::post;
@@ -13,7 +14,7 @@ use tokio::task::JoinSet;
 
 use super::{
     GraySwanGuardrail, GraySwanGuardrailAPIError, GraySwanInput, GraySwanPayload, GraySwanResponse,
-    GraySwanSettings, OnFlaggedAction,
+    GraySwanSettings, OnFlaggedAction, ReasoningMode,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::{
@@ -48,66 +49,109 @@ fn message(role: &str, content: &str) -> GuardrailMessage {
     }
 }
 
+fn input(messages: Vec<GuardrailMessage>, request_history: Vec<GuardrailMessage>) -> GraySwanInput {
+    GraySwanInput {
+        messages,
+        tools: Vec::new(),
+        metadata: BTreeMap::new(),
+        request_history,
+        litellm_metadata: BTreeMap::new(),
+    }
+}
+
+fn response(violation: f64) -> GraySwanResponse {
+    GraySwanResponse {
+        violation,
+        ..GraySwanResponse::default()
+    }
+}
+
 #[test]
 fn grayswan_payload_reconstructs_history_and_merges_dynamic_parameters() {
-    let mut input = GraySwanInput {
-        messages: vec![message("user", "new")],
-        tools: vec![GuardrailToolParam {
-            tool_type: "function".to_owned(),
-            extra: BTreeMap::new(),
-        }],
-        metadata: BTreeMap::new(),
-        request_history: vec![message("assistant", "old")],
-    };
-    input.metadata.insert(
+    let mut scan = input(
+        vec![message("user", "new")],
+        vec![message("assistant", "old")],
+    );
+    scan.tools.push(GuardrailToolParam {
+        tool_type: "function".to_owned(),
+        extra: BTreeMap::new(),
+    });
+    scan.metadata.insert(
         "policy_id".to_owned(),
         GuardrailExtraValue::Text("request-policy".to_owned()),
     );
-    let payload = guardrail(OnFlaggedAction::Block).prepare_payload(&input);
+    let payload = guardrail(OnFlaggedAction::Block).prepare_payload(&scan);
     assert_eq!(payload.messages.len(), 2);
-    assert_eq!(
-        payload.parameters.get("policy_id"),
-        Some(&GuardrailExtraValue::Text("request-policy".to_owned()))
+    assert_eq!(payload.policy_id.as_deref(), Some("request-policy"));
+}
+
+#[test]
+fn grayswan_payload_dynamic_categories_override_configured_categories() {
+    let mut instance = guardrail(OnFlaggedAction::Block);
+    instance.settings.categories = Some(BTreeMap::from([(
+        "configured".to_owned(),
+        "monitor".to_owned(),
+    )]));
+    let mut scan = input(vec![message("user", "new")], Vec::new());
+    scan.metadata.insert(
+        "categories".to_owned(),
+        GuardrailExtraValue::Object(BTreeMap::from([(
+            "dynamic".to_owned(),
+            GuardrailExtraValue::Text("block".to_owned()),
+        )])),
     );
+    let payload = instance.prepare_payload(&scan);
+    assert_eq!(
+        payload.categories,
+        Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())]))
+    );
+}
+
+#[test]
+fn grayswan_payload_falls_back_to_configured_reasoning_mode() {
+    let mut instance = guardrail(OnFlaggedAction::Block);
+    instance.settings.reasoning_mode = Some(ReasoningMode::Hybrid);
+    let scan = input(vec![message("user", "new")], Vec::new());
+    let payload = instance.prepare_payload(&scan);
+    assert_eq!(payload.reasoning_mode, Some(ReasoningMode::Hybrid));
 }
 
 #[test]
 fn grayswan_verdict_at_threshold_blocks() {
     let guardrail = guardrail(OnFlaggedAction::Block);
-    let response = GraySwanResponse {
-        violation_score: 0.5,
-        violation_reason: Some("policy".to_owned()),
-        messages: None,
-    };
-    let result = guardrail.process_response(response, GuardrailInputType::Request, vec![]);
+    let result = guardrail.process_response(&response(0.5), GuardrailInputType::Request, vec![]);
     drop(result.expect_err("threshold violation"));
 }
 
 #[test]
 fn grayswan_passthrough_replaces_post_call_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
-    let response = GraySwanResponse {
-        violation_score: 0.5,
-        violation_reason: None,
-        messages: Some(vec![message("assistant", "changed")]),
-    };
     let result = guardrail
-        .process_response(response, GuardrailInputType::Response, vec![])
+        .process_response(&response(0.5), GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
-    assert_eq!(result.messages, vec![message("assistant", "changed")]);
+    assert_eq!(result.messages.len(), 1);
+    assert!(result.violation_message.is_some());
+}
+
+#[test]
+fn grayswan_passthrough_raises_on_pre_call() {
+    let guardrail = guardrail(OnFlaggedAction::Passthrough);
+    let result = guardrail.process_response(&response(0.5), GuardrailInputType::Request, vec![]);
+    assert!(matches!(
+        result,
+        Err(GraySwanGuardrailAPIError::PreCallPassthrough { .. })
+    ));
 }
 
 #[test]
 fn grayswan_context_reconstructs_request_history() {
-    let input = GraySwanInput {
-        messages: vec![message("user", "new")],
-        tools: Vec::new(),
-        metadata: BTreeMap::new(),
-        request_history: vec![message("assistant", "old")],
-    };
+    let scan = input(
+        vec![message("user", "new")],
+        vec![message("assistant", "old")],
+    );
     assert_eq!(
         guardrail(OnFlaggedAction::Monitor)
-            .prepare_payload(&input)
+            .prepare_payload(&scan)
             .messages
             .len(),
         2
@@ -116,13 +160,8 @@ fn grayswan_context_reconstructs_request_history() {
 
 #[test]
 fn grayswan_monitor_verdict_passes_through() {
-    let response = GraySwanResponse {
-        violation_score: 0.5,
-        violation_reason: None,
-        messages: None,
-    };
     let result = guardrail(OnFlaggedAction::Monitor)
-        .process_response(response, GuardrailInputType::Request, Vec::new())
+        .process_response(&response(0.5), GuardrailInputType::Request, Vec::new())
         .expect("monitor action");
     assert!(result.flagged);
 }
@@ -135,13 +174,8 @@ fn grayswan_error_policy_is_fail_open_by_default() {
 #[test]
 fn grayswan_below_threshold_passes_through_even_when_the_action_is_block() {
     let guardrail = guardrail(OnFlaggedAction::Block);
-    let response = GraySwanResponse {
-        violation_score: 0.1,
-        violation_reason: None,
-        messages: None,
-    };
     let result = guardrail
-        .process_response(response, GuardrailInputType::Request, vec![])
+        .process_response(&response(0.1), GuardrailInputType::Request, vec![])
         .expect("below threshold is not blocked");
     assert!(!result.flagged);
 }
@@ -154,6 +188,7 @@ fn grayswan_headers_include_bearer_token_and_json_content_type() {
         headers.get(AUTHORIZATION).unwrap().to_str().unwrap(),
         "Bearer secret"
     );
+    assert!(headers.get(AUTHORIZATION).unwrap().is_sensitive());
     assert_eq!(
         headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(),
         "application/json"
@@ -164,7 +199,11 @@ fn empty_payload() -> GraySwanPayload {
     GraySwanPayload {
         messages: Vec::new(),
         tools: Vec::new(),
-        parameters: BTreeMap::new(),
+        categories: None,
+        policy_id: None,
+        reasoning_mode: None,
+        metadata: None,
+        litellm_metadata: None,
     }
 }
 
@@ -193,7 +232,7 @@ async fn grayswan_call_api_returns_the_response_on_success() {
     let response = call_api_mock(StatusCode::OK, "{}".to_owned())
         .await
         .expect("success");
-    assert!((response.violation_score - 0.0).abs() < f64::EPSILON);
+    assert!((response.violation - 0.0).abs() < f64::EPSILON);
 }
 
 #[tokio::test]
@@ -206,13 +245,27 @@ async fn grayswan_call_api_rejects_a_non_success_status() {
     ));
 }
 
-fn empty_input() -> GraySwanInput {
-    GraySwanInput {
-        messages: Vec::new(),
-        tools: Vec::new(),
-        metadata: BTreeMap::new(),
-        request_history: Vec::new(),
-    }
+#[test]
+fn grayswan_default_settings_match_litellm() {
+    let settings = GraySwanSettings::default();
+    assert_eq!(settings.on_flagged_action, OnFlaggedAction::Monitor);
+    assert!((settings.violation_threshold - 0.5).abs() < f64::EPSILON);
+    assert!(settings.fail_open);
+    assert_eq!(super::DEFAULT_TIMEOUT, Duration::from_secs(30));
+}
+
+#[tokio::test]
+async fn grayswan_apply_guardrail_skips_the_api_call_when_there_are_no_messages() {
+    let instance = guardrail(OnFlaggedAction::Block);
+    let result = instance
+        .apply_guardrail(input(Vec::new(), Vec::new()), GuardrailInputType::Request)
+        .await
+        .expect("empty scans pass through without calling the API");
+    assert!(!result.flagged);
+}
+
+fn single_message_input() -> GraySwanInput {
+    input(vec![message("user", "hello")], Vec::new())
 }
 
 async fn apply_guardrail_against_a_failing_server(
@@ -240,7 +293,7 @@ async fn apply_guardrail_against_a_failing_server(
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     instance
-        .apply_guardrail(empty_input(), GuardrailInputType::Request)
+        .apply_guardrail(single_message_input(), GuardrailInputType::Request)
         .await
 }
 

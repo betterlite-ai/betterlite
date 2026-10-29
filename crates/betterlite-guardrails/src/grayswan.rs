@@ -11,12 +11,18 @@ use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
 };
 
+mod format;
 pub mod wire;
 
+use format::{
+    category_override, conversation_messages, format_violation_message, reasoning_mode_override,
+    text_override, violation_guardrail_message,
+};
 use wire::{GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult};
 
 pub const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OnFlaggedAction {
@@ -28,12 +34,20 @@ pub enum OnFlaggedAction {
     Passthrough,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningMode {
+    Off,
+    Hybrid,
+    Thinking,
+}
+
 #[derive(Debug, Clone)]
 pub struct GraySwanSettings {
     pub on_flagged_action: OnFlaggedAction,
     pub violation_threshold: f64,
-    pub reasoning_mode: Option<String>,
-    pub categories: Option<Vec<String>>,
+    pub reasoning_mode: Option<ReasoningMode>,
+    pub categories: Option<BTreeMap<String, String>>,
     pub policy_id: Option<String>,
     pub fail_open: bool,
 }
@@ -41,7 +55,7 @@ pub struct GraySwanSettings {
 impl Default for GraySwanSettings {
     fn default() -> Self {
         Self {
-            on_flagged_action: OnFlaggedAction::Block,
+            on_flagged_action: OnFlaggedAction::Monitor,
             violation_threshold: 0.5,
             reasoning_mode: None,
             categories: None,
@@ -61,12 +75,30 @@ pub enum GraySwanGuardrailAPIError {
     HttpStatus { status: StatusCode },
     #[error("the Gray Swan API key is not a valid header")]
     InvalidHeader { source: InvalidHeaderValue },
+    #[error("the Gray Swan API response is larger than {limit} bytes")]
+    ResponseTooLarge { limit: usize },
     #[error("the Gray Swan API response is not valid JSON")]
     ResponseJson { source: serde_json::Error },
     #[error("Gray Swan flagged content{reason}")]
     Blocked { reason: String },
     #[error("Gray Swan passthrough requested before the model call{reason}")]
     PreCallPassthrough { reason: String },
+}
+
+impl GraySwanGuardrailAPIError {
+    #[must_use]
+    pub const fn status_code(&self) -> StatusCode {
+        match self {
+            Self::Timeout { .. }
+            | Self::Request { .. }
+            | Self::HttpStatus { .. }
+            | Self::InvalidHeader { .. }
+            | Self::ResponseTooLarge { .. }
+            | Self::ResponseJson { .. }
+            | Self::Blocked { .. }
+            | Self::PreCallPassthrough { .. } => StatusCode::BAD_REQUEST,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -110,39 +142,27 @@ impl GraySwanGuardrail {
 
     #[must_use]
     pub fn prepare_payload(&self, input: &GraySwanInput) -> GraySwanPayload {
-        let mut parameters = BTreeMap::new();
-        insert_parameter(
-            &mut parameters,
-            "categories",
-            self.settings.categories.clone().map(|values| {
-                GuardrailExtraValue::Array(
-                    values.into_iter().map(GuardrailExtraValue::Text).collect(),
-                )
-            }),
-            &input.metadata,
-        );
-        insert_parameter(
-            &mut parameters,
-            "policy_id",
-            self.settings
-                .policy_id
-                .clone()
-                .map(GuardrailExtraValue::Text),
-            &input.metadata,
-        );
-        let reasoning = input.metadata.get("reasoning_mode").cloned().or_else(|| {
-            self.settings
-                .reasoning_mode
-                .clone()
-                .map(GuardrailExtraValue::Text)
-        });
-        if let Some(value) = reasoning {
-            parameters.insert("reasoning_mode".to_owned(), value);
-        }
+        let categories = category_override(&input.metadata)
+            .or_else(|| self.settings.categories.clone())
+            .filter(|values| !values.is_empty());
+        let policy_id =
+            text_override(&input.metadata, "policy_id").or_else(|| self.settings.policy_id.clone());
+        let reasoning_mode =
+            reasoning_mode_override(&input.metadata).or(self.settings.reasoning_mode);
+        let metadata = input.metadata.get("metadata").cloned();
+        let litellm_metadata = if input.litellm_metadata.is_empty() {
+            None
+        } else {
+            Some(GuardrailExtraValue::Object(input.litellm_metadata.clone()))
+        };
         GraySwanPayload {
             messages: conversation_messages(input),
             tools: input.tools.clone(),
-            parameters,
+            categories,
+            policy_id,
+            reasoning_mode,
+            metadata,
+            litellm_metadata,
         }
     }
 
@@ -152,14 +172,21 @@ impl GraySwanGuardrail {
         input_type: GuardrailInputType,
     ) -> Result<GraySwanResult, GraySwanGuardrailAPIError> {
         let original = conversation_messages(&input);
+        if input.messages.is_empty() {
+            return Ok(GraySwanResult {
+                flagged: false,
+                messages: original,
+                violation_message: None,
+            });
+        }
         match self.call_api(&self.prepare_payload(&input)).await {
-            Ok(response) => self.process_response(response, input_type, original),
+            Ok(response) => self.process_response(&response, input_type, original),
             Err(error) if self.settings.fail_open => {
                 tracing::error!(error = %error, "Gray Swan API error; passing through");
                 Ok(GraySwanResult {
                     flagged: false,
                     messages: original,
-                    violation_reason: None,
+                    violation_message: None,
                 })
             }
             Err(error) => Err(error),
@@ -184,29 +211,28 @@ impl GraySwanGuardrail {
         if !status.is_success() {
             return Err(GraySwanGuardrailAPIError::HttpStatus { status });
         }
-        let body = response.bytes().await.map_err(request_error)?;
+        let body = read_capped_body(response, MAX_RESPONSE_BYTES).await?;
         serde_json::from_slice(&body)
             .map_err(|source| GraySwanGuardrailAPIError::ResponseJson { source })
     }
 
     pub fn process_response(
         &self,
-        response: GraySwanResponse,
+        response: &GraySwanResponse,
         input_type: GuardrailInputType,
         original: Vec<GuardrailMessage>,
     ) -> Result<GraySwanResult, GraySwanGuardrailAPIError> {
-        let flagged = response.violation_score >= self.settings.violation_threshold;
+        let flagged = response.violation >= self.settings.violation_threshold;
         if !flagged || self.settings.on_flagged_action == OnFlaggedAction::Monitor {
             return Ok(GraySwanResult {
                 flagged,
                 messages: original,
-                violation_reason: response.violation_reason,
+                violation_message: None,
             });
         }
-        let reason = response
-            .violation_reason
-            .as_deref()
-            .map_or_else(String::new, |value| format!(": {value}"));
+        let is_output = input_type == GuardrailInputType::Response;
+        let violation_message = format_violation_message(response, is_output);
+        let reason = format!(": {violation_message}");
         match (self.settings.on_flagged_action, input_type) {
             (OnFlaggedAction::Block, _) => Err(GraySwanGuardrailAPIError::Blocked { reason }),
             (OnFlaggedAction::Passthrough, GuardrailInputType::Request) => {
@@ -214,39 +240,16 @@ impl GraySwanGuardrail {
             }
             (OnFlaggedAction::Passthrough, GuardrailInputType::Response) => Ok(GraySwanResult {
                 flagged: true,
-                messages: response.messages.unwrap_or(original),
-                violation_reason: response.violation_reason,
+                messages: vec![violation_guardrail_message(&violation_message)],
+                violation_message: Some(violation_message),
             }),
             (OnFlaggedAction::Monitor, _) => Ok(GraySwanResult {
                 flagged,
                 messages: original,
-                violation_reason: response.violation_reason,
+                violation_message: Some(violation_message),
             }),
         }
     }
-}
-
-fn insert_parameter(
-    parameters: &mut BTreeMap<String, GuardrailExtraValue>,
-    name: &str,
-    configured: Option<GuardrailExtraValue>,
-    metadata: &BTreeMap<String, GuardrailExtraValue>,
-) {
-    match (metadata.get(name), configured) {
-        (Some(value), _) => {
-            parameters.insert(name.to_owned(), value.clone());
-        }
-        (None, Some(value)) => {
-            parameters.insert(name.to_owned(), value);
-        }
-        (None, None) => {}
-    }
-}
-
-fn conversation_messages(input: &GraySwanInput) -> Vec<GuardrailMessage> {
-    let mut messages = input.request_history.clone();
-    messages.extend(input.messages.clone());
-    messages
 }
 
 fn request_error(source: reqwest::Error) -> GraySwanGuardrailAPIError {
@@ -255,6 +258,27 @@ fn request_error(source: reqwest::Error) -> GraySwanGuardrailAPIError {
     } else {
         GraySwanGuardrailAPIError::Request { source }
     }
+}
+
+async fn read_capped_body(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, GraySwanGuardrailAPIError> {
+    let limit_bytes = u64::try_from(limit).unwrap_or(u64::MAX);
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit_bytes)
+    {
+        return Err(GraySwanGuardrailAPIError::ResponseTooLarge { limit });
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+        body.extend_from_slice(&chunk);
+        if body.len() > limit {
+            return Err(GraySwanGuardrailAPIError::ResponseTooLarge { limit });
+        }
+    }
+    Ok(body)
 }
 
 #[path = "grayswan/tests.rs"]
