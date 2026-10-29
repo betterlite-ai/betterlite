@@ -5,12 +5,13 @@ use std::num::ParseIntError;
 use std::str;
 use std::str::Utf8Error;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use thiserror::Error;
 
 pub const INCREMENT_WITH_FLOOR_LUA: &str = "local count = redis.call('INCRBY', KEYS[1], ARGV[1]) if count < 0 then count = redis.call('INCRBY', KEYS[1], -count) end if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end return count";
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+// serde_json::Value is disallowed (clippy.toml); mirrors McpValue's shape for the same reason.
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum CachedValue {
     Object(BTreeMap<String, Self>),
