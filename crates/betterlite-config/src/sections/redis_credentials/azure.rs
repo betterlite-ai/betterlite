@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::loader::EnvironmentLookup;
 
@@ -9,6 +9,7 @@ pub struct AzureSettings {
     pub client_id: Option<SecretString>,
     pub tenant_id: Option<SecretString>,
     pub client_secret: Option<SecretString>,
+    pub username: Option<String>,
     pub credential: AzureCredential,
 }
 
@@ -36,31 +37,25 @@ where
     let client_secret = settings
         .azure_client_secret
         .clone()
-        .map(|value| value.expose_secret().to_owned())
-        .or_else(|| lookup.lookup("REDIS_AZURE_CLIENT_SECRET"))
-        .or_else(|| lookup.lookup("AZURE_CLIENT_SECRET"));
-    AzureSettings {
-        credential: azure_credential(
-            client_id.as_deref(),
-            tenant_id.as_deref(),
-            client_secret.as_deref(),
-        ),
-        client_id: client_id.map(SecretString::from),
-        tenant_id: tenant_id.map(SecretString::from),
-        client_secret: client_secret.map(SecretString::from),
-    }
-}
-
-const fn azure_credential(
-    client_id: Option<&str>,
-    tenant_id: Option<&str>,
-    secret: Option<&str>,
-) -> AzureCredential {
-    if client_id.is_some() && tenant_id.is_some() && secret.is_some() {
+        .or_else(|| {
+            lookup
+                .lookup("REDIS_AZURE_CLIENT_SECRET")
+                .map(SecretString::from)
+        })
+        .or_else(|| lookup.lookup("AZURE_CLIENT_SECRET").map(SecretString::from));
+    let username = lookup.lookup("REDIS_USERNAME");
+    let credential = if client_id.is_some() && tenant_id.is_some() && client_secret.is_some() {
         AzureCredential::ClientSecret
     } else if client_id.is_some() {
         AzureCredential::ManagedIdentity
     } else {
         AzureCredential::Default
+    };
+    AzureSettings {
+        credential,
+        client_id: client_id.map(SecretString::from),
+        tenant_id: tenant_id.map(SecretString::from),
+        client_secret,
+        username,
     }
 }

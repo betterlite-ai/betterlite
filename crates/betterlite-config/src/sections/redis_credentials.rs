@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
-use url::Url;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
@@ -45,11 +44,11 @@ enum ScalarBool {
     Text(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Provider {
-    Gcp,
-    Azure,
-    Aws,
+    Gcp(GcpSettings),
+    Azure(AzureSettings),
+    Aws(AwsSettings),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,10 +61,7 @@ pub enum ProviderWarning {
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub provider: Option<Provider>,
-    pub gcp: Option<GcpSettings>,
-    pub azure: Option<AzureSettings>,
-    pub aws: Option<AwsSettings>,
-    pub url: Option<String>,
+    pub url: Option<SecretString>,
     pub username: Option<String>,
     pub password: Option<SecretString>,
     pub warnings: Vec<ProviderWarning>,
@@ -81,23 +77,15 @@ impl Section for Raw {
     {
         let settings = self.litellm_settings.cache_params;
         let environment_snapshot = environment_snapshot(lookup);
-        let selection = resolve_providers(&settings, lookup)?;
-        let provider = provider_precedence(
-            selection.gcp.as_ref(),
-            selection.azure.as_ref(),
-            selection.aws.as_ref(),
-        );
-        let (url, username, password) = resolve_connection(&settings, lookup, provider.is_some());
+        let (provider, warnings) = resolve_providers(&settings, lookup)?;
+        let (url, username, password) = resolve_connection(&settings, lookup, provider.as_ref());
 
         Ok(Settings {
             provider,
-            gcp: selection.gcp,
-            azure: selection.azure,
-            aws: selection.aws,
             url,
             username,
             password,
-            warnings: selection.warnings,
+            warnings,
             environment_snapshot,
         })
     }
@@ -106,33 +94,34 @@ impl Section for Raw {
 fn resolve_connection<L>(
     settings: &RawSettings,
     lookup: &L,
-    provider_active: bool,
-) -> (Option<String>, Option<String>, Option<SecretString>)
+    provider: Option<&Provider>,
+) -> (Option<SecretString>, Option<String>, Option<SecretString>)
 where
     L: EnvironmentLookup,
 {
     let configured_url = settings.url.clone().or_else(|| lookup.lookup("REDIS_URL"));
-    let configured_username = settings
-        .username
-        .clone()
-        .or_else(|| lookup.lookup("REDIS_USERNAME"));
-    let configured_password = settings
-        .password
-        .as_ref()
-        .map(|value| value.expose_secret().to_owned())
-        .or_else(|| lookup.lookup("REDIS_PASSWORD"));
-    if provider_active {
-        (
-            configured_url.map(|value| url_without_userinfo(&value)),
+    match provider {
+        Some(Provider::Azure(azure)) => (
+            configured_url.map(|value| SecretString::from(url_without_userinfo(&value))),
+            azure.username.clone(),
+            None,
+        ),
+        Some(_) => (
+            configured_url.map(|value| SecretString::from(url_without_userinfo(&value))),
             None,
             None,
-        )
-    } else {
-        (
-            configured_url,
-            configured_username,
-            configured_password.map(SecretString::from),
-        )
+        ),
+        None => {
+            let username = settings
+                .username
+                .clone()
+                .or_else(|| lookup.lookup("REDIS_USERNAME"));
+            let password = settings
+                .password
+                .clone()
+                .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
+            (configured_url.map(SecretString::from), username, password)
+        }
     }
 }
 
@@ -172,12 +161,15 @@ fn ssl_enabled<L>(settings: &RawSettings, lookup: &L) -> bool
 where
     L: EnvironmentLookup,
 {
-    let fallback = || {
-        lookup
-            .lookup("REDIS_SSL")
-            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)))
-    };
-    settings.ssl.as_ref().map_or_else(fallback, coerces_to_true)
+    let configured = settings.ssl.as_ref();
+    configured.map_or_else(
+        || {
+            lookup
+                .lookup("REDIS_SSL")
+                .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)))
+        },
+        coerces_to_true,
+    )
 }
 
 fn coerces_to_true(setting: &ScalarBool) -> bool {
@@ -190,12 +182,20 @@ fn coerces_to_true(setting: &ScalarBool) -> bool {
 }
 
 fn url_without_userinfo(url: &str) -> String {
-    let Ok(mut parsed) = Url::parse(url) else {
-        return url.to_owned();
-    };
-    let _ignored_username = parsed.set_username("");
-    let _ignored_password = parsed.set_password(None);
-    parsed.to_string()
+    let (scheme, rest) = url
+        .split_once("://")
+        .map_or((None, url), |(url_scheme, remainder)| {
+            (Some(url_scheme), remainder)
+        });
+    let netloc_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (netloc_with_userinfo, tail) = rest.split_at(netloc_end);
+    let netloc = netloc_with_userinfo
+        .rsplit_once('@')
+        .map_or(netloc_with_userinfo, |(_, host)| host);
+    scheme.map_or_else(
+        || format!("{netloc}{tail}"),
+        |url_scheme| format!("{url_scheme}://{netloc}{tail}"),
+    )
 }
 
 #[path = "redis_credentials/aws.rs"]
@@ -212,7 +212,7 @@ use gcp::GcpSettings;
 
 #[path = "redis_credentials/provider.rs"]
 mod provider;
-use provider::{provider_precedence, resolve_providers};
+use provider::resolve_providers;
 
 #[path = "redis_credentials/tests.rs"]
 mod tests;
