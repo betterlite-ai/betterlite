@@ -1,7 +1,6 @@
 use crate::arguments::json::Json;
 
-// A byte count, not an exact serialised size: a schema-bomb budget only needs a value
-// within a small constant factor, so this walks the tree once instead of serialising it.
+// A byte count, not an exact serialised size: a schema-bomb budget only needs a value within a small constant factor, so this walks the tree once instead of serialising it.
 #[must_use]
 pub fn estimate_json_bytes(value: &Json) -> usize {
     let mut total: usize = 0;

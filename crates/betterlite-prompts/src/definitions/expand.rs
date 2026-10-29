@@ -5,19 +5,19 @@ use super::error::DefinitionsError;
 use super::estimate::estimate_json_bytes;
 use crate::arguments::json::{Json, Object};
 
-// A name resolves only against the local `defs` tables built while walking, so a
-// `$ref` that is not present there (an external URL, a typo) is left untouched instead
-// of ever being fetched.
+// A name resolves only against the local `defs` tables built while walking, so a `$ref` that is not present there (an external URL, a typo) is left untouched instead of ever being fetched.
 pub fn unpack_defs(
     schema: Object,
     defs: &Object,
     max_inlined_bytes: Option<usize>,
 ) -> Result<Object, DefinitionsError> {
     let original = schema.clone();
-    // Python merges the root's own `$defs` / `definitions` into `root_defs` before even
-    // checking whether the root itself is a `$ref`; building the scope outside
-    // `expand_tree` lets the root ref resolve against its own sibling defs.
-    let root_scope = Scope::root(defs).descend(&schema);
+    // Python merges the root's own `$defs` / `definitions` into `root_defs` before checking whether the root itself is a `$ref`, so the root ref can resolve against its own sibling defs.
+    let root_base = Arc::new(defs.clone());
+    let root_scope = Scope {
+        defs: merge_defs(&root_base, &schema),
+        chain: Arc::new(BTreeSet::new()),
+    };
     let root = expand_tree(Json::Object(schema), root_scope, max_inlined_bytes)?;
     Ok(match root {
         Json::Object(object) => object,
@@ -32,20 +32,6 @@ struct Scope {
 }
 
 impl Scope {
-    fn root(defs: &Object) -> Self {
-        Self {
-            defs: Arc::new(defs.clone()),
-            chain: Arc::new(BTreeSet::new()),
-        }
-    }
-
-    fn descend(&self, node: &Object) -> Self {
-        Self {
-            defs: merge_defs(&self.defs, node),
-            chain: Arc::clone(&self.chain),
-        }
-    }
-
     fn follow(&self, name: &str, target: Option<&Object>) -> Self {
         let mut chain = (*self.chain).clone();
         chain.insert(name.to_owned());
@@ -103,10 +89,6 @@ struct Budget {
 }
 
 impl Budget {
-    const fn new(limit: Option<usize>) -> Self {
-        Self { limit, spent: 0 }
-    }
-
     const fn charge(&mut self, amount: usize) -> Result<(), DefinitionsError> {
         self.spent = self.spent.saturating_add(amount);
         match self.limit {
@@ -118,14 +100,16 @@ impl Budget {
     }
 }
 
-// Walks `root` with an explicit work stack instead of native recursion, so a deeply
-// nested schema (legitimate or adversarial) cannot exhaust the call stack.
+// Walks `root` with an explicit work stack instead of native recursion, so a deeply nested schema (legitimate or adversarial) cannot exhaust the call stack.
 fn expand_tree(
     root: Json,
     scope: Scope,
     max_inlined_bytes: Option<usize>,
 ) -> Result<Json, DefinitionsError> {
-    let mut budget = Budget::new(max_inlined_bytes);
+    let mut budget = Budget {
+        limit: max_inlined_bytes,
+        spent: 0,
+    };
     let mut work = vec![Item::Visit { node: root, scope }];
     let mut output: Vec<Json> = Vec::new();
     while let Some(item) = work.pop() {
@@ -199,7 +183,10 @@ fn resolve_ref(
 }
 
 fn push_object_children(object: Object, scope: &Scope, work: &mut Vec<Item>) {
-    let local_scope = scope.descend(&object);
+    let local_scope = Scope {
+        defs: merge_defs(&scope.defs, &object),
+        chain: Arc::clone(&scope.chain),
+    };
     let entries: Vec<(String, Json)> = object.into_iter().collect();
     let keys: Vec<String> = entries.iter().map(|(key, _)| key.clone()).collect();
     work.push(Item::Collect(Label::Object(keys)));

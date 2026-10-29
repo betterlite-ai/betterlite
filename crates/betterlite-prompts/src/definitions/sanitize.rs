@@ -2,8 +2,7 @@ use super::error::DefinitionsError;
 use super::legacy::{DEFS_MAX_INLINED_BYTES, unpack_legacy_defs};
 use crate::arguments::json::{Json, Object};
 
-// `type` and `properties` are always present once sanitized; the rest carries through
-// only when the caller supplied it.
+// `type` and `properties` are always present once sanitized; the rest carries through only when the caller supplied it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicInputSchema {
     pub schema_type: Json,
@@ -16,8 +15,7 @@ pub struct AnthropicInputSchema {
 
 const ANTHROPIC_TYPE: &str = "object";
 
-// Legacy `definitions` / `components.schemas` references are inlined before filtering,
-// since Anthropic only resolves `$defs` and would otherwise see a dangling pointer.
+// Legacy `definitions` / `components.schemas` references are inlined before filtering, since Anthropic only resolves `$defs` and would otherwise see a dangling pointer.
 pub fn sanitize_for_anthropic(
     input_schema: Object,
 ) -> Result<AnthropicInputSchema, DefinitionsError> {
@@ -32,17 +30,13 @@ pub fn sanitize_for_anthropic(
     }
     let expanded = unpack_legacy_defs(normalized, DEFS_MAX_INLINED_BYTES)?;
     Ok(AnthropicInputSchema {
-        schema_type: take(&expanded, "type"),
-        properties: take(&expanded, "properties"),
+        schema_type: expanded.get("type").cloned().unwrap_or(Json::Null),
+        properties: expanded.get("properties").cloned().unwrap_or(Json::Null),
         additional_properties: expanded.get("additionalProperties").cloned(),
         required: expanded.get("required").cloned(),
         defs: expanded.get("$defs").cloned(),
         strict: expanded.get("strict").cloned(),
     })
-}
-
-fn take(schema: &Object, key: &str) -> Json {
-    schema.get(key).cloned().unwrap_or(Json::Null)
 }
 
 mod tests;
