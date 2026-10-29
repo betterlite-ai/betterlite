@@ -82,10 +82,8 @@ pub enum DbError {
 pub enum PercentEscapeError {
     #[error("percent-escape has fewer than two trailing characters")]
     Incomplete,
-    #[error("percent-escape digits are not valid UTF-8")]
-    NotUtf8(#[source] Utf8Error),
     #[error("percent-escape digits are not a valid hex byte")]
-    NotHex(#[source] ParseIntError),
+    NotHex,
 }
 
 pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
@@ -186,15 +184,16 @@ fn percent_decode(text: &str) -> Result<String, DbError> {
                     .ok_or(DbError::MalformedPercentEscape {
                         source: PercentEscapeError::Incomplete,
                     })?;
-            let digits_text =
-                str::from_utf8(digits).map_err(|source| DbError::MalformedPercentEscape {
-                    source: PercentEscapeError::NotUtf8(source),
-                })?;
-            let decoded = u8::from_str_radix(digits_text, 16).map_err(|source| {
-                DbError::MalformedPercentEscape {
-                    source: PercentEscapeError::NotHex(source),
-                }
-            })?;
+            let not_hex = || DbError::MalformedPercentEscape {
+                source: PercentEscapeError::NotHex,
+            };
+            // u8::from_str_radix also accepts a leading '+' sign, which would turn "%+1" into
+            // byte 0x01 instead of the malformed escape CPython's _hextobyte lookup rejects.
+            if !digits.iter().all(u8::is_ascii_hexdigit) {
+                return Err(not_hex());
+            }
+            let digits_text = str::from_utf8(digits).map_err(|_utf8_error| not_hex())?;
+            let decoded = u8::from_str_radix(digits_text, 16).map_err(|_parse_error| not_hex())?;
             bytes.push(decoded);
             rest = after;
             continue;

@@ -1,3 +1,4 @@
+use percent_encoding::percent_decode;
 use std::fmt::Write as _;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::from_utf8;
@@ -231,30 +232,12 @@ fn quote_plus(text: &str) -> String {
     encoded
 }
 
-fn next_percent_escape(tail: &[u8]) -> Option<(u8, &[u8])> {
-    let (digits, after) = tail.split_at_checked(2)?;
-    let text = from_utf8(digits).ok()?;
-    let decoded = u8::from_str_radix(text, 16).ok()?;
-    Some((decoded, after))
-}
-
+// Mirrors urllib.parse.unquote_plus: '+' becomes a space everywhere before %XX escapes are decoded,
+// and percent-encoding's decoder leaves an incomplete or non-hex escape as a literal '%', exactly
+// like CPython's unquote_to_bytes does on a _hextobyte lookup miss.
 fn unquote_plus(text: &str) -> String {
-    let mut bytes = Vec::with_capacity(text.len());
-    let mut rest = text.as_bytes();
-    while let Some((&byte, tail)) = rest.split_first() {
-        if byte == b'+' {
-            bytes.push(b' ');
-            rest = tail;
-        } else if byte == b'%'
-            && let Some((decoded, after)) = next_percent_escape(tail)
-        {
-            bytes.push(decoded);
-            rest = after;
-        } else {
-            bytes.push(byte);
-            rest = tail;
-        }
-    }
+    let space_separated = text.replace('+', " ");
+    let bytes: Vec<u8> = percent_decode(space_separated.as_bytes()).collect();
     decode_percent_bytes(bytes)
 }
 
