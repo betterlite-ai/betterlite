@@ -7,11 +7,12 @@ pub mod window;
 
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use rate::OffPeakRateError;
 use schema::OffPeakBlock;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenRates {
     pub input_rate: Decimal,
     pub output_rate: Decimal,
@@ -30,7 +31,7 @@ impl TokenRates {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub struct BaseCosts {
     pub prompt_rate: Decimal,
     pub completion_rate: Decimal,
@@ -39,7 +40,7 @@ pub struct BaseCosts {
     pub cache_read_rate: Decimal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ResolvedBaseCosts {
     pub prompt_rate: Decimal,
     pub completion_rate: Decimal,

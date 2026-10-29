@@ -1224,6 +1224,7 @@ dependencies = [
  "indexmap 2.14.2",
  "reqwest",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde-saphyr",
