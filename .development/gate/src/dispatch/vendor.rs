@@ -2,7 +2,7 @@ mod tests;
 
 use std::fs::{self, File, TryLockError};
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -24,16 +24,15 @@ pub(crate) fn find_vendor<'agents>(
     })
 }
 
-fn limits_folder(git_common_dir: &Path) -> PathBuf {
-    git_common_dir.join("betterlite").join("limits")
-}
-
 pub(crate) fn limited(
     git_common_dir: &Path,
     agents: &Agents,
     vendor: &str,
 ) -> Result<bool, GateError> {
-    let path = limits_folder(git_common_dir).join(vendor);
+    let path = git_common_dir
+        .join("betterlite")
+        .join("limits")
+        .join(vendor);
     let modified = match fs::metadata(&path).and_then(|metadata| metadata.modified()) {
         Ok(time) => time,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
@@ -47,7 +46,7 @@ pub(crate) fn limited(
 }
 
 pub(crate) fn mark(git_common_dir: &Path, vendor: &str, line: &str) -> Result<(), GateError> {
-    let folder = limits_folder(git_common_dir);
+    let folder = git_common_dir.join("betterlite").join("limits");
     fs::create_dir_all(&folder).map_err(|source| GateError::Write {
         path: folder.clone(),
         source,
