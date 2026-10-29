@@ -9,6 +9,7 @@ use std::{fs, path::PathBuf};
 #[case::denies_field_with_boundary("api_key='abc123'", false, "api_key='[Filtered]'")]
 #[case::rejects_name_prefix_match("mytoken=abc123", false, "mytoken=abc123")]
 #[case::matches_at_string_start("token=abc123 next", false, "token='[Filtered]' next")]
+#[case::allows_bare_field_after_non_word_boundary("(token=abc123)", false, "(token='[Filtered]')")]
 #[case::preserves_bare_none("token=None", false, "token=None")]
 #[case::redacts_nonetype_suffix("key=NoneType", false, "key='[Filtered]'")]
 #[case::quoted_key_form_skips_boundary_check(
