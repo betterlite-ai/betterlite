@@ -4,7 +4,6 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Number;
 
-// crate::payloads::python_json has the same formatter, pub(super) to payloads out of this task's scope
 // mirrors how json.loads keeps a dict in written order and json.dumps writes it back out
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
