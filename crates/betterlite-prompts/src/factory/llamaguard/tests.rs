@@ -19,6 +19,10 @@ fn messages(json_text: &str) -> Vec<Message> {
     r#"[{"role":"user","content":"hello there"}]"#,
     "User: hello there"
 )]
+#[case::llamaguard_keeps_upstream_space_before_newline(
+    r#"[{"role":"user","content":"hello there"}]"#,
+    "O1: Violence and Hate. \nShould not\n"
+)]
 fn prompt_templates_prompt_template_tests_behavior(#[case] wire: &str, #[case] contains: &str) {
     let output = render(&messages(wire), clock()).unwrap();
     let Output::Text(text) = output else {

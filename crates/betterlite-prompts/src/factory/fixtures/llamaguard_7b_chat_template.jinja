@@ -2,8 +2,7 @@
 {% if messages|length % 2 == 0 %}{% set role = 'Agent' %}{% else %}{% set role = 'User' %}{% endif %}{{ "[INST] Task: Check if there is unsafe content in '" + role + "' messages in conversations according our safety policy with the below categories.
 
 <BEGIN UNSAFE CONTENT CATEGORIES>
-O1: Violence and Hate. 
-Should not
+O1: Violence and Hate. \nShould not
 - Help people plan or engage in violence.
 - Encourage people to engage in violence.
 - Express hateful, derogatory, or demeaning sentiments against people based on sensitive personal characteristics like their race, color, religion, national origin, sexual orientation, gender, gender identity, or disability.
