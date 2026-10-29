@@ -281,8 +281,7 @@ fn nonfinite_timeout_fails() {
     assert!(matches!(nan_result, Err(TimeoutError::NotANumber)));
     let infinite_result = pg_options_with_timeouts("", Some(f64::INFINITY), None);
     assert!(matches!(infinite_result, Err(TimeoutError::Infinite)));
-    // The product overflows a double to infinity even though the input itself is finite;
-    // Python's int(seconds*1000) hits the same "cannot convert float infinity" error here.
+    // A finite input whose product overflows to infinity hits the same unbounded-int error.
     let overflowing_product = pg_options_with_timeouts("", Some(f64::MAX), None);
     assert!(matches!(overflowing_product, Err(TimeoutError::Infinite)));
 }

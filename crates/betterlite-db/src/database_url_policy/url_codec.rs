@@ -33,23 +33,8 @@ pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
             rest = remainder;
         }
     }
-    let mut netloc = String::new();
-    if let Some(after) = rest.strip_prefix("//") {
-        if let Some(end) = after.find(['/', '?', '#']) {
-            match after.split_at_checked(end) {
-                Some((host, tail)) => {
-                    host.clone_into(&mut netloc);
-                    rest = tail;
-                }
-                None => rest = after,
-            }
-        } else {
-            after.clone_into(&mut netloc);
-            rest = "";
-        }
-        check_netloc_brackets(&netloc)?;
-    }
-    let (before_fragment, fragment) = rest.split_once('#').unwrap_or((rest, ""));
+    let (netloc, after_netloc) = split_netloc(rest)?;
+    let (before_fragment, fragment) = after_netloc.split_once('#').unwrap_or((after_netloc, ""));
     let (path, query) = before_fragment
         .split_once('?')
         .unwrap_or((before_fragment, ""));
@@ -60,6 +45,18 @@ pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
         query: query.to_owned(),
         fragment: fragment.to_owned(),
     })
+}
+
+// Splits off the "//netloc" prefix, if any, and validates its brackets.
+fn split_netloc(rest: &str) -> Result<(String, &str), UrlSplitError> {
+    let Some(after) = rest.strip_prefix("//") else {
+        return Ok((String::new(), rest));
+    };
+    let (netloc, tail) = after.find(['/', '?', '#']).map_or((after, ""), |end| {
+        after.split_at_checked(end).unwrap_or((after, ""))
+    });
+    check_netloc_brackets(netloc)?;
+    Ok((netloc.to_owned(), tail))
 }
 
 // Mirrors _check_bracketed_netloc: an unmatched or misplaced bracket is an error.
@@ -73,15 +70,12 @@ fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
         return Ok(());
     }
     let hostname_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
-    let bracket_at = hostname_and_port
-        .find('[')
+    let bracketed = hostname_and_port
+        .strip_prefix('[')
         .ok_or(UrlSplitError::InvalidIpv6Url)?;
-    if bracket_at != 0 {
-        return Err(UrlSplitError::InvalidIpv6Url);
-    }
-    let bracketed = &hostname_and_port[1..];
-    let close_at = bracketed.find(']').ok_or(UrlSplitError::InvalidIpv6Url)?;
-    let after_close = &bracketed[close_at + 1..];
+    let (_, after_close) = bracketed
+        .split_once(']')
+        .ok_or(UrlSplitError::InvalidIpv6Url)?;
     if !after_close.is_empty() && !after_close.starts_with(':') {
         return Err(UrlSplitError::InvalidIpv6Url);
     }

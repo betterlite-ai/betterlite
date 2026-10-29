@@ -11,8 +11,6 @@ use betterlite_db::database_url_policy::query::{
     idle_lifetime_params, reader_shareable_params, token_refresh_params_from_url, url_query_value,
     with_query_value,
 };
-use betterlite_db::database_url_policy::url_codec::UrlSplitError;
-
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
@@ -31,13 +29,13 @@ impl crate::helpers::Helper for Op {
             }
             Input::ConnectionParamsFromUrl { url } => connection_params_from_url(url)
                 .map(|params| params_value(&params))
-                .map_err(url_split_error),
+                .map_err(|error| helper_error("ValueError", error.to_string())),
             Input::TokenRefreshParamsFromUrl { url } => token_refresh_params_from_url(url)
                 .map(|params| params_value(&params))
-                .map_err(url_split_error),
+                .map_err(|error| helper_error("ValueError", error.to_string())),
             Input::UnsupportedDbScheme { database_url } => unsupported_db_scheme(database_url)
                 .map(|scheme| scheme.map_or(serde_json::Value::Null, serde_json::Value::String))
-                .map_err(url_split_error),
+                .map_err(|error| helper_error("ValueError", error.to_string())),
             Input::UnsupportedDbSchemeMessage { env_var, scheme } => {
                 Ok(run_unsupported_scheme_message(env_var, scheme))
             }
@@ -62,9 +60,9 @@ fn run_add_missing_query_params(
     url: &str,
     params: &[(String, QueryValue)],
 ) -> crate::helpers::HelperResult {
-    add_missing_query_params(url, params)
-        .map(serde_json::Value::String)
-        .map_err(url_split_error)
+    let updated = add_missing_query_params(url, params)
+        .map_err(|error| helper_error("ValueError", error.to_string()))?;
+    Ok(serde_json::Value::String(updated))
 }
 
 fn run_unsupported_scheme_message(env_var: &str, scheme: &str) -> serde_json::Value {
@@ -73,39 +71,36 @@ fn run_unsupported_scheme_message(env_var: &str, scheme: &str) -> serde_json::Va
 }
 
 fn run_url_query_value(url: Option<&str>, key: &str) -> crate::helpers::HelperResult {
-    url_query_value(url, key)
-        .map(serde_json::Value::String)
-        .map_err(url_split_error)
+    let value =
+        url_query_value(url, key).map_err(|error| helper_error("ValueError", error.to_string()))?;
+    Ok(serde_json::Value::String(value))
 }
 
 fn run_with_query_value(url: &str, key: &str, value: &str) -> crate::helpers::HelperResult {
-    with_query_value(url, key, value)
-        .map(serde_json::Value::String)
-        .map_err(url_split_error)
+    let updated = with_query_value(url, key, value)
+        .map_err(|error| helper_error("ValueError", error.to_string()))?;
+    Ok(serde_json::Value::String(updated))
 }
 
 fn run_append_query_params(
     url: Option<&str>,
     params: &[(String, Vec<String>)],
 ) -> crate::helpers::HelperResult {
-    append_query_params(url, params)
-        .map(|outcome| serde_json::json!({ "url": outcome.url, "warning": outcome.warning }))
-        .map_err(url_split_error)
-}
-
-fn url_split_error(error: UrlSplitError) -> Box<crate::helpers::HelperError> {
-    helper_error("ValueError", error.to_string())
+    let outcome = append_query_params(url, params)
+        .map_err(|error| helper_error("ValueError", error.to_string()))?;
+    Ok(serde_json::json!({ "url": outcome.url, "warning": outcome.warning }))
 }
 
 fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+    let error = crate::helpers::HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message,
-    })
+    };
+    Box::new(error)
 }
 
 fn run_build_connection_params(input: &Input) -> serde_json::Value {
