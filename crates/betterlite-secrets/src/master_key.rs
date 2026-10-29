@@ -7,7 +7,10 @@ pub fn matches_raw(presented: Option<&str>, master_key: Option<&str>) -> bool {
         return false;
     };
     // secrets.compare_digest raises on non-ASCII str operands in Python; here it is false
-    if !left.is_ascii() || !right.is_ascii() {
+    if !left.is_ascii() {
+        return false;
+    }
+    if !right.is_ascii() {
         return false;
     }
     bool::from(left.as_bytes().ct_eq(right.as_bytes()))
