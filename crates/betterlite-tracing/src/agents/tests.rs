@@ -110,8 +110,7 @@ fn climbs_past_non_agent_ancestors_to_find_a_differently_named_agent() {
 
 #[test]
 fn skips_same_named_ancestors_instead_of_stopping() {
-    // "inner" is iterated first, so its parent walk is the one agent_nodes keeps;
-    // its immediate parent shares its name and must be skipped, not treated as a stop.
+    // A same-named ancestor is skipped rather than treated as a stop in the parent walk.
     let spans = vec![
         span(
             "inner",

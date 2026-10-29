@@ -158,8 +158,13 @@ async fn get_trace_builds_the_trace_with_offsets_and_agents() {
     llm.start_ns = 2_000_000;
     llm.duration_ns = 1_000_000;
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
         trace_spans_rows: vec![root, llm],
-        ..StubStorage::default()
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let trace = store
@@ -182,13 +187,18 @@ async fn get_span_returns_span_detail_with_ui_content_and_attributes() {
     let mut attributes = IndexMap::new();
     attributes.insert("key".to_owned(), "value".to_owned());
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
+        trace_spans_rows: Vec::new(),
         span_detail_rows: vec![SpanDetailRow {
             span_id: "span-1".to_owned(),
             input: "hello".to_owned(),
             output: "world".to_owned(),
             attributes,
         }],
-        ..StubStorage::default()
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let detail = store
@@ -234,13 +244,18 @@ async fn get_span_error_returns_none_when_the_span_has_no_error() {
 #[tokio::test]
 async fn get_span_error_returns_a_next_cursor_when_more_data_remains() {
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
         span_error_rows: vec![SpanErrorRow {
             span_id: "span-1".to_owned(),
             message: "partial".to_owned(),
             total_chars: 100,
             version: version(),
         }],
-        ..StubStorage::default()
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let page = store
@@ -254,13 +269,18 @@ async fn get_span_error_returns_a_next_cursor_when_more_data_remains() {
 #[tokio::test]
 async fn get_span_error_omits_the_next_cursor_when_the_chunk_reaches_the_end() {
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
         span_error_rows: vec![SpanErrorRow {
             span_id: "span-1".to_owned(),
             message: "tail".to_owned(),
             total_chars: 4,
             version: version(),
         }],
-        ..StubStorage::default()
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let page = store
@@ -273,16 +293,20 @@ async fn get_span_error_omits_the_next_cursor_when_the_chunk_reaches_the_end() {
 
 #[tokio::test]
 async fn get_span_error_next_cursor_carries_the_stored_row_version() {
-    // The database re-wrote the error under a new version between pages; the returned
-    // cursor carries that new version, not the one the caller requested.
+    // The returned cursor carries the row's current version, not the requested one.
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
         span_error_rows: vec![SpanErrorRow {
             span_id: "span-1".to_owned(),
             message: "partial".to_owned(),
             total_chars: 100,
             version: version(),
         }],
-        ..StubStorage::default()
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let requested = encode_error_cursor(&ErrorCursor {
@@ -306,13 +330,18 @@ async fn get_span_error_next_cursor_carries_the_stored_row_version() {
 async fn get_span_error_computes_byte_offsets_for_multi_byte_messages() {
     let message = "h\u{e9}llo".to_owned(); // 5 chars, 6 UTF-8 bytes
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
         span_error_rows: vec![SpanErrorRow {
             span_id: "span-1".to_owned(),
             message: message.clone(),
             total_chars: 100,
             version: version(),
         }],
-        ..StubStorage::default()
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let page = store
@@ -331,7 +360,12 @@ async fn get_span_error_computes_byte_offsets_for_multi_byte_messages() {
 async fn list_traces_returns_a_next_cursor_when_the_page_is_full() {
     let storage = StubStorage {
         list_traces_rows: vec![list_row("trace-1", 100), list_row("trace-2", 200)],
-        ..StubStorage::default()
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let page = store
@@ -346,7 +380,12 @@ async fn list_traces_returns_a_next_cursor_when_the_page_is_full() {
 async fn list_traces_returns_no_next_cursor_when_the_page_is_short() {
     let storage = StubStorage {
         list_traces_rows: vec![list_row("trace-1", 100)],
-        ..StubStorage::default()
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let page = store
@@ -418,8 +457,13 @@ async fn spend_lookup_forwards_the_scope_to_storage() {
     let mut root = span_row("root", None, SpanType::Agent);
     root.litellm_request_id = Some("req-1".to_owned());
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
         trace_spans_rows: vec![root],
-        ..StubStorage::default()
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let _trace = store.get_trace("trace-1", &scope).await;
@@ -434,9 +478,13 @@ async fn spend_log_outage_does_not_fail_get_trace() {
     let mut root = span_row("root", None, SpanType::Agent);
     root.litellm_request_id = Some("req-1".to_owned());
     let storage = StubStorage {
+        list_traces_rows: Vec::new(),
         trace_spans_rows: vec![root],
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
         spend_fails: true,
-        ..StubStorage::default()
+        seen_scope: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
     let trace = store
