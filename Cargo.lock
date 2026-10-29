@@ -1191,6 +1191,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-db",
  "betterlite-guardrails",
+ "betterlite-harness",
  "betterlite-http",
  "betterlite-lens",
  "betterlite-logging",
@@ -1282,6 +1283,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

@@ -1,0 +1,1 @@
+{method: POST, path: /upload, headers: {}, body_kind: multipart, body: {parts: [{name: file, filename: a.txt, content_type: text/plain, text: one}, {name: file, filename: a.txt, fixture: binary-response.bin}]}}
