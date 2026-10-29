@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -13,9 +12,11 @@ use aws_credential_types::Credentials;
 use super::aws::{AwsCredentialsResolver, AwsSettings, ElastiCacheIamProvider};
 use super::azure::{
     AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureToken, AzureTokenError,
-    AzureTokenFetcher,
+    AzureTokenFetchError, AzureTokenFetcher,
 };
-use super::gcp::{Clock, GcpIamCredentialProvider, GcpTokenCache, GcpTokenError, GcpTokenFetcher};
+use super::gcp::{
+    Clock, GcpIamCredentialProvider, GcpTokenCache, GcpTokenFetchError, GcpTokenFetcher,
+};
 use super::{Provider, ProviderWarning};
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -75,6 +76,17 @@ fn azure_ad_token_gates_on_strict_true(#[case] token: &str, #[case] expect_enabl
         matches!(settings.provider, Some(Provider::Azure(_))),
         expect_enabled
     );
+}
+
+#[test]
+fn azure_ad_token_resolves_os_environ_reference() {
+    let source =
+        "litellm_settings:\n  cache_params:\n    azure_redis_ad_token: os.environ/AZURE_AD_TOKEN_FLAG\n";
+    let mut environment = BTreeMap::new();
+    environment.insert("AZURE_AD_TOKEN_FLAG".to_owned(), "true".to_owned());
+    environment.insert("AZURE_CLIENT_ID".to_owned(), "client".to_owned());
+    let settings = load(source, environment);
+    assert!(matches!(settings.provider, Some(Provider::Azure(_))));
 }
 
 #[rstest]
@@ -252,6 +264,36 @@ fn aws_iam_auth_config_false_overrides_environment_true() {
 }
 
 #[test]
+fn aws_iam_auth_resolves_os_environ_reference() {
+    let source = "litellm_settings:\n  cache_params:\n    aws_iam_auth: os.environ/AWS_IAM_AUTH_FLAG\n    aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n    ssl: true\n";
+    let mut environment = BTreeMap::new();
+    environment.insert("AWS_IAM_AUTH_FLAG".to_owned(), "true".to_owned());
+    let settings = load(source, environment);
+    assert!(matches!(settings.provider, Some(Provider::Aws(_))));
+}
+
+#[test]
+fn aws_iam_serverless_resolves_os_environ_reference() {
+    let source = "litellm_settings:\n  cache_params:\n    aws_iam_auth: true\n    aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n    aws_iam_serverless: os.environ/AWS_IAM_SERVERLESS_FLAG\n    ssl: true\n";
+    let mut environment = BTreeMap::new();
+    environment.insert("AWS_IAM_SERVERLESS_FLAG".to_owned(), "true".to_owned());
+    let settings = load(source, environment);
+    let Some(Provider::Aws(aws)) = settings.provider else {
+        panic!("expected an aws provider");
+    };
+    assert!(aws.serverless);
+}
+
+#[test]
+fn ssl_flag_resolves_os_environ_reference() {
+    let source = "litellm_settings:\n  cache_params:\n    aws_iam_auth: true\n    aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n    ssl: os.environ/SSL_FLAG\n";
+    let mut environment = BTreeMap::new();
+    environment.insert("SSL_FLAG".to_owned(), "true".to_owned());
+    let settings = load(source, environment);
+    assert!(matches!(settings.provider, Some(Provider::Aws(_))));
+}
+
+#[test]
 fn aws_requires_tls_via_ssl_flag() {
     let source = "litellm_settings:\n  cache_params:\n    aws_iam_auth: true\n    aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n";
     let error = ConfigLoader {
@@ -384,13 +426,9 @@ impl CountingGcpFetcher {
 }
 
 impl GcpTokenFetcher for CountingGcpFetcher {
-    fn fetch(
-        &self,
-        service_account: &str,
-    ) -> Result<SecretString, Box<dyn StdError + Send + Sync + 'static>> {
+    fn fetch(&self, service_account: &str) -> Result<SecretString, GcpTokenFetchError> {
         let mut calls = self.calls.lock().map_err(|_poisoned| {
-            let error: Box<dyn StdError + Send + Sync> = Box::new(GcpTokenError::LockPoisoned);
-            error
+            GcpTokenFetchError::new("the counting fetcher's lock was poisoned")
         })?;
         calls.push(());
         let count = calls.len();
@@ -454,15 +492,7 @@ fn gcp_iam_credential_provider_fetches_through_its_cache() {
         ttl: Duration::from_mins(55),
         cache: Arc::new(GcpTokenCache::default()),
     };
-    let token = provider
-        .cache
-        .get_or_fetch(
-            provider.service_account.expose_secret(),
-            provider.ttl,
-            &clock,
-            &fetcher,
-        )
-        .unwrap();
+    let token = provider.get_credentials(&clock, &fetcher).unwrap();
     assert_eq!(token.expose_secret(), "redis-sa-token-1");
 }
 
@@ -547,10 +577,6 @@ fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
     );
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("the fixed azure token fetcher's lock was poisoned")]
-struct FixedFetcherLockPoisoned;
-
 struct FixedAzureTokenFetcher {
     token: String,
     scopes_seen: Mutex<Vec<String>>,
@@ -572,7 +598,9 @@ impl AzureTokenFetcher for FixedAzureTokenFetcher {
             self.scopes_seen
                 .lock()
                 .map_err(|_poisoned| AzureTokenError::Fetch {
-                    source: Box::new(FixedFetcherLockPoisoned),
+                    source: AzureTokenFetchError::new(
+                        "the fixed azure token fetcher's lock was poisoned",
+                    ),
                 })?;
         scopes_seen.push(scope.to_owned());
         drop(scopes_seen);

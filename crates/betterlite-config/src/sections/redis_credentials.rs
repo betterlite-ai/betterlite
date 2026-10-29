@@ -199,17 +199,22 @@ where
 fn config_or_environment_flag<L>(
     configured: Option<&ScalarBool>,
     lookup: &L,
+    path: &str,
     variable: &str,
-) -> bool
+) -> Result<bool, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let Some(value) = configured else {
-        return lookup
+        return Ok(lookup
             .lookup(variable)
-            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)));
+            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value))));
     };
-    coerces_to_true(value)
+    let resolved = match value {
+        ScalarBool::Boolean(boolean) => ScalarBool::Boolean(*boolean),
+        ScalarBool::Text(text) => ScalarBool::Text(resolve_string(text.clone(), path, lookup)?),
+    };
+    Ok(coerces_to_true(&resolved))
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {

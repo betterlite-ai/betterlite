@@ -1,4 +1,5 @@
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 
 use super::aws::build_aws;
 use super::azure::resolve_azure;
@@ -15,19 +16,22 @@ where
     let mut warnings = Vec::new();
     let gcp = build_gcp(settings, lookup)?;
 
-    let azure_ad_token = non_empty(settings.azure_redis_ad_token.clone())
-        .or_else(|| lookup.lookup("REDIS_AZURE_AD_TOKEN"));
-    let azure_enabled = azure_ad_token.is_some_and(|value| value.eq_ignore_ascii_case("true"));
     let azure = resolve_provider(
-        azure_enabled,
+        azure_ad_token_enabled(settings, lookup)?,
         &[(gcp.is_some(), ProviderWarning::GcpOutranksAzure)],
         &mut warnings,
         || resolve_azure(settings, lookup),
     )
     .transpose()?;
 
+    let aws_iam_auth = config_or_environment_flag(
+        settings.aws_iam_auth.as_ref(),
+        lookup,
+        "litellm_settings.cache_params.aws_iam_auth",
+        "REDIS_AWS_IAM_AUTH",
+    )?;
     let aws = resolve_provider(
-        config_or_environment_flag(settings.aws_iam_auth.as_ref(), lookup, "REDIS_AWS_IAM_AUTH"),
+        aws_iam_auth,
         &[
             (gcp.is_some(), ProviderWarning::GcpOutranksAws),
             (
@@ -48,6 +52,23 @@ where
     };
 
     Ok((resolved, warnings))
+}
+
+fn azure_ad_token_enabled<L>(settings: &RawSettings, lookup: &L) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let configured = non_empty(settings.azure_redis_ad_token.clone())
+        .map(|value| {
+            resolve_string(
+                value,
+                "litellm_settings.cache_params.azure_redis_ad_token",
+                lookup,
+            )
+        })
+        .transpose()?;
+    let azure_ad_token = configured.or_else(|| lookup.lookup("REDIS_AZURE_AD_TOKEN"));
+    Ok(azure_ad_token.is_some_and(|value| value.eq_ignore_ascii_case("true")))
 }
 
 fn resolve_provider<T, B>(

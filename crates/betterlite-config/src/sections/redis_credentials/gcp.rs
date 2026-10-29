@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::error::Error as StdError;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -35,11 +34,23 @@ impl Clock for SystemClock {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub struct GcpTokenFetchError {
+    message: String,
+}
+
+impl GcpTokenFetchError {
+    #[must_use]
+    pub fn new(message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+        }
+    }
+}
+
 pub trait GcpTokenFetcher: Send + Sync {
-    fn fetch(
-        &self,
-        service_account: &str,
-    ) -> Result<SecretString, Box<dyn StdError + Send + Sync + 'static>>;
+    fn fetch(&self, service_account: &str) -> Result<SecretString, GcpTokenFetchError>;
 }
 
 #[derive(Debug, Error)]
@@ -47,7 +58,7 @@ pub enum GcpTokenError {
     #[error("failed to generate a GCP IAM access token: {source}")]
     Fetch {
         #[source]
-        source: Box<dyn StdError + Send + Sync + 'static>,
+        source: GcpTokenFetchError,
     },
     #[error("the GCP token cache lock was poisoned")]
     LockPoisoned,
@@ -131,6 +142,32 @@ pub struct GcpIamCredentialProvider {
     pub cache: Arc<GcpTokenCache>,
 }
 
+impl GcpIamCredentialProvider {
+    pub fn get_credentials(
+        &self,
+        clock: &dyn Clock,
+        fetcher: &dyn GcpTokenFetcher,
+    ) -> Result<SecretString, GcpTokenError> {
+        self.cache.get_or_fetch(
+            self.service_account.expose_secret(),
+            self.ttl,
+            clock,
+            fetcher,
+        )
+    }
+}
+
+impl GcpSettings {
+    #[must_use]
+    pub fn credential_provider(&self) -> GcpIamCredentialProvider {
+        GcpIamCredentialProvider {
+            service_account: self.service_account.clone(),
+            ttl: Duration::from_secs(self.token_ttl_seconds),
+            cache: Arc::clone(&self.token_cache),
+        }
+    }
+}
+
 pub(super) fn build_gcp<L>(
     settings: &RawSettings,
     lookup: &L,
@@ -166,7 +203,12 @@ where
         .transpose()?;
     let gcp_ssl_ca_certs =
         configured_ssl_ca_certs.or_else(|| lookup.lookup("REDIS_GCP_SSL_CA_CERTS"));
-    let ssl = config_or_environment_flag(settings.ssl.as_ref(), lookup, "REDIS_SSL");
+    let ssl = config_or_environment_flag(
+        settings.ssl.as_ref(),
+        lookup,
+        "litellm_settings.cache_params.ssl",
+        "REDIS_SSL",
+    )?;
     Ok(gcp_service_account.map(|account| GcpSettings {
         service_account: SecretString::from(account),
         ssl_ca_certs: gcp_ssl_ca_certs.filter(|_| ssl),

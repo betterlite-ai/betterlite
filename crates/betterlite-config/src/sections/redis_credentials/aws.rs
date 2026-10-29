@@ -185,8 +185,9 @@ where
     let serverless = config_or_environment_flag(
         settings.aws_iam_serverless.as_ref(),
         lookup,
+        "litellm_settings.cache_params.aws_iam_serverless",
         "REDIS_AWS_IAM_SERVERLESS",
-    );
+    )?;
     Ok(AwsSettings {
         user_name,
         cache_name: cache_name.to_ascii_lowercase(),
@@ -209,7 +210,12 @@ where
         lookup,
         "REDIS_URL",
     )?;
-    let ssl_enabled = config_or_environment_flag(settings.ssl.as_ref(), lookup, "REDIS_SSL");
+    let ssl_enabled = config_or_environment_flag(
+        settings.ssl.as_ref(),
+        lookup,
+        "litellm_settings.cache_params.ssl",
+        "REDIS_SSL",
+    )?;
     if uses_tls(url.as_ref(), ssl_enabled)? {
         Ok(())
     } else {

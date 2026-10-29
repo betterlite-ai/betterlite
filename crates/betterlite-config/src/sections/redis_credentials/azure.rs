@@ -1,4 +1,3 @@
-use std::error::Error as StdError;
 use std::sync::Arc;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -33,11 +32,26 @@ pub struct AzureToken {
 }
 
 #[derive(Debug, Error)]
+#[error("{message}")]
+pub struct AzureTokenFetchError {
+    message: String,
+}
+
+impl AzureTokenFetchError {
+    #[must_use]
+    pub fn new(message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
 pub enum AzureTokenError {
     #[error("failed to fetch an Azure AD access token: {source}")]
     Fetch {
         #[source]
-        source: Box<dyn StdError + Send + Sync + 'static>,
+        source: AzureTokenFetchError,
     },
 }
 
