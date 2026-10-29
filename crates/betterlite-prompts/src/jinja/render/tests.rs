@@ -3,7 +3,7 @@
 use super::render_chat_template;
 use crate::builtin::Message;
 use crate::jinja::engine;
-use chrono::{TimeZone, Utc};
+use chrono::{TimeZone as _, Utc};
 use rstest::rstest;
 
 fn messages(wire: &str) -> Vec<Message> {
@@ -56,6 +56,8 @@ fn jinja_prompts_behavior_tests_behavior(
     let actual = render_chat_template(&env, chat_template, "", "", &messages(wire));
     match expected {
         Some(text) => assert_eq!(actual.unwrap(), text),
-        None => assert!(actual.is_err()),
+        None => {
+            actual.unwrap_err();
+        }
     }
 }

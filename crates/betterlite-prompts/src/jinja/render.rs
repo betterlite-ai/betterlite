@@ -3,20 +3,17 @@ use crate::builtin::{Calls, Content, Message};
 use indexmap::IndexMap;
 use minijinja::value::{Serde, Value};
 use minijinja::{Environment, context};
+use std::collections::BTreeMap;
 
 const ALTERNATION_MARKER: &str = "Conversation roles must alternate user/assistant";
 
-fn placeholder(role: &str, content: Content) -> Message {
-    Message {
-        role: role.to_owned(),
-        content,
+fn probe_supports_system(template: &minijinja::Template<'_, '_>) -> bool {
+    let probe = [Message {
+        role: "system".to_owned(),
+        content: Content::Text("test".to_owned()),
         tool_calls: Calls::Absent,
         extra: IndexMap::new(),
-    }
-}
-
-fn probe_supports_system(template: &minijinja::Template<'_, '_>) -> bool {
-    let probe = [placeholder("system", Content::Text("test".to_owned()))];
+    }];
     let ctx = context! {
         bos_token => "<bos>",
         eos_token => "<eos>",
@@ -25,53 +22,44 @@ fn probe_supports_system(template: &minijinja::Template<'_, '_>) -> bool {
     template.render(ctx).is_ok()
 }
 
-fn reformat_for_user(messages: &[Message]) -> Vec<Message> {
-    messages
-        .iter()
-        .map(|message| {
-            if message.role == "system" {
-                placeholder("user", message.content.clone())
-            } else {
-                message.clone()
-            }
-        })
-        .collect()
-}
-
 fn pad_for_alternation(reformatted: &[Message]) -> Option<Vec<Message>> {
-    let last = reformatted.last()?.clone();
-    let mut padded = Vec::with_capacity(reformatted.len());
-    for index in 0..reformatted.len() - 1 {
-        padded.push(reformatted[index].clone());
-        if reformatted[index].role == reformatted[index + 1].role {
-            let opposite = if reformatted[index].role == "user" {
+    let (first, _) = reformatted.split_first()?;
+    let mut padded = vec![first.clone()];
+    for pair in reformatted.windows(2) {
+        let [previous, current] = pair else { continue };
+        if previous.role == current.role {
+            let opposite = if previous.role == "user" {
                 "assistant"
             } else {
                 "user"
             };
-            padded.push(placeholder(opposite, Content::Text(String::new())));
+            padded.push(Message {
+                role: opposite.to_owned(),
+                content: Content::Text(String::new()),
+                tool_calls: Calls::Absent,
+                extra: IndexMap::new(),
+            });
         }
+        padded.push(current.clone());
     }
-    padded.push(last);
     Some(padded)
 }
 
-fn wrap(source: minijinja::Error) -> RenderError {
-    RenderError::Render { source }
-}
-
-fn render_with_generation_prompt(
+fn render_messages(
     template: &minijinja::Template<'_, '_>,
     bos_token: &str,
     eos_token: &str,
     messages: &[Message],
+    add_generation_prompt: Option<bool>,
 ) -> Result<String, minijinja::Error> {
-    let ctx = context! {
-        bos_token,
-        eos_token,
-        messages => Value::from(Serde(messages)),
-        add_generation_prompt => true,
-    };
+    let mut ctx = BTreeMap::from([
+        ("bos_token", Value::from(bos_token)),
+        ("eos_token", Value::from(eos_token)),
+        ("messages", Value::from(Serde(messages))),
+    ]);
+    if let Some(flag) = add_generation_prompt {
+        ctx.insert("add_generation_prompt", Value::from(flag));
+    }
     template.render(ctx)
 }
 
@@ -82,17 +70,15 @@ fn render_alternation_retry(
     reformatted: &[Message],
 ) -> Result<String, RenderError> {
     let Some(padded) = pad_for_alternation(reformatted) else {
-        return Err(wrap(minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            "reformatted messages are empty",
-        )));
+        return Err(RenderError::Render {
+            source: minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "reformatted messages are empty",
+            ),
+        });
     };
-    let ctx = context! {
-        bos_token,
-        eos_token,
-        messages => Value::from(Serde(&padded)),
-    };
-    template.render(ctx).map_err(wrap)
+    render_messages(template, bos_token, eos_token, &padded, None)
+        .map_err(|source| RenderError::Render { source })
 }
 
 pub(super) fn render_chat_template(
@@ -107,11 +93,26 @@ pub(super) fn render_chat_template(
         .map_err(|source| RenderError::Compile { source })?;
 
     if probe_supports_system(&template) {
-        return render_with_generation_prompt(&template, bos_token, eos_token, messages).map_err(wrap);
+        return render_messages(&template, bos_token, eos_token, messages, Some(true))
+            .map_err(|source| RenderError::Render { source });
     }
 
-    let reformatted = reformat_for_user(messages);
-    match render_with_generation_prompt(&template, bos_token, eos_token, &reformatted) {
+    let reformatted: Vec<Message> = messages
+        .iter()
+        .map(|message| {
+            if message.role == "system" {
+                Message {
+                    role: "user".to_owned(),
+                    content: message.content.clone(),
+                    tool_calls: Calls::Absent,
+                    extra: IndexMap::new(),
+                }
+            } else {
+                message.clone()
+            }
+        })
+        .collect();
+    match render_messages(&template, bos_token, eos_token, &reformatted, Some(true)) {
         Ok(rendered) => Ok(rendered),
         Err(error) if error.to_string().contains(ALTERNATION_MARKER) => {
             render_alternation_retry(&template, bos_token, eos_token, &reformatted)
