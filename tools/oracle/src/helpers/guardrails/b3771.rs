@@ -95,7 +95,9 @@ fn grayswan_input_type(input: &serde_json::Value) -> GuardrailInputType {
     }
 }
 
-fn grayswan_guardrail(input: &serde_json::Value) -> Result<GraySwanGuardrail, Box<crate::helpers::HelperError>> {
+fn grayswan_guardrail(
+    input: &serde_json::Value,
+) -> Result<GraySwanGuardrail, Box<crate::helpers::HelperError>> {
     let settings = parse_grayswan_settings(input, OnFlaggedAction::Block)?;
     Ok(make_grayswan_guardrail(
         "http://oracle.invalid".to_owned(),
@@ -173,8 +175,7 @@ where
     let Some(value) = request.get(name).cloned() else {
         return Ok(None);
     };
-    let parsed = serde_json::from_value(value)
-        .map_err(guardrail_error)?;
+    let parsed = serde_json::from_value(value).map_err(guardrail_error)?;
     Ok(Some(parsed))
 }
 
@@ -182,7 +183,10 @@ where
 fn parse_grayswan_request(
     request: &serde_json::Value,
 ) -> Result<GraySwanRequest, Box<crate::helpers::HelperError>> {
-    let settings_source = request.get("config").cloned().unwrap_or_else(|| request.clone());
+    let settings_source = request
+        .get("config")
+        .cloned()
+        .unwrap_or_else(|| request.clone());
     let settings = parse_grayswan_settings(&settings_source, OnFlaggedAction::Monitor)?;
     let dynamic = field_or_empty_object(request, "dynamic");
     let dynamic_params: GraySwanDynamicParams =
@@ -272,8 +276,11 @@ fn run_grayswan_call(call: GraySwanRequest) -> crate::helpers::HelperResult {
         None => disconnection_script(&call.fail),
     };
     let mock = MockProvider::start(script).map_err(guardrail_error)?;
-    let guardrail =
-        make_grayswan_guardrail(mock.base_url.clone(), call.settings, Duration::from_millis(200));
+    let guardrail = make_grayswan_guardrail(
+        mock.base_url.clone(),
+        call.settings,
+        Duration::from_millis(200),
+    );
     let prepared = build_grayswan_input(
         call.texts,
         call.tool_calls,
