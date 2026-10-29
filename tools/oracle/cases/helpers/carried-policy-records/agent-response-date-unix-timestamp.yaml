@@ -1,0 +1,9 @@
+kind: helper
+name: agent-response-date-unix-timestamp
+call:
+  carried_policy_records:
+    function: agent_response
+    value: {agent_id: a, agent_name: 'n', agent_card_params: {}, created_at: 1700000000, updated_at: 1700000000}
+env: {}
+compare:
+  ignore: []
