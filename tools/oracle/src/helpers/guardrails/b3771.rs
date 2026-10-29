@@ -47,15 +47,14 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
 fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let guardrail = grayswan_guardrail(input);
     let response = GraySwanResponse {
-        violation_score: input
+        violation: input
             .get("score")
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(0.0_f64),
-        violation_reason: Some("oracle violation".to_owned()),
-        messages: None,
+        ..GraySwanResponse::default()
     };
     let value = guardrail
-        .process_response(response, GuardrailInputType::Request, Vec::new())
+        .process_response(&response, GuardrailInputType::Request, Vec::new())
         .map_err(|error| failure(error.to_string()))?;
     serde_json::to_value(json!({"allowed": true, "flagged": value.flagged}))
         .map_err(|error| failure(error.to_string()))
