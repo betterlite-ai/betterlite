@@ -51,6 +51,6 @@ Your final answer is one JSON object that matches .development/schema/report.sch
 - status is done or blocked.
 - summary says what changed, in two to four plain sentences.
 - blocker is empty when done.
-- prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every crate the branch adds to a Cargo.toml must be a chosen option here, named exactly as the crate (serde_repr, not serde_repr::Serialize_repr), or the gate fails.
+- prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every option needs its own https link and why, also one you write by hand: link the LiteLLM code it ports or the std or crate docs it builds on, or the gate rejects the report. Every crate the branch adds to a Cargo.toml must be a chosen option here, named exactly as the crate (serde_repr, not serde_repr::Serialize_repr), or the gate fails.
 - deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher checks that the file and the report list the same number of deviations with the same links.
 - notes holds facts the architect needs and nothing else.
