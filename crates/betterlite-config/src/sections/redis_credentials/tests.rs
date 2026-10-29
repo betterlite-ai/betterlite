@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
-use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -506,8 +505,7 @@ fn elasticache_provider_signs_connect_url_for_the_configured_cache() {
 
 #[test]
 fn elasticache_provider_matches_botocore_sigv4_query_auth_known_answer() {
-    // Expected value from botocore's SigV4QueryAuth(creds, "elasticache", "eu-west-1", expires=900)
-    // signing the same request at the Unix epoch, for the static example credentials below.
+    // From botocore's SigV4QueryAuth signing the same request at the Unix epoch.
     let expected = "cache.example/?Action=connect&User=app\
         &X-Amz-Algorithm=AWS4-HMAC-SHA256\
         &X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F19700101%2Feu-west-1%2Felasticache%2Faws4_request\
@@ -549,16 +547,9 @@ fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
     );
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("the fixed azure token fetcher's lock was poisoned")]
 struct FixedFetcherLockPoisoned;
-
-impl fmt::Display for FixedFetcherLockPoisoned {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the fixed azure token fetcher's lock was poisoned")
-    }
-}
-
-impl StdError for FixedFetcherLockPoisoned {}
 
 struct FixedAzureTokenFetcher {
     token: String,
