@@ -11,9 +11,9 @@ use super::policy::{
     unsupported_db_scheme_message,
 };
 use super::query::{
-    QueryValue, add_missing_query_params, append_query_params, append_query_params_diagnostic,
-    connection_params_from_url, idle_lifetime_params, reader_shareable_params,
-    token_refresh_params_from_url, url_query_value, with_query_value,
+    AppendQueryParam, QueryValue, add_missing_query_params, append_query_params,
+    append_query_params_diagnostic, connection_params_from_url, idle_lifetime_params,
+    reader_shareable_params, token_refresh_params_from_url, url_query_value, with_query_value,
 };
 use super::url_codec::UrlSplitError;
 
@@ -166,10 +166,41 @@ fn extra_params_override() {
 #[test]
 fn append_overwrites_lists() {
     let url = "postgresql://h/db?tag=old1&tag=old2";
-    let params = vec![("tag".to_owned(), vec!["new1".to_owned(), "new2".to_owned()])];
+    let params = vec![(
+        "tag".to_owned(),
+        AppendQueryParam::List(vec![
+            QueryValue::Text("new1".to_owned()),
+            QueryValue::Text("new2".to_owned()),
+        ]),
+    )];
     let outcome = append_query_params(Some(url), &params).unwrap();
     assert_eq!(outcome.url, "postgresql://h/db?tag=new1&tag=new2");
     assert!(outcome.warning.is_none());
+}
+
+// build_db_connection_url_params yields a mix of ints, floats and strings that append_query_params must compose as scalars.
+#[test]
+fn append_accepts_scalar_params() {
+    let url = "postgresql://h/db";
+    let params = vec![
+        (
+            "connection_limit".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Integer(10)),
+        ),
+        (
+            "pool_timeout".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Float(60.5)),
+        ),
+        (
+            "pgbouncer".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Text("true".to_owned())),
+        ),
+    ];
+    let outcome = append_query_params(Some(url), &params).unwrap();
+    assert_eq!(
+        outcome.url,
+        "postgresql://h/db?connection_limit=10&pool_timeout=60.5&pgbouncer=true"
+    );
 }
 
 #[test]
@@ -191,7 +222,10 @@ fn append_empty_warns() {
 #[test]
 fn append_diagnostic_redacts_credentials() {
     let url = "postgresql://alice:s3cr3t@host/db?tag=old";
-    let params = vec![("tag".to_owned(), vec!["new".to_owned()])];
+    let params = vec![(
+        "tag".to_owned(),
+        AppendQueryParam::Scalar(QueryValue::Text("new".to_owned())),
+    )];
     let (redacted_url, redacted_params) = append_query_params_diagnostic(Some(url), &params);
     assert_eq!(redacted_url, "postgresql://REDACTED@host/db?tag=old");
     assert_eq!(redacted_params, "{tag: REDACTED}");
@@ -239,6 +273,14 @@ fn replace_all_query_values() {
         with_query_value(url, "k", "new").unwrap(),
         "postgresql://h/db?j=3&k=new"
     );
+}
+
+// Matches CPython's repr(float): scientific notation outside the (-4, 16] decimal-point range.
+#[test]
+fn float_param_matches_python_repr() {
+    assert_eq!(QueryValue::Float(1e16).to_param_string(), "1e+16");
+    assert_eq!(QueryValue::Float(1e-05).to_param_string(), "1e-05");
+    assert_eq!(QueryValue::Float(60.0).to_param_string(), "60.0");
 }
 
 #[test]
@@ -425,7 +467,7 @@ fn malformed_url_bytes() {
     ));
     assert!(matches!(
         decode_database_url(b"postgresql://user%2name@host/db"),
-        Err(DbError::MalformedPercentEscape)
+        Err(DbError::MalformedPercentEscape { .. })
     ));
     assert!(matches!(
         decode_database_url(b"localhost/db"),
@@ -472,6 +514,33 @@ fn native_url_debug_redaction_covers_query_secrets() {
     assert!(!debug.contains("tls-secret"));
     assert!(debug.contains("other"));
     assert!(debug.contains('1'));
+}
+
+// An unencoded '/' in the password pushes the real '@' past where urlsplit stops scanning the netloc.
+#[test]
+fn append_diagnostic_redacts_password_containing_slash() {
+    let url = "postgresql://admin:Secr3t/x@db/app";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "REDACTED");
+    assert!(!redacted_url.contains("Secr3t"));
+}
+
+// An unencoded '?' in the password has the same truncation effect, this time via the query split.
+#[test]
+fn append_diagnostic_redacts_password_containing_question_mark() {
+    let url = "postgresql://admin:Secr3t?x@db/app";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "REDACTED");
+    assert!(!redacted_url.contains("Secr3t"));
+}
+
+// A password containing '/' also pushes digits past the real port boundary, so MalformedPort must not carry it.
+#[test]
+fn malformed_port_does_not_leak_password() {
+    let error = decode_database_url(b"postgresql://user:Secr3t/pw@host:abc/db").unwrap_err();
+    let message = error.to_string();
+    assert!(!message.contains("Secr3t"));
+    assert!(matches!(error, DbError::MalformedPort { .. }));
 }
 
 #[test]
