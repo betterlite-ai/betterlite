@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from typing import TypeAlias, cast
 
 from litellm.harness.types import Reasoning, Text, ToolCall, ToolResult
@@ -13,12 +12,12 @@ class EventMismatchError(ValueError):
 
 
 def run(input_value: dict[str, Json]) -> dict[str, Json]:
-    fixture = Path(cast(str, input_value["fixture"]))
+    stream = cast(str, input_value["stream"])
     config = CodexHarnessConfig()
     state = config.create_stream_state()
     events: list[Json] = []
     started: set[str] = set()
-    for raw_line in fixture.read_text().splitlines():
+    for raw_line in stream.splitlines():
         if not raw_line:
             continue
         line = cast(dict[str, Json], json.loads(raw_line))
