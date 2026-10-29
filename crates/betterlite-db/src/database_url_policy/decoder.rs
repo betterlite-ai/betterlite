@@ -61,6 +61,10 @@ pub enum DbError {
     },
     #[error("database URL has no scheme")]
     MissingScheme,
+    #[error(
+        "database URL has credentials past the parsed host, carried by an unescaped '/', '?' or '#'"
+    )]
+    CredentialsPastNetloc,
     #[error("database URL host has an unterminated or misplaced '[' bracket")]
     MalformedBracket,
     #[error(transparent)]
@@ -100,11 +104,17 @@ pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
         return Err(DbError::MissingScheme);
     }
     let (user, password, host, port) = parse_netloc(&parsed.netloc)?;
-    let database = parsed
-        .path
-        .strip_prefix('/')
-        .unwrap_or(&parsed.path)
-        .to_owned();
+    // Mirrors query.rs's redact_credentials guard: once the netloc itself parses, an unencoded
+    // '/', '?' or '#' in the password has still truncated it early, leaving the rest of the
+    // credentials sitting unparsed (and unredacted) in the path, query or fragment.
+    if !parsed.netloc.is_empty()
+        && (parsed.path.contains('@')
+            || parsed.query.contains('@')
+            || parsed.fragment.contains('@'))
+    {
+        return Err(DbError::CredentialsPastNetloc);
+    }
+    let database = percent_decode(parsed.path.strip_prefix('/').unwrap_or(&parsed.path))?;
     let query = parse_qsl(&parsed.query, true)
         .into_iter()
         .map(|(key, value)| {
