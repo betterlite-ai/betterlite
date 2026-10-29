@@ -2,7 +2,10 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
-use speedate::{Date, DateTime, DateTimeConfig, TimeConfig, TimestampUnit};
+use speedate::{
+    Date, DateTime, DateTimeConfig, MicrosecondsPrecisionOverflowBehavior, TimeConfig,
+    TimestampUnit,
+};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -52,7 +55,7 @@ impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
 fn build_config() -> DateTimeConfig {
     let time_config = TimeConfig::builder()
         .unix_timestamp_offset(Some(0_i32))
-        .microseconds_precision_overflow_behavior("truncate".parse().unwrap_or_default())
+        .microseconds_precision_overflow_behavior(MicrosecondsPrecisionOverflowBehavior::Truncate)
         .build();
     DateTimeConfig::builder()
         .timestamp_unit(TimestampUnit::Infer)
