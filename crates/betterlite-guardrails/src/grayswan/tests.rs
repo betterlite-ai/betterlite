@@ -544,3 +544,59 @@ async fn grayswan_apply_guardrail_propagates_the_error_when_fail_open_is_unset()
         Err(GraySwanGuardrailAPIError::HttpStatus { .. })
     ));
 }
+
+async fn apply_guardrail_capturing_payload(input_type: GuardrailInputType) -> serde_json::Value {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_for_handler = captured.clone();
+    let answer = move |body: axum::body::Bytes| {
+        let captured = captured_for_handler.clone();
+        async move {
+            *captured.lock().unwrap() = body.to_vec();
+            (StatusCode::OK, "{}".to_owned())
+        }
+    };
+    let router = Router::new().route("/cygnal/monitor", post(answer));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let instance = GraySwanGuardrail {
+        api_key: SecretString::from("secret"),
+        api_base: base,
+        settings: GraySwanSettings::default(),
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    };
+    let scan = input(
+        vec!["hello".to_owned()],
+        vec![GuardrailExtraValue::Text("call-xyz".to_owned())],
+        vec![message("assistant", "previous-context")],
+    );
+    instance
+        .apply_guardrail(scan, input_type)
+        .await
+        .expect("guardrail call succeeds");
+    let body = captured.lock().unwrap().clone();
+    serde_json::from_slice(&body).expect("captured payload is valid JSON")
+}
+
+#[tokio::test]
+async fn grayswan_apply_guardrail_drops_tool_calls_and_history_for_a_request() {
+    let payload = apply_guardrail_capturing_payload(GuardrailInputType::Request).await;
+    let messages = payload["messages"].as_array().expect("messages array");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["role"], "user");
+    assert_eq!(messages[0]["content"], "hello");
+    assert!(messages[0].get("tool_calls").is_none());
+}
+
+#[tokio::test]
+async fn grayswan_apply_guardrail_sends_tool_calls_and_history_for_a_response() {
+    let payload = apply_guardrail_capturing_payload(GuardrailInputType::Response).await;
+    let messages = payload["messages"].as_array().expect("messages array");
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["role"], "assistant");
+    assert_eq!(messages[0]["content"], "previous-context");
+    assert_eq!(messages[1]["content"], "hello");
+    assert!(messages[1].get("tool_calls").is_some());
+}
