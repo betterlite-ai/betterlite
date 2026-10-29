@@ -3,10 +3,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
-/// A loosely typed JSON scalar.
-///
-/// The source's tolerant scalar coercion has to inspect a cost field's runtime
-/// shape, not assume it is already a number.
+// The source's tolerant scalar coercion inspects a cost field's runtime shape, not just a number.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Scalar {
@@ -17,8 +14,6 @@ pub enum Scalar {
     Object(IgnoredAny),
 }
 
-/// A whole-request price tier. Field identity is the catalog's wire names, read
-/// through named struct fields rather than a runtime string-keyed lookup.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Tier {
@@ -29,7 +24,8 @@ pub struct Tier {
     #[serde(rename = "output_cost_per_reasoning_token")]
     pub output_reasoning_token: Option<Scalar>,
     pub cache_read_input_token_cost: Option<Scalar>,
-    pub cache_creation_input_token_cost: Option<Scalar>,
+    #[serde(rename = "cache_creation_input_token_cost")]
+    pub cache_creation_token_cost: Option<Scalar>,
     pub input_cost_per_query: Option<Scalar>,
     pub range: Option<Vec<Scalar>>,
     pub max_results_range: Option<Vec<Scalar>>,
@@ -45,11 +41,7 @@ pub enum TieredPricingError {
     MalformedRange,
 }
 
-/// Coerce a per-token cost into a [`Decimal`].
-///
-/// A syntactically invalid numeric string becomes zero, matching the source's
-/// `except ValueError: return 0.0`; an out-of-range or unrepresentable number
-/// is a typed error instead.
+// A syntactically invalid numeric string becomes zero, matching the source's `except ValueError: return 0.0`.
 pub fn coerce_cost_per_token(value: Option<&Scalar>) -> Result<Decimal, TieredPricingError> {
     match value {
         None => Ok(Decimal::ZERO),
@@ -66,11 +58,7 @@ pub fn coerce_cost_per_token(value: Option<&Scalar>) -> Result<Decimal, TieredPr
     }
 }
 
-/// Read a tier's rate, preferring a present field over the fallback.
-///
-/// A present primary wins even when it is explicit zero. The caller resolves
-/// which named field is primary and which is the fallback, so this never
-/// interpolates a cost-field name itself.
+// A present primary wins even when it is explicit zero; only a null/missing primary reads the fallback.
 pub fn tier_rate(
     primary: Option<&Scalar>,
     fallback: Option<&Scalar>,
@@ -104,16 +92,7 @@ fn range_bounds(tier: &Tier) -> Option<(Decimal, Decimal)> {
     Some((lower_bound, upper_bound))
 }
 
-/// Select the whole-request tier for `input_tokens`.
-///
-/// Tiers are stable-sorted by each tier's first range endpoint (zero when the
-/// tier has no range) so sort ties keep their original order. A malformed
-/// range, including one that is present but empty, errors here during the
-/// sort rather than being filtered out beforehand. Only two-element ranges are
-/// retained; a request matches the first retained tier with
-/// `lower < input_tokens <= upper`, or else falls back to the last retained
-/// tier, covering both an above-every-range request and a gap between two
-/// ranges.
+// A malformed range, including an empty one, errors during the sort rather than being filtered out first.
 pub fn select_tier_for_input(
     tiers: &[Tier],
     input_tokens: i64,

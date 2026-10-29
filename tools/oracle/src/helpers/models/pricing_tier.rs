@@ -38,7 +38,7 @@ fn scalar_for<'tier>(tier: &'tier Tier, key: &str) -> Option<&'tier Scalar> {
         "output_cost_per_token" => tier.output_token.as_ref(),
         "output_cost_per_reasoning_token" => tier.output_reasoning_token.as_ref(),
         "cache_read_input_token_cost" => tier.cache_read_input_token_cost.as_ref(),
-        "cache_creation_input_token_cost" => tier.cache_creation_input_token_cost.as_ref(),
+        "cache_creation_input_token_cost" => tier.cache_creation_token_cost.as_ref(),
         "input_cost_per_query" => tier.input_cost_per_query.as_ref(),
         _ => None,
     }
@@ -52,13 +52,14 @@ fn range_json(tier: &Tier) -> Option<serde_json::Value> {
 }
 
 fn pricing_error(error: impl std::fmt::Display) -> Box<crate::helpers::HelperError> {
+    let message = error.to_string();
     Box::new(crate::helpers::HelperError {
         class: "TieredPricingError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     })
 }
 
