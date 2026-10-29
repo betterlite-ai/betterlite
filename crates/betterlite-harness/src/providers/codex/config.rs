@@ -76,17 +76,12 @@ pub(super) fn config_overrides(config: &JsonObject) -> Result<Vec<String>, Harne
     for (key, value) in config {
         let first = key.split('.').next().unwrap_or_default();
         if key.is_empty() || key.contains('=') {
-            return Err(HarnessError::OptionsMismatch {
-                given: "CodexOptions.config key",
-                harness: Harness::Codex,
-                expected: "a non-empty key without '='",
-            });
+            return Err(HarnessError::InvalidConfigKey { key: key.clone() });
         }
         if MANAGED_CONFIG_KEYS.contains(&first) {
-            return Err(HarnessError::OptionsMismatch {
-                given: "CodexOptions.config",
+            return Err(HarnessError::ManagedConfigKey {
+                key: key.clone(),
                 harness: Harness::Codex,
-                expected: "a key Codex does not manage itself",
             });
         }
         overrides.push(format!("{}={}", key, toml_value(value, 0)?));

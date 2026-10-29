@@ -28,11 +28,7 @@ fn config_toml_managed_keys() {
     assert_eq!(super::config::toml_value(value, 0).unwrap(), "[true, 2]");
     assert!(matches!(
         super::config::config_overrides(&config).unwrap_err(),
-        HarnessError::OptionsMismatch {
-            given: "CodexOptions.config",
-            harness: Harness::Codex,
-            expected: "a key Codex does not manage itself",
-        }
+        HarnessError::ManagedConfigKey { key, harness: Harness::Codex } if key == "model"
     ));
 }
 
@@ -329,11 +325,16 @@ fn rejects_managed_config(#[case] key: &str) {
     let config: JsonObject = serde_json::from_str(&format!("{{\"{key}\":true}}")).unwrap();
     assert!(matches!(
         super::config::config_overrides(&config).unwrap_err(),
-        HarnessError::OptionsMismatch {
-            given: "CodexOptions.config",
-            harness: Harness::Codex,
-            expected: "a key Codex does not manage itself",
-        }
+        HarnessError::ManagedConfigKey { key: reported, harness: Harness::Codex } if reported == key
+    ));
+}
+
+#[test]
+fn rejects_invalid_config_key() {
+    let config: JsonObject = serde_json::from_str(r#"{"has=equals":true}"#).unwrap();
+    assert!(matches!(
+        super::config::config_overrides(&config).unwrap_err(),
+        HarnessError::InvalidConfigKey { key } if key == "has=equals"
     ));
 }
 

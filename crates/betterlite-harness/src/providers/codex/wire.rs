@@ -93,8 +93,8 @@ pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
         .map(|(key, entry)| (key.clone(), entry.clone()))
         .collect();
     let value = Value::Object(object);
-    serde_json::from_value(value.clone()).ok().or_else(|| {
-        (value.get("type").and_then(Value::as_str) == Some("turn.failed"))
+    serde_json::from_value(value).ok().or_else(|| {
+        (line.get("type").and_then(Value::as_str) == Some("turn.failed"))
             .then(|| super::StreamEvent::TurnFailed { error: None })
     })
 }

@@ -37,18 +37,7 @@ pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
         Item::WebSearch { query, status, .. } => {
             web_search_projection(query.as_deref(), status.as_deref())
         }
-        Item::McpToolCall {
-            server,
-            tool,
-            arguments,
-            result,
-            error,
-            status,
-            ..
-        } => mcp_tool_projection(
-            (server.as_deref(), tool.as_deref(), arguments.as_ref()),
-            (result.as_ref(), error.as_ref(), status.as_deref()),
-        ),
+        Item::McpToolCall { .. } => mcp_tool_call_projection(item),
         Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => ToolProjection {
             name: String::new(),
             native_name: String::new(),
@@ -57,6 +46,39 @@ pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
             output: String::new(),
             is_error: false,
         },
+    }
+}
+
+fn mcp_tool_call_projection(item: &Item) -> ToolProjection {
+    let Item::McpToolCall {
+        server,
+        tool,
+        arguments,
+        result,
+        error,
+        status,
+        ..
+    } = item
+    else {
+        return ToolProjection {
+            name: String::new(),
+            native_name: String::new(),
+            input: JsonObject::new(),
+            builtin: false,
+            output: String::new(),
+            is_error: false,
+        };
+    };
+    let (name, native_name, input) =
+        mcp_tool_input(server.as_deref(), tool.as_deref(), arguments.as_ref());
+    let (output, is_error) = mcp_tool_output(result.as_ref(), error.as_ref(), status.as_deref());
+    ToolProjection {
+        name,
+        native_name,
+        input,
+        builtin: false,
+        output,
+        is_error,
     }
 }
 
@@ -117,24 +139,6 @@ fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProje
         builtin: true,
         output: String::new(),
         is_error: status == Some("failed"),
-    }
-}
-
-fn mcp_tool_projection(
-    call: (Option<&str>, Option<&str>, Option<&Value>),
-    outcome: (Option<&OrderedJson>, Option<&Value>, Option<&str>),
-) -> ToolProjection {
-    let (server, tool, arguments) = call;
-    let (result, error, status) = outcome;
-    let (name, native_name, input) = mcp_tool_input(server, tool, arguments);
-    let (output, is_error) = mcp_tool_output(result, error, status);
-    ToolProjection {
-        name,
-        native_name,
-        input,
-        builtin: false,
-        output,
-        is_error,
     }
 }
 
