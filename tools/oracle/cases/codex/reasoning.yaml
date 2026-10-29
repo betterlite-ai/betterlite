@@ -1,0 +1,7 @@
+kind: helper
+name: codex-reasoning
+call:
+  b4835:
+    fixture: tools/oracle/cases/codex/fixtures/reasoning.jsonl
+env: {}
+compare: {ignore: []}
