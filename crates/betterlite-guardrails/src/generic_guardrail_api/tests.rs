@@ -6,7 +6,7 @@ use std::future::IntoFuture as _;
 use axum::Router;
 use axum::routing::post;
 use reqwest::StatusCode;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{CONTENT_TYPE, HeaderName};
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
@@ -34,7 +34,7 @@ fn settings(
 }
 
 fn api(settings: GenericGuardrailAPISettings, api_base: &str) -> GenericGuardrailAPI {
-    GenericGuardrailAPI::new(SecretString::from("secret-token"), api_base, settings)
+    GenericGuardrailAPI::new(Some(SecretString::from("secret-token")), api_base, settings)
 }
 
 fn base_request() -> GenericGuardrailAPIRequest {
@@ -157,19 +157,19 @@ fn generic_guardrail_error_policy_is_explicit() {
 
 #[test]
 fn generic_guardrail_fail_on_error_override_unreachable() {
-    let settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
-        unreachable_fallback: Some(UnreachableFallback::FailClosed),
-        fail_on_error: Some(true),
-        provider_params: None,
-        streaming_end_of_stream_only: None,
-        streaming_sampling_rate: None,
-        streaming_transform_mode: None,
-    }));
-    assert!(settings.fail_on_error);
-    assert_eq!(
-        settings.unreachable_fallback,
-        UnreachableFallback::FailClosed
+    let instance = api(
+        settings(false, UnreachableFallback::FailClosed),
+        "http://example",
     );
+    let error = GenericGuardrailAPIError::HttpStatus {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    let fallback = GenericGuardrailAPIResponse {
+        texts: Some(vec!["fallback".to_owned()]),
+        ..base_response()
+    };
+    let result = instance.handle_error(error, fallback).expect("fallback");
+    assert_eq!(result.texts, Some(vec!["fallback".to_owned()]));
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn generic_guardrail_status_code_is_always_bad_request() {
 #[test]
 fn generic_guardrail_handle_error_propagates_a_reachable_error_with_fail_open_configured() {
     let instance = api(
-        settings(false, UnreachableFallback::FailOpen),
+        settings(true, UnreachableFallback::FailOpen),
         "http://example",
     );
     let error = GenericGuardrailAPIError::Blocked {
@@ -203,7 +203,7 @@ fn generic_guardrail_handle_error_propagates_a_reachable_error_with_fail_open_co
 #[test]
 fn generic_guardrail_handle_error_propagates_an_unreachable_error_with_fail_closed_configured() {
     let instance = api(
-        settings(false, UnreachableFallback::FailClosed),
+        settings(true, UnreachableFallback::FailClosed),
         "http://example",
     );
     let error = GenericGuardrailAPIError::HttpStatus {
@@ -238,20 +238,33 @@ fn generic_guardrail_handle_error_falls_open_for_an_unreachable_error_with_fail_
 }
 
 #[test]
-fn generic_guardrail_headers_include_bearer_token_and_json_content_type() {
+fn generic_guardrail_headers_include_the_api_key_and_json_content_type() {
     let instance = api(
         GenericGuardrailAPISettings::from_optional(None),
         "http://example",
     );
     let headers = instance.prepare_headers().expect("headers");
+    let api_key_header = HeaderName::from_static("x-api-key");
     assert_eq!(
-        headers.get(AUTHORIZATION).unwrap().to_str().unwrap(),
-        "Bearer secret-token"
+        headers.get(&api_key_header).unwrap().to_str().unwrap(),
+        "secret-token"
     );
+    assert!(headers.get(&api_key_header).unwrap().is_sensitive());
     assert_eq!(
         headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(),
         "application/json"
     );
+}
+
+#[test]
+fn generic_guardrail_headers_omit_the_api_key_when_none_is_configured() {
+    let instance = GenericGuardrailAPI::new(
+        None,
+        "http://example",
+        GenericGuardrailAPISettings::from_optional(None),
+    );
+    let headers = instance.prepare_headers().expect("headers");
+    assert!(!headers.contains_key("x-api-key"));
 }
 
 #[rstest]
@@ -286,7 +299,8 @@ fn generic_guardrail_enforce_response_blocks_only_a_blocked_action() {
         blocked_reason: Some("policy".to_owned()),
         ..base_response()
     };
-    let error = super::enforce_response(blocked).expect_err("blocked action");
+    let error =
+        super::enforce_response(blocked, &base_request(), &base_request()).expect_err("blocked");
     assert!(matches!(
         error,
         GenericGuardrailAPIError::Blocked { reason } if reason == ": policy"
@@ -296,12 +310,27 @@ fn generic_guardrail_enforce_response_blocks_only_a_blocked_action() {
         action: GuardrailResponseAction::None,
         ..base_response()
     };
-    let allowed = super::enforce_response(passthrough).expect("passthrough action");
+    let allowed = super::enforce_response(passthrough, &base_request(), &base_request())
+        .expect("passthrough action");
     assert_eq!(allowed.action, GuardrailResponseAction::None);
 }
 
 #[test]
-fn generic_guardrail_reconcile_response_clears_structured_messages_left_unmodified() {
+fn generic_guardrail_enforce_response_falls_back_to_the_original_request_when_fields_are_empty() {
+    let original = GenericGuardrailAPIRequest {
+        texts: Some(vec!["original".to_owned()]),
+        ..base_request()
+    };
+    let response = GenericGuardrailAPIResponse {
+        texts: None,
+        ..base_response()
+    };
+    let result = super::enforce_response(response, &original, &original).expect("not blocked");
+    assert_eq!(result.texts, Some(vec!["original".to_owned()]));
+}
+
+#[test]
+fn generic_guardrail_enforce_response_clears_structured_messages_left_unmodified() {
     let shown_row = row("shown");
     let original = GenericGuardrailAPIRequest {
         structured_messages: Some(vec![row("original")]),
@@ -311,12 +340,12 @@ fn generic_guardrail_reconcile_response_clears_structured_messages_left_unmodifi
         structured_messages: Some(vec![shown_row.clone()]),
         ..base_request()
     };
-    let mut response = GenericGuardrailAPIResponse {
+    let response = GenericGuardrailAPIResponse {
         structured_messages: Some(vec![shown_row]),
         ..base_response()
     };
-    super::reconcile_response(&mut response, &original, &shown);
-    assert_eq!(response.structured_messages, None);
+    let result = super::enforce_response(response, &original, &shown).expect("not blocked");
+    assert_eq!(result.structured_messages, None);
 }
 
 async fn call_api_mock(

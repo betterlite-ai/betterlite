@@ -2,15 +2,18 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use reqwest::StatusCode;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, InvalidHeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
-    GenericGuardrailAPISettings, GuardrailResponseAction, UnreachableFallback,
-    reconcile_structured_rows,
+    GenericGuardrailAPISettings, UnreachableFallback,
 };
+
+mod response;
+
+use response::{enforce_response, passthrough_response};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_PATH: &str = "/beta/litellm_basic_guardrail_api";
@@ -50,7 +53,13 @@ impl GenericGuardrailAPIError {
 
     const fn is_unreachable(&self) -> bool {
         match self {
-            Self::Timeout { .. } | Self::Request { .. } | Self::HttpStatus { .. } => true,
+            Self::Timeout { .. } | Self::Request { .. } => true,
+            Self::HttpStatus { status } => matches!(
+                *status,
+                StatusCode::BAD_GATEWAY
+                    | StatusCode::SERVICE_UNAVAILABLE
+                    | StatusCode::GATEWAY_TIMEOUT
+            ),
             Self::Blocked { .. }
             | Self::InvalidHeader { .. }
             | Self::ResponseTooLarge { .. }
@@ -61,7 +70,7 @@ impl GenericGuardrailAPIError {
 
 #[derive(Debug, Clone)]
 pub struct GenericGuardrailAPI {
-    pub api_key: SecretString,
+    pub api_key: Option<SecretString>,
     pub api_base: String,
     pub settings: GenericGuardrailAPISettings,
     pub client: reqwest::Client,
@@ -71,7 +80,7 @@ pub struct GenericGuardrailAPI {
 impl GenericGuardrailAPI {
     #[must_use]
     pub fn new(
-        api_key: SecretString,
+        api_key: Option<SecretString>,
         api_base: &str,
         settings: GenericGuardrailAPISettings,
     ) -> Self {
@@ -87,7 +96,7 @@ impl GenericGuardrailAPI {
 
     #[must_use]
     pub fn with_client(
-        api_key: SecretString,
+        api_key: Option<SecretString>,
         api_base: &str,
         settings: GenericGuardrailAPISettings,
         client: reqwest::Client,
@@ -105,12 +114,13 @@ impl GenericGuardrailAPI {
 
     pub fn prepare_headers(&self) -> Result<HeaderMap, GenericGuardrailAPIError> {
         let mut headers = HeaderMap::new();
-        let mut authorization =
-            HeaderValue::from_str(&format!("Bearer {}", self.api_key.expose_secret()))
-                .map_err(|source| GenericGuardrailAPIError::InvalidHeader { source })?;
-        authorization.set_sensitive(true);
-        headers.insert(AUTHORIZATION, authorization);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        if let Some(api_key) = &self.api_key {
+            let mut value = HeaderValue::from_str(api_key.expose_secret())
+                .map_err(|source| GenericGuardrailAPIError::InvalidHeader { source })?;
+            value.set_sensitive(true);
+            headers.insert(HeaderName::from_static("x-api-key"), value);
+        }
         Ok(headers)
     }
 
@@ -129,10 +139,7 @@ impl GenericGuardrailAPI {
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
         let fallback = passthrough_response(original);
         match self.call_api(&request).await {
-            Ok(mut response) => {
-                reconcile_response(&mut response, original, &request);
-                enforce_response(response)
-            }
+            Ok(response) => enforce_response(response, original, &request),
             Err(error) => self.handle_error(error, fallback),
         }
     }
@@ -154,12 +161,7 @@ impl GenericGuardrailAPI {
         if !status.is_success() {
             return Err(GenericGuardrailAPIError::HttpStatus { status });
         }
-        let body = response.bytes().await.map_err(request_error)?;
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(GenericGuardrailAPIError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
+        let body = read_capped_body(response, MAX_RESPONSE_BYTES).await?;
         serde_json::from_slice(&body)
             .map_err(|source| GenericGuardrailAPIError::ResponseJson { source })
     }
@@ -169,14 +171,10 @@ impl GenericGuardrailAPI {
         error: GenericGuardrailAPIError,
         fallback: GenericGuardrailAPIResponse,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
-        if self.settings.fail_on_error {
+        let unreachable_fail_open = error.is_unreachable()
+            && self.settings.unreachable_fallback == UnreachableFallback::FailOpen;
+        if unreachable_fail_open || !self.settings.fail_on_error {
             tracing::error!(error = %error, "generic guardrail API error; passing through");
-            return Ok(fallback);
-        }
-        if error.is_unreachable()
-            && self.settings.unreachable_fallback == UnreachableFallback::FailOpen
-        {
-            tracing::error!(error = %error, "generic guardrail API unreachable; passing through");
             return Ok(fallback);
         }
         Err(error)
@@ -242,48 +240,25 @@ fn request_error(source: reqwest::Error) -> GenericGuardrailAPIError {
     }
 }
 
-fn passthrough_response(request: &GenericGuardrailAPIRequest) -> GenericGuardrailAPIResponse {
-    let texts = request.texts.clone();
-    let images = request.images.clone();
-    let tools = request.tools.clone();
-    let structured_messages = request.structured_messages.clone();
-    GenericGuardrailAPIResponse {
-        action: GuardrailResponseAction::None,
-        texts,
-        images,
-        tools,
-        structured_messages,
-        blocked_reason: None,
-        stream_holdback_chars: None,
+async fn read_capped_body(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, GenericGuardrailAPIError> {
+    let limit_bytes = u64::try_from(limit).unwrap_or(u64::MAX);
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit_bytes)
+    {
+        return Err(GenericGuardrailAPIError::ResponseTooLarge { limit });
     }
-}
-
-fn reconcile_response(
-    response: &mut GenericGuardrailAPIResponse,
-    original: &GenericGuardrailAPIRequest,
-    shown: &GenericGuardrailAPIRequest,
-) {
-    if let (Some(original_rows), Some(shown_rows), Some(returned_rows)) = (
-        original.structured_messages.as_deref(),
-        shown.structured_messages.as_deref(),
-        response.structured_messages.as_deref(),
-    ) {
-        response.structured_messages =
-            reconcile_structured_rows(original_rows, shown_rows, returned_rows);
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+        body.extend_from_slice(&chunk);
+        if body.len() > limit {
+            return Err(GenericGuardrailAPIError::ResponseTooLarge { limit });
+        }
     }
-}
-
-fn enforce_response(
-    response: GenericGuardrailAPIResponse,
-) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
-    if response.action == GuardrailResponseAction::Blocked {
-        let reason = response
-            .blocked_reason
-            .as_deref()
-            .map_or_else(String::new, |value| format!(": {value}"));
-        return Err(GenericGuardrailAPIError::Blocked { reason });
-    }
-    Ok(response)
+    Ok(body)
 }
 
 #[path = "generic_guardrail_api/tests.rs"]
