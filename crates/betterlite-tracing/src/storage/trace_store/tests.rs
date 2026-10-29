@@ -3,14 +3,16 @@
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE;
 use betterlite_logging::trace_types::{SpanType, TraceScope};
 use betterlite_logging::ui_content::UiContent;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use super::{TraceStorage, TraceStore};
-use crate::cursor::{decode_error_cursor, encode_error_cursor};
+use super::{SpanErrorTarget, TraceStorage, TraceStore};
+use crate::cursor::{ErrorCursor, decode_error_cursor, decode_trace_cursor};
 use crate::spend::SpendRow;
 use crate::storage::query::{
     ListTracesQuery, SpanDetailQuery, SpanErrorQuery, SpendByRequestIdsQuery, TraceSpansQuery,
@@ -250,7 +252,15 @@ async fn get_span_returns_none_when_the_span_is_missing() {
 async fn get_span_error_returns_none_when_the_span_has_no_error() {
     let store = TraceStore::from(StubStorage::default());
     let page = store
-        .get_span_error(("trace-1", "span-1"), &scope(), "", None)
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "",
+            },
+            &scope(),
+            None,
+        )
         .await
         .expect("ok");
     assert_eq!(page, None);
@@ -275,7 +285,15 @@ async fn get_span_error_returns_a_next_cursor_when_more_data_remains() {
     };
     let store = TraceStore::from(storage);
     let page = store
-        .get_span_error(("trace-1", "span-1"), &scope(), "", None)
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "",
+            },
+            &scope(),
+            None,
+        )
         .await
         .expect("ok")
         .expect("page");
@@ -301,7 +319,15 @@ async fn get_span_error_omits_the_next_cursor_when_the_chunk_reaches_the_end() {
     };
     let store = TraceStore::from(storage);
     let page = store
-        .get_span_error(("trace-1", "span-1"), &scope(), "", None)
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "",
+            },
+            &scope(),
+            None,
+        )
         .await
         .expect("ok")
         .expect("page");
@@ -327,9 +353,21 @@ async fn get_span_error_next_cursor_carries_the_stored_row_version() {
         seen_trace_ref: Mutex::new(None),
     };
     let store = TraceStore::from(storage);
-    let requested = encode_error_cursor(0, &"B".repeat(64));
+    let requested_payload = ErrorCursor {
+        offset: 0,
+        version: "B".repeat(64),
+    };
+    let requested = URL_SAFE.encode(serde_json::to_string(&requested_payload).expect("json"));
     let page = store
-        .get_span_error(("trace-1", "span-1"), &scope(), "", Some(&requested))
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "",
+            },
+            &scope(),
+            Some(&requested),
+        )
         .await
         .expect("ok")
         .expect("page");
@@ -361,7 +399,15 @@ async fn get_span_error_computes_byte_offsets_for_multi_byte_messages() {
     };
     let store = TraceStore::from(storage);
     let page = store
-        .get_span_error(("trace-1", "span-1"), &scope(), "", None)
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "",
+            },
+            &scope(),
+            None,
+        )
         .await
         .expect("ok")
         .expect("page");
@@ -390,7 +436,11 @@ async fn list_traces_returns_a_next_cursor_when_the_page_is_full() {
         .await
         .expect("ok");
     assert_eq!(page.data.len(), 2);
-    assert!(page.next_cursor.is_some());
+    let cursor = page.next_cursor.expect("next cursor");
+    assert_eq!(
+        decode_trace_cursor(Some(&cursor)).expect("decode"),
+        (200, "ref-trace-2".to_owned())
+    );
 }
 
 #[tokio::test]
@@ -461,7 +511,15 @@ async fn get_span_error_forwards_the_scope_to_storage() {
     let scope = scope_with("team-d", "hash-d");
     let store = TraceStore::from(StubStorage::default());
     let _page = store
-        .get_span_error(("trace-1", "span-1"), &scope, "", None)
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "",
+            },
+            &scope,
+            None,
+        )
         .await;
     assert_eq!(
         store.storage.seen_scope.lock().expect("lock").clone(),
@@ -493,7 +551,15 @@ async fn get_span_forwards_the_trace_ref_to_storage() {
 async fn get_span_error_forwards_the_trace_ref_to_storage() {
     let store = TraceStore::from(StubStorage::default());
     let _page = store
-        .get_span_error(("trace-1", "span-1"), &scope(), "ref-3", None)
+        .get_span_error(
+            SpanErrorTarget {
+                trace_id: "trace-1",
+                span_id: "span-1",
+                trace_ref: "ref-3",
+            },
+            &scope(),
+            None,
+        )
         .await;
     assert_eq!(
         store.storage.seen_trace_ref.lock().expect("lock").clone(),

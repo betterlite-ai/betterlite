@@ -5,7 +5,7 @@ use base64::engine::general_purpose::URL_SAFE;
 use rstest::rstest;
 
 use super::{
-    CursorError, decode_error_cursor, decode_trace_cursor, encode_error_cursor, encode_trace_cursor,
+    CursorError, ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_trace_cursor,
 };
 
 const VALID_VERSION: &str = "A1B2C3D4E5F6071829384756AFBECD1029384756473829102938475647382910";
@@ -54,7 +54,11 @@ fn decodes_an_absent_diagnostic_cursor_as_none() {
 
 #[test]
 fn round_trips_an_error_cursor() {
-    let encoded = encode_error_cursor(4096, VALID_VERSION);
+    let payload = ErrorCursor {
+        offset: 4096,
+        version: VALID_VERSION.to_owned(),
+    };
+    let encoded = URL_SAFE.encode(serde_json::to_string(&payload).expect("json"));
     let decoded = decode_error_cursor(Some(&encoded))
         .expect("ok")
         .expect("some");

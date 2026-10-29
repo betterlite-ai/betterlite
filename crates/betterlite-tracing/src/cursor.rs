@@ -70,15 +70,6 @@ pub struct ErrorCursor {
     pub version: String,
 }
 
-#[must_use]
-pub fn encode_error_cursor(offset: u64, version: &str) -> String {
-    let payload = ErrorCursor {
-        offset,
-        version: version.to_owned(),
-    };
-    URL_SAFE.encode(serde_json::to_string(&payload).unwrap_or_default())
-}
-
 pub fn decode_error_cursor(cursor: Option<&str>) -> Result<Option<ErrorCursor>, CursorError> {
     let Some(parsed) = decode_payload::<ErrorCursor>(cursor, CursorError::InvalidDiagnostic)?
     else {

@@ -2,12 +2,12 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::future::Future;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE;
 use betterlite_logging::trace_types::{SpanDetail, SpanErrorPage, Trace, TracePage, TraceScope};
 use betterlite_logging::ui_content::to_ui_content;
 
-use crate::cursor::{
-    ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_error_cursor, encode_trace_cursor,
-};
+use crate::cursor::{ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_trace_cursor};
 use crate::projections::{NANOS_PER_MS, trace_from_rows, trace_summary_from_row};
 use crate::spend::{SPEND_WINDOW_MS, SpendRow};
 use crate::storage::error::StorageError;
@@ -45,6 +45,12 @@ pub trait TraceStorage {
 
 pub struct TraceStore<S> {
     storage: S,
+}
+
+pub struct SpanErrorTarget<'span_error> {
+    pub trace_id: &'span_error str,
+    pub span_id: &'span_error str,
+    pub trace_ref: &'span_error str,
 }
 
 impl<S> From<S> for TraceStore<S> {
@@ -120,8 +126,13 @@ fn error_page(row: SpanErrorRow, position: Option<&ErrorCursor>) -> SpanErrorPag
     let message_len = u64::try_from(row.message.len()).unwrap_or(u64::MAX);
     let total_chars = u64::try_from(row.total_chars).unwrap_or(u64::MAX);
     let next_offset = requested_offset.saturating_add(message_len);
-    let next_cursor =
-        (next_offset < total_chars).then(|| encode_error_cursor(next_offset, &row.version));
+    let next_cursor = (next_offset < total_chars).then(|| {
+        let payload = ErrorCursor {
+            offset: next_offset,
+            version: row.version.clone(),
+        };
+        URL_SAFE.encode(serde_json::to_string(&payload).unwrap_or_default())
+    });
     SpanErrorPage {
         span_id: row.span_id,
         message: row.message,
@@ -263,14 +274,18 @@ where
 
     pub async fn get_span_error(
         &self,
-        span: (&str, &str),
+        target: SpanErrorTarget<'_>,
         scope: &TraceScope,
-        trace_ref: &str,
         cursor: Option<&str>,
     ) -> Result<Option<SpanErrorPage>, StorageError<S::Error>> {
-        let (trace_id, span_id) = span;
         let position = decode_error_cursor(cursor)?;
-        let query = span_error_query(trace_id, span_id, scope, trace_ref, position.as_ref());
+        let query = span_error_query(
+            target.trace_id,
+            target.span_id,
+            scope,
+            target.trace_ref,
+            position.as_ref(),
+        );
         let Some(row) = first_of(self.storage.span_error(query).await)? else {
             return Ok(None);
         };
