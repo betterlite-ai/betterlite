@@ -1,0 +1,8 @@
+task: B3865
+deviations:
+  - what: Oversized OTLP payloads return a typed error instead of being silently ignored.
+    why: Better observability for operators while preserving the bounded ingest contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/decode.py#L120-L151
+  - what: The fallback OTLP error encoder emits the standard protobuf message field directly.
+    why: The native codec boundary is not present in this worktree, so response encoding remains interoperable without importing proprietary code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/decode.py#L191-L198
