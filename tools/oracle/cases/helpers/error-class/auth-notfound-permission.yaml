@@ -1,0 +1,12 @@
+kind: helper
+name: error-class-auth-notfound-permission
+call:
+  error_class:
+    family: permission_denied
+    message: invalid api key for this operation
+    model: gpt-4
+    provider: openai
+    max_retries: 2
+    num_retries: 1
+env: {}
+compare: {ignore: []}

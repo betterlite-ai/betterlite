@@ -1,0 +1,12 @@
+kind: helper
+name: error-class-server-gateway-unavailable
+call:
+  error_class:
+    family: service_unavailable
+    message: upstream service temporarily unavailable
+    model: gpt-4
+    provider: openai
+    max_retries: 1
+    num_retries: 0
+env: {}
+compare: {ignore: []}

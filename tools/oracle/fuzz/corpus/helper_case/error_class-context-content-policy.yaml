@@ -1,0 +1,10 @@
+kind: helper
+name: error-class-context-content-policy
+call:
+  error_class:
+    family: content_policy_violation
+    message: flagged by the content safety system
+    model: gpt-4
+    provider: openai
+env: {}
+compare: {ignore: []}

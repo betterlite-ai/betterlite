@@ -997,6 +997,13 @@ dependencies = [
 [[package]]
 name = "betterlite-error"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-foundry"
@@ -1197,6 +1204,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-guardrails",
  "betterlite-harness",
  "betterlite-http",
@@ -1416,6 +1424,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-openai",
  "email_address",

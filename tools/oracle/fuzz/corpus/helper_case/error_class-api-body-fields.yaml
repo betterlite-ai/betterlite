@@ -1,0 +1,14 @@
+kind: helper
+name: error-class-api-body-fields
+call:
+  error_class:
+    family: api
+    context:
+      message: vendor returned a malformed response
+      model: gpt-4
+      provider: openai
+      body_type: server_error
+      body_param: model
+    status: 500
+env: {}
+compare: {ignore: []}
