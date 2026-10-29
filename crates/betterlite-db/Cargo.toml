@@ -15,7 +15,7 @@ deadpool-postgres.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio-postgres.workspace = true
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
