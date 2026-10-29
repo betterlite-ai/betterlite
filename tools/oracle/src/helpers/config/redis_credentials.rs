@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
+use aws_credential_types::Credentials;
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::redis_credentials::Provider;
 use betterlite_config::sections::redis_credentials::aws::{
-    AwsCredentials, AwsCredentialsResolver, ElastiCacheIamProvider, ElastiCacheSigningError,
+    AwsCredentialsResolver, ElastiCacheIamProvider, ElastiCacheSigningError,
 };
 use betterlite_config::sections::redis_credentials::azure::AzureCredential;
 use secrecy::ExposeSecret as _;
@@ -53,12 +54,14 @@ enum Failure {
 struct StaticAwsCredentials;
 
 impl AwsCredentialsResolver for StaticAwsCredentials {
-    fn resolve(&self) -> Result<AwsCredentials, ElastiCacheSigningError> {
-        Ok(AwsCredentials {
-            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_owned(),
-            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned(),
-            session_token: None,
-        })
+    fn resolve(&self) -> Result<Credentials, ElastiCacheSigningError> {
+        Ok(Credentials::new(
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            None,
+            None,
+            "redis-credentials-helper",
+        ))
     }
 }
 
@@ -143,7 +146,8 @@ fn elasticache_sig_generation(cache_name: &str, serverless: bool) -> Result<Valu
             let provider = ElastiCacheIamProvider { settings: aws };
             let (_user_name, signed) =
                 provider.get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)?;
-            let (host, query) = signed.split_once("/?").unwrap_or((signed.as_str(), ""));
+            let signed_url = signed.expose_secret();
+            let (host, query) = signed_url.split_once("/?").unwrap_or((signed_url, ""));
             let params: BTreeMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
                 .map(|(name, value)| (name.into_owned(), value.into_owned()))
                 .collect();

@@ -93,14 +93,10 @@ class _StubAzureIdentityModule(types.ModuleType):
         self.ClientSecretCredential = type("ClientSecretCredential", (_StubAzureCredential,), {})
 
 
-def _stub_azure_identity_module() -> types.ModuleType:
-    return _StubAzureIdentityModule()
-
-
 def azure_credential_selection(
     client_id: str | None, tenant_id: str | None, client_secret: str | None
 ) -> Json:
-    stub = _stub_azure_identity_module()
+    stub = _StubAzureIdentityModule()
     with (
         mock.patch.dict(sys.modules, {"azure.identity": stub}),
         mock.patch.dict(os.environ, {}, clear=False),
