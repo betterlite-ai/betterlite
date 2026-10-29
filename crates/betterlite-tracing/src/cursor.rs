@@ -75,15 +75,14 @@ pub fn decode_error_cursor(cursor: Option<&str>) -> Result<Option<ErrorCursor>, 
     else {
         return Ok(None);
     };
-    if parsed.offset > MAX_OFFSET || !is_valid_version(&parsed.version) {
+    if parsed.offset > MAX_OFFSET
+        || parsed.version.len() != VERSION_LENGTH
+        || !parsed
+            .version
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (byte.is_ascii_uppercase() && byte <= b'F'))
+    {
         return Err(CursorError::InvalidDiagnostic(None));
     }
     Ok(Some(parsed))
-}
-
-fn is_valid_version(version: &str) -> bool {
-    let valid_chars = version
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || (byte.is_ascii_uppercase() && byte <= b'F'));
-    version.len() == VERSION_LENGTH && valid_chars
 }

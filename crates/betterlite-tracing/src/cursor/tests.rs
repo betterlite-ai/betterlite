@@ -3,6 +3,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 use rstest::rstest;
+use std::fs;
 
 use super::{
     CursorError, ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_trace_cursor,
@@ -83,4 +84,19 @@ fn rejects_an_invalid_diagnostic_cursor(#[case] cursor: &str) {
 fn invalid_diagnostic_cursor_reports_the_litellm_message() {
     let error = decode_error_cursor(Some("not valid base64 at all!!")).unwrap_err();
     assert_eq!(error.to_string(), "Invalid diagnostic cursor");
+}
+
+#[test]
+fn replays_the_trace_store_corpus() {
+    let corpus_path = format!("{}/fuzz/corpus/cursors", env!("CARGO_MANIFEST_DIR"));
+    fs::read_dir(corpus_path)
+        .expect("corpus directory")
+        .map(|entry| {
+            let path = entry.expect("corpus entry").path();
+            fs::read_to_string(path).expect("corpus file")
+        })
+        .for_each(|input| {
+            drop(decode_trace_cursor(Some(&input)));
+            drop(decode_error_cursor(Some(&input)));
+        });
 }

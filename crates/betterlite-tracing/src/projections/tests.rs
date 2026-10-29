@@ -5,6 +5,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{span_from_row, status_from_code, trace_from_rows, trace_summary_from_row};
+use crate::spend::SpendRow;
 use crate::storage::rows::{SpanQueryRow, TraceListRow};
 
 fn unscoped_ids() -> (String, String) {
@@ -79,6 +80,24 @@ fn computes_the_span_offset_relative_to_the_trace_start() {
     let span = span_from_row(&row, 3_000_000, &[]);
     assert_eq!(span.start_offset_ms, Decimal::new(2, 0));
     assert_eq!(span.duration_ms, Decimal::new(2, 0));
+}
+
+#[test]
+fn associates_spend_with_spans_and_trace_summaries() {
+    let mut row = base_span_row();
+    row.litellm_request_id = Some("req-1".to_owned());
+    row.team_id = "team-1".to_owned();
+    row.api_key_hash = "hash-1".to_owned();
+    let spend = vec![SpendRow {
+        litellm_request_id: "req-1".to_owned(),
+        team_id: "team-1".to_owned(),
+        api_key_hash: "hash-1".to_owned(),
+        spend: Decimal::new(125, 2),
+    }];
+    let span = span_from_row(&row, 0, &spend);
+    assert_eq!(span.spend, Some(Decimal::new(125, 2)));
+    let trace = trace_from_rows("trace-1", &[row], "ref-1", &spend).expect("trace");
+    assert_eq!(trace.summary.spend, Some(Decimal::new(125, 2)));
 }
 
 #[test]

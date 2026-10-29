@@ -14,6 +14,7 @@ use thiserror::Error;
 use super::{SpanErrorTarget, TraceStorage, TraceStore};
 use crate::cursor::{ErrorCursor, decode_error_cursor, decode_trace_cursor};
 use crate::spend::SpendRow;
+use crate::storage::AGENT_TRACING_LIST_PAGE_SIZE;
 use crate::storage::query::{
     ListTracesQuery, SpanDetailQuery, SpanErrorQuery, SpendByRequestIdsQuery, TraceSpansQuery,
 };
@@ -33,6 +34,16 @@ struct StubStorage {
     spend_fails: bool,
     seen_scope: Mutex<Option<TraceScope>>,
     seen_trace_ref: Mutex<Option<String>>,
+    spend_query: Mutex<Option<SpendByRequestIdsQuery>>,
+}
+
+fn store(storage: StubStorage) -> TraceStore<StubStorage> {
+    let page_size = AGENT_TRACING_LIST_PAGE_SIZE;
+    TraceStore { storage, page_size }
+}
+
+fn store_with_page_size(storage: StubStorage, page_size: usize) -> TraceStore<StubStorage> {
+    TraceStore { storage, page_size }
 }
 
 impl StubStorage {
@@ -85,7 +96,8 @@ impl TraceStorage for StubStorage {
         &self,
         query: SpendByRequestIdsQuery,
     ) -> impl Future<Output = Result<Vec<SpendRow>, Self::Error>> {
-        self.record_scope(query.scope);
+        self.record_scope(query.scope.clone());
+        *self.spend_query.lock().expect("lock") = Some(query);
         if self.spend_fails {
             return ready(Err(StubError));
         }
@@ -106,6 +118,43 @@ fn scope_with(team_id: &str, api_key_hash: &str) -> TraceScope {
 
 fn version() -> String {
     "A".repeat(64)
+}
+
+fn requested_error_cursor() -> String {
+    let payload = ErrorCursor {
+        offset: 0,
+        version: "B".repeat(64),
+    };
+    let json = serde_json::to_string(&payload).expect("json");
+    URL_SAFE.encode(json)
+}
+
+fn storage_with_trace_rows(rows: Vec<SpanQueryRow>) -> StubStorage {
+    StubStorage {
+        list_traces_rows: Vec::new(),
+        trace_spans_rows: rows,
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
+        seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
+    }
+}
+
+fn storage_with_list_rows(rows: Vec<TraceListRow>) -> StubStorage {
+    StubStorage {
+        list_traces_rows: rows,
+        trace_spans_rows: Vec::new(),
+        span_detail_rows: Vec::new(),
+        span_error_rows: Vec::new(),
+        spend_rows: Vec::new(),
+        spend_fails: false,
+        seen_scope: Mutex::new(None),
+        seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
+    }
 }
 
 fn span_row(span_id: &str, parent: Option<&str>, span_type: SpanType) -> SpanQueryRow {
@@ -158,7 +207,7 @@ fn list_row(trace_id: &str, start_ms: i64) -> TraceListRow {
 
 #[tokio::test]
 async fn get_trace_returns_none_for_an_empty_trace() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let trace = store.get_trace("trace-1", &scope(), "").await.expect("ok");
     assert_eq!(trace, None);
 }
@@ -181,8 +230,9 @@ async fn get_trace_builds_the_trace_with_offsets_and_agents() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let trace = store
         .get_trace("trace-1", &scope(), "")
         .await
@@ -216,8 +266,9 @@ async fn get_span_returns_span_detail_with_ui_content_and_attributes() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let detail = store
         .get_span("trace-1", "span-1", &scope(), "")
         .await
@@ -240,7 +291,7 @@ async fn get_span_returns_span_detail_with_ui_content_and_attributes() {
 
 #[tokio::test]
 async fn get_span_returns_none_when_the_span_is_missing() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let detail = store
         .get_span("trace-1", "span-1", &scope(), "")
         .await
@@ -250,7 +301,7 @@ async fn get_span_returns_none_when_the_span_is_missing() {
 
 #[tokio::test]
 async fn get_span_error_returns_none_when_the_span_has_no_error() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let page = store
         .get_span_error(
             SpanErrorTarget {
@@ -282,8 +333,9 @@ async fn get_span_error_returns_a_next_cursor_when_more_data_remains() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let page = store
         .get_span_error(
             SpanErrorTarget {
@@ -316,8 +368,9 @@ async fn get_span_error_omits_the_next_cursor_when_the_chunk_reaches_the_end() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let page = store
         .get_span_error(
             SpanErrorTarget {
@@ -336,7 +389,6 @@ async fn get_span_error_omits_the_next_cursor_when_the_chunk_reaches_the_end() {
 
 #[tokio::test]
 async fn get_span_error_next_cursor_carries_the_stored_row_version() {
-    // The returned cursor carries the row's current version, not the requested one.
     let storage = StubStorage {
         list_traces_rows: Vec::new(),
         trace_spans_rows: Vec::new(),
@@ -351,13 +403,10 @@ async fn get_span_error_next_cursor_carries_the_stored_row_version() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
-    let requested_payload = ErrorCursor {
-        offset: 0,
-        version: "B".repeat(64),
-    };
-    let requested = URL_SAFE.encode(serde_json::to_string(&requested_payload).expect("json"));
+    let store = store(storage);
+    let requested = requested_error_cursor();
     let page = store
         .get_span_error(
             SpanErrorTarget {
@@ -396,8 +445,9 @@ async fn get_span_error_computes_byte_offsets_for_multi_byte_messages() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let page = store
         .get_span_error(
             SpanErrorTarget {
@@ -429,10 +479,11 @@ async fn list_traces_returns_a_next_cursor_when_the_page_is_full() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store_with_page_size(storage, 2);
     let page = store
-        .list_traces(&scope(), (0, 1_000), None, 2)
+        .list_traces(&scope(), (0, 1_000), None)
         .await
         .expect("ok");
     assert_eq!(page.data.len(), 2);
@@ -454,10 +505,11 @@ async fn list_traces_returns_no_next_cursor_when_the_page_is_short() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store_with_page_size(storage, 5);
     let page = store
-        .list_traces(&scope(), (0, 1_000), None, 5)
+        .list_traces(&scope(), (0, 1_000), None)
         .await
         .expect("ok");
     assert_eq!(page.next_cursor, None);
@@ -465,9 +517,9 @@ async fn list_traces_returns_no_next_cursor_when_the_page_is_short() {
 
 #[tokio::test]
 async fn list_traces_rejects_an_invalid_cursor() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let error = store
-        .list_traces(&scope(), (0, 1_000), Some("not-a-cursor!!"), 5)
+        .list_traces(&scope(), (0, 1_000), Some("not-a-cursor!!"))
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), "Invalid trace cursor");
@@ -476,8 +528,8 @@ async fn list_traces_rejects_an_invalid_cursor() {
 #[tokio::test]
 async fn list_traces_forwards_the_scope_to_storage() {
     let scope = scope_with("team-a", "hash-a");
-    let store = TraceStore::from(StubStorage::default());
-    let _page = store.list_traces(&scope, (0, 1_000), None, 5).await;
+    let store = store(StubStorage::default());
+    let _page = store.list_traces(&scope, (0, 1_000), None).await;
     assert_eq!(
         store.storage.seen_scope.lock().expect("lock").clone(),
         Some(scope)
@@ -487,7 +539,7 @@ async fn list_traces_forwards_the_scope_to_storage() {
 #[tokio::test]
 async fn get_trace_forwards_the_scope_to_storage() {
     let scope = scope_with("team-b", "hash-b");
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let _trace = store.get_trace("trace-1", &scope, "").await;
     assert_eq!(
         store.storage.seen_scope.lock().expect("lock").clone(),
@@ -498,7 +550,7 @@ async fn get_trace_forwards_the_scope_to_storage() {
 #[tokio::test]
 async fn get_span_forwards_the_scope_to_storage() {
     let scope = scope_with("team-c", "hash-c");
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let _detail = store.get_span("trace-1", "span-1", &scope, "").await;
     assert_eq!(
         store.storage.seen_scope.lock().expect("lock").clone(),
@@ -509,7 +561,7 @@ async fn get_span_forwards_the_scope_to_storage() {
 #[tokio::test]
 async fn get_span_error_forwards_the_scope_to_storage() {
     let scope = scope_with("team-d", "hash-d");
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let _page = store
         .get_span_error(
             SpanErrorTarget {
@@ -529,7 +581,7 @@ async fn get_span_error_forwards_the_scope_to_storage() {
 
 #[tokio::test]
 async fn get_trace_forwards_the_trace_ref_to_storage() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let _trace = store.get_trace("trace-1", &scope(), "ref-1").await;
     assert_eq!(
         store.storage.seen_trace_ref.lock().expect("lock").clone(),
@@ -539,7 +591,7 @@ async fn get_trace_forwards_the_trace_ref_to_storage() {
 
 #[tokio::test]
 async fn get_span_forwards_the_trace_ref_to_storage() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let _detail = store.get_span("trace-1", "span-1", &scope(), "ref-2").await;
     assert_eq!(
         store.storage.seen_trace_ref.lock().expect("lock").clone(),
@@ -549,7 +601,7 @@ async fn get_span_forwards_the_trace_ref_to_storage() {
 
 #[tokio::test]
 async fn get_span_error_forwards_the_trace_ref_to_storage() {
-    let store = TraceStore::from(StubStorage::default());
+    let store = store(StubStorage::default());
     let _page = store
         .get_span_error(
             SpanErrorTarget {
@@ -581,8 +633,9 @@ async fn spend_lookup_forwards_the_scope_to_storage() {
         spend_fails: false,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let _trace = store.get_trace("trace-1", &scope, "").await;
     assert_eq!(
         store.storage.seen_scope.lock().expect("lock").clone(),
@@ -603,12 +656,57 @@ async fn spend_log_outage_does_not_fail_get_trace() {
         spend_fails: true,
         seen_scope: Mutex::new(None),
         seen_trace_ref: Mutex::new(None),
+        spend_query: Mutex::new(None),
     };
-    let store = TraceStore::from(storage);
+    let store = store(storage);
     let trace = store
         .get_trace("trace-1", &scope(), "")
         .await
         .expect("ok")
         .expect("trace");
     assert_eq!(trace.summary.spend, None);
+}
+
+#[tokio::test]
+async fn get_trace_expands_the_spend_window_around_span_bounds() {
+    let mut root = span_row("root", None, SpanType::Agent);
+    root.start_ns = 1_000_000;
+    root.duration_ns = 5_000_000;
+    root.litellm_request_id = Some("req-1".to_owned());
+    let storage = storage_with_trace_rows(vec![root]);
+    let store = store(storage);
+    store
+        .get_trace("trace-1", &scope(), "")
+        .await
+        .expect("trace");
+    let query = store
+        .storage
+        .spend_query
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("spend query");
+    assert_eq!(query.start_ms, 1 - super::SPEND_WINDOW_MS);
+    assert_eq!(query.end_ms, 6 + super::SPEND_WINDOW_MS);
+}
+
+#[tokio::test]
+async fn list_traces_expands_the_spend_window_around_row_bounds() {
+    let mut row = list_row("trace-1", 100);
+    row.request_ids = vec!["req-1".to_owned()];
+    let storage = storage_with_list_rows(vec![row]);
+    let store = store(storage);
+    store
+        .list_traces(&scope(), (0, 1_000), None)
+        .await
+        .expect("page");
+    let query = store
+        .storage
+        .spend_query
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("spend query");
+    assert_eq!(query.start_ms, 100 - super::SPEND_WINDOW_MS);
+    assert_eq!(query.end_ms, 110 + super::SPEND_WINDOW_MS);
 }

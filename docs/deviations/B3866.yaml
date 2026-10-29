@@ -6,3 +6,6 @@ deviations:
   - what: get_span_error paginates by UTF-8 byte offset instead of Python's code-point offset (len() on a str).
     why: The task description specifies the offset as "the byte position in the full message"; Rust strings are naturally byte-indexed, and error messages are ASCII-dominant in practice, so this matches the task's own spec rather than LiteLLM's character-based arithmetic.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py#L396
+  - what: AGENT_TRACING_LIST_PAGE_SIZE is resolved by the caller; this crate does not read the environment override.
+    why: Environment access belongs at the configuration boundary, so the config crate owns reading AGENT_TRACING_LIST_PAGE_SIZE and passes the resolved page size into TraceStore.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L60

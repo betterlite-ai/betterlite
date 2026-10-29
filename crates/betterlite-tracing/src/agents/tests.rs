@@ -148,3 +148,20 @@ fn excludes_agents_with_zero_invocations() {
     let nodes = agent_nodes(&spans);
     assert!(nodes.is_empty());
 }
+
+#[test]
+fn associates_agent_spend_only_when_every_llm_request_is_recorded() {
+    let mut first = span("l1", None, "chat", SpanType::Llm, "researcher");
+    first.litellm_request_id = Some("req-1".to_owned());
+    first.spend = Some(Decimal::ONE);
+    let mut second = span("l2", None, "chat", SpanType::Llm, "researcher");
+    second.litellm_request_id = Some("req-2".to_owned());
+    second.spend = Some(Decimal::TWO);
+    let agent = span("a1", None, "researcher", SpanType::Agent, "researcher");
+    let nodes = agent_nodes(&[agent.clone(), first.clone(), second.clone()]);
+    assert_eq!(nodes[0].spend, Some(Decimal::new(3, 0)));
+
+    second.spend = None;
+    let partial_nodes = agent_nodes(&[agent, first, second]);
+    assert_eq!(partial_nodes[0].spend, None);
+}

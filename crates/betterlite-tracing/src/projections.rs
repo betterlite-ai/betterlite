@@ -169,8 +169,8 @@ struct TraceSummaryContext<'ctx> {
 
 fn summary_time_bounds_ms(bounds: &TraceBounds) -> (i64, i64) {
     let start_ms = bounds.start_ns.checked_div(NANOS_PER_MS).unwrap_or(0);
-    let duration_ms = bounds.end_ns.saturating_sub(bounds.start_ns);
-    (start_ms, duration_ms)
+    let duration_ns = bounds.end_ns.saturating_sub(bounds.start_ns);
+    (start_ms, duration_ns)
 }
 
 fn summary_counts(spans: &[Span], agents: &[AgentNode]) -> (i64, i64, i64, i64, i64, i64) {

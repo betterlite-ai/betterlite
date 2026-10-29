@@ -44,19 +44,14 @@ pub trait TraceStorage {
 }
 
 pub struct TraceStore<S> {
-    storage: S,
+    pub storage: S,
+    pub page_size: usize,
 }
 
 pub struct SpanErrorTarget<'span_error> {
     pub trace_id: &'span_error str,
     pub span_id: &'span_error str,
     pub trace_ref: &'span_error str,
-}
-
-impl<S> From<S> for TraceStore<S> {
-    fn from(storage: S) -> Self {
-        Self { storage }
-    }
 }
 
 fn unique_nonempty(ids: &[String]) -> Vec<String> {
@@ -80,45 +75,6 @@ fn list_window(rows: &[TraceListRow], start_ms: i64, end_ms: i64) -> (i64, i64) 
         .max()
         .unwrap_or(end_ms);
     (window_start, window_end)
-}
-
-fn first_of<T, E>(rows: Result<Vec<T>, E>) -> Result<Option<T>, StorageError<E>>
-where
-    E: Error,
-{
-    let values = rows.map_err(StorageError::Query)?;
-    Ok(values.into_iter().next())
-}
-
-fn span_error_query(
-    trace_id: &str,
-    span_id: &str,
-    scope: &TraceScope,
-    trace_ref: &str,
-    position: Option<&ErrorCursor>,
-) -> SpanErrorQuery {
-    let error_offset = position.map_or(0, |requested| requested.offset);
-    SpanErrorQuery {
-        scope: scope.clone(),
-        trace_id: trace_id.to_owned(),
-        span_id: span_id.to_owned(),
-        trace_ref: trace_ref.to_owned(),
-        error_offset,
-        error_version: position.map_or_else(String::new, |requested| requested.version.clone()),
-    }
-}
-
-fn span_detail_from_row(row: SpanDetailRow) -> SpanDetail {
-    let input_ui = to_ui_content(&row.input);
-    let output_ui = to_ui_content(&row.output);
-    SpanDetail {
-        span_id: row.span_id,
-        input_ui,
-        output_ui,
-        input: row.input,
-        output: row.output,
-        attributes: row.attributes,
-    }
 }
 
 fn error_page(row: SpanErrorRow, position: Option<&ErrorCursor>) -> SpanErrorPage {
@@ -192,7 +148,6 @@ where
         scope: &TraceScope,
         time_range: (i64, i64),
         cursor: Option<&str>,
-        limit: usize,
     ) -> Result<TracePage, StorageError<S::Error>> {
         let (start_ms, end_ms) = time_range;
         let (cursor_ms, cursor_trace_id) = decode_trace_cursor(cursor)?;
@@ -202,7 +157,7 @@ where
             end_ms,
             cursor_ms,
             cursor_trace_id,
-            limit,
+            limit: self.page_size,
         };
         let rows = self
             .storage
@@ -214,7 +169,7 @@ where
             .iter()
             .map(|row| trace_summary_from_row(row, &spend_rows))
             .collect();
-        let next_cursor = (rows.len() == limit)
+        let next_cursor = (rows.len() == self.page_size)
             .then(|| rows.last())
             .flatten()
             .map(|row| encode_trace_cursor(row.start_ms, &row.trace_ref));
@@ -269,7 +224,21 @@ where
             span_id: span_id.to_owned(),
             trace_ref: trace_ref.to_owned(),
         };
-        Ok(first_of(self.storage.span_detail(query).await)?.map(span_detail_from_row))
+        Ok(self
+            .storage
+            .span_detail(query)
+            .await
+            .map_err(StorageError::Query)?
+            .into_iter()
+            .next()
+            .map(|row| SpanDetail {
+                span_id: row.span_id,
+                input_ui: to_ui_content(&row.input),
+                output_ui: to_ui_content(&row.output),
+                input: row.input,
+                output: row.output,
+                attributes: row.attributes,
+            }))
     }
 
     pub async fn get_span_error(
@@ -279,14 +248,24 @@ where
         cursor: Option<&str>,
     ) -> Result<Option<SpanErrorPage>, StorageError<S::Error>> {
         let position = decode_error_cursor(cursor)?;
-        let query = span_error_query(
-            target.trace_id,
-            target.span_id,
-            scope,
-            target.trace_ref,
-            position.as_ref(),
-        );
-        let Some(row) = first_of(self.storage.span_error(query).await)? else {
+        let query = SpanErrorQuery {
+            scope: scope.clone(),
+            trace_id: target.trace_id.to_owned(),
+            span_id: target.span_id.to_owned(),
+            trace_ref: target.trace_ref.to_owned(),
+            error_offset: position.as_ref().map_or(0, |requested| requested.offset),
+            error_version: position
+                .as_ref()
+                .map_or_else(String::new, |requested| requested.version.clone()),
+        };
+        let Some(row) = self
+            .storage
+            .span_error(query)
+            .await
+            .map_err(StorageError::Query)?
+            .into_iter()
+            .next()
+        else {
             return Ok(None);
         };
         Ok(Some(error_page(row, position.as_ref())))
