@@ -108,7 +108,7 @@ fn function_call_prompt_rejects_null_system_content() {
 fn response_schema_prompt_uses_the_custom_template_when_given() {
     let schema = field(r#"{"type": "object"}"#);
     let rendered = response_schema_prompt(&schema, Some(&template())).unwrap();
-    assert_eq!(rendered, "<bos><s>[INST] {'type': 'object'} [/INST]</s>");
+    assert_eq!(rendered, "<s>[INST] {'type': 'object'} [/INST]</s>");
 }
 
 #[test]

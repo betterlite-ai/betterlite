@@ -41,13 +41,13 @@ fn function_call_prompt_adds_a_system_message() {
 }
 
 #[test]
-fn bedrock_missing_local_template_raises_a_value_error() {
+fn bedrock_missing_local_template_raises_an_exception() {
     let input: Input = serde_json::from_str(
         r#"{"mode":"factory","model":"meta.llama3-70b-instruct-v1:0","custom_llm_provider":"bedrock","messages":[{"role":"user","content":"hi"}]}"#,
     )
     .unwrap();
     let error = Op::run(&input).unwrap_err();
-    assert_eq!(error.class, "ValueError");
+    assert_eq!(error.class, "Exception");
 }
 
 #[test]

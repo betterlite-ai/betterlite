@@ -42,21 +42,31 @@ impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::CustomPrompt { template, messages } => {
-                custom_prompt(template, messages).map(Value::from).map_err(|error| failure(&error))
-            }
-            Input::FunctionCallPrompt { messages, functions } => function_call_prompt(messages, functions)
+            Input::CustomPrompt { template, messages } => custom_prompt(template, messages)
+                .map(Value::from)
+                .map_err(|error| failure(&error)),
+            Input::FunctionCallPrompt {
+                messages,
+                functions,
+            } => function_call_prompt(messages, functions)
                 .map(|output| to_value(output).unwrap_or(Value::Null))
                 .map_err(|error| failure(&error)),
-            Input::ResponseSchemaPrompt { response_schema, template } => {
-                response_schema_prompt(response_schema, template.as_ref())
+            Input::ResponseSchemaPrompt {
+                response_schema,
+                template,
+            } => response_schema_prompt(response_schema, template.as_ref())
+                .map(Value::from)
+                .map_err(|error| failure(&error)),
+            Input::DefaultResponseSchemaPrompt { response_schema } => {
+                default_response_schema_prompt(response_schema)
                     .map(Value::from)
                     .map_err(|error| failure(&error))
             }
-            Input::DefaultResponseSchemaPrompt { response_schema } => {
-                default_response_schema_prompt(response_schema).map(Value::from).map_err(|error| failure(&error))
-            }
-            Input::Factory { model, messages, custom_llm_provider } => {
+            Input::Factory {
+                model,
+                messages,
+                custom_llm_provider,
+            } => {
                 let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
                 prompt_factory(model, messages, custom_llm_provider.as_deref(), now)
                     .map(output_value)
@@ -76,11 +86,12 @@ fn output_value(output: Output) -> Value {
 
 fn failure(error: &FactoryError) -> Box<HelperError> {
     let class = match error {
-        FactoryError::Prompt(_) | FactoryError::Render(_) => "Exception",
+        FactoryError::Prompt(_) | FactoryError::Render(_) | FactoryError::NoChatTemplate => {
+            "Exception"
+        }
         FactoryError::Repr(_) => "SerializationError",
         FactoryError::Limit | FactoryError::InputLimit(_) => "LimitError",
         FactoryError::Append { .. } => "AttributeError",
-        FactoryError::NoChatTemplate => "ValueError",
         FactoryError::Unsupported { .. } => "NotBuilt",
     };
     Box::new(HelperError {

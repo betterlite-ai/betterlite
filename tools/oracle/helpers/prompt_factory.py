@@ -3,7 +3,8 @@ from typing import TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
-from litellm.litellm_core_utils.prompt_templates import factory
+from litellm.constants import known_tokenizer_config
+from litellm.litellm_core_utils.prompt_templates import factory, huggingface_template_handler
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -31,6 +32,11 @@ prompt_factory = cast(
 
 class InputError(ValueError):
     pass
+
+
+def _unreachable(hf_model_name: str) -> dict[str, Json]:
+    del hf_model_name
+    return {"status": "failure"}
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -65,7 +71,12 @@ def run(input_value: dict[str, Json]) -> Json:
         model = cast(str, input_value["model"])
         messages = cast(list[dict[str, Json]], input_value["messages"])
         custom_llm_provider = cast(str | None, input_value.get("custom_llm_provider"))
-        return prompt_factory(
-            model=model, messages=messages, custom_llm_provider=custom_llm_provider
-        )
+        with (
+            patch.dict(cast(dict[str, Json], known_tokenizer_config), {}, clear=True),
+            patch.object(huggingface_template_handler, "_get_tokenizer_config", _unreachable),
+            patch.object(huggingface_template_handler, "_get_chat_template_file", _unreachable),
+        ):
+            return prompt_factory(
+                model=model, messages=messages, custom_llm_provider=custom_llm_provider
+            )
     raise InputError(f"unsupported mode {mode}")
