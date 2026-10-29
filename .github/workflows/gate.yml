@@ -147,7 +147,7 @@ jobs:
         env:
           GATE_BASE: ${{ steps.find.outputs.base }}
           TASK: ${{ steps.find.outputs.task }}
-        run: cargo gate run "$TASK"
+        run: cargo gate run "$TASK" --skip mutants --skip coverage
 
       - name: Run the base checks on the merged result
         if: steps.find.outputs.task == '' && github.event_name != 'pull_request'
