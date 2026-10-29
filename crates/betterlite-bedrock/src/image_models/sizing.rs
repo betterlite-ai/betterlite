@@ -39,8 +39,7 @@ fn has_valid_underscores(digits: &str) -> bool {
     true
 }
 
-// Mirrors width, height = size.split("x") followed by int(width), int(height).
-// size.split('x') always yields at least one item, so the first slot is never empty.
+// Mirrors width, height = size.split("x") followed by int(width), int(height); the first slot is never empty
 pub fn split_size(size: &str) -> Result<(i64, i64), SizeError> {
     let mut iter = size.split('x');
     let width = iter.next().unwrap_or_default();
