@@ -1,0 +1,12 @@
+name: multipart-bytes
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /health/liveliness
+  headers: {}
+  body_kind: bytes
+  body: {fixture: binary-response.bin, content_type: application/octet-stream}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

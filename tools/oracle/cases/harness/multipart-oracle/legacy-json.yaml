@@ -1,0 +1,11 @@
+name: multipart-legacy-json
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /health/liveliness
+  headers: {}
+  body: {multipart: value, bytes: value}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
