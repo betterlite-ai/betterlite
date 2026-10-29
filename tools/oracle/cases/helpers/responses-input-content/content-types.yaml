@@ -1,0 +1,9 @@
+kind: helper
+name: content-types
+call:
+  responses_input_content:
+    mode: content_types
+    content_types: ["input_text", "output_text", "tool_result", "something_else", "input_audio", "input_image_url", "input_document", "input_guarded_text", "input_video_url", "input_file", "text", "image_url", "audio_url", "document", "guarded_text", "video_url", "file", "thinking", "redacted_thinking"]
+    instructions: [null, "", "follow"]
+env: {}
+compare: {ignore: []}

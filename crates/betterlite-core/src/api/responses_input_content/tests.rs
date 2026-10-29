@@ -1,9 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    ContentError, chat_content_type, content_blocks, instructions_to_system_message,
-    resolve_file_id, transform_input_file_item_to_file_item,
-    transform_input_image_item_to_image_item,
+    ContentError, chat_content_type, content_blocks, input_file_block, input_image_block,
+    instructions_to_system_message, resolve_file_id,
 };
 use rstest::rstest;
 use serde_json::{Map, Value, json};
@@ -31,7 +30,7 @@ fn resolve_file_id_cases(#[case] item: Value, #[case] expected: Option<Value>) {
 }
 
 #[rstest]
-fn transform_input_file_item_full() {
+fn input_file_block_full() {
     let item = object(json!({
         "file_id": "",
         "file_url": "https://a.test/f",
@@ -44,38 +43,38 @@ fn transform_input_file_item_full() {
         "file": {"file_id": "https://a.test/f", "file_data": "data", "filename": "f"},
         "cache_control": null,
     });
-    assert_eq!(transform_input_file_item_to_file_item(&item), expected);
+    assert_eq!(input_file_block(&item), expected);
 }
 
 #[rstest]
-fn transform_input_file_item_omits_falsy_fields() {
+fn input_file_block_omits_falsy_fields() {
     let item = object(json!({"file_id": "", "file_url": ""}));
     let expected = json!({"type": "file", "file": {}});
-    assert_eq!(transform_input_file_item_to_file_item(&item), expected);
+    assert_eq!(input_file_block(&item), expected);
 }
 
 #[rstest]
-fn transform_input_file_item_keeps_cache_control_only_when_present() {
+fn input_file_block_keeps_cache_control_only_when_present() {
     let item = object(json!({"file_id": "file_a"}));
     let expected = json!({"type": "file", "file": {"file_id": "file_a"}});
-    assert_eq!(transform_input_file_item_to_file_item(&item), expected);
+    assert_eq!(input_file_block(&item), expected);
 }
 
 #[rstest]
-fn transform_input_image_item_defaults() {
+fn input_image_block_defaults() {
     let item = object(json!({"image_url": "", "detail": ""}));
     let expected = json!({"type": "image_url", "image_url": {"url": "", "detail": "auto"}});
-    assert_eq!(transform_input_image_item_to_image_item(&item), expected);
+    assert_eq!(input_image_block(&item), expected);
 }
 
 #[rstest]
-fn transform_input_image_item_supplied_values_survive() {
+fn input_image_block_supplied_values_survive() {
     let item = object(json!({"image_url": "https://a.test/i.png", "detail": "high"}));
     let expected = json!({
         "type": "image_url",
         "image_url": {"url": "https://a.test/i.png", "detail": "high"},
     });
-    assert_eq!(transform_input_image_item_to_image_item(&item), expected);
+    assert_eq!(input_image_block(&item), expected);
 }
 
 #[rstest]

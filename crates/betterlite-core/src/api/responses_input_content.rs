@@ -18,7 +18,7 @@ pub enum ContentError {
     InvalidContentType { type_name: &'static str },
 }
 
-const VALID_CHAT_COMPLETION_CONTENT_TYPES: [&str; 12] = [
+const VALID_CONTENT_TYPES: [&str; 12] = [
     "text",
     "image_url",
     "input_audio",
@@ -51,11 +51,12 @@ fn truthy_str(item: &Map<String, Value>, key: &str) -> Option<Value> {
 
 #[must_use]
 pub fn resolve_file_id(item: &Map<String, Value>) -> Option<Value> {
-    truthy_str(item, "file_id").or_else(|| truthy_str(item, "file_url"))
+    let file_id = truthy_str(item, "file_id");
+    file_id.or_else(|| truthy_str(item, "file_url"))
 }
 
 #[must_use]
-pub fn transform_input_file_item_to_file_item(item: &Map<String, Value>) -> Value {
+pub fn input_file_block(item: &Map<String, Value>) -> Value {
     let mut file_dict = Map::new();
     if let Some(file_id) = resolve_file_id(item) {
         file_dict.insert("file_id".to_owned(), file_id);
@@ -77,7 +78,7 @@ pub fn transform_input_file_item_to_file_item(item: &Map<String, Value>) -> Valu
 }
 
 #[must_use]
-pub fn transform_input_image_item_to_image_item(item: &Map<String, Value>) -> Value {
+pub fn input_image_block(item: &Map<String, Value>) -> Value {
     let url = truthy_str(item, "image_url").unwrap_or_else(|| Value::String(String::new()));
     let detail = truthy_str(item, "detail").unwrap_or_else(|| Value::String("auto".to_owned()));
 
@@ -94,7 +95,7 @@ pub fn transform_input_image_item_to_image_item(item: &Map<String, Value>) -> Va
 #[must_use]
 pub fn chat_content_type(content_type: &str) -> &'static str {
     if let Some(stripped) = content_type.strip_prefix("input_") {
-        if VALID_CHAT_COMPLETION_CONTENT_TYPES.contains(&stripped) {
+        if VALID_CONTENT_TYPES.contains(&stripped) {
             return valid_content_type(stripped);
         }
         if stripped == "audio" {
@@ -107,7 +108,7 @@ pub fn chat_content_type(content_type: &str) -> &'static str {
         return "text";
     }
 
-    if VALID_CHAT_COMPLETION_CONTENT_TYPES.contains(&content_type) {
+    if VALID_CONTENT_TYPES.contains(&content_type) {
         return valid_content_type(content_type);
     }
 
@@ -115,11 +116,10 @@ pub fn chat_content_type(content_type: &str) -> &'static str {
 }
 
 fn valid_content_type(content_type: &str) -> &'static str {
-    VALID_CHAT_COMPLETION_CONTENT_TYPES
+    let found = VALID_CONTENT_TYPES
         .iter()
-        .find(|valid| **valid == content_type)
-        .copied()
-        .unwrap_or("text")
+        .find(|valid| **valid == content_type);
+    found.copied().unwrap_or("text")
 }
 
 fn python_str(value: &Value) -> String {
@@ -147,13 +147,13 @@ fn content_list_item(item: &Value) -> Option<Value> {
 }
 
 fn image_content_block(item: &Map<String, Value>) -> Value {
-    let mut image_block = transform_input_image_item_to_image_item(item);
-    if let Value::Object(fields) = &mut image_block
+    let mut block = input_image_block(item);
+    if let Value::Object(fields) = &mut block
         && let Some(cache_control) = item.get("cache_control")
     {
         fields.insert("cache_control".to_owned(), cache_control.clone());
     }
-    image_block
+    block
 }
 
 fn encrypted_content_block(item: &Map<String, Value>) -> Option<Value> {
@@ -195,7 +195,7 @@ fn generic_text_block(item: &Map<String, Value>, type_name: Option<&str>) -> Opt
 fn content_item_block(item: &Map<String, Value>) -> Option<Value> {
     let type_name = item.get("type").and_then(Value::as_str);
     match type_name {
-        Some("input_file") => Some(transform_input_file_item_to_file_item(item)),
+        Some("input_file") => Some(input_file_block(item)),
         Some("input_image") => Some(image_content_block(item)),
         Some("encrypted_content") => encrypted_content_block(item),
         _ => generic_text_block(item, type_name),
