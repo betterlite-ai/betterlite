@@ -1,0 +1,8 @@
+task: B2307
+deviations:
+  - what: Database URL input larger than 1048576 bytes fails decoding before a connection is attempted.
+    why: Bound the native URL byte boundary; the pinned urllib helpers impose no byte cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L122-L136
+  - what: append_query_params diagnostics redact URL credentials and secret query values instead of logging the raw URL and parameter map.
+    why: Database credentials must not enter operator logs; query results and warnings remain unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L166-L181
