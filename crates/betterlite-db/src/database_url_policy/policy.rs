@@ -177,5 +177,14 @@ fn millis_from_seconds(seconds: f64) -> Result<String, TimeoutError> {
     if millis.is_infinite() {
         return Err(TimeoutError::Infinite);
     }
-    Ok(format!("{millis:.0}"))
+    Ok(format!("{:.0}", normalize_negative_zero(millis)))
+}
+
+// Python's int(seconds*1000) has no negative zero; "{:.0}" on -0.0_f64 prints "-0" unless cleared.
+const fn normalize_negative_zero(value: f64) -> f64 {
+    if value.to_bits() == (-0.0_f64).to_bits() {
+        0.0
+    } else {
+        value
+    }
 }

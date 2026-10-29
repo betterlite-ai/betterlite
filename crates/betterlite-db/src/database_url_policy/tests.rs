@@ -266,6 +266,11 @@ fn options_existing_spellings() {
 fn options_zero_negative() {
     let result = pg_options_with_timeouts("", Some(0.0_f64), Some(-1.0_f64)).unwrap();
     assert_eq!(result, "-c statement_timeout=0 -c lock_timeout=-1000");
+    // Python's int(seconds*1000) truncates -0.0004*1000 == -0.4 to 0, never "-0".
+    let negative_zero_millis = pg_options_with_timeouts("", Some(-0.0004_f64), None).unwrap();
+    assert_eq!(negative_zero_millis, "-c statement_timeout=0");
+    let negative_zero = pg_options_with_timeouts("", Some(-0.0_f64), None).unwrap();
+    assert_eq!(negative_zero, "-c statement_timeout=0");
 }
 
 #[test]
@@ -336,6 +341,25 @@ fn invalid_ipv6_netloc_is_an_error() {
         decode_database_url(url.as_bytes()),
         Err(DbError::InvalidIpv6Url(UrlSplitError::InvalidIpv6Url))
     ));
+}
+
+// Python's _check_bracketed_host rejects a bracketed host that isn't an IPv6 or IPvFuture address.
+#[test]
+fn bracketed_hostname_and_ipv4_are_errors() {
+    let hostname_url = "postgresql://u:p@[hostname]/db";
+    assert_eq!(
+        unsupported_db_scheme(hostname_url),
+        Err(UrlSplitError::NotIpAddress {
+            hostname: "hostname".to_owned()
+        })
+    );
+    let ipv4_url = "postgresql://u:p@[1.2.3.4]/db";
+    assert_eq!(
+        unsupported_db_scheme(ipv4_url),
+        Err(UrlSplitError::Ipv4AddressInBrackets)
+    );
+    let ipv6_url = "postgresql://u:p@[::1]/db";
+    assert_eq!(unsupported_db_scheme(ipv6_url), Ok(None));
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::from_utf8;
 
 // Mirrors urllib.parse's urlsplit/urlunsplit/parse_qsl/urlencode for postgres/postgresql schemes only; semicolon-params and forced "//" branches never fire and are left out.
@@ -11,11 +12,17 @@ pub(super) struct SplitUrl {
     pub(super) fragment: String,
 }
 
-// Mirrors the ValueError Python's urlsplit raises for a malformed bracketed netloc.
+// Mirrors the ValueError Python's urlsplit raises for a malformed or invalid bracketed netloc.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum UrlSplitError {
     #[error("Invalid IPv6 URL")]
     InvalidIpv6Url,
+    #[error("'{hostname}' does not appear to be an IPv4 or IPv6 address")]
+    NotIpAddress { hostname: String },
+    #[error("An IPv4 address cannot be in brackets")]
+    Ipv4AddressInBrackets,
+    #[error("IPvFuture address is invalid")]
+    InvalidIpvFuture,
 }
 
 pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
@@ -59,7 +66,7 @@ fn split_netloc(rest: &str) -> Result<(String, &str), UrlSplitError> {
     Ok((netloc.to_owned(), tail))
 }
 
-// Mirrors _check_bracketed_netloc: an unmatched or misplaced bracket is an error.
+// Mirrors _check_bracketed_netloc: an unmatched, misplaced or invalid-host bracket is an error.
 fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
     let has_open = netloc.contains('[');
     let has_close = netloc.contains(']');
@@ -70,16 +77,55 @@ fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
         return Ok(());
     }
     let hostname_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
-    let bracketed = hostname_and_port
-        .strip_prefix('[')
-        .ok_or(UrlSplitError::InvalidIpv6Url)?;
-    let (_, after_close) = bracketed
-        .split_once(']')
-        .ok_or(UrlSplitError::InvalidIpv6Url)?;
-    if !after_close.is_empty() && !after_close.starts_with(':') {
-        return Err(UrlSplitError::InvalidIpv6Url);
+    let hostname = if hostname_and_port.contains('[') {
+        let after_open = hostname_and_port
+            .strip_prefix('[')
+            .ok_or(UrlSplitError::InvalidIpv6Url)?;
+        let (hostname, after_close) = after_open
+            .split_once(']')
+            .ok_or(UrlSplitError::InvalidIpv6Url)?;
+        if !after_close.is_empty() && !after_close.starts_with(':') {
+            return Err(UrlSplitError::InvalidIpv6Url);
+        }
+        hostname
+    } else {
+        hostname_and_port
+            .split_once(':')
+            .map_or(hostname_and_port, |(host, _)| host)
+    };
+    check_bracketed_host(hostname)
+}
+
+// Mirrors _check_bracketed_host: the host inside (or implied by) brackets must be an
+// IPvFuture spelling or a parseable address that is not IPv4.
+fn check_bracketed_host(hostname: &str) -> Result<(), UrlSplitError> {
+    if let Some(rest) = hostname.strip_prefix('v') {
+        return if is_ipvfuture_rest(rest) {
+            Ok(())
+        } else {
+            Err(UrlSplitError::InvalidIpvFuture)
+        };
     }
-    Ok(())
+    if hostname.parse::<Ipv4Addr>().is_ok() {
+        return Err(UrlSplitError::Ipv4AddressInBrackets);
+    }
+    if hostname.parse::<Ipv6Addr>().is_ok() {
+        return Ok(());
+    }
+    Err(UrlSplitError::NotIpAddress {
+        hostname: hostname.to_owned(),
+    })
+}
+
+// Matches r"\Av[a-fA-F0-9]+\..+\Z" against "v" + rest, with the leading 'v' already stripped.
+fn is_ipvfuture_rest(rest: &str) -> bool {
+    let Some(dot_index) = rest.find('.') else {
+        return false;
+    };
+    let (hex_digits, after_dot) = rest.split_at(dot_index);
+    !hex_digits.is_empty()
+        && hex_digits.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && after_dot.len() > 1
 }
 
 pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
