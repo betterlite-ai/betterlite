@@ -70,6 +70,24 @@ fn failure_headers_preserves_repeated_upstream_values() {
 }
 
 #[test]
+fn failure_headers_drops_an_unsafe_prefixed_header() {
+    let mut upstream = HeaderMap::new();
+    upstream.insert("set-cookie", HeaderValue::from_static("a=b"));
+    upstream.insert("x-request-id", HeaderValue::from_static("abc"));
+    let error = ChatError::Provider {
+        response: Box::new(UpstreamResponse {
+            status: 500,
+            headers: upstream,
+            body: Vec::new(),
+        }),
+    };
+    let headers = failure_headers(&error, "call-3", None);
+    assert!(headers.get("llm_provider-set-cookie").is_none());
+    assert!(headers.get("set-cookie").is_none());
+    assert_eq!(headers.get("llm_provider-x-request-id").unwrap(), "abc");
+}
+
+#[test]
 fn failure_headers_forwards_a_non_utf8_value_losslessly() {
     let mut upstream = HeaderMap::new();
     upstream.insert(

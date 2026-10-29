@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{WireField, allowed_response_headers, filter_unsafe_headers, project_provider_headers};
+use super::{
+    WireField, allowed_response_headers, filter_unsafe_headers, is_bare_rate_limit_header,
+    project_provider_headers,
+};
 
 fn map(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
     entries
@@ -77,6 +80,21 @@ fn error_types_error_type_tests_behavior(
         Operation::AllowedFromExplicit => allowed_response_headers(&map(input), &BTreeMap::new()),
     };
     assert_eq!(actual, map(expected));
+}
+
+#[rstest]
+#[case::limit_requests("x-ratelimit-limit-requests", true)]
+#[case::remaining_requests("x-ratelimit-remaining-requests", true)]
+#[case::limit_tokens("x-ratelimit-limit-tokens", true)]
+#[case::remaining_tokens("x-ratelimit-remaining-tokens", true)]
+#[case::case_insensitive("X-RateLimit-Limit-Requests", true)]
+#[case::other_header("x-request-id", false)]
+#[case::prefixed_rate_limit_header("llm_provider-x-ratelimit-limit-requests", false)]
+fn is_bare_rate_limit_header_matches_only_the_four_openai_headers(
+    #[case] name: &str,
+    #[case] expected: bool,
+) {
+    assert_eq!(is_bare_rate_limit_header(name), expected);
 }
 
 #[test]
