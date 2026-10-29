@@ -121,8 +121,7 @@ impl GenericGuardrailAPI {
         request: GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
         let merged = self.merge_provider_params(request);
-        let sent = merged.clone();
-        self.apply_guardrail_with_original(sent, &merged).await
+        self.apply_guardrail_with_original(&merged, &merged).await
     }
 
     fn merge_provider_params(
@@ -144,12 +143,12 @@ impl GenericGuardrailAPI {
 
     pub async fn apply_guardrail_with_original(
         &self,
-        request: GenericGuardrailAPIRequest,
+        request: &GenericGuardrailAPIRequest,
         original: &GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
         let fallback = passthrough_response(original);
-        match self.call_api(&request).await {
-            Ok(response) => enforce_response(response, original, &request),
+        match self.call_api(request).await {
+            Ok(response) => enforce_response(response, original, request),
             Err(error) => self.handle_error(error, fallback),
         }
     }
@@ -201,25 +200,20 @@ pub fn extract_user_api_key_metadata(
         merged.extend(values.clone());
     }
     let mut result = GenericGuardrailAPIMetadata {
-        user_api_key_hash: known_field(&merged, "user_api_key_hash"),
-        user_api_key_alias: known_field(&merged, "user_api_key_alias"),
-        user_api_key_user_id: known_field(&merged, "user_api_key_user_id"),
-        user_api_key_user_email: known_field(&merged, "user_api_key_user_email"),
-        user_api_key_team_id: known_field(&merged, "user_api_key_team_id"),
-        user_api_key_team_alias: known_field(&merged, "user_api_key_team_alias"),
-        user_api_key_end_user_id: known_field(&merged, "user_api_key_end_user_id"),
-        user_api_key_org_id: known_field(&merged, "user_api_key_org_id"),
+        user_api_key_hash: merged.get("user_api_key_hash").cloned().flatten(),
+        user_api_key_alias: merged.get("user_api_key_alias").cloned().flatten(),
+        user_api_key_user_id: merged.get("user_api_key_user_id").cloned().flatten(),
+        user_api_key_user_email: merged.get("user_api_key_user_email").cloned().flatten(),
+        user_api_key_team_id: merged.get("user_api_key_team_id").cloned().flatten(),
+        user_api_key_team_alias: merged.get("user_api_key_team_alias").cloned().flatten(),
+        user_api_key_end_user_id: merged.get("user_api_key_end_user_id").cloned().flatten(),
+        user_api_key_org_id: merged.get("user_api_key_org_id").cloned().flatten(),
         extra: BTreeMap::new(),
     };
-    if let Some(token) = known_field(&merged, "user_api_key_token") {
+    if let Some(token) = merged.get("user_api_key_token").cloned().flatten() {
         result.user_api_key_hash = Some(token);
     }
     result
-}
-
-fn known_field(values: &BTreeMap<String, Option<String>>, name: &str) -> Option<String> {
-    let value = values.get(name).cloned();
-    value.flatten()
 }
 
 fn normalize_api_base(api_base: &str) -> String {

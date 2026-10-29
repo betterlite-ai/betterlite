@@ -22,18 +22,11 @@ pub(super) fn passthrough_response(
     }
 }
 
-const fn is_empty<T>(values: Option<&Vec<T>>) -> bool {
-    if let Some(items) = values {
-        return items.is_empty();
-    }
-    true
-}
-
 fn field_or_original<T>(value: Option<Vec<T>>, original: Option<&Vec<T>>) -> Option<Vec<T>>
 where
     T: Clone,
 {
-    if is_empty(value.as_ref()) {
+    if value.as_ref().is_none_or(Vec::is_empty) {
         original.cloned()
     } else {
         value
@@ -45,7 +38,7 @@ fn reconcile_structured_messages(
     original: &GenericGuardrailAPIRequest,
     shown: &GenericGuardrailAPIRequest,
 ) -> Option<Vec<GuardrailMessage>> {
-    if is_empty(response_rows.as_ref()) {
+    if response_rows.as_ref().is_none_or(Vec::is_empty) {
         return None;
     }
     if let (Some(original_rows), Some(shown_rows)) = (
