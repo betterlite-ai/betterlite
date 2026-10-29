@@ -55,13 +55,8 @@ fn output_schema_file(schema: &JsonObject) -> Result<Vec<u8>, HarnessError> {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
     );
-    let strict = strict_json_schema(schema_value, 0).map_err(|_schema_err| {
-        HarnessError::OptionsMismatch {
-            given: "SessionSettings.output_schema",
-            harness: Harness::Codex,
-            expected: "a JSON Schema within the Codex config nesting limit",
-        }
-    })?;
+    let strict = strict_json_schema(schema_value, 0)
+        .map_err(|source| HarnessError::OutputSchema { source })?;
     serde_json::to_vec(&strict).map_err(|source| HarnessError::StateEncode { source })
 }
 

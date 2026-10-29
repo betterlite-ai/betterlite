@@ -1,4 +1,5 @@
 use crate::events::RunResult;
+use crate::payloads::PayloadError;
 use crate::state::Incompatibility;
 use crate::types::{Capability, Harness, Usage};
 use std::io;
@@ -54,5 +55,10 @@ pub enum HarnessError {
     ContentLimitExceeded {
         operation: CappedOperation,
         limit: usize,
+    },
+    #[error("the output schema could not be prepared: {source}")]
+    OutputSchema {
+        #[source]
+        source: PayloadError,
     },
 }
