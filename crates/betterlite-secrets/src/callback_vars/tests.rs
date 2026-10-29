@@ -286,9 +286,11 @@ fn secret_debug_redaction() {
     let decrypted = decrypt_callback_vars(&encrypted, &codec);
     assert_eq!(decrypted, encrypted);
     let recorded = codec.diagnostics.messages.lock().unwrap();
-    assert!(!recorded.is_empty());
-    for message in recorded.iter() {
-        assert!(!message.contains(plaintext));
-        assert!(!message.contains(&ciphertext));
-    }
+    let is_empty = recorded.is_empty();
+    let all_redacted = recorded
+        .iter()
+        .all(|message| !message.contains(plaintext) && !message.contains(&ciphertext));
+    drop(recorded);
+    assert!(!is_empty);
+    assert!(all_redacted);
 }
