@@ -92,6 +92,18 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     Some(10),
     Outcome::BudgetExceeded(10)
 )]
+#[case::the_byte_budget_accepts_a_target_that_exactly_fills_it(
+    object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
+    object(r#"{"Foo": {"type": "string"}}"#),
+    Some(18),
+    Outcome::Object(object(r#"{"a": {"type": "string"}}"#))
+)]
+#[case::refs_inside_a_list_item_are_expanded(
+    object(r##"{"a": [{"$ref": "#/$defs/Foo"}, {"$ref": "#/$defs/Bar"}]}"##),
+    object(r#"{"Foo": {"type": "string"}, "Bar": {"type": "number"}}"#),
+    None,
+    Outcome::Object(object(r#"{"a": [{"type": "string"}, {"type": "number"}]}"#))
+)]
 fn schema_definitions_behavior_tests_behavior(
     #[case] schema: Object,
     #[case] defs: Object,
