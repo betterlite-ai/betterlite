@@ -156,6 +156,17 @@ fn provider_projection_exposes_provider_and_mode_without_a_provider_crate() {
 #[path = "inventory/tests.rs"]
 mod inventory;
 
+#[test]
+fn a_flattened_fields_bad_enum_value_recovers_its_own_path_not_the_lost_top_level_dot() {
+    let raw: Box<RawValue> =
+        serde_json::from_str(r#"{"litellm_provider":"openai","mode":"not_a_real_mode"}"#).unwrap();
+    let error = ModelFields::parse(raw.as_ref()).unwrap_err();
+    let ModelFieldError::Json { path, .. } = error else {
+        panic!("expected a Json error, got {error:?}");
+    };
+    assert_eq!(path, "mode");
+}
+
 #[rstest]
 fn replays_the_model_fields_corpus() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/model_fields");
