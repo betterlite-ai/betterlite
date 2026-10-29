@@ -149,7 +149,6 @@ pub fn response_schema_prompt(
             };
             let without_tokens = CustomPromptTemplate {
                 bos_token: String::new(),
-                eos_token: String::new(),
                 ..custom_template.clone()
             };
             custom_prompt(&without_tokens, slice::from_ref(&message))

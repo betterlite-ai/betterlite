@@ -27,6 +27,30 @@ fn messages(json_text: &str) -> Vec<Message> {
     r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#,
     "\n\nHuman: <admin>s</admin>\n\nHuman: u\n\nAssistant: a"
 )]
+#[case::factory_clarifai_claude(
+    "anthropic.claude-v2",
+    Some("clarifai"),
+    r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#,
+    "\n\nHuman: <admin>s</admin>\n\nHuman: u\n\nAssistant: a"
+)]
+#[case::factory_clarifai_non_claude_falls_back_to_generic(
+    "clarifai/meta-llama/some-model",
+    Some("clarifai"),
+    r#"[{"role":"system","content":"s"},{"role":"user","content":"u"}]"#,
+    "s u"
+)]
+#[case::factory_anthropic_claude_2(
+    "claude-2",
+    Some("anthropic"),
+    r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#,
+    "\n\nHuman: <admin>s</admin>\n\nHuman: u\n\nAssistant: a"
+)]
+#[case::factory_anthropic_claude_instant_1(
+    "claude-instant-1",
+    Some("anthropic"),
+    r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#,
+    "\n\nHuman: <admin>s</admin>\n\nHuman: u\n\nAssistant: a"
+)]
 fn prompt_templates_prompt_template_tests_behavior(
     #[case] model: &str,
     #[case] custom_llm_provider: Option<&str>,

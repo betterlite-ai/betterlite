@@ -45,3 +45,13 @@ fn llama3_instruct_has_no_fallback() {
 fn unmatched_model_returns_none() {
     assert!(dispatch("some-other-model", &messages()).is_none());
 }
+
+#[test]
+fn llama2_without_chat_returns_none() {
+    assert!(dispatch("meta.llama2-13b-v1", &messages()).is_none());
+}
+
+#[test]
+fn llama3_without_instruct_returns_none() {
+    assert!(dispatch("meta.llama3-70b-chat-v1:0", &messages()).is_none());
+}

@@ -32,11 +32,6 @@ fn try_generic(
     if lower.contains("meta-llama/llama-2") && lower.contains("chat") {
         return builtin::llama2(messages).into_output();
     }
-    if (lower.contains("meta-llama/llama-3") || lower.contains("meta-llama-3"))
-        && lower.contains("instruct")
-    {
-        return Err(FactoryError::NoChatTemplate);
-    }
     if lower.contains("tiiuae/falcon") {
         return falcon_variant(lower, messages);
     }
