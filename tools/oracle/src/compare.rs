@@ -1,12 +1,13 @@
-use std::collections::BTreeSet;
-
-use serde_json::Value;
-
 use crate::case::{Compare, Ignore};
 use crate::http::Response;
 use crate::mock::ProviderRequest;
 
 pub(crate) mod helper;
+pub(crate) mod multipart;
+mod value;
+
+use multipart::{captured_parts, first_part_difference, masked_boundary};
+use value::{first_difference, remove_pointer};
 
 use helper::HelperOutput;
 
@@ -101,6 +102,15 @@ pub(crate) fn compare(
     right_requests: &[ProviderRequest],
     compare: &Compare,
 ) -> Result<(), Difference> {
+    compare_responses(left, right, compare)?;
+    compare_provider_requests(left_requests, right_requests, compare)
+}
+
+fn compare_responses(
+    left: &Response,
+    right: &Response,
+    compare: &Compare,
+) -> Result<(), Difference> {
     let difference = |pointer: &str, message: &str| Difference {
         pointer: pointer.to_owned(),
         message: message.to_owned(),
@@ -108,15 +118,7 @@ pub(crate) fn compare(
     if left.status != right.status {
         return Err(difference("/status", "response statuses differ"));
     }
-    let mut left_body = left.body.clone();
-    let mut right_body = right.body.clone();
-    for ignored in &compare.ignore {
-        remove_pointer(&mut left_body, &ignored.pointer);
-        remove_pointer(&mut right_body, &ignored.pointer);
-    }
-    if let Some(pointer) = first_difference(&left_body, &right_body, "") {
-        return Err(difference(&pointer, "response bodies differ"));
-    }
+    compare_response_body(left, right, &compare.ignore, &difference)?;
     for header in &compare.headers {
         let name = header.to_ascii_lowercase();
         if left.headers.get(&name) != right.headers.get(&name) {
@@ -135,7 +137,38 @@ pub(crate) fn compare(
             ));
         }
     }
-    compare_provider_requests(left_requests, right_requests, compare)
+    Ok(())
+}
+
+fn compare_response_body(
+    left: &Response,
+    right: &Response,
+    ignores: &[Ignore],
+    difference: &dyn Fn(&str, &str) -> Difference,
+) -> Result<(), Difference> {
+    let mut left_body = left.body.clone();
+    let mut right_body = right.body.clone();
+    for ignored in ignores {
+        remove_pointer(&mut left_body, &ignored.pointer);
+        remove_pointer(&mut right_body, &ignored.pointer);
+    }
+    let Some(body_pointer) = first_difference(&left_body, &right_body, "") else {
+        return Ok(());
+    };
+    let binary_response = left
+        .headers
+        .get("content-type")
+        .is_some_and(|value| value.starts_with("application/octet-stream"))
+        && right
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value.starts_with("application/octet-stream"));
+    let response_pointer = if binary_response {
+        "/response/bytes"
+    } else {
+        &body_pointer
+    };
+    Err(difference(response_pointer, "response bodies differ"))
 }
 
 fn compare_provider_requests(
@@ -151,85 +184,42 @@ fn compare_provider_requests(
         return Err(difference("/upstream", "provider request counts differ"));
     }
     for (index, (left_request, right_request)) in left.iter().zip(right).enumerate() {
-        if left_request.method != right_request.method || left_request.path != right_request.path {
-            return Err(difference(
-                &format!("/upstream/{index}"),
-                "provider request targets differ",
-            ));
-        }
-        if left_request.body != right_request.body {
-            return Err(difference(
-                &format!("/upstream/{index}/body"),
-                "provider request bodies differ",
-            ));
-        }
-        for header in &compare.upstream_headers {
-            let name = header.to_ascii_lowercase();
-            if left_request.headers.get(&name) != right_request.headers.get(&name) {
-                return Err(difference(
-                    &format!("/upstream/{index}/headers/{name}"),
-                    "provider header values differ",
-                ));
-            }
-        }
+        compare_provider_request(index, left_request, right_request, compare, &difference)?;
     }
     Ok(())
 }
 
-fn remove_pointer(value: &mut Value, pointer: &str) {
-    if pointer.is_empty() {
-        *value = Value::Null;
-        return;
+fn compare_provider_request(
+    index: usize,
+    left: &ProviderRequest,
+    right: &ProviderRequest,
+    compare: &Compare,
+    difference: &dyn Fn(&str, &str) -> Difference,
+) -> Result<(), Difference> {
+    if left.method != right.method || left.path != right.path {
+        return Err(difference(
+            &format!("/upstream/{index}"),
+            "provider request targets differ",
+        ));
     }
-    if let Some((parent, key)) = pointer.rsplit_once('/') {
-        let decoded = key.replace("~1", "/").replace("~0", "~");
-        if let Some(Value::Object(object)) = value.pointer_mut(parent) {
-            object.remove(&decoded);
-            return;
+    // two decoded captures compare part by part, so only their random boundaries may differ
+    let body_pointer = match (captured_parts(left), captured_parts(right)) {
+        (Some(left_parts), Some(right_parts)) => first_part_difference(&left_parts, &right_parts)
+            .map(|part| format!("/upstream/{index}{part}")),
+        (Some(_) | None, _) => (left.body != right.body).then(|| format!("/upstream/{index}/body")),
+    };
+    if let Some(pointer) = body_pointer {
+        return Err(difference(&pointer, "provider request bodies differ"));
+    }
+    for header in &compare.upstream_headers {
+        let name = header.to_ascii_lowercase();
+        let left_value = left.headers.get(&name).map(|value| masked_boundary(value));
+        if left_value != right.headers.get(&name).map(|value| masked_boundary(value)) {
+            return Err(difference(
+                &format!("/upstream/{index}/headers/{name}"),
+                "provider header values differ",
+            ));
         }
-        if let Some(child) = value.pointer_mut(pointer) {
-            *child = Value::Null;
-        }
     }
-}
-
-fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
-    if left == right {
-        return None;
-    }
-    match (left, right) {
-        (Value::Object(left_object), Value::Object(right_object)) => {
-            let keys = left_object
-                .keys()
-                .chain(right_object.keys())
-                .collect::<BTreeSet<_>>();
-            keys.into_iter().find_map(|key| {
-                let child = format!("{pointer}/{}", key.replace('~', "~0").replace('/', "~1"));
-                first_difference_optional(left_object.get(key), right_object.get(key), &child)
-            })
-        }
-        (Value::Array(left_array), Value::Array(right_array)) => {
-            let length = left_array.len().max(right_array.len());
-            (0..length).find_map(|index| {
-                let child = format!("{pointer}/{index}");
-                first_difference_optional(left_array.get(index), right_array.get(index), &child)
-            })
-        }
-        _ => Some(if pointer.is_empty() {
-            "/".to_owned()
-        } else {
-            pointer.to_owned()
-        }),
-    }
-}
-
-fn first_difference_optional(
-    left: Option<&Value>,
-    right: Option<&Value>,
-    pointer: &str,
-) -> Option<String> {
-    match (left, right) {
-        (Some(left_value), Some(right_value)) => first_difference(left_value, right_value, pointer),
-        _ => Some(pointer.to_owned()),
-    }
+    Ok(())
 }
