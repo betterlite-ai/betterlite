@@ -330,6 +330,38 @@ fn generic_guardrail_enforce_response_falls_back_to_the_original_request_when_fi
 }
 
 #[test]
+fn generic_guardrail_enforce_response_keeps_a_non_empty_modified_field() {
+    let original = GenericGuardrailAPIRequest {
+        texts: Some(vec!["original".to_owned()]),
+        ..base_request()
+    };
+    let response = GenericGuardrailAPIResponse {
+        texts: Some(vec!["modified".to_owned()]),
+        ..base_response()
+    };
+    let result = super::enforce_response(response, &original, &original).expect("not blocked");
+    assert_eq!(result.texts, Some(vec!["modified".to_owned()]));
+}
+
+#[test]
+fn generic_guardrail_enforce_response_keeps_modified_structured_messages() {
+    let original = GenericGuardrailAPIRequest {
+        structured_messages: Some(vec![row("original")]),
+        ..base_request()
+    };
+    let shown = GenericGuardrailAPIRequest {
+        structured_messages: Some(vec![row("shown")]),
+        ..base_request()
+    };
+    let response = GenericGuardrailAPIResponse {
+        structured_messages: Some(vec![row("modified")]),
+        ..base_response()
+    };
+    let result = super::enforce_response(response, &original, &shown).expect("not blocked");
+    assert_eq!(result.structured_messages, Some(vec![row("modified")]));
+}
+
+#[test]
 fn generic_guardrail_enforce_response_clears_structured_messages_left_unmodified() {
     let shown_row = row("shown");
     let original = GenericGuardrailAPIRequest {

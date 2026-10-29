@@ -119,6 +119,19 @@ fn grayswan_payload_falls_back_to_configured_reasoning_mode() {
 }
 
 #[test]
+fn grayswan_payload_dynamic_reasoning_mode_overrides_configured_mode() {
+    let mut instance = guardrail(OnFlaggedAction::Block);
+    instance.settings.reasoning_mode = Some(ReasoningMode::Off);
+    let mut scan = input(vec![message("user", "new")], Vec::new());
+    scan.metadata.insert(
+        "reasoning_mode".to_owned(),
+        GuardrailExtraValue::Text("HYBRID".to_owned()),
+    );
+    let payload = instance.prepare_payload(&scan);
+    assert_eq!(payload.reasoning_mode, Some(ReasoningMode::Hybrid));
+}
+
+#[test]
 fn grayswan_verdict_at_threshold_blocks() {
     let guardrail = guardrail(OnFlaggedAction::Block);
     let result = guardrail.process_response(&response(0.5), GuardrailInputType::Request, vec![]);
@@ -289,6 +302,28 @@ async fn grayswan_call_api_rejects_a_non_success_status() {
         result,
         Err(GraySwanGuardrailAPIError::HttpStatus { status })
             if status == StatusCode::INTERNAL_SERVER_ERROR
+    ));
+}
+
+// Hardcoded independently of `MAX_RESPONSE_BYTES`, so a mutation of that constant can't move this boundary too.
+const SPEC_MAX_RESPONSE_BYTES: usize = 0x0010_0000;
+
+#[tokio::test]
+async fn grayswan_call_api_allows_a_body_at_the_size_limit() {
+    let body = format!("{{}}{}", " ".repeat(SPEC_MAX_RESPONSE_BYTES - 2));
+    assert_eq!(body.len(), SPEC_MAX_RESPONSE_BYTES);
+    call_api_mock(StatusCode::OK, body)
+        .await
+        .expect("body at the limit is accepted");
+}
+
+#[tokio::test]
+async fn grayswan_call_api_rejects_a_body_over_the_size_limit() {
+    let body = " ".repeat(SPEC_MAX_RESPONSE_BYTES + 1);
+    let result = call_api_mock(StatusCode::OK, body).await;
+    assert!(matches!(
+        result,
+        Err(GraySwanGuardrailAPIError::ResponseTooLarge { limit }) if limit == SPEC_MAX_RESPONSE_BYTES
     ));
 }
 
