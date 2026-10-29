@@ -1,0 +1,13 @@
+kind: helper
+name: artifacts-to-b64-results
+call:
+  bedrock_other_image_models:
+    artifacts_to_b64_results:
+      family: stability1
+      response_body:
+        artifacts:
+          - {base64: aGVsbG8=}
+          - {base64: d29ybGQ=}
+env: {}
+compare:
+  ignore: []
