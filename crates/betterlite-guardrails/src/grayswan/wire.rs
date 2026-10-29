@@ -7,13 +7,25 @@ use crate::generic_guardrail_contracts::{
 };
 use crate::grayswan::ReasoningMode;
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GraySwanDynamicParams {
+    pub categories: Option<BTreeMap<String, String>>,
+    pub policy_id: Option<String>,
+    pub reasoning_mode: Option<ReasoningMode>,
+    pub metadata: Option<GuardrailExtraValue>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraySwanInput {
-    pub messages: Vec<GuardrailMessage>,
+    #[serde(default)]
+    pub texts: Vec<String>,
+    #[serde(default)]
+    pub tool_calls: Vec<GuardrailExtraValue>,
     #[serde(default)]
     pub tools: Vec<GuardrailToolParam>,
     #[serde(default)]
-    pub metadata: BTreeMap<String, GuardrailExtraValue>,
+    pub metadata: GraySwanDynamicParams,
     #[serde(default)]
     pub request_history: Vec<GuardrailMessage>,
     #[serde(default)]

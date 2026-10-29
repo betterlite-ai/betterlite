@@ -65,6 +65,8 @@ struct Parameters {
     policy_id: Option<String>,
     fail_open: Option<bool>,
     guardrail_timeout: Option<f64>,
+    streaming_end_of_stream_only: Option<bool>,
+    streaming_sampling_rate: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -84,6 +86,8 @@ pub struct Configured {
     pub policy_id: Option<String>,
     pub fail_open: bool,
     pub guardrail_timeout: Duration,
+    pub streaming_end_of_stream_only: bool,
+    pub streaming_sampling_rate: u32,
 }
 
 impl Section for Raw {
@@ -140,36 +144,46 @@ impl Entry {
             api_base: base.trim_end_matches('/').to_owned(),
             on_flagged_action: resolve_on_flagged_action(
                 parameters.on_flagged_action.as_deref(),
-                &prefix,
-            )?,
+            ),
             violation_threshold,
             reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode.as_deref(), lookup),
             categories: parameters.categories,
             policy_id: parameters.policy_id,
             fail_open: parameters.fail_open.unwrap_or(true),
-            guardrail_timeout: resolve_guardrail_timeout(parameters.guardrail_timeout),
+            guardrail_timeout: resolve_guardrail_timeout(parameters.guardrail_timeout, &prefix)?,
+            streaming_end_of_stream_only: parameters.streaming_end_of_stream_only.unwrap_or(false),
+            streaming_sampling_rate: parameters.streaming_sampling_rate.unwrap_or(5),
         })
     }
 }
 
-fn resolve_explicit_or_env<T>(
+fn resolve_explicit_or_env<T, P, F>(
     explicit: Option<String>,
     path: &str,
     lookup: &dyn EnvironmentLookup,
-    parse: impl FnOnce(String, &str, &dyn EnvironmentLookup) -> Result<T, ConfigError>,
-    env_fallback: impl FnOnce(&dyn EnvironmentLookup) -> T,
-) -> Result<T, ConfigError> {
+    parse: P,
+    env_fallback: F,
+) -> Result<T, ConfigError>
+where
+    P: FnOnce(String, &str, &dyn EnvironmentLookup) -> Result<T, ConfigError>,
+    F: FnOnce(&dyn EnvironmentLookup) -> T,
+{
     if let Some(value) = explicit {
         return parse(value, path, lookup);
     }
     Ok(env_fallback(lookup))
 }
 
-fn resolve_guardrail_timeout(guardrail_timeout: Option<f64>) -> Duration {
-    if let Some(secs) = guardrail_timeout {
-        return Duration::try_from_secs_f64(secs).unwrap_or(DEFAULT_GUARDRAIL_TIMEOUT);
-    }
-    DEFAULT_GUARDRAIL_TIMEOUT
+fn resolve_guardrail_timeout(
+    guardrail_timeout: Option<f64>,
+    prefix: &str,
+) -> Result<Duration, ConfigError> {
+    let Some(secs) = guardrail_timeout else {
+        return Ok(DEFAULT_GUARDRAIL_TIMEOUT);
+    };
+    Duration::try_from_secs_f64(secs).map_err(|_source| ConfigError::Unsupported {
+        paths: vec![format!("{prefix}.guardrail_timeout: '{secs}'")],
+    })
 }
 
 fn resolve_api_key<L>(
@@ -195,20 +209,22 @@ where
     )?))
 }
 
-fn resolve_on_flagged_action(
-    value: Option<&str>,
-    prefix: &str,
-) -> Result<OnFlaggedAction, ConfigError> {
+fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
     let Some(text) = value else {
-        return Ok(OnFlaggedAction::default());
+        return OnFlaggedAction::default();
     };
     match text.to_ascii_lowercase().as_str() {
-        "block" => Ok(OnFlaggedAction::Block),
-        "monitor" => Ok(OnFlaggedAction::Monitor),
-        "passthrough" => Ok(OnFlaggedAction::Passthrough),
-        _ => Err(ConfigError::Unsupported {
-            paths: vec![format!("{prefix}.on_flagged_action: '{text}'")],
-        }),
+        "block" => OnFlaggedAction::Block,
+        "monitor" => OnFlaggedAction::Monitor,
+        "passthrough" => OnFlaggedAction::Passthrough,
+        _ => {
+            tracing::warn!(
+                on_flagged_action = text,
+                default = ?OnFlaggedAction::default(),
+                "Gray Swan Guardrail: unsupported on_flagged_action, defaulting"
+            );
+            OnFlaggedAction::default()
+        }
     }
 }
 

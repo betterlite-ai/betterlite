@@ -67,6 +67,25 @@ fn generic_guardrail_api_config_api_key_is_optional() {
         super::UnreachableFallback::FailClosed
     );
     assert!(configured.fail_on_error);
+    assert_eq!(configured.additional_provider_specific_params, None);
+}
+
+#[test]
+fn generic_guardrail_api_config_reads_additional_provider_specific_params() {
+    let source = format!(
+        "{GENERIC_CONFIG}      additional_provider_specific_params:\n        custom_threshold: 0.8\n        enable_feature: true\n"
+    );
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    let params = configured.additional_provider_specific_params.as_ref().unwrap();
+    assert_eq!(
+        params.get("custom_threshold"),
+        Some(&super::GuardrailValue::Decimal(0.8))
+    );
+    assert_eq!(
+        params.get("enable_feature"),
+        Some(&super::GuardrailValue::Boolean(true))
+    );
 }
 
 #[test]

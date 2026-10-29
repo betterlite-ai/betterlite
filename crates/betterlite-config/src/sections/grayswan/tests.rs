@@ -70,6 +70,8 @@ fn grayswan_config_defaults_match_litellm() {
     assert_eq!(configured.policy_id, None);
     assert!(configured.fail_open);
     assert_eq!(configured.guardrail_timeout, Duration::from_secs(30));
+    assert!(!configured.streaming_end_of_stream_only);
+    assert_eq!(configured.streaming_sampling_rate, 5);
 }
 
 #[test]
@@ -104,11 +106,22 @@ fn grayswan_config_silently_drops_an_unsupported_reasoning_mode() {
 }
 
 #[test]
-fn grayswan_config_rejects_an_unsupported_on_flagged_action() {
+fn grayswan_config_defaults_an_unsupported_on_flagged_action_to_monitor() {
     let source = format!("{GRAYSWAN_CONFIG}      on_flagged_action: yolo\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.on_flagged_action,
+        super::OnFlaggedAction::Monitor
+    );
+}
+
+#[test]
+fn grayswan_config_rejects_a_guardrail_timeout_that_duration_cannot_represent() {
+    let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();
     assert!(matches!(error, ConfigError::Unsupported { paths }
-        if paths == ["guardrails.0.litellm_params.on_flagged_action: 'yolo'"]));
+        if paths == ["guardrails.0.litellm_params.guardrail_timeout: '-1'"]));
 }
 
 #[test]
@@ -126,7 +139,7 @@ fn grayswan_config_explicit_values_win() {
         "https://env.example".to_owned(),
     )]);
     let source = format!(
-        "{GRAYSWAN_CONFIG}      api_base: https://configured.example\n      on_flagged_action: BLOCK\n      violation_threshold: \"0.9\"\n      categories:\n        jailbreak: block\n      policy_id: policy-1\n      fail_open: false\n      guardrail_timeout: 5\n"
+        "{GRAYSWAN_CONFIG}      api_base: https://configured.example\n      on_flagged_action: BLOCK\n      violation_threshold: \"0.9\"\n      categories:\n        jailbreak: block\n      policy_id: policy-1\n      fail_open: false\n      guardrail_timeout: 5\n      streaming_end_of_stream_only: true\n      streaming_sampling_rate: 2\n"
     );
     let settings = resolve(&source, &lookup).unwrap();
     let configured = settings.guardrails.first().unwrap();
@@ -143,6 +156,8 @@ fn grayswan_config_explicit_values_win() {
     assert_eq!(configured.policy_id.as_deref(), Some("policy-1"));
     assert!(!configured.fail_open);
     assert_eq!(configured.guardrail_timeout, Duration::from_secs(5));
+    assert!(configured.streaming_end_of_stream_only);
+    assert_eq!(configured.streaming_sampling_rate, 2);
 }
 
 #[test]
