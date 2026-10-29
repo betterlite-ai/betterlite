@@ -32,6 +32,9 @@ struct ClaudeResult {
 }
 
 pub(crate) fn claude_answer(text: &str) -> Result<Option<String>, GateError> {
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
     let parsed: ClaudeResult = serde_json::from_str(text).map_err(|source| GateError::Json {
         what: "Claude's result".to_owned(),
         source,

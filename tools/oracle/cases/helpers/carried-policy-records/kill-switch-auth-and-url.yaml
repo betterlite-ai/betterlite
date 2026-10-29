@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-auth-and-url
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "HTTP://example.com:bad/path"}
+env: {}
+compare:
+  ignore: []

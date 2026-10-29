@@ -45,12 +45,12 @@ The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .ba
 
 ## Final answer
 
-Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Every field is required; use an empty string or list when there is nothing to say.
+Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry and deviation from earlier attempts that still holds.
 
 - task is the task id.
 - status is done or blocked.
 - summary says what changed, in two to four plain sentences.
 - blocker is empty when done.
-- prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every crate you added to a Cargo.toml must be a chosen option here, or the gate fails.
+- prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every crate the branch adds to a Cargo.toml must be a chosen option here, named exactly as the crate (serde_repr, not serde_repr::Serialize_repr), or the gate fails.
 - deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher checks that the file and the report list the same number of deviations with the same links.
 - notes holds facts the architect needs and nothing else.

@@ -1,0 +1,12 @@
+kind: helper
+name: fuzz-seed
+call:
+  stored_cipher:
+    op: app_crypto
+    key: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    steps:
+      - {kind: roundtrip, data: {token: sk-live-secret}, aad: caller-prefix}
+      - {kind: decrypt, envelope: {nonce: AAECAwQFBgcICQoL, ciphertext: svx5qAA0pNDiiY80UkuXsYv0V4kEQppXeS9AN+VC4F/Z+4U=, tag: YvF4vk9f1nOfC1kTTQFbOA==}, aad: null}
+env: {}
+compare:
+  ignore: []
