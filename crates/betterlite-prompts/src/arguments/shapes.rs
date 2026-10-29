@@ -1,18 +1,19 @@
-use serde_json::{Map, Value};
+use super::json::{Json, Object};
 
 const CUSTOM_GRAMMAR_FIELDS: [&str; 2] = ["definition", "syntax"];
 
-pub fn get_tool_call_names(tools: &[Map<String, Value>]) -> Vec<String> {
+#[must_use]
+pub fn get_tool_call_names(tools: &[Object]) -> Vec<String> {
     let mut names = Vec::new();
     for tool in tools {
-        if tool.get("type").and_then(Value::as_str) != Some("function") {
+        if tool.get("type").and_then(Json::as_str) != Some("function") {
             continue;
         }
         let Some(name) = tool
             .get("function")
-            .and_then(Value::as_object)
+            .and_then(Json::as_object)
             .and_then(|function| function.get("name"))
-            .and_then(Value::as_str)
+            .and_then(Json::as_str)
         else {
             continue;
         };
@@ -23,62 +24,47 @@ pub fn get_tool_call_names(tools: &[Map<String, Value>]) -> Vec<String> {
     names
 }
 
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Bool(true) => true,
-        Value::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(fields) => !fields.is_empty(),
-    }
+#[must_use]
+pub fn is_function_call(optional_params: &Object) -> bool {
+    optional_params
+        .get("functions")
+        .is_some_and(Json::is_truthy)
 }
 
-pub fn is_function_call(optional_params: &Map<String, Value>) -> bool {
-    match optional_params.get("functions") {
-        Some(value) => is_truthy(value),
-        None => false,
-    }
+#[must_use]
+pub fn check_is_function_call(optional_params: Option<&Object>) -> bool {
+    optional_params.is_some_and(is_function_call)
 }
 
-pub fn check_is_function_call(optional_params: Option<&Map<String, Value>>) -> bool {
-    match optional_params {
-        Some(params) => is_function_call(params),
-        None => false,
-    }
-}
-
-pub fn convert_custom_tool_format_to_chat_shape(
-    format_obj: &Map<String, Value>,
-) -> Map<String, Value> {
-    let is_grammar = format_obj.get("type").and_then(Value::as_str) == Some("grammar");
+#[must_use]
+pub fn convert_custom_tool_format_to_chat_shape(format_obj: &Object) -> Object {
+    let is_grammar = format_obj.get("type").and_then(Json::as_str) == Some("grammar");
     if !is_grammar || format_obj.contains_key("grammar") {
         return format_obj.clone();
     }
-    let mut grammar = Map::new();
+    let mut grammar = Object::new();
     for field in CUSTOM_GRAMMAR_FIELDS {
         if let Some(value) = format_obj.get(field) {
             grammar.insert(field.to_owned(), value.clone());
         }
     }
-    let mut shaped = Map::new();
-    shaped.insert("type".to_owned(), Value::String("grammar".to_owned()));
-    shaped.insert("grammar".to_owned(), Value::Object(grammar));
+    let mut shaped = Object::new();
+    shaped.insert("type".to_owned(), Json::Text("grammar".to_owned()));
+    shaped.insert("grammar".to_owned(), Json::Object(grammar));
     shaped
 }
 
-pub fn convert_custom_tool_format_to_responses_shape(
-    format_obj: &Map<String, Value>,
-) -> Map<String, Value> {
-    let is_grammar = format_obj.get("type").and_then(Value::as_str) == Some("grammar");
-    let Some(grammar) = format_obj.get("grammar").and_then(Value::as_object) else {
+#[must_use]
+pub fn convert_custom_tool_format_to_responses_shape(format_obj: &Object) -> Object {
+    let is_grammar = format_obj.get("type").and_then(Json::as_str) == Some("grammar");
+    let Some(grammar) = format_obj.get("grammar").and_then(Json::as_object) else {
         return format_obj.clone();
     };
     if !is_grammar {
         return format_obj.clone();
     }
-    let mut shaped = Map::new();
-    shaped.insert("type".to_owned(), Value::String("grammar".to_owned()));
+    let mut shaped = Object::new();
+    shaped.insert("type".to_owned(), Json::Text("grammar".to_owned()));
     for field in CUSTOM_GRAMMAR_FIELDS {
         if let Some(value) = grammar.get(field) {
             shaped.insert(field.to_owned(), value.clone());
@@ -87,16 +73,14 @@ pub fn convert_custom_tool_format_to_responses_shape(
     shaped
 }
 
-pub fn with_prompt_cache_breakpoint(
-    target: &Map<String, Value>,
-    marker: Option<&Value>,
-) -> Map<String, Value> {
-    let Some(marker) = marker else {
+#[must_use]
+pub fn with_prompt_cache_breakpoint(target: &Object, marker: Option<&Json>) -> Object {
+    let Some(breakpoint) = marker else {
         return target.clone();
     };
-    let mut marked = target.clone();
-    marked.insert("prompt_cache_breakpoint".to_owned(), marker.clone());
-    marked
+    let mut result = target.clone();
+    result.insert("prompt_cache_breakpoint".to_owned(), breakpoint.clone());
+    result
 }
 
 mod tests;

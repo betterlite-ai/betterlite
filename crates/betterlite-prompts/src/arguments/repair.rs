@@ -1,4 +1,4 @@
-use serde_json::Value;
+use super::json::Json;
 
 fn unmatched_openers(text: &str) -> Vec<char> {
     let mut opener_stack: Vec<char> = Vec::new();
@@ -25,10 +25,8 @@ fn unmatched_openers(text: &str) -> Vec<char> {
         match ch {
             '{' => opener_stack.push('}'),
             '[' => opener_stack.push(']'),
-            '}' | ']' => {
-                if opener_stack.last() == Some(&ch) {
-                    opener_stack.pop();
-                }
+            '}' | ']' if opener_stack.last() == Some(&ch) => {
+                opener_stack.pop();
             }
             _ => {}
         }
@@ -38,7 +36,7 @@ fn unmatched_openers(text: &str) -> Vec<char> {
 
 // Repairs only a trailing comma plus unmatched brackets; a balanced or still
 // unparseable candidate falls through to None, never a broader rewrite.
-pub(super) fn attempt_json_repair(text: &str) -> Option<Value> {
+pub(super) fn attempt_json_repair(text: &str) -> Option<Json> {
     let stripped = text.trim_end();
     if stripped.is_empty() {
         return None;
