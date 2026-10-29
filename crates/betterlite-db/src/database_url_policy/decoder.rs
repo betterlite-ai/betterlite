@@ -11,6 +11,21 @@ type Netloc = (Option<String>, Option<SecretString>, String, Option<u16>);
 const SECRET_QUERY_KEYS: [&str; 2] = ["password", "sslpassword"];
 
 #[derive(Clone)]
+pub enum QueryParamValue {
+    Plain(String),
+    Secret(SecretString),
+}
+
+impl Debug for QueryParamValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Plain(value) => Debug::fmt(value, f),
+            Self::Secret(_) => f.write_str("\"REDACTED\""),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct DbEndpoint {
     pub scheme: String,
     pub user: Option<String>,
@@ -18,22 +33,11 @@ pub struct DbEndpoint {
     pub host: String,
     pub port: Option<u16>,
     pub database: String,
-    pub query: Vec<(String, String)>,
+    pub query: Vec<(String, QueryParamValue)>,
 }
 
 impl Debug for DbEndpoint {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let redacted_query: Vec<(&str, &str)> = self
-            .query
-            .iter()
-            .map(|(key, value)| {
-                if SECRET_QUERY_KEYS.contains(&key.as_str()) {
-                    (key.as_str(), "REDACTED")
-                } else {
-                    (key.as_str(), value.as_str())
-                }
-            })
-            .collect();
         f.debug_struct("DbEndpoint")
             .field("scheme", &self.scheme)
             .field("user", &self.user.as_ref().map(|_| "REDACTED"))
@@ -41,7 +45,7 @@ impl Debug for DbEndpoint {
             .field("host", &self.host)
             .field("port", &self.port)
             .field("database", &self.database)
-            .field("query", &redacted_query)
+            .field("query", &self.query)
             .finish()
     }
 }
@@ -61,14 +65,27 @@ pub enum DbError {
     MalformedBracket,
     #[error(transparent)]
     InvalidIpv6Url(#[from] UrlSplitError),
-    #[error("database URL port {text:?} is not a valid port number")]
+    #[error("database URL port ({len} bytes) is not a valid port number")]
     MalformedPort {
-        text: String,
+        len: usize,
         #[source]
         source: ParseIntError,
     },
     #[error("database URL has an incomplete or invalid percent-escape")]
-    MalformedPercentEscape,
+    MalformedPercentEscape {
+        #[source]
+        source: PercentEscapeError,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PercentEscapeError {
+    #[error("percent-escape has fewer than two trailing characters")]
+    Incomplete,
+    #[error("percent-escape digits are not valid UTF-8")]
+    NotUtf8(#[source] Utf8Error),
+    #[error("percent-escape digits are not a valid hex byte")]
+    NotHex(#[source] ParseIntError),
 }
 
 pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
@@ -86,7 +103,16 @@ pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
         .strip_prefix('/')
         .unwrap_or(&parsed.path)
         .to_owned();
-    let query = parse_qsl(&parsed.query, true);
+    let query = parse_qsl(&parsed.query, true)
+        .into_iter()
+        .map(|(key, value)| {
+            if SECRET_QUERY_KEYS.contains(&key.as_str()) {
+                (key, QueryParamValue::Secret(SecretString::from(value)))
+            } else {
+                (key, QueryParamValue::Plain(value))
+            }
+        })
+        .collect();
     Ok(DbEndpoint {
         scheme: parsed.scheme,
         user,
@@ -126,7 +152,7 @@ fn parse_hostport(hostport: &str) -> Result<(String, Option<u16>), DbError> {
             Some(text) => Some(
                 text.parse::<u16>()
                     .map_err(|source| DbError::MalformedPort {
-                        text: text.to_owned(),
+                        len: text.len(),
                         source,
                     })?,
             ),
@@ -141,7 +167,7 @@ fn parse_hostport(hostport: &str) -> Result<(String, Option<u16>), DbError> {
             Some(
                 text.parse::<u16>()
                     .map_err(|source| DbError::MalformedPort {
-                        text: text.to_owned(),
+                        len: text.len(),
                         source,
                     })?,
             ),
@@ -155,13 +181,20 @@ fn percent_decode(text: &str) -> Result<String, DbError> {
     let mut rest = text.as_bytes();
     while let Some((&byte, tail)) = rest.split_first() {
         if byte == b'%' {
-            let (digits, after) = tail
-                .split_at_checked(2)
-                .ok_or(DbError::MalformedPercentEscape)?;
+            let (digits, after) =
+                tail.split_at_checked(2)
+                    .ok_or(DbError::MalformedPercentEscape {
+                        source: PercentEscapeError::Incomplete,
+                    })?;
             let digits_text =
-                str::from_utf8(digits).map_err(|_source| DbError::MalformedPercentEscape)?;
-            let decoded = u8::from_str_radix(digits_text, 16)
-                .map_err(|_source| DbError::MalformedPercentEscape)?;
+                str::from_utf8(digits).map_err(|source| DbError::MalformedPercentEscape {
+                    source: PercentEscapeError::NotUtf8(source),
+                })?;
+            let decoded = u8::from_str_radix(digits_text, 16).map_err(|source| {
+                DbError::MalformedPercentEscape {
+                    source: PercentEscapeError::NotHex(source),
+                }
+            })?;
             bytes.push(decoded);
             rest = after;
             continue;
