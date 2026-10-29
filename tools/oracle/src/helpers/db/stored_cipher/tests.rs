@@ -33,7 +33,7 @@ fn app_crypto_aad_mismatch_fails_to_decrypt() {
             {"kind": "aad_mismatch", "data": {"token": "sk-live"}, "encrypt_aad": "a", "decrypt_aad": "b"},
         ],
     }));
-    assert_eq!(results[0]["error"]["class"], "ValueError");
+    assert_eq!(results[0]["error"]["class"], "InvalidTag");
 }
 
 #[test]
