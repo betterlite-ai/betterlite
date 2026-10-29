@@ -1,0 +1,8 @@
+kind: helper
+name: file-blocks
+call:
+  responses_input_content:
+    mode: content_blocks
+    content: [{"type": "input_file", "file_id": "", "file_url": "https://a.test/f", "file_data": "data", "filename": "f", "cache_control": null}, {"type": "input_image", "image_url": "", "detail": "", "cache_control": null}, {"type": "input_image", "image_url": "https://a.test/i.png", "detail": "high"}]
+env: {}
+compare: {ignore: []}

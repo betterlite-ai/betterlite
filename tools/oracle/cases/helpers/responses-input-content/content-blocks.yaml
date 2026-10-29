@@ -1,0 +1,8 @@
+kind: helper
+name: content-blocks
+call:
+  responses_input_content:
+    mode: content_blocks
+    content: ["a", 5, "b", true, {"type": "encrypted_content", "encrypted_content": 7}, {"type": "encrypted_content", "encrypted_content": null}, {"type": "text", "text": "", "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": null}]
+env: {}
+compare: {ignore: []}

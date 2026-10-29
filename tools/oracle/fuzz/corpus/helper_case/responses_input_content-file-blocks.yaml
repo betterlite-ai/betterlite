@@ -1,0 +1,8 @@
+kind: helper
+name: file-blocks
+call:
+  responses_input_content:
+    mode: file_block
+    item: {"file_id": "", "file_url": "https://a.test/f", "file_data": "data", "filename": "f", "cache_control": null}
+env: {}
+compare: {ignore: []}
