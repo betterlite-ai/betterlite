@@ -36,19 +36,22 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
     object(r#"{"Foo": {"type": "string"}}"#),
     None,
-    Outcome::Object(object(r#"{"a": {"type": "string"}}"#))
+    Outcome::Object(object(r#"{"a": {"type": "string"}}"#)),
+    Some(vec!["a"])
 )]
 #[case::missing_ref_is_left_untouched(
     object(r##"{"a": {"$ref": "#/$defs/Missing"}}"##),
     object("{}"),
     None,
-    Outcome::Object(object(r##"{"a": {"$ref": "#/$defs/Missing"}}"##))
+    Outcome::Object(object(r##"{"a": {"$ref": "#/$defs/Missing"}}"##)),
+    None
 )]
 #[case::external_ref_is_never_fetched(
     object(r#"{"a": {"$ref": "https://example.com/other.json"}}"#),
     object("{}"),
     None,
-    Outcome::Object(object(r#"{"a": {"$ref": "https://example.com/other.json"}}"#))
+    Outcome::Object(object(r#"{"a": {"$ref": "https://example.com/other.json"}}"#)),
+    None
 )]
 #[case::recursive_ref_stops_at_the_cycle(
     object(r##"{"$ref": "#/$defs/Foo"}"##),
@@ -56,7 +59,8 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     None,
     Outcome::Object(object(
         r##"{"type": "object", "properties": {"child": {"$ref": "#/$defs/Foo"}}}"##
-    ))
+    )),
+    None
 )]
 #[case::nested_defs_shadow_the_parent_defs_table(
     object(
@@ -66,55 +70,64 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     None,
     Outcome::Object(object(
         r#"{"$defs": {"Foo": {"type": "string"}}, "a": {"$defs": {"Foo": {"type": "number"}}, "b": {"type": "number"}}}"#
-    ))
+    )),
+    Some(vec!["$defs", "a"])
 )]
 #[case::root_defs_merge_applies_even_when_the_root_is_a_ref(
     object(r##"{"$defs": {"Foo": {"type": "string"}}, "$ref": "#/$defs/Foo"}"##),
     object("{}"),
     None,
-    Outcome::Object(object(r#"{"type": "string"}"#))
+    Outcome::Object(object(r#"{"type": "string"}"#)),
+    None
 )]
 #[case::non_string_ref_value_is_left_unresolved(
     object(r#"{"a": {"$ref": 123}}"#),
     object("{}"),
     None,
-    Outcome::Object(object(r#"{"a": {"$ref": 123}}"#))
+    Outcome::Object(object(r#"{"a": {"$ref": 123}}"#)),
+    None
 )]
 #[case::a_root_only_ref_resolving_to_a_scalar_falls_back_to_the_original_schema(
     object(r##"{"$ref": "#/$defs/Scalar"}"##),
     object(r#"{"Scalar": 1}"#),
     None,
-    Outcome::Object(object(r##"{"$ref": "#/$defs/Scalar"}"##))
+    Outcome::Object(object(r##"{"$ref": "#/$defs/Scalar"}"##)),
+    None
 )]
 #[case::the_byte_budget_rejects_an_oversized_target(
     object(r##"{"a": {"$ref": "#/$defs/Big"}}"##),
     object(&format!(r#"{{"Big": {{"description": "{}"}}}}"#, "x".repeat(50))),
     Some(10),
-    Outcome::BudgetExceeded(10)
+    Outcome::BudgetExceeded(10),
+    None
 )]
 #[case::the_byte_budget_accepts_a_target_that_exactly_fills_it(
     object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
     object(r#"{"Foo": {"type": "string"}}"#),
     Some(18),
-    Outcome::Object(object(r#"{"a": {"type": "string"}}"#))
+    Outcome::Object(object(r#"{"a": {"type": "string"}}"#)),
+    None
 )]
 #[case::refs_inside_a_list_item_are_expanded(
     object(r##"{"a": [{"$ref": "#/$defs/Foo"}, {"$ref": "#/$defs/Bar"}]}"##),
     object(r#"{"Foo": {"type": "string"}, "Bar": {"type": "number"}}"#),
     None,
-    Outcome::Object(object(r#"{"a": [{"type": "string"}, {"type": "number"}]}"#))
+    Outcome::Object(object(r#"{"a": [{"type": "string"}, {"type": "number"}]}"#)),
+    None
 )]
 #[case::a_non_object_root_defs_value_is_ignored(
     object(r##"{"$defs": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##),
     object("{}"),
     None,
-    Outcome::Object(object(r##"{"$defs": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##))
+    Outcome::Object(object(r##"{"$defs": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##)),
+    None
 )]
 #[case::a_non_object_defs_value_on_a_resolved_ref_target_is_ignored(
     object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
     object(r#"{"Foo": {"$defs": "not an object", "type": "string"}}"#),
     None,
-    Outcome::Object(object(r#"{"a": {"$defs": "not an object", "type": "string"}}"#))
+    Outcome::Object(object(r#"{"a": {"$defs": "not an object", "type": "string"}}"#)),
+    None
 )]
 #[case::a_non_object_definitions_value_on_a_plain_dict_is_ignored(
     object(r##"{"a": {"definitions": "not an object", "b": {"$ref": "#/$defs/Foo"}}}"##),
@@ -122,13 +135,23 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     None,
     Outcome::Object(object(
         r##"{"a": {"definitions": "not an object", "b": {"$ref": "#/$defs/Foo"}}}"##
-    ))
+    )),
+    None
 )]
 fn schema_definitions_behavior_tests_behavior(
     #[case] schema: Object,
     #[case] defs: Object,
     #[case] max_inlined_bytes: Option<usize>,
     #[case] expected: Outcome,
+    #[case] expected_keys: Option<Vec<&str>>,
 ) {
-    assert_eq!(run(schema, &defs, max_inlined_bytes), expected);
+    let actual = run(schema, &defs, max_inlined_bytes);
+    assert_eq!(actual, expected);
+    if let Some(expected_keys) = expected_keys {
+        let Outcome::Object(result) = actual else {
+            panic!("key order assertions require a successful object result");
+        };
+        let actual_keys: Vec<&str> = result.keys().map(String::as_str).collect();
+        assert_eq!(actual_keys, expected_keys);
+    }
 }
