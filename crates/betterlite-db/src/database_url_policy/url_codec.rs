@@ -11,7 +11,14 @@ pub(super) struct SplitUrl {
     pub(super) fragment: String,
 }
 
-pub(super) fn urlsplit(url: &str) -> SplitUrl {
+// Mirrors the ValueError Python's urlsplit raises for a malformed bracketed netloc.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum UrlSplitError {
+    #[error("Invalid IPv6 URL")]
+    InvalidIpv6Url,
+}
+
+pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
     let trimmed = url.trim_start_matches(|character: char| u32::from(character) <= 0x20);
     let cleaned: String = trimmed
         .chars()
@@ -40,18 +47,45 @@ pub(super) fn urlsplit(url: &str) -> SplitUrl {
             after.clone_into(&mut netloc);
             rest = "";
         }
+        check_netloc_brackets(&netloc)?;
     }
     let (before_fragment, fragment) = rest.split_once('#').unwrap_or((rest, ""));
     let (path, query) = before_fragment
         .split_once('?')
         .unwrap_or((before_fragment, ""));
-    SplitUrl {
+    Ok(SplitUrl {
         scheme,
         netloc,
         path: path.to_owned(),
         query: query.to_owned(),
         fragment: fragment.to_owned(),
+    })
+}
+
+// Mirrors _check_bracketed_netloc: an unmatched or misplaced bracket is an error.
+fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
+    let has_open = netloc.contains('[');
+    let has_close = netloc.contains(']');
+    if has_open != has_close {
+        return Err(UrlSplitError::InvalidIpv6Url);
     }
+    if !has_open {
+        return Ok(());
+    }
+    let hostname_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
+    let bracket_at = hostname_and_port
+        .find('[')
+        .ok_or(UrlSplitError::InvalidIpv6Url)?;
+    if bracket_at != 0 {
+        return Err(UrlSplitError::InvalidIpv6Url);
+    }
+    let bracketed = &hostname_and_port[1..];
+    let close_at = bracketed.find(']').ok_or(UrlSplitError::InvalidIpv6Url)?;
+    let after_close = &bracketed[close_at + 1..];
+    if !after_close.is_empty() && !after_close.starts_with(':') {
+        return Err(UrlSplitError::InvalidIpv6Url);
+    }
+    Ok(())
 }
 
 pub(super) fn urlunsplit(parts: &SplitUrl) -> String {

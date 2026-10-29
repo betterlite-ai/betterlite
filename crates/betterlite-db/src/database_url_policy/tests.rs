@@ -15,12 +15,13 @@ use super::query::{
     connection_params_from_url, idle_lifetime_params, reader_shareable_params,
     token_refresh_params_from_url, url_query_value, with_query_value,
 };
+use super::url_codec::UrlSplitError;
 
 #[test]
 fn missing_only_identity() {
     let url = "postgresql://h/db?a=1&b=2";
     let params = vec![("a".to_owned(), QueryValue::Integer(9))];
-    assert_eq!(add_missing_query_params(url, &params), url);
+    assert_eq!(add_missing_query_params(url, &params).unwrap(), url);
 }
 
 #[test]
@@ -31,7 +32,7 @@ fn blank_pinned_value() {
         ("b".to_owned(), QueryValue::Text("2".to_owned())),
     ];
     assert_eq!(
-        add_missing_query_params(url, &params),
+        add_missing_query_params(url, &params).unwrap(),
         "postgresql://h/db?a=&c=1&b=2"
     );
 }
@@ -41,7 +42,7 @@ fn duplicate_query_order() {
     let url = "postgresql://h/db?x=1&x=2&y=3";
     let params = vec![("z".to_owned(), QueryValue::Integer(4))];
     assert_eq!(
-        add_missing_query_params(url, &params),
+        add_missing_query_params(url, &params).unwrap(),
         "postgresql://h/db?x=1&x=2&y=3&z=4"
     );
 }
@@ -56,17 +57,29 @@ fn idle_none_zero_negative() {
         )]
     );
     assert_eq!(
-        idle_lifetime_params(Some(0.0_f64)),
+        idle_lifetime_params(Some(QueryValue::Integer(0))),
         vec![(
             "max_idle_connection_lifetime".to_owned(),
-            QueryValue::Float(0.0)
+            QueryValue::Integer(0)
         )]
     );
     assert_eq!(
-        idle_lifetime_params(Some(-5.0_f64)),
+        idle_lifetime_params(Some(QueryValue::Integer(-5))),
         vec![(
             "max_idle_connection_lifetime".to_owned(),
-            QueryValue::Float(-5.0)
+            QueryValue::Integer(-5)
+        )]
+    );
+}
+
+// A configured int such as 300 is emitted unchanged, never promoted to a float.
+#[test]
+fn idle_integer_configured_passes_through() {
+    assert_eq!(
+        idle_lifetime_params(Some(QueryValue::Integer(300))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(300)
         )]
     );
 }
@@ -94,7 +107,7 @@ fn reader_exact_allowlist() {
 fn reader_last_duplicate_no_blanks() {
     let url = "postgresql://h/db?connection_limit=1&connection_limit=2&pool_timeout=&schema=public";
     assert_eq!(
-        connection_params_from_url(url),
+        connection_params_from_url(url).unwrap(),
         vec![(
             "connection_limit".to_owned(),
             QueryValue::Text("2".to_owned())
@@ -106,7 +119,7 @@ fn reader_last_duplicate_no_blanks() {
 fn refresh_tls_allowlist() {
     let url = "postgresql://h/db?connection_limit=5&sslmode=verify-full&sslcert=/path&sslaccept=strict&sslrootcert=/root&schema=public&options=-c";
     assert_eq!(
-        token_refresh_params_from_url(url),
+        token_refresh_params_from_url(url).unwrap(),
         vec![
             (
                 "connection_limit".to_owned(),
@@ -154,20 +167,20 @@ fn extra_params_override() {
 fn append_overwrites_lists() {
     let url = "postgresql://h/db?tag=old1&tag=old2";
     let params = vec![("tag".to_owned(), vec!["new1".to_owned(), "new2".to_owned()])];
-    let outcome = append_query_params(Some(url), &params);
+    let outcome = append_query_params(Some(url), &params).unwrap();
     assert_eq!(outcome.url, "postgresql://h/db?tag=new1&tag=new2");
     assert!(outcome.warning.is_none());
 }
 
 #[test]
 fn append_empty_warns() {
-    let none_outcome = append_query_params(None, &[]);
+    let none_outcome = append_query_params(None, &[]).unwrap();
     assert_eq!(none_outcome.url, "");
     assert_eq!(
         none_outcome.warning,
         Some("append_query_params received empty or non-string URL, returning empty string")
     );
-    let empty_outcome = append_query_params(Some(""), &[]);
+    let empty_outcome = append_query_params(Some(""), &[]).unwrap();
     assert_eq!(empty_outcome.url, "");
     assert_eq!(
         empty_outcome.warning,
@@ -187,19 +200,43 @@ fn append_diagnostic_redacts_credentials() {
     assert_eq!(none_params, "{}");
 }
 
+// Only the last '@' in the netloc splits credentials from host.
+#[test]
+fn append_diagnostic_redacts_at_sign_in_password() {
+    let url = "postgresql://alice:p@ss@host/db";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "postgresql://REDACTED@host/db");
+}
+
+// A schemeless DSN has no parsed netloc at all, so it is redacted in full.
+#[test]
+fn append_diagnostic_redacts_schemeless_dsn() {
+    let url = "user:pass@host/db";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "REDACTED");
+}
+
+// Secret query values are redacted too, even though they never appear in the netloc.
+#[test]
+fn append_diagnostic_redacts_password_query_param() {
+    let url = "postgresql://h/db?password=hunter2&other=1";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "postgresql://h/db?password=REDACTED&other=1");
+}
+
 #[test]
 fn first_query_value() {
     let url = "postgresql://h/db?k=&k=first&k=second";
-    assert_eq!(url_query_value(Some(url), "k"), "first");
-    assert_eq!(url_query_value(Some(url), "missing"), "");
-    assert_eq!(url_query_value(None, "k"), "");
+    assert_eq!(url_query_value(Some(url), "k").unwrap(), "first");
+    assert_eq!(url_query_value(Some(url), "missing").unwrap(), "");
+    assert_eq!(url_query_value(None, "k").unwrap(), "");
 }
 
 #[test]
 fn replace_all_query_values() {
     let url = "postgresql://h/db?k=old1&k=old2&j=3";
     assert_eq!(
-        with_query_value(url, "k", "new"),
+        with_query_value(url, "k", "new").unwrap(),
         "postgresql://h/db?j=3&k=new"
     );
 }
@@ -244,14 +281,27 @@ fn nonfinite_timeout_fails() {
     assert!(matches!(nan_result, Err(TimeoutError::NotANumber)));
     let infinite_result = pg_options_with_timeouts("", Some(f64::INFINITY), None);
     assert!(matches!(infinite_result, Err(TimeoutError::Infinite)));
+    // The product overflows a double to infinity even though the input itself is finite;
+    // Python's int(seconds*1000) hits the same "cannot convert float infinity" error here.
+    let overflowing_product = pg_options_with_timeouts("", Some(f64::MAX), None);
+    assert!(matches!(overflowing_product, Err(TimeoutError::Infinite)));
+}
+
+// Python's int(seconds*1000) is unbounded; no 64-bit ceiling applies here either.
+#[test]
+fn large_finite_timeout_has_no_bound() {
+    let result = pg_options_with_timeouts("", Some(1e300_f64), None).unwrap();
+    let millis = result.strip_prefix("-c statement_timeout=").unwrap();
+    assert_eq!(millis.len(), 304);
+    assert!(millis.chars().all(|character| character.is_ascii_digit()));
 }
 
 #[test]
 fn postgres_scheme_aliases() {
-    assert_eq!(unsupported_db_scheme("postgres://h/db"), None);
-    assert_eq!(unsupported_db_scheme("postgresql://h/db"), None);
-    assert_eq!(unsupported_db_scheme("POSTGRESQL://h/db"), None);
-    assert_eq!(unsupported_db_scheme("POSTGRES://h/db"), None);
+    assert_eq!(unsupported_db_scheme("postgres://h/db"), Ok(None));
+    assert_eq!(unsupported_db_scheme("postgresql://h/db"), Ok(None));
+    assert_eq!(unsupported_db_scheme("POSTGRESQL://h/db"), Ok(None));
+    assert_eq!(unsupported_db_scheme("POSTGRES://h/db"), Ok(None));
 }
 
 #[test]
@@ -267,8 +317,26 @@ fn unsupported_scheme_message() {
 fn malformed_dsn_scheme() {
     assert_eq!(
         unsupported_db_scheme("user:pass@host/db"),
-        Some("user".to_owned())
+        Ok(Some("user".to_owned()))
     );
+}
+
+// Python 3.13's urlsplit raises ValueError("Invalid IPv6 URL") for an unmatched bracket.
+#[test]
+fn invalid_ipv6_netloc_is_an_error() {
+    let url = "postgresql://u:p@[::1/db";
+    assert_eq!(
+        add_missing_query_params(url, &[]),
+        Err(UrlSplitError::InvalidIpv6Url)
+    );
+    assert_eq!(
+        unsupported_db_scheme(url),
+        Err(UrlSplitError::InvalidIpv6Url)
+    );
+    assert!(matches!(
+        decode_database_url(url.as_bytes()),
+        Err(DbError::InvalidIpv6Url(UrlSplitError::InvalidIpv6Url))
+    ));
 }
 
 #[test]
@@ -326,7 +394,7 @@ fn extras_whitespace_and_on_false() {
 fn malformed_url_bytes() {
     assert!(matches!(
         decode_database_url(b"postgresql://[::1/db"),
-        Err(DbError::MalformedBracket)
+        Err(DbError::InvalidIpv6Url(UrlSplitError::InvalidIpv6Url))
     ));
     assert!(matches!(
         decode_database_url(b"postgresql://host:abc/db"),
@@ -367,6 +435,20 @@ fn native_url_debug_redaction() {
     assert!(!debug.contains("alice"));
     assert!(!debug.contains("s3cr3t"));
     assert!(debug.contains("REDACTED"));
+}
+
+// A password or sslpassword carried in the query string must not leave the type through Debug either.
+#[test]
+fn native_url_debug_redaction_covers_query_secrets() {
+    let endpoint = decode_database_url(
+        b"postgresql://host/db?password=hunter2&sslpassword=tls-secret&other=1",
+    )
+    .unwrap();
+    let debug = format!("{endpoint:?}");
+    assert!(!debug.contains("hunter2"));
+    assert!(!debug.contains("tls-secret"));
+    assert!(debug.contains("other"));
+    assert!(debug.contains('1'));
 }
 
 #[test]

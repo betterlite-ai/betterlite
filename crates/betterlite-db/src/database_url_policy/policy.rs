@@ -1,7 +1,6 @@
 use super::query::QueryValue;
-use super::url_codec::urlsplit;
+use super::url_codec::{UrlSplitError, urlsplit};
 use regex::Regex;
-use rust_decimal::Decimal;
 use std::num::ParseFloatError;
 
 pub const POOL_LIMIT_DEFAULT: i64 = 10;
@@ -52,17 +51,16 @@ const SUPPORTED_DB_SCHEMES: [&str; 2] = ["postgresql", "postgres"];
 const MISSING_SCHEME: &str = "<missing scheme>";
 
 // None for a supported scheme, else the parsed lower-case scheme or the missing-scheme placeholder; never the full URL.
-#[must_use]
-pub fn unsupported_db_scheme(database_url: &str) -> Option<String> {
-    let scheme = urlsplit(database_url).scheme;
+pub fn unsupported_db_scheme(database_url: &str) -> Result<Option<String>, UrlSplitError> {
+    let scheme = urlsplit(database_url)?.scheme;
     if SUPPORTED_DB_SCHEMES.contains(&scheme.as_str()) {
-        return None;
+        return Ok(None);
     }
-    Some(if scheme.is_empty() {
+    Ok(Some(if scheme.is_empty() {
         MISSING_SCHEME.to_owned()
     } else {
         scheme
-    })
+    }))
 }
 
 #[must_use]
@@ -86,8 +84,6 @@ pub enum TimeoutError {
     NotANumber,
     #[error("cannot convert float infinity to integer")]
     Infinite,
-    #[error("{seconds} does not fit in a 64-bit millisecond timeout")]
-    Overflow { seconds: f64 },
 }
 
 // Pydantic's lax float field: accepts a number or a numeric string, nothing else.
@@ -168,7 +164,8 @@ fn already_spelled(existing_options: &str, name: &str) -> bool {
     Regex::new(&pattern).is_ok_and(|spelling| spelling.is_match(existing_options))
 }
 
-fn millis_from_seconds(seconds: f64) -> Result<i64, TimeoutError> {
+// Matches Python's unbounded int(seconds * 1000): no 64-bit ceiling on the result.
+fn millis_from_seconds(seconds: f64) -> Result<String, TimeoutError> {
     if seconds.is_nan() {
         return Err(TimeoutError::NotANumber);
     }
@@ -177,6 +174,8 @@ fn millis_from_seconds(seconds: f64) -> Result<i64, TimeoutError> {
     }
     // mul_add avoids clippy's float-arithmetic-operator restriction.
     let millis = seconds.mul_add(1000.0, 0.0).trunc();
-    let exact = Decimal::from_f64_retain(millis).ok_or(TimeoutError::Overflow { seconds })?;
-    i64::try_from(exact).map_err(|_source: rust_decimal::Error| TimeoutError::Overflow { seconds })
+    if millis.is_infinite() {
+        return Err(TimeoutError::Infinite);
+    }
+    Ok(format!("{millis:.0}"))
 }

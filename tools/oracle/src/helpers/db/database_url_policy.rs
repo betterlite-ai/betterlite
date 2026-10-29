@@ -11,6 +11,7 @@ use betterlite_db::database_url_policy::query::{
     idle_lifetime_params, reader_shareable_params, token_refresh_params_from_url, url_query_value,
     with_query_value,
 };
+use betterlite_db::database_url_policy::url_codec::UrlSplitError;
 
 pub(crate) struct Op;
 
@@ -20,31 +21,32 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
             Input::IdleLifetimeParams { configured } => {
-                Ok(params_value(&idle_lifetime_params(*configured)))
+                Ok(params_value(&idle_lifetime_params(configured.clone())))
             }
             Input::AddMissingQueryParams { url, params } => {
-                Ok(run_add_missing_query_params(url, params))
+                run_add_missing_query_params(url, params)
             }
             Input::ReaderShareableParams { params } => {
                 Ok(params_value(&reader_shareable_params(params)))
             }
-            Input::ConnectionParamsFromUrl { url } => {
-                Ok(params_value(&connection_params_from_url(url)))
-            }
-            Input::TokenRefreshParamsFromUrl { url } => {
-                Ok(params_value(&token_refresh_params_from_url(url)))
-            }
-            Input::UnsupportedDbScheme { database_url } => Ok(unsupported_db_scheme(database_url)
-                .map_or(serde_json::Value::Null, serde_json::Value::String)),
+            Input::ConnectionParamsFromUrl { url } => connection_params_from_url(url)
+                .map(|params| params_value(&params))
+                .map_err(url_split_error),
+            Input::TokenRefreshParamsFromUrl { url } => token_refresh_params_from_url(url)
+                .map(|params| params_value(&params))
+                .map_err(url_split_error),
+            Input::UnsupportedDbScheme { database_url } => unsupported_db_scheme(database_url)
+                .map(|scheme| scheme.map_or(serde_json::Value::Null, serde_json::Value::String))
+                .map_err(url_split_error),
             Input::UnsupportedDbSchemeMessage { env_var, scheme } => {
                 Ok(run_unsupported_scheme_message(env_var, scheme))
             }
             Input::BuildDbConnectionUrlParams { .. } => Ok(run_build_connection_params(input)),
             Input::PgOptionsWithTimeouts { .. } => run_pg_options_with_timeouts(input),
-            Input::UrlQueryValue { url, key } => Ok(run_url_query_value(url.as_deref(), key)),
-            Input::WithQueryValue { url, key, value } => Ok(run_with_query_value(url, key, value)),
+            Input::UrlQueryValue { url, key } => run_url_query_value(url.as_deref(), key),
+            Input::WithQueryValue { url, key, value } => run_with_query_value(url, key, value),
             Input::AppendQueryParams { url, params } => {
-                Ok(run_append_query_params(url.as_deref(), params))
+                run_append_query_params(url.as_deref(), params)
             }
             Input::TokenAuthFlagEnabled { value, env_var } => {
                 run_token_auth_flag_enabled(value.as_ref(), env_var)
@@ -56,9 +58,13 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> serde_json::Value {
-    let updated = add_missing_query_params(url, params);
-    serde_json::Value::String(updated)
+fn run_add_missing_query_params(
+    url: &str,
+    params: &[(String, QueryValue)],
+) -> crate::helpers::HelperResult {
+    add_missing_query_params(url, params)
+        .map(serde_json::Value::String)
+        .map_err(url_split_error)
 }
 
 fn run_unsupported_scheme_message(env_var: &str, scheme: &str) -> serde_json::Value {
@@ -66,22 +72,40 @@ fn run_unsupported_scheme_message(env_var: &str, scheme: &str) -> serde_json::Va
     serde_json::Value::String(message)
 }
 
-fn run_url_query_value(url: Option<&str>, key: &str) -> serde_json::Value {
-    let value = url_query_value(url, key);
-    serde_json::Value::String(value)
+fn run_url_query_value(url: Option<&str>, key: &str) -> crate::helpers::HelperResult {
+    url_query_value(url, key)
+        .map(serde_json::Value::String)
+        .map_err(url_split_error)
 }
 
-fn run_with_query_value(url: &str, key: &str, value: &str) -> serde_json::Value {
-    let result = with_query_value(url, key, value);
-    serde_json::Value::String(result)
+fn run_with_query_value(url: &str, key: &str, value: &str) -> crate::helpers::HelperResult {
+    with_query_value(url, key, value)
+        .map(serde_json::Value::String)
+        .map_err(url_split_error)
 }
 
 fn run_append_query_params(
     url: Option<&str>,
     params: &[(String, Vec<String>)],
-) -> serde_json::Value {
-    let outcome = append_query_params(url, params);
-    serde_json::json!({ "url": outcome.url, "warning": outcome.warning })
+) -> crate::helpers::HelperResult {
+    append_query_params(url, params)
+        .map(|outcome| serde_json::json!({ "url": outcome.url, "warning": outcome.warning }))
+        .map_err(url_split_error)
+}
+
+fn url_split_error(error: UrlSplitError) -> Box<crate::helpers::HelperError> {
+    helper_error("ValueError", error.to_string())
+}
+
+fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
 }
 
 fn run_build_connection_params(input: &Input) -> serde_json::Value {
@@ -149,16 +173,9 @@ fn timeout_error(error: &TimeoutError) -> Box<crate::helpers::HelperError> {
     let class = match error {
         TimeoutError::NotNumeric { .. } => "ValidationError",
         TimeoutError::NotANumber => "ValueError",
-        TimeoutError::Infinite | TimeoutError::Overflow { .. } => "OverflowError",
+        TimeoutError::Infinite => "OverflowError",
     };
-    Box::new(crate::helpers::HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
+    helper_error(class, error.to_string())
 }
 
 fn run_token_auth_flag_enabled(
@@ -183,7 +200,7 @@ fn run_token_auth_flag_enabled(
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     IdleLifetimeParams {
-        configured: Option<f64>,
+        configured: Option<QueryValue>,
     },
     AddMissingQueryParams {
         url: String,

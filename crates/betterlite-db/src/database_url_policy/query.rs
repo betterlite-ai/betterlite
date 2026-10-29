@@ -1,5 +1,6 @@
 use super::url_codec::{
-    SplitUrl, parse_qs, parse_qsl, urlencode_doseq, urlencode_pairs, urlsplit, urlunsplit,
+    SplitUrl, UrlSplitError, parse_qs, parse_qsl, urlencode_doseq, urlencode_pairs, urlsplit,
+    urlunsplit,
 };
 use std::collections::HashSet;
 
@@ -42,20 +43,19 @@ pub(super) const CONNECTION_PARAM_KEYS: [&str; 6] = [
 
 const PRISMA_TLS_PARAM_KEYS: [&str; 3] = ["sslmode", "sslcert", "sslaccept"];
 
-// The default only applies when nothing is configured.
+// A configured value passes through unchanged; only a missing one gets the default.
 #[must_use]
-pub fn idle_lifetime_params(configured: Option<f64>) -> Vec<(String, QueryValue)> {
-    let value = configured.map_or(
-        QueryValue::Integer(IDLE_LIFETIME_DEFAULT),
-        QueryValue::Float,
-    );
+pub fn idle_lifetime_params(configured: Option<QueryValue>) -> Vec<(String, QueryValue)> {
+    let value = configured.unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT));
     vec![("max_idle_connection_lifetime".to_owned(), value)]
 }
 
 // Returns url unchanged when nothing is added.
-#[must_use]
-pub fn add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> String {
-    let parsed = urlsplit(url);
+pub fn add_missing_query_params(
+    url: &str,
+    params: &[(String, QueryValue)],
+) -> Result<String, UrlSplitError> {
+    let parsed = urlsplit(url)?;
     let existing = parse_qsl(&parsed.query, true);
     let pinned: HashSet<&str> = existing.iter().map(|(key, _)| key.as_str()).collect();
     let additions: Vec<(String, String)> = params
@@ -64,12 +64,12 @@ pub fn add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> S
         .map(|(key, value)| (key.clone(), value.to_param_string()))
         .collect();
     if additions.is_empty() {
-        return url.to_owned();
+        return Ok(url.to_owned());
     }
     let mut all = existing;
     all.extend(additions);
     let query = urlencode_pairs(&all);
-    urlunsplit(&SplitUrl { query, ..parsed })
+    Ok(urlunsplit(&SplitUrl { query, ..parsed }))
 }
 
 // The pool/timeout allowlist the reader may inherit.
@@ -96,17 +96,17 @@ fn last_duplicate_wins(pairs: Vec<(String, String)>) -> Vec<(String, QueryValue)
 }
 
 // The reader-shareable subset already on url.
-#[must_use]
-pub fn connection_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
-    let parsed = urlsplit(url);
+pub fn connection_params_from_url(url: &str) -> Result<Vec<(String, QueryValue)>, UrlSplitError> {
+    let parsed = urlsplit(url)?;
     let deduped = last_duplicate_wins(parse_qsl(&parsed.query, false));
-    reader_shareable_params(&deduped)
+    Ok(reader_shareable_params(&deduped))
 }
 
 // The pool/timeout and Prisma TLS params a refreshed token URL carries over; schema and options are never included.
-#[must_use]
-pub fn token_refresh_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
-    let parsed = urlsplit(url);
+pub fn token_refresh_params_from_url(
+    url: &str,
+) -> Result<Vec<(String, QueryValue)>, UrlSplitError> {
+    let parsed = urlsplit(url)?;
     let kept: Vec<(String, String)> = parse_qsl(&parsed.query, false)
         .into_iter()
         .filter(|(key, _)| {
@@ -114,34 +114,32 @@ pub fn token_refresh_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
                 || PRISMA_TLS_PARAM_KEYS.contains(&key.as_str())
         })
         .collect();
-    last_duplicate_wins(kept)
+    Ok(last_duplicate_wins(kept))
 }
 
 // The first nonblank value for key, or "".
-#[must_use]
-pub fn url_query_value(raw_url: Option<&str>, key: &str) -> String {
+pub fn url_query_value(raw_url: Option<&str>, key: &str) -> Result<String, UrlSplitError> {
     let Some(url) = raw_url.filter(|value| !value.is_empty()) else {
-        return String::new();
+        return Ok(String::new());
     };
-    let parsed = urlsplit(url);
-    parse_qs(&parsed.query)
+    let parsed = urlsplit(url)?;
+    Ok(parse_qs(&parsed.query)
         .into_iter()
         .find(|(existing, _)| existing == key)
         .and_then(|(_, values)| values.into_iter().next())
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 // Every old occurrence of key is removed, then one replacement is appended.
-#[must_use]
-pub fn with_query_value(url: &str, key: &str, value: &str) -> String {
-    let parsed = urlsplit(url);
+pub fn with_query_value(url: &str, key: &str, value: &str) -> Result<String, UrlSplitError> {
+    let parsed = urlsplit(url)?;
     let mut pairs: Vec<(String, String)> = parse_qsl(&parsed.query, false)
         .into_iter()
         .filter(|(existing, _)| existing != key)
         .collect();
     pairs.push((key.to_owned(), value.to_owned()));
     let query = urlencode_pairs(&pairs);
-    urlunsplit(&SplitUrl { query, ..parsed })
+    Ok(urlunsplit(&SplitUrl { query, ..parsed }))
 }
 
 fn update_query_groups(
@@ -167,25 +165,26 @@ const EMPTY_URL_WARNING: &str =
     "append_query_params received empty or non-string URL, returning empty string";
 
 // Unlike add_missing_query_params, blank existing values are dropped and a supplied key's values overwrite any existing list.
-#[must_use]
 pub fn append_query_params(
     raw_url: Option<&str>,
     params: &[(String, Vec<String>)],
-) -> AppendOutcome {
+) -> Result<AppendOutcome, UrlSplitError> {
     let Some(url) = raw_url.filter(|value| !value.is_empty()) else {
-        return AppendOutcome {
+        return Ok(AppendOutcome {
             url: String::new(),
             warning: Some(EMPTY_URL_WARNING),
-        };
+        });
     };
-    let parsed = urlsplit(url);
+    let parsed = urlsplit(url)?;
     let groups = update_query_groups(parse_qs(&parsed.query), params);
     let query = urlencode_doseq(&groups);
-    AppendOutcome {
+    Ok(AppendOutcome {
         url: urlunsplit(&SplitUrl { query, ..parsed }),
         warning: None,
-    }
+    })
 }
+
+const SECRET_QUERY_KEYS: [&str; 2] = ["password", "sslpassword"];
 
 // The redacted form of what append_query_params would log; never carries the URL's credentials.
 #[must_use]
@@ -209,13 +208,36 @@ pub fn append_query_params_diagnostic(
     (redacted_url, redacted_params)
 }
 
+// A URL this helper cannot parse is reported fully redacted, never raw.
 fn redact_credentials(url: &str) -> String {
-    let parsed = urlsplit(url);
-    match parsed.netloc.split_once('@') {
-        Some((_, host)) => {
-            let netloc = format!("REDACTED@{host}");
-            urlunsplit(&SplitUrl { netloc, ..parsed })
-        }
-        None => url.to_owned(),
+    let Ok(parsed) = urlsplit(url) else {
+        return "REDACTED".to_owned();
+    };
+    if parsed.netloc.is_empty() {
+        return "REDACTED".to_owned();
     }
+    let netloc = match parsed.netloc.rsplit_once('@') {
+        Some((_, host)) => format!("REDACTED@{host}"),
+        None => parsed.netloc.clone(),
+    };
+    let query = redact_secret_query_values(&parsed.query);
+    urlunsplit(&SplitUrl {
+        netloc,
+        query,
+        ..parsed
+    })
+}
+
+fn redact_secret_query_values(query: &str) -> String {
+    let redacted: Vec<(String, String)> = parse_qsl(query, true)
+        .into_iter()
+        .map(|(key, value)| {
+            if SECRET_QUERY_KEYS.contains(&key.as_str()) {
+                (key, "REDACTED".to_owned())
+            } else {
+                (key, value)
+            }
+        })
+        .collect();
+    urlencode_pairs(&redacted)
 }

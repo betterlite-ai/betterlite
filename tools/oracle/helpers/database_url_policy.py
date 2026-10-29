@@ -1,6 +1,8 @@
+import logging
 from collections.abc import Callable
 from typing import TypeAlias, cast
 
+from litellm._logging import verbose_proxy_logger
 from litellm.proxy.db.db_url_settings import (
     add_missing_query_params,
     connection_params_from_url,
@@ -23,8 +25,6 @@ from litellm_proxy_extras.utils import str_to_bool
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-EMPTY_URL_WARNING = "append_query_params received empty or non-string URL, returning empty string"
-
 
 def pairs_to_dict(pairs: Json) -> dict[str, str | int | float]:
     result: dict[str, str | int | float] = {}
@@ -39,7 +39,7 @@ def dict_to_pairs(params: dict[str, str | int | float]) -> Json:
 
 
 def run_idle_lifetime_params(input_value: dict[str, Json]) -> Json:
-    configured = cast("float | None", input_value["configured"])
+    configured = cast("int | float | None", input_value["configured"])
     return dict_to_pairs(dict(idle_lifetime_params(configured)))
 
 
@@ -122,14 +122,32 @@ def run_with_query_value(input_value: dict[str, Json]) -> Json:
     return _with_query_value(url, key, value)
 
 
+class _WarningCapture(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
 def run_append_query_params(input_value: dict[str, Json]) -> Json:
     url = cast("str | None", input_value["url"])
     params: dict[str, list[str]] = {}
     for pair in cast(list[Json], input_value["params"]):
         key, values = cast(list[Json], pair)
         params[cast(str, key)] = cast("list[str]", values)
-    modified_url = append_query_params(url, params)
-    warning = EMPTY_URL_WARNING if not isinstance(url, str) or url == "" else None
+    capture = _WarningCapture()
+    capture.setLevel(logging.WARNING)
+    previous_level = verbose_proxy_logger.level
+    verbose_proxy_logger.addHandler(capture)
+    verbose_proxy_logger.setLevel(logging.WARNING)
+    try:
+        modified_url = append_query_params(url, params)
+    finally:
+        verbose_proxy_logger.removeHandler(capture)
+        verbose_proxy_logger.setLevel(previous_level)
+    warning = capture.messages[0] if capture.messages else None
     return {"url": modified_url, "warning": warning}
 
 

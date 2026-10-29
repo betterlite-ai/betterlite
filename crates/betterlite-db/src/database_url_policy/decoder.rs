@@ -1,4 +1,5 @@
-use super::url_codec::{parse_qsl, urlsplit};
+use super::url_codec::{UrlSplitError, parse_qsl, urlsplit};
+use secrecy::SecretString;
 use std::fmt::{self, Debug, Formatter};
 use std::num::ParseIntError;
 use std::str::{self, Utf8Error};
@@ -6,13 +7,15 @@ use std::str::{self, Utf8Error};
 // 1 MiB cap on a database URL before decoding is attempted.
 const MAX_DATABASE_URL_BYTES: usize = 0x0010_0000;
 
-type Netloc = (Option<String>, Option<String>, String, Option<u16>);
+type Netloc = (Option<String>, Option<SecretString>, String, Option<u16>);
 
-#[derive(Clone, PartialEq, Eq)]
+const SECRET_QUERY_KEYS: [&str; 2] = ["password", "sslpassword"];
+
+#[derive(Clone)]
 pub struct DbEndpoint {
     pub scheme: String,
     pub user: Option<String>,
-    pub password: Option<String>,
+    pub password: Option<SecretString>,
     pub host: String,
     pub port: Option<u16>,
     pub database: String,
@@ -21,6 +24,17 @@ pub struct DbEndpoint {
 
 impl Debug for DbEndpoint {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let redacted_query: Vec<(&str, &str)> = self
+            .query
+            .iter()
+            .map(|(key, value)| {
+                if SECRET_QUERY_KEYS.contains(&key.as_str()) {
+                    (key.as_str(), "REDACTED")
+                } else {
+                    (key.as_str(), value.as_str())
+                }
+            })
+            .collect();
         f.debug_struct("DbEndpoint")
             .field("scheme", &self.scheme)
             .field("user", &self.user.as_ref().map(|_| "REDACTED"))
@@ -28,7 +42,7 @@ impl Debug for DbEndpoint {
             .field("host", &self.host)
             .field("port", &self.port)
             .field("database", &self.database)
-            .field("query", &self.query)
+            .field("query", &redacted_query)
             .finish()
     }
 }
@@ -46,6 +60,8 @@ pub enum DbError {
     MissingScheme,
     #[error("database URL host has an unterminated or misplaced '[' bracket")]
     MalformedBracket,
+    #[error(transparent)]
+    InvalidIpv6Url(#[from] UrlSplitError),
     #[error("database URL port {text:?} is not a valid port number")]
     MalformedPort {
         text: String,
@@ -62,7 +78,7 @@ pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
         return Err(DbError::TooLarge { len: bytes.len() });
     }
     let text = str::from_utf8(bytes).map_err(|source| DbError::InvalidUtf8 { source })?;
-    let parsed = urlsplit(text);
+    let parsed = urlsplit(text)?;
     if parsed.scheme.is_empty() {
         return Err(DbError::MissingScheme);
     }
@@ -92,9 +108,10 @@ fn parse_netloc(netloc: &str) -> Result<Netloc, DbError> {
     let (user, password) = match userinfo {
         None => (None, None),
         Some(info) => match info.split_once(':') {
-            Some((user, password)) => {
-                (Some(percent_decode(user)?), Some(percent_decode(password)?))
-            }
+            Some((user, password)) => (
+                Some(percent_decode(user)?),
+                Some(SecretString::from(percent_decode(password)?)),
+            ),
             None => (Some(percent_decode(info)?), None),
         },
     };
