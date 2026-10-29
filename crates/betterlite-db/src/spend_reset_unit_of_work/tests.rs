@@ -249,6 +249,43 @@ async fn postgres_all_unit_of_work_table_bindings() {
 }
 
 #[tokio::test]
+async fn key_zero_resets_only_non_window_rows() {
+    let (fixture, store, client) = schema().await;
+    seed_bindings(&client).await;
+    budget_cascade_unit_of_work(
+        || BudgetCascadeBatch {
+            store: store.clone(),
+        },
+        async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
+            unit.keys.queue_spend_zero(KeyLinkedResetFilter {
+                budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
+                spend: SpendRange::default(),
+            });
+            Ok(())
+        },
+    )
+    .await
+    .unwrap();
+    assert_spend(
+        &client,
+        "LiteLLM_VerificationToken",
+        "token",
+        "token-linked",
+        0.0_f64,
+    )
+    .await;
+    assert_spend(
+        &client,
+        "LiteLLM_VerificationToken",
+        "token",
+        "token-window",
+        10.0_f64,
+    )
+    .await;
+    finish(fixture, store, client).await;
+}
+
+#[tokio::test]
 async fn queued_body_sends_no_sql() {
     let (fixture, store, client) = schema().await;
     client
