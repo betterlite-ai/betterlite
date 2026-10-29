@@ -37,19 +37,19 @@ impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
     }
 }
 
-fn build_config() -> DateTimeConfig {
+fn build_config() -> Result<DateTimeConfig, speedate::ConfigError> {
     let time_config = TimeConfig::builder()
         .unix_timestamp_offset(Some(0_i32))
-        .microseconds_precision_overflow_behavior("truncate".parse().unwrap_or_default())
+        .microseconds_precision_overflow_behavior("truncate".parse()?)
         .build();
-    DateTimeConfig::builder()
+    Ok(DateTimeConfig::builder()
         .timestamp_unit(TimestampUnit::Infer)
         .time_config(time_config)
-        .build()
+        .build())
 }
 
 fn parse_lax_datetime(text: &str) -> Option<LaxDateTime> {
-    let config = build_config();
+    let config = build_config().ok()?;
     let parsed = DateTime::parse_str_with_config(text, &config)
         .or_else(|_| {
             let date = Date::parse_str(text)?;
