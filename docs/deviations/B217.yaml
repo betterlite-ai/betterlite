@@ -1,0 +1,11 @@
+task: B217
+deviations:
+  - what: A `$ref` whose value is not a string is left on the node untouched instead of raising; LiteLLM's `node["$ref"].split("/")[-1]` raises AttributeError on a non-string value.
+    why: A malformed `$ref` is not a shape any production caller relies on, and rule owned-behavior-is-built draws the line at a bug none can rely on; betterlite treats it the same way as an unresolved reference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1009
+  - what: A root-level `$ref` whose target is not an object falls back to the original schema instead of raising; LiteLLM's `schema.clear(); schema.update(resolved)` raises TypeError when `resolved` is not a mapping.
+    why: A root `$ref` resolving to a scalar or list is not a shape any production caller relies on, so betterlite returns the schema unchanged rather than reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1050-L1051
+  - what: A `components` key whose value is not an object is treated as having no `components.schemas`, instead of raising; LiteLLM's `schema.pop("components", {}).get("schemas")` raises AttributeError when `components` is present but not a dict.
+    why: A non-object `components` value is not a shape any production caller relies on, so betterlite treats it as absent rather than reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1128
