@@ -7,12 +7,11 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::{
-    decrypt_callback_vars, encrypt_callback_vars, is_sensitive_callback_key, strip_callback_config,
-};
+use super::{Transform, is_sensitive_callback_key, strip_callback_config, transform_callback_vars};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
 use crate::secret_codec::{
-    Algorithm, CALLBACK_VAR_ENCRYPTED_PREFIX, CipherSettings, OsNonces, StoredCipher, StoredValue,
+    Algorithm, CALLBACK_VAR_ENCRYPTED_PREFIX, CipherSettings, NonceSource, OsNonces, StoredCipher,
+    StoredValue,
 };
 
 fn cipher(key: Option<&str>) -> StoredCipher<OsNonces, TracingDiagnostics> {
@@ -24,6 +23,22 @@ fn cipher(key: Option<&str>) -> StoredCipher<OsNonces, TracingDiagnostics> {
         nonces: OsNonces,
         diagnostics: TracingDiagnostics,
     }
+}
+
+fn encrypt_callback_vars<N, D>(metadata: &Value, cipher: &StoredCipher<N, D>) -> Value
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
+    transform_callback_vars(metadata, &Transform::Encrypt(cipher))
+}
+
+fn decrypt_callback_vars<N, D>(metadata: &Value, cipher: &StoredCipher<N, D>) -> Value
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
+    transform_callback_vars(metadata, &Transform::Decrypt(cipher))
 }
 
 fn sample_metadata() -> Value {

@@ -37,28 +37,13 @@ pub fn is_sensitive_callback_key(key: &str, extra: &BTreeSet<String>) -> bool {
     SensitiveDataMasker::default().is_sensitive_key(key, &[])
 }
 
-pub fn encrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    transform_callback_vars(metadata, &Transform::Encrypt(cipher))
-}
-
-pub fn decrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    transform_callback_vars(metadata, &Transform::Decrypt(cipher))
-}
-
-enum Transform<'cipher, N, D> {
+pub enum Transform<'cipher, N, D> {
     Encrypt(&'cipher StoredCipher<N, D>),
     Decrypt(&'cipher StoredCipher<N, D>),
 }
 
-fn transform_callback_vars<N, D>(metadata: &Payload, transform: &Transform<'_, N, D>) -> Payload
+#[must_use]
+pub fn transform_callback_vars<N, D>(metadata: &Payload, transform: &Transform<'_, N, D>) -> Payload
 where
     N: NonceSource,
     D: SecretDiagnostics,

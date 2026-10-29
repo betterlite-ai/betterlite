@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_secrets::callback_vars::{
-    decrypt_callback_vars, encrypt_callback_vars, is_sensitive_callback_key, strip_callback_config,
+    Transform, is_sensitive_callback_key, strip_callback_config, transform_callback_vars,
 };
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
@@ -98,8 +98,12 @@ fn run_step(
 ) -> Value {
     match step {
         CallbackSecretStep::Strip { metadata } => strip_callback_config(metadata),
-        CallbackSecretStep::Encrypt { metadata } => encrypt_callback_vars(metadata, cipher),
-        CallbackSecretStep::Decrypt { metadata } => decrypt_callback_vars(metadata, cipher),
+        CallbackSecretStep::Encrypt { metadata } => {
+            transform_callback_vars(metadata, &Transform::Encrypt(cipher))
+        }
+        CallbackSecretStep::Decrypt { metadata } => {
+            transform_callback_vars(metadata, &Transform::Decrypt(cipher))
+        }
         CallbackSecretStep::Sensitive { key } => Value::Bool(is_sensitive_callback_key(key, extra)),
     }
 }
