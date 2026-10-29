@@ -1,0 +1,238 @@
+use std::ops::Range;
+
+use regex::Regex;
+
+use super::fixture::{self, KEY_PREFIX};
+
+pub(super) const FILTERED: &str = "[Filtered]";
+
+const QUOTED_VALUE: &str = r#"'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*""#;
+const BRACKET_ATOM: &str = r#"(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[^\[\]{}()'"]"#;
+const NESTED_BRACKET_LEVELS: usize = 3;
+const BARE_VALUE: &str = r"[^,)\]}\s]+";
+const EMAIL_BODY: &str = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}";
+const SHA256_BODY: &str = "[0-9a-f]{64}";
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum PatternError {
+    #[error("sentry scrubbing pattern failed to compile: {source}")]
+    Compile {
+        #[source]
+        source: regex::Error,
+    },
+}
+
+struct PiiPatterns {
+    email: Regex,
+    sha256: Regex,
+}
+
+pub(super) struct Patterns {
+    field: Regex,
+    key: Regex,
+    pii: Option<PiiPatterns>,
+}
+
+fn bracketed_value_pattern() -> String {
+    let mut pattern = ["[\\[{(](?:", BRACKET_ATOM, ")*[\\]})]"].concat();
+    for _ in 0..NESTED_BRACKET_LEVELS {
+        pattern = ["[\\[{(](?:", BRACKET_ATOM, "|", &pattern, ")*[\\]})]"].concat();
+    }
+    pattern
+}
+
+fn field_pattern_source(names: &[&str]) -> String {
+    let escaped = names
+        .iter()
+        .map(|name| regex::escape(name))
+        .collect::<Vec<_>>()
+        .join("|");
+    let bracketed = bracketed_value_pattern();
+    format!(
+        "(?i)(?P<field>(?:{escaped})=|['\"](?:{escaped})['\"]:\\s*)(?P<value>{QUOTED_VALUE}|{bracketed}|{BARE_VALUE})"
+    )
+}
+
+fn key_pattern_source(custom_key_minimum: usize, generated_key_bytes: usize) -> String {
+    let generated_suffix_length = generated_key_bytes
+        .saturating_mul(4)
+        .saturating_add(2)
+        .checked_div(3)
+        .unwrap_or(0);
+    let floor = custom_key_minimum
+        .saturating_sub(KEY_PREFIX.len())
+        .min(generated_suffix_length);
+    format!("{KEY_PREFIX}[A-Za-z0-9_-]{{{floor},}}")
+}
+
+pub(super) fn build(
+    send_default_pii: bool,
+    custom_key_minimum: usize,
+    generated_key_bytes: usize,
+) -> Result<Patterns, PatternError> {
+    let mut field_names = fixture::DEFAULT_DENYLIST
+        .iter()
+        .chain(fixture::SENTRY_DENYLIST)
+        .copied()
+        .collect::<Vec<_>>();
+    if !send_default_pii {
+        field_names.extend(
+            fixture::DEFAULT_PII_DENYLIST
+                .iter()
+                .chain(fixture::SENTRY_PII_DENYLIST)
+                .copied(),
+        );
+    }
+    let pii = if send_default_pii {
+        None
+    } else {
+        let email = Regex::new(EMAIL_BODY).map_err(|source| PatternError::Compile { source })?;
+        let sha256 = Regex::new(SHA256_BODY).map_err(|source| PatternError::Compile { source })?;
+        Some(PiiPatterns { email, sha256 })
+    };
+    let field = Regex::new(&field_pattern_source(&field_names))
+        .map_err(|source| PatternError::Compile { source })?;
+    let key_source = key_pattern_source(custom_key_minimum, generated_key_bytes);
+    let key = Regex::new(&key_source).map_err(|source| PatternError::Compile { source })?;
+    Ok(Patterns { field, key, pii })
+}
+
+fn field_match_is_rejected(text: &str, start: usize, field: &str, value: &str) -> bool {
+    let field_is_bare = field.ends_with('=');
+    let before_byte = start
+        .checked_sub(1)
+        .and_then(|index| text.as_bytes().get(index));
+    let boundary_violation = field_is_bare
+        && before_byte.is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_');
+    let value_is_quoted_or_bracketed = value.starts_with(['\'', '"', '[', '{', '(']);
+    let none_violation = !value_is_quoted_or_bracketed && value_is_bare_none(value);
+    boundary_violation || none_violation
+}
+
+fn value_is_bare_none(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let Some(prefix) = bytes.get(..4) else {
+        return false;
+    };
+    prefix.eq_ignore_ascii_case(b"none")
+        && bytes
+            .get(4)
+            .is_none_or(|byte| !(byte.is_ascii_alphanumeric() || *byte == b'_'))
+}
+
+fn push_filtered_field(output: &mut String, field: &str, value_starts_with_quote: bool) {
+    let quote = if value_starts_with_quote { '"' } else { '\'' };
+    output.push_str(field);
+    output.push(quote);
+    output.push_str(FILTERED);
+    output.push(quote);
+}
+
+fn advance_past_char(text: &str, start: usize) -> usize {
+    let next = text.get(start..).and_then(|rest| rest.chars().next());
+    next.map_or(text.len(), |ch| start.saturating_add(ch.len_utf8()))
+}
+
+fn scan_and_filter<M, Find, Push>(
+    text: &str,
+    mut next_match: Find,
+    mut push_replacement: Push,
+) -> String
+where
+    Find: FnMut(&str, usize) -> Option<(Range<usize>, bool, M)>,
+    Push: FnMut(&mut String, M),
+{
+    let mut output = String::with_capacity(text.len());
+    let mut copied_until = 0_usize;
+    let mut scan_from = 0_usize;
+    while scan_from <= text.len() {
+        let Some((whole, rejected, data)) = next_match(text, scan_from) else {
+            break;
+        };
+        if rejected {
+            scan_from = advance_past_char(text, whole.start).max(scan_from.saturating_add(1));
+            continue;
+        }
+        output.push_str(text.get(copied_until..whole.start).unwrap_or_default());
+        push_replacement(&mut output, data);
+        copied_until = whole.end;
+        scan_from = whole.end;
+    }
+    output.push_str(text.get(copied_until..).unwrap_or_default());
+    output
+}
+
+fn scrub_fields(text: &str, field_pattern: &Regex) -> String {
+    let find_field = |haystack: &str, scan_from: usize| {
+        let captures = field_pattern.captures_at(haystack, scan_from)?;
+        let (whole, field, value) = (
+            captures.get(0)?,
+            captures.name("field")?,
+            captures.name("value")?,
+        );
+        let rejected =
+            field_match_is_rejected(haystack, whole.start(), field.as_str(), value.as_str());
+        let data = (field.as_str().to_owned(), value.as_str().starts_with('"'));
+        Some((whole.range(), rejected, data))
+    };
+    scan_and_filter(
+        text,
+        find_field,
+        |output, (field, value_starts_with_quote)| {
+            push_filtered_field(output, &field, value_starts_with_quote);
+        },
+    )
+}
+
+fn sha256_touches_word(text: &str, whole: regex::Match<'_>) -> bool {
+    let before_byte = whole
+        .start()
+        .checked_sub(1)
+        .and_then(|index| text.as_bytes().get(index));
+    let after_byte = text.as_bytes().get(whole.end());
+    before_byte.is_some_and(u8::is_ascii_alphanumeric)
+        || after_byte.is_some_and(u8::is_ascii_alphanumeric)
+}
+
+fn scrub_sha256(text: &str, sha256_pattern: &Regex) -> String {
+    let find_sha256 = |haystack: &str, scan_from: usize| {
+        let whole = sha256_pattern.find_at(haystack, scan_from)?;
+        let rejected = sha256_touches_word(haystack, whole);
+        Some((whole.range(), rejected, ()))
+    };
+    scan_and_filter(text, find_sha256, |output, ()| output.push_str(FILTERED))
+}
+
+pub(super) fn apply(patterns: &Patterns, text: &str) -> String {
+    let fields_scrubbed = scrub_fields(text, &patterns.field);
+    let keys_scrubbed = patterns
+        .key
+        .replace_all(&fields_scrubbed, FILTERED)
+        .into_owned();
+    let Some(pii) = patterns.pii.as_ref() else {
+        return keys_scrubbed;
+    };
+    let emails_scrubbed = pii.email.replace_all(&keys_scrubbed, FILTERED).into_owned();
+    scrub_sha256(&emails_scrubbed, &pii.sha256)
+}
+
+pub fn scrub(text: &str, send_default_pii: bool) -> Result<String, PatternError> {
+    let patterns = build(
+        send_default_pii,
+        fixture::MINIMUM_CUSTOM_KEY_LENGTH,
+        fixture::GENERATED_KEY_LENGTH,
+    )?;
+    Ok(apply(&patterns, text))
+}
+
+pub fn scrub_with_key_lengths(
+    text: &str,
+    send_default_pii: bool,
+    custom_key_minimum: usize,
+    generated_key_bytes: usize,
+) -> Result<String, PatternError> {
+    let patterns = build(send_default_pii, custom_key_minimum, generated_key_bytes)?;
+    Ok(apply(&patterns, text))
+}
+
+mod tests;
