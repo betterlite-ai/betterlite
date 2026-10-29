@@ -230,7 +230,7 @@ fn error_types_error_type_tests_behavior(
     assert_eq!(metadata.status_code, expected_status);
     assert_eq!(metadata.error_type, expected_type);
     assert_eq!(metadata.param, expected_param);
-    assert_eq!(metadata.code, WireField::Text(expected_status.to_string()));
+    assert_eq!(metadata.code, expected_status.to_string());
 }
 
 #[test]

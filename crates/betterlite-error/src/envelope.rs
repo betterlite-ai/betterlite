@@ -85,7 +85,7 @@ const COOKIE_AND_CORS_HEADERS: [&str; 7] = [
 const LLM_PROVIDER_MARKER: &str = "llm_provider";
 const LLM_PROVIDER_PREFIX: &str = "llm_provider-";
 
-// get_response_headers: the four bare x-ratelimit headers forward as-is, everything else gets the llm_provider- prefix
+// a name already containing "llm_provider" is not prefixed again, matching _get_llm_provider_headers
 #[must_use]
 pub fn project_provider_headers(
     response_headers: &BTreeMap<String, String>,
