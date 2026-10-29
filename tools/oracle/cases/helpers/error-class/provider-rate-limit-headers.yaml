@@ -1,0 +1,24 @@
+kind: helper
+name: error-class-provider-rate-limit-headers
+call:
+  error_class:
+    family: rate_limit
+    context:
+      message: slow down
+      model: gpt-4
+      provider: openai
+    category: vendor_rate_limit
+    dimension: requests
+    headers:
+      retry-after: "12"
+      x-ratelimit-limit-tokens: "500"
+      set-cookie: a=b
+      llm_provider-set-cookie: a=b
+      access-control-allow-origin: "*"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/allowed_response_headers/llm_provider-set-cookie
+      why: >-
+        B184 deviation drops llm_provider-set-cookie too, unlike real LiteLLM which filters
+        UNSAFE_PROXY_RESPONSE_HEADERS only on the unprefixed name and keeps the prefixed copy.

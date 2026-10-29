@@ -1,0 +1,33 @@
+kind: helper
+name: callback-secret-fields-prefix-and-legacy-values
+call:
+  callback_secret_fields:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: []
+    steps:
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::not-even-base64*garbage"
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: plain-value
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              region: "litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj"
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: sk-secret
+env: {}
+compare:
+  ignore: []

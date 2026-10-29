@@ -7,7 +7,6 @@
     )
 )]
 
-pub mod callback;
 pub mod callback_vars;
 pub mod error;
 pub mod master_key;
