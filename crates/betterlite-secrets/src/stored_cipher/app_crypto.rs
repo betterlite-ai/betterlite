@@ -1,5 +1,6 @@
-use aes_gcm::aead::{Aead as _, Payload as AeadPayload};
-use aes_gcm::{Aes256Gcm, KeyInit as _};
+use aes_gcm::aead::AeadInOut as _;
+use aes_gcm::aead::inout::InOutBuf;
+use aes_gcm::{Aes256Gcm, KeyInit as _, Tag};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_redact::structured::Payload as Json;
@@ -12,12 +13,6 @@ use crate::secret_codec::NonceSource;
 
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
-
-#[derive(Clone, Copy)]
-enum Direction {
-    Encrypt,
-    Decrypt,
-}
 
 #[derive(Debug, Error)]
 pub enum AppCryptoError {
@@ -84,10 +79,9 @@ where
         self.nonces
             .fill(&mut nonce)
             .map_err(|source| AppCryptoError::Random { source })?;
-        let plaintext =
+        let buffer =
             serde_json::to_vec(data).map_err(|source| AppCryptoError::JsonEncode { source })?;
-        let sealed = self.transcode(nonce, &plaintext, aad, Direction::Encrypt)?;
-        encode_envelope(nonce, &sealed)
+        seal_envelope(&self.cipher, nonce, aad, buffer)
     }
 
     pub fn decrypt_json(
@@ -95,44 +89,38 @@ where
         envelope: &Envelope,
         aad: Option<&[u8]>,
     ) -> Result<Json, AppCryptoError> {
-        let (nonce, sealed) = decode_envelope(envelope)?;
-        let plaintext = self.transcode(nonce, &sealed, aad, Direction::Decrypt)?;
-        serde_json::from_slice(&plaintext).map_err(|source| AppCryptoError::JsonDecode { source })
-    }
-
-    fn transcode(
-        &self,
-        nonce: [u8; NONCE_LEN],
-        msg: &[u8],
-        aad: Option<&[u8]>,
-        direction: Direction,
-    ) -> Result<Vec<u8>, AppCryptoError> {
+        let (nonce, mut buffer, tag) = decode_envelope(envelope)?;
         let aes_nonce = aes_gcm::Nonce::from(nonce);
-        let payload = AeadPayload {
-            msg,
-            aad: aad.unwrap_or(b""),
-        };
-        let sealed = match direction {
-            Direction::Encrypt => self.cipher.encrypt(&aes_nonce, payload),
-            Direction::Decrypt => self.cipher.decrypt(&aes_nonce, payload),
-        };
-        sealed.map_err(|source| AppCryptoError::Seal { source })
+        self.cipher
+            .decrypt_inout_detached(
+                &aes_nonce,
+                aad.unwrap_or(b""),
+                InOutBuf::from(&mut *buffer),
+                &tag,
+            )
+            .map_err(|source| AppCryptoError::Seal { source })?;
+        serde_json::from_slice(&buffer).map_err(|source| AppCryptoError::JsonDecode { source })
     }
 }
 
-fn encode_envelope(nonce: [u8; NONCE_LEN], sealed: &[u8]) -> Result<Envelope, AppCryptoError> {
-    let split_at = sealed.len().saturating_sub(TAG_LEN);
-    let (ciphertext, tag) = sealed
-        .split_at_checked(split_at)
-        .ok_or(AppCryptoError::Truncated)?;
+fn seal_envelope(
+    cipher: &Aes256Gcm,
+    nonce: [u8; NONCE_LEN],
+    aad: Option<&[u8]>,
+    mut buffer: Vec<u8>,
+) -> Result<Envelope, AppCryptoError> {
+    let aes_nonce = aes_gcm::Nonce::from(nonce);
+    let tag = cipher
+        .encrypt_inout_detached(&aes_nonce, aad.unwrap_or(b""), InOutBuf::from(&mut *buffer))
+        .map_err(|source| AppCryptoError::Seal { source })?;
     Ok(Envelope {
         nonce: STANDARD.encode(nonce),
-        ciphertext: STANDARD.encode(ciphertext),
+        ciphertext: STANDARD.encode(&buffer),
         tag: STANDARD.encode(tag),
     })
 }
 
-fn decode_envelope(envelope: &Envelope) -> Result<([u8; NONCE_LEN], Vec<u8>), AppCryptoError> {
+fn decode_envelope(envelope: &Envelope) -> Result<([u8; NONCE_LEN], Vec<u8>, Tag), AppCryptoError> {
     let nonce_bytes = STANDARD
         .decode(&envelope.nonce)
         .map_err(|source| AppCryptoError::Decode { source })?;
@@ -142,9 +130,11 @@ fn decode_envelope(envelope: &Envelope) -> Result<([u8; NONCE_LEN], Vec<u8>), Ap
     let ciphertext = STANDARD
         .decode(&envelope.ciphertext)
         .map_err(|source| AppCryptoError::Decode { source })?;
-    let tag = STANDARD
+    let tag_bytes = STANDARD
         .decode(&envelope.tag)
         .map_err(|source| AppCryptoError::Decode { source })?;
-    let sealed: Vec<u8> = ciphertext.into_iter().chain(tag).collect();
-    Ok((nonce, sealed))
+    let tag_array: [u8; TAG_LEN] = tag_bytes
+        .try_into()
+        .map_err(|_bytes| AppCryptoError::Truncated)?;
+    Ok((nonce, ciphertext, Tag::from(tag_array)))
 }
