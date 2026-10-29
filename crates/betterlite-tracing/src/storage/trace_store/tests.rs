@@ -33,6 +33,17 @@ struct StubStorage {
     seen_trace_ref: Mutex<Option<String>>,
 }
 
+impl StubStorage {
+    fn record_scope(&self, scope: TraceScope) {
+        *self.seen_scope.lock().expect("lock") = Some(scope);
+    }
+
+    fn record_scope_and_ref(&self, scope: TraceScope, trace_ref: String) {
+        self.record_scope(scope);
+        *self.seen_trace_ref.lock().expect("lock") = Some(trace_ref);
+    }
+}
+
 impl TraceStorage for StubStorage {
     type Error = StubError;
 
@@ -40,7 +51,7 @@ impl TraceStorage for StubStorage {
         &self,
         query: ListTracesQuery,
     ) -> impl Future<Output = Result<Vec<TraceListRow>, Self::Error>> {
-        *self.seen_scope.lock().expect("lock") = Some(query.scope);
+        self.record_scope(query.scope);
         ready(Ok(self.list_traces_rows.clone()))
     }
 
@@ -48,8 +59,7 @@ impl TraceStorage for StubStorage {
         &self,
         query: TraceSpansQuery,
     ) -> impl Future<Output = Result<Vec<SpanQueryRow>, Self::Error>> {
-        *self.seen_scope.lock().expect("lock") = Some(query.scope);
-        *self.seen_trace_ref.lock().expect("lock") = Some(query.trace_ref);
+        self.record_scope_and_ref(query.scope, query.trace_ref);
         ready(Ok(self.trace_spans_rows.clone()))
     }
 
@@ -57,8 +67,7 @@ impl TraceStorage for StubStorage {
         &self,
         query: SpanDetailQuery,
     ) -> impl Future<Output = Result<Vec<SpanDetailRow>, Self::Error>> {
-        *self.seen_scope.lock().expect("lock") = Some(query.scope);
-        *self.seen_trace_ref.lock().expect("lock") = Some(query.trace_ref);
+        self.record_scope_and_ref(query.scope, query.trace_ref);
         ready(Ok(self.span_detail_rows.clone()))
     }
 
@@ -66,8 +75,7 @@ impl TraceStorage for StubStorage {
         &self,
         query: SpanErrorQuery,
     ) -> impl Future<Output = Result<Vec<SpanErrorRow>, Self::Error>> {
-        *self.seen_scope.lock().expect("lock") = Some(query.scope);
-        *self.seen_trace_ref.lock().expect("lock") = Some(query.trace_ref);
+        self.record_scope_and_ref(query.scope, query.trace_ref);
         ready(Ok(self.span_error_rows.clone()))
     }
 
@@ -75,7 +83,7 @@ impl TraceStorage for StubStorage {
         &self,
         query: SpendByRequestIdsQuery,
     ) -> impl Future<Output = Result<Vec<SpendRow>, Self::Error>> {
-        *self.seen_scope.lock().expect("lock") = Some(query.scope);
+        self.record_scope(query.scope);
         if self.spend_fails {
             return ready(Err(StubError));
         }
