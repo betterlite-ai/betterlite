@@ -28,24 +28,6 @@ pub struct ErrorMetadata {
     pub openai_code: Option<String>,
 }
 
-impl Default for ErrorMetadata {
-    fn default() -> Self {
-        Self {
-            status_code: 0,
-            model: None,
-            provider: None,
-            error_type: WireField::MISSING,
-            param: WireField::MISSING,
-            code: String::new(),
-            retry: RetryMetadata::default(),
-            rate_limit_category: None,
-            rate_limit_dimension: None,
-            allowed_response_headers: BTreeMap::new(),
-            openai_code: None,
-        }
-    }
-}
-
 pub(super) fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
     let mut metadata = details.context.metadata(
         429,
