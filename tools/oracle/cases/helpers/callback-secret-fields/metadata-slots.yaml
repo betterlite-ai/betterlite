@@ -1,0 +1,59 @@
+kind: helper
+name: callback-secret-fields-metadata-slots
+call:
+  callback_secret_fields:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: []
+    steps:
+      - kind: strip
+        metadata: "not-a-map"
+      - kind: strip
+        metadata: null
+      - kind: strip
+        metadata:
+          logging:
+            - {callback_vars: {api_key: sk-secret, region: us-east-1}}
+            - not_a_dict
+          callback_settings: {callback_vars: {gcs_path_service_account: svc.json}}
+          secret_manager_settings: {aws_access_key_id: AKIA-secret}
+          other: untouched
+      - kind: strip
+        metadata:
+          other: {logging: nested-untouched, callback_settings: also-untouched}
+          logging: []
+      - kind: encrypt
+        metadata:
+          logging: not-a-list
+          callback_settings: {callback_vars: not-a-dict}
+      - kind: encrypt
+        metadata:
+          logging:
+            - {callback_vars: {api_key: sk-secret}}
+            - not_a_dict
+            - 7
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: {nested_api_key: sk-secret}
+      - kind: encrypt
+        metadata:
+          secret_manager_settings: {aws_access_key_id: AKIA-secret}
+      - kind: encrypt
+        metadata: "not-a-map"
+      - kind: encrypt
+        metadata: null
+      - kind: encrypt
+        metadata: ["a", "b"]
+      - kind: decrypt
+        metadata: "not-a-map"
+      - kind: decrypt
+        metadata: null
+      - kind: decrypt
+        metadata: ["a", "b"]
+env: {}
+compare:
+  ignore: []

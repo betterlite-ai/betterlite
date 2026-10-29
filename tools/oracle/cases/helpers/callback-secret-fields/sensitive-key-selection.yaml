@@ -1,0 +1,29 @@
+kind: helper
+name: callback-secret-fields-sensitive-key-selection
+call:
+  callback_secret_fields:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: [custom_extra_field, random_field]
+    steps:
+      - kind: sensitive
+        key: access-token
+      - kind: sensitive
+        key: GCS_Path_Service_Account
+      - kind: sensitive
+        key: input_cost_per_token
+      - kind: sensitive
+        key: vertex_credentials
+      - kind: sensitive
+        key: custom_extra_field
+      - kind: sensitive
+        key: max_tokens
+      - kind: sensitive
+        key: region
+      - kind: sensitive
+        key: Random_Field
+env: {}
+compare:
+  ignore: []
