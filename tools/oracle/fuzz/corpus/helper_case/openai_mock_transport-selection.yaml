@@ -1,0 +1,18 @@
+kind: helper
+name: openai-mock-transport-seed-selection
+call:
+  openai_mock_transport:
+    case: mock_selection
+    scenarios:
+      - kind: async
+        network_mock: false
+        supplied: none
+      - kind: async
+        network_mock: true
+        supplied: shared
+      - kind: sync
+        network_mock: true
+        supplied: client
+env: {}
+compare:
+  ignore: []
