@@ -169,12 +169,9 @@ fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
 }
 
 pub(super) fn payload(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = input
-        .get("grayswan_payload")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    let parsed = parse_request(&request)?;
-    run_payload(parsed)
+    let request = input.get("grayswan_payload").cloned();
+    let request = request.unwrap_or_else(|| json!({}));
+    run_payload(parse_request(&request)?)
 }
 
 fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
@@ -198,12 +195,9 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
 }
 
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = input
-        .get("grayswan_call")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    let call = parse_request(&request)?;
-    run_call(call)
+    let request = input.get("grayswan_call").cloned();
+    let request = request.unwrap_or_else(|| json!({}));
+    run_call(parse_request(&request)?)
 }
 
 fn run_call(call: Request) -> crate::helpers::HelperResult {
