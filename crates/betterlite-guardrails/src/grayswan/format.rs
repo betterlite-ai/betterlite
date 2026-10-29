@@ -1,66 +1,68 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::generic_guardrail_contracts::{GuardrailExtraValue, GuardrailMessage};
-use crate::grayswan::ReasoningMode;
-use crate::grayswan::wire::{GraySwanInput, GraySwanResponse};
+use crate::generic_guardrail_contracts::{
+    GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
+};
+use crate::grayswan::wire::GraySwanResponse;
 
-fn as_text(value: &GuardrailExtraValue) -> Option<&str> {
-    match value {
-        GuardrailExtraValue::Text(text) => Some(text),
-        GuardrailExtraValue::Null
-        | GuardrailExtraValue::Boolean(_)
-        | GuardrailExtraValue::SignedInteger(_)
-        | GuardrailExtraValue::UnsignedInteger(_)
-        | GuardrailExtraValue::Decimal(_)
-        | GuardrailExtraValue::Array(_)
-        | GuardrailExtraValue::Object(_) => None,
-    }
-}
-
-pub(super) fn category_override(
-    metadata: &BTreeMap<String, GuardrailExtraValue>,
-) -> Option<BTreeMap<String, String>> {
-    let GuardrailExtraValue::Object(categories) = metadata.get("categories")? else {
-        return None;
+pub(super) fn build_messages(
+    texts: &[String],
+    tool_calls: &[GuardrailExtraValue],
+    input_type: GuardrailInputType,
+    context: Vec<GuardrailMessage>,
+) -> Vec<GuardrailMessage> {
+    let role = if input_type == GuardrailInputType::Response {
+        "assistant"
+    } else {
+        "user"
     };
-    let mut result = BTreeMap::new();
-    for (name, value) in categories {
-        if let Some(text) = as_text(value) {
-            result.insert(name.clone(), text.to_owned());
+    let mut messages = context;
+    match texts {
+        [single] if !tool_calls.is_empty() => {
+            messages.push(text_message_with_tool_calls(single.clone(), tool_calls));
+        }
+        body => {
+            messages.extend(body.iter().map(|text| text_message(role, text.clone())));
+            if !tool_calls.is_empty() {
+                messages.push(tool_calls_message(tool_calls));
+            }
         }
     }
-    Some(result)
-}
-
-pub(super) fn text_override(
-    metadata: &BTreeMap<String, GuardrailExtraValue>,
-    name: &str,
-) -> Option<String> {
-    let value = metadata.get(name)?;
-    as_text(value).map(str::to_owned)
-}
-
-const REASONING_MODE_NAMES: [(&str, ReasoningMode); 3] = [
-    ("off", ReasoningMode::Off),
-    ("hybrid", ReasoningMode::Hybrid),
-    ("thinking", ReasoningMode::Thinking),
-];
-
-pub(super) fn reasoning_mode_override(
-    metadata: &BTreeMap<String, GuardrailExtraValue>,
-) -> Option<ReasoningMode> {
-    let text = text_override(metadata, "reasoning_mode")?.to_ascii_lowercase();
-    REASONING_MODE_NAMES
-        .iter()
-        .find(|(name, _)| *name == text)
-        .map(|(_, mode)| *mode)
-}
-
-pub(super) fn conversation_messages(input: &GraySwanInput) -> Vec<GuardrailMessage> {
-    let mut messages = input.request_history.clone();
-    messages.extend(input.messages.clone());
     messages
+}
+
+fn text_message(role: &str, content: String) -> GuardrailMessage {
+    GuardrailMessage {
+        role: role.to_owned(),
+        extra: BTreeMap::from([("content".to_owned(), GuardrailExtraValue::Text(content))]),
+    }
+}
+
+fn text_message_with_tool_calls(
+    content: String,
+    tool_calls: &[GuardrailExtraValue],
+) -> GuardrailMessage {
+    GuardrailMessage {
+        role: "assistant".to_owned(),
+        extra: BTreeMap::from([
+            ("content".to_owned(), GuardrailExtraValue::Text(content)),
+            (
+                "tool_calls".to_owned(),
+                GuardrailExtraValue::Array(tool_calls.to_vec()),
+            ),
+        ]),
+    }
+}
+
+fn tool_calls_message(tool_calls: &[GuardrailExtraValue]) -> GuardrailMessage {
+    GuardrailMessage {
+        role: "assistant".to_owned(),
+        extra: BTreeMap::from([(
+            "tool_calls".to_owned(),
+            GuardrailExtraValue::Array(tool_calls.to_vec()),
+        )]),
+    }
 }
 
 pub(super) fn format_violation_message(response: &GraySwanResponse, is_output: bool) -> String {
@@ -96,8 +98,8 @@ pub(super) fn format_violation_message(response: &GraySwanResponse, is_output: b
 fn describe_violated_rule(rule: &GuardrailExtraValue) -> String {
     if let GuardrailExtraValue::Object(fields) = rule {
         match (
-            text_override(fields, "name"),
-            text_override(fields, "description"),
+            field_text(fields, "name"),
+            field_text(fields, "description"),
         ) {
             (Some(matched_name), Some(matched_description)) => {
                 return format!("{matched_name}: {matched_description}");
@@ -109,5 +111,18 @@ fn describe_violated_rule(rule: &GuardrailExtraValue) -> String {
     if let GuardrailExtraValue::Text(text) = rule {
         return text.clone();
     }
-    format!("{rule:?}")
+    serde_json::to_string(rule).unwrap_or_default()
+}
+
+fn field_text(fields: &BTreeMap<String, GuardrailExtraValue>, name: &str) -> Option<String> {
+    match fields.get(name)? {
+        GuardrailExtraValue::Text(text) => Some(text.clone()),
+        GuardrailExtraValue::Null
+        | GuardrailExtraValue::Boolean(_)
+        | GuardrailExtraValue::SignedInteger(_)
+        | GuardrailExtraValue::UnsignedInteger(_)
+        | GuardrailExtraValue::Decimal(_)
+        | GuardrailExtraValue::Array(_)
+        | GuardrailExtraValue::Object(_) => None,
+    }
 }

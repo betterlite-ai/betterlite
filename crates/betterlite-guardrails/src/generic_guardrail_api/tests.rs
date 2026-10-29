@@ -12,7 +12,10 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use super::{GenericGuardrailAPI, GenericGuardrailAPIError, extract_user_api_key_metadata};
+use super::{
+    GenericGuardrailAPI, GenericGuardrailAPIError, GenericGuardrailAPITransport,
+    extract_user_api_key_metadata,
+};
 use crate::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
     GenericGuardrailAPISettings, GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
@@ -34,7 +37,16 @@ fn settings(
 }
 
 fn api(settings: GenericGuardrailAPISettings, api_base: &str) -> GenericGuardrailAPI {
-    GenericGuardrailAPI::new(Some(SecretString::from("secret-token")), api_base, settings)
+    GenericGuardrailAPI::with_client(
+        Some(SecretString::from("secret-token")),
+        api_base,
+        settings,
+        None,
+        GenericGuardrailAPITransport {
+            client: reqwest::Client::default(),
+            timeout: super::DEFAULT_TIMEOUT,
+        },
+    )
 }
 
 fn base_request() -> GenericGuardrailAPIRequest {
@@ -100,7 +112,7 @@ fn generic_guardrail_metadata_token_alias_overrides_hash() {
 }
 
 #[test]
-fn generic_guardrail_metadata_maps_every_known_field_and_drops_unprefixed_keys() {
+fn generic_guardrail_metadata_maps_every_known_field_and_drops_unknown_keys() {
     let metadata = BTreeMap::from([
         ("user_api_key_hash".to_owned(), Some("hash".to_owned())),
         ("user_api_key_alias".to_owned(), Some("alias".to_owned())),
@@ -134,11 +146,54 @@ fn generic_guardrail_metadata_maps_every_known_field_and_drops_unprefixed_keys()
     );
     assert_eq!(result.user_api_key_end_user_id.as_deref(), Some("end-user"));
     assert_eq!(result.user_api_key_org_id.as_deref(), Some("org"));
-    assert_eq!(
-        result.extra.get("user_api_key_custom"),
-        Some(&Some("custom".to_owned()))
+    assert!(result.extra.is_empty());
+}
+
+#[test]
+fn generic_guardrail_merge_provider_params_adds_the_configured_base_values() {
+    let mut instance = api(
+        GenericGuardrailAPISettings::from_optional(None),
+        "http://example",
     );
-    assert!(!result.extra.contains_key("unrelated"));
+    instance.provider_params = Some(BTreeMap::from([(
+        "custom_threshold".to_owned(),
+        GuardrailExtraValue::Decimal(0.8),
+    )]));
+    let merged = instance.merge_provider_params(base_request());
+    assert_eq!(
+        merged.provider_params,
+        Some(BTreeMap::from([(
+            "custom_threshold".to_owned(),
+            GuardrailExtraValue::Decimal(0.8)
+        )]))
+    );
+}
+
+#[test]
+fn generic_guardrail_merge_provider_params_lets_the_request_override_the_base_value() {
+    let mut instance = api(
+        GenericGuardrailAPISettings::from_optional(None),
+        "http://example",
+    );
+    instance.provider_params = Some(BTreeMap::from([(
+        "custom_threshold".to_owned(),
+        GuardrailExtraValue::Decimal(0.8),
+    )]));
+    let request = GenericGuardrailAPIRequest {
+        provider_params: Some(BTreeMap::from([(
+            "custom_threshold".to_owned(),
+            GuardrailExtraValue::Decimal(0.3),
+        )])),
+        ..base_request()
+    };
+    let merged = instance.merge_provider_params(request);
+    assert_eq!(
+        merged.provider_params,
+        Some(BTreeMap::from([(
+            "custom_threshold".to_owned(),
+            GuardrailExtraValue::Decimal(0.3)
+        )]))
+    );
 }
 
 #[test]
@@ -258,10 +313,15 @@ fn generic_guardrail_headers_include_the_api_key_and_json_content_type() {
 
 #[test]
 fn generic_guardrail_headers_omit_the_api_key_when_none_is_configured() {
-    let instance = GenericGuardrailAPI::new(
+    let instance = GenericGuardrailAPI::with_client(
         None,
         "http://example",
         GenericGuardrailAPISettings::from_optional(None),
+        None,
+        GenericGuardrailAPITransport {
+            client: reqwest::Client::default(),
+            timeout: super::DEFAULT_TIMEOUT,
+        },
     );
     let headers = instance.prepare_headers().expect("headers");
     assert!(!headers.contains_key("x-api-key"));

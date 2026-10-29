@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
-    GenericGuardrailAPISettings, UnreachableFallback,
+    GenericGuardrailAPISettings, GuardrailExtraValue, UnreachableFallback,
 };
 
 mod response;
@@ -69,46 +69,38 @@ impl GenericGuardrailAPIError {
 }
 
 #[derive(Debug, Clone)]
+pub struct GenericGuardrailAPITransport {
+    pub client: reqwest::Client,
+    pub timeout: Duration,
+}
+
+#[derive(Debug, Clone)]
 pub struct GenericGuardrailAPI {
     pub api_key: Option<SecretString>,
     pub api_base: String,
     pub settings: GenericGuardrailAPISettings,
+    pub provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
     pub client: reqwest::Client,
     pub timeout: Duration,
 }
 
 impl GenericGuardrailAPI {
     #[must_use]
-    pub fn new(
-        api_key: Option<SecretString>,
-        api_base: &str,
-        settings: GenericGuardrailAPISettings,
-    ) -> Self {
-        let resolved_base = normalize_api_base(api_base);
-        Self {
-            api_key,
-            api_base: resolved_base,
-            settings,
-            client: reqwest::Client::default(),
-            timeout: DEFAULT_TIMEOUT,
-        }
-    }
-
-    #[must_use]
     pub fn with_client(
         api_key: Option<SecretString>,
         api_base: &str,
         settings: GenericGuardrailAPISettings,
-        client: reqwest::Client,
-        timeout: Duration,
+        provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
+        transport: GenericGuardrailAPITransport,
     ) -> Self {
         let resolved_base = normalize_api_base(api_base);
         Self {
             api_key,
             api_base: resolved_base,
             settings,
-            client,
-            timeout,
+            provider_params,
+            client: transport.client,
+            timeout: transport.timeout,
         }
     }
 
@@ -128,8 +120,26 @@ impl GenericGuardrailAPI {
         &self,
         request: GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
-        let shown = request.clone();
-        self.apply_guardrail_with_original(shown, &request).await
+        let merged = self.merge_provider_params(request);
+        let sent = merged.clone();
+        self.apply_guardrail_with_original(sent, &merged).await
+    }
+
+    fn merge_provider_params(
+        &self,
+        request: GenericGuardrailAPIRequest,
+    ) -> GenericGuardrailAPIRequest {
+        let Some(base_params) = &self.provider_params else {
+            return request;
+        };
+        let mut merged = base_params.clone();
+        if let Some(dynamic_params) = &request.provider_params {
+            merged.extend(dynamic_params.clone());
+        }
+        GenericGuardrailAPIRequest {
+            provider_params: Some(merged),
+            ..request
+        }
     }
 
     pub async fn apply_guardrail_with_original(
@@ -186,41 +196,29 @@ pub fn extract_user_api_key_metadata(
     litellm_metadata: Option<&BTreeMap<String, Option<String>>>,
     metadata: Option<&BTreeMap<String, Option<String>>>,
 ) -> GenericGuardrailAPIMetadata {
-    let mut result = GenericGuardrailAPIMetadata::default();
-    if let Some(values) = metadata {
-        merge_metadata(&mut result, values);
-    }
+    let mut merged = metadata.cloned().unwrap_or_default();
     if let Some(values) = litellm_metadata {
-        merge_metadata(&mut result, values);
+        merged.extend(values.clone());
     }
-    if let Some(token) = result.extra.remove("user_api_key_token").flatten() {
+    let mut result = GenericGuardrailAPIMetadata {
+        user_api_key_hash: known_field(&merged, "user_api_key_hash"),
+        user_api_key_alias: known_field(&merged, "user_api_key_alias"),
+        user_api_key_user_id: known_field(&merged, "user_api_key_user_id"),
+        user_api_key_user_email: known_field(&merged, "user_api_key_user_email"),
+        user_api_key_team_id: known_field(&merged, "user_api_key_team_id"),
+        user_api_key_team_alias: known_field(&merged, "user_api_key_team_alias"),
+        user_api_key_end_user_id: known_field(&merged, "user_api_key_end_user_id"),
+        user_api_key_org_id: known_field(&merged, "user_api_key_org_id"),
+        extra: BTreeMap::new(),
+    };
+    if let Some(token) = known_field(&merged, "user_api_key_token") {
         result.user_api_key_hash = Some(token);
     }
     result
 }
 
-fn merge_metadata(
-    target: &mut GenericGuardrailAPIMetadata,
-    values: &BTreeMap<String, Option<String>>,
-) {
-    for (name, value) in values {
-        if !name.starts_with("user_api_key_") {
-            continue;
-        }
-        match name.as_str() {
-            "user_api_key_hash" => target.user_api_key_hash.clone_from(value),
-            "user_api_key_alias" => target.user_api_key_alias.clone_from(value),
-            "user_api_key_user_id" => target.user_api_key_user_id.clone_from(value),
-            "user_api_key_user_email" => target.user_api_key_user_email.clone_from(value),
-            "user_api_key_team_id" => target.user_api_key_team_id.clone_from(value),
-            "user_api_key_team_alias" => target.user_api_key_team_alias.clone_from(value),
-            "user_api_key_end_user_id" => target.user_api_key_end_user_id.clone_from(value),
-            "user_api_key_org_id" => target.user_api_key_org_id.clone_from(value),
-            _ => {
-                target.extra.insert(name.clone(), value.clone());
-            }
-        }
-    }
+fn known_field(values: &BTreeMap<String, Option<String>>, name: &str) -> Option<String> {
+    values.get(name).cloned().flatten()
 }
 
 fn normalize_api_base(api_base: &str) -> String {
