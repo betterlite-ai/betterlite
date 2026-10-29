@@ -107,31 +107,32 @@ def app_encrypt(app: AppCrypto, data: dict[str, Json], aad: bytes | None) -> dic
     return encrypt(data, aad)
 
 
-def app_decrypt(app: AppCrypto, envelope: dict[str, Json], aad: bytes | None) -> Json:
-    return cast(Callable[[dict[str, Json], bytes | None], Json], app.decrypt_json)(envelope, aad)
-
-
-def call_app_crypto(app: AppCrypto, step: dict[str, Json]) -> Json:
+def call_app_crypto(
+    decrypt: Callable[[dict[str, Json], bytes | None], Json],
+    app: AppCrypto,
+    step: dict[str, Json],
+) -> Json:
     match text(step, "kind"):
         case "roundtrip":
             aad = app_aad(step, "aad")
             envelope = app_encrypt(app, cast(dict[str, Json], step.get("data")), aad)
-            return app_decrypt(app, envelope, aad)
+            return decrypt(envelope, aad)
         case "aad_mismatch":
             data = cast(dict[str, Json], step.get("data"))
             envelope = app_encrypt(app, data, app_aad(step, "encrypt_aad"))
-            return app_decrypt(app, envelope, app_aad(step, "decrypt_aad"))
+            return decrypt(envelope, app_aad(step, "decrypt_aad"))
         case "decrypt":
             envelope_value = step.get("envelope")
             if not isinstance(envelope_value, dict):
                 raise ValueError("envelope must be an object")
-            return app_decrypt(app, cast(dict[str, Json], envelope_value), app_aad(step, "aad"))
+            return decrypt(cast(dict[str, Json], envelope_value), app_aad(step, "aad"))
         case other:
             raise ValueError(f"unknown app_crypto step: {other}")
 
 
 def run_app_crypto(input_value: dict[str, Json]) -> Json:
     app = AppCrypto(base64.b64decode(text(input_value, "key")))
+    decrypt = cast(Callable[[dict[str, Json], bytes | None], Json], app.decrypt_json)
     steps = input_value["steps"]
     if not isinstance(steps, list):
         raise ValueError("steps must be a list")
@@ -140,7 +141,7 @@ def run_app_crypto(input_value: dict[str, Json]) -> Json:
         if not isinstance(step, dict):
             raise ValueError("each step must be an object")
         try:
-            results.append({"value": call_app_crypto(app, step)})
+            results.append({"value": call_app_crypto(decrypt, app, step)})
         except (ValueError, KeyError, TypeError, InvalidTag) as error:
             results.append({"error": {"class": type(error).__name__, "message": str(error)}})
     return results
