@@ -266,8 +266,7 @@ fn first_query_value() {
     assert_eq!(url_query_value(None, "k").unwrap(), "");
 }
 
-// u8::from_str_radix accepts a leading '+' sign, so "%+1" must not decode as byte 0x01: CPython's
-// parse_qsl leaves it as the literal "% 1" once the '+' is turned into a space.
+// CPython's parse_qsl leaves "%+1" as the literal "% 1", not byte 0x01.
 #[test]
 fn percent_plus_is_not_a_valid_escape() {
     let url = "postgresql://h/db?options=%+1";
@@ -447,8 +446,7 @@ fn token_invalid_flag_message() {
     );
 }
 
-// Python's repr() escapes every non-printable Unicode character, not only ASCII controls: a
-// pasted zero-width space must come back as ​, not raw, in the ValueError message.
+// A pasted zero-width space must come back escaped as ​, not raw, in the message.
 #[test]
 fn token_invalid_flag_message_escapes_non_printable_unicode() {
     let value = FlagValue::Text("on\u{200b}".to_owned());
@@ -500,8 +498,7 @@ fn malformed_url_bytes() {
     ));
 }
 
-// The query string goes through the lenient urllib-style decoder, so "%+1" stays literal text
-// instead of raising: u8::from_str_radix would otherwise accept the leading '+' as byte 0x01.
+// The query string goes through the lenient urllib-style decoder, so "%+1" stays literal text.
 #[test]
 fn native_url_query_percent_plus_is_literal() {
     let endpoint = decode_database_url(b"postgresql://h/db?options=%+1").unwrap();

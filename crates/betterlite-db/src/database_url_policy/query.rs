@@ -67,11 +67,13 @@ pub fn add_missing_query_params(
 
 #[must_use]
 pub fn reader_shareable_params(params: &[(String, QueryValue)]) -> Vec<(String, QueryValue)> {
-    params
-        .iter()
-        .filter(|(key, _)| CONNECTION_PARAM_KEYS.contains(&key.as_str()))
-        .cloned()
-        .collect()
+    let mut kept = Vec::new();
+    for (key, value) in params {
+        if CONNECTION_PARAM_KEYS.contains(&key.as_str()) {
+            kept.push((key.clone(), value.clone()));
+        }
+    }
+    kept
 }
 
 fn last_duplicate_wins(pairs: Vec<(String, String)>) -> Vec<(String, QueryValue)> {

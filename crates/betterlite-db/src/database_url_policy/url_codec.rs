@@ -232,9 +232,7 @@ fn quote_plus(text: &str) -> String {
     encoded
 }
 
-// Mirrors urllib.parse.unquote_plus: '+' becomes a space everywhere before %XX escapes are decoded,
-// and percent-encoding's decoder leaves an incomplete or non-hex escape as a literal '%', exactly
-// like CPython's unquote_to_bytes does on a _hextobyte lookup miss.
+// Matches urllib.parse.unquote_plus: percent_decode leaves a bad escape as a literal '%', like CPython.
 fn unquote_plus(text: &str) -> String {
     let space_separated = text.replace('+', " ");
     let bytes: Vec<u8> = percent_decode(space_separated.as_bytes()).collect();

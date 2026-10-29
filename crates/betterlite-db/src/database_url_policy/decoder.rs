@@ -187,8 +187,7 @@ fn percent_decode(text: &str) -> Result<String, DbError> {
             let not_hex = || DbError::MalformedPercentEscape {
                 source: PercentEscapeError::NotHex,
             };
-            // u8::from_str_radix also accepts a leading '+' sign, which would turn "%+1" into
-            // byte 0x01 instead of the malformed escape CPython's _hextobyte lookup rejects.
+            // u8::from_str_radix also accepts a leading '+' sign, unlike CPython's _hextobyte.
             if !digits.iter().all(u8::is_ascii_hexdigit) {
                 return Err(not_hex());
             }
