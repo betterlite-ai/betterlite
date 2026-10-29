@@ -5,7 +5,7 @@ use betterlite_secrets::stored_cipher::app_crypto::{AppCrypto, AppCryptoError, E
 use secrecy::SecretSlice;
 use serde_json::{Value, json};
 
-use super::support::invalid;
+use super::cipher_settings::invalid;
 use crate::helpers::HelperResult;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

@@ -3,12 +3,14 @@ use serde_json::Value;
 
 use self::app_crypto_ops::{AppCryptoStep, run_app_crypto};
 use self::callback_vars::{CallbackStep, run_callback_vars};
-use self::support::KeySource;
+use self::cipher_settings::KeySource;
 use crate::helpers::{Helper, HelperResult};
 
 mod app_crypto_ops;
 mod callback_vars;
-mod support;
+mod cipher_settings;
+mod fixed_nonces;
+mod log_recorder;
 mod tests;
 
 pub(crate) struct Op;
