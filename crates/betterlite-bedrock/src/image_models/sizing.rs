@@ -10,8 +10,7 @@ pub enum SizeError {
     InvalidInt(String),
 }
 
-/// Mirrors Python's `int(str)`: trims whitespace, allows one leading sign and
-/// single underscores between digits, rejects everything else.
+// Mirrors Python's int(str): trims whitespace, allows one leading sign and single underscores between digits
 pub fn parse_python_int(text: &str) -> Result<i64, SizeError> {
     let trimmed = text.trim();
     let (sign, digits) = trimmed.strip_prefix('-').map_or_else(
@@ -40,7 +39,7 @@ fn has_valid_underscores(digits: &str) -> bool {
     true
 }
 
-/// Mirrors `width, height = size.split("x")` followed by `int(width), int(height)`.
+// Mirrors width, height = size.split("x") followed by int(width), int(height)
 pub fn split_size(size: &str) -> Result<(i64, i64), SizeError> {
     let parts: Vec<&str> = size.split('x').collect();
     match parts.as_slice() {

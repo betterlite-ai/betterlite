@@ -1,14 +1,11 @@
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 use super::error::ImageModelsError;
 
-/// A caller-supplied Bedrock image parameter value.
-///
-/// Bedrock's request bodies accept arbitrary provider-native keys passed through
-/// unchanged, so this stays a small, explicitly named alternative to `serde_json::Value`
-/// (see `crate::request_policy::RequestValue` for the same pattern applied to
-/// header/identity merging).
-#[derive(Debug, Clone, PartialEq)]
+// Bedrock's request bodies accept arbitrary provider-native keys passed through unchanged
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Field {
     Null,
     Bool(bool),
@@ -24,23 +21,18 @@ pub type Params = IndexMap<String, Field>;
 impl Field {
     #[must_use]
     pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Self::Text(text) => Some(text),
-            Self::Null
-            | Self::Bool(_)
-            | Self::Int(_)
-            | Self::Float(_)
-            | Self::List(_)
-            | Self::Mapping(_) => None,
+        if let Self::Text(text) = self {
+            Some(text)
+        } else {
+            None
         }
     }
 
-    /// Python truthiness: `None`/empty string/empty collection/zero/`False` are falsy.
+    // Python truthiness: None/empty string/empty collection/zero/False are falsy
     #[must_use]
     pub fn truthy(&self) -> bool {
         match self {
-            Self::Null => false,
-            Self::Bool(flag) => *flag,
+            Self::Null | Self::Bool(_) => matches!(self, Self::Bool(true)),
             Self::Int(value) => *value != 0,
             Self::Float(value) => *value != 0.0,
             Self::Text(text) => !text.is_empty(),
@@ -49,31 +41,25 @@ impl Field {
         }
     }
 
-    /// Python's `str()` for the values that can reach an f-string in this module.
+    // Python's str() for the values that can reach an f-string in this module
     #[must_use]
     pub fn python_str(&self) -> String {
-        match self {
-            Self::Null => "None".to_owned(),
-            Self::Bool(true) => "True".to_owned(),
-            Self::Bool(false) => "False".to_owned(),
-            Self::Text(text) => text.clone(),
-            Self::Int(value) => value.to_string(),
-            Self::Float(value) => value.to_string(),
-            Self::List(_) | Self::Mapping(_) => "object".to_owned(),
+        if let Some(text) = self.as_str() {
+            return text.to_owned();
         }
-    }
-
-    #[must_use]
-    pub const fn python_type_name(&self) -> &'static str {
-        match self {
-            Self::Null => "NoneType",
-            Self::Bool(_) => "bool",
-            Self::Int(_) => "int",
-            Self::Float(_) => "float",
-            Self::Text(_) => "str",
-            Self::List(_) => "list",
-            Self::Mapping(_) => "dict",
+        if matches!(self, Self::List(_) | Self::Mapping(_)) {
+            return "object".to_owned();
         }
+        if let Self::Bool(flag) = self {
+            return if *flag { "True" } else { "False" }.to_owned();
+        }
+        if let Self::Int(value) = self {
+            return value.to_string();
+        }
+        if let Self::Float(value) = self {
+            return value.to_string();
+        }
+        "None".to_owned()
     }
 }
 
@@ -107,8 +93,7 @@ impl From<Params> for Field {
     }
 }
 
-/// Mirrors `dict.pop(key, {})` followed by relying on the result being a mapping: a
-/// present, non-mapping value fails at this step rather than being silently coerced.
+// Mirrors dict.pop(key, {}); a present, non-mapping value fails here rather than being coerced
 pub(super) fn pop_mapping(
     params: &mut Params,
     key: &'static str,

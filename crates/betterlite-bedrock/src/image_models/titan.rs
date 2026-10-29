@@ -2,10 +2,7 @@ use super::error::ImageModelsError;
 use super::params::{Field, Params, pop_mapping};
 use super::sizing::split_size;
 
-#[must_use]
-pub const fn get_supported_openai_params() -> &'static [&'static str] {
-    &["size", "n", "quality"]
-}
+pub const SUPPORTED_OPENAI_PARAMS: &[&str] = &["size", "n", "quality"];
 
 pub fn map_openai_params(
     non_default_params: &Params,

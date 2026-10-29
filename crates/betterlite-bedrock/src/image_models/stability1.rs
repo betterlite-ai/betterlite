@@ -2,10 +2,7 @@ use super::error::ImageModelsError;
 use super::params::{Field, Params};
 use super::sizing::split_size;
 
-/// The persisted `AmazonStabilityConfig` class settings, loaded from `betterlite-config`.
-///
-/// `__init__` stores exactly these five non-None values; there are no methods or dunders
-/// to exclude once they are plain struct fields.
+// __init__ stores exactly these five non-None values; there are no dunders left to exclude as struct fields
 #[derive(Debug, Clone, Default)]
 pub struct ClassSettings {
     pub cfg_scale: Option<Field>,
@@ -16,7 +13,7 @@ pub struct ClassSettings {
 }
 
 impl ClassSettings {
-    /// `get_config`: the non-`None` settings, in a fixed field order.
+    // get_config: the non-None settings, in a fixed field order
     #[must_use]
     pub fn get_config(&self) -> Params {
         let mut config = Params::new();
@@ -35,10 +32,7 @@ impl ClassSettings {
     }
 }
 
-#[must_use]
-pub const fn get_supported_openai_params() -> &'static [&'static str] {
-    &["size"]
-}
+pub const SUPPORTED_OPENAI_PARAMS: &[&str] = &["size"];
 
 pub fn map_openai_params(
     non_default_params: &Params,

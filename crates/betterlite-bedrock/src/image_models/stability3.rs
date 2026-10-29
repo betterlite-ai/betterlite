@@ -4,16 +4,7 @@ use super::error::ImageModelsError;
 use super::params::{Field, Params};
 use super::response::{FinishReason, Stability3Response};
 
-#[must_use]
-pub const fn get_supported_openai_params() -> &'static [&'static str] {
-    &[]
-}
-
-/// Stability3 has no field mapping of its own: the caller's params pass through unchanged.
-#[must_use]
-pub const fn map_openai_params(optional_params: Params) -> Params {
-    optional_params
-}
+pub const SUPPORTED_OPENAI_PARAMS: &[&str] = &[];
 
 pub fn transform_request_body(
     text: &str,
