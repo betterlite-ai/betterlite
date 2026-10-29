@@ -29,8 +29,8 @@ pub(super) fn run_app_crypto(key: &str, steps: &[AppCryptoStep]) -> HelperResult
     let decoded = STANDARD
         .decode(key)
         .map_err(|error| invalid(&error.to_string()))?;
-    let app: AppCrypto = AppCrypto::new(&SecretSlice::from(decoded))
-        .map_err(|error| invalid(&error.to_string()))?;
+    let app: AppCrypto =
+        AppCrypto::new(&SecretSlice::from(decoded)).map_err(|error| invalid(&error.to_string()))?;
     let results = steps.iter().map(|step| call_app_crypto(&app, step));
     Ok(Value::Array(results.collect()))
 }
