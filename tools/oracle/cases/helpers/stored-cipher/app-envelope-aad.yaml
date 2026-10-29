@@ -1,0 +1,43 @@
+kind: helper
+name: stored-cipher-app-envelope-aad
+call:
+  stored_cipher:
+    op: app_crypto
+    key: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    steps:
+      - kind: decrypt
+        envelope:
+          nonce: AAECAwQFBgcICQoL
+          ciphertext: PCC3Of/F8zetY/Wpi8laGfS5pUk=
+          tag: STjChyLSESSELTqg5wuL+g==
+        aad: caller-prefix
+      - kind: decrypt
+        envelope:
+          nonce: AAECAwQFBgcICQoL
+          ciphertext: PCC3Of/F8zetY/Wpi8laGfS5pUk=
+          tag: STjChyLSESSELTqg5wuL+g==
+        aad: null
+      # envelope made by betterlite's AppCrypto with a fixed nonce, so LiteLLM decrypting it proves Rust output is interoperable
+      - kind: decrypt
+        envelope:
+          nonce: AAECAwQFBgcICQoL
+          ciphertext: PCC4Of/S7jn5Lvzu38tCT/C9qliZDTpRSwKG93gdIs8=
+          tag: ZWAwpoSsRsqkupkNCjl+xQ==
+        aad: caller-prefix
+      - kind: roundtrip
+        data: {token: sk-live-secret, n: 7}
+        aad: caller-prefix
+      - kind: roundtrip
+        data: {token: sk-live-secret, n: 7}
+        aad: null
+      - kind: aad_mismatch
+        data: {token: sk-live-secret}
+        encrypt_aad: a
+        decrypt_aad: b
+      - kind: aad_mismatch
+        data: {token: sk-live-secret}
+        encrypt_aad: null
+        decrypt_aad: a
+env: {}
+compare:
+  ignore: []

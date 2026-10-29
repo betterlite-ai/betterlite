@@ -1,7 +1,7 @@
 id: B2313
 milestone: M4 keys, spend and management
 title: Request-carried agent policies and budget snapshots
-status: todo
+status: done
 depends_on: [B000, B171, B856]
 file: tasks/B2313-carried-policy-records.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/carried_budget_state.py"
 parent: B167
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 297

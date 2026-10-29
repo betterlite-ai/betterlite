@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-url-authority-forms
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: 'http://:80'}
+env: {}
+compare:
+  ignore: []

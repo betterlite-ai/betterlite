@@ -40,7 +40,6 @@ pub fn decode_secret_map<N, D>(
     field: &str,
 ) -> Result<Option<SecretMap>, SecretError>
 where
-    N: NonceSource,
     D: SecretDiagnostics,
 {
     let rejected = || SecretError::MapDecode {
@@ -69,7 +68,6 @@ fn decode_text_map<N, D>(
     field: &str,
 ) -> Result<SecretMap, SecretError>
 where
-    N: NonceSource,
     D: SecretDiagnostics,
 {
     let rejected = || SecretError::MapDecode {

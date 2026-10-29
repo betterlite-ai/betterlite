@@ -8,11 +8,14 @@ publish.workspace = true
 [dependencies]
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc"] }
 base64 = "0.23.1"
+betterlite-redact = { path = "../betterlite-redact" }
 crypto_secretbox = { version = "0.1.1", default-features = false, features = ["salsa20", "std"] }
 getrandom = "0.4.3"
 secrecy = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
 serde_json = "1.0.154"
 sha2 = { version = "0.11.1", default-features = false }
+subtle.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
