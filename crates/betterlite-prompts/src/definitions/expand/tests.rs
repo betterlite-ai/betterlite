@@ -147,11 +147,11 @@ fn schema_definitions_behavior_tests_behavior(
 ) {
     let actual = run(schema, &defs, max_inlined_bytes);
     assert_eq!(actual, expected);
-    if let Some(expected_keys) = expected_keys {
+    if let Some(expected_order) = expected_keys {
         let Outcome::Object(result) = actual else {
             panic!("key order assertions require a successful object result");
         };
         let actual_keys: Vec<&str> = result.keys().map(String::as_str).collect();
-        assert_eq!(actual_keys, expected_keys);
+        assert_eq!(actual_keys, expected_order);
     }
 }
