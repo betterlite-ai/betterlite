@@ -1,0 +1,5 @@
+task: B1666
+deviations:
+  - what: "Tier rates use exact Decimal arithmetic and nonfinite or unrepresentable numeric values return a typed pricing error instead of propagating a float infinity/NaN."
+    why: "Money must stay finite and checked from input conversion onward."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tiered_pricing.py#L11-L25"
