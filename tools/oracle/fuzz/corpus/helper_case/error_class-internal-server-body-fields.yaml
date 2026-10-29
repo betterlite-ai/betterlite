@@ -1,0 +1,13 @@
+kind: helper
+name: error-class-internal-server-body-fields
+call:
+  error_class:
+    family: internal_server
+    message: upstream blew up
+    model: gpt-4
+    provider: openai
+    body_type: server_error
+    body_param: model
+    body_code: upstream_failure
+env: {}
+compare: {ignore: []}

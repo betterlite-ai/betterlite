@@ -332,6 +332,7 @@ def _internal_server(input_value: InternalServerInput) -> object:
         input_value.get("model"),
         max_retries=input_value.get("max_retries"),
         num_retries=input_value.get("num_retries"),
+        body=_body_from_input(input_value),
     )
     return _metadata(exc)
 
@@ -396,6 +397,7 @@ def _rate_limit(input_value: RateLimitInput) -> object:
         category=input_value["category"],
         rate_limit_type=input_value.get("dimension"),
         headers=headers or None,
+        body=_body_from_input(context),
     )
     return _metadata(
         exc, category=exc.category, rate_limit_type=exc.rate_limit_type, headers=exc.headers
