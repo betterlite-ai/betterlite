@@ -9,8 +9,16 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-config = { path = "../../betterlite-config" }
+betterlite-http = { path = ".." }
 libfuzzer-sys = "0.4.9"
 url = "2.5.8"
+
+[[bin]]
+name = "openai_mock_transport"
+path = "fuzz_targets/openai_mock_transport.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "proxy_policy"
