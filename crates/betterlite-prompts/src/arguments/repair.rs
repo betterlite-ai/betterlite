@@ -34,8 +34,7 @@ fn unmatched_openers(text: &str) -> Vec<char> {
     opener_stack
 }
 
-// Repairs only a trailing comma plus unmatched brackets; a balanced or still
-// unparseable candidate falls through to None, never a broader rewrite.
+// Strips only a trailing comma and closes unmatched brackets; a balanced or still unparsable candidate stays None.
 pub(super) fn attempt_json_repair(text: &str) -> Option<Json> {
     let stripped = text.trim_end();
     if stripped.is_empty() {

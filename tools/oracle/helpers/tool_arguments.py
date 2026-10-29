@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 from litellm.litellm_core_utils.prompt_templates.common_utils import (
     check_is_function_call,
@@ -12,7 +12,9 @@ from litellm.litellm_core_utils.prompt_templates.common_utils import (
     split_concatenated_json_objects,
     with_prompt_cache_breakpoint,
 )
-from litellm.types.llms.openai import ChatCompletionToolParam
+
+if TYPE_CHECKING:
+    from litellm.types.llms.openai import ChatCompletionToolParam
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 

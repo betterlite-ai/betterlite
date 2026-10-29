@@ -25,7 +25,7 @@ fn json(text: &str) -> Json {
     "{\"a\":\"\\\\\",\"b\":\"}\"",
     Some(json(r#"{"a": "\\", "b": "}"}"#))
 )]
-#[case::still_unparseable_after_closing_stays_none("{\"a\":,", None)]
+#[case::still_unparsable_after_closing_stays_none("{\"a\":,", None)]
 fn tool_arguments_behavior_tests_behavior(#[case] text: &str, #[case] expected: Option<Json>) {
     assert_eq!(attempt_json_repair(text), expected);
 }

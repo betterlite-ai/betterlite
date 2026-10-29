@@ -1,14 +1,20 @@
 use super::json::{Json, Object};
 
-pub const MAX_SALVAGED_TOOL_ARGUMENT_OBJECTS: usize = 8;
+pub const MAX_SALVAGED_ARGUMENT_OBJECTS: usize = 8;
 
-#[must_use]
-pub fn split_concatenated_json_objects(raw: &str) -> Vec<Object> {
+fn trimmed_stream(raw: &str) -> Option<impl Iterator<Item = serde_json::Result<Json>> + '_> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Vec::new();
+        return None;
     }
-    let stream = serde_json::Deserializer::from_str(trimmed).into_iter::<Json>();
+    Some(serde_json::Deserializer::from_str(trimmed).into_iter::<Json>())
+}
+
+#[must_use]
+pub fn split_concatenated_json(raw: &str) -> Vec<Object> {
+    let Some(stream) = trimmed_stream(raw) else {
+        return Vec::new();
+    };
     let mut objects = Vec::new();
     for item in stream {
         match item {
@@ -21,12 +27,10 @@ pub fn split_concatenated_json_objects(raw: &str) -> Vec<Object> {
 }
 
 #[must_use]
-pub fn salvage_concatenated_tool_arguments(raw: &str) -> Vec<Object> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
+pub fn salvage_concatenated_arguments(raw: &str) -> Vec<Object> {
+    let Some(stream) = trimmed_stream(raw) else {
         return Vec::new();
-    }
-    let stream = serde_json::Deserializer::from_str(trimmed).into_iter::<Json>();
+    };
     let mut count: usize = 0;
     let mut kept: Vec<Object> = Vec::new();
     let mut exceeded = false;
@@ -54,7 +58,7 @@ fn keep_object(kept: &mut Vec<Object>, exceeded: &mut bool, count: usize, object
         }
         if count > 2 {
             let previous_count = count.saturating_sub(1);
-            if previous_count > MAX_SALVAGED_TOOL_ARGUMENT_OBJECTS {
+            if previous_count > MAX_SALVAGED_ARGUMENT_OBJECTS {
                 *exceeded = true;
                 return;
             }
@@ -62,7 +66,7 @@ fn keep_object(kept: &mut Vec<Object>, exceeded: &mut bool, count: usize, object
             *kept = vec![first; previous_count];
         }
     }
-    if kept.len() >= MAX_SALVAGED_TOOL_ARGUMENT_OBJECTS {
+    if kept.len() >= MAX_SALVAGED_ARGUMENT_OBJECTS {
         *exceeded = true;
         return;
     }

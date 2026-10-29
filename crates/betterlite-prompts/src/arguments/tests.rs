@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::concatenated::{salvage_concatenated_tool_arguments, split_concatenated_json_objects};
+use super::concatenated::{salvage_concatenated_arguments, split_concatenated_json};
 use super::parse::parse_tool_call_arguments;
 use rstest::rstest;
 use std::{fs, path::PathBuf, str};
@@ -15,6 +15,6 @@ fn replays_the_tool_arguments_corpus(#[files("fuzz/corpus/tool_arguments/*")] pa
         return;
     };
     drop(parse_tool_call_arguments(arguments, None, None));
-    drop(split_concatenated_json_objects(arguments));
-    drop(salvage_concatenated_tool_arguments(arguments));
+    drop(split_concatenated_json(arguments));
+    drop(salvage_concatenated_arguments(arguments));
 }

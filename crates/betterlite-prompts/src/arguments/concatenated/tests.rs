@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{salvage_concatenated_tool_arguments, split_concatenated_json_objects};
+use super::{salvage_concatenated_arguments, split_concatenated_json};
 use crate::arguments::json::{Json, Object};
 use rstest::rstest;
 use std::fmt::Write as _;
@@ -22,8 +22,8 @@ fn object(text: &str) -> Object {
 
 fn run(operation: Operation, raw: &str) -> Vec<Object> {
     match operation {
-        Operation::Split => split_concatenated_json_objects(raw),
-        Operation::Salvage => salvage_concatenated_tool_arguments(raw),
+        Operation::Split => split_concatenated_json(raw),
+        Operation::Salvage => salvage_concatenated_arguments(raw),
     }
 }
 
@@ -79,26 +79,24 @@ fn tool_arguments_behavior_tests_behavior(
     assert_eq!(run(operation, raw), expected);
 }
 
+fn concatenated_objects(count: u8) -> String {
+    (0_u8..count).fold(String::new(), |mut raw, index| {
+        write!(raw, "{{\"n\":{index}}}").expect("write to String succeeds");
+        raw
+    })
+}
+
 #[test]
 fn more_than_the_cap_of_distinct_objects_yields_nothing() {
-    let mut raw = String::new();
-    for index in 0_u8..9_u8 {
-        write!(raw, "{{\"n\":{index}}}").expect("write to String succeeds");
-    }
-    assert_eq!(
-        salvage_concatenated_tool_arguments(&raw),
-        Vec::<Object>::new()
-    );
+    let raw = concatenated_objects(9_u8);
+    assert_eq!(salvage_concatenated_arguments(&raw), Vec::<Object>::new());
 }
 
 #[test]
 fn exactly_the_cap_of_distinct_objects_is_kept() {
-    let mut raw = String::new();
-    for index in 0_u8..8_u8 {
-        write!(raw, "{{\"n\":{index}}}").expect("write to String succeeds");
-    }
+    let raw = concatenated_objects(8_u8);
     let expected: Vec<Object> = (0_u8..8_u8)
         .map(|index| object(&format!("{{\"n\": {index}}}")))
         .collect();
-    assert_eq!(salvage_concatenated_tool_arguments(&raw), expected);
+    assert_eq!(salvage_concatenated_arguments(&raw), expected);
 }

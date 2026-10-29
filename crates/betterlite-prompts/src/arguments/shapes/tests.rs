@@ -1,9 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    check_is_function_call, convert_custom_tool_format_to_chat_shape,
-    convert_custom_tool_format_to_responses_shape, get_tool_call_names, is_function_call,
-    with_prompt_cache_breakpoint,
+    check_is_function_call, custom_tool_to_chat_shape, custom_tool_to_responses_shape,
+    get_tool_call_names, is_function_call, with_prompt_cache_breakpoint,
 };
 use crate::arguments::json::{Json, Object};
 use rstest::rstest;
@@ -48,12 +47,12 @@ fn run(operation: Operation) -> Json {
             let optional_params = optional_params_literal.map(object);
             Json::Bool(check_is_function_call(optional_params.as_ref()))
         }
-        Operation::ToChatShape(format_obj) => Json::Object(
-            convert_custom_tool_format_to_chat_shape(&object(format_obj)),
-        ),
-        Operation::ToResponsesShape(format_obj) => Json::Object(
-            convert_custom_tool_format_to_responses_shape(&object(format_obj)),
-        ),
+        Operation::ToChatShape(format_obj) => {
+            Json::Object(custom_tool_to_chat_shape(&object(format_obj)))
+        }
+        Operation::ToResponsesShape(format_obj) => {
+            Json::Object(custom_tool_to_responses_shape(&object(format_obj)))
+        }
         Operation::CacheBreakpoint(target, marker_literal) => {
             let marker = marker_literal.map(json);
             Json::Object(with_prompt_cache_breakpoint(

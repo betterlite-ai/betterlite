@@ -4,8 +4,7 @@ use serde_json::Number;
 
 pub type Object = IndexMap<String, Json>;
 
-// LiteLLM keeps tool arguments as sent, and IndexMap preserves insertion order the way
-// serde_json::Value would only with the workspace-wide preserve_order feature this crate skips.
+// IndexMap keeps insertion order without the workspace-wide preserve_order feature this crate skips.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Json {

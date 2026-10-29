@@ -1,13 +1,12 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_prompts::arguments::concatenated::{
-    salvage_concatenated_tool_arguments, split_concatenated_json_objects,
+    salvage_concatenated_arguments, split_concatenated_json,
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::arguments::parse::{ParseArgumentsError, parse_tool_call_arguments};
 use betterlite_prompts::arguments::shapes::{
-    check_is_function_call, convert_custom_tool_format_to_chat_shape,
-    convert_custom_tool_format_to_responses_shape, get_tool_call_names, is_function_call,
-    with_prompt_cache_breakpoint,
+    check_is_function_call, custom_tool_to_chat_shape, custom_tool_to_responses_shape,
+    get_tool_call_names, is_function_call, with_prompt_cache_breakpoint,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -22,10 +21,12 @@ pub(crate) enum Input {
         #[serde(default)]
         context: Option<String>,
     },
-    SplitConcatenatedJsonObjects {
+    #[serde(rename = "split_concatenated_json_objects")]
+    SplitConcatenatedJson {
         raw: String,
     },
-    SalvageConcatenatedToolArguments {
+    #[serde(rename = "salvage_concatenated_tool_arguments")]
+    SalvageConcatenatedArguments {
         raw: String,
     },
     GetToolCallNames {
@@ -38,10 +39,12 @@ pub(crate) enum Input {
         #[serde(default)]
         optional_params: Option<Object>,
     },
-    ConvertCustomToolFormatToChatShape {
+    #[serde(rename = "convert_custom_tool_format_to_chat_shape")]
+    CustomToolToChatShape {
         format_obj: Object,
     },
-    ConvertCustomToolFormatToResponsesShape {
+    #[serde(rename = "convert_custom_tool_format_to_responses_shape")]
+    CustomToolToResponsesShape {
         format_obj: Object,
     },
     WithPromptCacheBreakpoint {
@@ -62,15 +65,15 @@ impl Helper for Op {
                 context,
             } => parse_tool_call_arguments(arguments, tool_name.as_deref(), context.as_deref())
                 .map(json_to_value)
-                .map_err(|error| failure(&error)),
-            Input::SplitConcatenatedJsonObjects { raw } => Ok(Value::Array(
-                split_concatenated_json_objects(raw)
+                .map_err(|error| malformed_arguments_error(&error)),
+            Input::SplitConcatenatedJson { raw } => Ok(Value::Array(
+                split_concatenated_json(raw)
                     .into_iter()
                     .map(object_to_value)
                     .collect(),
             )),
-            Input::SalvageConcatenatedToolArguments { raw } => Ok(Value::Array(
-                salvage_concatenated_tool_arguments(raw)
+            Input::SalvageConcatenatedArguments { raw } => Ok(Value::Array(
+                salvage_concatenated_arguments(raw)
                     .into_iter()
                     .map(object_to_value)
                     .collect(),
@@ -82,12 +85,12 @@ impl Helper for Op {
             Input::CheckIsFunctionCall { optional_params } => Ok(Value::from(
                 check_is_function_call(optional_params.as_ref()),
             )),
-            Input::ConvertCustomToolFormatToChatShape { format_obj } => Ok(object_to_value(
-                convert_custom_tool_format_to_chat_shape(format_obj),
-            )),
-            Input::ConvertCustomToolFormatToResponsesShape { format_obj } => Ok(object_to_value(
-                convert_custom_tool_format_to_responses_shape(format_obj),
-            )),
+            Input::CustomToolToChatShape { format_obj } => {
+                Ok(object_to_value(custom_tool_to_chat_shape(format_obj)))
+            }
+            Input::CustomToolToResponsesShape { format_obj } => {
+                Ok(object_to_value(custom_tool_to_responses_shape(format_obj)))
+            }
             Input::WithPromptCacheBreakpoint { target, marker } => Ok(object_to_value(
                 with_prompt_cache_breakpoint(target, marker.as_ref()),
             )),
@@ -114,14 +117,15 @@ fn object_to_value(object: Object) -> Value {
     Value::Object(entries)
 }
 
-fn failure(error: &ParseArgumentsError) -> Box<HelperError> {
+fn malformed_arguments_error(error: &ParseArgumentsError) -> Box<HelperError> {
+    let message = error.to_string();
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     })
 }
 
