@@ -1,7 +1,7 @@
 id: B1600
 milestone: M4 keys, spend and management
 title: Read and write LiteLLM encrypted secrets
-status: todo
+status: done
 depends_on: [B002, B171, B244, B700]
 file: tasks/B1600-stored-cipher.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/proxy/spend_tracking/spend_tracking_utils.py"
 parent: B061
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 296

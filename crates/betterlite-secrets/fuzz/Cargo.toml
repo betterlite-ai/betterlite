@@ -20,4 +20,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "stored_secret"
+path = "fuzz_targets/stored_secret.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
