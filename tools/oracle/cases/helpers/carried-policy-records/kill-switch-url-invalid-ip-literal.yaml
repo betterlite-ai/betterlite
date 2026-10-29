@@ -6,6 +6,6 @@ call:
     value: {url: "http://[abc]"}
 env: {}
 compare:
-  ignore: 
+  ignore:
     - pointer: /error/message
       why: betterlite writes its own validation message
