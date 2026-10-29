@@ -439,7 +439,10 @@ fn gcp_token_cache_is_keyed_by_service_account() {
     let second_account = cache
         .get_or_fetch("account-b", ttl, &clock, &fetcher)
         .unwrap();
-    assert_ne!(first_account.expose_secret(), second_account.expose_secret());
+    assert_ne!(
+        first_account.expose_secret(),
+        second_account.expose_secret()
+    );
     assert_eq!(fetcher.call_count(), 2);
 }
 
@@ -539,7 +542,11 @@ fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
     let (_user_name, signed) = provider
         .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
         .unwrap();
-    assert!(signed.expose_secret().contains("ResourceType=ServerlessCache"));
+    assert!(
+        signed
+            .expose_secret()
+            .contains("ResourceType=ServerlessCache")
+    );
 }
 
 #[derive(Debug)]
