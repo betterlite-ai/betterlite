@@ -95,6 +95,7 @@ fn exactly_the_cap_of_distinct_objects_is_kept() {
     for index in 0..8 {
         raw.push_str(&format!("{{\"n\":{index}}}"));
     }
-    let expected: Vec<Map<String, Value>> = (0..8).map(|index| object(json!({"n": index}))).collect();
+    let expected: Vec<Map<String, Value>> =
+        (0..8).map(|index| object(json!({"n": index}))).collect();
     assert_eq!(salvage_concatenated_tool_arguments(&raw), expected);
 }

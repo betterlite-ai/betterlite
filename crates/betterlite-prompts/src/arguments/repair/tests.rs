@@ -27,10 +27,7 @@ use serde_json::json;
     "{\"a\":\"\\\\\",\"b\":\"}\"",
     Some(json!({"a": "\\", "b": "}"}))
 )]
-#[case::still_unparseable_after_closing_stays_none(
-    "{\"a\":,",
-    None
-)]
+#[case::still_unparseable_after_closing_stays_none("{\"a\":,", None)]
 fn tool_arguments_behavior_tests_behavior(
     #[case] text: &str,
     #[case] expected: Option<serde_json::Value>,

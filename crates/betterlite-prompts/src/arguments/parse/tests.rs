@@ -10,7 +10,10 @@ use serde_json::json;
 #[case::valid_json_parses_directly("{\"a\":1}", json!({"a": 1}))]
 #[case::non_object_json_is_returned_as_is("[1,2,3]", json!([1, 2, 3]))]
 #[case::truncated_json_is_repaired("{\"a\":1,\"b\":[1,2", json!({"a": 1, "b": [1, 2]}))]
-fn tool_arguments_behavior_tests_behavior(#[case] arguments: &str, #[case] expected: serde_json::Value) {
+fn tool_arguments_behavior_tests_behavior(
+    #[case] arguments: &str,
+    #[case] expected: serde_json::Value,
+) {
     let parsed = parse_tool_call_arguments(arguments, None, None).expect("parses");
     assert_eq!(parsed, expected);
 }
