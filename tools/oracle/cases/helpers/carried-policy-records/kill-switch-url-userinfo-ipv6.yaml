@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-url-userinfo-ipv6
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "http://user@[::1]/"}
+env: {}
+compare:
+  ignore: []

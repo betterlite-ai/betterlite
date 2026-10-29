@@ -1,0 +1,9 @@
+kind: helper
+name: snapshot-date-only
+call:
+  carried_policy_records:
+    function: team_snapshot
+    value: {user_api_key_team_budget_reset_at: '2026-01-01', user_api_key_team_table_max_budget: null}
+env: {}
+compare:
+  ignore: []
