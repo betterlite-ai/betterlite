@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "default-schema-prompt", "call": {"prompt_factory": {"mode": "default_response_schema_prompt", "response_schema": {"type": "string"}}}, "env": {}, "compare": {"ignore": []}}
