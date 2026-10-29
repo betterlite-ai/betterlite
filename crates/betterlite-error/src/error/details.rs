@@ -7,16 +7,21 @@ use super::ErrorContext;
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
 // exception_status_code in Timeout.__init__ defaults to 408 when the caller leaves it unset
-const fn default_timeout_status() -> u16 {
-    let status: u16 = 408;
-    status.saturating_add(0)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct TimeoutStatus(pub u16);
+
+impl Default for TimeoutStatus {
+    fn default() -> Self {
+        Self(408)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TimeoutDetails {
     pub context: ErrorContext,
-    #[serde(default = "default_timeout_status")]
-    pub original_status: u16,
+    #[serde(default)]
+    pub original_status: TimeoutStatus,
 }
 
 #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -77,16 +82,21 @@ pub struct GuardrailDetails {
 }
 
 // getattr(original_exception, "status_code", None) defaults to 503 when the upstream exception has none
-const fn default_mid_stream_status() -> u16 {
-    let status: u16 = 503;
-    status.saturating_add(0)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct MidStreamStatus(pub u16);
+
+impl Default for MidStreamStatus {
+    fn default() -> Self {
+        Self(503)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MidStreamFallbackDetails {
     pub context: ErrorContext,
-    #[serde(default = "default_mid_stream_status")]
-    pub original_status: u16,
+    #[serde(default)]
+    pub original_status: MidStreamStatus,
     pub generated_content: String,
     pub is_pre_first_chunk: bool,
 }

@@ -9,7 +9,7 @@ mod tests;
 
 use details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
-    RateLimitDetails, SchemaValidationDetails, TimeoutDetails,
+    RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
 
 // the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
@@ -31,30 +31,58 @@ pub struct ErrorContext {
     pub body_code: Option<String>,
 }
 
+// which wire fields a body dict is allowed to fill, matching which LiteLLM subclass constructor
+// forwards body= to openai.APIError.__init__ (exceptions.py L250, L643, L833, L789, L512)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BodyOverride {
+    // Authentication, NotFound, PermissionDenied, UnprocessableEntity, ServiceUnavailable, BadGateway,
+    // ContextWindowExceeded, Timeout, ApiConnection, ApiResponseValidation, UnsupportedParams, MidStreamFallback
+    None,
+    // BadRequest, ContentPolicyViolation, Api: openai.APIError reads type/param/code straight off the body
+    Full,
+    // InternalServer, RateLimit: the subclass sets self.type to a literal right after the base constructor
+    // runs, so param and code still come from the body but type never does
+    TypeLiteral,
+}
+
+type MetadataInputs<'ctx> = (&'ctx ErrorContext, u16, WireField, WireField, BodyOverride);
+
 impl ErrorContext {
-    // a body dict overrides either default, the same way openai.APIError.__init__ reads body.get("type"/"param")
     fn metadata(
         &self,
         status_code: u16,
         default_type: WireField,
         default_param: WireField,
+        body: BodyOverride,
     ) -> ErrorMetadata {
         let retry = RetryMetadata {
             max_retries: self.max_retries,
             num_retries: self.num_retries,
         };
-        let error_type = self.body_type.clone().map_or(default_type, WireField::Text);
-        let param = self
-            .body_param
-            .clone()
-            .map_or(default_param, WireField::Text);
+        let (error_type, param, code) = match body {
+            BodyOverride::None => (default_type, default_param, None),
+            BodyOverride::Full => (
+                self.body_type.clone().map_or(default_type, WireField::Text),
+                self.body_param
+                    .clone()
+                    .map_or(default_param, WireField::Text),
+                self.body_code.clone(),
+            ),
+            BodyOverride::TypeLiteral => (
+                default_type,
+                self.body_param
+                    .clone()
+                    .map_or(default_param, WireField::Text),
+                self.body_code.clone(),
+            ),
+        };
         let mut metadata = build_metadata(
             status_code,
             (self.model.clone(), self.provider.clone()),
             (error_type, param),
             retry,
         );
-        metadata.openai_code.clone_from(&self.body_code);
+        metadata.openai_code = code;
         metadata
     }
 }
@@ -109,56 +137,41 @@ pub enum ErrorClass {
     Unclassified(Box<ErrorContext>),
 }
 
-// the common case: a status code with both wire fields null, before any per-context body override
-const fn null_wire(ctx: &ErrorContext, status: u16) -> (&ErrorContext, u16, WireField, WireField) {
-    let error_type = WireField::Null;
-    (ctx, status, error_type, WireField::Null)
-}
-
 impl ErrorClass {
     #[must_use]
     pub fn metadata(&self) -> ErrorMetadata {
-        let (ctx, status, error_type, param) = match self {
-            Self::Authentication(ctx) => null_wire(ctx, 401),
-            Self::NotFound(ctx) => null_wire(ctx, 404),
-            Self::PermissionDenied(ctx) => null_wire(ctx, 403),
-            Self::BadRequest(ctx)
-            | Self::ContextWindowExceeded(ctx)
-            | Self::ContentPolicyViolation(ctx) => null_wire(ctx, 400),
-            Self::UnprocessableEntity(ctx) => null_wire(ctx, 422),
-            Self::ServiceUnavailable(ctx) => null_wire(ctx, 503),
-            Self::BadGateway(ctx) => null_wire(ctx, 502),
-            Self::InternalServer(ctx) => (
-                ctx.as_ref(),
-                500,
-                WireField::Text("internal_server_error".to_owned()),
-                WireField::Null,
-            ),
-            Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => null_wire(ctx, 500),
-            // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
-            Self::UnsupportedParams(ctx) => {
-                (ctx.as_ref(), 400, WireField::MISSING, WireField::Null)
+        use BodyOverride::{Full, None as No, TypeLiteral};
+        use WireField::Null;
+        const MISSING: WireField = WireField::MISSING;
+        let internal_server_error = WireField::Text("internal_server_error".to_owned());
+
+        // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
+        let (ctx, status, default_type, default_param, body): MetadataInputs<'_> = match self {
+            Self::Authentication(ctx) => (ctx, 401, Null, Null, No),
+            Self::NotFound(ctx) => (ctx, 404, Null, Null, No),
+            Self::PermissionDenied(ctx) => (ctx, 403, Null, Null, No),
+            Self::BadRequest(ctx) | Self::ContentPolicyViolation(ctx) => {
+                (ctx, 400, Null, Null, Full)
             }
-            Self::Unclassified(ctx) => (ctx.as_ref(), 500, WireField::MISSING, WireField::MISSING),
-            Self::Timeout(details) => null_wire(&details.context, details.original_status),
-            Self::Api(api) => null_wire(&api.context, api.status),
-            Self::MidStreamFallback(details) => {
-                null_wire(&details.context, details.original_status)
+            Self::ContextWindowExceeded(ctx) => (ctx, 400, Null, Null, No),
+            Self::UnprocessableEntity(ctx) => (ctx, 422, Null, Null, No),
+            Self::ServiceUnavailable(ctx) => (ctx, 503, Null, Null, No),
+            Self::BadGateway(ctx) => (ctx, 502, Null, Null, No),
+            Self::InternalServer(ctx) => (ctx, 500, internal_server_error, Null, TypeLiteral),
+            Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => {
+                (ctx, 500, Null, Null, No)
             }
+            Self::UnsupportedParams(ctx) => (ctx, 400, MISSING, Null, No),
+            Self::Unclassified(ctx) => (ctx, 500, MISSING, MISSING, No),
+            Self::Timeout(timeout) => (&timeout.context, timeout.original_status.0, Null, Null, No),
+            Self::Api(api) => (&api.context, api.status, Null, Null, Full),
+            Self::MidStreamFallback(mid) => (&mid.context, mid.original_status.0, Null, Null, No),
             Self::RateLimit(details) => return rate_limit_metadata(details),
             Self::BudgetExceeded(details) => return budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => {
-                let wire = (WireField::MISSING, WireField::MISSING);
-                return build_metadata(
-                    details.status_code,
-                    (None, None),
-                    wire,
-                    RetryMetadata::default(),
-                );
-            }
+            Self::GuardrailRaised(details) => return guardrail_metadata(details),
             Self::JsonSchemaValidation(details) => return schema_validation_metadata(details),
         };
-        ctx.metadata(status, error_type, param)
+        ctx.metadata(status, default_type, default_param, body)
     }
 }
 
@@ -168,6 +181,16 @@ fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadat
         500,
         identity,
         (WireField::Null, WireField::Null),
+        RetryMetadata::default(),
+    )
+}
+
+fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
+    let identity = (None, None);
+    build_metadata(
+        details.status_code,
+        identity,
+        (WireField::MISSING, WireField::MISSING),
         RetryMetadata::default(),
     )
 }
@@ -213,6 +236,7 @@ fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
         429,
         WireField::Text("throttling_error".to_owned()),
         WireField::Null,
+        BodyOverride::TypeLiteral,
     );
     // litellm.RateLimitError.__init__ sets self.code = "429" as a literal, after the base openai.APIError body handling
     metadata.openai_code = Some("429".to_owned());
@@ -261,7 +285,7 @@ impl TaxonomyError {
                 provider, model, ..
             } => ErrorClass::Timeout(Box::new(TimeoutDetails {
                 context: self.context(provider, model.as_deref()),
-                original_status: 408,
+                original_status: TimeoutStatus(408),
             })),
             Self::Transport {
                 provider, model, ..

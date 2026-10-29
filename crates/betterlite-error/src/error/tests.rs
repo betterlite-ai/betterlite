@@ -8,8 +8,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::details::{
-    ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
-    RateLimitDetails, SchemaValidationDetails, TimeoutDetails,
+    ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails, MidStreamStatus,
+    RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
 use super::{ErrorClass, ErrorContext, TaxonomyError};
 use crate::envelope::WireField;
@@ -82,7 +82,7 @@ fn context_with_body(
 #[case::timeout_defaults_to_408(
     ErrorClass::Timeout(Box::new(TimeoutDetails {
         context: context("timed out"),
-        original_status: 408,
+        original_status: TimeoutStatus(408),
     })),
     408,
     WireField::Null,
@@ -91,7 +91,7 @@ fn context_with_body(
 #[case::timeout_keeps_an_explicit_status_override(
     ErrorClass::Timeout(Box::new(TimeoutDetails {
         context: context("timed out"),
-        original_status: 504,
+        original_status: TimeoutStatus(504),
     })),
     504,
     WireField::Null,
@@ -124,6 +124,55 @@ fn context_with_body(
     400,
     WireField::Null,
     WireField::Null
+)]
+#[case::authentication_never_takes_a_body_even_when_one_is_sent(
+    ErrorClass::Authentication(Box::new(context_with_body(
+        "bad key",
+        "invalid_request_error",
+        Some("authorization"),
+        Some("invalid_api_key")
+    ))),
+    401,
+    WireField::Null,
+    WireField::Null
+)]
+#[case::context_window_exceeded_never_takes_a_body_even_when_one_is_sent(
+    ErrorClass::ContextWindowExceeded(Box::new(context_with_body(
+        "too many tokens",
+        "invalid_request_error",
+        Some("messages"),
+        Some("context_length_exceeded")
+    ))),
+    400,
+    WireField::Null,
+    WireField::Null
+)]
+#[case::internal_server_with_a_body_takes_param_but_keeps_its_literal_type(
+    ErrorClass::InternalServer(Box::new(context_with_body(
+        "boom",
+        "server_error",
+        Some("model"),
+        Some("upstream_failure")
+    ))),
+    500,
+    WireField::Text("internal_server_error".to_owned()),
+    WireField::Text("model".to_owned())
+)]
+#[case::rate_limit_with_a_body_takes_param_but_keeps_its_literal_type(
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context_with_body(
+            "slow down",
+            "server_error",
+            Some("retry_after"),
+            Some("vendor_throttled")
+        ),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    })),
+    429,
+    WireField::Text("throttling_error".to_owned()),
+    WireField::Text("retry_after".to_owned())
 )]
 #[case::api_error_with_a_body_sets_type_and_param_from_it(
     ErrorClass::Api(Box::new(ApiDetails {
@@ -206,6 +255,48 @@ fn bad_request_without_a_body_leaves_openai_code_absent() {
 }
 
 #[test]
+fn authentication_with_a_body_code_never_sets_openai_code() {
+    let class = ErrorClass::Authentication(Box::new(context_with_body(
+        "bad key",
+        "invalid_request_error",
+        None,
+        Some("invalid_api_key"),
+    )));
+    assert_eq!(class.metadata().openai_code, None);
+}
+
+#[test]
+fn context_window_exceeded_with_a_body_code_never_sets_openai_code() {
+    let class = ErrorClass::ContextWindowExceeded(Box::new(context_with_body(
+        "too many tokens",
+        "invalid_request_error",
+        None,
+        Some("context_length_exceeded"),
+    )));
+    assert_eq!(class.metadata().openai_code, None);
+}
+
+#[test]
+fn internal_server_with_a_body_code_keeps_it_as_openai_code() {
+    let class = ErrorClass::InternalServer(Box::new(context_with_body(
+        "boom",
+        "server_error",
+        None,
+        Some("upstream_failure"),
+    )));
+    assert_eq!(
+        class.metadata().openai_code,
+        Some("upstream_failure".to_owned())
+    );
+}
+
+#[test]
+fn internal_server_without_a_body_leaves_openai_code_absent() {
+    let class = ErrorClass::InternalServer(Box::new(context("boom")));
+    assert_eq!(class.metadata().openai_code, None);
+}
+
+#[test]
 fn rate_limit_carries_its_category_and_dimension() {
     let class = ErrorClass::RateLimit(Box::new(RateLimitDetails {
         context: context("slow down"),
@@ -228,6 +319,17 @@ fn rate_limit_carries_its_category_and_dimension() {
 fn rate_limit_openai_code_is_always_the_429_literal() {
     let class = ErrorClass::RateLimit(Box::new(RateLimitDetails {
         context: context("slow down"),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    }));
+    assert_eq!(class.metadata().openai_code, Some("429".to_owned()));
+}
+
+#[test]
+fn rate_limit_openai_code_stays_429_even_when_a_body_code_is_sent() {
+    let class = ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context_with_body("slow down", "server_error", None, Some("vendor_throttled")),
         category: RateLimitCategory::VendorRateLimit,
         dimension: None,
         headers: BTreeMap::new(),
@@ -340,7 +442,7 @@ fn mid_stream_fallback_wire_input_without_a_status_defaults_to_503() {
 fn mid_stream_fallback_keeps_the_original_exception_status() {
     let class = ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
         context: context("fallback"),
-        original_status: 529,
+        original_status: MidStreamStatus(529),
         generated_content: "partial".to_owned(),
         is_pre_first_chunk: false,
     }));
