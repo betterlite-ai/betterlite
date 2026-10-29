@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::{
-    WireField, allowed_response_headers, filter_unsafe_headers, is_bare_rate_limit_header,
+    BARE_RATE_LIMIT_HEADERS, WireField, allowed_response_headers, is_unsafe_header_name,
     project_provider_headers,
 };
 
@@ -74,7 +74,10 @@ fn error_types_error_type_tests_behavior(
     #[case] expected: &[(&str, &str)],
 ) {
     let actual = match operation {
-        Operation::Filter => filter_unsafe_headers(map(input)),
+        Operation::Filter => map(input)
+            .into_iter()
+            .filter(|(name, _)| !is_unsafe_header_name(name))
+            .collect(),
         Operation::Project => project_provider_headers(&map(input)),
         Operation::AllowedFromResponse => allowed_response_headers(&BTreeMap::new(), &map(input)),
         Operation::AllowedFromExplicit => allowed_response_headers(&map(input), &BTreeMap::new()),
@@ -94,7 +97,10 @@ fn is_bare_rate_limit_header_matches_only_the_four_openai_headers(
     #[case] name: &str,
     #[case] expected: bool,
 ) {
-    assert_eq!(is_bare_rate_limit_header(name), expected);
+    assert_eq!(
+        BARE_RATE_LIMIT_HEADERS.contains(&name.to_lowercase().as_str()),
+        expected
+    );
 }
 
 #[test]

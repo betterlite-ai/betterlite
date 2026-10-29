@@ -37,7 +37,7 @@ pub struct ErrorResponse {
     pub error: ErrorObject,
 }
 
-const BARE_RATE_LIMIT_HEADERS: [&str; 4] = [
+pub const BARE_RATE_LIMIT_HEADERS: [&str; 4] = [
     "x-ratelimit-limit-requests",
     "x-ratelimit-remaining-requests",
     "x-ratelimit-limit-tokens",
@@ -106,12 +106,6 @@ pub fn project_provider_headers(
     projected
 }
 
-#[must_use]
-pub fn is_bare_rate_limit_header(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    BARE_RATE_LIMIT_HEADERS.contains(&lower.as_str())
-}
-
 // UNSAFE_PROXY_RESPONSE_HEADERS, plus the raw-and-prefixed cookie/CORS deviation
 #[must_use]
 pub fn is_unsafe_header_name(name: &str) -> bool {
@@ -122,14 +116,6 @@ pub fn is_unsafe_header_name(name: &str) -> bool {
         .strip_prefix(LLM_PROVIDER_PREFIX)
         .is_some_and(|rest| COOKIE_AND_CORS_HEADERS.contains(&rest));
     unsafe_raw || unsafe_prefixed
-}
-
-#[must_use]
-pub fn filter_unsafe_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    let kept = headers
-        .into_iter()
-        .filter(|(name, _)| !is_unsafe_header_name(name));
-    kept.collect()
 }
 
 // explicit_headers (a headers= kwarg, e.g. RateLimitError) bypasses projection and an empty map counts as missing, same as getattr(e, "headers", None) or {}
@@ -143,5 +129,7 @@ pub fn allowed_response_headers(
     } else {
         explicit_headers.clone()
     };
-    filter_unsafe_headers(raw)
+    raw.into_iter()
+        .filter(|(name, _)| !is_unsafe_header_name(name))
+        .collect()
 }

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use axum::http::header::InvalidHeaderName;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
-use betterlite_error::envelope::{is_bare_rate_limit_header, is_unsafe_header_name};
+use betterlite_error::envelope::{BARE_RATE_LIMIT_HEADERS, is_unsafe_header_name};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 
@@ -121,7 +121,7 @@ fn provider_headers(upstream: &HeaderMap, rate_limit_count: usize) -> HeaderMap 
 fn forwardable_failure_headers(upstream: &HeaderMap) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in upstream {
-        if is_bare_rate_limit_header(name.as_str()) {
+        if BARE_RATE_LIMIT_HEADERS.contains(&name.as_str().to_lowercase().as_str()) {
             headers.append(name.clone(), value.clone());
         }
         match provider_prefixed_name(name) {
