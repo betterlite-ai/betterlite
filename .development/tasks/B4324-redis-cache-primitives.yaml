@@ -140,7 +140,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::pipeline_increment::/)'
     - id: async-commands-protocol-tests
       why: _AsyncRedisCommands protocol is missing methods or has incorrect signatures.
-      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^protocol::/)'
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::protocol::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
