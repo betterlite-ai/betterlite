@@ -3,12 +3,11 @@ use std::fmt::{self, Debug, Formatter};
 use std::num::ParseIntError;
 use std::str::{self, Utf8Error};
 
-/// 1 MiB, the byte cap on a database URL before decoding is attempted.
+// 1 MiB cap on a database URL before decoding is attempted.
 const MAX_DATABASE_URL_BYTES: usize = 0x0010_0000;
 
 type Netloc = (Option<String>, Option<String>, String, Option<u16>);
 
-/// A decoded database URL: the production byte boundary, not a Python port.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DbEndpoint {
     pub scheme: String,
@@ -57,8 +56,7 @@ pub enum DbError {
     MalformedPercentEscape,
 }
 
-/// The native URL byte boundary: caps input size, decodes UTF-8, and splits
-/// userinfo/host/port/query without reusing any Python-parity helper above.
+// The native URL byte boundary; does not reuse the Python-parity helpers above.
 pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
     if bytes.len() > MAX_DATABASE_URL_BYTES {
         return Err(DbError::TooLarge { len: bytes.len() });
@@ -123,11 +121,11 @@ fn parse_hostport(hostport: &str) -> Result<(String, Option<u16>), DbError> {
 }
 
 fn parse_port(text: &str) -> Result<u16, DbError> {
-    text.parse::<u16>()
-        .map_err(|source| DbError::MalformedPort {
-            text: text.to_owned(),
-            source,
-        })
+    let parsed = text.parse::<u16>();
+    parsed.map_err(|source| DbError::MalformedPort {
+        text: text.to_owned(),
+        source,
+    })
 }
 
 fn percent_decode(text: &str) -> Result<String, DbError> {

@@ -1,11 +1,15 @@
-use betterlite_db::database_url_policy::flag::{FlagValue, TokenFlagError, str_to_bool, token_auth_flag_enabled};
+use betterlite_db::database_url_policy::flag::{
+    FlagValue, TokenFlagError, str_to_bool, token_auth_flag_enabled,
+};
 use betterlite_db::database_url_policy::policy::{
-    ConfiguredSeconds, DatabaseTimeoutSettings, PoolTimeouts, TimeoutError, build_db_connection_url_params,
-    pg_options_with_timeouts, unsupported_db_scheme, unsupported_db_scheme_message,
+    ConfiguredSeconds, DatabaseTimeoutSettings, PoolTimeouts, TimeoutError,
+    build_db_connection_url_params, pg_options_with_timeouts, unsupported_db_scheme,
+    unsupported_db_scheme_message,
 };
 use betterlite_db::database_url_policy::query::{
-    QueryValue, add_missing_query_params, append_query_params, connection_params_from_url, idle_lifetime_params,
-    reader_shareable_params, token_refresh_params_from_url, url_query_value, with_query_value,
+    QueryValue, add_missing_query_params, append_query_params, connection_params_from_url,
+    idle_lifetime_params, reader_shareable_params, token_refresh_params_from_url, url_query_value,
+    with_query_value,
 };
 
 pub(crate) struct Op;
@@ -19,35 +23,68 @@ impl crate::helpers::Helper for Op {
                 Ok(params_value(&idle_lifetime_params(*configured)))
             }
             Input::AddMissingQueryParams { url, params } => {
-                Ok(serde_json::Value::String(add_missing_query_params(url, params)))
+                Ok(run_add_missing_query_params(url, params))
             }
-            Input::ReaderShareableParams { params } => Ok(params_value(&reader_shareable_params(params))),
-            Input::ConnectionParamsFromUrl { url } => Ok(params_value(&connection_params_from_url(url))),
-            Input::TokenRefreshParamsFromUrl { url } => Ok(params_value(&token_refresh_params_from_url(url))),
+            Input::ReaderShareableParams { params } => {
+                Ok(params_value(&reader_shareable_params(params)))
+            }
+            Input::ConnectionParamsFromUrl { url } => {
+                Ok(params_value(&connection_params_from_url(url)))
+            }
+            Input::TokenRefreshParamsFromUrl { url } => {
+                Ok(params_value(&token_refresh_params_from_url(url)))
+            }
             Input::UnsupportedDbScheme { database_url } => Ok(unsupported_db_scheme(database_url)
                 .map_or(serde_json::Value::Null, serde_json::Value::String)),
             Input::UnsupportedDbSchemeMessage { env_var, scheme } => {
-                Ok(serde_json::Value::String(unsupported_db_scheme_message(env_var, scheme)))
+                Ok(run_unsupported_scheme_message(env_var, scheme))
             }
-            Input::BuildDbConnectionUrlParams { .. } => Ok(run_build_db_connection_url_params(input)),
+            Input::BuildDbConnectionUrlParams { .. } => Ok(run_build_connection_params(input)),
             Input::PgOptionsWithTimeouts { .. } => run_pg_options_with_timeouts(input),
-            Input::UrlQueryValue { url, key } => {
-                Ok(serde_json::Value::String(url_query_value(url.as_deref(), key)))
-            }
-            Input::WithQueryValue { url, key, value } => {
-                Ok(serde_json::Value::String(with_query_value(url, key, value)))
-            }
+            Input::UrlQueryValue { url, key } => Ok(run_url_query_value(url.as_deref(), key)),
+            Input::WithQueryValue { url, key, value } => Ok(run_with_query_value(url, key, value)),
             Input::AppendQueryParams { url, params } => {
-                let outcome = append_query_params(url.as_deref(), params);
-                Ok(serde_json::json!({ "url": outcome.url, "warning": outcome.warning }))
+                Ok(run_append_query_params(url.as_deref(), params))
             }
-            Input::TokenAuthFlagEnabled { value, env_var } => run_token_auth_flag_enabled(value.as_ref(), env_var),
-            Input::StrToBool { value } => Ok(serde_json::Value::Bool(str_to_bool(value.as_deref()))),
+            Input::TokenAuthFlagEnabled { value, env_var } => {
+                run_token_auth_flag_enabled(value.as_ref(), env_var)
+            }
+            Input::StrToBool { value } => {
+                Ok(serde_json::Value::Bool(str_to_bool(value.as_deref())))
+            }
         }
     }
 }
 
-fn run_build_db_connection_url_params(input: &Input) -> serde_json::Value {
+fn run_add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> serde_json::Value {
+    let updated = add_missing_query_params(url, params);
+    serde_json::Value::String(updated)
+}
+
+fn run_unsupported_scheme_message(env_var: &str, scheme: &str) -> serde_json::Value {
+    let message = unsupported_db_scheme_message(env_var, scheme);
+    serde_json::Value::String(message)
+}
+
+fn run_url_query_value(url: Option<&str>, key: &str) -> serde_json::Value {
+    let value = url_query_value(url, key);
+    serde_json::Value::String(value)
+}
+
+fn run_with_query_value(url: &str, key: &str, value: &str) -> serde_json::Value {
+    let result = with_query_value(url, key, value);
+    serde_json::Value::String(result)
+}
+
+fn run_append_query_params(
+    url: Option<&str>,
+    params: &[(String, Vec<String>)],
+) -> serde_json::Value {
+    let outcome = append_query_params(url, params);
+    serde_json::json!({ "url": outcome.url, "warning": outcome.warning })
+}
+
+fn run_build_connection_params(input: &Input) -> serde_json::Value {
     let Input::BuildDbConnectionUrlParams {
         connection_limit,
         pool_timeout,
@@ -72,12 +109,11 @@ fn run_build_db_connection_url_params(input: &Input) -> serde_json::Value {
 }
 
 fn params_value(params: &[(String, QueryValue)]) -> serde_json::Value {
-    serde_json::Value::Array(
-        params
-            .iter()
-            .map(|(key, value)| serde_json::json!([key, query_value_json(value)]))
-            .collect(),
-    )
+    let entries: Vec<serde_json::Value> = params
+        .iter()
+        .map(|(key, value)| serde_json::json!([key, query_value_json(value)]))
+        .collect();
+    serde_json::Value::Array(entries)
 }
 
 fn query_value_json(value: &QueryValue) -> serde_json::Value {
@@ -89,11 +125,17 @@ fn query_value_json(value: &QueryValue) -> serde_json::Value {
 }
 
 fn run_pg_options_with_timeouts(input: &Input) -> crate::helpers::HelperResult {
-    let Input::PgOptionsWithTimeouts { existing_options, statement_timeout, lock_timeout } = input else {
+    let Input::PgOptionsWithTimeouts {
+        existing_options,
+        statement_timeout,
+        lock_timeout,
+    } = input
+    else {
         return Ok(serde_json::Value::Null);
     };
-    let settings = DatabaseTimeoutSettings::validate(statement_timeout.clone(), lock_timeout.clone())
-        .map_err(|error| timeout_error(&error))?;
+    let settings =
+        DatabaseTimeoutSettings::validate(statement_timeout.clone(), lock_timeout.clone())
+            .map_err(|error| timeout_error(&error))?;
     let options = pg_options_with_timeouts(
         existing_options,
         settings.database_statement_timeout,
@@ -119,8 +161,12 @@ fn timeout_error(error: &TimeoutError) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn run_token_auth_flag_enabled(value: Option<&FlagValue>, env_var: &str) -> crate::helpers::HelperResult {
-    token_auth_flag_enabled(value, env_var).map(serde_json::Value::Bool).map_err(|error| {
+fn run_token_auth_flag_enabled(
+    value: Option<&FlagValue>,
+    env_var: &str,
+) -> crate::helpers::HelperResult {
+    let result = token_auth_flag_enabled(value, env_var);
+    result.map(serde_json::Value::Bool).map_err(|error| {
         let TokenFlagError::NotRecognized { message } = error;
         Box::new(crate::helpers::HelperError {
             class: "ValueError".to_owned(),

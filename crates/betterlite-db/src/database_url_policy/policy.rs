@@ -4,11 +4,10 @@ use regex::Regex;
 use rust_decimal::Decimal;
 use std::num::ParseFloatError;
 
-pub const CONNECTION_POOL_LIMIT_DEFAULT: i64 = 10;
-pub const CONNECTION_POOL_TIMEOUT_DEFAULT: i64 = 60;
+pub const POOL_LIMIT_DEFAULT: i64 = 10;
+pub const POOL_TIMEOUT_DEFAULT: i64 = 60;
 
-/// The three optional pool timeouts `_build_db_connection_url_params` may add,
-/// grouped so the function stays under clippy's argument-count limit.
+// Grouped so build_db_connection_url_params stays under clippy's argument-count limit.
 #[derive(Debug, Default, Clone)]
 pub struct PoolTimeouts {
     pub pool_timeout: Option<QueryValue>,
@@ -16,8 +15,7 @@ pub struct PoolTimeouts {
     pub socket_timeout: Option<QueryValue>,
 }
 
-/// `_build_db_connection_url_params`: `extra_params` is an untyped passthrough
-/// whose keys win over every named argument above, including `connection_limit`.
+// extra_params is an untyped passthrough whose keys win over every named argument, including connection_limit.
 #[must_use]
 pub fn build_db_connection_url_params(
     connection_limit: i64,
@@ -53,8 +51,7 @@ pub fn build_db_connection_url_params(
 const SUPPORTED_DB_SCHEMES: [&str; 2] = ["postgresql", "postgres"];
 const MISSING_SCHEME: &str = "<missing scheme>";
 
-/// `unsupported_db_scheme`: `None` for a supported scheme, else the parsed
-/// lower-case scheme or the missing-scheme placeholder, never the full URL.
+// None for a supported scheme, else the parsed lower-case scheme or the missing-scheme placeholder; never the full URL.
 #[must_use]
 pub fn unsupported_db_scheme(database_url: &str) -> Option<String> {
     let scheme = urlsplit(database_url).scheme;
@@ -68,12 +65,13 @@ pub fn unsupported_db_scheme(database_url: &str) -> Option<String> {
     })
 }
 
-/// `unsupported_db_scheme_message`.
 #[must_use]
 pub fn unsupported_db_scheme_message(env_var: &str, scheme: &str) -> String {
-    format!(
-        "{env_var} uses unsupported scheme '{scheme}'. LiteLLM's database features (virtual keys, store_model_in_db, spend tracking) require PostgreSQL; use a 'postgresql://' connection string. SQLite and other engines are not supported. See https://docs.litellm.ai/docs/proxy/virtual_keys"
-    )
+    let mut message = format!("{env_var} uses unsupported scheme '{scheme}'. ");
+    message.push_str(
+        "LiteLLM's database features (virtual keys, store_model_in_db, spend tracking) require PostgreSQL; use a 'postgresql://' connection string. SQLite and other engines are not supported. See https://docs.litellm.ai/docs/proxy/virtual_keys",
+    );
+    message
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -92,9 +90,7 @@ pub enum TimeoutError {
     Overflow { seconds: f64 },
 }
 
-/// A `general_settings` timeout value before `DatabaseTimeoutSettings`
-/// validates it: pydantic's lax float field accepts a number or a numeric
-/// string, and rejects anything else.
+// Pydantic's lax float field: accepts a number or a numeric string, nothing else.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum ConfiguredSeconds {
@@ -114,7 +110,6 @@ impl ConfiguredSeconds {
     }
 }
 
-/// `DatabaseTimeoutSettings`: validated at the boundary, both fields default `None`.
 pub struct DatabaseTimeoutSettings {
     pub database_statement_timeout: Option<f64>,
     pub database_lock_timeout: Option<f64>,
@@ -125,20 +120,20 @@ impl DatabaseTimeoutSettings {
         statement_timeout: Option<ConfiguredSeconds>,
         lock_timeout: Option<ConfiguredSeconds>,
     ) -> Result<Self, TimeoutError> {
+        let database_statement_timeout = statement_timeout
+            .map(ConfiguredSeconds::into_seconds)
+            .transpose()?;
+        let database_lock_timeout = lock_timeout
+            .map(ConfiguredSeconds::into_seconds)
+            .transpose()?;
         Ok(Self {
-            database_statement_timeout: statement_timeout
-                .map(ConfiguredSeconds::into_seconds)
-                .transpose()?,
-            database_lock_timeout: lock_timeout
-                .map(ConfiguredSeconds::into_seconds)
-                .transpose()?,
+            database_statement_timeout,
+            database_lock_timeout,
         })
     }
 }
 
-/// `_pg_options_with_timeouts`: configured timeouts become `-c name=millis`,
-/// after whatever `options` the operator already pinned, unless they already
-/// spelled that setting themselves.
+// Configured timeouts become -c name=millis after existing options, skipping a name already spelled there.
 pub fn pg_options_with_timeouts(
     existing_options: &str,
     statement_timeout: Option<f64>,
@@ -180,8 +175,7 @@ fn millis_from_seconds(seconds: f64) -> Result<i64, TimeoutError> {
     if seconds.is_infinite() {
         return Err(TimeoutError::Infinite);
     }
-    // `mul_add` is a method call rather than the `*` operator, which keeps
-    // this scaling step outside clippy's float-arithmetic restriction.
+    // mul_add avoids clippy's float-arithmetic-operator restriction.
     let millis = seconds.mul_add(1000.0, 0.0).trunc();
     let exact = Decimal::from_f64_retain(millis).ok_or(TimeoutError::Overflow { seconds })?;
     i64::try_from(exact).map_err(|_source: rust_decimal::Error| TimeoutError::Overflow { seconds })

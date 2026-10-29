@@ -11,9 +11,9 @@ use super::policy::{
     unsupported_db_scheme_message,
 };
 use super::query::{
-    QueryValue, add_missing_query_params, append_query_params, connection_params_from_url,
-    idle_lifetime_params, reader_shareable_params, token_refresh_params_from_url, url_query_value,
-    with_query_value,
+    QueryValue, add_missing_query_params, append_query_params, append_query_params_diagnostic,
+    connection_params_from_url, idle_lifetime_params, reader_shareable_params,
+    token_refresh_params_from_url, url_query_value, with_query_value,
 };
 
 #[test]
@@ -176,6 +176,18 @@ fn append_empty_warns() {
 }
 
 #[test]
+fn append_diagnostic_redacts_credentials() {
+    let url = "postgresql://alice:s3cr3t@host/db?tag=old";
+    let params = vec![("tag".to_owned(), vec!["new".to_owned()])];
+    let (redacted_url, redacted_params) = append_query_params_diagnostic(Some(url), &params);
+    assert_eq!(redacted_url, "postgresql://REDACTED@host/db?tag=old");
+    assert_eq!(redacted_params, "{tag: REDACTED}");
+    let (none_url, none_params) = append_query_params_diagnostic(None, &[]);
+    assert_eq!(none_url, "None");
+    assert_eq!(none_params, "{}");
+}
+
+#[test]
 fn first_query_value() {
     let url = "postgresql://h/db?k=&k=first&k=second";
     assert_eq!(url_query_value(Some(url), "k"), "first");
@@ -200,14 +212,17 @@ fn options_seconds_to_millis() {
 
 #[test]
 fn options_existing_spellings() {
-    for existing in [
+    let spellings = [
         "-c statement_timeout=100",
         "-cstatement_timeout=100",
         "--statement_timeout=100",
-    ] {
-        let result = pg_options_with_timeouts(existing, Some(5.0_f64), None).unwrap();
-        assert_eq!(result, existing);
-    }
+    ];
+    let results: Vec<String> = spellings
+        .iter()
+        .map(|existing| pg_options_with_timeouts(existing, Some(5.0_f64), None).unwrap())
+        .collect();
+    let expected: Vec<String> = spellings.iter().map(ToString::to_string).collect();
+    assert_eq!(results, expected);
 }
 
 #[test]
@@ -258,20 +273,24 @@ fn malformed_dsn_scheme() {
 
 #[test]
 fn token_boolean_spellings() {
-    for truthy in ["1", "on", "t", "true", "y", "yes", "TRUE", " True "] {
-        let value = FlagValue::Text(truthy.to_owned());
-        assert!(
-            token_auth_flag_enabled(Some(&value), "ENV").unwrap(),
-            "{truthy}"
-        );
-    }
-    for falsy in ["", "0", "f", "false", "n", "no", "off", "FALSE"] {
-        let value = FlagValue::Text(falsy.to_owned());
-        assert!(
-            !token_auth_flag_enabled(Some(&value), "ENV").unwrap(),
-            "{falsy}"
-        );
-    }
+    let truthy = ["1", "on", "t", "true", "y", "yes", "TRUE", " True "];
+    let truthy_results: Vec<bool> = truthy
+        .iter()
+        .map(|text| {
+            let value = FlagValue::Text((*text).to_owned());
+            token_auth_flag_enabled(Some(&value), "ENV").unwrap()
+        })
+        .collect();
+    assert_eq!(truthy_results, vec![true; truthy.len()]);
+    let falsy = ["", "0", "f", "false", "n", "no", "off", "FALSE"];
+    let falsy_results: Vec<bool> = falsy
+        .iter()
+        .map(|text| {
+            let value = FlagValue::Text((*text).to_owned());
+            token_auth_flag_enabled(Some(&value), "ENV").unwrap()
+        })
+        .collect();
+    assert_eq!(falsy_results, vec![false; falsy.len()]);
     assert!(token_auth_flag_enabled(Some(&FlagValue::Bool(true)), "ENV").unwrap());
     assert!(!token_auth_flag_enabled(None, "ENV").unwrap());
 }
@@ -289,9 +308,9 @@ fn token_invalid_flag_message() {
 
 #[test]
 fn extras_boolean_spellings() {
-    for truthy in ["true", "1", "t", "y", "yes", "TRUE"] {
-        assert!(str_to_bool(Some(truthy)), "{truthy}");
-    }
+    let truthy = ["true", "1", "t", "y", "yes", "TRUE"];
+    let results: Vec<bool> = truthy.iter().map(|text| str_to_bool(Some(text))).collect();
+    assert_eq!(results, vec![true; truthy.len()]);
     assert!(!str_to_bool(Some("false")));
     assert!(!str_to_bool(None));
 }
@@ -353,11 +372,15 @@ fn native_url_debug_redaction() {
 #[test]
 fn replays_the_database_urls_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/database_urls");
-    for entry in fs::read_dir(corpus).unwrap() {
-        let path = entry.unwrap().path();
-        let bytes = fs::read(&path).unwrap();
-        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-        let decoded = decode_database_url(&bytes);
-        assert_eq!(decoded.is_err(), name.ends_with("-rejected"), "{name}");
-    }
+    let mismatches: Vec<String> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            let bytes = fs::read(path).unwrap();
+            let name = path.file_name().unwrap().to_str().unwrap();
+            decode_database_url(&bytes).is_err() != name.ends_with("-rejected")
+        })
+        .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(mismatches, Vec::<String>::new());
 }

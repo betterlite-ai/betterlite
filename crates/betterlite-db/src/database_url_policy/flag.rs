@@ -3,7 +3,6 @@ use std::fmt::Write as _;
 const TRUTHY_TOKEN_AUTH_VALUES: [&str; 6] = ["1", "on", "t", "true", "y", "yes"];
 const FALSY_TOKEN_AUTH_VALUES: [&str; 7] = ["", "0", "f", "false", "n", "no", "off"];
 
-/// `token_auth_flag_enabled`'s `value: str | bool | None` parameter.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum FlagValue {
@@ -17,8 +16,6 @@ pub enum TokenFlagError {
     NotRecognized { message: String },
 }
 
-/// `token_auth_flag_enabled`: booleans pass through, `None` maps to `false`,
-/// strings are stripped and lower-cased before matching either spelling list.
 pub fn token_auth_flag_enabled(
     value: Option<&FlagValue>,
     env_var: &str,
@@ -55,7 +52,7 @@ fn not_recognized(env_var: &str, raw: &str) -> TokenFlagError {
     }
 }
 
-/// Python's `repr()` for the realistic range of a flag's raw string value.
+// Matches Python's repr() so the raised message reads the same as upstream.
 fn python_repr(text: &str) -> String {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
@@ -86,14 +83,12 @@ fn python_repr(text: &str) -> String {
     out
 }
 
-/// Extras `str_to_bool`: deliberately permissive and distinct from
-/// `token_auth_flag_enabled`, with no stripping and no `"on"` spelling.
+// Deliberately permissive and distinct from token_auth_flag_enabled: no stripping, no "on".
 #[must_use]
 pub fn str_to_bool(value: Option<&str>) -> bool {
-    value.is_some_and(|text| {
-        matches!(
-            text.to_lowercase().as_str(),
-            "true" | "1" | "t" | "y" | "yes"
-        )
-    })
+    let Some(text) = value else { return false };
+    matches!(
+        text.to_lowercase().as_str(),
+        "true" | "1" | "t" | "y" | "yes"
+    )
 }

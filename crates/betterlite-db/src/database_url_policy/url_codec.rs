@@ -1,11 +1,7 @@
 use std::fmt::Write as _;
 use std::str::from_utf8;
 
-// Mirrors `urllib.parse.urlsplit`/`urlunsplit`/`parse_qsl`/`urlencode` for the
-// postgres/postgresql schemes this task owns: those schemes never appear in
-// urllib's `uses_netloc` or `uses_params` tables, so the parts of `urlsplit`
-// that consult those tables (semicolon params, forced "//" on an empty
-// netloc) never fire here and are left out.
+// Mirrors urllib.parse's urlsplit/urlunsplit/parse_qsl/urlencode for postgres/postgresql schemes only; semicolon-params and forced "//" branches never fire and are left out.
 
 pub(super) struct SplitUrl {
     pub(super) scheme: String,
@@ -60,10 +56,7 @@ pub(super) fn urlsplit(url: &str) -> SplitUrl {
 
 pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
     let mut url = parts.path.clone();
-    // Python's `urlunsplit` also forces a `//` prefix when `scheme in
-    // uses_netloc` and the path does not already start with `//`; postgres
-    // and postgresql never appear in that table, so only the netloc branch
-    // below applies for this task's schemes.
+    // Postgres/postgresql never appear in urllib's uses_netloc table, so only the netloc branch applies here.
     if !parts.netloc.is_empty() {
         if !url.is_empty() && !url.starts_with('/') {
             url.insert(0, '/');
@@ -83,10 +76,11 @@ pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
 }
 
 const fn is_scheme_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')
+    let is_alnum = byte.is_ascii_alphanumeric();
+    is_alnum || matches!(byte, b'+' | b'-' | b'.')
 }
 
-/// `urllib.parse.parse_qsl(query, keep_blank_values=keep_blank_values)`.
+// Mirrors urllib.parse.parse_qsl(query, keep_blank_values=keep_blank_values).
 pub(super) fn parse_qsl(query: &str, keep_blank_values: bool) -> Vec<(String, String)> {
     if query.is_empty() {
         return Vec::new();
@@ -105,8 +99,7 @@ pub(super) fn parse_qsl(query: &str, keep_blank_values: bool) -> Vec<(String, St
     pairs
 }
 
-/// `urllib.parse.parse_qs(query)`: `parse_qsl` grouped by key, each key's
-/// values kept in the order they were seen, blanks dropped.
+// Mirrors urllib.parse.parse_qs: parse_qsl grouped by key, values kept in order, blanks dropped.
 pub(super) fn parse_qs(query: &str) -> Vec<(String, Vec<String>)> {
     let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
     for (name, value) in parse_qsl(query, false) {
@@ -118,17 +111,16 @@ pub(super) fn parse_qs(query: &str) -> Vec<(String, Vec<String>)> {
     grouped
 }
 
-/// `urllib.parse.urlencode(pairs)`: plain `(name, value)` pairs, no `doseq`.
+// Mirrors urllib.parse.urlencode(pairs) with no doseq.
 pub(super) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
-    pairs
+    let parts: Vec<String> = pairs
         .iter()
         .map(|(name, value)| format!("{}={}", quote_plus(name), quote_plus(value)))
-        .collect::<Vec<_>>()
-        .join("&")
+        .collect();
+    parts.join("&")
 }
 
-/// `urllib.parse.urlencode(groups, doseq=True)`: a key with several values
-/// repeats the key once per value, in that value's order.
+// Mirrors urllib.parse.urlencode(groups, doseq=True): repeats a key once per value.
 pub(super) fn urlencode_doseq(groups: &[(String, Vec<String>)]) -> String {
     let mut parts = Vec::new();
     for (name, values) in groups {
@@ -140,22 +132,38 @@ pub(super) fn urlencode_doseq(groups: &[(String, Vec<String>)]) -> String {
     parts.join("&")
 }
 
-fn quote_plus(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for &byte in text.as_bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-' | b'~' => {
-                out.push(char::from(byte));
-            }
-            b' ' => out.push('+'),
-            _ => {
-                if write!(out, "%{byte:02X}").is_err() {
-                    return out;
-                }
-            }
-        }
+const fn is_unreserved_byte(byte: u8) -> bool {
+    let is_alnum = byte.is_ascii_alphanumeric();
+    is_alnum || matches!(byte, b'_' | b'.' | b'-' | b'~')
+}
+
+fn percent_decode_digits(digits: &[u8]) -> Option<u8> {
+    let text = from_utf8(digits).ok()?;
+    u8::from_str_radix(text, 16).ok()
+}
+
+fn percent_encode_byte(byte: u8) -> String {
+    if is_unreserved_byte(byte) {
+        char::from(byte).to_string()
+    } else if byte == b' ' {
+        "+".to_owned()
+    } else {
+        format!("%{byte:02X}")
     }
-    out
+}
+
+fn quote_plus(text: &str) -> String {
+    let bytes = text.as_bytes();
+    bytes
+        .iter()
+        .map(|&byte| percent_encode_byte(byte))
+        .collect()
+}
+
+fn next_percent_escape(tail: &[u8]) -> Option<(u8, &[u8])> {
+    let (digits, after) = tail.split_at_checked(2)?;
+    let decoded = percent_decode_digits(digits)?;
+    Some((decoded, after))
 }
 
 fn unquote_plus(text: &str) -> String {
@@ -165,32 +173,20 @@ fn unquote_plus(text: &str) -> String {
         if byte == b'+' {
             bytes.push(b' ');
             rest = tail;
-            continue;
-        }
-        if byte == b'%'
-            && let Some(decoded) = tail
-                .split_at_checked(2)
-                .and_then(|(percent_digits, after)| {
-                    from_utf8(percent_digits)
-                        .ok()
-                        .and_then(|digits| u8::from_str_radix(digits, 16).ok())
-                        .map(|value| (value, after))
-                })
+        } else if byte == b'%'
+            && let Some((decoded, after)) = next_percent_escape(tail)
         {
-            bytes.push(decoded.0);
-            rest = decoded.1;
-            continue;
+            bytes.push(decoded);
+            rest = after;
+        } else {
+            bytes.push(byte);
+            rest = tail;
         }
-        bytes.push(byte);
-        rest = tail;
     }
     decode_percent_bytes(bytes)
 }
 
-/// Replicates Python's `bytes.decode("utf-8", errors="replace")` without the
-/// workspace's banned `String::from_utf8_lossy`: each maximal invalid
-/// subsequence becomes one U+FFFD, matching how `unquote` recovers from a
-/// percent-escape that does not land on a UTF-8 boundary.
+// Replicates bytes.decode("utf-8", errors="replace") without the workspace's banned String::from_utf8_lossy.
 fn decode_percent_bytes(bytes: Vec<u8>) -> String {
     let Err(first_error) = from_utf8(&bytes) else {
         return String::from_utf8(bytes).unwrap_or_default();

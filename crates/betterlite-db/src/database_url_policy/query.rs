@@ -3,7 +3,6 @@ use super::url_codec::{
 };
 use std::collections::HashSet;
 
-/// A query-string value: Python's `str | int | float` parameter type.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(untagged)]
 pub enum QueryValue {
@@ -30,7 +29,7 @@ impl QueryValue {
     }
 }
 
-const DEFAULT_MAX_IDLE_CONNECTION_LIFETIME: i64 = 60;
+const IDLE_LIFETIME_DEFAULT: i64 = 60;
 
 pub(super) const CONNECTION_PARAM_KEYS: [&str; 6] = [
     "connection_limit",
@@ -43,17 +42,17 @@ pub(super) const CONNECTION_PARAM_KEYS: [&str; 6] = [
 
 const PRISMA_TLS_PARAM_KEYS: [&str; 3] = ["sslmode", "sslcert", "sslaccept"];
 
-/// `idle_lifetime_params`: the default only applies when nothing is configured.
+// The default only applies when nothing is configured.
 #[must_use]
 pub fn idle_lifetime_params(configured: Option<f64>) -> Vec<(String, QueryValue)> {
     let value = configured.map_or(
-        QueryValue::Integer(DEFAULT_MAX_IDLE_CONNECTION_LIFETIME),
+        QueryValue::Integer(IDLE_LIFETIME_DEFAULT),
         QueryValue::Float,
     );
     vec![("max_idle_connection_lifetime".to_owned(), value)]
 }
 
-/// `add_missing_query_params`: returns `url` unchanged when nothing is added.
+// Returns url unchanged when nothing is added.
 #[must_use]
 pub fn add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> String {
     let parsed = urlsplit(url);
@@ -73,14 +72,15 @@ pub fn add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> S
     urlunsplit(&SplitUrl { query, ..parsed })
 }
 
-/// `reader_shareable_params`: the pool/timeout allowlist the reader may inherit.
+// The pool/timeout allowlist the reader may inherit.
 #[must_use]
 pub fn reader_shareable_params(params: &[(String, QueryValue)]) -> Vec<(String, QueryValue)> {
-    params
+    let kept: Vec<(String, QueryValue)> = params
         .iter()
         .filter(|(key, _)| CONNECTION_PARAM_KEYS.contains(&key.as_str()))
         .cloned()
-        .collect()
+        .collect();
+    kept
 }
 
 fn last_duplicate_wins(pairs: Vec<(String, String)>) -> Vec<(String, QueryValue)> {
@@ -95,7 +95,7 @@ fn last_duplicate_wins(pairs: Vec<(String, String)>) -> Vec<(String, QueryValue)
     deduped
 }
 
-/// `connection_params_from_url`: the reader-shareable subset already on `url`.
+// The reader-shareable subset already on url.
 #[must_use]
 pub fn connection_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
     let parsed = urlsplit(url);
@@ -103,8 +103,7 @@ pub fn connection_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
     reader_shareable_params(&deduped)
 }
 
-/// `token_refresh_params_from_url`: the pool/timeout and Prisma TLS params a
-/// refreshed token URL carries over; `schema` and `options` never included.
+// The pool/timeout and Prisma TLS params a refreshed token URL carries over; schema and options are never included.
 #[must_use]
 pub fn token_refresh_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
     let parsed = urlsplit(url);
@@ -118,7 +117,7 @@ pub fn token_refresh_params_from_url(url: &str) -> Vec<(String, QueryValue)> {
     last_duplicate_wins(kept)
 }
 
-/// `_url_query_value`: the first nonblank value for `key`, or `""`.
+// The first nonblank value for key, or "".
 #[must_use]
 pub fn url_query_value(raw_url: Option<&str>, key: &str) -> String {
     let Some(url) = raw_url.filter(|value| !value.is_empty()) else {
@@ -132,7 +131,7 @@ pub fn url_query_value(raw_url: Option<&str>, key: &str) -> String {
         .unwrap_or_default()
 }
 
-/// `_with_query_value`: every old occurrence of `key` removed, one replacement appended.
+// Every old occurrence of key is removed, then one replacement is appended.
 #[must_use]
 pub fn with_query_value(url: &str, key: &str, value: &str) -> String {
     let parsed = urlsplit(url);
@@ -159,7 +158,6 @@ fn update_query_groups(
     result
 }
 
-/// `append_query_params`'s warning text and the resulting URL.
 pub struct AppendOutcome {
     pub url: String,
     pub warning: Option<&'static str>,
@@ -168,9 +166,7 @@ pub struct AppendOutcome {
 const EMPTY_URL_WARNING: &str =
     "append_query_params received empty or non-string URL, returning empty string";
 
-/// `append_query_params`: unlike `add_missing_query_params`, blank existing
-/// values are dropped and a supplied key's list of values overwrites any
-/// existing one in place.
+// Unlike add_missing_query_params, blank existing values are dropped and a supplied key's values overwrite any existing list.
 #[must_use]
 pub fn append_query_params(
     raw_url: Option<&str>,
@@ -191,19 +187,26 @@ pub fn append_query_params(
     }
 }
 
-/// The redacted form of what `append_query_params` would log: the operator's
-/// own debug/warning text must never carry the URL's credentials.
+// The redacted form of what append_query_params would log; never carries the URL's credentials.
 #[must_use]
 pub fn append_query_params_diagnostic(
     raw_url: Option<&str>,
     params: &[(String, Vec<String>)],
 ) -> (String, String) {
     let redacted_url = raw_url.map_or_else(|| "None".to_owned(), redact_credentials);
-    let redacted_params: Vec<String> = params
-        .iter()
-        .map(|(key, _)| format!("{key}: REDACTED"))
-        .collect();
-    (redacted_url, format!("{{{}}}", redacted_params.join(", ")))
+    let mut redacted_params = String::from("{");
+    let mut keys = params.iter().map(|(key, _)| key.as_str());
+    if let Some(first) = keys.next() {
+        redacted_params.push_str(first);
+        redacted_params.push_str(": REDACTED");
+    }
+    for key in keys {
+        redacted_params.push_str(", ");
+        redacted_params.push_str(key);
+        redacted_params.push_str(": REDACTED");
+    }
+    redacted_params.push('}');
+    (redacted_url, redacted_params)
 }
 
 fn redact_credentials(url: &str) -> String {
