@@ -40,6 +40,9 @@ pub trait Sandbox: Send + Sync {
     type Process: Process;
 
     fn workdir(&self) -> &str;
+    fn is_container(&self) -> bool {
+        false
+    }
     fn exec(
         &self,
         command: &SandboxCommand,

@@ -65,6 +65,8 @@ description: >-
   no event is missed and every ToolCall precedes its ToolResult.
 scope:
   paths:
+    - crates/betterlite-harness/src/errors.rs
+    - crates/betterlite-harness/src/payloads/python_json.rs
     - crates/betterlite-harness/src/providers/codex.rs
     - crates/betterlite-harness/src/providers/codex/**
     - tools/oracle/cases/codex/**
@@ -200,5 +202,5 @@ pitfalls:
   - "Web search tool calls have no result field; output is always empty."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 2

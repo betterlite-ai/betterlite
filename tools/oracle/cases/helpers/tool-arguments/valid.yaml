@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "valid", "call": {"tool_arguments": {"mode": "parse_tool_call_arguments", "arguments": "{\"a\":1,\"b\":[1,2,3]}"}}, "env": {}, "compare": {"ignore": []}}

@@ -1,0 +1,7 @@
+kind: helper
+name: codex-structured-output
+call:
+  b4835:
+    fixture: tools/oracle/cases/codex/fixtures/structured_output.jsonl
+env: {}
+compare: {ignore: []}

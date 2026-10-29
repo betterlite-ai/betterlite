@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-other-image-models-size-quality
+call:
+  bedrock_other_image_models:
+    size_n_quality_map:
+      family: nova
+      non_default: {size: "768x768", n: 3, quality: hd}
+      optional_params: {}
+env: {}
+compare:
+  ignore: []
