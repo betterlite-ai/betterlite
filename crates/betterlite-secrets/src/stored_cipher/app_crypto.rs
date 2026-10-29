@@ -28,8 +28,7 @@ pub enum AppCryptoError {
         #[source]
         source: serde_json::Error,
     },
-    // cryptography's InvalidTag carries no message of its own; str(error) is "".
-    #[error("")]
+    #[error("the envelope failed authentication")]
     Seal {
         #[source]
         source: aes_gcm::Error,
@@ -70,11 +69,7 @@ where
         Ok(Self { cipher, nonces })
     }
 
-    pub fn encrypt_json(
-        &self,
-        data: &Json,
-        aad: Option<&[u8]>,
-    ) -> Result<Envelope, AppCryptoError> {
+    pub fn encrypt_json(&self, data: &Json, aad: &[u8]) -> Result<Envelope, AppCryptoError> {
         let mut nonce = [0_u8; NONCE_LEN];
         self.nonces
             .fill(&mut nonce)
@@ -84,20 +79,11 @@ where
         seal_envelope(&self.cipher, nonce, aad, buffer)
     }
 
-    pub fn decrypt_json(
-        &self,
-        envelope: &Envelope,
-        aad: Option<&[u8]>,
-    ) -> Result<Json, AppCryptoError> {
+    pub fn decrypt_json(&self, envelope: &Envelope, aad: &[u8]) -> Result<Json, AppCryptoError> {
         let (nonce, mut buffer, tag) = decode_envelope(envelope)?;
         let aes_nonce = aes_gcm::Nonce::from(nonce);
         self.cipher
-            .decrypt_inout_detached(
-                &aes_nonce,
-                aad.unwrap_or(b""),
-                InOutBuf::from(&mut *buffer),
-                &tag,
-            )
+            .decrypt_inout_detached(&aes_nonce, aad, InOutBuf::from(&mut *buffer), &tag)
             .map_err(|source| AppCryptoError::Seal { source })?;
         serde_json::from_slice(&buffer).map_err(|source| AppCryptoError::JsonDecode { source })
     }
@@ -106,12 +92,12 @@ where
 fn seal_envelope(
     cipher: &Aes256Gcm,
     nonce: [u8; NONCE_LEN],
-    aad: Option<&[u8]>,
+    aad: &[u8],
     mut buffer: Vec<u8>,
 ) -> Result<Envelope, AppCryptoError> {
     let aes_nonce = aes_gcm::Nonce::from(nonce);
     let tag = cipher
-        .encrypt_inout_detached(&aes_nonce, aad.unwrap_or(b""), InOutBuf::from(&mut *buffer))
+        .encrypt_inout_detached(&aes_nonce, aad, InOutBuf::from(&mut *buffer))
         .map_err(|source| AppCryptoError::Seal { source })?;
     Ok(Envelope {
         nonce: STANDARD.encode(nonce),

@@ -143,7 +143,7 @@ def run_app_crypto(input_value: dict[str, Json]) -> Json:
         try:
             results.append({"value": call_app_crypto(decrypt, app, step)})
         except (ValueError, KeyError, TypeError, InvalidTag) as error:
-            results.append({"error": {"class": type(error).__name__, "message": str(error)}})
+            results.append({"error": {"class": type(error).__name__}})
     return results
 
 

@@ -52,8 +52,8 @@ fn accepts_a_key_that_is_not_utf8() {
     let non_utf8 = SecretSlice::from(vec![0xff_u8; 32]);
     let app = AppCrypto::new(&non_utf8, OsNonces).unwrap();
     let data = json!({"a": 1_i64});
-    let envelope = app.encrypt_json(&data, None).unwrap();
-    let opened = app.decrypt_json(&envelope, None).unwrap();
+    let envelope = app.encrypt_json(&data, b"").unwrap();
+    let opened = app.decrypt_json(&envelope, b"").unwrap();
     assert_eq!(opened, data);
 }
 
@@ -65,7 +65,7 @@ fn decrypts_a_vector_produced_by_pythons_aesgcm() {
         ciphertext: PYTHON_CIPHERTEXT.to_owned(),
         tag: PYTHON_TAG.to_owned(),
     };
-    let data = app.decrypt_json(&envelope, Some(AAD)).unwrap();
+    let data = app.decrypt_json(&envelope, AAD).unwrap();
     assert_eq!(data, json!({"a": 1_i64, "b": "two"}));
 }
 
@@ -73,8 +73,8 @@ fn decrypts_a_vector_produced_by_pythons_aesgcm() {
 fn round_trips_and_a_python_reader_would_accept_the_shape() {
     let app = AppCrypto::new(&key_secret(&KEY), OsNonces).unwrap();
     let data = json!({"a": 1_i64, "b": "two"});
-    let envelope = app.encrypt_json(&data, Some(AAD)).unwrap();
-    let opened = app.decrypt_json(&envelope, Some(AAD)).unwrap();
+    let envelope = app.encrypt_json(&data, AAD).unwrap();
+    let opened = app.decrypt_json(&envelope, AAD).unwrap();
     assert_eq!(opened, data);
 }
 
@@ -87,11 +87,11 @@ fn an_injected_fixed_nonce_makes_a_reproducible_envelope() {
     let nonce_bytes = STANDARD.decode(PYTHON_NONCE).unwrap();
     let app = AppCrypto::new(&key_secret(&KEY), FixedNonce(&nonce_bytes)).unwrap();
     let data = json!({"token": "sk-live-secret", "n": 7_i64});
-    let envelope = app.encrypt_json(&data, Some(AAD)).unwrap();
+    let envelope = app.encrypt_json(&data, AAD).unwrap();
     assert_eq!(envelope.nonce, PYTHON_NONCE);
     assert_eq!(envelope.ciphertext, RUST_MADE_CIPHERTEXT);
     assert_eq!(envelope.tag, RUST_MADE_TAG);
-    assert_eq!(app.decrypt_json(&envelope, Some(AAD)).unwrap(), data);
+    assert_eq!(app.decrypt_json(&envelope, AAD).unwrap(), data);
 }
 
 #[test]
@@ -102,10 +102,9 @@ fn wrong_aad_fails_authentication() {
         ciphertext: PYTHON_CIPHERTEXT.to_owned(),
         tag: PYTHON_TAG.to_owned(),
     };
-    let error = app.decrypt_json(&envelope, None).unwrap_err();
+    let error = app.decrypt_json(&envelope, b"").unwrap_err();
     assert!(matches!(error, AppCryptoError::Seal { .. }));
-    // cryptography's InvalidTag carries no text of its own; str(error) is "".
-    assert_eq!(error.to_string(), "");
+    assert_eq!(error.to_string(), "the envelope failed authentication");
 }
 
 #[rstest]
@@ -119,7 +118,7 @@ fn tampering_fails_authentication(#[case] ciphertext: String, #[case] tag: Strin
         tag,
     };
     assert!(matches!(
-        app.decrypt_json(&envelope, Some(AAD)),
+        app.decrypt_json(&envelope, AAD),
         Err(AppCryptoError::Seal { .. })
     ));
 }

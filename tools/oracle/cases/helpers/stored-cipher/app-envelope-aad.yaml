@@ -3,19 +3,19 @@ name: stored-cipher-app-envelope-aad
 call:
   stored_cipher:
     op: app_crypto
-    key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZTA="
+    key: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
     steps:
       - kind: decrypt
         envelope:
           nonce: AAECAwQFBgcICQoL
-          ciphertext: svx5qAA0pNDiiY80UkuXsYv0V4kEQppXeS9AN+VC4F/Z+4U=
-          tag: YvF4vk9f1nOfC1kTTQFbOA==
+          ciphertext: PCC3Of/F8zetY/Wpi8laGfS5pUk=
+          tag: STjChyLSESSELTqg5wuL+g==
         aad: caller-prefix
       - kind: decrypt
         envelope:
           nonce: AAECAwQFBgcICQoL
-          ciphertext: svx5qAA0pNDiiY80UkuXsYv0V4kEQppXeS9AN+VC4F/Z+4U=
-          tag: YvF4vk9f1nOfC1kTTQFbOA==
+          ciphertext: PCC3Of/F8zetY/Wpi8laGfS5pUk=
+          tag: STjChyLSESSELTqg5wuL+g==
         aad: null
       # envelope made by betterlite's AppCrypto with a fixed nonce, so LiteLLM decrypting it proves Rust output is interoperable
       - kind: decrypt

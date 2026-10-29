@@ -45,7 +45,6 @@ where
     transform_callback_vars(metadata, transform)
 }
 
-// Port of callback_utils._transform_callback_vars: visits logging[*].callback_vars and callback_settings.callback_vars.
 fn transform_callback_vars<F>(metadata: &Payload, transform: F) -> Payload
 where
     F: Fn(&str, &Payload) -> Payload,

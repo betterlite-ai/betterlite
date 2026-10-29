@@ -39,7 +39,7 @@ pub(super) fn run_app_crypto(key: &str, steps: &[AppCryptoStep]) -> HelperResult
 fn call_app_crypto(app: &AppCrypto<OsNonces>, step: &AppCryptoStep) -> Value {
     match step {
         AppCryptoStep::Roundtrip { data, aad } => {
-            let aad_bytes = aad.as_ref().map(String::as_bytes);
+            let aad_bytes = aad.as_deref().unwrap_or("").as_bytes();
             let result = app
                 .encrypt_json(data, aad_bytes)
                 .and_then(|envelope| app.decrypt_json(&envelope, aad_bytes));
@@ -50,15 +50,15 @@ fn call_app_crypto(app: &AppCrypto<OsNonces>, step: &AppCryptoStep) -> Value {
             encrypt_aad,
             decrypt_aad,
         } => {
-            let encrypt_bytes = encrypt_aad.as_ref().map(String::as_bytes);
-            let decrypt_bytes = decrypt_aad.as_ref().map(String::as_bytes);
+            let encrypt_bytes = encrypt_aad.as_deref().unwrap_or("").as_bytes();
+            let decrypt_bytes = decrypt_aad.as_deref().unwrap_or("").as_bytes();
             let result = app
                 .encrypt_json(data, encrypt_bytes)
                 .and_then(|envelope| app.decrypt_json(&envelope, decrypt_bytes));
             app_result(result)
         }
         AppCryptoStep::Decrypt { envelope, aad } => {
-            let aad_bytes = aad.as_ref().map(String::as_bytes);
+            let aad_bytes = aad.as_deref().unwrap_or("").as_bytes();
             app_result(app.decrypt_json(envelope, aad_bytes))
         }
     }
@@ -77,7 +77,7 @@ fn app_result(result: Result<Value, AppCryptoError>) -> Value {
                 | AppCryptoError::Truncated
                 | AppCryptoError::JsonDecode { .. } => "ValueError",
             };
-            json!({"error": {"class": class, "message": error.to_string()}})
+            json!({"error": {"class": class}})
         }
     }
 }
