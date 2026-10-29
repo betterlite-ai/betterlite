@@ -1,0 +1,10 @@
+kind: helper
+name: sentry-nested-repr
+call:
+  sentry_scrubbing:
+    function: scrub_text
+    text: "password=[[[[x]]]]"
+    send_default_pii: false
+env: {}
+compare:
+  ignore: []

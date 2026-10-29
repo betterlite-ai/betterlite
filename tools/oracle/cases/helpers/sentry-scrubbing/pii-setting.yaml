@@ -1,0 +1,10 @@
+kind: helper
+name: sentry-pii-setting
+call:
+  sentry_scrubbing:
+    function: scrub_text
+    text: "user_email='person@example.com'"
+    send_default_pii: true
+env: {}
+compare:
+  ignore: []

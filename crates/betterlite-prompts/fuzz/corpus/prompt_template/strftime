@@ -1,0 +1,1 @@
+{{ strftime_now('%Y-%m-%d') }}
