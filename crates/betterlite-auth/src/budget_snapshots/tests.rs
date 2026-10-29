@@ -68,10 +68,10 @@ fn parse_metadata(json: &str) -> BTreeMap<String, Box<RawValue>> {
     serde_json::from_str(json).unwrap()
 }
 
-fn alias_value<T: super::BudgetSnapshot>(
-    metadata: &BTreeMap<String, Box<RawValue>>,
-    key: &str,
-) -> Option<String> {
+fn alias_value<T>(metadata: &BTreeMap<String, Box<RawValue>>, key: &str) -> Option<String>
+where
+    T: super::BudgetSnapshot,
+{
     let snapshot = T::from_metadata(metadata)?;
     let entries = snapshot.metadata_entries().unwrap();
     entries
@@ -80,7 +80,10 @@ fn alias_value<T: super::BudgetSnapshot>(
         .map(|value| value.get().to_owned())
 }
 
-fn parses<T: super::BudgetSnapshot>(metadata: &BTreeMap<String, Box<RawValue>>) -> bool {
+fn parses<T>(metadata: &BTreeMap<String, Box<RawValue>>) -> bool
+where
+    T: super::BudgetSnapshot,
+{
     T::from_metadata(metadata).is_some()
 }
 
@@ -146,33 +149,32 @@ fn each_snapshot_field_alias(
     assert_eq!(native_value, alias_value);
 }
 
-#[rstest]
-#[case::team(
-    alias_value::<TeamBudgetSnapshot>,
-    r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#,
-    "user_api_key_team_table_max_budget",
-    "2.5"
-)]
-#[case::user(
-    alias_value::<UserBudgetSnapshot>,
-    r#"{"budget_reset_at":null,"user_api_key_user_budget_reset_at":null,"max_budget":1.25,"user_api_key_user_table_max_budget":2.5,"user_alias":"native","user_api_key_user_alias":"alias"}"#,
-    "user_api_key_user_table_max_budget",
-    "2.5"
-)]
-#[case::org(
-    alias_value::<OrgBudgetSnapshot>,
-    r#"{"spend":1,"user_api_key_org_spend":2,"max_budget":1.25,"user_api_key_org_max_budget":2.5}"#,
-    "user_api_key_org_spend",
-    "2"
-)]
-fn snapshot_alias_wins_over_field_name(
-    #[case] resolver: fn(&BTreeMap<String, Box<RawValue>>, &str) -> Option<String>,
-    #[case] input: &str,
-    #[case] alias_key: &str,
-    #[case] expected: &str,
-) {
-    let value = resolver(&parse_metadata(input), alias_key).expect("alias spelling must win");
-    assert_eq!(value, expected);
+#[test]
+fn snapshot_alias_wins_over_field_name() {
+    let team = TeamBudgetSnapshot::from_metadata(&parse_metadata(
+        r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#,
+    ))
+    .unwrap();
+    assert_eq!(
+        team.max_budget,
+        Some(Decimal::from_str_exact("2.5").unwrap())
+    );
+
+    let user = UserBudgetSnapshot::from_metadata(&parse_metadata(
+        r#"{"budget_reset_at":null,"user_api_key_user_budget_reset_at":null,"max_budget":1.25,"user_api_key_user_table_max_budget":2.5,"user_alias":"native","user_api_key_user_alias":"alias"}"#,
+    ))
+    .unwrap();
+    assert_eq!(
+        user.max_budget,
+        Some(Decimal::from_str_exact("2.5").unwrap())
+    );
+    assert_eq!(user.user_alias.as_deref(), Some("alias"));
+
+    let org = OrgBudgetSnapshot::from_metadata(&parse_metadata(
+        r#"{"spend":1,"user_api_key_org_spend":2,"max_budget":1.25,"user_api_key_org_max_budget":2.5}"#,
+    ))
+    .unwrap();
+    assert_eq!(org.spend, Decimal::from(2_i32));
 }
 
 #[rstest]
