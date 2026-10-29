@@ -22,11 +22,18 @@ pub(super) fn error_failure(
     other_class: &str,
     message: String,
 ) -> Box<crate::helpers::HelperError> {
-    let class = if is_blocked { blocked_class } else { other_class };
+    let class = if is_blocked {
+        blocked_class
+    } else {
+        other_class
+    };
     failure_with_class(class, message)
 }
 
-pub(super) fn failure_with_class(class_name: &str, message: String) -> Box<crate::helpers::HelperError> {
+pub(super) fn failure_with_class(
+    class_name: &str,
+    message: String,
+) -> Box<crate::helpers::HelperError> {
     let class = class_name.to_owned();
     Box::new(crate::helpers::HelperError {
         class,

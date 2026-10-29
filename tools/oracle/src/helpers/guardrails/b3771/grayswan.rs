@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
-use betterlite_guardrails::grayswan::wire::{GraySwanDynamicParams, GraySwanInput, GraySwanResponse};
-use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
 use betterlite_guardrails::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage, GuardrailToolParam,
 };
+use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
+use betterlite_guardrails::grayswan::wire::{
+    GraySwanDynamicParams, GraySwanInput, GraySwanResponse,
+};
+use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -48,7 +50,9 @@ fn input_type(input: &serde_json::Value) -> GuardrailInputType {
     }
 }
 
-fn guardrail(input: &serde_json::Value) -> Result<GraySwanGuardrail, Box<crate::helpers::HelperError>> {
+fn guardrail(
+    input: &serde_json::Value,
+) -> Result<GraySwanGuardrail, Box<crate::helpers::HelperError>> {
     let settings = parse_settings(input, OnFlaggedAction::Block)?;
     Ok(GraySwanGuardrail {
         api_key: SecretString::from("oracle-key"),
@@ -165,7 +169,10 @@ fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
 }
 
 pub(super) fn payload(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = input.get("grayswan_payload").cloned().unwrap_or_else(|| json!({}));
+    let request = input
+        .get("grayswan_payload")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let parsed = parse_request(&request)?;
     run_payload(parsed)
 }
@@ -191,14 +198,19 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
 }
 
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = input.get("grayswan_call").cloned().unwrap_or_else(|| json!({}));
+    let request = input
+        .get("grayswan_call")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let call = parse_request(&request)?;
     run_call(call)
 }
 
 fn run_call(call: Request) -> crate::helpers::HelperResult {
     let script = match &call.answer {
-        Some(reply) => MockScript::try_from(std::slice::from_ref(reply)).map_err(guardrail_error)?,
+        Some(reply) => {
+            MockScript::try_from(std::slice::from_ref(reply)).map_err(guardrail_error)?
+        }
         None => disconnection_script(&call.fail),
     };
     let mock = MockProvider::start(script).map_err(guardrail_error)?;

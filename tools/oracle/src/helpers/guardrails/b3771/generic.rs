@@ -37,7 +37,10 @@ fn metadata_field(
 }
 
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = input.get("generic_call").cloned().unwrap_or_else(|| json!({}));
+    let request = input
+        .get("generic_call")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     run_call(&request)
 }
 
