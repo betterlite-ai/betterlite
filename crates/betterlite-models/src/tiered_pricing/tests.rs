@@ -27,6 +27,7 @@ fn selected_is<'tier>(selected: Option<&'tier Tier>, expected: &'tier Tier) -> b
 #[case::true_boolean(Some(number("true")), "1")]
 #[case::false_boolean(Some(number("false")), "0")]
 #[case::invalid_string(Some(number("\"not-a-number\"")), "0")]
+#[case::incomplete_exponent(Some(number("\"5e\"")), "0")]
 fn coerce_cost_per_token_tolerates_loose_scalars(
     #[case] value: Option<Scalar>,
     #[case] expected: &str,
@@ -154,6 +155,18 @@ fn select_tier_for_input_errors_on_an_empty_range_during_the_sort_before_the_len
 fn coerce_cost_per_token_errors_on_a_string_that_overflows_exact_decimal() {
     let overflowing = number("\"1e999999999999999999999\"");
     coerce_cost_per_token(Some(&overflowing)).unwrap_err();
+}
+
+#[test]
+fn coerce_cost_per_token_errors_on_a_string_with_too_many_significant_digits() {
+    let too_precise = number("\"99999999999999999999999999999999\"");
+    coerce_cost_per_token(Some(&too_precise)).unwrap_err();
+}
+
+#[test]
+fn coerce_cost_per_token_errors_on_a_string_float_accepts_but_decimal_cannot_represent() {
+    let infinite = number("\"inf\"");
+    coerce_cost_per_token(Some(&infinite)).unwrap_err();
 }
 
 #[test]
