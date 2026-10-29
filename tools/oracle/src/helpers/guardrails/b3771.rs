@@ -9,10 +9,9 @@ use betterlite_guardrails::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPISettings,
     GuardrailInputType, StreamingTransformMode, UnreachableFallback,
 };
+use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
 use betterlite_guardrails::grayswan::wire::GraySwanResponse;
-use betterlite_guardrails::grayswan::{
-    GraySwanGuardrail, GraySwanGuardrailAPIError, GraySwanSettings, OnFlaggedAction,
-};
+use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
 use secrecy::SecretString;
 use serde_json::json;
 use std::collections::BTreeMap;
