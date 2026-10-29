@@ -21,19 +21,10 @@ enum LaxDateTimeRaw {
 
 #[derive(Debug, Error)]
 #[error("{0}")]
-pub struct LaxDateTimeConfigError(speedate::ConfigError);
-
-#[derive(Debug, Error)]
-#[error("{0}")]
 pub struct LaxDateTimeParseError(speedate::ParseError);
 
 #[derive(Debug, Error)]
 pub enum LaxDateTimeError {
-    #[error("invalid microseconds precision overflow configuration")]
-    Config {
-        #[source]
-        source: LaxDateTimeConfigError,
-    },
     #[error("invalid datetime: {value}")]
     Parse {
         value: String,
@@ -50,9 +41,7 @@ impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
             LaxDateTimeRaw::Text(text) => text,
             LaxDateTimeRaw::Number(number) => number.to_string(),
         };
-        let config = build_config().map_err(|source| LaxDateTimeError::Config {
-            source: LaxDateTimeConfigError(source),
-        })?;
+        let config = build_config();
         parse_lax_datetime(&text, &config).map_err(|source| LaxDateTimeError::Parse {
             value: text,
             source: LaxDateTimeParseError(source),
@@ -60,15 +49,15 @@ impl TryFrom<LaxDateTimeRaw> for LaxDateTime {
     }
 }
 
-fn build_config() -> Result<DateTimeConfig, speedate::ConfigError> {
+fn build_config() -> DateTimeConfig {
     let time_config = TimeConfig::builder()
         .unix_timestamp_offset(Some(0_i32))
-        .microseconds_precision_overflow_behavior("truncate".parse()?)
+        .microseconds_precision_overflow_behavior("truncate".parse().unwrap_or_default())
         .build();
-    Ok(DateTimeConfig::builder()
+    DateTimeConfig::builder()
         .timestamp_unit(TimestampUnit::Infer)
         .time_config(time_config)
-        .build())
+        .build()
 }
 
 fn parse_lax_datetime(
