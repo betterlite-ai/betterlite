@@ -1,0 +1,11 @@
+kind: helper
+name: timeout-negative-zero
+call:
+  database_url_policy:
+    function: pg_options_with_timeouts
+    existing_options: ""
+    statement_timeout: -0.0004
+    lock_timeout: null
+env: {}
+compare:
+  ignore: []

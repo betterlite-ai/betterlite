@@ -1,0 +1,9 @@
+kind: helper
+name: idle-lifetime-integer-zero
+call:
+  database_url_policy:
+    function: idle_lifetime_params
+    configured: 0
+env: {}
+compare:
+  ignore: []

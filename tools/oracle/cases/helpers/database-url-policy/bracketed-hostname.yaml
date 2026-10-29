@@ -1,0 +1,9 @@
+kind: helper
+name: bracketed-hostname
+call:
+  database_url_policy:
+    function: unsupported_db_scheme
+    database_url: "postgresql://u:p@[hostname]/db"
+env: {}
+compare:
+  ignore: []

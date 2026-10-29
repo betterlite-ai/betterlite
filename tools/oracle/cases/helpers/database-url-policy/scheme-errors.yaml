@@ -1,0 +1,9 @@
+kind: helper
+name: scheme-errors
+call:
+  database_url_policy:
+    function: unsupported_db_scheme
+    database_url: "db-primary.internal/mydb"
+env: {}
+compare:
+  ignore: []

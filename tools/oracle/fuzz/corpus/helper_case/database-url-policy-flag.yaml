@@ -1,0 +1,10 @@
+kind: helper
+name: database-url-policy-flag
+call:
+  database_url_policy:
+    function: token_auth_flag_enabled
+    value: "yes"
+    env_var: "ENV"
+env: {}
+compare:
+  ignore: []

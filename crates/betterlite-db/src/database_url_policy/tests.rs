@@ -1,0 +1,677 @@
+#![cfg(test)]
+
+use std::fs;
+use std::path::Path;
+
+use super::decoder::{DbError, QueryParamValue, decode_database_url};
+use super::flag::{FlagValue, TokenFlagError, str_to_bool, token_auth_flag_enabled};
+use super::policy::{
+    ConfiguredSeconds, DatabaseTimeoutSettings, PoolTimeouts, TimeoutError,
+    build_db_connection_url_params, pg_options_with_timeouts, unsupported_db_scheme,
+    unsupported_db_scheme_message,
+};
+use super::query::{
+    AppendQueryParam, QueryValue, add_missing_query_params, append_query_params,
+    append_query_params_diagnostic, connection_params_from_url, idle_lifetime_params,
+    reader_shareable_params, token_refresh_params_from_url, url_query_value, with_query_value,
+};
+use super::url_codec::UrlSplitError;
+
+#[test]
+fn missing_only_identity() {
+    let url = "postgresql://h/db?a=1&b=2";
+    let params = vec![("a".to_owned(), QueryValue::Integer(9))];
+    assert_eq!(add_missing_query_params(url, &params).unwrap(), url);
+}
+
+#[test]
+fn blank_pinned_value() {
+    let url = "postgresql://h/db?a=&c=1";
+    let params = vec![
+        ("a".to_owned(), QueryValue::Text("9".to_owned())),
+        ("b".to_owned(), QueryValue::Text("2".to_owned())),
+    ];
+    assert_eq!(
+        add_missing_query_params(url, &params).unwrap(),
+        "postgresql://h/db?a=&c=1&b=2"
+    );
+}
+
+#[test]
+fn duplicate_query_order() {
+    let url = "postgresql://h/db?x=1&x=2&y=3";
+    let params = vec![("z".to_owned(), QueryValue::Integer(4))];
+    assert_eq!(
+        add_missing_query_params(url, &params).unwrap(),
+        "postgresql://h/db?x=1&x=2&y=3&z=4"
+    );
+}
+
+#[test]
+fn idle_none_zero_negative() {
+    assert_eq!(
+        idle_lifetime_params(None),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(60)
+        )]
+    );
+    assert_eq!(
+        idle_lifetime_params(Some(QueryValue::Integer(0))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(0)
+        )]
+    );
+    assert_eq!(
+        idle_lifetime_params(Some(QueryValue::Integer(-5))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(-5)
+        )]
+    );
+}
+
+// A configured int such as 300 is emitted unchanged, never promoted to a float.
+#[test]
+fn idle_integer_configured_passes_through() {
+    assert_eq!(
+        idle_lifetime_params(Some(QueryValue::Integer(300))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(300)
+        )]
+    );
+}
+
+#[test]
+fn reader_exact_allowlist() {
+    let params = vec![
+        ("connection_limit".to_owned(), QueryValue::Integer(1)),
+        ("pool_timeout".to_owned(), QueryValue::Integer(2)),
+        ("connect_timeout".to_owned(), QueryValue::Integer(3)),
+        ("socket_timeout".to_owned(), QueryValue::Integer(4)),
+        (
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(5),
+        ),
+        ("pgbouncer".to_owned(), QueryValue::Text("true".to_owned())),
+        ("schema".to_owned(), QueryValue::Text("public".to_owned())),
+        ("sslmode".to_owned(), QueryValue::Text("require".to_owned())),
+        ("options".to_owned(), QueryValue::Text("-c".to_owned())),
+    ];
+    assert_eq!(reader_shareable_params(&params), params[..6].to_vec());
+}
+
+#[test]
+fn reader_last_duplicate_no_blanks() {
+    let url = "postgresql://h/db?connection_limit=1&connection_limit=2&pool_timeout=&schema=public";
+    assert_eq!(
+        connection_params_from_url(url).unwrap(),
+        vec![(
+            "connection_limit".to_owned(),
+            QueryValue::Text("2".to_owned())
+        )]
+    );
+}
+
+#[test]
+fn refresh_tls_allowlist() {
+    let url = "postgresql://h/db?connection_limit=5&sslmode=verify-full&sslcert=/path&sslaccept=strict&sslrootcert=/root&schema=public&options=-c";
+    assert_eq!(
+        token_refresh_params_from_url(url).unwrap(),
+        vec![
+            (
+                "connection_limit".to_owned(),
+                QueryValue::Text("5".to_owned())
+            ),
+            (
+                "sslmode".to_owned(),
+                QueryValue::Text("verify-full".to_owned())
+            ),
+            ("sslcert".to_owned(), QueryValue::Text("/path".to_owned())),
+            (
+                "sslaccept".to_owned(),
+                QueryValue::Text("strict".to_owned())
+            ),
+        ]
+    );
+}
+
+#[test]
+fn pool_optional_omission() {
+    let params = build_db_connection_url_params(10, PoolTimeouts::default(), false, &[]);
+    assert_eq!(
+        params,
+        vec![(
+            "connection_limit".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Integer(10))
+        )]
+    );
+}
+
+#[test]
+fn extra_params_override() {
+    let extra = vec![
+        (
+            "connection_limit".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Integer(99)),
+        ),
+        (
+            "new_key".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Text("v".to_owned())),
+        ),
+    ];
+    let params = build_db_connection_url_params(10, PoolTimeouts::default(), false, &extra);
+    assert_eq!(
+        params,
+        vec![
+            (
+                "connection_limit".to_owned(),
+                AppendQueryParam::Scalar(QueryValue::Integer(99))
+            ),
+            (
+                "new_key".to_owned(),
+                AppendQueryParam::Scalar(QueryValue::Text("v".to_owned()))
+            ),
+        ]
+    );
+}
+
+#[test]
+fn extra_params_accept_bool_and_list() {
+    let extra = vec![
+        ("ssl".to_owned(), AppendQueryParam::Bool(true)),
+        (
+            "tags".to_owned(),
+            AppendQueryParam::List(vec![
+                QueryValue::Text("a".to_owned()),
+                QueryValue::Text("b".to_owned()),
+            ]),
+        ),
+    ];
+    let params = build_db_connection_url_params(10, PoolTimeouts::default(), false, &extra);
+    assert_eq!(
+        params,
+        vec![
+            (
+                "connection_limit".to_owned(),
+                AppendQueryParam::Scalar(QueryValue::Integer(10))
+            ),
+            ("ssl".to_owned(), AppendQueryParam::Bool(true)),
+            (
+                "tags".to_owned(),
+                AppendQueryParam::List(vec![
+                    QueryValue::Text("a".to_owned()),
+                    QueryValue::Text("b".to_owned()),
+                ])
+            ),
+        ]
+    );
+}
+
+#[test]
+fn append_overwrites_lists() {
+    let url = "postgresql://h/db?tag=old1&tag=old2";
+    let params = vec![(
+        "tag".to_owned(),
+        AppendQueryParam::List(vec![
+            QueryValue::Text("new1".to_owned()),
+            QueryValue::Text("new2".to_owned()),
+        ]),
+    )];
+    let outcome = append_query_params(Some(url), &params).unwrap();
+    assert_eq!(outcome.url, "postgresql://h/db?tag=new1&tag=new2");
+    assert!(outcome.warning.is_none());
+}
+
+// build_db_connection_url_params yields a mix of ints, floats and strings that append_query_params must compose as scalars.
+#[test]
+fn append_accepts_scalar_params() {
+    let url = "postgresql://h/db";
+    let params = vec![
+        (
+            "connection_limit".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Integer(10)),
+        ),
+        (
+            "pool_timeout".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Float(60.5)),
+        ),
+        (
+            "pgbouncer".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Text("true".to_owned())),
+        ),
+    ];
+    let outcome = append_query_params(Some(url), &params).unwrap();
+    assert_eq!(
+        outcome.url,
+        "postgresql://h/db?connection_limit=10&pool_timeout=60.5&pgbouncer=true"
+    );
+}
+
+#[test]
+fn append_empty_warns() {
+    let none_outcome = append_query_params(None, &[]).unwrap();
+    assert_eq!(none_outcome.url, "");
+    assert_eq!(
+        none_outcome.warning,
+        Some("append_query_params received empty or non-string URL, returning empty string")
+    );
+    let empty_outcome = append_query_params(Some(""), &[]).unwrap();
+    assert_eq!(empty_outcome.url, "");
+    assert_eq!(
+        empty_outcome.warning,
+        Some("append_query_params received empty or non-string URL, returning empty string")
+    );
+}
+
+#[test]
+fn append_diagnostic_redacts_credentials() {
+    let url = "postgresql://alice:s3cr3t@host/db?tag=old";
+    let params = vec![(
+        "tag".to_owned(),
+        AppendQueryParam::Scalar(QueryValue::Text("new".to_owned())),
+    )];
+    let (redacted_url, redacted_params) = append_query_params_diagnostic(Some(url), &params);
+    assert_eq!(redacted_url, "postgresql://REDACTED@host/db?tag=old");
+    assert_eq!(redacted_params, "{tag: REDACTED}");
+    let (none_url, none_params) = append_query_params_diagnostic(None, &[]);
+    assert_eq!(none_url, "None");
+    assert_eq!(none_params, "{}");
+}
+
+// Only the last '@' in the netloc splits credentials from host.
+#[test]
+fn append_diagnostic_redacts_at_sign_in_password() {
+    let url = "postgresql://alice:p@ss@host/db";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "postgresql://REDACTED@host/db");
+}
+
+// A schemeless DSN has no parsed netloc at all, so it is redacted in full.
+#[test]
+fn append_diagnostic_redacts_schemeless_dsn() {
+    let url = "user:pass@host/db";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "REDACTED");
+}
+
+// Secret query values are redacted too, even though they never appear in the netloc.
+#[test]
+fn append_diagnostic_redacts_password_query_param() {
+    let url = "postgresql://h/db?password=hunter2&other=1";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "postgresql://h/db?password=REDACTED&other=1");
+}
+
+#[test]
+fn first_query_value() {
+    let url = "postgresql://h/db?k=&k=first&k=second";
+    assert_eq!(url_query_value(Some(url), "k").unwrap(), "first");
+    assert_eq!(url_query_value(Some(url), "missing").unwrap(), "");
+    assert_eq!(url_query_value(None, "k").unwrap(), "");
+}
+
+// CPython's parse_qsl leaves "%+1" as the literal "% 1", not byte 0x01.
+#[test]
+fn percent_plus_is_not_a_valid_escape() {
+    let url = "postgresql://h/db?options=%+1";
+    assert_eq!(url_query_value(Some(url), "options").unwrap(), "% 1");
+}
+
+#[test]
+fn replace_all_query_values() {
+    let url = "postgresql://h/db?k=old1&k=old2&j=3";
+    assert_eq!(
+        with_query_value(url, "k", "new").unwrap(),
+        "postgresql://h/db?j=3&k=new"
+    );
+}
+
+// Matches CPython's repr(float): scientific notation outside the (-4, 16] decimal-point range.
+#[test]
+fn float_param_matches_python_repr() {
+    assert_eq!(QueryValue::Float(1e16).to_param_string(), "1e+16");
+    assert_eq!(QueryValue::Float(1e-05).to_param_string(), "1e-05");
+    assert_eq!(QueryValue::Float(60.0).to_param_string(), "60.0");
+}
+
+#[test]
+fn options_seconds_to_millis() {
+    let result = pg_options_with_timeouts("", Some(1.5_f64), None).unwrap();
+    assert_eq!(result, "-c statement_timeout=1500");
+}
+
+#[test]
+fn options_existing_spellings() {
+    let spellings = [
+        "-c statement_timeout=100",
+        "-cstatement_timeout=100",
+        "--statement_timeout=100",
+    ];
+    let results: Vec<String> = spellings
+        .iter()
+        .map(|existing| pg_options_with_timeouts(existing, Some(5.0_f64), None).unwrap())
+        .collect();
+    let expected: Vec<String> = spellings.iter().map(ToString::to_string).collect();
+    assert_eq!(results, expected);
+}
+
+#[test]
+fn options_zero_negative() {
+    let result = pg_options_with_timeouts("", Some(0.0_f64), Some(-1.0_f64)).unwrap();
+    assert_eq!(result, "-c statement_timeout=0 -c lock_timeout=-1000");
+    // Python's int(seconds*1000) truncates -0.0004*1000 == -0.4 to 0, never "-0".
+    let negative_zero_millis = pg_options_with_timeouts("", Some(-0.0004_f64), None).unwrap();
+    assert_eq!(negative_zero_millis, "-c statement_timeout=0");
+    let negative_zero = pg_options_with_timeouts("", Some(-0.0_f64), None).unwrap();
+    assert_eq!(negative_zero, "-c statement_timeout=0");
+}
+
+#[test]
+fn invalid_timeout_no_fallback() {
+    let result =
+        DatabaseTimeoutSettings::validate(Some(ConfiguredSeconds::Text("abc".to_owned())), None);
+    assert!(matches!(result, Err(TimeoutError::NotNumeric { .. })));
+}
+
+#[test]
+fn nonfinite_timeout_fails() {
+    let nan_result = pg_options_with_timeouts("", Some(f64::NAN), None);
+    assert!(matches!(nan_result, Err(TimeoutError::NotANumber)));
+    let infinite_result = pg_options_with_timeouts("", Some(f64::INFINITY), None);
+    assert!(matches!(infinite_result, Err(TimeoutError::Infinite)));
+    // A finite input whose product overflows to infinity hits the same unbounded-int error.
+    let overflowing_product = pg_options_with_timeouts("", Some(f64::MAX), None);
+    assert!(matches!(overflowing_product, Err(TimeoutError::Infinite)));
+}
+
+// Python's int(seconds*1000) is unbounded; no 64-bit ceiling applies here either.
+#[test]
+fn large_finite_timeout_has_no_bound() {
+    let result = pg_options_with_timeouts("", Some(1e300_f64), None).unwrap();
+    let millis = result.strip_prefix("-c statement_timeout=").unwrap();
+    assert_eq!(millis.len(), 304);
+    assert!(millis.chars().all(|character| character.is_ascii_digit()));
+}
+
+#[test]
+fn postgres_scheme_aliases() {
+    assert_eq!(unsupported_db_scheme("postgres://h/db"), Ok(None));
+    assert_eq!(unsupported_db_scheme("postgresql://h/db"), Ok(None));
+    assert_eq!(unsupported_db_scheme("POSTGRESQL://h/db"), Ok(None));
+    assert_eq!(unsupported_db_scheme("POSTGRES://h/db"), Ok(None));
+}
+
+#[test]
+fn unsupported_scheme_message() {
+    let message = unsupported_db_scheme_message("DATABASE_URL", "mysql");
+    assert_eq!(
+        message,
+        "DATABASE_URL uses unsupported scheme 'mysql'. LiteLLM's database features (virtual keys, store_model_in_db, spend tracking) require PostgreSQL; use a 'postgresql://' connection string. SQLite and other engines are not supported. See https://docs.litellm.ai/docs/proxy/virtual_keys"
+    );
+}
+
+#[test]
+fn malformed_dsn_scheme() {
+    assert_eq!(
+        unsupported_db_scheme("user:pass@host/db"),
+        Ok(Some("user".to_owned()))
+    );
+}
+
+// Python 3.13's urlsplit raises ValueError("Invalid IPv6 URL") for an unmatched bracket.
+#[test]
+fn invalid_ipv6_netloc_is_an_error() {
+    let url = "postgresql://u:p@[::1/db";
+    assert_eq!(
+        add_missing_query_params(url, &[]),
+        Err(UrlSplitError::InvalidIpv6Url)
+    );
+    assert_eq!(
+        unsupported_db_scheme(url),
+        Err(UrlSplitError::InvalidIpv6Url)
+    );
+    assert!(matches!(
+        decode_database_url(url.as_bytes()),
+        Err(DbError::MalformedNetloc(UrlSplitError::InvalidIpv6Url))
+    ));
+}
+
+// Python's _check_bracketed_host rejects a bracketed host that isn't an IPv6 or IPvFuture address.
+#[test]
+fn bracketed_hostname_and_ipv4_are_errors() {
+    let hostname_url = "postgresql://u:p@[hostname]/db";
+    assert_eq!(
+        unsupported_db_scheme(hostname_url),
+        Err(UrlSplitError::NotIpAddress {
+            hostname: "hostname".to_owned()
+        })
+    );
+    let ipv4_url = "postgresql://u:p@[1.2.3.4]/db";
+    assert_eq!(
+        unsupported_db_scheme(ipv4_url),
+        Err(UrlSplitError::Ipv4AddressInBrackets)
+    );
+    let ipv6_url = "postgresql://u:p@[::1]/db";
+    assert_eq!(unsupported_db_scheme(ipv6_url), Ok(None));
+}
+
+// U+FF1A (FULLWIDTH COLON) NFKC-normalizes to ':', the homoglyph attack _checknetloc rejects.
+#[test]
+fn nfkc_homoglyph_netloc_is_an_error() {
+    let url = "postgresql://evil\u{ff1a}host/db";
+    assert_eq!(
+        unsupported_db_scheme(url),
+        Err(UrlSplitError::InvalidNfkcNetloc)
+    );
+}
+
+#[test]
+fn token_boolean_spellings() {
+    let truthy = ["1", "on", "t", "true", "y", "yes", "TRUE", " True "];
+    let truthy_results: Vec<bool> = truthy
+        .iter()
+        .map(|text| {
+            let value = FlagValue::Text((*text).to_owned());
+            token_auth_flag_enabled(Some(&value), "ENV").unwrap()
+        })
+        .collect();
+    assert_eq!(truthy_results, vec![true; truthy.len()]);
+    let falsy = ["", "0", "f", "false", "n", "no", "off", "FALSE"];
+    let falsy_results: Vec<bool> = falsy
+        .iter()
+        .map(|text| {
+            let value = FlagValue::Text((*text).to_owned());
+            token_auth_flag_enabled(Some(&value), "ENV").unwrap()
+        })
+        .collect();
+    assert_eq!(falsy_results, vec![false; falsy.len()]);
+    assert!(token_auth_flag_enabled(Some(&FlagValue::Bool(true)), "ENV").unwrap());
+    assert!(!token_auth_flag_enabled(None, "ENV").unwrap());
+}
+
+#[test]
+fn token_invalid_flag_message() {
+    let value = FlagValue::Text("maybe".to_owned());
+    let error = token_auth_flag_enabled(Some(&value), "IAM_TOKEN_DB_AUTH").unwrap_err();
+    let TokenFlagError::NotRecognized { message } = error;
+    assert_eq!(
+        message,
+        "IAM_TOKEN_DB_AUTH='maybe' is not a recognized boolean. Set it to one of 1, on, t, true, y, yes to turn it on, or to one of 0, f, false, n, no, off to turn it off."
+    );
+}
+
+// A pasted zero-width space must come back escaped as ​, not raw, in the message.
+#[test]
+fn token_invalid_flag_message_escapes_non_printable_unicode() {
+    let value = FlagValue::Text("on\u{200b}".to_owned());
+    let error = token_auth_flag_enabled(Some(&value), "IAM_TOKEN_DB_AUTH").unwrap_err();
+    let TokenFlagError::NotRecognized { message } = error;
+    assert_eq!(
+        message,
+        "IAM_TOKEN_DB_AUTH='on\\u200b' is not a recognized boolean. Set it to one of 1, on, t, true, y, yes to turn it on, or to one of 0, f, false, n, no, off to turn it off."
+    );
+}
+
+#[test]
+fn extras_boolean_spellings() {
+    let truthy = ["true", "1", "t", "y", "yes", "TRUE"];
+    let results: Vec<bool> = truthy.iter().map(|text| str_to_bool(Some(text))).collect();
+    assert_eq!(results, vec![true; truthy.len()]);
+    assert!(!str_to_bool(Some("false")));
+    assert!(!str_to_bool(None));
+}
+
+#[test]
+fn extras_whitespace_and_on_false() {
+    assert!(!str_to_bool(Some(" true ")));
+    assert!(!str_to_bool(Some("on")));
+    assert!(!str_to_bool(Some("ON")));
+}
+
+#[test]
+fn malformed_url_bytes() {
+    assert!(matches!(
+        decode_database_url(b"postgresql://[::1/db"),
+        Err(DbError::MalformedNetloc(UrlSplitError::InvalidIpv6Url))
+    ));
+    assert!(matches!(
+        decode_database_url(b"postgresql://host:abc/db"),
+        Err(DbError::MalformedPort { .. })
+    ));
+    assert!(matches!(
+        decode_database_url(b"postgresql://user%2name@host/db"),
+        Err(DbError::MalformedPercentEscape { .. })
+    ));
+    assert!(matches!(
+        decode_database_url(b"postgresql://user%+1@host/db"),
+        Err(DbError::MalformedPercentEscape { .. })
+    ));
+    assert!(matches!(
+        decode_database_url(b"localhost/db"),
+        Err(DbError::MissingScheme)
+    ));
+    assert!(matches!(
+        decode_database_url(&[0xff, 0xfe]),
+        Err(DbError::InvalidUtf8 { .. })
+    ));
+}
+
+// The query string goes through the lenient urllib-style decoder, so "%+1" stays literal text.
+#[test]
+fn native_url_query_percent_plus_is_literal() {
+    let endpoint = decode_database_url(b"postgresql://h/db?options=%+1").unwrap();
+    let (_, value) = endpoint
+        .query
+        .into_iter()
+        .find(|(key, _)| key == "options")
+        .unwrap();
+    assert!(matches!(value, QueryParamValue::Plain(text) if text == "% 1"));
+}
+
+#[test]
+fn native_url_size_limit() {
+    let oversized = vec![b'a'; 0x0010_0001];
+    assert!(matches!(
+        decode_database_url(&oversized),
+        Err(DbError::TooLarge { len: 0x0010_0001 })
+    ));
+    let boundary = vec![b'a'; 0x0010_0000];
+    assert!(matches!(
+        decode_database_url(&boundary),
+        Err(DbError::MissingScheme)
+    ));
+}
+
+#[test]
+fn native_url_debug_redaction() {
+    let endpoint = decode_database_url(b"postgresql://alice:s3cr3t@host/db").unwrap();
+    let debug = format!("{endpoint:?}");
+    assert!(!debug.contains("alice"));
+    assert!(!debug.contains("s3cr3t"));
+    assert!(debug.contains("REDACTED"));
+}
+
+// A password or sslpassword carried in the query string must not leave the type through Debug either.
+#[test]
+fn native_url_debug_redaction_covers_query_secrets() {
+    let endpoint = decode_database_url(
+        b"postgresql://host/db?password=hunter2&sslpassword=tls-secret&other=1",
+    )
+    .unwrap();
+    let debug = format!("{endpoint:?}");
+    assert!(!debug.contains("hunter2"));
+    assert!(!debug.contains("tls-secret"));
+    assert!(debug.contains("other"));
+    assert!(debug.contains('1'));
+}
+
+// An unencoded '/' in the path pushes a leftover '@' credential past the netloc.
+#[test]
+fn native_url_rejects_credentials_past_netloc() {
+    let error = decode_database_url(b"postgresql://admin:12345/xyz@host/db").unwrap_err();
+    assert!(matches!(error, DbError::CredentialsPastNetloc));
+    let message = error.to_string();
+    assert!(!message.contains("admin"));
+    assert!(!message.contains("xyz"));
+}
+
+// A schemeless "user:pass@host/db" DSN parses "user" as the scheme and leaves an empty netloc.
+#[test]
+fn native_url_rejects_user_pass_without_slashes() {
+    let error = decode_database_url(b"user:s3cr3t@host/db").unwrap_err();
+    assert!(matches!(error, DbError::CredentialsPastNetloc));
+    assert!(!error.to_string().contains("s3cr3t"));
+    assert!(!format!("{error:?}").contains("s3cr3t"));
+}
+
+#[test]
+fn native_url_decodes_percent_encoded_database_name() {
+    let endpoint = decode_database_url(b"postgresql://h/my%2Ddb").unwrap();
+    assert_eq!(endpoint.database, "my-db");
+}
+
+// An unencoded '/' in the password pushes the real '@' past where urlsplit stops scanning the netloc.
+#[test]
+fn append_diagnostic_redacts_password_containing_slash() {
+    let url = "postgresql://admin:Secr3t/x@db/app";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "REDACTED");
+    assert!(!redacted_url.contains("Secr3t"));
+}
+
+// An unencoded '?' in the password has the same truncation effect, this time via the query split.
+#[test]
+fn append_diagnostic_redacts_password_containing_question_mark() {
+    let url = "postgresql://admin:Secr3t?x@db/app";
+    let (redacted_url, _) = append_query_params_diagnostic(Some(url), &[]);
+    assert_eq!(redacted_url, "REDACTED");
+    assert!(!redacted_url.contains("Secr3t"));
+}
+
+// A password containing '/' also pushes digits past the real port boundary, so MalformedPort must not carry it.
+#[test]
+fn malformed_port_does_not_leak_password() {
+    let error = decode_database_url(b"postgresql://user:Secr3t/pw@host:abc/db").unwrap_err();
+    let message = error.to_string();
+    assert!(!message.contains("Secr3t"));
+    assert!(matches!(error, DbError::MalformedPort { .. }));
+}
+
+#[test]
+fn replays_the_database_urls_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/database_urls");
+    let mismatches: Vec<String> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            let bytes = fs::read(path).unwrap();
+            let name = path.file_name().unwrap().to_str().unwrap();
+            decode_database_url(&bytes).is_err() != name.ends_with("-rejected")
+        })
+        .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(mismatches, Vec::<String>::new());
+}
