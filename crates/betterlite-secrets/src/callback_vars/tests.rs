@@ -66,6 +66,16 @@ fn non_dict_unchanged() {
     assert_eq!(strip_callback_config(&Value::Null), Value::Null);
 }
 
+#[rstest]
+#[case::string(json!("not-a-map"))]
+#[case::null(Value::Null)]
+#[case::array(json!(["a", "b"]))]
+fn non_dict_unchanged_through_transform(#[case] non_dict: Value) {
+    let codec = cipher(Some("salt-one"));
+    assert_eq!(encrypt_callback_vars(&non_dict, &codec), non_dict);
+    assert_eq!(decrypt_callback_vars(&non_dict, &codec), non_dict);
+}
+
 #[test]
 fn strip_three_top_level_slots() {
     let stripped = strip_callback_config(&sample_metadata());
@@ -153,6 +163,7 @@ fn secret_manager_not_encrypted() {
 #[case::cost_exemption("input_cost_per_token", &[][..], false)]
 #[case::plural_credentials("vertex_credentials", &[][..], true)]
 #[case::extra_exact_match("input_cost_per_token", &["input_cost_per_token"][..], true)]
+#[case::extra_case_sensitive("Random_Field", &["random_field"][..], false)]
 fn sensitive_key_selection(#[case] key: &str, #[case] extra: &[&str], #[case] expected: bool) {
     let extra_keys: BTreeSet<String> = extra.iter().map(ToString::to_string).collect();
     assert_eq!(is_sensitive_callback_key(key, &extra_keys), expected);

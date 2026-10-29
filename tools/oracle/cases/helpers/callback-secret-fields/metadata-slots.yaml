@@ -42,6 +42,18 @@ call:
       - kind: encrypt
         metadata:
           secret_manager_settings: {aws_access_key_id: AKIA-secret}
+      - kind: encrypt
+        metadata: "not-a-map"
+      - kind: encrypt
+        metadata: null
+      - kind: encrypt
+        metadata: ["a", "b"]
+      - kind: decrypt
+        metadata: "not-a-map"
+      - kind: decrypt
+        metadata: null
+      - kind: decrypt
+        metadata: ["a", "b"]
 env: {}
 compare:
   ignore: []
