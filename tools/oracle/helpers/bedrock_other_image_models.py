@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, cast
 
 from litellm.llms.bedrock.image_generation.amazon_nova_canvas_transformation import (
     AmazonNovaCanvasConfig,
@@ -19,8 +19,8 @@ from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGene
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-ConfigClass: TypeAlias = (
+type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
+type ConfigClass = (
     type[AmazonTitanImageGenerationConfig]
     | type[AmazonStabilityConfig]
     | type[AmazonStability3Config]

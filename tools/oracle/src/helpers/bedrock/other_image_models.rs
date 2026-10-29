@@ -3,7 +3,7 @@ use betterlite_bedrock::image_models::family::{self, Family};
 use betterlite_bedrock::image_models::params::{Field, Params};
 use betterlite_bedrock::image_models::response::{
     ImagesOnlyResponse, ModelResponse, Stability1Response, Stability3Response, TitanResponse,
-    apply_images, optional_images, stability1_images, titan_images,
+    optional_images, stability1_images, titan_images,
 };
 use betterlite_bedrock::image_models::stability1::{self, ClassSettings};
 use betterlite_bedrock::image_models::{nova, stability3, titan};
@@ -12,6 +12,13 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
+
+mod calls;
+
+use calls::{
+    ArtifactsCall, FamilyName, ProviderErrorCall, SelectionCall, SettingsCall, SizeQualityCall,
+    Stability1Call, TextParamsCall, TitanCall,
+};
 
 pub(crate) struct Op;
 
@@ -26,79 +33,6 @@ pub(crate) enum Input {
     ArtifactsToB64Results(ArtifactsCall),
     ImageProviderError(ProviderErrorCall),
     ImageFamilySelection(SelectionCall),
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct TitanCall {
-    non_default: Map<String, Value>,
-    optional_params: Map<String, Value>,
-    text: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct Stability1Call {
-    non_default: Map<String, Value>,
-    optional_params: Map<String, Value>,
-    text: String,
-    settings: SettingsCall,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct SettingsCall {
-    cfg_scale: Option<Value>,
-    seed: Option<Value>,
-    steps: Option<Value>,
-    width: Option<Value>,
-    height: Option<Value>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct TextParamsCall {
-    text: String,
-    optional_params: Map<String, Value>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum FamilyName {
-    Titan,
-    Stability1,
-    Stability3,
-    Nova,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct SizeQualityCall {
-    family: Option<FamilyName>,
-    non_default: Map<String, Value>,
-    optional_params: Map<String, Value>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct ArtifactsCall {
-    family: Option<FamilyName>,
-    response_body: Map<String, Value>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct ProviderErrorCall {
-    family: Option<FamilyName>,
-    response_body: Option<Map<String, Value>>,
-    optional_params: Map<String, Value>,
-    text: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct SelectionCall {
-    model: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -128,54 +62,67 @@ impl Helper for Op {
 }
 
 fn titan_image_body(call: &TitanCall) -> Result<Value, Failure> {
-    let non_default = map_to_params(&call.non_default);
-    let optional_params = map_to_params(&call.optional_params);
+    let non_default = map_to_params(&call.non_default)?;
+    let optional_params = map_to_params(&call.optional_params)?;
     let mapped = titan::map_openai_params(&non_default, optional_params)?;
     let body = titan::transform_request_body(&call.text, mapped)?;
-    Ok(Value::Object(params_to_map(&body)))
+    Ok(Value::Object(params_to_map(&body)?))
 }
 
 fn stability1_text_prompts(call: &Stability1Call) -> Result<Value, Failure> {
-    let non_default = map_to_params(&call.non_default);
-    let optional_params = map_to_params(&call.optional_params);
+    let non_default = map_to_params(&call.non_default)?;
+    let optional_params = map_to_params(&call.optional_params)?;
     let mapped = stability1::map_openai_params(&non_default, optional_params)?;
-    let settings = class_settings(&call.settings);
+    let settings = class_settings(&call.settings)?;
     let body = stability1::transform_request_body(&call.text, &mapped, &settings);
-    Ok(Value::Object(params_to_map(&body)))
+    Ok(Value::Object(params_to_map(&body)?))
 }
 
-fn class_settings(call: &SettingsCall) -> ClassSettings {
-    ClassSettings {
-        cfg_scale: call.cfg_scale.as_ref().map(value_to_field),
-        seed: call.seed.as_ref().map(value_to_field),
-        steps: call.steps.as_ref().map(value_to_field),
-        width: call.width.as_ref().map(value_to_field),
-        height: call.height.as_ref().map(value_to_field),
-    }
+fn class_settings(call: &SettingsCall) -> Result<ClassSettings, Failure> {
+    let cfg_scale = optional_field(call.cfg_scale.as_ref())?;
+    let seed = optional_field(call.seed.as_ref())?;
+    let steps = optional_field(call.steps.as_ref())?;
+    let width = optional_field(call.width.as_ref())?;
+    let height = optional_field(call.height.as_ref())?;
+    Ok(ClassSettings {
+        cfg_scale,
+        seed,
+        steps,
+        width,
+        height,
+    })
+}
+
+fn optional_field(value: Option<&Value>) -> Result<Option<Field>, Failure> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    let field: Field = serde_json::from_value(raw.clone())?;
+    Ok(Some(field))
 }
 
 fn stability3_prompt(call: &TextParamsCall) -> Result<Value, Failure> {
-    let mapped = stability3::map_openai_params(map_to_params(&call.optional_params));
-    let body = stability3::transform_request_body(&call.text, mapped)?;
-    Ok(Value::Object(params_to_map(&body)))
+    let optional_params = map_to_params(&call.optional_params)?;
+    let body = stability3::transform_request_body(&call.text, optional_params)?;
+    Ok(Value::Object(params_to_map(&body)?))
 }
 
 fn nova_canvas_task_body(call: &TextParamsCall) -> Result<Value, Failure> {
-    let optional_params = map_to_params(&call.optional_params);
+    let optional_params = map_to_params(&call.optional_params)?;
     let body = nova::transform_request_body(&call.text, optional_params)?;
-    Ok(Value::Object(params_to_map(&body)))
+    Ok(Value::Object(params_to_map(&body)?))
 }
 
 fn size_n_quality_map(call: &SizeQualityCall) -> Result<Value, Failure> {
-    let non_default = map_to_params(&call.non_default);
-    let optional_params = map_to_params(&call.optional_params);
+    let non_default = map_to_params(&call.non_default)?;
+    let optional_params = map_to_params(&call.optional_params)?;
     let mapped = match family_or_stability1(call.family) {
         Family::Titan => titan::map_openai_params(&non_default, optional_params)?,
         Family::Stability1 => stability1::map_openai_params(&non_default, optional_params)?,
-        Family::Stability3 => stability3::map_openai_params(optional_params),
+        Family::Stability3 => optional_params,
         Family::Nova => nova::map_openai_params(&non_default, optional_params)?,
     };
-    Ok(Value::Object(params_to_map(&mapped)))
+    Ok(Value::Object(params_to_map(&mapped)?))
 }
 
 fn artifacts_to_b64_results(call: &ArtifactsCall) -> Result<Value, Failure> {
@@ -187,15 +134,16 @@ fn artifacts_to_b64_results(call: &ArtifactsCall) -> Result<Value, Failure> {
         }
         Family::Stability3 => {
             let typed: Stability3Response = serde_json::from_value(response)?;
-            optional_images(&ImagesOnlyResponse { images: typed.images })
+            optional_images(&ImagesOnlyResponse {
+                images: typed.images,
+            })
         }
         Family::Nova => optional_images(&serde_json::from_value::<ImagesOnlyResponse>(response)?),
     };
-    let mut model_response = ModelResponse {
+    let model_response = ModelResponse {
         created: Some(42),
-        data: Vec::new(),
+        data: images,
     };
-    apply_images(&mut model_response, images);
     Ok(serde_json::json!({
         "created": model_response.created,
         "data": model_response
@@ -221,16 +169,18 @@ fn image_provider_error(call: &ProviderErrorCall) -> Result<Value, Failure> {
                 .collect::<Vec<Value>>(),
         }));
     }
-    let optional_params = map_to_params(&call.optional_params);
+    let optional_params = map_to_params(&call.optional_params)?;
     let body = match family_or_stability1(call.family) {
         Family::Titan => titan::transform_request_body(&call.text, optional_params)?,
         Family::Nova => nova::transform_request_body(&call.text, optional_params)?,
-        Family::Stability1 => {
-            stability1::transform_request_body(&call.text, &optional_params, &ClassSettings::default())
-        }
+        Family::Stability1 => stability1::transform_request_body(
+            &call.text,
+            &optional_params,
+            &ClassSettings::default(),
+        ),
         Family::Stability3 => stability3::transform_request_body(&call.text, optional_params)?,
     };
-    Ok(Value::Object(params_to_map(&body)))
+    Ok(Value::Object(params_to_map(&body)?))
 }
 
 fn image_family_selection(call: &SelectionCall) -> Value {
@@ -252,42 +202,18 @@ const fn family_or_stability1(name: Option<FamilyName>) -> Family {
     }
 }
 
-fn value_to_field(value: &Value) -> Field {
-    match value {
-        Value::Null => Field::Null,
-        Value::Bool(flag) => Field::Bool(*flag),
-        Value::Number(number) => number
-            .as_i64()
-            .map_or_else(|| Field::Float(number.as_f64().unwrap_or_default()), Field::Int),
-        Value::String(text) => Field::Text(text.clone()),
-        Value::Array(items) => Field::List(items.iter().map(value_to_field).collect()),
-        Value::Object(map) => Field::Mapping(map_to_params(map)),
+fn map_to_params(map: &Map<String, Value>) -> Result<Params, Failure> {
+    let value = Value::Object(map.clone());
+    let params: Params = serde_json::from_value(value)?;
+    Ok(params)
+}
+
+fn params_to_map(params: &Params) -> Result<Map<String, Value>, Failure> {
+    let mut map = Map::new();
+    for (key, field) in params {
+        map.insert(key.clone(), serde_json::to_value(field)?);
     }
-}
-
-fn map_to_params(map: &Map<String, Value>) -> Params {
-    map.iter()
-        .map(|(key, value)| (key.clone(), value_to_field(value)))
-        .collect()
-}
-
-fn field_to_value(field: &Field) -> Value {
-    match field {
-        Field::Null => Value::Null,
-        Field::Bool(flag) => Value::Bool(*flag),
-        Field::Int(value) => Value::from(*value),
-        Field::Float(value) => Value::from(*value),
-        Field::Text(text) => Value::String(text.clone()),
-        Field::List(items) => Value::Array(items.iter().map(field_to_value).collect()),
-        Field::Mapping(params) => Value::Object(params_to_map(params)),
-    }
-}
-
-fn params_to_map(params: &Params) -> Map<String, Value> {
-    params
-        .iter()
-        .map(|(key, field)| (key.clone(), field_to_value(field)))
-        .collect()
+    Ok(map)
 }
 
 impl From<Failure> for Box<HelperError> {
@@ -304,13 +230,18 @@ impl From<Failure> for Box<HelperError> {
             Failure::ImageModels(ImageModelsError::Header(_)) => "UnicodeEncodeError",
             Failure::Json(_) => "KeyError",
         };
+        let message = if let Failure::ImageModels(ImageModelsError::Provider { error, .. }) = &failure {
+            error.error.message.clone()
+        } else {
+            failure.to_string()
+        };
         Self::new(HelperError {
             class: class.to_owned(),
             status: None,
             error_type: None,
             param: None,
             code: None,
-            message: failure.to_string(),
+            message,
         })
     }
 }
