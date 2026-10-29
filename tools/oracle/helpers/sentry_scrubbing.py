@@ -7,9 +7,7 @@ from typing import TypeAlias, cast
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-# Pinned to sentry-sdk 2.21.0, the version litellm's own uv.lock locks this behavior
-# against. The oracle's litellm checkout has no sentry-sdk installed, so the two
-# constants and the EventScrubber shape sentry_scrubbing.py imports are stubbed below.
+# sentry-sdk 2.21.0 (LiteLLM's uv.lock) is absent from the oracle venv, so its scrubber is stubbed
 DEFAULT_DENYLIST = [
     "password",
     "passwd",
