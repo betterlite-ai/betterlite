@@ -15,7 +15,8 @@ use super::azure::{
     AzureTokenFetchError, AzureTokenFetcher,
 };
 use super::gcp::{
-    Clock, GcpIamCredentialProvider, GcpTokenCache, GcpTokenFetchError, GcpTokenFetcher,
+    Clock, GcpCredentialSource as _, GcpIamCredentialProvider, GcpTokenCache, GcpTokenFetchError,
+    GcpTokenFetcher,
 };
 use super::{Provider, ProviderWarning};
 use crate::loader::{ConfigError, ConfigLoader};
@@ -426,8 +427,8 @@ impl CountingGcpFetcher {
 
 impl GcpTokenFetcher for CountingGcpFetcher {
     fn fetch(&self, service_account: &str) -> Result<SecretString, GcpTokenFetchError> {
-        let mut calls = self.calls.lock().map_err(|_poisoned| {
-            GcpTokenFetchError::new("the counting fetcher's lock was poisoned")
+        let mut calls = self.calls.lock().map_err(|_poisoned| GcpTokenFetchError {
+            message: "the counting fetcher's lock was poisoned".to_owned(),
         })?;
         calls.push(());
         let count = calls.len();
@@ -597,9 +598,9 @@ impl AzureTokenFetcher for FixedAzureTokenFetcher {
             self.scopes_seen
                 .lock()
                 .map_err(|_poisoned| AzureTokenError::Fetch {
-                    source: AzureTokenFetchError::new(
-                        "the fixed azure token fetcher's lock was poisoned",
-                    ),
+                    source: AzureTokenFetchError {
+                        message: "the fixed azure token fetcher's lock was poisoned".to_owned(),
+                    },
                 })?;
         scopes_seen.push(scope.to_owned());
         drop(scopes_seen);

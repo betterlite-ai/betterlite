@@ -34,16 +34,7 @@ pub struct AzureToken {
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct AzureTokenFetchError {
-    message: String,
-}
-
-impl AzureTokenFetchError {
-    #[must_use]
-    pub fn new(message: &str) -> Self {
-        Self {
-            message: message.to_owned(),
-        }
-    }
+    pub message: String,
 }
 
 #[derive(Debug, Error)]

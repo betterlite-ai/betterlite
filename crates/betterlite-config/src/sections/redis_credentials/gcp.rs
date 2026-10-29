@@ -37,16 +37,7 @@ impl Clock for SystemClock {
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct GcpTokenFetchError {
-    message: String,
-}
-
-impl GcpTokenFetchError {
-    #[must_use]
-    pub fn new(message: &str) -> Self {
-        Self {
-            message: message.to_owned(),
-        }
-    }
+    pub message: String,
 }
 
 pub trait GcpTokenFetcher: Send + Sync {
@@ -142,8 +133,16 @@ pub struct GcpIamCredentialProvider {
     pub cache: Arc<GcpTokenCache>,
 }
 
-impl GcpIamCredentialProvider {
-    pub fn get_credentials(
+pub trait GcpCredentialSource {
+    fn get_credentials(
+        &self,
+        clock: &dyn Clock,
+        fetcher: &dyn GcpTokenFetcher,
+    ) -> Result<SecretString, GcpTokenError>;
+}
+
+impl GcpCredentialSource for GcpIamCredentialProvider {
+    fn get_credentials(
         &self,
         clock: &dyn Clock,
         fetcher: &dyn GcpTokenFetcher,
@@ -154,17 +153,6 @@ impl GcpIamCredentialProvider {
             clock,
             fetcher,
         )
-    }
-}
-
-impl GcpSettings {
-    #[must_use]
-    pub fn credential_provider(&self) -> GcpIamCredentialProvider {
-        GcpIamCredentialProvider {
-            service_account: self.service_account.clone(),
-            ttl: Duration::from_secs(self.token_ttl_seconds),
-            cache: Arc::clone(&self.token_cache),
-        }
     }
 }
 
