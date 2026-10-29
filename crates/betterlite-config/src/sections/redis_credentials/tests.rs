@@ -1,13 +1,17 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::aws::{AwsCredentials, AwsCredentialsResolver, AwsSettings, ElastiCacheIamProvider};
+use aws_credential_types::Credentials;
+
+use super::aws::{AwsCredentialsResolver, AwsSettings, ElastiCacheIamProvider};
 use super::azure::{
     AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureToken, AzureTokenError,
     AzureTokenFetcher,
@@ -381,15 +385,20 @@ impl CountingGcpFetcher {
 }
 
 impl GcpTokenFetcher for CountingGcpFetcher {
-    fn fetch(&self, service_account: &str) -> Result<String, GcpTokenError> {
-        let mut calls = self
-            .calls
-            .lock()
-            .map_err(|_poisoned| GcpTokenError::LockPoisoned)?;
+    fn fetch(
+        &self,
+        service_account: &str,
+    ) -> Result<SecretString, Box<dyn StdError + Send + Sync + 'static>> {
+        let mut calls = self.calls.lock().map_err(|_poisoned| {
+            let error: Box<dyn StdError + Send + Sync> = Box::new(GcpTokenError::LockPoisoned);
+            error
+        })?;
         calls.push(());
         let count = calls.len();
         drop(calls);
-        Ok(format!("{service_account}-token-{count}"))
+        Ok(SecretString::from(format!(
+            "{service_account}-token-{count}"
+        )))
     }
 }
 
@@ -406,14 +415,14 @@ fn gcp_token_cache_reuses_token_within_ttl_and_refetches_after_expiry() {
     let second = cache
         .get_or_fetch("account-a", ttl, &clock, &fetcher)
         .unwrap();
-    assert_eq!(first, second);
+    assert_eq!(first.expose_secret(), second.expose_secret());
     assert_eq!(fetcher.call_count(), 1);
 
     clock.advance(ttl + Duration::from_secs(1));
     let third = cache
         .get_or_fetch("account-a", ttl, &clock, &fetcher)
         .unwrap();
-    assert_ne!(first, third);
+    assert_ne!(first.expose_secret(), third.expose_secret());
     assert_eq!(fetcher.call_count(), 2);
 }
 
@@ -430,7 +439,7 @@ fn gcp_token_cache_is_keyed_by_service_account() {
     let second_account = cache
         .get_or_fetch("account-b", ttl, &clock, &fetcher)
         .unwrap();
-    assert_ne!(first_account, second_account);
+    assert_ne!(first_account.expose_secret(), second_account.expose_secret());
     assert_eq!(fetcher.call_count(), 2);
 }
 
@@ -443,19 +452,29 @@ fn gcp_iam_credential_provider_fetches_through_its_cache() {
         ttl: Duration::from_mins(55),
         cache: Arc::new(GcpTokenCache::default()),
     };
-    let token = provider.get_credentials(&clock, &fetcher).unwrap();
-    assert_eq!(token, "redis-sa-token-1");
+    let token = provider
+        .cache
+        .get_or_fetch(
+            provider.service_account.expose_secret(),
+            provider.ttl,
+            &clock,
+            &fetcher,
+        )
+        .unwrap();
+    assert_eq!(token.expose_secret(), "redis-sa-token-1");
 }
 
 struct StaticAwsCredentials;
 
 impl AwsCredentialsResolver for StaticAwsCredentials {
-    fn resolve(&self) -> Result<AwsCredentials, super::aws::ElastiCacheSigningError> {
-        Ok(AwsCredentials {
-            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_owned(),
-            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned(),
-            session_token: None,
-        })
+    fn resolve(&self) -> Result<Credentials, super::aws::ElastiCacheSigningError> {
+        Ok(Credentials::new(
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            None,
+            None,
+            "redis-credentials-tests",
+        ))
     }
 }
 
@@ -472,13 +491,39 @@ fn elasticache_provider_signs_connect_url_for_the_configured_cache() {
     let (user_name, signed) = provider
         .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
         .unwrap();
+    let signed_url = signed.expose_secret();
     assert_eq!(user_name, "app");
-    assert!(signed.starts_with("cache.example/?"));
-    assert!(signed.contains("Action=connect"));
-    assert!(signed.contains("User=app"));
-    assert!(signed.contains("X-Amz-Signature="));
-    assert!(signed.contains("X-Amz-Expires=900"));
-    assert!(!signed.contains("ResourceType"));
+    assert!(signed_url.starts_with("cache.example/?"));
+    assert!(signed_url.contains("Action=connect"));
+    assert!(signed_url.contains("User=app"));
+    assert!(signed_url.contains("X-Amz-Signature="));
+    assert!(signed_url.contains("X-Amz-Expires=900"));
+    assert!(!signed_url.contains("ResourceType"));
+}
+
+#[test]
+fn elasticache_provider_matches_botocore_sigv4_query_auth_known_answer() {
+    // Expected value from botocore's SigV4QueryAuth(creds, "elasticache", "eu-west-1", expires=900)
+    // signing the same request at the Unix epoch, for the static example credentials below.
+    let expected = "cache.example/?Action=connect&User=app\
+        &X-Amz-Algorithm=AWS4-HMAC-SHA256\
+        &X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F19700101%2Feu-west-1%2Felasticache%2Faws4_request\
+        &X-Amz-Date=19700101T000000Z\
+        &X-Amz-Expires=900\
+        &X-Amz-SignedHeaders=host\
+        &X-Amz-Signature=e1e4ce13c45cfa056cbbb7bf8235fe64d59d0f2b10176bea67739664779bcfd4";
+    let settings = AwsSettings {
+        user_name: "app".to_owned(),
+        cache_name: "cache.example".to_owned(),
+        region: "eu-west-1".to_owned(),
+        serverless: false,
+        token_ttl_seconds: 900,
+    };
+    let provider = ElastiCacheIamProvider { settings };
+    let (_user_name, signed) = provider
+        .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
+        .unwrap();
+    assert_eq!(signed.expose_secret(), expected);
 }
 
 #[test]
@@ -494,8 +539,19 @@ fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
     let (_user_name, signed) = provider
         .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
         .unwrap();
-    assert!(signed.contains("ResourceType=ServerlessCache"));
+    assert!(signed.expose_secret().contains("ResourceType=ServerlessCache"));
 }
+
+#[derive(Debug)]
+struct FixedFetcherLockPoisoned;
+
+impl fmt::Display for FixedFetcherLockPoisoned {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "the fixed azure token fetcher's lock was poisoned")
+    }
+}
+
+impl StdError for FixedFetcherLockPoisoned {}
 
 struct FixedAzureTokenFetcher {
     token: String,
@@ -518,12 +574,12 @@ impl AzureTokenFetcher for FixedAzureTokenFetcher {
             self.scopes_seen
                 .lock()
                 .map_err(|_poisoned| AzureTokenError::Fetch {
-                    reason: "lock poisoned".to_owned(),
+                    source: Box::new(FixedFetcherLockPoisoned),
                 })?;
         scopes_seen.push(scope.to_owned());
         drop(scopes_seen);
         Ok(AzureToken {
-            token: self.token.clone(),
+            token: SecretString::from(self.token.clone()),
         })
     }
 }
@@ -543,7 +599,7 @@ fn azure_ad_provider_returns_username_and_token_from_its_fetcher() {
     };
     let (username, token) = provider.get_credentials().unwrap();
     assert_eq!(username, Some("app".to_owned()));
-    assert_eq!(token, "access-token");
+    assert_eq!(token.expose_secret(), "access-token");
     assert_eq!(
         fetcher.scopes_seen.lock().unwrap().as_slice(),
         [AZURE_REDIS_SCOPE]

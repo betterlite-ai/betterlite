@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::error::Error as StdError;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -34,26 +36,39 @@ impl Clock for SystemClock {
 }
 
 pub trait GcpTokenFetcher: Send + Sync {
-    fn fetch(&self, service_account: &str) -> Result<String, GcpTokenError>;
+    fn fetch(
+        &self,
+        service_account: &str,
+    ) -> Result<SecretString, Box<dyn StdError + Send + Sync + 'static>>;
 }
 
 #[derive(Debug, Error)]
 pub enum GcpTokenError {
-    #[error("failed to generate a GCP IAM access token: {reason}")]
-    Fetch { reason: String },
+    #[error("failed to generate a GCP IAM access token: {source}")]
+    Fetch {
+        #[source]
+        source: Box<dyn StdError + Send + Sync + 'static>,
+    },
     #[error("the GCP token cache lock was poisoned")]
     LockPoisoned,
+    #[error("the GCP IAM token TTL overflows the system clock")]
+    Expiry,
 }
 
-#[derive(Debug)]
 struct CachedToken {
-    token: String,
+    token: SecretString,
     expires_at: Instant,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct GcpTokenCache {
     entries: Mutex<HashMap<String, CachedToken>>,
+}
+
+impl fmt::Debug for GcpTokenCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GcpTokenCache").finish_non_exhaustive()
+    }
 }
 
 impl GcpTokenCache {
@@ -63,7 +78,7 @@ impl GcpTokenCache {
         ttl: Duration,
         clock: &dyn Clock,
         fetcher: &dyn GcpTokenFetcher,
-    ) -> Result<String, GcpTokenError> {
+    ) -> Result<SecretString, GcpTokenError> {
         let now = clock.now();
         if let Some(token) = self.fresh_token(service_account, now)? {
             return Ok(token);
@@ -79,12 +94,15 @@ impl GcpTokenCache {
             drop(entries);
             return Ok(token);
         }
-        let token = fetcher.fetch(service_account)?;
+        let token = fetcher
+            .fetch(service_account)
+            .map_err(|source| GcpTokenError::Fetch { source })?;
+        let expires_at = now.checked_add(ttl).ok_or(GcpTokenError::Expiry)?;
         entries.insert(
             service_account.to_owned(),
             CachedToken {
                 token: token.clone(),
-                expires_at: now.checked_add(ttl).unwrap_or(now),
+                expires_at,
             },
         );
         drop(entries);
@@ -95,7 +113,7 @@ impl GcpTokenCache {
         &self,
         service_account: &str,
         now: Instant,
-    ) -> Result<Option<String>, GcpTokenError> {
+    ) -> Result<Option<SecretString>, GcpTokenError> {
         let entries = self
             .entries
             .lock()
@@ -111,22 +129,6 @@ pub struct GcpIamCredentialProvider {
     pub service_account: SecretString,
     pub ttl: Duration,
     pub cache: Arc<GcpTokenCache>,
-}
-
-impl GcpIamCredentialProvider {
-    pub fn get_credentials(
-        &self,
-        clock: &dyn Clock,
-        fetcher: &dyn GcpTokenFetcher,
-    ) -> Result<String, GcpTokenError> {
-        use secrecy::ExposeSecret as _;
-        self.cache.get_or_fetch(
-            self.service_account.expose_secret(),
-            self.ttl,
-            clock,
-            fetcher,
-        )
-    }
 }
 
 pub(super) fn build_gcp<L>(

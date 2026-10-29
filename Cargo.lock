@@ -1179,6 +1179,7 @@ dependencies = [
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "axum",
  "base64 0.23.1",
  "betterlite-anthropic",

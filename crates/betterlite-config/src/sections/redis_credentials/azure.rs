@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::sync::Arc;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -28,13 +29,16 @@ pub enum AzureCredential {
 
 #[derive(Debug, Clone)]
 pub struct AzureToken {
-    pub token: String,
+    pub token: SecretString,
 }
 
 #[derive(Debug, Error)]
 pub enum AzureTokenError {
-    #[error("failed to fetch an Azure AD access token: {reason}")]
-    Fetch { reason: String },
+    #[error("failed to fetch an Azure AD access token: {source}")]
+    Fetch {
+        #[source]
+        source: Box<dyn StdError + Send + Sync + 'static>,
+    },
 }
 
 pub trait AzureTokenFetcher: Send + Sync {
@@ -53,7 +57,7 @@ pub struct AzureAdCredentialProvider {
 }
 
 impl AzureAdCredentialProvider {
-    pub fn get_credentials(&self) -> Result<(Option<String>, String), AzureTokenError> {
+    pub fn get_credentials(&self) -> Result<(Option<String>, SecretString), AzureTokenError> {
         let token = self
             .fetcher
             .fetch_token(self.credential, AZURE_REDIS_SCOPE)?;

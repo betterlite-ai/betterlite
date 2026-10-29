@@ -2,6 +2,7 @@ use std::iter::empty;
 use std::time::{Duration, SystemTime};
 
 use aws_credential_types::Credentials;
+use aws_credential_types::provider::error::CredentialsError;
 use aws_sigv4::http_request::{
     SignableBody, SignableRequest, SignatureLocation, SigningError, SigningParams, SigningSettings,
     sign,
@@ -42,21 +43,17 @@ impl AwsSettings {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct AwsCredentials {
-    pub access_key_id: String,
-    pub secret_access_key: String,
-    pub session_token: Option<String>,
-}
-
 pub trait AwsCredentialsResolver {
-    fn resolve(&self) -> Result<AwsCredentials, ElastiCacheSigningError>;
+    fn resolve(&self) -> Result<Credentials, ElastiCacheSigningError>;
 }
 
 #[derive(Debug, Error)]
 pub enum ElastiCacheSigningError {
-    #[error("failed to resolve AWS credentials for ElastiCache IAM Redis authentication: {reason}")]
-    Credentials { reason: String },
+    #[error("failed to resolve AWS credentials for ElastiCache IAM Redis authentication: {source}")]
+    Credentials {
+        #[source]
+        source: CredentialsError,
+    },
     #[error("failed to build the AWS SigV4 signing parameters: {source}")]
     SigningParams {
         #[source]
@@ -83,25 +80,19 @@ impl ElastiCacheIamProvider {
         &self,
         resolver: &dyn AwsCredentialsResolver,
         now: SystemTime,
-    ) -> Result<(String, String), ElastiCacheSigningError> {
+    ) -> Result<(String, SecretString), ElastiCacheSigningError> {
         let credentials = resolver.resolve()?;
-        let signed = presign_connect_url(&self.settings, &credentials, now)?;
+        let signed = presign_connect_url(&self.settings, credentials, now)?;
         Ok((self.settings.user_name.clone(), signed))
     }
 }
 
 fn presign_connect_url(
     settings: &AwsSettings,
-    credentials: &AwsCredentials,
+    credentials: Credentials,
     now: SystemTime,
-) -> Result<String, ElastiCacheSigningError> {
-    let identity = Identity::from(Credentials::new(
-        credentials.access_key_id.clone(),
-        credentials.secret_access_key.clone(),
-        credentials.session_token.clone(),
-        None,
-        "redis-credentials",
-    ));
+) -> Result<SecretString, ElastiCacheSigningError> {
+    let identity = Identity::from(credentials);
 
     let mut signing_settings = SigningSettings::default();
     signing_settings.signature_location = SignatureLocation::QueryParams;
@@ -135,7 +126,11 @@ fn presign_connect_url(
     for (name, value) in query_params {
         query.append_pair(name, value.as_ref());
     }
-    Ok(format!("{}/?{}", settings.cache_name, query.finish()))
+    Ok(SecretString::from(format!(
+        "{}/?{}",
+        settings.cache_name,
+        query.finish()
+    )))
 }
 
 fn required_setting<L>(
