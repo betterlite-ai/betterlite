@@ -1,16 +1,11 @@
 mod tests;
 
-/// One candidate frame in the caller's walk, starting from the real caller onward.
-///
-/// This module's own two plumbing frames (`_get_call_stack_info` and its immediate
-/// caller) are never part of the slice passed in.
 #[derive(Debug, Clone)]
 pub struct StackFrame {
     pub function_name: String,
     pub module_name: String,
 }
 
-/// Frame names that belong to this crate's circuit-breaker guards, never to a real caller.
 pub const BREAKER_GUARD_FRAME_NAMES: [&str; 4] = [
     "<lambda>",
     "wrapper",
@@ -18,9 +13,7 @@ pub const BREAKER_GUARD_FRAME_NAMES: [&str; 4] = [
     "_run_under_circuit_breaker_sync",
 ];
 
-/// Joins up to `num_frames` real caller names, skipping guard frames from `guard_module`.
-///
-/// Returns `"unknown"` when no real caller name survives the filter.
+// mirrors LiteLLM's _get_call_stack_info, which reports "unknown" rather than an empty join
 #[must_use]
 pub fn project_call_stack(frames: &[StackFrame], guard_module: &str, num_frames: usize) -> String {
     let mut names = Vec::with_capacity(num_frames);

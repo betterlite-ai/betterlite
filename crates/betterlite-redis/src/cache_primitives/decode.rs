@@ -10,7 +10,6 @@ use thiserror::Error;
 
 pub const INCREMENT_WITH_FLOOR_LUA: &str = "local count = redis.call('INCRBY', KEYS[1], ARGV[1]) if count < 0 then count = redis.call('INCRBY', KEYS[1], -count) end if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end return count";
 
-/// A decoded cache value: the shapes `json.loads` or `ast.literal_eval` can produce.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum CachedValue {
@@ -52,10 +51,11 @@ pub enum DecodeError {
 }
 
 pub fn decoded_counts(values: &[Option<Vec<u8>>]) -> Result<Vec<Option<i64>>, DecodeError> {
-    values
-        .iter()
-        .map(|value| decode_count(value.as_deref()))
-        .collect()
+    let mut counts = Vec::with_capacity(values.len());
+    for value in values {
+        counts.push(decode_count(value.as_deref())?);
+    }
+    Ok(counts)
 }
 
 pub fn validate_lua_count(reply: &[u8]) -> Result<i64, DecodeError> {
@@ -71,8 +71,7 @@ fn decode_count(reply: Option<&[u8]>) -> Result<Option<i64>, DecodeError> {
     validate_lua_count(bytes).map(Some)
 }
 
-/// Tries `json.loads` first, then `ast.literal_eval` on decode or parse failure; a value that
-/// fails both propagates its literal-eval error rather than being swallowed into `None`.
+// a value that fails both json and literal-eval propagates the literal-eval error, never None
 pub fn decode_cached_value(
     cached_response: Option<&[u8]>,
 ) -> Result<Option<CachedValue>, DecodeError> {

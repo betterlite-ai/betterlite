@@ -44,6 +44,14 @@ fn push_text_values(
     length
 }
 
+fn remove_keys(lists: &Mutex<HashMap<String, Vec<String>>>, names: &[&str]) -> usize {
+    let mut locked = lists.lock().unwrap();
+    names
+        .iter()
+        .filter(|name| locked.remove(**name).is_some())
+        .count()
+}
+
 fn pop_front(lists: &Mutex<HashMap<String, Vec<String>>>, name: &str) -> FakeReply {
     let Some(mut popped) = lists.lock().unwrap().get(name).cloned() else {
         return FakeReply::Nil;
@@ -67,13 +75,7 @@ impl AsyncRedisCommands for FakeClient {
     }
 
     fn delete(&self, names: &[&str]) -> impl Future<Output = Result<i64, Self::Error>> + Send {
-        let removed = {
-            let mut lists = self.lists.lock().unwrap();
-            names
-                .iter()
-                .filter(|name| lists.remove(**name).is_some())
-                .count()
-        };
+        let removed = remove_keys(&self.lists, names);
         ready(Ok(i64::try_from(removed).unwrap_or_default()))
     }
 

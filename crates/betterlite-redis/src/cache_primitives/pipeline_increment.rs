@@ -2,9 +2,6 @@ mod tests;
 
 use super::namespace::check_and_fix_namespace;
 
-/// One entry of the batch this helper pipelines.
-///
-/// Mirrors `LiteLLM`'s `RedisPipelineIncrementOperation` `TypedDict`.
 #[derive(Debug, Clone)]
 pub struct IncrementOperation {
     pub key: String,
@@ -12,16 +9,12 @@ pub struct IncrementOperation {
     pub ttl: Option<i64>,
 }
 
-/// One command this helper queues onto the pipeline, in the order it must be sent.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PipelineStep {
     IncrByFloat { key: String, value: f64 },
     Expire { key: String, ttl: i64 },
 }
 
-/// Namespaces each operation's key and chains its `INCRBYFLOAT`.
-///
-/// Followed by an `EXPIRE` whenever that operation names a TTL, in operation order.
 #[must_use]
 pub fn plan_pipeline_steps(
     operations: &[IncrementOperation],
@@ -45,12 +38,12 @@ pub fn plan_pipeline_steps(
     steps
 }
 
-/// Keeps only the `INCRBYFLOAT` replies.
-///
-/// The driver classifies each untyped reply as it decodes it, so a non-float reply (the
-/// `EXPIRE` booleans) already arrives as `None` here, mirroring
-/// `[r for r in results if isinstance(r, float)]`.
+// the driver already classifies each untyped reply, so a non-float EXPIRE reply is None here
 #[must_use]
 pub fn float_replies(replies: &[Option<f64>]) -> Vec<f64> {
-    replies.iter().filter_map(|reply| *reply).collect()
+    let mut floats = Vec::with_capacity(replies.len());
+    for reply in replies.iter().flatten() {
+        floats.push(*reply);
+    }
+    floats
 }

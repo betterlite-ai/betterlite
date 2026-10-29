@@ -1,5 +1,7 @@
 mod tests;
 
+use std::hash::Hash;
+
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
@@ -16,12 +18,7 @@ struct FailureLabel {
     failure_class: String,
 }
 
-/// Prometheus metrics for the Redis circuit breaker.
-///
-/// The caller supplies the registry a breaker should register into, or `None` when no
-/// Prometheus registry is in use; every recording call then no-ops instead of touching metrics
-/// that were never registered. Registration happens once, in the constructor, so a caller that
-/// builds one `BreakerMetrics` per breaker instance never re-registers the same metric name.
+// a None registry means recording calls no-op instead of touching metrics that were never registered
 pub struct BreakerMetrics {
     state_gauge: Option<Family<StateLabel, Gauge>>,
     transitions: Option<Family<StateLabel, Counter>>,
@@ -82,24 +79,26 @@ impl BreakerMetrics {
     }
 
     pub fn record_transition(&self, state: &str) {
-        let Some(transitions) = &self.transitions else {
-            return;
+        let label = StateLabel {
+            state: state.to_owned(),
         };
-        transitions
-            .get_or_create(&StateLabel {
-                state: state.to_owned(),
-            })
-            .inc();
+        Self::increment(self.transitions.as_ref(), &label);
     }
 
     pub fn record_failure(&self, failure_class: &str) {
-        let Some(failures) = &self.failures else {
+        let label = FailureLabel {
+            failure_class: failure_class.to_owned(),
+        };
+        Self::increment(self.failures.as_ref(), &label);
+    }
+
+    fn increment<L>(counters: Option<&Family<L, Counter>>, label: &L)
+    where
+        L: Clone + Eq + Hash + EncodeLabelSet,
+    {
+        let Some(family) = counters else {
             return;
         };
-        failures
-            .get_or_create(&FailureLabel {
-                failure_class: failure_class.to_owned(),
-            })
-            .inc();
+        family.get_or_create(label).inc();
     }
 }

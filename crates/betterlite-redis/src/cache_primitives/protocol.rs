@@ -2,7 +2,6 @@ mod tests;
 
 use std::future::Future;
 
-/// `str | bytes | float` as `LiteLLM` passes them to `rpush` and `eval`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RedisScalar {
     Text(String),
@@ -10,11 +9,7 @@ pub enum RedisScalar {
     Float(f64),
 }
 
-/// The async redis commands this cache issues, typed once so Redis and `RedisCluster` clients
-/// can share call sites without redis-py's stubs, which omit these methods on `RedisCluster`.
-///
-/// Methods spell out `impl Future<...> + Send` rather than `async fn` so the trait keeps its
-/// `Send` bound on every implementor's future, which an `async fn` in a public trait cannot name.
+// `impl Future<...> + Send` names the Send bound an async fn in a public trait cannot
 pub trait AsyncRedisCommands {
     type Error;
     type Reply;
