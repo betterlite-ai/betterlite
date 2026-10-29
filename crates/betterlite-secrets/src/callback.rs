@@ -35,18 +35,19 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let transform = |key: &str, value: &Payload| encrypt_if_plaintext(key, value, cipher, extra);
-    transform_callback_vars(metadata, transform)
+    transform_callback_vars(metadata, |key, value| {
+        encrypt_if_plaintext(key, value, cipher, extra)
+    })
 }
 
 // Port of callback_utils.decrypt_callback_vars.
-pub fn decrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    let transform = |key: &str, value: &Payload| decrypt_or_passthrough(key, value, cipher);
-    transform_callback_vars(metadata, transform)
+pub fn decrypt_callback_vars<N: NonceSource, D: SecretDiagnostics>(
+    metadata: &Payload,
+    cipher: &StoredCipher<N, D>,
+) -> Payload {
+    transform_callback_vars(metadata, |key, value| {
+        decrypt_or_passthrough(key, value, cipher)
+    })
 }
 
 // Port of callback_utils._transform_callback_vars: visits logging[*].callback_vars and callback_settings.callback_vars.
