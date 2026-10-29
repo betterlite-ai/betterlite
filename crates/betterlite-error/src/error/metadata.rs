@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::BodyOverride;
-use super::details::{
-    BudgetExceededDetails, GuardrailDetails, RateLimitDetails, SchemaValidationDetails,
-};
+use super::details::{BudgetExceededDetails, RateLimitDetails, SchemaValidationDetails};
 use crate::envelope::{WireField, is_unsafe_header_name};
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
@@ -30,55 +28,58 @@ pub struct ErrorMetadata {
     pub openai_code: Option<String>,
 }
 
-pub(super) fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
-    let status_code = details.status_code;
+// the inputs that genuinely differ across the "no retry, no body override" error families; simple_metadata owns the rest
+pub(super) struct MetadataFields {
+    pub status_code: u16,
+    pub model: Option<String>,
+    pub provider: Option<String>,
+    pub error_type: WireField,
+    pub param: WireField,
+    pub rate_limit_category: Option<RateLimitCategory>,
+    pub rate_limit_dimension: Option<RateLimitDimension>,
+}
+
+pub(super) fn simple_metadata(fields: MetadataFields) -> ErrorMetadata {
+    let status_code = fields.status_code;
     ErrorMetadata {
         status_code,
-        model: None,
-        provider: Some(details.provider.clone()),
-        error_type: WireField::MISSING,
-        param: WireField::MISSING,
+        model: fields.model,
+        provider: fields.provider,
+        error_type: fields.error_type,
+        param: fields.param,
         code: status_code.to_string(),
         retry: RetryMetadata::default(),
-        rate_limit_category: Some(RateLimitCategory::LitellmRateLimit),
-        rate_limit_dimension: Some(RateLimitDimension::Budget),
+        rate_limit_category: fields.rate_limit_category,
+        rate_limit_dimension: fields.rate_limit_dimension,
         allowed_response_headers: BTreeMap::new(),
         openai_code: None,
     }
 }
 
-pub(super) fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
+pub(super) fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
     let status_code = details.status_code;
-    ErrorMetadata {
+    simple_metadata(MetadataFields {
         status_code,
         model: None,
-        provider: None,
+        provider: Some(details.provider.clone()),
         error_type: WireField::MISSING,
         param: WireField::MISSING,
-        code: status_code.to_string(),
-        retry: RetryMetadata::default(),
-        rate_limit_category: None,
-        rate_limit_dimension: None,
-        allowed_response_headers: BTreeMap::new(),
-        openai_code: None,
-    }
+        rate_limit_category: Some(RateLimitCategory::LitellmRateLimit),
+        rate_limit_dimension: Some(RateLimitDimension::Budget),
+    })
 }
 
 pub(super) fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
-    let status_code = 500;
-    ErrorMetadata {
-        status_code,
-        model: Some(details.model.clone()),
+    let model = details.model.clone();
+    simple_metadata(MetadataFields {
+        status_code: 500,
+        model: Some(model),
         provider: Some(details.provider.clone()),
         error_type: WireField::Null,
         param: WireField::Null,
-        code: status_code.to_string(),
-        retry: RetryMetadata::default(),
         rate_limit_category: None,
         rate_limit_dimension: None,
-        allowed_response_headers: BTreeMap::new(),
-        openai_code: None,
-    }
+    })
 }
 
 pub(super) fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {

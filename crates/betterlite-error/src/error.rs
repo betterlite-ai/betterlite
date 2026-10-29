@@ -12,8 +12,8 @@ use details::{
     RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
 use metadata::{
-    ErrorMetadata, RetryMetadata, budget_exceeded_metadata, guardrail_metadata,
-    rate_limit_metadata, schema_validation_metadata,
+    ErrorMetadata, MetadataFields, RetryMetadata, budget_exceeded_metadata, rate_limit_metadata,
+    schema_validation_metadata, simple_metadata,
 };
 
 // the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
@@ -146,7 +146,15 @@ impl ErrorClass {
             MidStreamFallback(mf) => mf.context.metadata(mf.original_status.0, Null, Null, No),
             Self::RateLimit(details) => rate_limit_metadata(details),
             Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => guardrail_metadata(details),
+            Self::GuardrailRaised(details) => simple_metadata(MetadataFields {
+                status_code: details.status_code,
+                model: None,
+                provider: None,
+                error_type: MISSING,
+                param: MISSING,
+                rate_limit_category: None,
+                rate_limit_dimension: None,
+            }),
             Self::JsonSchemaValidation(details) => schema_validation_metadata(details),
         }
     }
