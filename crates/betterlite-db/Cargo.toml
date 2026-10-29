@@ -20,6 +20,7 @@ serde.workspace = true
 thiserror.workspace = true
 tokio-postgres.workspace = true
 unicode-general-category = "1.1.0"
+unicode-normalization = "0.1.26"
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }

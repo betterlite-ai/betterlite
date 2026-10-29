@@ -1,7 +1,16 @@
-use percent_encoding::percent_decode;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
 use std::fmt::Write as _;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::str::from_utf8;
+use unicode_normalization::UnicodeNormalization as _;
+
+// Mirrors CPython's quote_plus: alphanumerics and _.-~ pass through literally, a space becomes
+// a literal space here and is turned into '+' after encoding, everything else is percent-escaped.
+const QUOTE_PLUS_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'-')
+    .remove(b'~')
+    .remove(b' ');
 
 pub(super) struct SplitUrl {
     pub(super) scheme: String,
@@ -22,6 +31,8 @@ pub enum UrlSplitError {
     Ipv4AddressInBrackets,
     #[error("IPvFuture address is invalid")]
     InvalidIpvFuture,
+    #[error("netloc contains invalid characters under NFKC normalization")]
+    InvalidNfkcNetloc,
 }
 
 pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
@@ -65,7 +76,28 @@ fn split_netloc(rest: &str) -> Result<(String, &str), UrlSplitError> {
         after.split_at_checked(end).unwrap_or((after, ""))
     });
     check_netloc_brackets(netloc)?;
+    check_netloc_nfkc(netloc)?;
     Ok((netloc.to_owned(), tail))
+}
+
+// Mirrors _checknetloc: a non-ASCII netloc that NFKC-normalizes into one of '/?#@:' can smuggle a
+// separator past code that only inspected the pre-normalization text (CPython's homoglyph guard).
+fn check_netloc_nfkc(netloc: &str) -> Result<(), UrlSplitError> {
+    if netloc.is_ascii() {
+        return Ok(());
+    }
+    let stripped: String = netloc
+        .chars()
+        .filter(|character| !matches!(character, '@' | ':' | '#' | '?'))
+        .collect();
+    let normalized: String = stripped.nfkc().collect();
+    if stripped == normalized {
+        return Ok(());
+    }
+    if normalized.contains(['/', '?', '#', '@', ':']) {
+        return Err(UrlSplitError::InvalidNfkcNetloc);
+    }
+    Ok(())
 }
 
 // Mirrors _check_bracketed_netloc: an unmatched, misplaced or invalid-host bracket is an error.
@@ -197,7 +229,13 @@ pub(super) fn parse_qs(query: &str) -> Vec<(String, Vec<String>)> {
 pub(super) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
     let mut parts = Vec::new();
     for (name, value) in pairs {
-        parts.push(format!("{}={}", quote_plus(name), quote_plus(value)));
+        let encoded_name = utf8_percent_encode(name, QUOTE_PLUS_SET)
+            .to_string()
+            .replace(' ', "+");
+        let encoded_value = utf8_percent_encode(value, QUOTE_PLUS_SET)
+            .to_string()
+            .replace(' ', "+");
+        parts.push(format!("{encoded_name}={encoded_value}"));
     }
     parts.join("&")
 }
@@ -206,30 +244,17 @@ pub(super) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
 pub(super) fn urlencode_doseq(groups: &[(String, Vec<String>)]) -> String {
     let mut parts = Vec::new();
     for (name, values) in groups {
-        let encoded_name = quote_plus(name);
+        let encoded_name = utf8_percent_encode(name, QUOTE_PLUS_SET)
+            .to_string()
+            .replace(' ', "+");
         for value in values {
-            parts.push(format!("{encoded_name}={}", quote_plus(value)));
+            let encoded_value = utf8_percent_encode(value, QUOTE_PLUS_SET)
+                .to_string()
+                .replace(' ', "+");
+            parts.push(format!("{encoded_name}={encoded_value}"));
         }
     }
     parts.join("&")
-}
-
-fn percent_encode_byte(byte: u8) -> String {
-    if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-' | b'~') {
-        char::from(byte).to_string()
-    } else if byte == b' ' {
-        "+".to_owned()
-    } else {
-        format!("%{byte:02X}")
-    }
-}
-
-fn quote_plus(text: &str) -> String {
-    let mut encoded = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        encoded.push_str(&percent_encode_byte(byte));
-    }
-    encoded
 }
 
 // Matches urllib.parse.unquote_plus: percent_decode leaves a bad escape as a literal '%', like CPython.
@@ -238,27 +263,14 @@ fn unquote_plus(text: &str) -> String {
     decode_percent_bytes(percent_decode(space_separated.as_bytes()).collect())
 }
 
-// Replicates bytes.decode("utf-8", errors="replace") without the workspace's banned String::from_utf8_lossy.
+// Replicates bytes.decode("utf-8", errors="replace") using the standard library's own chunking.
 fn decode_percent_bytes(bytes: Vec<u8>) -> String {
-    let Err(first_error) = from_utf8(&bytes) else {
-        return String::from_utf8(bytes).unwrap_or_default();
-    };
     let mut text = String::with_capacity(bytes.len());
-    let mut rest = bytes.as_slice();
-    let mut next_error = Some(first_error.valid_up_to());
-    while let Some(valid_len) = next_error {
-        let Some((valid, after_valid)) = rest.split_at_checked(valid_len) else {
-            break;
-        };
-        text.push_str(from_utf8(valid).unwrap_or_default());
-        text.push(char::REPLACEMENT_CHARACTER);
-        let skip = match from_utf8(after_valid) {
-            Ok(_) => after_valid.len(),
-            Err(error) => error.error_len().unwrap_or(after_valid.len()).max(1),
-        };
-        rest = after_valid.get(skip..).unwrap_or(&[]);
-        next_error = from_utf8(rest).err().map(|error| error.valid_up_to());
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
     }
-    text.push_str(from_utf8(rest).unwrap_or_default());
     text
 }
