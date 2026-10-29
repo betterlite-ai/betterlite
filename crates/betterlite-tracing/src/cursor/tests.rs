@@ -5,23 +5,22 @@ use base64::engine::general_purpose::URL_SAFE;
 use rstest::rstest;
 
 use super::{
-    CursorError, ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_error_cursor,
-    encode_trace_cursor,
+    CursorError, decode_error_cursor, decode_trace_cursor, encode_error_cursor, encode_trace_cursor,
 };
 
 const VALID_VERSION: &str = "A1B2C3D4E5F6071829384756AFBECD1029384756473829102938475647382910";
 
 #[test]
 fn decodes_an_absent_trace_cursor_as_the_empty_start() {
-    assert_eq!(decode_trace_cursor(None), Ok((0, String::new())));
+    assert_eq!(decode_trace_cursor(None).expect("ok"), (0, String::new()));
 }
 
 #[test]
 fn round_trips_a_trace_cursor() {
     let cursor = encode_trace_cursor(1_700_000_000_000, "trace-abc");
     assert_eq!(
-        decode_trace_cursor(Some(&cursor)),
-        Ok((1_700_000_000_000, "trace-abc".to_owned()))
+        decode_trace_cursor(Some(&cursor)).expect("ok"),
+        (1_700_000_000_000, "trace-abc".to_owned())
     );
 }
 
@@ -36,10 +35,10 @@ fn round_trips_a_trace_cursor() {
 #[case::empty_trace_id(&URL_SAFE.encode("[5,\"\"]"))]
 #[case::numeric_trace_id(&URL_SAFE.encode("[5,6]"))]
 fn rejects_an_invalid_trace_cursor(#[case] cursor: &str) {
-    assert_eq!(
+    assert!(matches!(
         decode_trace_cursor(Some(cursor)),
-        Err(CursorError::InvalidTrace)
-    );
+        Err(CursorError::InvalidTrace(_))
+    ));
 }
 
 #[test]
@@ -50,17 +49,17 @@ fn invalid_trace_cursor_reports_the_litellm_message() {
 
 #[test]
 fn decodes_an_absent_diagnostic_cursor_as_none() {
-    assert_eq!(decode_error_cursor(None), Ok(None));
+    assert_eq!(decode_error_cursor(None).expect("ok"), None);
 }
 
 #[test]
 fn round_trips_an_error_cursor() {
-    let cursor = ErrorCursor {
-        offset: 4096,
-        version: VALID_VERSION.to_owned(),
-    };
-    let encoded = encode_error_cursor(&cursor);
-    assert_eq!(decode_error_cursor(Some(&encoded)), Ok(Some(cursor)));
+    let encoded = encode_error_cursor(4096, VALID_VERSION);
+    let decoded = decode_error_cursor(Some(&encoded))
+        .expect("ok")
+        .expect("some");
+    assert_eq!(decoded.offset, 4096);
+    assert_eq!(decoded.version, VALID_VERSION);
 }
 
 #[rstest]
@@ -70,10 +69,10 @@ fn round_trips_an_error_cursor() {
 #[case::lowercase_version(&URL_SAFE.encode(format!("{{\"offset\":0,\"version\":\"{}\"}}", VALID_VERSION.to_lowercase())))]
 #[case::offset_too_large(&URL_SAFE.encode(format!("{{\"offset\":18446744073709551615,\"version\":\"{VALID_VERSION}\"}}")))]
 fn rejects_an_invalid_diagnostic_cursor(#[case] cursor: &str) {
-    assert_eq!(
+    assert!(matches!(
         decode_error_cursor(Some(cursor)),
-        Err(CursorError::InvalidDiagnostic)
-    );
+        Err(CursorError::InvalidDiagnostic(_))
+    ));
 }
 
 #[test]

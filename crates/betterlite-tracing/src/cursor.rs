@@ -6,26 +6,40 @@ use thiserror::Error;
 
 mod tests;
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
+pub enum CursorSource {
+    #[error(transparent)]
+    Base64(base64::DecodeError),
+    #[error(transparent)]
+    Json(serde_json::Error),
+}
+
+#[derive(Debug, Error)]
 pub enum CursorError {
     #[error("Invalid trace cursor")]
-    InvalidTrace,
+    InvalidTrace(#[source] Option<CursorSource>),
     #[error("Invalid diagnostic cursor")]
-    InvalidDiagnostic,
+    InvalidDiagnostic(#[source] Option<CursorSource>),
 }
 
 #[derive(Deserialize, Serialize)]
 struct TraceCursorPayload(i64, String);
 
-fn decode_payload<T>(cursor: Option<&str>, error: CursorError) -> Result<Option<T>, CursorError>
+fn decode_payload<T>(
+    cursor: Option<&str>,
+    make_error: fn(Option<CursorSource>) -> CursorError,
+) -> Result<Option<T>, CursorError>
 where
     T: DeserializeOwned,
 {
     let Some(raw) = cursor.filter(|candidate| !candidate.is_empty()) else {
         return Ok(None);
     };
-    let bytes = URL_SAFE.decode(raw).map_err(|_source| error.clone())?;
-    let payload: T = serde_json::from_slice(&bytes).map_err(|_source| error)?;
+    let bytes = URL_SAFE
+        .decode(raw)
+        .map_err(|source| make_error(Some(CursorSource::Base64(source))))?;
+    let payload: T = serde_json::from_slice(&bytes)
+        .map_err(|source| make_error(Some(CursorSource::Json(source))))?;
     Ok(Some(payload))
 }
 
@@ -41,7 +55,7 @@ pub fn decode_trace_cursor(cursor: Option<&str>) -> Result<(i64, String), Cursor
         return Ok((0, String::new()));
     };
     if payload.0 <= 0 || payload.1.is_empty() {
-        return Err(CursorError::InvalidTrace);
+        return Err(CursorError::InvalidTrace(None));
     }
     Ok((payload.0, payload.1))
 }
@@ -57,9 +71,12 @@ pub struct ErrorCursor {
 }
 
 #[must_use]
-pub fn encode_error_cursor(cursor: &ErrorCursor) -> String {
-    let encoded = serde_json::to_string(cursor).unwrap_or_default();
-    URL_SAFE.encode(encoded)
+pub fn encode_error_cursor(offset: u64, version: &str) -> String {
+    let payload = ErrorCursor {
+        offset,
+        version: version.to_owned(),
+    };
+    URL_SAFE.encode(serde_json::to_string(&payload).unwrap_or_default())
 }
 
 pub fn decode_error_cursor(cursor: Option<&str>) -> Result<Option<ErrorCursor>, CursorError> {
@@ -68,7 +85,7 @@ pub fn decode_error_cursor(cursor: Option<&str>) -> Result<Option<ErrorCursor>, 
         return Ok(None);
     };
     if parsed.offset > MAX_OFFSET || !is_valid_version(&parsed.version) {
-        return Err(CursorError::InvalidDiagnostic);
+        return Err(CursorError::InvalidDiagnostic(None));
     }
     Ok(Some(parsed))
 }
