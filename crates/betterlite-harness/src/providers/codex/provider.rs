@@ -4,6 +4,7 @@ use crate::types::Harness;
 
 use super::config::CODEX_TOKEN_ENV;
 
+// stands in for ctx.sandbox.host_url(ctx.endpoint.port) until B4841's session endpoint lands; see docs/deviations/B4835.yaml
 pub(super) fn provider_overrides<S>(
     context: &SessionContext<S>,
 ) -> Result<Vec<String>, HarnessError> {

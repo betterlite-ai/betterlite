@@ -31,7 +31,7 @@ use config::{CODEX_HOME_ENV, CODEX_SCHEMA_FILENAME, CODEX_TOKEN_ENV};
 use features::feature_overrides;
 use permissions::permission_args;
 use provider::provider_overrides;
-use stream::{CodexStreamState, ItemEventKind, StreamEvent};
+use stream::{CodexStreamState, ItemEventKind, ParsedLine, StreamEvent};
 use stream_events::{record_thread_id, record_turn_failed, transform_item_event};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -167,8 +167,12 @@ impl BaseCLIHarnessConfig for CodexHarnessConfig {
         line: &JsonObject,
         state: &mut Self::StreamState,
     ) -> Vec<Event> {
-        let Some(event) = stream::parse(line) else {
-            return Vec::new();
+        let event = match stream::parse(line) {
+            ParsedLine::Event(event) => *event,
+            ParsedLine::Unparsed(message) => {
+                state.error = Some(message);
+                return Vec::new();
+            }
         };
         match event {
             StreamEvent::ThreadStarted { thread_id } => {

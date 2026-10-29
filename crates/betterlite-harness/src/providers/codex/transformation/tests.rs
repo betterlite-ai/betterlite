@@ -192,6 +192,38 @@ fn null_item_id_still_reports_tool_events() {
 }
 
 #[test]
+fn object_error_message_is_recorded_instead_of_dropped() {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject =
+        serde_json::from_str(r#"{"type":"error","message":{"code":1}}"#).unwrap();
+    let events = CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert!(events.is_empty());
+    assert!(
+        state
+            .error
+            .as_deref()
+            .is_some_and(|text| text.contains("error"))
+    );
+}
+
+#[test]
+fn numeric_agent_message_text_is_recorded_instead_of_dropped() {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(
+        r#"{"type":"item.completed","item":{"id":"m1","type":"agent_message","text":42}}"#,
+    )
+    .unwrap();
+    let events = CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert!(events.is_empty());
+    assert!(
+        state
+            .error
+            .as_deref()
+            .is_some_and(|text| text.contains("item.completed"))
+    );
+}
+
+#[test]
 fn turn_failed_keeps_prior_error_when_message_is_empty() {
     let mut state = CodexStreamState::default();
     let error_line: JsonObject =

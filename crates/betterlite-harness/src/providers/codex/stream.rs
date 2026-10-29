@@ -95,7 +95,7 @@ pub(super) enum StreamEvent {
     Other,
 }
 
-pub(super) use wire::{Item, parse, tool_projection};
+pub(super) use wire::{Item, ParsedLine, parse, tool_projection};
 
 pub(super) fn item_id(item: &Item) -> String {
     let id = match item {

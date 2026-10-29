@@ -90,16 +90,31 @@ pub(crate) struct McpToolCallItem {
     pub(crate) status: Option<String>,
 }
 
-pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
+// a line whose type is known but whose fields don't fit; see docs/deviations/B4835.yaml
+pub(crate) enum ParsedLine {
+    Event(Box<super::StreamEvent>),
+    Unparsed(String),
+}
+
+pub(crate) fn parse(line: &JsonObject) -> ParsedLine {
     let object: serde_json::Map<String, Value> = line
         .iter()
         .map(|(key, entry)| (key.clone(), entry.clone()))
         .collect();
+    let event_type = line.get("type").and_then(Value::as_str);
     let value = Value::Object(object);
-    serde_json::from_value(value).ok().or_else(|| {
-        (line.get("type").and_then(Value::as_str) == Some("turn.failed"))
-            .then(|| super::StreamEvent::TurnFailed { error: None })
-    })
+    match serde_json::from_value(value) {
+        Ok(event) => ParsedLine::Event(Box::new(event)),
+        Err(error) => {
+            if event_type == Some("turn.failed") {
+                return ParsedLine::Event(Box::new(super::StreamEvent::TurnFailed { error: None }));
+            }
+            let name = event_type.unwrap_or("<missing type>");
+            ParsedLine::Unparsed(format!(
+                "codex emitted a {name} event that did not match its expected shape: {error}"
+            ))
+        }
+    }
 }
 
 #[path = "tool_projection.rs"]
