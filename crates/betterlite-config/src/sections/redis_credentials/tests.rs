@@ -6,18 +6,15 @@ use std::time::{Duration, Instant, SystemTime};
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use thiserror::Error;
 
 use aws_credential_types::Credentials;
 
 use super::aws::{AwsCredentialsResolver, AwsSettings, ElastiCacheIamProvider};
 use super::azure::{
-    AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureToken, AzureTokenError,
-    AzureTokenFetchError, AzureTokenFetcher,
+    AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureToken, AzureTokenFetcher,
 };
-use super::gcp::{
-    Clock, GcpCredentialSource as _, GcpIamCredentialProvider, GcpTokenCache, GcpTokenFetchError,
-    GcpTokenFetcher,
-};
+use super::gcp::{Clock, GcpIamCredentialProvider, GcpTokenCache, GcpTokenFetcher};
 use super::{Provider, ProviderWarning};
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -425,11 +422,18 @@ impl CountingGcpFetcher {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("the counting fetcher's lock was poisoned")]
+struct CountingGcpFetcherError;
+
 impl GcpTokenFetcher for CountingGcpFetcher {
-    fn fetch(&self, service_account: &str) -> Result<SecretString, GcpTokenFetchError> {
-        let mut calls = self.calls.lock().map_err(|_poisoned| GcpTokenFetchError {
-            message: "the counting fetcher's lock was poisoned".to_owned(),
-        })?;
+    type Error = CountingGcpFetcherError;
+
+    fn fetch(&self, service_account: &str) -> Result<SecretString, Self::Error> {
+        let mut calls = self
+            .calls
+            .lock()
+            .map_err(|_poisoned| CountingGcpFetcherError)?;
         calls.push(());
         let count = calls.len();
         drop(calls);
@@ -492,7 +496,15 @@ fn gcp_iam_credential_provider_fetches_through_its_cache() {
         ttl: Duration::from_mins(55),
         cache: Arc::new(GcpTokenCache::default()),
     };
-    let token = provider.get_credentials(&clock, &fetcher).unwrap();
+    let token = provider
+        .cache
+        .get_or_fetch(
+            provider.service_account.expose_secret(),
+            provider.ttl,
+            &clock,
+            &fetcher,
+        )
+        .unwrap();
     assert_eq!(token.expose_secret(), "redis-sa-token-1");
 }
 
@@ -588,20 +600,22 @@ impl FixedAzureTokenFetcher {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("the fixed azure token fetcher's lock was poisoned")]
+struct FixedAzureTokenFetcherError;
+
 impl AzureTokenFetcher for FixedAzureTokenFetcher {
+    type Error = FixedAzureTokenFetcherError;
+
     fn fetch_token(
         &self,
         _credential: AzureCredential,
         scope: &str,
-    ) -> Result<AzureToken, AzureTokenError> {
-        let mut scopes_seen =
-            self.scopes_seen
-                .lock()
-                .map_err(|_poisoned| AzureTokenError::Fetch {
-                    source: AzureTokenFetchError {
-                        message: "the fixed azure token fetcher's lock was poisoned".to_owned(),
-                    },
-                })?;
+    ) -> Result<AzureToken, Self::Error> {
+        let mut scopes_seen = self
+            .scopes_seen
+            .lock()
+            .map_err(|_poisoned| FixedAzureTokenFetcherError)?;
         scopes_seen.push(scope.to_owned());
         drop(scopes_seen);
         Ok(AzureToken {
@@ -616,11 +630,9 @@ fn azure_ad_provider_returns_username_and_token_from_its_fetcher() {
         token: "access-token".to_owned(),
         scopes_seen: Mutex::new(Vec::new()),
     });
-    let cloned_fetcher = Arc::clone(&fetcher);
-    let fetcher_handle: Arc<dyn AzureTokenFetcher> = cloned_fetcher;
     let provider = AzureAdCredentialProvider {
         credential: AzureCredential::ManagedIdentity,
-        fetcher: fetcher_handle,
+        fetcher: Arc::clone(&fetcher),
         username: Some("app".to_owned()),
     };
     let (username, token) = provider.get_credentials().unwrap();
@@ -638,11 +650,9 @@ fn azure_ad_provider_reuses_the_same_fetcher_across_calls() {
         token: "access-token".to_owned(),
         scopes_seen: Mutex::new(Vec::new()),
     });
-    let cloned_fetcher = Arc::clone(&fetcher);
-    let fetcher_handle: Arc<dyn AzureTokenFetcher> = cloned_fetcher;
     let provider = AzureAdCredentialProvider {
         credential: AzureCredential::Default,
-        fetcher: fetcher_handle,
+        fetcher: Arc::clone(&fetcher),
         username: None,
     };
     provider.get_credentials().unwrap();

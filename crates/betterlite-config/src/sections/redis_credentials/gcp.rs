@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::error::Error as StdError;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -34,22 +35,21 @@ impl Clock for SystemClock {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("{message}")]
-pub struct GcpTokenFetchError {
-    pub message: String,
-}
-
 pub trait GcpTokenFetcher: Send + Sync {
-    fn fetch(&self, service_account: &str) -> Result<SecretString, GcpTokenFetchError>;
+    type Error: StdError + Send + Sync + 'static;
+
+    fn fetch(&self, service_account: &str) -> Result<SecretString, Self::Error>;
 }
 
 #[derive(Debug, Error)]
-pub enum GcpTokenError {
+pub enum GcpTokenError<E>
+where
+    E: StdError + Send + Sync + 'static,
+{
     #[error("failed to generate a GCP IAM access token: {source}")]
     Fetch {
         #[source]
-        source: GcpTokenFetchError,
+        source: E,
     },
     #[error("the GCP token cache lock was poisoned")]
     LockPoisoned,
@@ -74,15 +74,18 @@ impl fmt::Debug for GcpTokenCache {
 }
 
 impl GcpTokenCache {
-    pub fn get_or_fetch(
+    pub fn get_or_fetch<F>(
         &self,
         service_account: &str,
         ttl: Duration,
         clock: &dyn Clock,
-        fetcher: &dyn GcpTokenFetcher,
-    ) -> Result<SecretString, GcpTokenError> {
+        fetcher: &F,
+    ) -> Result<SecretString, GcpTokenError<F::Error>>
+    where
+        F: GcpTokenFetcher,
+    {
         let now = clock.now();
-        if let Some(token) = self.fresh_token(service_account, now)? {
+        if let Some(token) = self.fresh_token(service_account, now) {
             return Ok(token);
         }
         let mut entries = self
@@ -111,19 +114,12 @@ impl GcpTokenCache {
         Ok(token)
     }
 
-    fn fresh_token(
-        &self,
-        service_account: &str,
-        now: Instant,
-    ) -> Result<Option<SecretString>, GcpTokenError> {
-        let entries = self
-            .entries
-            .lock()
-            .map_err(|_poisoned| GcpTokenError::LockPoisoned)?;
-        Ok(entries
+    fn fresh_token(&self, service_account: &str, now: Instant) -> Option<SecretString> {
+        let entries = self.entries.lock().ok()?;
+        entries
             .get(service_account)
             .filter(|cached| now < cached.expires_at)
-            .map(|cached| cached.token.clone()))
+            .map(|cached| cached.token.clone())
     }
 }
 
@@ -131,29 +127,6 @@ pub struct GcpIamCredentialProvider {
     pub service_account: SecretString,
     pub ttl: Duration,
     pub cache: Arc<GcpTokenCache>,
-}
-
-pub trait GcpCredentialSource {
-    fn get_credentials(
-        &self,
-        clock: &dyn Clock,
-        fetcher: &dyn GcpTokenFetcher,
-    ) -> Result<SecretString, GcpTokenError>;
-}
-
-impl GcpCredentialSource for GcpIamCredentialProvider {
-    fn get_credentials(
-        &self,
-        clock: &dyn Clock,
-        fetcher: &dyn GcpTokenFetcher,
-    ) -> Result<SecretString, GcpTokenError> {
-        self.cache.get_or_fetch(
-            self.service_account.expose_secret(),
-            self.ttl,
-            clock,
-            fetcher,
-        )
-    }
 }
 
 pub(super) fn build_gcp<L>(

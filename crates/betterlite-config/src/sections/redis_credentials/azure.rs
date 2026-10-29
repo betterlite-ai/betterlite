@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::sync::Arc;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -32,40 +33,48 @@ pub struct AzureToken {
 }
 
 #[derive(Debug, Error)]
-#[error("{message}")]
-pub struct AzureTokenFetchError {
-    pub message: String,
-}
-
-#[derive(Debug, Error)]
-pub enum AzureTokenError {
+pub enum AzureTokenError<E>
+where
+    E: StdError + Send + Sync + 'static,
+{
     #[error("failed to fetch an Azure AD access token: {source}")]
     Fetch {
         #[source]
-        source: AzureTokenFetchError,
+        source: E,
     },
 }
 
 pub trait AzureTokenFetcher: Send + Sync {
+    type Error: StdError + Send + Sync + 'static;
+
     fn fetch_token(
         &self,
         credential: AzureCredential,
         scope: &str,
-    ) -> Result<AzureToken, AzureTokenError>;
+    ) -> Result<AzureToken, Self::Error>;
 }
 
 // Holds one fetcher across every call so the SDK credential's own token cache and refresh apply.
-pub struct AzureAdCredentialProvider {
+pub struct AzureAdCredentialProvider<F>
+where
+    F: AzureTokenFetcher,
+{
     pub credential: AzureCredential,
-    pub fetcher: Arc<dyn AzureTokenFetcher>,
+    pub fetcher: Arc<F>,
     pub username: Option<String>,
 }
 
-impl AzureAdCredentialProvider {
-    pub fn get_credentials(&self) -> Result<(Option<String>, SecretString), AzureTokenError> {
+impl<F> AzureAdCredentialProvider<F>
+where
+    F: AzureTokenFetcher,
+{
+    pub fn get_credentials(
+        &self,
+    ) -> Result<(Option<String>, SecretString), AzureTokenError<F::Error>> {
         let token = self
             .fetcher
-            .fetch_token(self.credential, AZURE_REDIS_SCOPE)?;
+            .fetch_token(self.credential, AZURE_REDIS_SCOPE)
+            .map_err(|source| AzureTokenError::Fetch { source })?;
         Ok((self.username.clone(), token.token))
     }
 }
