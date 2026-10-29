@@ -1,0 +1,10 @@
+kind: helper
+name: sentry-benign-value
+call:
+  sentry_scrubbing:
+    function: scrub_text
+    text: "model='gpt-4o' max_tokens=256 note=hello"
+    send_default_pii: false
+env: {}
+compare:
+  ignore: []
