@@ -30,6 +30,16 @@ use std::{fs, path::PathBuf};
     false,
     "xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdy"
 )]
+#[case::sha256_blocked_by_leading_word_character_alone(
+    "xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd end",
+    false,
+    "xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd end"
+)]
+#[case::sha256_blocked_by_trailing_word_character_alone(
+    "start abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdy",
+    false,
+    "start abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdy"
+)]
 #[case::sha256_filtered_when_isolated(
     "hash: abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd end",
     false,
@@ -46,6 +56,18 @@ fn sentry_scrubbing_behavior_tests_behavior(
     #[case] expected: &str,
 ) {
     assert_eq!(scrub(input, send_default_pii).unwrap(), expected);
+}
+
+#[test]
+fn advance_past_char_steps_over_the_full_multi_byte_codepoint() {
+    let text = "a\u{2713}b";
+    assert_eq!(super::advance_past_char(text, 1), 4);
+}
+
+#[test]
+fn advance_past_char_at_end_of_text_returns_text_length() {
+    let text = "ab";
+    assert_eq!(super::advance_past_char(text, 2), 2);
 }
 
 #[test]

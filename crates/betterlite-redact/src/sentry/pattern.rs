@@ -136,7 +136,7 @@ fn scan_and_filter<M>(
             break;
         };
         if rejected {
-            scan_from = advance_past_char(text, whole.start);
+            scan_from = advance_past_char(text, whole.start).max(scan_from.saturating_add(1));
             continue;
         }
         output.push_str(text.get(copied_until..whole.start).unwrap_or_default());
