@@ -55,9 +55,9 @@ pub struct ApiDetails {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BudgetExceededDetails {
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub current_cost: Decimal,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub max_budget: Decimal,
     #[serde(default)]
     pub message: Option<String>,

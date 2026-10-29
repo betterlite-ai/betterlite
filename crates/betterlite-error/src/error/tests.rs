@@ -373,6 +373,22 @@ fn rate_limit_details_debug_names_the_header_but_not_its_secret_value() {
 }
 
 #[test]
+fn error_metadata_debug_names_the_header_but_not_its_secret_value() {
+    let class = ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context("slow down"),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::from([(
+            "x-vendor-secret".to_owned(),
+            "sk-leaked-secret-token".to_owned(),
+        )]),
+    }));
+    let debug_text = format!("{:?}", class.metadata());
+    assert!(debug_text.contains("x-vendor-secret"));
+    assert!(!debug_text.contains("sk-leaked-secret-token"));
+}
+
+#[test]
 fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
     let class = ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
         current_cost: Decimal::new(125, 1),

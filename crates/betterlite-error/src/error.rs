@@ -11,9 +11,10 @@ use details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
     RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
-use metadata::{ErrorMetadata, RetryMetadata, rate_limit_metadata};
-
-use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
+use metadata::{
+    ErrorMetadata, RetryMetadata, budget_exceeded_metadata, guardrail_raised_metadata,
+    json_schema_validation_metadata, rate_limit_metadata,
+};
 
 // the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -118,84 +119,47 @@ pub enum ErrorClass {
 }
 
 impl ErrorClass {
+    // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
     #[must_use]
     pub fn metadata(&self) -> ErrorMetadata {
-        if let Self::RateLimit(details) = self {
-            return rate_limit_metadata(details);
-        }
-        if let Self::BudgetExceeded(details) = self {
-            return ErrorMetadata {
-                status_code: details.status_code,
-                model: None,
-                provider: Some(details.provider.clone()),
-                error_type: WireField::MISSING,
-                param: WireField::MISSING,
-                code: details.status_code.to_string(),
-                retry: RetryMetadata::default(),
-                rate_limit_category: Some(RateLimitCategory::LitellmRateLimit),
-                rate_limit_dimension: Some(RateLimitDimension::Budget),
-                allowed_response_headers: BTreeMap::new(),
-                openai_code: None,
-            };
-        }
-        if let Self::GuardrailRaised(details) = self {
-            return ErrorMetadata {
-                status_code: details.status_code,
-                model: None,
-                provider: None,
-                error_type: WireField::MISSING,
-                param: WireField::MISSING,
-                code: details.status_code.to_string(),
-                retry: RetryMetadata::default(),
-                rate_limit_category: None,
-                rate_limit_dimension: None,
-                allowed_response_headers: BTreeMap::new(),
-                openai_code: None,
-            };
-        }
-        self.context_metadata()
-    }
-
-    // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
-    fn context_metadata(&self) -> ErrorMetadata {
-        use BodyOverride::{Full, None as No, TypeLiteral};
-        use ErrorClass::{
-            ApiConnection, ApiResponseValidation, BadRequest, BudgetExceeded,
-            ContentPolicyViolation, GuardrailRaised, MidStreamFallback, RateLimit,
-        };
+        use BodyOverride::{Full, None as Absent, TypeLiteral};
         use WireField::Null;
         const MISSING: WireField = WireField::MISSING;
-        let ise = WireField::Text("internal_server_error".to_owned());
         match self {
-            Self::Authentication(ctx) => ctx.metadata(401, Null, Null, No),
-            Self::NotFound(ctx) => ctx.metadata(404, Null, Null, No),
-            Self::PermissionDenied(ctx) => ctx.metadata(403, Null, Null, No),
-            BadRequest(ctx) | ContentPolicyViolation(ctx) => ctx.metadata(400, Null, Null, Full),
-            Self::ContextWindowExceeded(ctx) => ctx.metadata(400, Null, Null, No),
-            Self::UnprocessableEntity(ctx) => ctx.metadata(422, Null, Null, No),
-            Self::ServiceUnavailable(ctx) => ctx.metadata(503, Null, Null, No),
-            Self::BadGateway(ctx) => ctx.metadata(502, Null, Null, No),
-            Self::InternalServer(ctx) => ctx.metadata(500, ise, Null, TypeLiteral),
-            ApiConnection(ctx) | ApiResponseValidation(ctx) => ctx.metadata(500, Null, Null, No),
-            Self::UnsupportedParams(ctx) => ctx.metadata(400, MISSING, Null, No),
-            Self::Unclassified(ctx) => ctx.metadata(500, MISSING, MISSING, No),
-            Self::Timeout(to) => to.context.metadata(to.original_status.0, Null, Null, No),
+            Self::Authentication(ctx) => ctx.metadata(401, Null, Null, Absent),
+            Self::NotFound(ctx) => ctx.metadata(404, Null, Null, Absent),
+            Self::PermissionDenied(ctx) => ctx.metadata(403, Null, Null, Absent),
+            Self::BadRequest(ctx) | Self::ContentPolicyViolation(ctx) => {
+                ctx.metadata(400, Null, Null, Full)
+            }
+            Self::ContextWindowExceeded(ctx) => ctx.metadata(400, Null, Null, Absent),
+            Self::UnprocessableEntity(ctx) => ctx.metadata(422, Null, Null, Absent),
+            Self::ServiceUnavailable(ctx) => ctx.metadata(503, Null, Null, Absent),
+            Self::BadGateway(ctx) => ctx.metadata(502, Null, Null, Absent),
+            Self::InternalServer(ctx) => {
+                let internal_server_type = WireField::Text("internal_server_error".to_owned());
+                ctx.metadata(500, internal_server_type, Null, TypeLiteral)
+            }
+            Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => {
+                ctx.metadata(500, Null, Null, Absent)
+            }
+            Self::UnsupportedParams(ctx) => ctx.metadata(400, MISSING, Null, Absent),
+            Self::Unclassified(ctx) => ctx.metadata(500, MISSING, MISSING, Absent),
+            Self::Timeout(timeout) => {
+                timeout
+                    .context
+                    .metadata(timeout.original_status.0, Null, Null, Absent)
+            }
+            Self::RateLimit(details) => rate_limit_metadata(details),
+            Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
             Self::Api(api) => api.context.metadata(api.status, Null, Null, Full),
-            MidStreamFallback(fb) => fb.context.metadata(fb.original_status.0, Null, Null, No),
-            Self::JsonSchemaValidation(details) => ErrorMetadata {
-                status_code: 500,
-                model: Some(details.model.clone()),
-                provider: Some(details.provider.clone()),
-                error_type: Null,
-                param: Null,
-                code: 500.to_string(),
-                retry: RetryMetadata::default(),
-                rate_limit_category: None,
-                rate_limit_dimension: None,
-                allowed_response_headers: BTreeMap::new(),
-                openai_code: None,
-            },
-            RateLimit(_) | BudgetExceeded(_) | GuardrailRaised(_) => self.metadata(),
+            Self::MidStreamFallback(fallback) => {
+                fallback
+                    .context
+                    .metadata(fallback.original_status.0, Null, Null, Absent)
+            }
+            Self::GuardrailRaised(details) => guardrail_raised_metadata(details),
+            Self::JsonSchemaValidation(details) => json_schema_validation_metadata(details),
         }
     }
 }

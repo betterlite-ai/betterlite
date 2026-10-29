@@ -193,18 +193,6 @@ def _body_from_input(context: ErrorContextInput) -> dict[str, str | None] | None
     }
 
 
-def _filter_unsafe_headers(headers: dict[str, str]) -> dict[str, str]:
-    return {
-        name: value
-        for name, value in headers.items()
-        if name.lower() not in UNSAFE_PROXY_RESPONSE_HEADERS
-    }
-
-
-def _mock_response(status_code: int) -> httpx.Response:
-    return httpx.Response(status_code=status_code, request=httpx.Request(method="GET", url="https://litellm.ai"))
-
-
 def _metadata(
     exc: Exception,
     *,
@@ -226,7 +214,13 @@ def _metadata(
         },
         "rate_limit_category": category,
         "rate_limit_dimension": rate_limit_type,
-        "allowed_response_headers": _filter_unsafe_headers(headers) if headers else {},
+        "allowed_response_headers": {
+            name: value
+            for name, value in headers.items()
+            if name.lower() not in UNSAFE_PROXY_RESPONSE_HEADERS
+        }
+        if headers
+        else {},
         "openai_code": getattr(exc, "code", None),
     }
 
@@ -258,7 +252,7 @@ def _permission_denied(input_value: PermissionDeniedInput) -> object:
         input_value["message"],
         input_value.get("provider"),
         input_value.get("model"),
-        response=_mock_response(403),
+        response=httpx.Response(status_code=403, request=httpx.Request(method="GET", url="https://litellm.ai")),
         max_retries=input_value.get("max_retries"),
         num_retries=input_value.get("num_retries"),
     )
@@ -282,7 +276,7 @@ def _unprocessable_entity(input_value: UnprocessableEntityInput) -> object:
         input_value["message"],
         input_value.get("model"),
         input_value.get("provider"),
-        response=_mock_response(422),
+        response=httpx.Response(status_code=422, request=httpx.Request(method="GET", url="https://litellm.ai")),
         max_retries=input_value.get("max_retries"),
         num_retries=input_value.get("num_retries"),
     )
