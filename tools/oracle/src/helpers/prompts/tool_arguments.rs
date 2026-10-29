@@ -2,6 +2,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_prompts::arguments::concatenated::{
     salvage_concatenated_tool_arguments, split_concatenated_json_objects,
 };
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::arguments::parse::{ParseArgumentsError, parse_tool_call_arguments};
 use betterlite_prompts::arguments::shapes::{
     check_is_function_call, convert_custom_tool_format_to_chat_shape,
@@ -28,25 +29,25 @@ pub(crate) enum Input {
         raw: String,
     },
     GetToolCallNames {
-        tools: Vec<Map<String, Value>>,
+        tools: Vec<Object>,
     },
     IsFunctionCall {
-        optional_params: Map<String, Value>,
+        optional_params: Object,
     },
     CheckIsFunctionCall {
         #[serde(default)]
-        optional_params: Option<Map<String, Value>>,
+        optional_params: Option<Object>,
     },
     ConvertCustomToolFormatToChatShape {
-        format_obj: Map<String, Value>,
+        format_obj: Object,
     },
     ConvertCustomToolFormatToResponsesShape {
-        format_obj: Map<String, Value>,
+        format_obj: Object,
     },
     WithPromptCacheBreakpoint {
-        target: Map<String, Value>,
+        target: Object,
         #[serde(default)]
-        marker: Option<Value>,
+        marker: Option<Json>,
     },
 }
 
@@ -60,13 +61,20 @@ impl Helper for Op {
                 tool_name,
                 context,
             } => parse_tool_call_arguments(arguments, tool_name.as_deref(), context.as_deref())
+                .map(json_to_value)
                 .map_err(|error| failure(&error)),
-            Input::SplitConcatenatedJsonObjects { raw } => {
-                Ok(Value::from(split_concatenated_json_objects(raw)))
-            }
-            Input::SalvageConcatenatedToolArguments { raw } => {
-                Ok(Value::from(salvage_concatenated_tool_arguments(raw)))
-            }
+            Input::SplitConcatenatedJsonObjects { raw } => Ok(Value::Array(
+                split_concatenated_json_objects(raw)
+                    .into_iter()
+                    .map(object_to_value)
+                    .collect(),
+            )),
+            Input::SalvageConcatenatedToolArguments { raw } => Ok(Value::Array(
+                salvage_concatenated_tool_arguments(raw)
+                    .into_iter()
+                    .map(object_to_value)
+                    .collect(),
+            )),
             Input::GetToolCallNames { tools } => Ok(Value::from(get_tool_call_names(tools))),
             Input::IsFunctionCall { optional_params } => {
                 Ok(Value::from(is_function_call(optional_params)))
@@ -74,17 +82,36 @@ impl Helper for Op {
             Input::CheckIsFunctionCall { optional_params } => Ok(Value::from(
                 check_is_function_call(optional_params.as_ref()),
             )),
-            Input::ConvertCustomToolFormatToChatShape { format_obj } => Ok(Value::Object(
+            Input::ConvertCustomToolFormatToChatShape { format_obj } => Ok(object_to_value(
                 convert_custom_tool_format_to_chat_shape(format_obj),
             )),
-            Input::ConvertCustomToolFormatToResponsesShape { format_obj } => Ok(Value::Object(
+            Input::ConvertCustomToolFormatToResponsesShape { format_obj } => Ok(object_to_value(
                 convert_custom_tool_format_to_responses_shape(format_obj),
             )),
-            Input::WithPromptCacheBreakpoint { target, marker } => Ok(Value::Object(
+            Input::WithPromptCacheBreakpoint { target, marker } => Ok(object_to_value(
                 with_prompt_cache_breakpoint(target, marker.as_ref()),
             )),
         }
     }
+}
+
+fn json_to_value(json: Json) -> Value {
+    match json {
+        Json::Null => Value::Null,
+        Json::Bool(flag) => Value::Bool(flag),
+        Json::Number(number) => Value::Number(number),
+        Json::Text(text) => Value::String(text),
+        Json::List(items) => Value::Array(items.into_iter().map(json_to_value).collect()),
+        Json::Object(fields) => object_to_value(fields),
+    }
+}
+
+fn object_to_value(object: Object) -> Value {
+    let entries: Map<String, Value> = object
+        .into_iter()
+        .map(|(key, value)| (key, json_to_value(value)))
+        .collect();
+    Value::Object(entries)
 }
 
 fn failure(error: &ParseArgumentsError) -> Box<HelperError> {

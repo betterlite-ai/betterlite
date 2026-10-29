@@ -8,19 +8,19 @@ use serde_json::Value;
 #[rstest]
 #[case::valid_arguments_parse_directly(
     r#"{"mode":"parse_tool_call_arguments","arguments":"{\"a\":1}"}"#,
-    serde_json::json!({"a": 1})
+    serde_json::json!({"a": 1_i32})
 )]
 #[case::truncated_arguments_are_repaired(
     r#"{"mode":"parse_tool_call_arguments","arguments":"{\"a\":1,\"b\":[1,2"}"#,
-    serde_json::json!({"a": 1, "b": [1, 2]})
+    serde_json::json!({"a": 1_i32, "b": [1_i32, 2_i32]})
 )]
 #[case::split_concatenated_objects(
     r#"{"mode":"split_concatenated_json_objects","raw":"{\"a\":1}{\"b\":2}"}"#,
-    serde_json::json!([{"a": 1}, {"b": 2}])
+    serde_json::json!([{"a": 1_i32}, {"b": 2_i32}])
 )]
 #[case::salvage_collapses_identical_repeats(
     r#"{"mode":"salvage_concatenated_tool_arguments","raw":"{\"a\":1}{\"a\":1}"}"#,
-    serde_json::json!([{"a": 1}])
+    serde_json::json!([{"a": 1_i32}])
 )]
 #[case::tool_call_names_skips_blank_names(
     r#"{"mode":"get_tool_call_names","tools":[{"type":"function","function":{"name":"search"}},{"type":"function","function":{"name":""}}]}"#,
