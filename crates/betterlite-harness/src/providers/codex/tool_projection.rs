@@ -1,0 +1,202 @@
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+
+use crate::payloads::python_json::{OrderedJson, python_json_text};
+use crate::types::JsonObject;
+
+use super::FileChangeEntry;
+use super::Item;
+use super::McpToolCallItem;
+
+pub(crate) struct ToolProjection {
+    pub(crate) name: String,
+    pub(crate) native_name: String,
+    pub(crate) input: JsonObject,
+    pub(crate) builtin: bool,
+    pub(crate) output: String,
+    pub(crate) is_error: bool,
+}
+
+pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
+    match item {
+        Item::CommandExecution {
+            command,
+            aggregated_output,
+            exit_code,
+            status,
+            ..
+        } => command_execution_projection(
+            command.as_deref(),
+            aggregated_output.as_deref(),
+            *exit_code,
+            status.as_deref(),
+        ),
+        Item::FileChange {
+            changes, status, ..
+        } => file_change_projection(changes.as_deref(), status.as_deref()),
+        Item::WebSearch { query, status, .. } => {
+            web_search_projection(query.as_deref(), status.as_deref())
+        }
+        Item::McpToolCall(call) => mcp_tool_call_projection(call),
+        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => ToolProjection {
+            name: String::new(),
+            native_name: String::new(),
+            input: JsonObject::new(),
+            builtin: false,
+            output: String::new(),
+            is_error: false,
+        },
+    }
+}
+
+fn mcp_tool_call_projection(call: &McpToolCallItem) -> ToolProjection {
+    let (name, native_name, input) = mcp_tool_input(
+        call.server.as_deref(),
+        call.tool.as_deref(),
+        call.arguments.as_ref(),
+    );
+    let (output, is_error) = mcp_tool_output(
+        call.result.as_ref(),
+        call.error.as_ref(),
+        call.status.as_deref(),
+    );
+    ToolProjection {
+        name,
+        native_name,
+        input,
+        builtin: false,
+        output,
+        is_error,
+    }
+}
+
+fn command_execution_projection(
+    command: Option<&str>,
+    aggregated_output: Option<&str>,
+    exit_code: Option<i64>,
+    status: Option<&str>,
+) -> ToolProjection {
+    let failed = status == Some("failed") || exit_code.is_some_and(|code| code != 0);
+    let input = BTreeMap::from([(
+        "command".to_owned(),
+        Value::String(command.unwrap_or_default().to_owned()),
+    )]);
+    ToolProjection {
+        name: "bash".to_owned(),
+        native_name: "command_execution".to_owned(),
+        input,
+        builtin: true,
+        output: aggregated_output.unwrap_or_default().to_owned(),
+        is_error: failed,
+    }
+}
+
+fn file_change_projection(
+    changes: Option<&[FileChangeEntry]>,
+    status: Option<&str>,
+) -> ToolProjection {
+    let entries = changes.unwrap_or_default();
+    let output = entries
+        .iter()
+        .map(|entry| format!("{} {}", entry.kind, entry.path).trim().to_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let input = BTreeMap::from([(
+        "changes".to_owned(),
+        serde_json::to_value(entries).unwrap_or(Value::Array(Vec::new())),
+    )]);
+    ToolProjection {
+        name: "edit".to_owned(),
+        native_name: "apply_patch".to_owned(),
+        input,
+        builtin: true,
+        output,
+        is_error: status == Some("failed"),
+    }
+}
+
+fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProjection {
+    let input = BTreeMap::from([(
+        "query".to_owned(),
+        Value::String(query.unwrap_or_default().to_owned()),
+    )]);
+    ToolProjection {
+        name: "web_search".to_owned(),
+        native_name: "web_search".to_owned(),
+        input,
+        builtin: true,
+        output: String::new(),
+        is_error: status == Some("failed"),
+    }
+}
+
+fn mcp_tool_input(
+    server: Option<&str>,
+    tool: Option<&str>,
+    arguments: Option<&Value>,
+) -> (String, String, JsonObject) {
+    let native = tool.unwrap_or_default().to_owned();
+    let input = match arguments {
+        Some(Value::Object(map)) => map
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.clone()))
+            .collect(),
+        Some(value) => BTreeMap::from([("arguments".to_owned(), value.clone())]),
+        None => BTreeMap::from([("arguments".to_owned(), Value::Null)]),
+    };
+    let name = server
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| native.clone(), |prefix| format!("{prefix}.{native}"));
+    (name, native, input)
+}
+
+fn mcp_tool_output(
+    result: Option<&OrderedJson>,
+    error: Option<&Value>,
+    status: Option<&str>,
+) -> (String, bool) {
+    let failed = status == Some("failed");
+    error.filter(|value| is_truthy(value)).map_or_else(
+        || (mcp_result_text(result), failed),
+        |reported| (mcp_error_message(reported), true),
+    )
+}
+
+fn mcp_result_text(result: Option<&OrderedJson>) -> String {
+    let Some(value) = result.filter(|value| !matches!(value, OrderedJson::Null)) else {
+        return String::new();
+    };
+    match value {
+        OrderedJson::Text(text) => text.clone(),
+        other @ (OrderedJson::Null
+        | OrderedJson::Bool(_)
+        | OrderedJson::Number(_)
+        | OrderedJson::List(_)
+        | OrderedJson::Object(_)) => python_json_text(other).unwrap_or_default(),
+    }
+}
+
+fn mcp_error_message(error: &Value) -> String {
+    match error {
+        Value::Object(fields) => fields
+            .get("message")
+            .and_then(Value::as_str)
+            .map_or_else(|| "None".to_owned(), str::to_owned),
+        Value::String(text) => text.clone(),
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_)) => {
+            other.to_string()
+        }
+    }
+}
+
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(flag) => *flag,
+        Value::Number(number) => number.as_f64().is_none_or(|parsed| parsed != 0.0_f64),
+        Value::String(text) => !text.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(fields) => !fields.is_empty(),
+    }
+}
