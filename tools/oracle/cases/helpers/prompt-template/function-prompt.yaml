@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "function-prompt", "call": {"prompt_factory": {"mode": "function_call_prompt", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}], "functions": [{"name": "lookup"}]}}, "env": {}, "compare": {"ignore": []}}
