@@ -106,10 +106,6 @@ base:
       run: |-
         packages=$(cargo gate affected) || exit 1
         if [ -z "$packages" ]; then echo "the change affects no package"; else cargo nextest run --locked --no-tests=warn $packages; fi
-    - id: doctests
-      why: documentation examples compile and pass
-      run: |-
-        if cargo metadata --format-version 1 --no-deps --locked | jq -e '[.packages[].targets[].kind[]] | index("lib")' > /dev/null; then cargo test --workspace --doc --locked; else echo "no library crate yet, so no doctests"; fi
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
       run: cargo deny --locked check

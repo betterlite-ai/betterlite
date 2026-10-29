@@ -1,13 +1,18 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
-use std::ffi::OsStr;
+use std::collections::{BTreeMap, BTreeSet};
+use std::env;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Cursor;
-use std::path::Path;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{self, Command};
 use std::time::Duration;
 
+use serde_json::json;
+
+use super::answers::{Answers, Layer, key};
+use crate::OracleError;
 use crate::case::{HelperCase, parse_helper_case};
 
 #[rstest::rstest]
@@ -129,7 +134,7 @@ fn dispatch_py_lists_exactly_the_registered_operations() {
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension() == Some(OsStr::new("rs")))
         .filter(|path| {
-            !["mod.rs", "python.rs", "tests.rs"]
+            !["answers.rs", "mod.rs", "python.rs", "tests.rs"]
                 .iter()
                 .any(|name| path.ends_with(name))
         });
@@ -146,4 +151,96 @@ fn dispatch_py_lists_exactly_the_registered_operations() {
         })
         .collect();
     assert_eq!(rust, python);
+}
+
+fn answer_scratch(name: &str) -> PathBuf {
+    let scratch = env::temp_dir().join(format!("betterlite-answers-{}-{name}", process::id()));
+    for keyed in [
+        "tools/oracle/litellm/uv.lock",
+        "tools/oracle/litellm/pyproject.toml",
+        "tools/oracle/litellm/.python-version",
+        "tools/oracle/helpers/dispatch.py",
+    ] {
+        let path = scratch.join(keyed);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, keyed).unwrap();
+    }
+    scratch
+}
+
+fn url_path_call() -> super::HelperCall {
+    serde_saphyr::from_str("url_path: {function: segment, value: a/b, field_name: id}").unwrap()
+}
+
+#[test]
+fn answer_cache_reads_the_shared_layer_first() {
+    let root = answer_scratch("layers");
+    let call = url_path_call();
+    let case_env = BTreeMap::new();
+    let name = format!("{}.json", key(&root, &call, &case_env).unwrap());
+    let answers = Answers {
+        shared: root.join("shared"),
+        own: root.join("own"),
+        write: Layer::Own,
+    };
+    fs::create_dir_all(&answers.shared).unwrap();
+    fs::create_dir_all(&answers.own).unwrap();
+    fs::write(
+        answers.shared.join(&name),
+        r#"{"ok":true,"value":"shared"}"#,
+    )
+    .unwrap();
+    fs::write(answers.own.join(&name), r#"{"ok":true,"value":"own"}"#).unwrap();
+    let shared = answers.answer(&root, &call, &case_env).unwrap();
+    fs::remove_file(answers.shared.join(&name)).unwrap();
+    let own = answers.answer(&root, &call, &case_env).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(shared.value, Some(json!("shared")));
+    assert_eq!(own.value, Some(json!("own")));
+}
+
+#[test]
+fn answer_cache_key_follows_the_helper_module_the_pin_and_the_env() {
+    let root = answer_scratch("key");
+    let call = url_path_call();
+    let case_env = BTreeMap::new();
+    let mut keys = vec![key(&root, &call, &case_env).unwrap()];
+    let module = root.join("tools/oracle/helpers/url_path.py");
+    fs::write(&module, "first").unwrap();
+    keys.push(key(&root, &call, &case_env).unwrap());
+    fs::write(&module, "second").unwrap();
+    keys.push(key(&root, &call, &case_env).unwrap());
+    fs::write(root.join("tools/oracle/litellm/uv.lock"), "bumped").unwrap();
+    keys.push(key(&root, &call, &case_env).unwrap());
+    let named = BTreeMap::from([("A".to_owned(), "1".to_owned())]);
+    keys.push(key(&root, &call, &named).unwrap());
+    fs::remove_file(root.join("tools/oracle/helpers/dispatch.py")).unwrap();
+    let missing = key(&root, &call, &case_env).unwrap_err();
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 5);
+    assert!(matches!(missing, OracleError::Filesystem { .. }));
+}
+
+#[test]
+fn answer_cache_stores_a_miss_in_the_write_layer_only() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let scratch = answer_scratch("miss");
+    let answers = Answers {
+        shared: scratch.join("shared"),
+        own: scratch.join("own"),
+        write: Layer::Shared,
+    };
+    let call = url_path_call();
+    let case_env = BTreeMap::new();
+    let output = answers.answer(&root, &call, &case_env).unwrap();
+    let stored: Vec<OsString> = fs::read_dir(&answers.shared)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    let name = format!("{}.json", key(&root, &call, &case_env).unwrap());
+    let own_written = answers.own.exists();
+    fs::remove_dir_all(&scratch).unwrap();
+    assert_eq!(stored, [OsString::from(name)]);
+    assert!(!own_written);
+    assert_eq!(output.value, super::invoke(&call).value);
 }

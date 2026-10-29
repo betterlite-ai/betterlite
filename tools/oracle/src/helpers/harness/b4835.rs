@@ -12,31 +12,21 @@ pub(crate) struct Op;
 
 #[derive(serde::Deserialize)]
 pub(crate) struct Input {
-    fixture: String,
+    stream: String,
 }
 
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let contents = std::fs::read_to_string(&input.fixture).map_err(|error| {
-            Box::new(HelperError {
-                class: "FixtureRead".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
         let config = CodexHarnessConfig;
         let mut state = config.create_stream_state();
         let mut started = BTreeSet::new();
         let mut output = Vec::new();
-        for line in contents.lines().filter(|line| !line.is_empty()) {
+        for line in input.stream.lines().filter(|line| !line.is_empty()) {
             let event: JsonObject = serde_json::from_str(line).map_err(|error| {
                 Box::new(HelperError {
-                    class: "FixtureParse".to_owned(),
+                    class: "StreamParse".to_owned(),
                     status: None,
                     error_type: None,
                     param: None,
