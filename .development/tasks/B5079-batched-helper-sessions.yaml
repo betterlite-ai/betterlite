@@ -1,0 +1,183 @@
+id: B5079
+title: Batched helper oracle Python sessions
+description: >-
+  Betterlite-oracle spends most of its test time starting a fresh Python process per LiteLLM helper case. Measured
+  on 2026-10-29, about 45 of the crate's roughly 298 tests each start that process at least once, together costing
+  about 281 of a roughly 311 second test run, and helper_seeds_select_cloud_storage alone (tools/oracle/src/helpers/context/cloud_storage/tests.rs)
+  spends 77.9 wall seconds starting 24 fresh processes, one per corpus case, inside one nextest test. run_python in
+  tools/oracle/src/helpers/python.rs builds a fresh setpriv/python/dispatch.py command and tears it down after one
+  request, and dispatch.py's main() reads exactly one bounded request from stdin, answers it, and exits. nextest runs
+  every test, including every rstest-expanded case, in its own OS process, so nothing can share a Python process
+  across tests. The win is only inside one test that runs several cases and inside one betterlite-oracle run.
+
+  Change dispatch.py so one process answers many requests and still carries no state from one request to the next.
+  Several adapters change process state on every call: proxy_policy.py lines 58-64 set litellm.aiohttp_trust_env and
+  litellm.disable_aiohttp_trust_env, clear os.environ and point HOME at a new temporary directory; datadog_tags.py
+  line 64 clears os.environ; provider_base_helpers.py lines 231-236 set litellm.modify_params only when configured is
+  a bool and then return it; request_records.py line 68 sets litellm.safe_memory_mode; bedrock_request_policy.py lines
+  89-91 set litellm.bedrock_request_metadata_fields. Running those calls one after another in one interpreter would
+  leak that state into later cases. So the session process imports litellm once and forks a child per request. main()
+  imports litellm, then loops: it reads one newline-terminated request line (the same 1 MiB bound as today) and calls
+  os.fork(). The child runs today's single-request body on that line (the parse and size check, the OPERATIONS check,
+  import_module, adapter.run, one compact JSON response line), flushes stdout and stderr, and leaves with os._exit using
+  the status today's main() returns: 0, or 2 for a malformed request or an unknown operation. The parent waits for the
+  child with os.waitpid before it reads the next line. When the child exited 0 the parent loops; otherwise the parent
+  exits with the child's status, or 1 when a signal ended the child, so a failed request ends the session the way it
+  ends a one-shot run today. At end of stdin the parent returns 0. LiteLLM also reads some settings from the
+  environment at import time (DEFAULT_MAX_TOKENS at litellm/constants.py#L90, and modify_params at line 250 of the
+  installed litellm 1.105.1 __init__.py), so a session serves only cases whose env is byte-equal, and a new session
+  starts whenever two consecutive cases' env differs.
+
+  Add PythonSession to tools/oracle/src/helpers/python.rs. It holds the spawned setpriv/python/dispatch.py Child with
+  its stdin and stdout kept open, plus a thread that drains its stderr for the whole session into a buffer bounded the
+  way read_limited bounds output. PythonSession::start(root, case_env) spawns the process exactly as run_python does
+  today (env_clear, then configure_environment). call(input, timeout) writes one compact JSON request and a newline,
+  reads exactly one newline-terminated response line bounded to 1 MiB, and parses it as HelperOutput. When the process
+  exits before a full line arrives, call returns HelperExited with the exit status and the stderr text, the same error
+  a one-shot run gives today. Past the timeout it kills and reaps the process and returns HelperTimeout. id() returns
+  the process id for tests. Dropping a PythonSession closes stdin so dispatch.py sees end of file and exits, polls
+  try_wait for up to 5 seconds the way wait_for_helper_exit polls, then kills it if it still runs, and always waits for
+  it, so the process is always reaped. run_python becomes PythonSession::start, one call with the current 60 second
+  timeout, and the drop, so every existing single-case caller (management_oracle's tests, run_case's normal and
+  self-check paths) behaves as today.
+
+  Add run_cases_batched(cases: &[HelperCase], self_check: bool) -> Result<HelperRun, OracleError> to
+  tools/oracle/src/helpers/mod.rs. It runs sync_litellm once, splits the cases into consecutive runs whose env is
+  byte-equal (slice::chunk_by fits), and starts one PythonSession per run. For each case the left side comes from
+  invoke, or from that session under self_check, matching left_side's split, and the right side comes from that
+  session. It compares and prints PASS or FAIL exactly as run_case does, in the cases' original order, and returns
+  Difference when any case differs. run_case keeps its signature and its one-process-per-call behavior. Change run_cases
+  in tools/oracle/src/runner.rs to collect LoadedCase::Helper entries into one Vec<HelperCase> in their original order
+  while still bucketing LoadedCase::Http entries into groups as today, then call helpers::run_cases_batched once on the
+  collected cases right after the loop and before the HTTP groups run. Today the helper cases already finish inside
+  the loop before any HTTP group starts, so the output order stays the same.
+
+  Change helper_seeds_select_cloud_storage in tools/oracle/src/helpers/context/cloud_storage/tests.rs to parse all 24
+  corpus cases first, call crate::helpers::run_cases_batched(&cases, false) once, and assert the result is
+  HelperRun::Match, replacing the per-case crate::helpers::run_case call. This is the test measured at 77.9 seconds and
+  24 processes.
+
+  Add five proof tests to tools/oracle/src/helpers/tests.rs, each named with the session_ prefix.
+  session_answers_several_calls_from_one_process starts one PythonSession with env {}, sends a url_path call and a
+  provider_base_helpers modify_params call, and asserts that id() is the same after both calls, that /proc/<id>/task
+  lists exactly one thread, and that each answer equals a fresh run_python answer for the same input.
+  session_keeps_no_adapter_state_between_calls sends {"operation": "provider_base_helpers", "input": {"modify_params":
+  {"environment": {}, "configured": true}}} and then the same call with configured null to one session, and asserts the
+  second answer is false and equals a fresh run_python answer; run_cases_batched on those two calls as env {} helper
+  cases returns Match against the native side. session_starts_a_fresh_process_when_env_changes calls
+  run_cases_batched(&cases, false) on a modify_params case with env {}, environment {} and configured null, then one
+  with env {LITELLM_MODIFY_PARAMS: "true"}, the same environment and configured null, and asserts Match; a reused
+  process fails the second case, since check_environment in provider_base_helpers.py raises on an env mismatch.
+  session_reports_a_failed_request_like_a_fresh_run asserts that a fresh session's call for operation nope returns the
+  same error text as run_python for that input. session_is_reaped_when_dropped starts a session, makes one call, drops
+  it, and asserts /proc/thread-self/children is empty, matching helper_runner_tests_behavior's idiom.
+
+  No new dependency: Command, Child, pipes, threads, std::sync::mpsc and newline framing already cover the Rust side,
+  and os.fork, os.waitpid, os._exit and ctypes are in Python's standard library.
+scope:
+  paths:
+  - tools/oracle/src/helpers/python.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/tests.rs
+  - tools/oracle/src/helpers/context/cloud_storage/tests.rs
+  - tools/oracle/src/runner.rs
+  - tools/oracle/helpers/dispatch.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L90
+  why: >-
+    DEFAULT_MAX_TOKENS binds os.getenv at import time, not at call time, so a started process cannot take a new
+    environment; a session is reused only across cases whose env already matches.
+- url: https://docs.python.org/3.13/library/os.html#os.fork
+  why: >-
+    fork in a process with more than one thread warns and can deadlock the child, and os._exit leaves without running
+    cleanup handlers or flushing stdio buffers, so the child flushes first and the parent forks only while it has one
+    thread.
+- url: https://man7.org/linux/man-pages/man2/prctl.2.html
+  why: >-
+    PR_SET_PDEATHSIG is cleared in the child of a fork, so the forked child sets it again or it outlives a killed
+    session.
+- url: https://nexte.st/docs/configuration/setup-scripts/
+  why: >-
+    Setup scripts are experimental and this page documents no teardown hook that runs after the matched tests finish,
+    so nothing can share one Python process across nextest's separate per-test OS processes.
+dod:
+- text: >-
+    One PythonSession answers several calls for different registered operations from one single-threaded process, each
+    answer equal to what a fresh run_python call for the same input returns, and a failed request returns the same
+    error a fresh run returns.
+  proof:
+  - session-mechanics
+- text: >-
+    No adapter state carries from one call to the next inside a session: after a call sets litellm.modify_params, the
+    next call sees LiteLLM's default again, the same as a fresh process.
+  proof:
+  - session-mechanics
+- text: run_cases_batched starts a new process whenever two consecutive cases' env differs, and keeps the cases' original order.
+  proof:
+  - session-mechanics
+- text: A PythonSession's process is always reaped once the session is dropped.
+  proof:
+  - session-mechanics
+- text: helper_seeds_select_cloud_storage answers all 24 cloud_storage corpus seeds through run_cases_batched and still reports HelperRun::Match, replacing its 24 fresh-process calls.
+  proof:
+  - cloud-storage-seeds
+- text: PythonSession::start builds its environment through configure_environment, so a case still cannot disable the local LiteLLM cost map.
+  proof:
+  - session-cost-map
+- text: >-
+    betterlite-oracle's own --self-check and gate runs still match LiteLLM byte for byte after runner.rs's helper-case
+    loop starts using sessions: the committed cloud-storage helper cases and the existing chat and health HTTP cases
+    still pass.
+  proof:
+  - oracle
+  - http-self-check
+checks:
+  optional: []
+  commands:
+  - id: session-mechanics
+    why: a PythonSession reuses no process, leaks adapter state between calls, keeps a process across an env change, reports a failed request differently, or leaves its process running after Drop
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::tests::session_/)'
+  - id: cloud-storage-seeds
+    why: the batched cloud_storage seed test stops matching any corpus case
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(helper_seeds_select_cloud_storage)'
+  - id: session-cost-map
+    why: a session lets a case override the local LiteLLM cost map
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(helper_case_cannot_disable_the_local_cost_map)'
+  - id: http-self-check
+    why: helper-case batching broke the existing HTTP self-check path
+    run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/health tools/oracle/cases/chat
+oracle_cases:
+- tools/oracle/cases/helpers/providers/cloud-storage/cloud-object-encoding.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/cloud-uri-detection.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/configured-bucket-split.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/encoded-traversal-order.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/legacy-prefix-boundary.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/legacy-trusted-policy.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/managed-id-authorization.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/object-component-sanitization.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/object-path-sanitization.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/object-path-validation.yaml
+deviations: []
+out_of_scope:
+- Registering a new helper operation, or changing any existing operation's OPERATIONS or GROUPS entry or adapter behavior.
+- Preloading adapter modules or litellm.proxy in the session parent; the parent imports only litellm, and each child imports its adapter.
+- Any mechanism that shares a Python process across nextest's separate per-test OS processes; nextest's setup scripts are experimental with no teardown hook.
+- The HTTP and Gateway case batching runner.rs already does through capture_gateways.
+- Lowering the 60 second per-call helper timeout or the 1 MiB request and output bounds.
+- cargo mutants' oracle runtime; the mutants check leaves out tools/oracle since 2026-10-29, so this task's win shows as nextest wall time, not in a mutants run.
+pitfalls:
+- The forked child must flush sys.stdout and sys.stderr itself and leave with os._exit. Returning from main() or raising SystemExit in the child runs cleanup a second time and drops the child back into the parent's read loop.
+- fork is only safe in a single-threaded process. With LITELLM_LOCAL_MODEL_COST_MAP=True, get_model_cost_map.py starts no fetch thread, but the parent checks that /proc/self/task lists exactly one entry before each fork, and otherwise writes "helper session parent has N threads" to stderr and exits 2. It never forks a threaded parent.
+- setpriv --pdeathsig KILL covers only the session process; Linux clears PR_SET_PDEATHSIG in a forked child, so a hung child would outlive a killed session. The child first calls prctl(1, signal.SIGKILL) through ctypes and exits at once when os.getppid() no longer equals the parent's pid.
+- The parent writes nothing to stdout itself, so a fork never copies unflushed parent output into the child; keep it that way.
+- The session's stderr must be drained for its whole life. An unread stderr pipe blocks the process once it fills (64 KiB on Linux), and the timeout then hides the real cause.
+- A blocking read on the child's stdout cannot time out. Read stdout on a thread that sends each line over std::sync::mpsc, wait with recv_timeout, and on timeout kill and reap the process.
+- LiteLLM binds some settings from the environment at import (DEFAULT_MAX_TOKENS, modify_params), so a session's environment is fixed at PythonSession::start. Group only cases whose env is byte-equal into one session.
+- dispatch.py sets LITELLM_LOCAL_MODEL_COST_MAP=True at import, before main() runs, and configure_environment forces it at spawn; no per-request field may change it.
+- run_python's one-shot path sends one line and closes stdin, and it must answer exactly as today.
+- nextest starts every test, including every rstest case, in its own process, so nothing in this task tries to share a Python process across tests.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
