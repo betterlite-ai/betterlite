@@ -1,0 +1,1 @@
+headers={'Authorization': 'Bearer sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'nested': ['x', {'secret': 'y'}]}
