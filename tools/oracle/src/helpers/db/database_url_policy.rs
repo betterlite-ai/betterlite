@@ -38,10 +38,11 @@ impl crate::helpers::Helper for Op {
             Input::AppendQueryParams { url, params } => {
                 run_append_query_params(url.as_deref(), params)
             }
-            Input::TokenAuthFlagEnabled { value, env_var } => value_error(
-                token_auth_flag_enabled(value.as_ref(), env_var),
-                serde_json::Value::Bool,
-            ),
+            Input::TokenAuthFlagEnabled { value, env_var } => {
+                token_auth_flag_enabled(value.as_ref(), env_var)
+                    .map(serde_json::Value::Bool)
+                    .map_err(|error| helper_error("ValueError", error.to_string()))
+            }
             Input::StrToBool { value } => {
                 Ok(serde_json::Value::Bool(str_to_bool(value.as_deref())))
             }
@@ -96,16 +97,6 @@ fn run_token_refresh_from_url(url: &str) -> crate::helpers::HelperResult {
 fn run_unsupported_db_scheme(database_url: &str) -> crate::helpers::HelperResult {
     match unsupported_db_scheme(database_url) {
         Ok(scheme) => Ok(scheme.map_or(serde_json::Value::Null, serde_json::Value::String)),
-        Err(error) => Err(helper_error("ValueError", error.to_string())),
-    }
-}
-
-fn value_error<T>(
-    result: Result<T, impl std::fmt::Display>,
-    to_value: impl FnOnce(T) -> serde_json::Value,
-) -> crate::helpers::HelperResult {
-    match result {
-        Ok(value) => Ok(to_value(value)),
         Err(error) => Err(helper_error("ValueError", error.to_string())),
     }
 }
