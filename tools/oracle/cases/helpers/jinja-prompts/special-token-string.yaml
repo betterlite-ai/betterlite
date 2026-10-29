@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "special-token-string", "call": {"jinja_prompts": {"mode": "extract_token", "token": "tok"}}, "env": {}, "compare": {"ignore": []}}
