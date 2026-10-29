@@ -12,7 +12,9 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use super::wire::GraySwanDynamicParams;
+use super::wire::{
+    GraySwanDynamicParams, GraySwanRuleNumber, GraySwanViolatedRule, GraySwanViolatedRuleFields,
+};
 use super::{
     GraySwanGuardrail, GraySwanGuardrailAPIError, GraySwanInput, GraySwanPayload, GraySwanResponse,
     GraySwanSettings, OnFlaggedAction, ReasoningMode,
@@ -200,19 +202,27 @@ fn grayswan_passthrough_replaces_pre_call_messages_instead_of_erroring() {
     assert!(result.violation_message.is_some());
 }
 
+fn structured_rule(
+    rule: Option<GraySwanRuleNumber>,
+    name: Option<&str>,
+    description: Option<&str>,
+) -> GraySwanViolatedRule {
+    GraySwanViolatedRule::Structured(GraySwanViolatedRuleFields {
+        rule,
+        name: name.map(ToOwned::to_owned),
+        description: description.map(ToOwned::to_owned),
+        extra: BTreeMap::new(),
+    })
+}
+
 #[test]
 fn grayswan_verdict_message_includes_rule_name_and_description() {
     let mut scan_response = response(0.9);
-    scan_response.violated_rule_descriptions = vec![GuardrailExtraValue::Object(BTreeMap::from([
-        (
-            "name".to_owned(),
-            GuardrailExtraValue::Text("self_harm".to_owned()),
-        ),
-        (
-            "description".to_owned(),
-            GuardrailExtraValue::Text("content promotes self-harm".to_owned()),
-        ),
-    ]))];
+    scan_response.violated_rule_descriptions = vec![structured_rule(
+        None,
+        Some("self_harm"),
+        Some("content promotes self-harm"),
+    )];
     let result = guardrail(OnFlaggedAction::Passthrough)
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
@@ -228,11 +238,7 @@ fn grayswan_verdict_message_includes_rule_name_and_description() {
 #[test]
 fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
     let mut scan_response = response(0.9);
-    scan_response.violated_rule_descriptions =
-        vec![GuardrailExtraValue::Object(BTreeMap::from([(
-            "name".to_owned(),
-            GuardrailExtraValue::Text("self_harm".to_owned()),
-        )]))];
+    scan_response.violated_rule_descriptions = vec![structured_rule(None, Some("self_harm"), None)];
     let result = guardrail(OnFlaggedAction::Passthrough)
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
@@ -246,9 +252,13 @@ fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
 }
 
 #[test]
-fn grayswan_verdict_message_falls_back_to_json_for_an_unrecognized_rule_shape() {
+fn grayswan_verdict_message_prefixes_the_rule_number_when_present() {
     let mut scan_response = response(0.9);
-    scan_response.violated_rule_descriptions = vec![GuardrailExtraValue::Decimal(2.0)];
+    scan_response.violated_rule_descriptions = vec![structured_rule(
+        Some(GraySwanRuleNumber::Integer(6)),
+        Some("Illegal Activities"),
+        Some("content promotes illegal activities"),
+    )];
     let result = guardrail(OnFlaggedAction::Passthrough)
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
@@ -256,7 +266,45 @@ fn grayswan_verdict_message_falls_back_to_json_for_an_unrecognized_rule_shape() 
         result.violation_message.as_deref(),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
-             It violated rule(s): 2.0."
+             It violated rule(s): #6 Illegal Activities: content promotes illegal activities."
+        )
+    );
+}
+
+#[test]
+fn grayswan_verdict_message_falls_back_to_a_typed_plain_value_for_an_unrecognized_rule_shape() {
+    let mut scan_response = response(0.9);
+    scan_response.violated_rule_descriptions = vec![GraySwanViolatedRule::Plain(
+        GuardrailExtraValue::Text("profanity".to_owned()),
+    )];
+    let result = guardrail(OnFlaggedAction::Passthrough)
+        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .expect("post-call passthrough");
+    assert_eq!(
+        result.violation_message.as_deref(),
+        Some(
+            "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
+             It violated rule(s): profanity."
+        )
+    );
+}
+
+#[test]
+fn grayswan_verdict_message_falls_back_to_typed_fields_for_a_nameless_rule_object() {
+    let mut scan_response = response(0.9);
+    scan_response.violated_rule_descriptions = vec![structured_rule(
+        Some(GraySwanRuleNumber::Integer(6)),
+        None,
+        Some("content promotes illegal activities"),
+    )];
+    let result = guardrail(OnFlaggedAction::Passthrough)
+        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .expect("post-call passthrough");
+    assert_eq!(
+        result.violation_message.as_deref(),
+        Some(
+            "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
+             It violated rule(s): {description: content promotes illegal activities, rule: 6}."
         )
     );
 }

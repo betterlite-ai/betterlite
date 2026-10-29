@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -54,11 +55,56 @@ pub struct GraySwanResponse {
     #[serde(default)]
     pub violation: f64,
     #[serde(default)]
-    pub violated_rule_descriptions: Vec<GuardrailExtraValue>,
+    pub violated_rule_descriptions: Vec<GraySwanViolatedRule>,
     #[serde(default)]
     pub mutation: Option<bool>,
     #[serde(default)]
     pub ipi: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum GraySwanViolatedRule {
+    Structured(GraySwanViolatedRuleFields),
+    Plain(GuardrailExtraValue),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GraySwanViolatedRuleFields {
+    #[serde(default)]
+    pub rule: Option<GraySwanRuleNumber>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, GuardrailExtraValue>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum GraySwanRuleNumber {
+    Integer(i64),
+    Text(String),
+}
+
+impl GraySwanRuleNumber {
+    #[must_use]
+    pub const fn is_truthy(&self) -> bool {
+        match self {
+            Self::Integer(value) => *value != 0,
+            Self::Text(value) => !value.is_empty(),
+        }
+    }
+}
+
+impl fmt::Display for GraySwanRuleNumber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Integer(value) => write!(f, "{value}"),
+            Self::Text(value) => write!(f, "{value}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

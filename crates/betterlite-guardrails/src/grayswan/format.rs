@@ -4,7 +4,9 @@ use std::fmt::Write as _;
 use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
 };
-use crate::grayswan::wire::GraySwanResponse;
+use crate::grayswan::wire::{
+    GraySwanResponse, GraySwanRuleNumber, GraySwanViolatedRule, GraySwanViolatedRuleFields,
+};
 
 pub(super) fn build_messages(
     texts: &[String],
@@ -95,34 +97,77 @@ pub(super) fn format_violation_message(response: &GraySwanResponse, is_output: b
     message
 }
 
-fn describe_violated_rule(rule: &GuardrailExtraValue) -> String {
-    if let GuardrailExtraValue::Object(fields) = rule {
-        match (
-            field_text(fields, "name"),
-            field_text(fields, "description"),
-        ) {
-            (Some(matched_name), Some(matched_description)) => {
-                return format!("{matched_name}: {matched_description}");
-            }
-            (Some(matched_name), None) => return matched_name,
-            _ => {}
-        }
+fn describe_violated_rule(rule: &GraySwanViolatedRule) -> String {
+    match rule {
+        GraySwanViolatedRule::Structured(fields) => describe_structured_rule(fields),
+        GraySwanViolatedRule::Plain(value) => describe_extra_value(value),
     }
-    if let GuardrailExtraValue::Text(text) = rule {
-        return text.clone();
-    }
-    serde_json::to_string(rule).unwrap_or_default()
 }
 
-fn field_text(fields: &BTreeMap<String, GuardrailExtraValue>, name: &str) -> Option<String> {
-    match fields.get(name)? {
-        GuardrailExtraValue::Text(text) => Some(text.clone()),
-        GuardrailExtraValue::Null
-        | GuardrailExtraValue::Boolean(_)
-        | GuardrailExtraValue::SignedInteger(_)
-        | GuardrailExtraValue::UnsignedInteger(_)
-        | GuardrailExtraValue::Decimal(_)
-        | GuardrailExtraValue::Array(_)
-        | GuardrailExtraValue::Object(_) => None,
+fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
+    let Some(name) = fields.name.as_deref().filter(|name| !name.is_empty()) else {
+        return describe_extra_value(&GuardrailExtraValue::Object(fallback_fields(fields)));
+    };
+    let prefixed_name = fields
+        .rule
+        .as_ref()
+        .filter(|number| number.is_truthy())
+        .map_or_else(|| name.to_owned(), |number| format!("#{number} {name}"));
+    fields
+        .description
+        .as_deref()
+        .filter(|description| !description.is_empty())
+        .map_or_else(
+            || prefixed_name.clone(),
+            |description| format!("{prefixed_name}: {description}"),
+        )
+}
+
+fn fallback_fields(fields: &GraySwanViolatedRuleFields) -> BTreeMap<String, GuardrailExtraValue> {
+    let mut map = fields.extra.clone();
+    if let Some(number) = &fields.rule {
+        let value = match number {
+            GraySwanRuleNumber::Integer(integer) => GuardrailExtraValue::SignedInteger(*integer),
+            GraySwanRuleNumber::Text(text) => GuardrailExtraValue::Text(text.clone()),
+        };
+        map.insert("rule".to_owned(), value);
+    }
+    if let Some(name) = &fields.name {
+        map.insert("name".to_owned(), GuardrailExtraValue::Text(name.clone()));
+    }
+    if let Some(description) = &fields.description {
+        map.insert(
+            "description".to_owned(),
+            GuardrailExtraValue::Text(description.clone()),
+        );
+    }
+    map
+}
+
+fn describe_extra_value(value: &GuardrailExtraValue) -> String {
+    match value {
+        GuardrailExtraValue::Text(text) => text.clone(),
+        GuardrailExtraValue::Boolean(true) => "True".to_owned(),
+        GuardrailExtraValue::Boolean(false) => "False".to_owned(),
+        GuardrailExtraValue::SignedInteger(number) => number.to_string(),
+        GuardrailExtraValue::UnsignedInteger(number) => number.to_string(),
+        GuardrailExtraValue::Decimal(number) => number.to_string(),
+        GuardrailExtraValue::Null => "None".to_owned(),
+        GuardrailExtraValue::Array(items) => {
+            let rendered = items
+                .iter()
+                .map(describe_extra_value)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{rendered}]")
+        }
+        GuardrailExtraValue::Object(fields) => {
+            let rendered = fields
+                .iter()
+                .map(|(key, field_value)| format!("{key}: {}", describe_extra_value(field_value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{rendered}}}")
+        }
     }
 }
