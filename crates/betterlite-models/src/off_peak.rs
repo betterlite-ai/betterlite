@@ -1,1 +1,116 @@
+mod block;
+pub mod rate;
+pub mod schema;
+mod tests;
+mod weekday;
+pub mod window;
 
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+
+use rate::OffPeakRateError;
+use schema::OffPeakBlock;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenRates {
+    pub input_rate: Decimal,
+    pub output_rate: Decimal,
+    pub cache_read_rate: Decimal,
+    pub cache_creation_rate: Decimal,
+    pub reasoning_rate: Option<Decimal>,
+}
+
+impl TokenRates {
+    #[must_use]
+    pub const fn billed_reasoning_rate(&self) -> Decimal {
+        if let Some(rate) = self.reasoning_rate {
+            return rate;
+        }
+        self.output_rate
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BaseCosts {
+    pub prompt_rate: Decimal,
+    pub completion_rate: Decimal,
+    pub cache_creation_rate: Decimal,
+    pub cache_creation_above_1hr_rate: Option<Decimal>,
+    pub cache_read_rate: Decimal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedBaseCosts {
+    pub prompt_rate: Decimal,
+    pub completion_rate: Decimal,
+    pub cache_creation_rate: Decimal,
+    pub cache_creation_above_1hr_rate: Decimal,
+    pub cache_read_rate: Decimal,
+}
+
+pub fn apply_off_peak_pricing(
+    off_peak_pricing: Option<&OffPeakBlock>,
+    moment: DateTime<Utc>,
+    rates: TokenRates,
+) -> Result<TokenRates, OffPeakRateError> {
+    let Some(block) = off_peak_pricing else {
+        return Ok(rates);
+    };
+    if !block::is_off_peak(block, moment) {
+        return Ok(rates);
+    }
+    let off_peak_reasoning_rate = rate::parse_rate(
+        block.reasoning_token_cost.as_ref(),
+        "output_cost_per_reasoning_token",
+    )?;
+    Ok(TokenRates {
+        input_rate: rate::off_peak_rate(
+            block.input_cost_per_token.as_ref(),
+            "input_cost_per_token",
+            rates.input_rate,
+        )?,
+        output_rate: rate::off_peak_rate(
+            block.output_cost_per_token.as_ref(),
+            "output_cost_per_token",
+            rates.output_rate,
+        )?,
+        cache_read_rate: rate::off_peak_rate(
+            block.cache_read_input_token_cost.as_ref(),
+            "cache_read_input_token_cost",
+            rates.cache_read_rate,
+        )?,
+        cache_creation_rate: rate::off_peak_rate(
+            block.cache_creation_cost.as_ref(),
+            "cache_creation_input_token_cost",
+            rates.cache_creation_rate,
+        )?,
+        reasoning_rate: off_peak_reasoning_rate.or(rates.reasoning_rate),
+    })
+}
+
+pub fn apply_off_peak_to_base_costs(
+    off_peak_pricing: Option<&OffPeakBlock>,
+    moment: DateTime<Utc>,
+    base_costs: BaseCosts,
+) -> Result<ResolvedBaseCosts, OffPeakRateError> {
+    let rates = apply_off_peak_pricing(
+        off_peak_pricing,
+        moment,
+        TokenRates {
+            input_rate: base_costs.prompt_rate,
+            output_rate: base_costs.completion_rate,
+            cache_read_rate: base_costs.cache_read_rate,
+            cache_creation_rate: base_costs.cache_creation_rate,
+            reasoning_rate: None,
+        },
+    )?;
+    Ok(ResolvedBaseCosts {
+        prompt_rate: rates.input_rate,
+        completion_rate: rates.output_rate,
+        cache_creation_rate: rates.cache_creation_rate,
+        cache_creation_above_1hr_rate: base_costs
+            .cache_creation_above_1hr_rate
+            .unwrap_or(rates.cache_creation_rate),
+        cache_read_rate: rates.cache_read_rate,
+    })
+}
