@@ -14,8 +14,9 @@ use serde_json::json;
 
 use crate::case::UpstreamAnswer;
 use crate::mock::MockProvider;
+use crate::routing_mock_scripts::MockScript;
 
-use super::support::{field_or_empty_object, guardrail_error, mock_script_for, parse_json_field};
+use super::support::{guardrail_error, parse_json_field};
 
 pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let litellm_values = metadata_field(input, "litellm_metadata")?;
@@ -36,18 +37,22 @@ fn metadata_field(
 }
 
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = field_or_empty_object(input, "generic_call");
+    let request = input.get("generic_call").cloned().unwrap_or_else(|| json!({}));
     run_call(&request)
 }
 
 fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
-    let runtime = super::support::current_thread_runtime()?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(guardrail_error)?;
     let settings = settings(request);
     let answer: Option<UpstreamAnswer> = parse_json_field(request, "answer")?;
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(guardrail_error)?;
     let base;
     let mock = if let Some(reply) = &answer {
-        let provider = MockProvider::start(mock_script_for(reply)?).map_err(guardrail_error)?;
+        let script = MockScript::try_from(std::slice::from_ref(reply)).map_err(guardrail_error)?;
+        let provider = MockProvider::start(script).map_err(guardrail_error)?;
         base = provider.base_url.clone();
         Some(provider)
     } else {
@@ -123,7 +128,7 @@ fn request_payload(
     request: &serde_json::Value,
 ) -> Result<GenericGuardrailAPIRequest, Box<crate::helpers::HelperError>> {
     let has_inputs = request.get("inputs").is_some();
-    let inputs = field_or_empty_object(request, "inputs");
+    let inputs = request.get("inputs").cloned().unwrap_or_else(|| json!({}));
     let texts = parse_json_field::<Vec<String>>(&inputs, "texts")?.or_else(|| {
         Some(if has_inputs {
             Vec::new()

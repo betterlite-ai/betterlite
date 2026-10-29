@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use serde_json::json;
-use crate::case::UpstreamAnswer;
 use crate::routing_mock_scripts::{MockScript, Outcome, ScriptedReply, Wait};
 
 pub(super) fn parse_json_field<T>(
@@ -46,23 +44,6 @@ where
 {
     let message = error.to_string();
     failure_with_class("GuardrailError", message)
-}
-
-pub(super) fn field_or_empty_object(input: &serde_json::Value, key: &str) -> serde_json::Value {
-    input.get(key).cloned().unwrap_or_else(|| json!({}))
-}
-
-pub(super) fn current_thread_runtime() -> Result<tokio::runtime::Runtime, Box<crate::helpers::HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(guardrail_error)
-}
-
-pub(super) fn mock_script_for(
-    reply: &UpstreamAnswer,
-) -> Result<MockScript, Box<crate::helpers::HelperError>> {
-    MockScript::try_from(std::slice::from_ref(reply)).map_err(guardrail_error)
 }
 
 // "closed" drops the connection immediately; "timeout" delays past the client's timeout.
