@@ -951,6 +951,7 @@ name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
  "betterlite-postgres-fixture",
+ "betterlite-secrets",
  "chrono",
  "clap",
  "deadpool-postgres",
@@ -1172,6 +1173,7 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-bedrock",
@@ -1366,12 +1368,15 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
+ "betterlite-redact",
  "crypto_secretbox",
  "getrandom 0.4.3",
  "rstest",
  "secrecy",
+ "serde",
  "serde_json",
  "sha2 0.11.1",
+ "subtle",
  "thiserror",
  "tracing",
  "tracing-subscriber",
