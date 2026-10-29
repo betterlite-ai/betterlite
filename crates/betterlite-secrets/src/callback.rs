@@ -4,10 +4,10 @@ use std::iter;
 use betterlite_redact::structured::{Payload, SensitiveDataMasker};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::error::SecretError;
-use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
+use crate::secret_codec::diagnostics::SecretDiagnostics;
 use crate::secret_codec::{
-    CALLBACK_VAR_ENCRYPTED_PREFIX, NonceSource, StoredCipher, StoredValue, open_stored,
+    CALLBACK_VAR_ENCRYPTED_PREFIX, DecryptPolicy, FailureLog, FailureValue, NonceSource,
+    StoredCipher, StoredValue,
 };
 
 const EXTRA_SENSITIVE_KEY: &str = "gcs_path_service_account";
@@ -42,6 +42,7 @@ where
 // Port of callback_utils.decrypt_callback_vars.
 pub fn decrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
+    N: NonceSource,
     D: SecretDiagnostics,
 {
     let transform = |key: &str, value: &Payload| decrypt_or_passthrough(key, value, cipher);
@@ -121,6 +122,7 @@ where
 // Port of callback_utils._decrypt_or_passthrough: a failed open keeps the marked value and logs at debug level.
 fn decrypt_or_passthrough<N, D>(key: &str, value: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
+    N: NonceSource,
     D: SecretDiagnostics,
 {
     let Some(text) = value.as_str() else {
@@ -132,22 +134,15 @@ where
     else {
         return value.clone();
     };
-    let opened = cipher
-        .settings
-        .signing_key
-        .as_ref()
-        .ok_or(SecretError::MissingKey)
-        .and_then(|signing_key| open_stored(inner, signing_key));
-    let error = match opened {
-        Ok(plaintext) => return Payload::String(plaintext.expose_secret().to_owned()),
-        Err(error) => error,
+    let policy = DecryptPolicy {
+        log: FailureLog::Debug,
+        value: FailureValue::Nothing,
     };
-    let failed = SecretEvent::DecryptFailed {
-        field: key,
-        error: &error,
-    };
-    cipher.diagnostics.record(Level::Debug, &failed);
-    value.clone()
+    let stored = StoredValue::<()>::Text(SecretString::from(inner));
+    match cipher.decrypt_value(stored, key, policy) {
+        Some(StoredValue::Text(plaintext)) => Payload::String(plaintext.expose_secret().to_owned()),
+        Some(StoredValue::Other(())) | None => value.clone(),
+    }
 }
 
 mod tests;
