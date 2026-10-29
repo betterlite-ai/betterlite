@@ -39,12 +39,16 @@ fn has_valid_underscores(digits: &str) -> bool {
     true
 }
 
-// Mirrors width, height = size.split("x") followed by int(width), int(height)
+// Mirrors width, height = size.split("x") followed by int(width), int(height).
+// size.split('x') always yields at least one item, so the first slot is never empty.
 pub fn split_size(size: &str) -> Result<(i64, i64), SizeError> {
-    let parts: Vec<&str> = size.split('x').collect();
-    match parts.as_slice() {
-        [width, height] => Ok((parse_python_int(width)?, parse_python_int(height)?)),
-        _ if parts.len() < 2 => Err(SizeError::NotEnough(parts.len())),
+    let mut iter = size.split('x');
+    let width = iter.next().unwrap_or_default();
+    let maybe_height = iter.next();
+    let extra = iter.next();
+    match (maybe_height, extra) {
+        (Some(height), None) => Ok((parse_python_int(width)?, parse_python_int(height)?)),
+        (None, None) => Err(SizeError::NotEnough(1)),
         _ => Err(SizeError::TooMany),
     }
 }

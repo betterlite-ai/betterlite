@@ -49,6 +49,7 @@ fn titan_image_body() {
     titan_image_body_maps_and_builds();
     titan_image_body_defaults();
     titan_image_body_quality_noop();
+    titan_image_body_quality_standard();
 }
 
 fn titan_image_body_maps_and_builds() {
@@ -107,6 +108,19 @@ fn titan_image_body_quality_noop() {
     let non_default = params(vec![("quality", Field::from("auto"))]);
     let mapped = titan::map_openai_params(&non_default, Params::new()).unwrap();
     assert!(mapped.get("imageGenerationConfig").is_none());
+}
+
+fn titan_image_body_quality_standard() {
+    for quality in ["standard", "medium", "low"] {
+        let non_default = params(vec![("quality", Field::from(quality))]);
+        let mapped = titan::map_openai_params(&non_default, Params::new()).unwrap();
+        let expected_config = params(vec![("quality", Field::from("standard"))]);
+        assert_eq!(
+            mapped.get("imageGenerationConfig"),
+            Some(&Field::from(expected_config)),
+            "quality {quality} should map to standard"
+        );
+    }
 }
 
 fn stability1_text_prompts() {
