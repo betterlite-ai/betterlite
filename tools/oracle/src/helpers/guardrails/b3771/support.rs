@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use serde_json::json;
-
 use crate::case::UpstreamAnswer;
 use crate::routing_mock_scripts::{MockScript, Outcome, ScriptedReply, Wait};
 
