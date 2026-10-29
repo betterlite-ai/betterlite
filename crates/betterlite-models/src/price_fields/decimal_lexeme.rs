@@ -13,6 +13,8 @@ pub enum DecimalLexemeError {
         #[source]
         source: TryFromIntError,
     },
+    #[error("the exponent moves the decimal point beyond the representable range")]
+    ScaleShiftOverflow,
     #[error(transparent)]
     Decimal(#[from] rust_decimal::Error),
 }
@@ -25,14 +27,17 @@ pub fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
     let exponent = exponent_text
         .parse::<i64>()
         .map_err(|source| DecimalLexemeError::Exponent { source })?;
-    let signed_scale = i64::from(decimal.scale()).saturating_sub(exponent);
+    let signed_scale = i64::from(decimal.scale())
+        .checked_sub(exponent)
+        .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
     if !signed_scale.is_negative() {
         let scale = u32::try_from(signed_scale)
             .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
         return Ok(Decimal::try_from_i128_with_scale(decimal.mantissa(), scale)
             .map(|value| value.normalize())?);
     }
-    let magnitude = u32::try_from(signed_scale.unsigned_abs()).unwrap_or(u32::MAX);
+    let magnitude = u32::try_from(signed_scale.unsigned_abs())
+        .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
     let multiplier = 10_i128
         .checked_pow(magnitude)
         .ok_or(rust_decimal::Error::ExceedsMaximumPossibleValue)?;
