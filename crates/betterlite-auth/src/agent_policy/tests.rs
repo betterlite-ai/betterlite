@@ -12,73 +12,87 @@ use std::collections::BTreeMap;
 
 const RESPONSE_JSON: &str = r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Record {
+    Auth,
+    Config,
+    Response,
+    Binding,
+    Managed,
+}
+
 #[rstest]
 #[case::kill_auth_field_header_name(
-    "auth",
+    Record::Auth,
     r#"{"type":"api_key","api_key":"s"}"#,
     "header_name",
     r#""x-api-key""#
 )]
 #[case::kill_config_field_method(
-    "config",
+    Record::Config,
     r#"{"url":"https://example.com"}"#,
     "method",
     r#""POST""#
 )]
-#[case::kill_config_field_headers("config", r#"{"url":"https://example.com"}"#, "headers", "{}")]
+#[case::kill_config_field_headers(
+    Record::Config,
+    r#"{"url":"https://example.com"}"#,
+    "headers",
+    "{}"
+)]
 #[case::kill_config_field_query_params(
-    "config",
+    Record::Config,
     r#"{"url":"https://example.com"}"#,
     "query_params",
     "{}"
 )]
-#[case::kill_config_field_body("config", r#"{"url":"https://example.com"}"#, "body", "null")]
-#[case::kill_config_field_auth("config", r#"{"url":"https://example.com"}"#, "auth", "null")]
-#[case::agent_response_field_identity("response", RESPONSE_JSON, "identity", "null")]
+#[case::kill_config_field_body(Record::Config, r#"{"url":"https://example.com"}"#, "body", "null")]
+#[case::kill_config_field_auth(Record::Config, r#"{"url":"https://example.com"}"#, "auth", "null")]
+#[case::agent_response_field_identity(Record::Response, RESPONSE_JSON, "identity", "null")]
 #[case::agent_response_field_identity_managed(
-    "response",
+    Record::Response,
     RESPONSE_JSON,
     "identity_managed",
     "false"
 )]
-#[case::agent_response_field_enabled("response", RESPONSE_JSON, "enabled", "true")]
+#[case::agent_response_field_enabled(Record::Response, RESPONSE_JSON, "enabled", "true")]
 #[case::agent_response_field_execution_mode(
-    "response",
+    Record::Response,
     RESPONSE_JSON,
     "execution_mode",
     r#""autonomous""#
 )]
 #[case::agent_response_field_jwt_auth_configured(
-    "response",
+    Record::Response,
     RESPONSE_JSON,
     "jwt_auth_configured",
     "false"
 )]
-#[case::binding_field_active("binding", r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "active", "true")]
-#[case::binding_field_service_principal_id("binding", r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "service_principal_id", "null")]
-#[case::binding_field_required_roles("binding", r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "required_roles", "[]")]
-#[case::binding_field_required_scopes("binding", r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "required_scopes", r#"["user_impersonation"]"#)]
-#[case::binding_field_last_authenticated_at("binding", r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "last_authenticated_at", "null")]
+#[case::binding_field_active(Record::Binding, r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "active", "true")]
+#[case::binding_field_service_principal_id(Record::Binding, r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "service_principal_id", "null")]
+#[case::binding_field_required_roles(Record::Binding, r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "required_roles", "[]")]
+#[case::binding_field_required_scopes(Record::Binding, r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "required_scopes", r#"["user_impersonation"]"#)]
+#[case::binding_field_last_authenticated_at(Record::Binding, r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#, "last_authenticated_at", "null")]
 #[case::managed_context_field_binding_revision(
-    "managed",
+    Record::Managed,
     r#"{"agent_id":"a","mode":"autonomous"}"#,
     "binding_revision",
     "null"
 )]
 #[case::managed_context_field_user_id(
-    "managed",
+    Record::Managed,
     r#"{"agent_id":"a","mode":"autonomous"}"#,
     "user_id",
     "null"
 )]
 #[case::managed_context_field_subject_oid(
-    "managed",
+    Record::Managed,
     r#"{"agent_id":"a","mode":"autonomous"}"#,
     "subject_oid",
     "null"
 )]
 fn named_owned_defaults(
-    #[case] kind: &str,
+    #[case] kind: Record,
     #[case] input: &str,
     #[case] field: &str,
     #[case] expected: &str,
@@ -86,33 +100,34 @@ fn named_owned_defaults(
     assert_eq!(owned_default_field(kind, input, field), expected);
 }
 
-fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
-    if kind == "auth" {
-        return serde_json::to_value(serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap())
-            .unwrap()[field]
-            .to_string();
+fn owned_default_field(kind: Record, input: &str, field: &str) -> String {
+    match kind {
+        Record::Auth => {
+            serde_json::to_value(serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap())
+                .unwrap()[field]
+                .to_string()
+        }
+        Record::Config => {
+            serde_json::to_value(serde_json::from_str::<AgentKillSwitchConfig>(input).unwrap())
+                .unwrap()[field]
+                .to_string()
+        }
+        Record::Response => {
+            serde_json::to_value(serde_json::from_str::<AgentResponse>(input).unwrap()).unwrap()
+                [field]
+                .to_string()
+        }
+        Record::Binding => {
+            serde_json::to_value(serde_json::from_str::<AgentIdentityBinding>(input).unwrap())
+                .unwrap()[field]
+                .to_string()
+        }
+        Record::Managed => {
+            serde_json::to_value(serde_json::from_str::<ManagedAgentContext>(input).unwrap())
+                .unwrap()[field]
+                .to_string()
+        }
     }
-    if kind == "config" {
-        return serde_json::to_value(serde_json::from_str::<AgentKillSwitchConfig>(input).unwrap())
-            .unwrap()[field]
-            .to_string();
-    }
-    if kind == "response" {
-        return serde_json::to_value(serde_json::from_str::<AgentResponse>(input).unwrap())
-            .unwrap()[field]
-            .to_string();
-    }
-    if kind == "binding" {
-        return serde_json::to_value(serde_json::from_str::<AgentIdentityBinding>(input).unwrap())
-            .unwrap()[field]
-            .to_string();
-    }
-    if kind == "managed" {
-        return serde_json::to_value(serde_json::from_str::<ManagedAgentContext>(input).unwrap())
-            .unwrap()[field]
-            .to_string();
-    }
-    panic!("unknown case kind");
 }
 
 #[test]
@@ -261,34 +276,38 @@ fn managed_mode_both_rejected() {
 const BINDING_JSON: &str = r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#;
 
 #[rstest]
-#[case::kill_config_field_url("config", r#"{"url":"https://example.com"}"#, "url")]
-#[case::kill_auth_field_type("auth", r#"{"type":"bearer","token":"s"}"#, "type")]
-#[case::kill_auth_field_token("auth", r#"{"type":"bearer","token":"s"}"#, "token")]
-#[case::kill_auth_field_api_key("auth", r#"{"type":"api_key","api_key":"s"}"#, "api_key")]
+#[case::kill_config_field_url(Record::Config, r#"{"url":"https://example.com"}"#, "url")]
+#[case::kill_auth_field_type(Record::Auth, r#"{"type":"bearer","token":"s"}"#, "type")]
+#[case::kill_auth_field_token(Record::Auth, r#"{"type":"bearer","token":"s"}"#, "token")]
+#[case::kill_auth_field_api_key(Record::Auth, r#"{"type":"api_key","api_key":"s"}"#, "api_key")]
 #[case::kill_auth_field_username(
-    "auth",
+    Record::Auth,
     r#"{"type":"basic","username":"u","password":"p"}"#,
     "username"
 )]
 #[case::kill_auth_field_password(
-    "auth",
+    Record::Auth,
     r#"{"type":"basic","username":"u","password":"p"}"#,
     "password"
 )]
-#[case::binding_field_agent_id("binding", BINDING_JSON, "agent_id")]
-#[case::binding_field_provider("binding", BINDING_JSON, "provider")]
-#[case::binding_field_tenant_id("binding", BINDING_JSON, "tenant_id")]
-#[case::binding_field_client_id("binding", BINDING_JSON, "client_id")]
-#[case::binding_field_issuer("binding", BINDING_JSON, "issuer")]
-#[case::binding_field_revision("binding", BINDING_JSON, "revision")]
+#[case::binding_field_agent_id(Record::Binding, BINDING_JSON, "agent_id")]
+#[case::binding_field_provider(Record::Binding, BINDING_JSON, "provider")]
+#[case::binding_field_tenant_id(Record::Binding, BINDING_JSON, "tenant_id")]
+#[case::binding_field_client_id(Record::Binding, BINDING_JSON, "client_id")]
+#[case::binding_field_issuer(Record::Binding, BINDING_JSON, "issuer")]
+#[case::binding_field_revision(Record::Binding, BINDING_JSON, "revision")]
 #[case::managed_context_field_agent_id(
-    "managed",
+    Record::Managed,
     r#"{"agent_id":"a","mode":"autonomous"}"#,
     "agent_id"
 )]
-#[case::managed_context_field_mode("managed", r#"{"agent_id":"a","mode":"autonomous"}"#, "mode")]
+#[case::managed_context_field_mode(
+    Record::Managed,
+    r#"{"agent_id":"a","mode":"autonomous"}"#,
+    "mode"
+)]
 fn required_field_omission_and_null_rejected(
-    #[case] kind: &str,
+    #[case] kind: Record,
     #[case] input: &str,
     #[case] field: &str,
     #[values(false, true)] explicit_null: bool,
@@ -301,19 +320,21 @@ fn required_field_omission_and_null_rejected(
     }
     let bytes = serde_json::to_vec(&fields).unwrap();
     match kind {
-        "config" => {
+        Record::Config => {
             serde_json::from_slice::<AgentKillSwitchConfig>(&bytes).unwrap_err();
         }
-        "auth" => {
+        Record::Auth => {
             serde_json::from_slice::<AgentKillSwitchAuth>(&bytes).unwrap_err();
         }
-        "binding" => {
+        Record::Response => {
+            serde_json::from_slice::<AgentResponse>(&bytes).unwrap_err();
+        }
+        Record::Binding => {
             serde_json::from_slice::<AgentIdentityBinding>(&bytes).unwrap_err();
         }
-        "managed" => {
+        Record::Managed => {
             serde_json::from_slice::<ManagedAgentContext>(&bytes).unwrap_err();
         }
-        _ => panic!("unknown kind"),
     }
 }
 
