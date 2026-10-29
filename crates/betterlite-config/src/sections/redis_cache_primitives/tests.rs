@@ -34,7 +34,10 @@ fn trims_surrounding_whitespace() {
 
 #[test]
 fn rejects_a_non_numeric_override() {
-    let lookup = BTreeMap::from([("DEFAULT_REDIS_MAJOR_VERSION".to_owned(), "latest".to_owned())]);
+    let lookup = BTreeMap::from([(
+        "DEFAULT_REDIS_MAJOR_VERSION".to_owned(),
+        "latest".to_owned(),
+    )]);
     let error = ConfigLoader { lookup }.load("{}").unwrap_err();
     assert!(matches!(
         error,
@@ -44,9 +47,11 @@ fn rejects_a_non_numeric_override() {
 
 #[test]
 fn rejects_top_level_yaml_key() {
-    let error = ConfigLoader { lookup: BTreeMap::<String, String>::new() }
-        .load("DEFAULT_REDIS_MAJOR_VERSION: 6")
-        .unwrap_err();
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("DEFAULT_REDIS_MAJOR_VERSION: 6")
+    .unwrap_err();
     assert!(matches!(
         error,
         ConfigError::Unsupported { paths } if paths == ["DEFAULT_REDIS_MAJOR_VERSION"]

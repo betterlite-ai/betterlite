@@ -19,7 +19,9 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { default_redis_major_version: DEFAULT_MAJOR_VERSION }
+        Self {
+            default_redis_major_version: DEFAULT_MAJOR_VERSION,
+        }
     }
 }
 
@@ -33,12 +35,16 @@ impl Section for Raw {
         let default_redis_major_version = lookup.lookup("DEFAULT_REDIS_MAJOR_VERSION").map_or(
             Ok(DEFAULT_MAJOR_VERSION),
             |text| {
-                text.trim().parse::<u32>().map_err(|source| ConfigError::InvalidInteger {
-                    path: "DEFAULT_REDIS_MAJOR_VERSION".to_owned(),
-                    source,
-                })
+                text.trim()
+                    .parse::<u32>()
+                    .map_err(|source| ConfigError::InvalidInteger {
+                        path: "DEFAULT_REDIS_MAJOR_VERSION".to_owned(),
+                        source,
+                    })
             },
         )?;
-        Ok(Settings { default_redis_major_version })
+        Ok(Settings {
+            default_redis_major_version,
+        })
     }
 }
