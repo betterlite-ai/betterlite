@@ -80,6 +80,7 @@ single_reset_writes!(TeamSpendResetWrites, "LiteLLM_TeamTable", "team_id");
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BudgetIdFilter {
     Equals(String),
+    In(Vec<String>),
     IsNull,
 }
 
@@ -92,13 +93,21 @@ pub struct SpendRange {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedResetFilter {
     pub budget_id: BudgetIdFilter,
-    pub spend: Option<SpendRange>,
+    pub spend: SpendRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyLinkedResetFilter {
+    pub budget_id: BudgetIdFilter,
+    pub spend: SpendRange,
 }
 
 #[derive(Debug, Clone)]
 pub(super) enum LinkedWrite {
     Zero(LinkedResetFilter),
     Decrement(LinkedResetFilter, Decimal),
+    KeyZero(KeyLinkedResetFilter),
+    KeyDecrement(KeyLinkedResetFilter, Decimal),
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +139,30 @@ impl LinkedSpendResetWrites {
 
     pub fn queue_spend_decrement(&self, filter: LinkedResetFilter, amount: Decimal) {
         let write = LinkedWrite::Decrement(filter, amount);
+        self.queue.push(CascadeEntry::Linked {
+            table: self.table,
+            write,
+        });
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KeyLinkedSpendResetWrites {
+    pub(super) table: &'static str,
+    pub(super) queue: Queue<CascadeEntry>,
+}
+
+impl KeyLinkedSpendResetWrites {
+    pub fn queue_spend_zero(&self, filter: KeyLinkedResetFilter) {
+        let write = LinkedWrite::KeyZero(filter);
+        self.queue.push(CascadeEntry::Linked {
+            table: self.table,
+            write,
+        });
+    }
+
+    pub fn queue_spend_decrement(&self, filter: KeyLinkedResetFilter, amount: Decimal) {
+        let write = LinkedWrite::KeyDecrement(filter, amount);
         self.queue.push(CascadeEntry::Linked {
             table: self.table,
             write,

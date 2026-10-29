@@ -9,8 +9,8 @@ mod tests;
 
 use batch::{BudgetCascadeBatch, CommitError, SpendResetBatch};
 use queue::{
-    BudgetWindowWrites, KeySpendResetWrites, LinkedSpendResetWrites, Queue, TeamSpendResetWrites,
-    UserSpendResetWrites,
+    BudgetWindowWrites, KeyLinkedSpendResetWrites, KeySpendResetWrites, LinkedSpendResetWrites,
+    Queue, TeamSpendResetWrites, UserSpendResetWrites,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -63,7 +63,7 @@ impl Default for SpendResetUnitOfWork {
 #[derive(Debug)]
 pub struct BudgetCascadeUnitOfWork {
     pub team_memberships: LinkedSpendResetWrites,
-    pub keys: LinkedSpendResetWrites,
+    pub keys: KeyLinkedSpendResetWrites,
     pub organizations: LinkedSpendResetWrites,
     pub tags: LinkedSpendResetWrites,
     pub model_access_groups: LinkedSpendResetWrites,
@@ -80,7 +80,7 @@ impl Default for BudgetCascadeUnitOfWork {
                 table: "LiteLLM_TeamMembership",
                 queue: Queue::clone(&queue),
             },
-            keys: LinkedSpendResetWrites {
+            keys: KeyLinkedSpendResetWrites {
                 table: "LiteLLM_VerificationToken",
                 queue: Queue::clone(&queue),
             },

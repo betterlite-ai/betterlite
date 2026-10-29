@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::batch::{BudgetCascadeBatch, CommitError, SpendResetBatch};
-use super::queue::{BudgetIdFilter, LinkedResetFilter, SpendRange};
+use super::queue::{BudgetIdFilter, KeyLinkedResetFilter, LinkedResetFilter, SpendRange};
 use super::{
     BudgetCascadeUnitOfWork, SpendDecrement, SpendResetUnitOfWork, UnitOfWorkError,
     budget_cascade_unit_of_work, spend_reset_data, spend_reset_unit_of_work,
@@ -96,7 +96,7 @@ async fn schema() -> (PostgresFixture, PostgresStore, Client) {
     let client = store.session().await.unwrap();
     client
         .batch_execute(
-            "CREATE TABLE \"LiteLLM_VerificationToken\" (token TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), budget_id TEXT, label TEXT NOT NULL DEFAULT 'kept'); CREATE TABLE \"LiteLLM_UserTable\" (user_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), total_spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TeamTable\" (team_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3)); CREATE TABLE \"LiteLLM_TeamMembership\" (user_id TEXT, team_id TEXT, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0, PRIMARY KEY (user_id, team_id)); CREATE TABLE \"LiteLLM_OrganizationTable\" (organization_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TagTable\" (tag_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ModelAccessGroupBudgetTable\" (access_group_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ProjectTable\" (project_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_EndUserTable\" (user_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_BudgetTable\" (budget_id TEXT PRIMARY KEY, budget_reset_at TIMESTAMP(3));",
+            "CREATE TABLE \"LiteLLM_VerificationToken\" (token TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), budget_id TEXT, budget_duration TEXT, label TEXT NOT NULL DEFAULT 'kept'); CREATE TABLE \"LiteLLM_UserTable\" (user_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), total_spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TeamTable\" (team_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3)); CREATE TABLE \"LiteLLM_TeamMembership\" (user_id TEXT, team_id TEXT, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0, PRIMARY KEY (user_id, team_id)); CREATE TABLE \"LiteLLM_OrganizationTable\" (organization_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TagTable\" (tag_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ModelAccessGroupBudgetTable\" (access_group_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ProjectTable\" (project_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_EndUserTable\" (user_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_BudgetTable\" (budget_id TEXT PRIMARY KEY, budget_reset_at TIMESTAMP(3));",
         )
         .await
         .unwrap();
@@ -126,7 +126,7 @@ async fn reset_at_of(
 async fn seed_bindings(client: &Client) {
     client
         .batch_execute(
-            "INSERT INTO \"LiteLLM_VerificationToken\" (token, spend) VALUES ('token-a', 10); INSERT INTO \"LiteLLM_UserTable\" (user_id, spend) VALUES ('user-a', 10); INSERT INTO \"LiteLLM_TeamTable\" (team_id, spend) VALUES ('team-a', 10); INSERT INTO \"LiteLLM_TeamMembership\" (user_id, team_id, budget_id, spend) VALUES ('u', 't', 'budget-a', 10); INSERT INTO \"LiteLLM_VerificationToken\" (token, budget_id, spend) VALUES ('token-linked', 'budget-a', 10); INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, budget_id, spend) VALUES ('org-a', 'budget-a', 10); INSERT INTO \"LiteLLM_TagTable\" (tag_name, budget_id, spend) VALUES ('tag-a', 'budget-a', 10); INSERT INTO \"LiteLLM_ModelAccessGroupBudgetTable\" (access_group_name, budget_id, spend) VALUES ('group-a', 'budget-a', 10); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, budget_id, spend) VALUES ('project-a', 'budget-a', 10); INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('enduser-a', 'budget-a', 10); INSERT INTO \"LiteLLM_BudgetTable\" (budget_id) VALUES ('budget-a');",
+            "INSERT INTO \"LiteLLM_VerificationToken\" (token, spend) VALUES ('token-a', 10); INSERT INTO \"LiteLLM_UserTable\" (user_id, spend) VALUES ('user-a', 10); INSERT INTO \"LiteLLM_TeamTable\" (team_id, spend) VALUES ('team-a', 10); INSERT INTO \"LiteLLM_TeamMembership\" (user_id, team_id, budget_id, spend) VALUES ('u', 't', 'budget-a', 10); INSERT INTO \"LiteLLM_VerificationToken\" (token, budget_id, spend) VALUES ('token-linked', 'budget-a', 10), ('token-window', 'budget-a', 10); UPDATE \"LiteLLM_VerificationToken\" SET budget_duration = 'daily' WHERE token = 'token-window'; INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, budget_id, spend) VALUES ('org-a', 'budget-a', 10); INSERT INTO \"LiteLLM_TagTable\" (tag_name, budget_id, spend) VALUES ('tag-a', 'budget-a', 10); INSERT INTO \"LiteLLM_ModelAccessGroupBudgetTable\" (access_group_name, budget_id, spend) VALUES ('group-a', 'budget-a', 10); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, budget_id, spend) VALUES ('project-a', 'budget-a', 10); INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('enduser-a', 'budget-a', 10); INSERT INTO \"LiteLLM_BudgetTable\" (budget_id) VALUES ('budget-a');",
         )
         .await
         .unwrap();
@@ -149,28 +149,43 @@ async fn queue_resets(store: &PostgresStore, at: DateTime<Utc>) {
     )
     .await
     .unwrap();
-    let filter = LinkedResetFilter {
-        budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
-        spend: None,
-    };
     budget_cascade_unit_of_work(
         || BudgetCascadeBatch {
             store: store.clone(),
         },
         async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
-            unit.team_memberships.queue_spend_zero(filter.clone());
-            unit.keys.queue_spend_zero(filter.clone());
-            unit.organizations.queue_spend_zero(filter.clone());
-            unit.tags.queue_spend_zero(filter.clone());
-            unit.model_access_groups.queue_spend_zero(filter.clone());
-            unit.projects.queue_spend_zero(filter.clone());
-            unit.endusers.queue_spend_zero(filter.clone());
-            unit.budgets.queue_window_advance("budget-a", at);
+            queue_cascade_writes(unit, at);
             Ok(())
         },
     )
     .await
     .unwrap();
+}
+
+fn queue_cascade_writes(unit: &BudgetCascadeUnitOfWork, at: DateTime<Utc>) {
+    let filter = LinkedResetFilter {
+        budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
+        spend: SpendRange::default(),
+    };
+    let key_filter = KeyLinkedResetFilter {
+        budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
+        spend: SpendRange::default(),
+    };
+    unit.team_memberships
+        .queue_spend_decrement(filter.clone(), Decimal::from(1_i32));
+    unit.keys
+        .queue_spend_decrement(key_filter, Decimal::from(1_i32));
+    unit.organizations
+        .queue_spend_decrement(filter.clone(), Decimal::from(2_i32));
+    unit.tags
+        .queue_spend_decrement(filter.clone(), Decimal::from(3_i32));
+    unit.model_access_groups
+        .queue_spend_decrement(filter.clone(), Decimal::from(4_i32));
+    unit.projects
+        .queue_spend_decrement(filter.clone(), Decimal::from(5_i32));
+    unit.endusers
+        .queue_spend_decrement(filter, Decimal::from(6_i32));
+    unit.budgets.queue_window_advance("budget-a", at);
 }
 
 async fn assert_all_bindings(client: &Client, at: DateTime<Utc>) {
@@ -181,25 +196,46 @@ async fn assert_all_bindings(client: &Client, at: DateTime<Utc>) {
     ] {
         assert_spend(client, table, column, id, 7.0_f64).await;
     }
-    for (table, column, id) in [
-        ("LiteLLM_TeamMembership", "team_id", "t"),
-        ("LiteLLM_VerificationToken", "token", "token-linked"),
-        ("LiteLLM_OrganizationTable", "organization_id", "org-a"),
-        ("LiteLLM_TagTable", "tag_name", "tag-a"),
-        (
-            "LiteLLM_ModelAccessGroupBudgetTable",
-            "access_group_name",
-            "group-a",
-        ),
-        ("LiteLLM_ProjectTable", "project_id", "project-a"),
-        ("LiteLLM_EndUserTable", "user_id", "enduser-a"),
-    ] {
-        assert_spend(client, table, column, id, 0.0_f64).await;
-    }
+    assert_cascade_spends(client).await;
     assert_eq!(
         reset_at_of(client, "LiteLLM_BudgetTable", "budget_id", "budget-a").await,
         Some(at.naive_utc())
     );
+}
+
+async fn assert_cascade_spends(client: &Client) {
+    for (table, column, id, expected) in [
+        ("LiteLLM_TeamMembership", "team_id", "t", 9.0_f64),
+        (
+            "LiteLLM_VerificationToken",
+            "token",
+            "token-linked",
+            9.0_f64,
+        ),
+        (
+            "LiteLLM_OrganizationTable",
+            "organization_id",
+            "org-a",
+            8.0_f64,
+        ),
+        ("LiteLLM_TagTable", "tag_name", "tag-a", 7.0_f64),
+        (
+            "LiteLLM_ModelAccessGroupBudgetTable",
+            "access_group_name",
+            "group-a",
+            6.0_f64,
+        ),
+        ("LiteLLM_ProjectTable", "project_id", "project-a", 5.0_f64),
+        ("LiteLLM_EndUserTable", "user_id", "enduser-a", 4.0_f64),
+        (
+            "LiteLLM_VerificationToken",
+            "token",
+            "token-window",
+            10.0_f64,
+        ),
+    ] {
+        assert_spend(client, table, column, id, expected).await;
+    }
 }
 
 #[tokio::test]
@@ -507,24 +543,24 @@ async fn linked_filters_preserved_in_queue_order() {
         async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
             unit.tags.queue_spend_decrement(
                 LinkedResetFilter {
-                    budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
-                    spend: Some(SpendRange {
+                    budget_id: BudgetIdFilter::In(vec!["budget-a".to_owned()]),
+                    spend: SpendRange {
                         greater_than: Some(Decimal::from(5_i32)),
                         less_than_or_equal: None,
-                    }),
+                    },
                 },
                 Decimal::from(3_i32),
             );
             unit.tags.queue_spend_zero(LinkedResetFilter {
                 budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
-                spend: Some(SpendRange {
+                spend: SpendRange {
                     greater_than: None,
                     less_than_or_equal: Some(Decimal::from(8_i32)),
-                }),
+                },
             });
             unit.tags.queue_spend_zero(LinkedResetFilter {
                 budget_id: BudgetIdFilter::IsNull,
-                spend: None,
+                spend: SpendRange::default(),
             });
             Ok(())
         },
@@ -548,7 +584,7 @@ async fn unmatched_linked_update_succeeds() {
         async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
             unit.organizations.queue_spend_zero(LinkedResetFilter {
                 budget_id: BudgetIdFilter::Equals("missing-budget".to_owned()),
-                spend: None,
+                spend: SpendRange::default(),
             });
             Ok(())
         },
@@ -575,7 +611,7 @@ async fn deleted_budget_window_update_is_noop() {
             unit.budgets.queue_window_advance("budget-del", at);
             unit.endusers.queue_spend_zero(LinkedResetFilter {
                 budget_id: BudgetIdFilter::Equals("budget-del".to_owned()),
-                spend: None,
+                spend: SpendRange::default(),
             });
             // Delete the budget on a separate connection before the batch commits.
             deleter
@@ -695,7 +731,7 @@ async fn separate_units_commit_independently() {
         async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
             unit.organizations.queue_spend_zero(LinkedResetFilter {
                 budget_id: BudgetIdFilter::Equals("whatever".to_owned()),
-                spend: None,
+                spend: SpendRange::default(),
             });
             Err(TestError)
         },

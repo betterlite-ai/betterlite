@@ -3,7 +3,10 @@ use deadpool_postgres::GenericClient;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::types::ToSql;
 
-use super::queue::{BudgetIdFilter, CascadeEntry, LinkedResetFilter, LinkedWrite, SpendResetEntry};
+use super::queue::{
+    BudgetIdFilter, CascadeEntry, KeyLinkedResetFilter, LinkedResetFilter, LinkedWrite,
+    SpendResetEntry,
+};
 use super::{BudgetCascadeUnitOfWork, SpendResetUnitOfWork};
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
@@ -158,19 +161,38 @@ fn render_filter(filter: &LinkedResetFilter) -> (String, Vec<Box<dyn ToSql + Syn
             params.push(Box::new(value.clone()));
             clauses.push(format!("budget_id = ${}", params.len()));
         }
+        BudgetIdFilter::In(values) => {
+            params.push(Box::new(values.clone()));
+            clauses.push(format!("budget_id = ANY(${})", params.len()));
+        }
         BudgetIdFilter::IsNull => clauses.push("budget_id IS NULL".to_owned()),
     }
-    if let Some(range) = &filter.spend {
-        if let Some(bound) = range.greater_than {
-            params.push(Box::new(bound));
-            clauses.push(format!("spend > ${}::numeric", params.len()));
-        }
-        if let Some(bound) = range.less_than_or_equal {
-            params.push(Box::new(bound));
-            clauses.push(format!("spend <= ${}::numeric", params.len()));
-        }
-    }
+    render_spend_range(&filter.spend, &mut clauses, &mut params);
     (clauses.join(" AND "), params)
+}
+
+fn render_key_filter(filter: &KeyLinkedResetFilter) -> (String, Vec<Box<dyn ToSql + Sync + Send>>) {
+    let (mut where_sql, params) = render_filter(&LinkedResetFilter {
+        budget_id: filter.budget_id.clone(),
+        spend: filter.spend,
+    });
+    where_sql.push_str(" AND budget_duration IS NULL");
+    (where_sql, params)
+}
+
+fn render_spend_range(
+    range: &super::queue::SpendRange,
+    clauses: &mut Vec<String>,
+    params: &mut Vec<Box<dyn ToSql + Sync + Send>>,
+) {
+    if let Some(bound) = range.greater_than {
+        params.push(Box::new(bound));
+        clauses.push(format!("spend > ${}::numeric", params.len()));
+    }
+    if let Some(bound) = range.less_than_or_equal {
+        params.push(Box::new(bound));
+        clauses.push(format!("spend <= ${}::numeric", params.len()));
+    }
 }
 
 async fn apply_linked_write<C>(
@@ -210,6 +232,41 @@ where
                 .await
                 .map_err(|source| CommitError::Statement(backend(source)))?;
         }
+        LinkedWrite::KeyZero(filter) => {
+            apply_linked_filter_write(client, table, filter, None).await?;
+        }
+        LinkedWrite::KeyDecrement(filter, amount) => {
+            apply_linked_filter_write(client, table, filter, Some(*amount)).await?;
+        }
     }
+    Ok(())
+}
+
+async fn apply_linked_filter_write<C>(
+    client: &C,
+    table: &'static str,
+    filter: &KeyLinkedResetFilter,
+    decrement: Option<rust_decimal::Decimal>,
+) -> Result<(), CommitError>
+where
+    C: GenericClient + Sync,
+{
+    let (where_sql, mut params) = render_key_filter(filter);
+    let assignment = decrement.map_or_else(
+        || "spend = 0".to_owned(),
+        |amount| {
+            params.push(Box::new(amount));
+            format!("spend = spend - ${}::numeric", params.len())
+        },
+    );
+    let sql = format!("UPDATE \"{table}\" SET {assignment} WHERE {where_sql}");
+    let refs: Vec<&(dyn ToSql + Sync)> = params
+        .iter()
+        .map(|value| -> &(dyn ToSql + Sync) { value.as_ref() })
+        .collect();
+    client
+        .query_opt(sql.as_str(), &refs)
+        .await
+        .map_err(|source| CommitError::Statement(backend(source)))?;
     Ok(())
 }
