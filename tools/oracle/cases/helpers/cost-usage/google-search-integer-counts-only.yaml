@@ -1,0 +1,17 @@
+kind: helper
+name: google-search-integer-counts-only
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 0
+        total_output_tokens: 0
+        grounding_tool_count:
+          - type: google_search
+            count: 3
+          - type: other
+            count: 100
+          - type: google_search
+            count: 2
+compare: {ignore: []}
+env: {}

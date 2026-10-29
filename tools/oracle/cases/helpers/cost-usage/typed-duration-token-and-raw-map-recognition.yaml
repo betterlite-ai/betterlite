@@ -1,0 +1,21 @@
+kind: helper
+name: typed-duration-token-and-raw-map-recognition
+call:
+  cost_usage:
+    transcription:
+      - type: duration
+        seconds: 12.5
+      - type: tokens
+        input_tokens: 10
+        output_tokens: 3
+        total_tokens: 13
+        input_token_details:
+          audio_tokens: 7
+          text_tokens: 3
+    interactions:
+      - type: tokens
+        input_tokens: 10
+        output_tokens: 3
+        total_tokens: 13
+compare: {ignore: []}
+env: {}
