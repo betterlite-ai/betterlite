@@ -50,7 +50,7 @@ pub fn build_db_connection_url_params(
 const SUPPORTED_DB_SCHEMES: [&str; 2] = ["postgresql", "postgres"];
 const MISSING_SCHEME: &str = "<missing scheme>";
 
-// None for a supported scheme, else the parsed lower-case scheme or the missing-scheme placeholder; never the full URL.
+// Never the full URL: a caller logging this result must not get credentials back out.
 pub fn unsupported_db_scheme(database_url: &str) -> Result<Option<String>, UrlSplitError> {
     let scheme = urlsplit(database_url)?.scheme;
     if SUPPORTED_DB_SCHEMES.contains(&scheme.as_str()) {
@@ -129,7 +129,6 @@ impl DatabaseTimeoutSettings {
     }
 }
 
-// Configured timeouts become -c name=millis after existing options, skipping a name already spelled there.
 pub fn pg_options_with_timeouts(
     existing_options: &str,
     statement_timeout: Option<f64>,

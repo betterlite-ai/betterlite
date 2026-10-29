@@ -2,8 +2,6 @@ use std::fmt::Write as _;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::from_utf8;
 
-// Mirrors urllib.parse's urlsplit/urlunsplit/parse_qsl/urlencode for postgres/postgresql connection strings.
-
 pub(super) struct SplitUrl {
     pub(super) scheme: String,
     pub(super) netloc: String,
@@ -215,11 +213,6 @@ pub(super) fn urlencode_doseq(groups: &[(String, Vec<String>)]) -> String {
     parts.join("&")
 }
 
-fn percent_decode_digits(digits: &[u8]) -> Option<u8> {
-    let text = from_utf8(digits).ok()?;
-    u8::from_str_radix(text, 16).ok()
-}
-
 fn percent_encode_byte(byte: u8) -> String {
     if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-' | b'~') {
         char::from(byte).to_string()
@@ -240,7 +233,8 @@ fn quote_plus(text: &str) -> String {
 
 fn next_percent_escape(tail: &[u8]) -> Option<(u8, &[u8])> {
     let (digits, after) = tail.split_at_checked(2)?;
-    let decoded = percent_decode_digits(digits)?;
+    let text = from_utf8(digits).ok()?;
+    let decoded = u8::from_str_radix(text, 16).ok()?;
     Some((decoded, after))
 }
 
