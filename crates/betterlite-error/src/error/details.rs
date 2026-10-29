@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use rust_decimal::Decimal;
 
@@ -13,7 +14,7 @@ pub struct TimeoutDetails {
     pub original_status: Option<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RateLimitDetails {
     pub context: ErrorContext,
     pub category: RateLimitCategory,
@@ -22,6 +23,18 @@ pub struct RateLimitDetails {
     // the explicit headers= kwarg; RateLimitError never derives these from a response, so they skip llm_provider- projection
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+}
+
+// never the derived Debug: a vendor Set-Cookie or secret header value must not escape through format!("{:?}")
+impl fmt::Debug for RateLimitDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RateLimitDetails")
+            .field("context", &self.context)
+            .field("category", &self.category)
+            .field("dimension", &self.dimension)
+            .field("headers", &self.headers.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -38,8 +51,9 @@ pub struct BudgetExceededDetails {
     pub max_budget: Decimal,
     #[serde(default)]
     pub message: Option<String>,
+    // llm_provider or "" in BudgetExceededError.__init__: always a string, never absent
     #[serde(default)]
-    pub provider: Option<String>,
+    pub provider: String,
     #[serde(default)]
     pub entity_type: Option<String>,
     #[serde(default)]

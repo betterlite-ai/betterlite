@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::Error as IoError;
 
-use crate::envelope::{WireField, filter_unsafe_headers};
+use crate::envelope::{WireField, is_unsafe_header_name};
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
 pub mod details;
@@ -91,80 +91,71 @@ pub enum ErrorClass {
 impl ErrorClass {
     #[must_use]
     pub fn metadata(&self) -> ErrorMetadata {
-        match self {
-            Self::Authentication(ctx) => ctx.metadata(401, WireField::Null, WireField::Null),
-            Self::NotFound(ctx) => ctx.metadata(404, WireField::Null, WireField::Null),
-            Self::PermissionDenied(ctx) => ctx.metadata(403, WireField::Null, WireField::Null),
+        // most families reduce to a status/type/param triple read off a shared ErrorContext; the rest return straight away
+        let (ctx, status, error_type, param) = match self {
+            Self::Authentication(ctx) => (&**ctx, 401, WireField::Null, WireField::Null),
+            Self::NotFound(ctx) => (&**ctx, 404, WireField::Null, WireField::Null),
+            Self::PermissionDenied(ctx) => (&**ctx, 403, WireField::Null, WireField::Null),
             Self::BadRequest(ctx)
             | Self::ContextWindowExceeded(ctx)
-            | Self::ContentPolicyViolation(ctx) => {
-                ctx.metadata(400, WireField::Null, WireField::Null)
-            }
-            Self::UnprocessableEntity(ctx) => ctx.metadata(422, WireField::Null, WireField::Null),
-            Self::ServiceUnavailable(ctx) => ctx.metadata(503, WireField::Null, WireField::Null),
-            Self::BadGateway(ctx) => ctx.metadata(502, WireField::Null, WireField::Null),
+            | Self::ContentPolicyViolation(ctx) => (&**ctx, 400, WireField::Null, WireField::Null),
+            Self::UnprocessableEntity(ctx) => (&**ctx, 422, WireField::Null, WireField::Null),
+            Self::ServiceUnavailable(ctx) => (&**ctx, 503, WireField::Null, WireField::Null),
+            Self::BadGateway(ctx) => (&**ctx, 502, WireField::Null, WireField::Null),
             Self::InternalServer(ctx) => {
                 let error_type = WireField::Text("internal_server_error".to_owned());
-                ctx.metadata(500, error_type, WireField::Null)
+                (&**ctx, 500, error_type, WireField::Null)
             }
             Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => {
-                ctx.metadata(500, WireField::Null, WireField::Null)
+                (&**ctx, 500, WireField::Null, WireField::Null)
             }
             // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
-            Self::UnsupportedParams(ctx) => ctx.metadata(400, WireField::MISSING, WireField::Null),
-            Self::Unclassified(ctx) => ctx.metadata(500, WireField::MISSING, WireField::MISSING),
-            Self::Timeout(details) => timeout_metadata(details),
-            Self::Api(details) => {
-                let ctx = &details.context;
-                ctx.metadata(details.status, WireField::Null, WireField::Null)
+            Self::UnsupportedParams(ctx) => (&**ctx, 400, WireField::MISSING, WireField::Null),
+            Self::Unclassified(ctx) => (&**ctx, 500, WireField::MISSING, WireField::MISSING),
+            // exception_status_code in Timeout.__init__; None means the 408 default applies
+            Self::Timeout(details) => {
+                let status = details.original_status.unwrap_or(408);
+                (&details.context, status, WireField::Null, WireField::Null)
             }
-            Self::RateLimit(details) => rate_limit_metadata(details),
-            Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => guardrail_raised_metadata(details),
-            Self::MidStreamFallback(details) => mid_stream_fallback_metadata(details),
-            Self::JsonSchemaValidation(details) => {
-                let identity = (Some(details.model.clone()), Some(details.provider.clone()));
-                let wire = (WireField::Null, WireField::Null);
-                build_metadata(500, identity, wire, RetryMetadata::default())
+            Self::Api(api) => (&api.context, api.status, WireField::Null, WireField::Null),
+            // getattr(original_exception, "status_code", None); None means the 503 default applies
+            Self::MidStreamFallback(details) => {
+                let status = details.original_status.unwrap_or(503);
+                (&details.context, status, WireField::Null, WireField::Null)
             }
-        }
+            Self::RateLimit(details) => return rate_limit_metadata(details),
+            Self::BudgetExceeded(details) => return budget_exceeded_metadata(details),
+            Self::GuardrailRaised(details) => {
+                let status = details.status_code;
+                let wire = (WireField::MISSING, WireField::MISSING);
+                return build_metadata(status, (None, None), wire, RetryMetadata::default());
+            }
+            Self::JsonSchemaValidation(details) => return schema_validation_metadata(details),
+        };
+        ctx.metadata(status, error_type, param)
     }
 }
 
-fn timeout_metadata(details: &TimeoutDetails) -> ErrorMetadata {
-    let status = details.original_status.unwrap_or(408);
-    details
-        .context
-        .metadata(status, WireField::Null, WireField::Null)
+fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
+    let identity = (Some(details.model.clone()), Some(details.provider.clone()));
+    build_metadata(
+        500,
+        identity,
+        (WireField::Null, WireField::Null),
+        RetryMetadata::default(),
+    )
 }
 
 fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
     let mut metadata = build_metadata(
         details.status_code,
-        (None, details.provider.clone()),
+        (None, Some(details.provider.clone())),
         (WireField::MISSING, WireField::MISSING),
         RetryMetadata::default(),
     );
     metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
     metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
     metadata
-}
-
-fn guardrail_raised_metadata(details: &GuardrailDetails) -> ErrorMetadata {
-    let wire = (WireField::MISSING, WireField::MISSING);
-    build_metadata(
-        details.status_code,
-        (None, None),
-        wire,
-        RetryMetadata::default(),
-    )
-}
-
-fn mid_stream_fallback_metadata(details: &MidStreamFallbackDetails) -> ErrorMetadata {
-    let status = details.original_status.unwrap_or(503);
-    details
-        .context
-        .metadata(status, WireField::Null, WireField::Null)
 }
 
 fn build_metadata(
@@ -198,7 +189,12 @@ fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
     );
     metadata.rate_limit_category = Some(details.category);
     metadata.rate_limit_dimension = details.dimension;
-    metadata.allowed_response_headers = filter_unsafe_headers(details.headers.clone());
+    metadata.allowed_response_headers = details
+        .headers
+        .clone()
+        .into_iter()
+        .filter(|(name, _)| !is_unsafe_header_name(name))
+        .collect();
     metadata
 }
 

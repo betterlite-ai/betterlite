@@ -100,12 +100,29 @@ fn context(message: &str) -> ErrorContext {
     WireField::Null,
     WireField::Null
 )]
+#[case::rate_limit_debug_hides_cookie_and_secret_header_values(
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context("slow down"),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::from([
+            ("set-cookie".to_owned(), "session=leaked-cookie-value".to_owned()),
+            ("x-vendor-secret".to_owned(), "sk-leaked-secret-token".to_owned()),
+        ]),
+    })),
+    429,
+    WireField::Text("throttling_error".to_owned()),
+    WireField::Null
+)]
 fn error_types_error_type_tests_behavior(
     #[case] class: ErrorClass,
     #[case] expected_status: u16,
     #[case] expected_type: WireField,
     #[case] expected_param: WireField,
 ) {
+    let debug_text = format!("{class:?}");
+    assert!(!debug_text.contains("leaked-cookie-value"));
+    assert!(!debug_text.contains("leaked-secret-token"));
     let metadata = class.metadata();
     assert_eq!(metadata.status_code, expected_status);
     assert_eq!(metadata.error_type, expected_type);
@@ -157,7 +174,7 @@ fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
         current_cost: Decimal::new(125, 1),
         max_budget: Decimal::from(10_i32),
         message: None,
-        provider: Some("openai".to_owned()),
+        provider: "openai".to_owned(),
         entity_type: Some("key".to_owned()),
         entity_id: Some("key-1".to_owned()),
         status_code: 422,
@@ -165,6 +182,7 @@ fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
     let metadata = class.metadata();
     assert_eq!(metadata.status_code, 422);
     assert_eq!(metadata.error_type, WireField::MISSING);
+    assert_eq!(metadata.provider, Some("openai".to_owned()));
     assert_eq!(
         metadata.rate_limit_category,
         Some(RateLimitCategory::LitellmRateLimit)
@@ -173,6 +191,21 @@ fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
         metadata.rate_limit_dimension,
         Some(RateLimitDimension::Budget)
     );
+}
+
+#[test]
+fn budget_exceeded_without_a_provider_reports_an_empty_string_like_litellm() {
+    let class = ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
+        current_cost: Decimal::new(125, 1),
+        max_budget: Decimal::from(10_i32),
+        message: None,
+        provider: String::new(),
+        entity_type: None,
+        entity_id: None,
+        status_code: 422,
+    }));
+    let metadata = class.metadata();
+    assert_eq!(metadata.provider, Some(String::new()));
 }
 
 #[test]
