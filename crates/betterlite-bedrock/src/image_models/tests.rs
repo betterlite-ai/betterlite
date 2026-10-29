@@ -282,6 +282,7 @@ fn nova_canvas_task_body_unsupported() {
 
 fn size_n_quality_map() {
     size_n_quality_map_basic();
+    size_n_quality_map_quality_sets();
     size_n_quality_map_quality_untouched();
     size_n_quality_map_split_errors();
     size_n_quality_map_python_int_syntax();
@@ -293,6 +294,22 @@ fn size_n_quality_map_basic() {
     assert_eq!(mapped.get("width"), Some(&Field::Int(256)));
     assert_eq!(mapped.get("height"), Some(&Field::Int(128)));
     assert_eq!(mapped.get("numberOfImages"), Some(&Field::Int(4)));
+}
+
+fn size_n_quality_map_quality_sets() {
+    // hd and premium each map to premium, standard maps to standard.
+    for quality in ["hd", "premium"] {
+        let non_default = params(vec![("quality", Field::from(quality))]);
+        let mapped = nova::map_openai_params(&non_default, Params::new()).unwrap();
+        assert_eq!(
+            mapped.get("quality"),
+            Some(&Field::from("premium")),
+            "quality {quality} should map to premium"
+        );
+    }
+    let non_default = params(vec![("quality", Field::from("standard"))]);
+    let mapped = nova::map_openai_params(&non_default, Params::new()).unwrap();
+    assert_eq!(mapped.get("quality"), Some(&Field::from("standard")));
 }
 
 fn size_n_quality_map_quality_untouched() {
@@ -332,6 +349,15 @@ fn size_n_quality_map_split_errors() {
         titan::map_openai_params(&trailing_underscore, Params::new()).unwrap_err();
     assert!(matches!(
         trailing_underscore_error,
+        ImageModelsError::Size(SizeError::InvalidInt(_))
+    ));
+
+    // A doubled sign leaves a non-digit character in the cleaned string, which Python's
+    // int() rejects even though Rust's own i64 parser would otherwise accept a lone "+5".
+    let doubled_sign = params(vec![("size", Field::from("++5x3"))]);
+    let doubled_sign_error = nova::map_openai_params(&doubled_sign, Params::new()).unwrap_err();
+    assert!(matches!(
+        doubled_sign_error,
         ImageModelsError::Size(SizeError::InvalidInt(_))
     ));
 }
@@ -490,6 +516,19 @@ fn image_provider_error_nonmapping_config() {
         error,
         ImageModelsError::NotAMapping("imageGenerationConfig")
     ));
+}
+
+#[test]
+fn field_truthy() {
+    // Python truthiness per variant: zero/empty is falsy, anything else is truthy.
+    assert!(!Field::Int(0).truthy());
+    assert!(Field::Int(1).truthy());
+    assert!(!Field::Float(0.0).truthy());
+    assert!(Field::Float(1.5).truthy());
+    assert!(!Field::List(Vec::new()).truthy());
+    assert!(Field::List(vec![Field::Int(1)]).truthy());
+    assert!(!Field::Mapping(Params::new()).truthy());
+    assert!(Field::Mapping(params(vec![("a", Field::Int(1))])).truthy());
 }
 
 fn image_family_selection() {
