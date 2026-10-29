@@ -22,6 +22,23 @@ fn context(message: &str) -> ErrorContext {
         provider: Some("openai".to_owned()),
         max_retries: None,
         num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }
+}
+
+fn context_with_body(
+    message: &str,
+    body_type: &str,
+    body_param: Option<&str>,
+    body_code: Option<&str>,
+) -> ErrorContext {
+    ErrorContext {
+        body_type: Some(body_type.to_owned()),
+        body_param: body_param.map(str::to_owned),
+        body_code: body_code.map(str::to_owned),
+        ..context(message)
     }
 }
 
@@ -65,7 +82,7 @@ fn context(message: &str) -> ErrorContext {
 #[case::timeout_defaults_to_408(
     ErrorClass::Timeout(Box::new(TimeoutDetails {
         context: context("timed out"),
-        original_status: None,
+        original_status: 408,
     })),
     408,
     WireField::Null,
@@ -74,11 +91,48 @@ fn context(message: &str) -> ErrorContext {
 #[case::timeout_keeps_an_explicit_status_override(
     ErrorClass::Timeout(Box::new(TimeoutDetails {
         context: context("timed out"),
-        original_status: Some(504),
+        original_status: 504,
     })),
     504,
     WireField::Null,
     WireField::Null
+)]
+#[case::bad_request_with_a_body_sets_type_and_param_from_it(
+    ErrorClass::BadRequest(Box::new(context_with_body(
+        "bad body",
+        "invalid_request_error",
+        Some("messages"),
+        None
+    ))),
+    400,
+    WireField::Text("invalid_request_error".to_owned()),
+    WireField::Text("messages".to_owned())
+)]
+#[case::content_policy_violation_with_a_body_but_no_param(
+    ErrorClass::ContentPolicyViolation(Box::new(context_with_body(
+        "flagged",
+        "invalid_request_error",
+        None,
+        Some("vector_store_search_failed")
+    ))),
+    400,
+    WireField::Text("invalid_request_error".to_owned()),
+    WireField::Null
+)]
+#[case::context_window_exceeded_has_no_body_and_stays_null(
+    ErrorClass::ContextWindowExceeded(Box::new(context("too many tokens"))),
+    400,
+    WireField::Null,
+    WireField::Null
+)]
+#[case::api_error_with_a_body_sets_type_and_param_from_it(
+    ErrorClass::Api(Box::new(ApiDetails {
+        context: context_with_body("vendor failure", "server_error", Some("model"), None),
+        status: 500,
+    })),
+    500,
+    WireField::Text("server_error".to_owned()),
+    WireField::Text("model".to_owned())
 )]
 #[case::rate_limit_sets_the_throttling_type(
     ErrorClass::RateLimit(Box::new(RateLimitDetails {
@@ -128,6 +182,27 @@ fn error_types_error_type_tests_behavior(
     assert_eq!(metadata.error_type, expected_type);
     assert_eq!(metadata.param, expected_param);
     assert_eq!(metadata.code, WireField::Text(expected_status.to_string()));
+}
+
+#[test]
+fn bad_request_with_a_body_code_keeps_it_as_openai_code() {
+    let class = ErrorClass::BadRequest(Box::new(context_with_body(
+        "vector store search failed",
+        "invalid_request_error",
+        None,
+        Some("vector_store_search_failed"),
+    )));
+    let metadata = class.metadata();
+    assert_eq!(
+        metadata.openai_code,
+        Some("vector_store_search_failed".to_owned())
+    );
+}
+
+#[test]
+fn bad_request_without_a_body_leaves_openai_code_absent() {
+    let class = ErrorClass::BadRequest(Box::new(context("bad body")));
+    assert_eq!(class.metadata().openai_code, None);
 }
 
 #[test]
@@ -239,13 +314,14 @@ fn guardrail_raised_never_sets_type_or_param() {
 }
 
 #[test]
-fn mid_stream_fallback_falls_back_to_503_without_an_original_status() {
-    let class = ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
-        context: context("fallback"),
-        original_status: None,
-        generated_content: String::new(),
-        is_pre_first_chunk: true,
-    }));
+fn mid_stream_fallback_wire_input_without_a_status_defaults_to_503() {
+    let json = r#"{
+        "family": "mid_stream_fallback",
+        "context": {"message": "fallback", "model": "gpt-4", "provider": "openai"},
+        "generated_content": "",
+        "is_pre_first_chunk": true
+    }"#;
+    let class: ErrorClass = serde_json::from_str(json).expect("deserializes without a status");
     assert_eq!(class.metadata().status_code, 503);
 }
 
@@ -253,11 +329,21 @@ fn mid_stream_fallback_falls_back_to_503_without_an_original_status() {
 fn mid_stream_fallback_keeps_the_original_exception_status() {
     let class = ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
         context: context("fallback"),
-        original_status: Some(529),
+        original_status: 529,
         generated_content: "partial".to_owned(),
         is_pre_first_chunk: false,
     }));
     assert_eq!(class.metadata().status_code, 529);
+}
+
+#[test]
+fn timeout_wire_input_without_a_status_defaults_to_408() {
+    let json = r#"{
+        "family": "timeout",
+        "context": {"message": "timed out", "model": "gpt-4", "provider": "openai"}
+    }"#;
+    let class: ErrorClass = serde_json::from_str(json).expect("deserializes without a status");
+    assert_eq!(class.metadata().status_code, 408);
 }
 
 #[test]

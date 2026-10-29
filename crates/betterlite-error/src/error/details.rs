@@ -6,12 +6,16 @@ use rust_decimal::Decimal;
 use super::ErrorContext;
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
+// exception_status_code in Timeout.__init__ defaults to 408 when the caller leaves it unset
+const fn default_timeout_status() -> u16 {
+    408
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TimeoutDetails {
     pub context: ErrorContext,
-    // exception_status_code in Timeout.__init__; None means the 408 default applies
-    #[serde(default)]
-    pub original_status: Option<u16>,
+    #[serde(default = "default_timeout_status")]
+    pub original_status: u16,
 }
 
 #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -71,12 +75,16 @@ pub struct GuardrailDetails {
     pub blocked_content: bool,
 }
 
+// getattr(original_exception, "status_code", None) defaults to 503 when the upstream exception has none
+const fn default_mid_stream_status() -> u16 {
+    503
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MidStreamFallbackDetails {
     pub context: ErrorContext,
-    // getattr(original_exception, "status_code", None); None means the 503 default applies
-    #[serde(default)]
-    pub original_status: Option<u16>,
+    #[serde(default = "default_mid_stream_status")]
+    pub original_status: u16,
     pub generated_content: String,
     pub is_pre_first_chunk: bool,
 }
