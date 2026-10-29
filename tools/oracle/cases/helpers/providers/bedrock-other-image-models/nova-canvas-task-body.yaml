@@ -1,0 +1,14 @@
+kind: helper
+name: nova-canvas-task-body
+call:
+  bedrock_other_image_models:
+    nova_canvas_task_body:
+      text: fallback text
+      optional_params:
+        taskType: TEXT_IMAGE
+        model_id: "123"
+        numberOfImages: 2
+        textToImageParams: {text: explicit text wins, negativeText: no clouds}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-url-scheme-tab
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "ht\ttp://example.com"}
+env: {}
+compare:
+  ignore: []

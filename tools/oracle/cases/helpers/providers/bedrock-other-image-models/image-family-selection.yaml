@@ -1,0 +1,9 @@
+kind: helper
+name: image-family-selection
+call:
+  bedrock_other_image_models:
+    image_family_selection:
+      model: stability.sd3-5-large-v1:0
+env: {}
+compare:
+  ignore: []

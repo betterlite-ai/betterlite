@@ -1,0 +1,11 @@
+kind: helper
+name: size-n-quality-map
+call:
+  bedrock_other_image_models:
+    size_n_quality_map:
+      family: nova
+      non_default: {size: "800x600", n: 4, quality: low}
+      optional_params: {quality: old-value}
+env: {}
+compare:
+  ignore: []

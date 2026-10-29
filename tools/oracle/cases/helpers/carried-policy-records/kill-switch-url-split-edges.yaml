@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-url-split-edges
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "http://[::1]:bad"}
+env: {}
+compare:
+  ignore: []

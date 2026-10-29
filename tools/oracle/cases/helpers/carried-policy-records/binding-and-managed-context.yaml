@@ -1,0 +1,9 @@
+kind: helper
+name: binding-and-managed-context
+call:
+  carried_policy_records:
+    function: identity_binding
+    value: {agent_id: a, provider: microsoft_entra, tenant_id: not-a-uuid, client_id: c, issuer: i, revision: r}
+env: {}
+compare:
+  ignore: []
