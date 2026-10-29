@@ -39,7 +39,11 @@ fn load(
 #[case::loads_height("height", "HEIGHT", |settings: &Settings| {
     settings.height.map(|value| value.to_string())
 })]
-fn bedrock_image_models_config_cases(#[case] key: &str, #[case] variable: &str, #[case] read: Read) {
+fn bedrock_image_models_config_cases(
+    #[case] key: &str,
+    #[case] variable: &str,
+    #[case] read: Read,
+) {
     assert_defaults_to_none(key, read);
     assert_reads_the_global_value(key, read);
     assert_reads_the_deployment_value(key, read);

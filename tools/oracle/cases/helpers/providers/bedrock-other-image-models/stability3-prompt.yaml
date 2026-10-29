@@ -1,0 +1,12 @@
+kind: helper
+name: stability3-prompt
+call:
+  bedrock_other_image_models:
+    stability3_prompt:
+      text: a sunset over mountains
+      optional_params: {prompt: already set, aspect_ratio: "16:9"}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: Python's message embeds the TypedDict constructor's fully qualified name

@@ -5,8 +5,7 @@ use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
-/// `AmazonStabilityConfig`'s class settings only: Titan, Nova and Stability 3 never read
-/// these keys.
+// AmazonStabilityConfig's class settings only; Titan, Nova, and Stability 3 never read these keys
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
@@ -58,12 +57,8 @@ impl Section for Raw {
     }
 }
 
-/// Deployment `litellm_params` take precedence over global `litellm_settings`; when more
-/// than one deployment sets a key, the last one in `model_list` wins.
-fn merge_deployments<L>(
-    model_list: Vec<RawDeployment>,
-    lookup: &L,
-) -> Result<Settings, ConfigError>
+// deployment litellm_params win over global litellm_settings; the last deployment in model_list wins ties
+fn merge_deployments<L>(model_list: Vec<RawDeployment>, lookup: &L) -> Result<Settings, ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -84,37 +79,48 @@ fn resolve_fields<L>(raw: RawFields, prefix: &str, lookup: &L) -> Result<Setting
 where
     L: EnvironmentLookup,
 {
+    let cfg_scale = resolve_number(
+        raw.cfg_scale,
+        &format!("{prefix}.cfg_scale"),
+        lookup,
+        parse_float,
+    )?;
+    let seed = resolve_number(
+        raw.seed,
+        &format!("{prefix}.seed"),
+        lookup,
+        parse_signed_integer,
+    )?;
+    let steps = resolve_number(
+        raw.steps,
+        &format!("{prefix}.steps"),
+        lookup,
+        parse_signed_integer,
+    )?;
+    let width = resolve_number(
+        raw.width,
+        &format!("{prefix}.width"),
+        lookup,
+        parse_signed_integer,
+    )?;
+    let height = resolve_number(
+        raw.height,
+        &format!("{prefix}.height"),
+        lookup,
+        parse_signed_integer,
+    )?;
     Ok(Settings {
-        cfg_scale: resolve_number(raw.cfg_scale, &format!("{prefix}.cfg_scale"), lookup, parse_float)?,
-        seed: resolve_number(
-            raw.seed,
-            &format!("{prefix}.seed"),
-            lookup,
-            parse_signed_integer,
-        )?,
-        steps: resolve_number(
-            raw.steps,
-            &format!("{prefix}.steps"),
-            lookup,
-            parse_signed_integer,
-        )?,
-        width: resolve_number(
-            raw.width,
-            &format!("{prefix}.width"),
-            lookup,
-            parse_signed_integer,
-        )?,
-        height: resolve_number(
-            raw.height,
-            &format!("{prefix}.height"),
-            lookup,
-            parse_signed_integer,
-        )?,
+        cfg_scale,
+        seed,
+        steps,
+        width,
+        height,
     })
 }
 
 fn parse_signed_integer(text: &str, path: &str) -> Result<i64, ConfigError> {
-    text.trim()
+    let trimmed = text.trim();
+    trimmed
         .parse::<i64>()
         .map_err(|source| ConfigError::InvalidInteger {
             path: path.to_owned(),
