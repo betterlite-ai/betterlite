@@ -1,0 +1,8 @@
+task: B3866
+deviations:
+  - what: Spend lookups return None (instead of a number) when the spend log is unavailable, with a warning log. Spans and agents show spend=None in that case.
+    why: The spend log is optional for tracing; spans are queryable even when spend is unavailable. LiteLLM does the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py#L306
+  - what: get_span_error paginates by UTF-8 byte offset instead of Python's code-point offset (len() on a str).
+    why: The task description specifies the offset as "the byte position in the full message"; Rust strings are naturally byte-indexed, and error messages are ASCII-dominant in practice, so this matches the task's own spec rather than LiteLLM's character-based arithmetic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/store.py#L396

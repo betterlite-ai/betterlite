@@ -109,15 +109,13 @@ fn span_detail_from_row(row: SpanDetailRow) -> SpanDetail {
 
 fn error_page(row: SpanErrorRow, position: Option<&ErrorCursor>) -> SpanErrorPage {
     let requested_offset = position.map_or(0, |cursor| cursor.offset);
-    let version_matches = position.is_none_or(|cursor| cursor.version == row.version);
     let next_offset = requested_offset.saturating_add(u64_from_usize(row.message.len()));
-    let next_cursor =
-        (version_matches && next_offset < u64_from_usize(row.total_chars)).then(|| {
-            encode_error_cursor(&ErrorCursor {
-                offset: next_offset,
-                version: row.version.clone(),
-            })
-        });
+    let next_cursor = (next_offset < u64_from_usize(row.total_chars)).then(|| {
+        encode_error_cursor(&ErrorCursor {
+            offset: next_offset,
+            version: row.version.clone(),
+        })
+    });
     SpanErrorPage {
         span_id: row.span_id,
         message: row.message,

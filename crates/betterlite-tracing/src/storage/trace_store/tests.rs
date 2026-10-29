@@ -272,9 +272,9 @@ async fn get_span_error_omits_the_next_cursor_when_the_chunk_reaches_the_end() {
 }
 
 #[tokio::test]
-async fn get_span_error_omits_the_next_cursor_when_the_stored_version_differs() {
-    // The database re-wrote the error under a new version between pages; the chunk is still
-    // valid to show, but the cursor is no longer trustworthy for a further page.
+async fn get_span_error_next_cursor_carries_the_stored_row_version() {
+    // The database re-wrote the error under a new version between pages; the returned
+    // cursor carries that new version, not the one the caller requested.
     let storage = StubStorage {
         span_error_rows: vec![SpanErrorRow {
             span_id: "span-1".to_owned(),
@@ -295,7 +295,11 @@ async fn get_span_error_omits_the_next_cursor_when_the_stored_version_differs() 
         .expect("ok")
         .expect("page");
     assert_eq!(page.message, "partial");
-    assert_eq!(page.next_cursor, None);
+    let cursor = page.next_cursor.expect("next cursor");
+    let decoded = decode_error_cursor(Some(&cursor))
+        .expect("decode")
+        .expect("cursor");
+    assert_eq!(decoded.version, version());
 }
 
 #[tokio::test]
