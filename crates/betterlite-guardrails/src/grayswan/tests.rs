@@ -146,6 +146,51 @@ fn grayswan_passthrough_raises_on_pre_call() {
 }
 
 #[test]
+fn grayswan_verdict_message_includes_rule_name_and_description() {
+    let mut scan_response = response(0.9);
+    scan_response.violated_rule_descriptions = vec![GuardrailExtraValue::Object(BTreeMap::from([
+        (
+            "name".to_owned(),
+            GuardrailExtraValue::Text("self_harm".to_owned()),
+        ),
+        (
+            "description".to_owned(),
+            GuardrailExtraValue::Text("content promotes self-harm".to_owned()),
+        ),
+    ]))];
+    let result = guardrail(OnFlaggedAction::Passthrough)
+        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .expect("post-call passthrough");
+    assert_eq!(
+        result.violation_message.as_deref(),
+        Some(
+            "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
+             It violated rule(s): self_harm: content promotes self-harm."
+        )
+    );
+}
+
+#[test]
+fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
+    let mut scan_response = response(0.9);
+    scan_response.violated_rule_descriptions =
+        vec![GuardrailExtraValue::Object(BTreeMap::from([(
+            "name".to_owned(),
+            GuardrailExtraValue::Text("self_harm".to_owned()),
+        )]))];
+    let result = guardrail(OnFlaggedAction::Passthrough)
+        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .expect("post-call passthrough");
+    assert_eq!(
+        result.violation_message.as_deref(),
+        Some(
+            "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
+             It violated rule(s): self_harm."
+        )
+    );
+}
+
+#[test]
 fn grayswan_context_reconstructs_request_history() {
     let scan = input(
         vec![message("user", "new")],
