@@ -58,3 +58,9 @@ fn a_prose_result_is_no_answer() {
     let text = r#"{"result":"I could not finish."}"#;
     assert_eq!(claude_answer(text).unwrap(), None);
 }
+
+#[test]
+fn empty_stdout_after_a_timeout_is_no_answer() {
+    assert_eq!(claude_answer("").unwrap(), None);
+    assert_eq!(claude_answer("\n").unwrap(), None);
+}
