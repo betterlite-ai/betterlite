@@ -31,17 +31,14 @@ pub struct ErrorContext {
     pub body_code: Option<String>,
 }
 
-// which wire fields a body dict is allowed to fill, matching which LiteLLM subclass constructor
-// forwards body= to openai.APIError.__init__ (exceptions.py L250, L643, L833, L789, L512)
+// which wire fields a body dict fills, matching which LiteLLM subclass forwards body= to openai.APIError.__init__
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BodyOverride {
-    // Authentication, NotFound, PermissionDenied, UnprocessableEntity, ServiceUnavailable, BadGateway,
-    // ContextWindowExceeded, Timeout, ApiConnection, ApiResponseValidation, UnsupportedParams, MidStreamFallback
+    // most families: openai.APIError never receives a body, so type/param/code stay at their class default
     None,
     // BadRequest, ContentPolicyViolation, Api: openai.APIError reads type/param/code straight off the body
     Full,
-    // InternalServer, RateLimit: the subclass sets self.type to a literal right after the base constructor
-    // runs, so param and code still come from the body but type never does
+    // InternalServer, RateLimit: the subclass overwrites self.type with a literal right after openai.APIError runs
     TypeLiteral,
 }
 
