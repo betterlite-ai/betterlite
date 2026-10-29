@@ -298,18 +298,19 @@ fn size_n_quality_map_basic() {
 
 fn size_n_quality_map_quality_sets() {
     // hd and premium each map to premium, standard maps to standard.
-    for quality in ["hd", "premium"] {
+    for (quality, expected) in [
+        ("hd", "premium"),
+        ("premium", "premium"),
+        ("standard", "standard"),
+    ] {
         let non_default = params(vec![("quality", Field::from(quality))]);
         let mapped = nova::map_openai_params(&non_default, Params::new()).unwrap();
         assert_eq!(
             mapped.get("quality"),
-            Some(&Field::from("premium")),
-            "quality {quality} should map to premium"
+            Some(&Field::from(expected)),
+            "quality {quality} should map to {expected}"
         );
     }
-    let non_default = params(vec![("quality", Field::from("standard"))]);
-    let mapped = nova::map_openai_params(&non_default, Params::new()).unwrap();
-    assert_eq!(mapped.get("quality"), Some(&Field::from("standard")));
 }
 
 fn size_n_quality_map_quality_untouched() {
@@ -352,8 +353,7 @@ fn size_n_quality_map_split_errors() {
         ImageModelsError::Size(SizeError::InvalidInt(_))
     ));
 
-    // A doubled sign leaves a non-digit character in the cleaned string, which Python's
-    // int() rejects even though Rust's own i64 parser would otherwise accept a lone "+5".
+    // A doubled sign is a non-digit character that Python's int() still rejects.
     let doubled_sign = params(vec![("size", Field::from("++5x3"))]);
     let doubled_sign_error = nova::map_openai_params(&doubled_sign, Params::new()).unwrap_err();
     assert!(matches!(
