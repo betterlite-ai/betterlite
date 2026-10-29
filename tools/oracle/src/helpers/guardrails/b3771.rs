@@ -110,7 +110,10 @@ fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
 }
 
 fn generic_call(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let request = input.get("generic_call").cloned().unwrap_or_else(|| json!({}));
+    let request = input
+        .get("generic_call")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let settings = generic_settings(&request);
     let answer = request
         .get("answer")
@@ -122,8 +125,9 @@ fn generic_call(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let io = |error: std::io::Error| failure(error.to_string());
     let mock_error = |error: crate::OracleError| failure(error.to_string());
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
-    let start =
-        |reply: &UpstreamAnswer| MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start);
+    let start = |reply: &UpstreamAnswer| {
+        MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
+    };
     let mock = answer.as_ref().map(start).transpose().map_err(mock_error)?;
     let base = match &mock {
         Some(provider) => provider.base_url.clone(),
@@ -136,7 +140,9 @@ fn generic_call(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .build()
         .map_err(io)?;
     let result = runtime.block_on(guardrail.apply_guardrail(generic_request()));
-    mock.map(MockProvider::finish).transpose().map_err(mock_error)?;
+    mock.map(MockProvider::finish)
+        .transpose()
+        .map_err(mock_error)?;
     match result {
         Ok(response) => serde_json::to_value(json!({"texts": response.texts, "blocked": false}))
             .map_err(|error| failure(error.to_string())),

@@ -142,9 +142,7 @@ impl Entry {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base: base.trim_end_matches('/').to_owned(),
-            on_flagged_action: resolve_on_flagged_action(
-                parameters.on_flagged_action.as_deref(),
-            ),
+            on_flagged_action: resolve_on_flagged_action(parameters.on_flagged_action.as_deref()),
             violation_threshold,
             reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode.as_deref(), lookup),
             categories: parameters.categories,

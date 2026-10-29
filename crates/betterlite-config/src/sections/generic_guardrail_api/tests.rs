@@ -77,7 +77,10 @@ fn generic_guardrail_api_config_reads_additional_provider_specific_params() {
     );
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     let configured = settings.guardrails.first().unwrap();
-    let params = configured.additional_provider_specific_params.as_ref().unwrap();
+    let params = configured
+        .additional_provider_specific_params
+        .as_ref()
+        .unwrap();
     assert_eq!(
         params.get("custom_threshold"),
         Some(&super::GuardrailValue::Decimal(0.8))
