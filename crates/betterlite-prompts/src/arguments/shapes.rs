@@ -48,7 +48,9 @@ pub fn check_is_function_call(optional_params: Option<&Map<String, Value>>) -> b
     }
 }
 
-pub fn convert_custom_tool_format_to_chat_shape(format_obj: &Map<String, Value>) -> Map<String, Value> {
+pub fn convert_custom_tool_format_to_chat_shape(
+    format_obj: &Map<String, Value>,
+) -> Map<String, Value> {
     let is_grammar = format_obj.get("type").and_then(Value::as_str) == Some("grammar");
     if !is_grammar || format_obj.contains_key("grammar") {
         return format_obj.clone();
@@ -65,7 +67,9 @@ pub fn convert_custom_tool_format_to_chat_shape(format_obj: &Map<String, Value>)
     shaped
 }
 
-pub fn convert_custom_tool_format_to_responses_shape(format_obj: &Map<String, Value>) -> Map<String, Value> {
+pub fn convert_custom_tool_format_to_responses_shape(
+    format_obj: &Map<String, Value>,
+) -> Map<String, Value> {
     let is_grammar = format_obj.get("type").and_then(Value::as_str) == Some("grammar");
     let Some(grammar) = format_obj.get("grammar").and_then(Value::as_object) else {
         return format_obj.clone();

@@ -37,15 +37,16 @@ fn run(operation: Operation) -> Value {
             let optional_params = optional_params.map(object);
             Value::from(check_is_function_call(optional_params.as_ref()))
         }
-        Operation::ToChatShape(format_obj) => {
-            Value::Object(convert_custom_tool_format_to_chat_shape(&object(format_obj)))
-        }
+        Operation::ToChatShape(format_obj) => Value::Object(
+            convert_custom_tool_format_to_chat_shape(&object(format_obj)),
+        ),
         Operation::ToResponsesShape(format_obj) => Value::Object(
             convert_custom_tool_format_to_responses_shape(&object(format_obj)),
         ),
-        Operation::CacheBreakpoint(target, marker) => {
-            Value::Object(with_prompt_cache_breakpoint(&object(target), marker.as_ref()))
-        }
+        Operation::CacheBreakpoint(target, marker) => Value::Object(with_prompt_cache_breakpoint(
+            &object(target),
+            marker.as_ref(),
+        )),
     }
 }
 

@@ -71,9 +71,9 @@ impl Helper for Op {
             Input::IsFunctionCall { optional_params } => {
                 Ok(Value::from(is_function_call(optional_params)))
             }
-            Input::CheckIsFunctionCall { optional_params } => {
-                Ok(Value::from(check_is_function_call(optional_params.as_ref())))
-            }
+            Input::CheckIsFunctionCall { optional_params } => Ok(Value::from(
+                check_is_function_call(optional_params.as_ref()),
+            )),
             Input::ConvertCustomToolFormatToChatShape { format_obj } => Ok(Value::Object(
                 convert_custom_tool_format_to_chat_shape(format_obj),
             )),
