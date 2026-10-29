@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::decoder::{DbError, decode_database_url};
+use super::decoder::{DbError, QueryParamValue, decode_database_url};
 use super::flag::{FlagValue, TokenFlagError, str_to_bool, token_auth_flag_enabled};
 use super::policy::{
     ConfiguredSeconds, DatabaseTimeoutSettings, PoolTimeouts, TimeoutError,
@@ -266,6 +266,14 @@ fn first_query_value() {
     assert_eq!(url_query_value(None, "k").unwrap(), "");
 }
 
+// u8::from_str_radix accepts a leading '+' sign, so "%+1" must not decode as byte 0x01: CPython's
+// parse_qsl leaves it as the literal "% 1" once the '+' is turned into a space.
+#[test]
+fn percent_plus_is_not_a_valid_escape() {
+    let url = "postgresql://h/db?options=%+1";
+    assert_eq!(url_query_value(Some(url), "options").unwrap(), "% 1");
+}
+
 #[test]
 fn replace_all_query_values() {
     let url = "postgresql://h/db?k=old1&k=old2&j=3";
@@ -439,6 +447,19 @@ fn token_invalid_flag_message() {
     );
 }
 
+// Python's repr() escapes every non-printable Unicode character, not only ASCII controls: a
+// pasted zero-width space must come back as ​, not raw, in the ValueError message.
+#[test]
+fn token_invalid_flag_message_escapes_non_printable_unicode() {
+    let value = FlagValue::Text("on\u{200b}".to_owned());
+    let error = token_auth_flag_enabled(Some(&value), "IAM_TOKEN_DB_AUTH").unwrap_err();
+    let TokenFlagError::NotRecognized { message } = error;
+    assert_eq!(
+        message,
+        "IAM_TOKEN_DB_AUTH='on\\u200b' is not a recognized boolean. Set it to one of 1, on, t, true, y, yes to turn it on, or to one of 0, f, false, n, no, off to turn it off."
+    );
+}
+
 #[test]
 fn extras_boolean_spellings() {
     let truthy = ["true", "1", "t", "y", "yes", "TRUE"];
@@ -477,6 +498,19 @@ fn malformed_url_bytes() {
         decode_database_url(&[0xff, 0xfe]),
         Err(DbError::InvalidUtf8 { .. })
     ));
+}
+
+// The query string goes through the lenient urllib-style decoder, so "%+1" stays literal text
+// instead of raising: u8::from_str_radix would otherwise accept the leading '+' as byte 0x01.
+#[test]
+fn native_url_query_percent_plus_is_literal() {
+    let endpoint = decode_database_url(b"postgresql://h/db?options=%+1").unwrap();
+    let (_, value) = endpoint
+        .query
+        .into_iter()
+        .find(|(key, _)| key == "options")
+        .unwrap();
+    assert!(matches!(value, QueryParamValue::Plain(text) if text == "% 1"));
 }
 
 #[test]
