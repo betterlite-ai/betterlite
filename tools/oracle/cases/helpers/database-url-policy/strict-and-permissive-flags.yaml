@@ -1,0 +1,10 @@
+kind: helper
+name: strict-and-permissive-flags
+call:
+  database_url_policy:
+    function: token_auth_flag_enabled
+    value: "0"
+    env_var: "IAM_TOKEN_DB_AUTH"
+env: {}
+compare:
+  ignore: []

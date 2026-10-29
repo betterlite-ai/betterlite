@@ -1,0 +1,10 @@
+kind: helper
+name: unsupported-scheme-message
+call:
+  database_url_policy:
+    function: unsupported_db_scheme_message
+    env_var: "DATABASE_URL"
+    scheme: "mysql"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,10 @@
+kind: helper
+name: append-query-params-scalars
+call:
+  database_url_policy:
+    function: append_query_params
+    url: "postgresql://h/db"
+    params: [["connection_limit", 10], ["pool_timeout", 60.5], ["pgbouncer", "true"]]
+env: {}
+compare:
+  ignore: []

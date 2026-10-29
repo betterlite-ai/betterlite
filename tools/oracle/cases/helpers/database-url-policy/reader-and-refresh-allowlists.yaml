@@ -1,0 +1,9 @@
+kind: helper
+name: reader-and-refresh-allowlists
+call:
+  database_url_policy:
+    function: token_refresh_params_from_url
+    url: "postgresql://h/db?connection_limit=5&sslmode=verify-full&schema=public&options=-c&bogus=1"
+env: {}
+compare:
+  ignore: []

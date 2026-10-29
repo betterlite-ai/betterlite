@@ -1,0 +1,14 @@
+kind: helper
+name: pool-and-idle-defaults
+call:
+  database_url_policy:
+    function: build_db_connection_url_params
+    connection_limit: 10
+    pool_timeout: 60
+    connect_timeout: null
+    socket_timeout: null
+    disable_prepared_statements: false
+    extra_params: [["max_idle_connection_lifetime", 60]]
+env: {}
+compare:
+  ignore: []
