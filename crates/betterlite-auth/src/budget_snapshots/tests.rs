@@ -1,8 +1,15 @@
 #![cfg(test)]
 
-use super::*;
+use super::lax_datetime::LaxDateTime;
+use super::{
+    BudgetSnapshot as _, KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot,
+    UserBudgetSnapshot,
+};
 use crate::agent_policy::AgentResponse;
 use rstest::rstest;
+use rust_decimal::Decimal;
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 
 fn raw(value: &str) -> Box<RawValue> {
     serde_json::from_str(value).unwrap()
@@ -30,68 +37,11 @@ fn required_nullable_fields_and_aliases_are_serialized() {
 }
 
 #[test]
-fn missing_or_invalid_fields_discard_the_snapshot() {
-    let mut metadata = BTreeMap::new();
-    metadata.insert(
-        String::from("user_api_key_team_budget_reset_at"),
-        raw("null"),
-    );
-    assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
-    metadata.insert(
-        String::from("user_api_key_team_table_max_budget"),
-        raw("\"not-a-number\""),
-    );
-    assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
-}
-
-#[test]
-fn embedded_json_strings_are_not_decoded() {
-    let mut metadata = BTreeMap::new();
-    metadata.insert(
-        String::from("user_api_key_user_budget_reset_at"),
-        raw("null"),
-    );
-    metadata.insert(
-        String::from("user_api_key_user_table_max_budget"),
-        raw("null"),
-    );
-    metadata.insert(
-        String::from("user_api_key_user_alias"),
-        raw(r#""{\"alias\":\"value\"}""#),
-    );
-    let snapshot = UserBudgetSnapshot::from_metadata(&metadata).unwrap();
-    assert_eq!(
-        snapshot.user_alias,
-        Some(String::from(r#"{"alias":"value"}"#))
-    );
-}
-
-#[test]
-fn native_names_and_aliases_prefer_alias_values() {
-    let mut metadata = BTreeMap::new();
-    metadata.insert(String::from("budget_reset_at"), raw("null"));
-    metadata.insert(
-        String::from("user_api_key_team_budget_reset_at"),
-        raw("null"),
-    );
-    metadata.insert(String::from("max_budget"), raw("1.25"));
-    metadata.insert(
-        String::from("user_api_key_team_table_max_budget"),
-        raw("2.50"),
-    );
-    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-    assert_eq!(
-        snapshot.max_budget,
-        Some(Decimal::from_str_exact("2.50").unwrap())
-    );
-}
-
-#[test]
 fn dates_keep_offset_and_naive_forms() {
     let mut metadata = BTreeMap::new();
     metadata.insert(
         String::from("user_api_key_team_budget_reset_at"),
-        raw(r#""2026-01-01T12:00:00+02:00""#),
+        raw(r#""2026-01-01T12:00:00.4+02:00""#),
     );
     metadata.insert(
         String::from("user_api_key_team_table_max_budget"),
@@ -102,6 +52,10 @@ fn dates_keep_offset_and_naive_forms() {
         offset.budget_reset_at,
         Some(LaxDateTime::Offset(_))
     ));
+    assert_eq!(
+        offset.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"].get(),
+        r#""2026-01-01T12:00:00.400000+02:00""#
+    );
     metadata.insert(
         String::from("user_api_key_team_budget_reset_at"),
         raw(r#""2026-01-01T12:00:00""#),

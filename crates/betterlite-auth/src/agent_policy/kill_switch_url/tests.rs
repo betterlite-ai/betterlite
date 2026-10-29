@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::*;
+use super::KillSwitchUrl;
 use rstest::rstest;
 
 #[rstest]

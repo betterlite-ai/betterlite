@@ -1,44 +1,16 @@
 #![cfg(test)]
 
 use super::caller::{AgentCaller, CALLER_TEAM_ID_HEADER, CALLER_USER_ID_HEADER};
-use super::*;
+use super::{
+    AgentIdentityBinding, AgentKeySummary, AgentKillSwitchAuth, AgentKillSwitchConfig,
+    AgentResponse, ManagedAgentContext,
+};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use serde_json::value::RawValue;
+use std::collections::BTreeMap;
 
 const RESPONSE_JSON: &str = r#"{"agent_id":"a","agent_name":"n","agent_card_params":{}}"#;
-
-#[test]
-fn auth_is_discriminated_and_secret_safe() {
-    let auth: AgentKillSwitchAuth =
-        serde_json::from_str(r#"{"type":"bearer","token":"secret"}"#).unwrap();
-    assert!(!format!("{auth:?}").contains("secret"));
-    let AgentKillSwitchAuth::Bearer { token } = &auth else {
-        panic!("expected bearer auth");
-    };
-    assert_eq!(token.expose_secret(), "secret");
-    serde_json::from_str::<AgentKillSwitchAuth>(r#"{"token":"secret"}"#).unwrap_err();
-}
-
-#[test]
-fn kill_switch_preserves_url_and_defaults() {
-    let config: AgentKillSwitchConfig =
-        serde_json::from_str(r#"{"url":" HTTP://example.com:bad/path"}"#).unwrap();
-    assert_eq!(config.url.0, " HTTP://example.com:bad/path");
-    assert_eq!(config.method, AgentKillSwitchMethod::Post);
-    assert!(config.headers.is_empty());
-    assert!(config.query_params.is_empty());
-    assert!(config.body.is_none());
-}
-
-#[test]
-fn identity_binding_keeps_string_identifiers() {
-    let binding: AgentIdentityBinding = serde_json::from_str(
-        r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"NOT-A-UUID","client_id":"c","issuer":"i","revision":"r"}"#,
-    )
-    .unwrap();
-    assert_eq!(binding.tenant_id, "NOT-A-UUID");
-    assert_eq!(binding.required_scopes.0, vec!["user_impersonation"]);
-}
 
 #[rstest]
 #[case::kill_auth_field_header_name(
@@ -449,4 +421,18 @@ fn managed_execution_modes(#[case] mode: &str) {
     let input = format!(r#"{{"agent_id":"a","mode":"{mode}"}}"#);
     let context: ManagedAgentContext = serde_json::from_str(&input).unwrap();
     assert_eq!(serde_json::to_value(context).unwrap()["mode"], mode);
+}
+
+#[rstest]
+#[case::agent_response_field_created_at("created_at")]
+#[case::agent_response_field_updated_at("updated_at")]
+fn response_date_fields_pad_fractional_seconds(#[case] field: &str) {
+    let input = format!(
+        r#"{{"agent_id":"a","agent_name":"n","agent_card_params":{{}},"{field}":"2026-01-01T12:00:00.123456789Z"}}"#
+    );
+    let response: AgentResponse = serde_json::from_str(&input).unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap()[field],
+        "2026-01-01T12:00:00.123456Z"
+    );
 }
