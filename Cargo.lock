@@ -954,6 +954,7 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
