@@ -104,6 +104,26 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     None,
     Outcome::Object(object(r#"{"a": [{"type": "string"}, {"type": "number"}]}"#))
 )]
+#[case::a_non_object_root_defs_value_is_ignored(
+    object(r##"{"$defs": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##),
+    object("{}"),
+    None,
+    Outcome::Object(object(r##"{"$defs": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##))
+)]
+#[case::a_non_object_defs_value_on_a_resolved_ref_target_is_ignored(
+    object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
+    object(r#"{"Foo": {"$defs": "not an object", "type": "string"}}"#),
+    None,
+    Outcome::Object(object(r#"{"a": {"$defs": "not an object", "type": "string"}}"#))
+)]
+#[case::a_non_object_definitions_value_on_a_plain_dict_is_ignored(
+    object(r##"{"a": {"definitions": "not an object", "b": {"$ref": "#/$defs/Foo"}}}"##),
+    object("{}"),
+    None,
+    Outcome::Object(object(
+        r##"{"a": {"definitions": "not an object", "b": {"$ref": "#/$defs/Foo"}}}"##
+    ))
+)]
 fn schema_definitions_behavior_tests_behavior(
     #[case] schema: Object,
     #[case] defs: Object,
