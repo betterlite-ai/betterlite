@@ -228,6 +228,14 @@ fn binary_answer_exact() {
     right.body = wire(b"\x00\xfebinary\x80\n");
     let difference = compare(&left, &right, &[], &[], &Compare::default()).unwrap_err();
     assert_eq!(difference.pointer, "/response/bytes");
+    let mut one_sided = left.clone();
+    one_sided
+        .headers
+        .insert("content-type".to_owned(), "text/plain".to_owned());
+    one_sided.body = wire(b"\x00\xfebinary\x80\n");
+    let one_sided_difference =
+        compare(&left, &one_sided, &[], &[], &Compare::default()).unwrap_err();
+    assert_eq!(one_sided_difference.pointer, "/1");
 }
 
 #[test]
@@ -354,12 +362,23 @@ fn rejects_captured_body_limits() {
     .concat();
     let error = decode_multipart_capture("multipart/form-data; boundary=a", &over).unwrap_err();
     assert_eq!(error.to_string(), "captured body exceeds 16777216 bytes");
+}
+
+#[test]
+fn rejects_captured_body_limits_over_http() {
     let answer = UpstreamAnswer {
         status: 200,
         headers: BTreeMap::new(),
         body: Some(Value::Object(Map::new())),
         events: None,
     };
+    let exact_mock =
+        MockProvider::start(MockScript::try_from(&[answer.clone()][..]).unwrap()).unwrap();
+    let mut exact_request: Request =
+        serde_saphyr::from_str("{method: POST, path: /, headers: {}, body: null}").unwrap();
+    exact_request.body = Value::String("x".repeat(LIMIT - 2));
+    send(&client().unwrap(), &exact_mock.base_url, &exact_request).unwrap();
+    assert_eq!(exact_mock.finish().unwrap().len(), 1);
     let mock = MockProvider::start(MockScript::try_from(&[answer][..]).unwrap()).unwrap();
     let mut request: Request =
         serde_saphyr::from_str("{method: POST, path: /, headers: {}, body: null}").unwrap();
