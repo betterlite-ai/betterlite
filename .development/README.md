@@ -69,6 +69,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-27: fuzz targets and corpora are always in scope, so any task may add a target and its seeds.
 - 2026-10-27: the gate's tests check runs only the packages a change can affect (changed files, Cargo.lock and their dependents, from guppy's determinator); a push to main runs the whole suite, so a break that only shows through shared dependency features surfaces on main's run.
 - 2026-10-28: the Codex usage limit ran out until 2026-11-02 07:07. Until then every role runs on Claude: Sonnet workers with 3 attempts, the Sonnet reviewer and planner, and the Opus security reviewer. Claude reviews Claude work (review_by_other_vendor off), and at most 8 dispatches run at once (Max). Revert this after the reset.
+- 2026-10-28: the line budget leaves out test files (tests.rs and anything under a tests/ folder, the same files file_size holds to the test limit), since the coverage and mutants checks are what ask for those tests. Task sizes stay as planned (Max).
 
 ## Writing a task
 

@@ -1,0 +1,5 @@
+kind: helper
+name: mock-request-decoder
+call: {openai_mock_transport: {case: mock_request_decoder, probes: [{content: '{"model": "gpt-4", "stream": true}'}, {content: "not json"}, {content: "[1,2,3]"}, {content: "{}"}]}}
+env: {}
+compare: {ignore: []}
