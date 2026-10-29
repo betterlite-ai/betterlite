@@ -38,145 +38,149 @@ def _range(source: dict[str, Json], key: str, path: str) -> list[str] | None:
     return [_decimal(f"{path}[{index}]", bound) for index, bound in enumerate(value)]
 
 
+def _fixed_keys(prefix: str, source: dict[str, Json], keys: list[str]) -> dict[str, Json]:
+    return {
+        key: _decimal(f"{prefix}.{key}", source[key]) if key in source else None for key in keys
+    }
+
+
+_GROUP_KEYS = {
+    "provider_specific_entry": ["us", "fast"],
+    "metadata": ["original_pricing_per_hour", "original_pricing_per_minute"],
+    "sample_spec": [
+        "computer_use_input_cost_per_1k_tokens",
+        "computer_use_output_cost_per_1k_tokens",
+        "file_search_cost_per_1k_calls",
+        "file_search_cost_per_gb_per_day",
+        "vector_store_cost_per_gb_per_day",
+    ],
+    "search_context_cost_per_query": [
+        "search_context_size_low",
+        "search_context_size_medium",
+        "search_context_size_high",
+    ],
+}
+
+_EXCLUDED_KEYS = {
+    "provider_specific_entry",
+    "guardrail_cost_per_unit",
+    "metadata",
+    "sample_spec",
+    "off_peak_pricing",
+    "search_context_cost_per_query",
+    "tiered_pricing",
+}
+
+
+def _flat_values(input_value: dict[str, Json]) -> dict[str, Json]:
+    values: dict[str, Json] = {}
+    for name, value in input_value.items():
+        if name in _EXCLUDED_KEYS:
+            continue
+        if "cost" in name or "multiplier" in name:
+            values[name] = _decimal(name, value)
+    return values
+
+
+def _guardrail_cost_per_unit(input_value: dict[str, Json]) -> dict[str, Json]:
+    guardrails = _object("guardrail_cost_per_unit", input_value.get("guardrail_cost_per_unit", {}))
+    return {
+        key: _decimal(f"guardrail_cost_per_unit.{key}", value) for key, value in guardrails.items()
+    }
+
+
+def _search_context_cost_per_query(input_value: dict[str, Json]) -> Json:
+    if "search_context_cost_per_query" not in input_value:
+        return None
+    search = _object("search_context_cost_per_query", input_value["search_context_cost_per_query"])
+    return _fixed_keys(
+        "search_context_cost_per_query", search, _GROUP_KEYS["search_context_cost_per_query"]
+    )
+
+
+def _off_peak_pricing(input_value: dict[str, Json]) -> Json:
+    off_peak = input_value.get("off_peak_pricing")
+    if off_peak is None:
+        return None
+    off_peak_object = _object("off_peak_pricing", off_peak)
+    windowed = _fixed_keys(
+        "off_peak_pricing",
+        off_peak_object,
+        ["input_cost_per_token", "output_cost_per_token", "cache_read_input_token_cost"],
+    )
+    tracked = {
+        key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
+        for key in ["cache_creation_input_token_cost", "output_cost_per_reasoning_token"]
+        if key in off_peak_object
+    }
+    passthrough = {
+        key: off_peak_object[key]
+        for key in ["hours_utc", "weekday_timezone"]
+        if key in off_peak_object
+    }
+    return {
+        **windowed,
+        "windows": off_peak_object.get("windows", []),
+        **tracked,
+        **passthrough,
+    }
+
+
+def _tier(index: int, tier: Json) -> Json:
+    if not isinstance(tier, dict):
+        raise PriceFieldError(f"price field tiered_pricing[{index}] must be a JSON object")
+    prefix = f"tiered_pricing[{index}]"
+    windowed = _fixed_keys(
+        prefix,
+        tier,
+        ["input_cost_per_token", "output_cost_per_token", "output_cost_per_reasoning_token"],
+    )
+    tracked = {
+        key: _decimal(f"{prefix}.{key}", tier[key])
+        for key in [
+            "cache_read_input_token_cost",
+            "cache_creation_input_token_cost",
+            "input_cost_per_query",
+        ]
+        if key in tier
+    }
+    return cast(
+        Json,
+        {
+            **windowed,
+            "range": _range(tier, "range", f"{prefix}.range"),
+            "max_results_range": _range(tier, "max_results_range", f"{prefix}.max_results_range"),
+            **tracked,
+        },
+    )
+
+
+def _tiered_pricing(input_value: dict[str, Json]) -> list[Json]:
+    tiers = input_value.get("tiered_pricing", [])
+    if not isinstance(tiers, list):
+        raise PriceFieldError("price field tiered_pricing must be a JSON array")
+    return [_tier(index, tier) for index, tier in enumerate(tiers)]
+
+
 def run(input_value: dict[str, Json]) -> dict[str, Json]:
     source = input_value.get("source")
     if isinstance(source, str):
         input_value = cast(dict[str, Json], json.loads(source, parse_float=Decimal))
     provider = _object("provider_specific_entry", input_value.get("provider_specific_entry", {}))
-    guardrails = _object("guardrail_cost_per_unit", input_value.get("guardrail_cost_per_unit", {}))
     metadata = _object("metadata", input_value.get("metadata", {}))
     sample = _object("sample_spec", input_value.get("sample_spec", {}))
-    off_peak = input_value.get("off_peak_pricing")
-    search = _object(
-        "search_context_cost_per_query", input_value.get("search_context_cost_per_query", {})
-    )
-    tiers = input_value.get("tiered_pricing", [])
-    if not isinstance(tiers, list):
-        raise PriceFieldError("price field tiered_pricing must be a JSON array")
-    values: dict[str, Json] = {}
-    for name, value in input_value.items():
-        if name in {
-            "provider_specific_entry",
-            "guardrail_cost_per_unit",
-            "metadata",
-            "sample_spec",
-            "off_peak_pricing",
-            "search_context_cost_per_query",
-            "tiered_pricing",
-        }:
-            continue
-        if "cost" in name or "multiplier" in name:
-            values[name] = _decimal(name, value)
-    off_peak_value: Json = None
-    if off_peak is not None:
-        off_peak_object = _object("off_peak_pricing", off_peak)
-        off_peak_value = {
-            **{
-                key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
-                if key in off_peak_object
-                else None
-                for key in [
-                    "input_cost_per_token",
-                    "output_cost_per_token",
-                    "cache_read_input_token_cost",
-                ]
-            },
-            "windows": off_peak_object.get("windows", []),
-            **{
-                key: _decimal(f"off_peak_pricing.{key}", off_peak_object[key])
-                for key in ["cache_creation_input_token_cost", "output_cost_per_reasoning_token"]
-                if key in off_peak_object
-            },
-            **(
-                {"hours_utc": off_peak_object["hours_utc"]}
-                if "hours_utc" in off_peak_object
-                else {}
-            ),
-            **(
-                {"weekday_timezone": off_peak_object["weekday_timezone"]}
-                if "weekday_timezone" in off_peak_object
-                else {}
-            ),
-        }
-    tier_values: list[Json] = []
-    for index, tier in enumerate(tiers):
-        if not isinstance(tier, dict):
-            raise PriceFieldError(f"price field tiered_pricing[{index}] must be a JSON object")
-        tier_values.append(
-            cast(
-                Json,
-                {
-                    **{
-                        key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
-                        if key in tier
-                        else None
-                        for key in [
-                            "input_cost_per_token",
-                            "output_cost_per_token",
-                            "output_cost_per_reasoning_token",
-                        ]
-                    },
-                    "range": _range(tier, "range", f"tiered_pricing[{index}].range"),
-                    "max_results_range": _range(
-                        tier, "max_results_range", f"tiered_pricing[{index}].max_results_range"
-                    ),
-                    **{
-                        key: _decimal(f"tiered_pricing[{index}].{key}", tier[key])
-                        for key in [
-                            "cache_read_input_token_cost",
-                            "cache_creation_input_token_cost",
-                            "input_cost_per_query",
-                        ]
-                        if key in tier
-                    },
-                },
-            )
-        )
     return cast(
         dict[str, Json],
         {
-            **values,
-            "provider_specific_entry": {
-                key: _decimal(f"provider_specific_entry.{key}", provider[key])
-                if key in provider
-                else None
-                for key in ["us", "fast"]
-            },
-            "guardrail_cost_per_unit": {
-                key: _decimal(f"guardrail_cost_per_unit.{key}", value)
-                for key, value in guardrails.items()
-            },
-            "metadata": {
-                key: _decimal(f"metadata.{key}", metadata[key]) if key in metadata else None
-                for key in ["original_pricing_per_hour", "original_pricing_per_minute"]
-            },
-            "sample_spec": {
-                key: (_decimal(f"sample_spec.{key}", sample[key]) if key in sample else None)
-                for key in [
-                    "computer_use_input_cost_per_1k_tokens",
-                    "computer_use_output_cost_per_1k_tokens",
-                    "file_search_cost_per_1k_calls",
-                    "file_search_cost_per_gb_per_day",
-                    "vector_store_cost_per_gb_per_day",
-                ]
-            },
-            "off_peak_pricing": off_peak_value,
-            "search_context_cost_per_query": (
-                {
-                    key: (
-                        _decimal(f"search_context_cost_per_query.{key}", search[key])
-                        if key in search
-                        else None
-                    )
-                    for key in [
-                        "search_context_size_low",
-                        "search_context_size_medium",
-                        "search_context_size_high",
-                    ]
-                }
-                if "search_context_cost_per_query" in input_value
-                else None
+            **_flat_values(input_value),
+            "provider_specific_entry": _fixed_keys(
+                "provider_specific_entry", provider, _GROUP_KEYS["provider_specific_entry"]
             ),
-            "tiered_pricing": tier_values,
+            "guardrail_cost_per_unit": _guardrail_cost_per_unit(input_value),
+            "metadata": _fixed_keys("metadata", metadata, _GROUP_KEYS["metadata"]),
+            "sample_spec": _fixed_keys("sample_spec", sample, _GROUP_KEYS["sample_spec"]),
+            "off_peak_pricing": _off_peak_pricing(input_value),
+            "search_context_cost_per_query": _search_context_cost_per_query(input_value),
+            "tiered_pricing": _tiered_pricing(input_value),
         },
     )
