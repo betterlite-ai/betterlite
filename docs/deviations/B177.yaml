@@ -1,0 +1,8 @@
+task: B177
+deviations:
+- what: Template lookup uses local files only and never downloads Hugging Face assets. Missing local templates in
+    the early Bedrock llama3/llama4 instruct branch raise a "No chat template found" error; the final generic selector
+    catches lookup failures and silently uses default_pt.
+  why: Keep local-only behavior while Max decides whether validated Hugging Face acquisition should be supported.
+    Preserve the source exception boundaries instead of inventing a warning or a Bedrock fallback.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5369
