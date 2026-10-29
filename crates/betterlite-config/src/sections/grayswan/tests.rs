@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use secrecy::ExposeSecret as _;
 
@@ -68,6 +69,7 @@ fn grayswan_config_defaults_match_litellm() {
     assert_eq!(configured.categories, None);
     assert_eq!(configured.policy_id, None);
     assert!(configured.fail_open);
+    assert_eq!(configured.guardrail_timeout, Duration::from_secs(30));
 }
 
 #[test]
@@ -79,7 +81,7 @@ fn grayswan_config_loads_environment() {
             "https://example.test/".to_owned(),
         ),
         ("GRAYSWAN_VIOLATION_THRESHOLD".to_owned(), "0.7".to_owned()),
-        ("GRAYSWAN_REASONING_MODE".to_owned(), "hybrid".to_owned()),
+        ("GRAYSWAN_REASONING_MODE".to_owned(), "HYBRID".to_owned()),
     ]);
     let source = GRAYSWAN_CONFIG.replace("      api_key: configured-key\n", "");
     let settings = resolve(&source, &lookup).unwrap();
@@ -87,15 +89,34 @@ fn grayswan_config_loads_environment() {
     assert_eq!(configured.api_key.expose_secret(), "env-key");
     assert_eq!(configured.api_base, "https://example.test");
     assert!((configured.violation_threshold - 0.7).abs() < f64::EPSILON);
-    assert_eq!(configured.reasoning_mode.as_deref(), Some("hybrid"));
+    assert_eq!(
+        configured.reasoning_mode,
+        Some(super::ReasoningMode::Hybrid)
+    );
 }
 
 #[test]
-fn grayswan_config_rejects_unsupported_reasoning_mode() {
+fn grayswan_config_silently_drops_an_unsupported_reasoning_mode() {
     let source = format!("{GRAYSWAN_CONFIG}      reasoning_mode: verbose\n");
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     let configured = settings.guardrails.first().unwrap();
     assert_eq!(configured.reasoning_mode, None);
+}
+
+#[test]
+fn grayswan_config_rejects_an_unsupported_on_flagged_action() {
+    let source = format!("{GRAYSWAN_CONFIG}      on_flagged_action: yolo\n");
+    let error = resolve(&source, &BTreeMap::new()).unwrap_err();
+    assert!(matches!(error, ConfigError::Unsupported { paths }
+        if paths == ["guardrails.0.litellm_params.on_flagged_action: 'yolo'"]));
+}
+
+#[test]
+fn grayswan_config_matches_on_flagged_action_case_insensitively() {
+    let source = format!("{GRAYSWAN_CONFIG}      on_flagged_action: Block\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(configured.on_flagged_action, super::OnFlaggedAction::Block);
 }
 
 #[test]
@@ -105,7 +126,7 @@ fn grayswan_config_explicit_values_win() {
         "https://env.example".to_owned(),
     )]);
     let source = format!(
-        "{GRAYSWAN_CONFIG}      api_base: https://configured.example\n      on_flagged_action: BLOCK\n      violation_threshold: \"0.9\"\n      categories: [jailbreak]\n      policy_id: policy-1\n      fail_open: false\n"
+        "{GRAYSWAN_CONFIG}      api_base: https://configured.example\n      on_flagged_action: BLOCK\n      violation_threshold: \"0.9\"\n      categories:\n        jailbreak: block\n      policy_id: policy-1\n      fail_open: false\n      guardrail_timeout: 5\n"
     );
     let settings = resolve(&source, &lookup).unwrap();
     let configured = settings.guardrails.first().unwrap();
@@ -113,11 +134,15 @@ fn grayswan_config_explicit_values_win() {
     assert_eq!(configured.on_flagged_action, super::OnFlaggedAction::Block);
     assert!((configured.violation_threshold - 0.9).abs() < f64::EPSILON);
     assert_eq!(
-        configured.categories.as_deref(),
-        Some(["jailbreak".to_owned()].as_slice())
+        configured.categories,
+        Some(BTreeMap::from([(
+            "jailbreak".to_owned(),
+            "block".to_owned()
+        )]))
     );
     assert_eq!(configured.policy_id.as_deref(), Some("policy-1"));
     assert!(!configured.fail_open);
+    assert_eq!(configured.guardrail_timeout, Duration::from_secs(5));
 }
 
 #[test]

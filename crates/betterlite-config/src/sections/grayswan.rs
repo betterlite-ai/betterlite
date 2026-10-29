@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::time::Duration;
+
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
@@ -9,6 +12,7 @@ mod tests;
 
 pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
+const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OnFlaggedAction {
@@ -16,6 +20,24 @@ pub enum OnFlaggedAction {
     #[default]
     Monitor,
     Passthrough,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReasoningMode {
+    Off,
+    Hybrid,
+    Thinking,
+}
+
+impl ReasoningMode {
+    fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "off" => Some(Self::Off),
+            "hybrid" => Some(Self::Hybrid),
+            "thinking" => Some(Self::Thinking),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -39,9 +61,10 @@ struct Parameters {
     on_flagged_action: Option<String>,
     violation_threshold: Option<String>,
     reasoning_mode: Option<String>,
-    categories: Option<Vec<String>>,
+    categories: Option<BTreeMap<String, String>>,
     policy_id: Option<String>,
     fail_open: Option<bool>,
+    guardrail_timeout: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -56,10 +79,11 @@ pub struct Configured {
     pub api_base: String,
     pub on_flagged_action: OnFlaggedAction,
     pub violation_threshold: f64,
-    pub reasoning_mode: Option<String>,
-    pub categories: Option<Vec<String>>,
+    pub reasoning_mode: Option<ReasoningMode>,
+    pub categories: Option<BTreeMap<String, String>>,
     pub policy_id: Option<String>,
     pub fail_open: bool,
+    pub guardrail_timeout: Duration,
 }
 
 impl Section for Raw {
@@ -89,38 +113,68 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let base = parameters
-            .api_base
-            .filter(|value| !value.is_empty())
-            .map_or_else(
-                || {
-                    Ok(lookup
-                        .lookup("GRAYSWAN_API_BASE")
-                        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
-                },
-                |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
-            )?;
-        let violation_threshold = parameters.violation_threshold.map_or_else(
-            || {
-                Ok(lookup
-                    .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
-                    .and_then(|text| text.parse::<f64>().ok())
-                    .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
-            },
-            |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
-        )?;
+        let base = resolve_api_base(parameters.api_base, &prefix, lookup)?;
+        let violation_threshold =
+            resolve_violation_threshold(parameters.violation_threshold, &prefix, lookup)?;
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base: base.trim_end_matches('/').to_owned(),
-            on_flagged_action: resolve_on_flagged_action(parameters.on_flagged_action.as_deref()),
+            on_flagged_action: resolve_on_flagged_action(
+                parameters.on_flagged_action.as_deref(),
+                &prefix,
+            )?,
             violation_threshold,
-            reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode, lookup),
+            reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode.as_deref(), lookup),
             categories: parameters.categories,
             policy_id: parameters.policy_id,
             fail_open: parameters.fail_open.unwrap_or(true),
+            guardrail_timeout: resolve_guardrail_timeout(parameters.guardrail_timeout),
         })
     }
+}
+
+fn resolve_api_base<L>(
+    api_base: Option<String>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<String, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    api_base.filter(|value| !value.is_empty()).map_or_else(
+        || {
+            Ok(lookup
+                .lookup("GRAYSWAN_API_BASE")
+                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
+        },
+        |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
+    )
+}
+
+fn resolve_violation_threshold<L>(
+    violation_threshold: Option<String>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    violation_threshold.map_or_else(
+        || {
+            Ok(lookup
+                .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
+                .and_then(|text| text.parse::<f64>().ok())
+                .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
+        },
+        |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
+    )
+}
+
+fn resolve_guardrail_timeout(guardrail_timeout: Option<f64>) -> Duration {
+    guardrail_timeout.map_or(DEFAULT_GUARDRAIL_TIMEOUT, |secs| {
+        Duration::try_from_secs_f64(secs).unwrap_or(DEFAULT_GUARDRAIL_TIMEOUT)
+    })
 }
 
 fn resolve_api_key<L>(
@@ -146,24 +200,32 @@ where
     )?))
 }
 
-fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
-    match value {
-        Some("BLOCK" | "block") => OnFlaggedAction::Block,
-        Some("MONITOR" | "monitor") => OnFlaggedAction::Monitor,
-        Some("PASSTHROUGH" | "passthrough") => OnFlaggedAction::Passthrough,
-        _ => OnFlaggedAction::default(),
-    }
+fn resolve_on_flagged_action(
+    value: Option<&str>,
+    prefix: &str,
+) -> Result<OnFlaggedAction, ConfigError> {
+    value.map_or_else(
+        || Ok(OnFlaggedAction::default()),
+        |text| match text.to_ascii_lowercase().as_str() {
+            "block" => Ok(OnFlaggedAction::Block),
+            "monitor" => Ok(OnFlaggedAction::Monitor),
+            "passthrough" => Ok(OnFlaggedAction::Passthrough),
+            _ => Err(ConfigError::Unsupported {
+                paths: vec![format!("{prefix}.on_flagged_action: '{text}'")],
+            }),
+        },
+    )
 }
 
-fn resolve_reasoning_mode<L>(value: Option<String>, lookup: &L) -> Option<String>
+fn resolve_reasoning_mode<L>(value: Option<&str>, lookup: &L) -> Option<ReasoningMode>
 where
     L: EnvironmentLookup,
 {
-    if let Some(text) = value.filter(|text| matches!(text.as_str(), "off" | "hybrid" | "thinking"))
-    {
-        return Some(text);
+    if let Some(mode) = value.and_then(ReasoningMode::parse) {
+        return Some(mode);
     }
     lookup
         .lookup("GRAYSWAN_REASONING_MODE")
-        .filter(|text| matches!(text.as_str(), "off" | "hybrid" | "thinking"))
+        .as_deref()
+        .and_then(ReasoningMode::parse)
 }
