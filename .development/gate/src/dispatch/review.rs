@@ -1,7 +1,7 @@
 use crate::answer::parse_answer;
 use crate::development::Development;
-use crate::dispatch::seat::{Seat, invoke};
-use crate::dispatch::{Attempt, EarlierReview, Step, find_runner, prompt, reviewer_role};
+use crate::dispatch::seat::{Run, Seat, invoke};
+use crate::dispatch::{Attempt, EarlierReview, Step, find_runner, prompt, reviewer_role, vendor};
 use crate::error::GateError;
 use crate::facts::Facts;
 use crate::git::git;
@@ -12,22 +12,48 @@ use crate::spec::rules::Rules;
 use crate::spec::task::ReviewLevel;
 use crate::yaml::read_yaml;
 
-fn reviewer_rung<'agents>(
+pub(crate) fn reviewer_rungs<'agents>(
     agents: &'agents Agents,
     level: ReviewLevel,
     worker_runner: &Runner,
-) -> Option<&'agents Rung> {
-    let vendor_of = |id: &str| {
-        agents
-            .runners
-            .iter()
-            .find(|runner| runner.id == id)
-            .map(|runner| runner.vendor)
+) -> Vec<&'agents Rung> {
+    let ladder = &reviewer_role(agents, level).ladder;
+    if !agents.policy.review_by_other_vendor {
+        return ladder.iter().collect();
+    }
+    let on_worker_vendor = |rung: &&Rung| {
+        find_runner(agents, &rung.runner).is_ok_and(|runner| runner.vendor == worker_runner.vendor)
     };
-    let mut ladder = reviewer_role(agents, level).ladder.iter();
-    ladder.find(|candidate| {
-        !agents.policy.review_by_other_vendor
-            || vendor_of(&candidate.runner) != Some(worker_runner.vendor)
+    let (same, other): (Vec<&Rung>, Vec<&Rung>) = ladder.iter().partition(on_worker_vendor);
+    other.into_iter().chain(same).collect()
+}
+
+fn review_text(attempt: &Attempt<'_>, worker_runner: &Runner) -> Result<String, GateError> {
+    let brief = attempt.brief;
+    let prompt = prompt::reviewer(brief, attempt.earlier);
+    for rung in reviewer_rungs(attempt.agents, brief.task.review_level, worker_runner) {
+        let runner = find_runner(attempt.agents, &rung.runner)?;
+        if vendor::limited(
+            attempt.places.git_common_dir,
+            attempt.agents,
+            &runner.vendor,
+        )? {
+            continue;
+        }
+        match invoke(attempt, runner, rung, Seat::Reviewer, &prompt)? {
+            Run::Answer(text) => return Ok(text),
+            Run::Silent => {
+                return Err(GateError::Dispatch {
+                    task: brief.task.id.clone(),
+                    reason: "the reviewer ended without an answer".to_owned(),
+                });
+            }
+            Run::Limited => {}
+        }
+    }
+    Err(GateError::Dispatch {
+        task: brief.task.id.clone(),
+        reason: "every runner on the reviewer ladder is at its usage limit".to_owned(),
     })
 }
 
@@ -78,13 +104,7 @@ pub(crate) fn review(
         task: brief.task.id.clone(),
         reason,
     };
-    let rung = reviewer_rung(attempt.agents, brief.task.review_level, worker_runner)
-        .ok_or_else(|| refused("no reviewer rung fits the vendor policy".to_owned()))?;
-    let runner = find_runner(attempt.agents, &rung.runner)?;
-    let prompt = prompt::reviewer(brief, attempt.earlier);
-    let Some(text) = invoke(attempt, runner, rung, Seat::Reviewer, &prompt)? else {
-        return Err(refused("the reviewer ended without an answer".to_owned()));
-    };
+    let text = review_text(attempt, worker_runner)?;
     let answer: Review = parse_answer(&text, "the review")?;
     let rules: Rules = read_yaml(&worktree.root.join(".development/rules.yaml"))?;
     let changed = Facts::collect(&worktree.root)?.changed;
