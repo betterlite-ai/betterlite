@@ -65,26 +65,23 @@ pub fn apply_off_peak_pricing(
         "output_cost_per_reasoning_token",
     )?;
     Ok(TokenRates {
-        input_rate: rate::off_peak_rate(
-            block.input_cost_per_token.as_ref(),
-            "input_cost_per_token",
-            rates.input_rate,
-        )?,
-        output_rate: rate::off_peak_rate(
+        input_rate: rate::parse_rate(block.input_cost_per_token.as_ref(), "input_cost_per_token")?
+            .unwrap_or(rates.input_rate),
+        output_rate: rate::parse_rate(
             block.output_cost_per_token.as_ref(),
             "output_cost_per_token",
-            rates.output_rate,
-        )?,
-        cache_read_rate: rate::off_peak_rate(
+        )?
+        .unwrap_or(rates.output_rate),
+        cache_read_rate: rate::parse_rate(
             block.cache_read_input_token_cost.as_ref(),
             "cache_read_input_token_cost",
-            rates.cache_read_rate,
-        )?,
-        cache_creation_rate: rate::off_peak_rate(
+        )?
+        .unwrap_or(rates.cache_read_rate),
+        cache_creation_rate: rate::parse_rate(
             block.cache_creation_cost.as_ref(),
             "cache_creation_input_token_cost",
-            rates.cache_creation_rate,
-        )?,
+        )?
+        .unwrap_or(rates.cache_creation_rate),
         reasoning_rate: off_peak_reasoning_rate.or(rates.reasoning_rate),
     })
 }

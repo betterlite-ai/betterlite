@@ -27,20 +27,16 @@ fn normalize_weekday(entry: &WeekdayEntry) -> Option<u32> {
         WeekdayEntry::Int(value) => u32::try_from(*value)
             .ok()
             .filter(|day| (1..=7).contains(day)),
-        WeekdayEntry::Text(text) => named_weekday(text.trim()),
-    }
-}
-
-fn named_weekday(name: &str) -> Option<u32> {
-    match name.to_ascii_lowercase().as_str() {
-        "mon" | "monday" => Some(1),
-        "tue" | "tues" | "tuesday" => Some(2),
-        "wed" | "wednesday" => Some(3),
-        "thu" | "thur" | "thurs" | "thursday" => Some(4),
-        "fri" | "friday" => Some(5),
-        "sat" | "saturday" => Some(6),
-        "sun" | "sunday" => Some(7),
-        _ => None,
+        WeekdayEntry::Text(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "mon" | "monday" => Some(1),
+            "tue" | "tues" | "tuesday" => Some(2),
+            "wed" | "wednesday" => Some(3),
+            "thu" | "thur" | "thurs" | "thursday" => Some(4),
+            "fri" | "friday" => Some(5),
+            "sat" | "saturday" => Some(6),
+            "sun" | "sunday" => Some(7),
+            _ => None,
+        },
     }
 }
 

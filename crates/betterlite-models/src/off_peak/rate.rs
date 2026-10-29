@@ -16,17 +16,6 @@ pub enum OffPeakRateError {
     },
 }
 
-pub(super) fn off_peak_rate(
-    value: Option<&RateField>,
-    field: &'static str,
-    standard_rate: Decimal,
-) -> Result<Decimal, OffPeakRateError> {
-    if let Some(rate) = parse_rate(value, field)? {
-        return Ok(rate);
-    }
-    Ok(standard_rate)
-}
-
 pub(super) fn parse_rate(
     value: Option<&RateField>,
     field: &'static str,

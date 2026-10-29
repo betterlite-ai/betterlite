@@ -5,7 +5,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::block::is_off_peak;
-use super::rate::{off_peak_rate, parse_rate};
+use super::rate::parse_rate;
 use super::schema::{HoursField, OffPeakBlock, RateField};
 use super::window::{WindowError, is_within_off_peak_window, matches_any_window, window_strings};
 use super::*;
@@ -186,7 +186,12 @@ fn unrepresentable_rate_magnitude_is_a_typed_error() {
 
 #[test]
 fn off_peak_rate_falls_back_to_the_standard_rate_when_absent() {
-    assert_eq!(off_peak_rate(None, "rate", dec("0.4")).unwrap(), dec("0.4"));
+    assert_eq!(
+        parse_rate(None, "rate")
+            .unwrap()
+            .unwrap_or_else(|| dec("0.4")),
+        dec("0.4")
+    );
 }
 
 #[test]
