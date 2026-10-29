@@ -112,6 +112,11 @@ pub fn project_provider_headers(
     projected
 }
 
+#[must_use]
+pub fn is_bare_rate_limit_header(name: &str) -> bool {
+    BARE_RATE_LIMIT_HEADERS.contains(&name.to_lowercase().as_str())
+}
+
 // UNSAFE_PROXY_RESPONSE_HEADERS, plus the raw-and-prefixed cookie/CORS deviation
 #[must_use]
 pub fn is_unsafe_header_name(name: &str) -> bool {
