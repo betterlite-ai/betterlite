@@ -1,0 +1,8 @@
+kind: helper
+name: otlp-content-text-plain
+call:
+  otlp_normalization:
+    content_text: {content: '[{"type": "output_text", "text": "first"}, {"type": "reasoning"}, {"text": "second"}]'}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: otlp-payload-elision-shortened
+call:
+  otlp_normalization:
+    elision:
+      value:
+        - '[{"role": "user", "content": "'
+        - {text: "a", times: 70000}
+        - '"}, {"role": "user", "content": "b"}, {"role": "assistant", "content": "'
+        - {text: "é", times: 40000}
+        - '", "name": "n"}]'
+env: {}
+compare:
+  ignore: []
