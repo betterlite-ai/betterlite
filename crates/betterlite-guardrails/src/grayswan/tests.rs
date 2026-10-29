@@ -2,13 +2,16 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::routing::post;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use secrecy::SecretString;
+use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -545,15 +548,20 @@ async fn grayswan_apply_guardrail_propagates_the_error_when_fail_open_is_unset()
     ));
 }
 
-async fn apply_guardrail_capturing_payload(input_type: GuardrailInputType) -> serde_json::Value {
+#[derive(Deserialize)]
+struct CapturedPayload {
+    messages: Vec<GuardrailMessage>,
+}
+
+async fn apply_guardrail_capturing_payload(input_type: GuardrailInputType) -> CapturedPayload {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let captured_for_handler = captured.clone();
-    let answer = move |body: axum::body::Bytes| {
-        let captured = captured_for_handler.clone();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let captured_for_handler = Arc::clone(&captured);
+    let answer = move |body: Bytes| {
+        let captured_for_body = Arc::clone(&captured_for_handler);
         async move {
-            *captured.lock().unwrap() = body.to_vec();
+            *captured_for_body.lock().unwrap() = body.to_vec();
             (StatusCode::OK, "{}".to_owned())
         }
     };
@@ -583,20 +591,27 @@ async fn apply_guardrail_capturing_payload(input_type: GuardrailInputType) -> se
 #[tokio::test]
 async fn grayswan_apply_guardrail_drops_tool_calls_and_history_for_a_request() {
     let payload = apply_guardrail_capturing_payload(GuardrailInputType::Request).await;
-    let messages = payload["messages"].as_array().expect("messages array");
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0]["role"], "user");
-    assert_eq!(messages[0]["content"], "hello");
-    assert!(messages[0].get("tool_calls").is_none());
+    assert_eq!(payload.messages.len(), 1);
+    assert_eq!(payload.messages[0].role, "user");
+    assert_eq!(
+        payload.messages[0].extra.get("content"),
+        Some(&GuardrailExtraValue::Text("hello".to_owned()))
+    );
+    assert!(!payload.messages[0].extra.contains_key("tool_calls"));
 }
 
 #[tokio::test]
 async fn grayswan_apply_guardrail_sends_tool_calls_and_history_for_a_response() {
     let payload = apply_guardrail_capturing_payload(GuardrailInputType::Response).await;
-    let messages = payload["messages"].as_array().expect("messages array");
-    assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0]["role"], "assistant");
-    assert_eq!(messages[0]["content"], "previous-context");
-    assert_eq!(messages[1]["content"], "hello");
-    assert!(messages[1].get("tool_calls").is_some());
+    assert_eq!(payload.messages.len(), 2);
+    assert_eq!(payload.messages[0].role, "assistant");
+    assert_eq!(
+        payload.messages[0].extra.get("content"),
+        Some(&GuardrailExtraValue::Text("previous-context".to_owned()))
+    );
+    assert_eq!(
+        payload.messages[1].extra.get("content"),
+        Some(&GuardrailExtraValue::Text("hello".to_owned()))
+    );
+    assert!(payload.messages[1].extra.contains_key("tool_calls"));
 }
