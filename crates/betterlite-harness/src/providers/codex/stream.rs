@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use serde::Deserialize;
+use serde_json::Number;
 
 #[derive(Clone, Debug, Default)]
 pub struct CodexStreamState {
@@ -18,14 +19,48 @@ pub(super) enum ItemEventKind {
     Completed,
 }
 
+// a value LiteLLM reads through Python truthiness and str(), never a nested object or array
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub(super) enum ScalarJson {
+    Null,
+    Bool(bool),
+    Number(Number),
+    Text(String),
+}
+
+impl ScalarJson {
+    pub(super) fn is_truthy(&self) -> bool {
+        match self {
+            Self::Null => false,
+            Self::Bool(flag) => *flag,
+            Self::Number(number) => number.as_f64().is_some_and(|value| value != 0.0_f64),
+            Self::Text(text) => !text.is_empty(),
+        }
+    }
+
+    pub(super) fn python_str(&self) -> String {
+        match self {
+            Self::Null => "None".to_owned(),
+            Self::Bool(flag) => python_bool_str(*flag),
+            Self::Number(number) => number.to_string(),
+            Self::Text(text) => text.clone(),
+        }
+    }
+}
+
+fn python_bool_str(flag: bool) -> String {
+    if flag { "True" } else { "False" }.to_owned()
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(super) enum FailureDetail {
     Object {
         #[serde(default)]
-        message: Option<String>,
+        message: Option<ScalarJson>,
     },
-    Text(String),
+    Scalar(ScalarJson),
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,16 +93,18 @@ pub(super) enum StreamEvent {
 
 pub(super) use wire::{Item, parse, tool_projection};
 
-pub(super) fn item_id(item: &Item) -> &str {
-    match item {
+pub(super) fn item_id(item: &Item) -> String {
+    let id = match item {
         Item::AgentMessage { id, .. }
         | Item::Reasoning { id, .. }
         | Item::CommandExecution { id, .. }
         | Item::FileChange { id, .. }
         | Item::WebSearch { id, .. }
-        | Item::McpToolCall { id, .. } => id,
-        Item::Other => "",
-    }
+        | Item::McpToolCall { id, .. } => id.as_ref(),
+        Item::Other => None,
+    };
+    id.filter(|value| value.is_truthy())
+        .map_or_else(String::new, ScalarJson::python_str)
 }
 
 #[path = "wire.rs"]

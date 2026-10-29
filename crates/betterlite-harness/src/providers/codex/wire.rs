@@ -2,10 +2,21 @@
     clippy::disallowed_types,
     reason = "codex's mcp tool arguments/result/error and the ToolCall.input boundary carry open JSON with no fixed schema"
 )]
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::types::JsonObject;
+
+use super::ScalarJson;
+use python_json::PyValue;
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct FileChangeEntry {
+    #[serde(default)]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) path: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
@@ -13,21 +24,21 @@ pub(crate) enum Item {
     #[serde(rename = "agent_message")]
     AgentMessage {
         #[serde(default)]
-        id: String,
+        id: Option<ScalarJson>,
         #[serde(default)]
         text: Option<String>,
     },
     #[serde(rename = "reasoning")]
     Reasoning {
         #[serde(default)]
-        id: String,
+        id: Option<ScalarJson>,
         #[serde(default)]
         text: Option<String>,
     },
     #[serde(rename = "command_execution")]
     CommandExecution {
         #[serde(default)]
-        id: String,
+        id: Option<ScalarJson>,
         #[serde(default)]
         command: Option<String>,
         #[serde(default)]
@@ -40,16 +51,16 @@ pub(crate) enum Item {
     #[serde(rename = "file_change")]
     FileChange {
         #[serde(default)]
-        id: String,
+        id: Option<ScalarJson>,
         #[serde(default)]
-        changes: Option<Vec<Value>>,
+        changes: Option<Vec<FileChangeEntry>>,
         #[serde(default)]
         status: Option<String>,
     },
     #[serde(rename = "web_search")]
     WebSearch {
         #[serde(default)]
-        id: String,
+        id: Option<ScalarJson>,
         #[serde(default)]
         query: Option<String>,
         #[serde(default)]
@@ -58,7 +69,7 @@ pub(crate) enum Item {
     #[serde(rename = "mcp_tool_call")]
     McpToolCall {
         #[serde(default)]
-        id: String,
+        id: Option<ScalarJson>,
         #[serde(default)]
         server: Option<String>,
         #[serde(default)]
@@ -66,7 +77,7 @@ pub(crate) enum Item {
         #[serde(default)]
         arguments: Option<Value>,
         #[serde(default)]
-        result: Option<Value>,
+        result: Option<PyValue>,
         #[serde(default)]
         error: Option<Value>,
         #[serde(default)]
@@ -77,12 +88,19 @@ pub(crate) enum Item {
 }
 
 pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
-    let object = line
+    let object: serde_json::Map<String, Value> = line
         .iter()
         .map(|(key, entry)| (key.clone(), entry.clone()))
         .collect();
-    serde_json::from_value(Value::Object(object)).ok()
+    let value = Value::Object(object);
+    serde_json::from_value(value.clone()).ok().or_else(|| {
+        (value.get("type").and_then(Value::as_str) == Some("turn.failed"))
+            .then(|| super::StreamEvent::TurnFailed { error: None })
+    })
 }
+
+#[path = "python_json.rs"]
+mod python_json;
 
 #[path = "tool_projection.rs"]
 mod tool_projection;

@@ -1,6 +1,6 @@
 use crate::events::Event;
 
-use super::stream::{self, CodexStreamState, FailureDetail, Item, ItemEventKind};
+use super::stream::{self, CodexStreamState, FailureDetail, Item, ItemEventKind, ScalarJson};
 
 pub(super) fn transform_item_event(
     item: Item,
@@ -46,18 +46,19 @@ pub(super) fn record_thread_id(thread_id: Option<String>, state: &mut CodexStrea
 pub(super) fn record_turn_failed(error: Option<FailureDetail>, state: &mut CodexStreamState) {
     state.failed = true;
     let message = match error {
-        Some(FailureDetail::Text(text)) => Some(text),
+        Some(FailureDetail::Scalar(value)) => Some(value),
         Some(FailureDetail::Object { message }) => message,
         None => None,
     };
     state.error = message
-        .filter(|text| !text.is_empty())
+        .filter(ScalarJson::is_truthy)
+        .map(|value| value.python_str())
         .or_else(|| state.error.clone())
         .or_else(|| Some("codex turn failed".to_owned()));
 }
 
 fn tool_events(item: &Item, event_type: ItemEventKind, state: &mut CodexStreamState) -> Vec<Event> {
-    let id = stream::item_id(item).to_owned();
+    let id = stream::item_id(item);
     let is_new = state.started.insert(id.clone());
     let is_completed = event_type == ItemEventKind::Completed;
     if !is_new && !is_completed {

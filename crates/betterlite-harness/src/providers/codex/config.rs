@@ -71,20 +71,6 @@ pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessErr
     }
 }
 
-#[must_use]
-pub(super) fn toml_assignment(key: &str, value: &str) -> String {
-    let quoted = Value::String(value.to_owned()).to_string();
-    format!("{key}={quoted}")
-}
-
-#[must_use]
-pub(super) fn schema_value(schema: &JsonObject) -> Value {
-    let entries = schema
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()));
-    Value::Object(entries.collect())
-}
-
 pub(super) fn config_overrides(config: &JsonObject) -> Result<Vec<String>, HarnessError> {
     let mut overrides = Vec::with_capacity(config.len());
     for (key, value) in config {

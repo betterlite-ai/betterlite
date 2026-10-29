@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use betterlite_harness::events::Event;
 use serde_json::json;
 
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
 pub(super) fn encode(event: &Event, started: &mut BTreeSet<String>) -> HelperResult {
     match event {
@@ -26,15 +26,31 @@ pub(super) fn encode(event: &Event, started: &mut BTreeSet<String>) -> HelperRes
             id,
             output,
             is_error,
-        } => {
-            if !started.contains(id) {
-                return Err(super::failure("EventOrder", "ToolResult preceded ToolCall"));
-            }
-            Ok(json!({"kind": "tool_result", "id": id, "output": output, "is_error": is_error}))
-        }
+        } => tool_result(id, output, *is_error, started),
         Event::FileChange(_)
         | Event::Compaction { .. }
         | Event::Approval(_)
-        | Event::Done { .. } => Err(super::failure("UnexpectedEvent", "Unexpected Codex event")),
+        | Event::Done { .. } => Err(Box::new(HelperError {
+            class: "UnexpectedEvent".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: "Unexpected Codex event".to_owned(),
+        })),
     }
+}
+
+fn tool_result(id: &str, output: &str, is_error: bool, started: &BTreeSet<String>) -> HelperResult {
+    if !started.contains(id) {
+        return Err(Box::new(HelperError {
+            class: "EventOrder".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: "ToolResult preceded ToolCall".to_owned(),
+        }));
+    }
+    Ok(json!({"kind": "tool_result", "id": id, "output": output, "is_error": is_error}))
 }

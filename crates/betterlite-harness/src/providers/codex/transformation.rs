@@ -49,7 +49,13 @@ fn reject_managed_env_collision(env: &BTreeMap<String, String>) -> Result<(), Ha
 }
 
 fn output_schema_file(schema: &JsonObject) -> Result<Vec<u8>, HarnessError> {
-    let strict = strict_json_schema(config::schema_value(schema), 0).map_err(|_schema_err| {
+    let schema_value = serde_json::Value::Object(
+        schema
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    );
+    let strict = strict_json_schema(schema_value, 0).map_err(|_schema_err| {
         HarnessError::OptionsMismatch {
             given: "SessionSettings.output_schema",
             harness: Harness::Codex,

@@ -4,7 +4,9 @@ use serde_json::Value;
 
 use crate::types::JsonObject;
 
+use super::FileChangeEntry;
 use super::Item;
+use super::python_json::{PyValue, python_json_text};
 
 pub(crate) struct ToolProjection {
     pub(crate) name: String,
@@ -47,37 +49,14 @@ pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
             (server.as_deref(), tool.as_deref(), arguments.as_ref()),
             (result.as_ref(), error.as_ref(), status.as_deref()),
         ),
-        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => empty_projection(),
-    }
-}
-
-const fn empty_projection() -> ToolProjection {
-    let input = JsonObject::new();
-    ToolProjection {
-        name: String::new(),
-        native_name: String::new(),
-        input,
-        builtin: false,
-        output: String::new(),
-        is_error: false,
-    }
-}
-
-fn builtin_projection(
-    name: &str,
-    native_name: &str,
-    input: JsonObject,
-    output: String,
-    is_error: bool,
-) -> ToolProjection {
-    let owned_native_name = native_name.to_owned();
-    ToolProjection {
-        name: name.to_owned(),
-        native_name: owned_native_name,
-        input,
-        builtin: true,
-        output,
-        is_error,
+        Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => ToolProjection {
+            name: String::new(),
+            native_name: String::new(),
+            input: JsonObject::new(),
+            builtin: false,
+            output: String::new(),
+            is_error: false,
+        },
     }
 }
 
@@ -92,43 +71,38 @@ fn command_execution_projection(
         "command".to_owned(),
         Value::String(command.unwrap_or_default().to_owned()),
     )]);
-    builtin_projection(
-        "bash",
-        "command_execution",
+    ToolProjection {
+        name: "bash".to_owned(),
+        native_name: "command_execution".to_owned(),
         input,
-        aggregated_output.unwrap_or_default().to_owned(),
-        failed,
-    )
+        builtin: true,
+        output: aggregated_output.unwrap_or_default().to_owned(),
+        is_error: failed,
+    }
 }
 
-fn file_change_projection(changes: Option<&[Value]>, status: Option<&str>) -> ToolProjection {
-    let output = changes
-        .unwrap_or_default()
+fn file_change_projection(
+    changes: Option<&[FileChangeEntry]>,
+    status: Option<&str>,
+) -> ToolProjection {
+    let entries = changes.unwrap_or_default();
+    let output = entries
         .iter()
-        .map(|change| {
-            let kind = change
-                .get("kind")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let path = change
-                .get("path")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            format!("{kind} {path}").trim().to_owned()
-        })
+        .map(|entry| format!("{} {}", entry.kind, entry.path).trim().to_owned())
         .collect::<Vec<_>>()
         .join("\n");
     let input = BTreeMap::from([(
         "changes".to_owned(),
-        Value::Array(changes.unwrap_or_default().to_vec()),
+        serde_json::to_value(entries).unwrap_or(Value::Array(Vec::new())),
     )]);
-    builtin_projection(
-        "edit",
-        "apply_patch",
+    ToolProjection {
+        name: "edit".to_owned(),
+        native_name: "apply_patch".to_owned(),
         input,
+        builtin: true,
         output,
-        status == Some("failed"),
-    )
+        is_error: status == Some("failed"),
+    }
 }
 
 fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProjection {
@@ -136,18 +110,19 @@ fn web_search_projection(query: Option<&str>, status: Option<&str>) -> ToolProje
         "query".to_owned(),
         Value::String(query.unwrap_or_default().to_owned()),
     )]);
-    builtin_projection(
-        "web_search",
-        "web_search",
+    ToolProjection {
+        name: "web_search".to_owned(),
+        native_name: "web_search".to_owned(),
         input,
-        String::new(),
-        status == Some("failed"),
-    )
+        builtin: true,
+        output: String::new(),
+        is_error: status == Some("failed"),
+    }
 }
 
 fn mcp_tool_projection(
     call: (Option<&str>, Option<&str>, Option<&Value>),
-    outcome: (Option<&Value>, Option<&Value>, Option<&str>),
+    outcome: (Option<&PyValue>, Option<&Value>, Option<&str>),
 ) -> ToolProjection {
     let (server, tool, arguments) = call;
     let (result, error, status) = outcome;
@@ -184,7 +159,7 @@ fn mcp_tool_input(
 }
 
 fn mcp_tool_output(
-    result: Option<&Value>,
+    result: Option<&PyValue>,
     error: Option<&Value>,
     status: Option<&str>,
 ) -> (String, bool) {
@@ -195,13 +170,18 @@ fn mcp_tool_output(
     )
 }
 
-fn mcp_result_text(result: Option<&Value>) -> String {
-    let Some(value) = result.filter(|value| !value.is_null()) else {
+fn mcp_result_text(result: Option<&PyValue>) -> String {
+    let Some(value) = result.filter(|value| !matches!(value, PyValue::Null)) else {
         return String::new();
     };
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned)
+    match value {
+        PyValue::Text(text) => text.clone(),
+        other @ (PyValue::Null
+        | PyValue::Bool(_)
+        | PyValue::Number(_)
+        | PyValue::List(_)
+        | PyValue::Object(_)) => python_json_text(other),
+    }
 }
 
 fn mcp_error_message(error: &Value) -> String {

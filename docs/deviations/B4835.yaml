@@ -12,3 +12,9 @@ deviations:
     why: "Codex loads ~/.codex by default. This deployment should use a clean session directory to avoid
          mixing with the user's own Codex configuration."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L218-L234
+  - what: "CodexOptions.env entries named LITELLM_HARNESS_TOKEN or CODEX_HOME are rejected with an error
+         instead of being silently overwritten."
+    why: "LiteLLM merges options.env under its own managed token and home entries, so a caller-supplied
+         value with the same name disappears without notice. The no-silent-drops rule in this repository
+         forbids an earlier entry being overwritten without saying so."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L233

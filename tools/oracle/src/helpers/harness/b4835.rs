@@ -19,15 +19,31 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let contents = std::fs::read_to_string(&input.fixture)
-            .map_err(|error| failure("FixtureRead", &error.to_string()))?;
+        let contents = std::fs::read_to_string(&input.fixture).map_err(|error| {
+            Box::new(HelperError {
+                class: "FixtureRead".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         let config = CodexHarnessConfig;
         let mut state = config.create_stream_state();
         let mut started = BTreeSet::new();
         let mut output = Vec::new();
         for line in contents.lines().filter(|line| !line.is_empty()) {
-            let event: JsonObject = serde_json::from_str(line)
-                .map_err(|error| failure("FixtureParse", &error.to_string()))?;
+            let event: JsonObject = serde_json::from_str(line).map_err(|error| {
+                Box::new(HelperError {
+                    class: "FixtureParse".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?;
             for parsed in config.transform_stream_line(&event, &mut state) {
                 output.push(events::encode(&parsed, &mut started)?);
             }
@@ -40,16 +56,4 @@ impl Helper for Op {
             "events": output,
         }))
     }
-}
-
-fn failure(class: &str, message: &str) -> Box<HelperError> {
-    let error = HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    };
-    Box::new(error)
 }

@@ -90,11 +90,11 @@ fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] i
 }
 
 #[test]
-fn mcp_object_result_is_compact_json() {
+fn mcp_object_result_is_python_json_dumps() {
     let item: Item =
         serde_json::from_str(r#"{"type":"mcp_tool_call","result":{"ok":true,"n":1}}"#).unwrap();
     let projection = super::stream::tool_projection(&item);
-    assert_eq!(projection.output, r#"{"n":1,"ok":true}"#);
+    assert_eq!(projection.output, r#"{"ok": true, "n": 1}"#);
     assert!(!projection.is_error);
 }
 
@@ -149,6 +149,40 @@ fn empty_turn_failed_message_falls_back(#[case] raw: &str) {
     CodexHarnessConfig.transform_stream_line(&line, &mut state);
     assert!(state.failed);
     assert_eq!(state.error.as_deref(), Some("codex turn failed"));
+}
+
+#[rstest::rstest]
+#[case::numeric_error(r#"{"type":"turn.failed","error":42}"#, "42")]
+#[case::numeric_message(r#"{"type":"turn.failed","error":{"message":42}}"#, "42")]
+fn turn_failed_accepts_non_string_error_shapes(#[case] raw: &str, #[case] expected: &str) {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(raw).unwrap();
+    CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert!(state.failed);
+    assert_eq!(state.error.as_deref(), Some(expected));
+}
+
+#[test]
+fn unparseable_turn_failed_still_marks_the_turn_failed() {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(r#"{"type":"turn.failed","error":[1,2]}"#).unwrap();
+    CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert!(state.failed);
+}
+
+#[test]
+fn null_item_id_still_reports_tool_events() {
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(
+        r#"{"type":"item.completed","item":{"id":null,"type":"command_execution","command":"echo hi","aggregated_output":"hi\n","exit_code":0,"status":"completed"}}"#,
+    )
+    .unwrap();
+    let events = CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    assert!(matches!(events.first(), Some(Event::ToolCall { id, .. }) if id.is_empty()));
+    assert!(matches!(
+        events.get(1),
+        Some(Event::ToolResult { id, is_error: false, .. }) if id.is_empty()
+    ));
 }
 
 #[test]
