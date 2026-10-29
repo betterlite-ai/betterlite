@@ -960,6 +960,8 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -968,6 +970,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "unicode-general-category",
+ "unicode-normalization",
 ]
 
 [[package]]

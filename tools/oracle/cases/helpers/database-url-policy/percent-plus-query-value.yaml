@@ -1,0 +1,10 @@
+kind: helper
+name: percent-plus-query-value
+call:
+  database_url_policy:
+    function: url_query_value
+    url: "postgresql://h/db?options=%+1"
+    key: "options"
+env: {}
+compare:
+  ignore: []

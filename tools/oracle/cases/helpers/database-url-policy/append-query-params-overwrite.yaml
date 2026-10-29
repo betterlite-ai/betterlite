@@ -1,0 +1,10 @@
+kind: helper
+name: append-query-params-overwrite
+call:
+  database_url_policy:
+    function: append_query_params
+    url: "postgresql://h/db?tag=old1&tag=old2"
+    params: [["tag", ["new1", "new2"]]]
+env: {}
+compare:
+  ignore: []
