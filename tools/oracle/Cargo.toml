@@ -14,6 +14,7 @@ betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-core = { path = "../../crates/betterlite-core" }
 betterlite-db = { path = "../../crates/betterlite-db" }
+betterlite-error = { path = "../../crates/betterlite-error" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-lens = { path = "../../crates/betterlite-lens" }

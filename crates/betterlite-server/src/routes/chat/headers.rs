@@ -81,7 +81,16 @@ pub(super) fn failure_headers(
         | ChatError::Http { .. } => None,
     };
     let mut headers = upstream.map_or_else(HeaderMap::new, |forwarded| {
-        let projected = project_provider_headers(&header_map_to_btree(forwarded));
+        let as_btree: BTreeMap<String, String> = forwarded
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
+            })
+            .collect();
+        let projected = project_provider_headers(&as_btree);
         btree_to_header_map(&filter_unsafe_headers(projected))
     });
     if let Ok(value) = HeaderValue::from_str(call_id) {
@@ -115,18 +124,6 @@ fn provider_headers(upstream: &HeaderMap, rate_limit_count: usize) -> HeaderMap 
         }
     }
     headers
-}
-
-fn header_map_to_btree(headers: &HeaderMap) -> BTreeMap<String, String> {
-    headers
-        .iter()
-        .filter_map(|(name, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|text| (name.as_str().to_owned(), text.to_owned()))
-        })
-        .collect()
 }
 
 fn btree_to_header_map(headers: &BTreeMap<String, String>) -> HeaderMap {

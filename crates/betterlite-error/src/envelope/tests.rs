@@ -83,7 +83,7 @@ fn error_types_error_type_tests_behavior(
 
 #[test]
 fn missing_wire_field_serializes_as_the_literal_none_string() {
-    assert_eq!(serde_json::to_value(WireField::Missing).unwrap(), "None");
+    assert_eq!(serde_json::to_value(WireField::MISSING).unwrap(), "None");
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn null_wire_field_serializes_as_json_null() {
 #[test]
 fn text_wire_field_serializes_as_the_string_it_holds() {
     assert_eq!(
-        serde_json::to_value(WireField::text("throttling_error".to_owned())).unwrap(),
+        serde_json::to_value(WireField::Text("throttling_error".to_owned())).unwrap(),
         "throttling_error"
     );
 }

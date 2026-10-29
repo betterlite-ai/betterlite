@@ -1,48 +1,30 @@
-//! The shared client-facing error envelope, extracted from `betterlite-server`'s `error_body.rs`.
-//!
-//! Also carries the provider response-header forwarding rules from
-//! `litellm/litellm_core_utils/llm_response_utils/get_headers.py` and the
-//! `UNSAFE_PROXY_RESPONSE_HEADERS` filter from `litellm/proxy/common_request_processing.py`.
-
 use std::collections::BTreeMap;
 
 use crate::error::ErrorMetadata;
 
 mod tests;
 
-/// The three JSON shapes a `LiteLLM` `getattr(e, field, "None")` lookup produces.
-///
-/// The attribute is missing (the literal string `"None"`), present and `None` (JSON
-/// `null`), or present with a string value.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// the externally tagged default: a fieldless variant serializes to its own name as a bare string
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum NoneMarker {
+    #[serde(rename = "None")]
+    None,
+}
+
+// mirrors getattr(e, field, "None"): attribute missing, present and null, or present with text
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(untagged)]
 pub enum WireField {
-    Missing,
+    Missing(NoneMarker),
     Null,
     Text(String),
 }
 
 impl WireField {
-    #[must_use]
-    pub const fn text(value: String) -> Self {
-        Self::Text(value)
-    }
+    pub const MISSING: Self = Self::Missing(NoneMarker::None);
 }
 
-impl serde::Serialize for WireField {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::Missing => serializer.serialize_str("None"),
-            Self::Null => serializer.serialize_none(),
-            Self::Text(text) => serializer.serialize_str(text),
-        }
-    }
-}
-
-/// The betterlite-owned, client-facing message for a classified error; never the
-/// `Debug` dump of the underlying cause.
+// never the Debug dump of the underlying cause
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ErrorObject {
     pub message: String,
@@ -57,37 +39,16 @@ pub struct ErrorResponse {
     pub error: ErrorObject,
 }
 
-impl ErrorResponse {
-    #[must_use]
-    pub const fn new(error: ErrorObject) -> Self {
-        Self { error }
-    }
-}
-
 impl ErrorObject {
     #[must_use]
-    pub const fn new(
-        message: String,
-        error_type: WireField,
-        param: WireField,
-        code: WireField,
-    ) -> Self {
+    pub fn from_metadata(metadata: &ErrorMetadata, message: String) -> Self {
+        let code = metadata.code.clone();
         Self {
             message,
-            error_type,
-            param,
+            error_type: metadata.error_type.clone(),
+            param: metadata.param.clone(),
             code,
         }
-    }
-
-    #[must_use]
-    pub fn from_metadata(metadata: &ErrorMetadata, message: String) -> Self {
-        Self::new(
-            message,
-            metadata.error_type.clone(),
-            metadata.param.clone(),
-            metadata.code.clone(),
-        )
     }
 }
 
@@ -125,8 +86,7 @@ const BROWSER_SECURITY_HEADERS: [&str; 13] = [
     "cross-origin-resource-policy",
 ];
 
-/// Narrower than [`HTTP_FRAMING_HEADERS`] / [`BROWSER_SECURITY_HEADERS`]: the subset that
-/// also gets dropped in its `llm_provider-` prefixed form, per the B184 security deviation.
+// the B184 deviation: also dropped once llm_provider- prefixed, unlike the rest of HTTP_FRAMING_HEADERS/BROWSER_SECURITY_HEADERS
 const COOKIE_AND_CORS_HEADERS: [&str; 7] = [
     "set-cookie",
     "cookie",
@@ -140,8 +100,7 @@ const COOKIE_AND_CORS_HEADERS: [&str; 7] = [
 const LLM_PROVIDER_MARKER: &str = "llm_provider";
 const LLM_PROVIDER_PREFIX: &str = "llm_provider-";
 
-/// `get_response_headers`: forward the four bare `x-ratelimit` headers as-is, and
-/// reprefix everything else `llm_provider-{name}` unless it already contains that marker.
+// get_response_headers: the four bare x-ratelimit headers forward as-is, everything else gets the llm_provider- prefix
 #[must_use]
 pub fn project_provider_headers(
     response_headers: &BTreeMap<String, String>,
@@ -162,35 +121,25 @@ pub fn project_provider_headers(
     projected
 }
 
-fn is_unsafe_response_header(name_lower: &str) -> bool {
-    HTTP_FRAMING_HEADERS.contains(&name_lower) || BROWSER_SECURITY_HEADERS.contains(&name_lower)
-}
-
-fn is_unsafe_prefixed_header(name_lower: &str) -> bool {
-    name_lower
-        .strip_prefix(LLM_PROVIDER_PREFIX)
-        .is_some_and(|rest| COOKIE_AND_CORS_HEADERS.contains(&rest))
-}
-
-/// `UNSAFE_PROXY_RESPONSE_HEADERS` filtering, plus the raw-and-prefixed cookie/CORS
-/// deviation: a malicious upstream cannot plant a `Set-Cookie` or CORS override under
-/// either name.
+// UNSAFE_PROXY_RESPONSE_HEADERS, plus the raw-and-prefixed cookie/CORS deviation
 #[must_use]
 pub fn filter_unsafe_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    headers
-        .into_iter()
-        .filter(|(name, _)| {
-            let lower = name.to_lowercase();
-            !is_unsafe_response_header(&lower) && !is_unsafe_prefixed_header(&lower)
-        })
-        .collect()
+    let mut kept = BTreeMap::new();
+    for (name, value) in headers {
+        let lower = name.to_lowercase();
+        let unsafe_raw = HTTP_FRAMING_HEADERS.contains(&lower.as_str())
+            || BROWSER_SECURITY_HEADERS.contains(&lower.as_str());
+        let unsafe_prefixed = lower
+            .strip_prefix(LLM_PROVIDER_PREFIX)
+            .is_some_and(|rest| COOKIE_AND_CORS_HEADERS.contains(&rest));
+        if !unsafe_raw && !unsafe_prefixed {
+            kept.insert(name, value);
+        }
+    }
+    kept
 }
 
-/// The full header pipeline for one error.
-///
-/// `explicit_headers` (a `headers=` kwarg that bypasses projection, e.g. `RateLimitError`)
-/// takes precedence over `response_headers` (projected through [`project_provider_headers`]
-/// first), then both paths go through the same safety filter.
+// explicit_headers (a headers= kwarg, e.g. RateLimitError) bypasses projection; response_headers goes through project_provider_headers first
 #[must_use]
 pub fn allowed_response_headers(
     explicit_headers: Option<&BTreeMap<String, String>>,

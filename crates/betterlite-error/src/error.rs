@@ -1,63 +1,44 @@
-//! Shared provider error taxonomy, ported from `litellm/exceptions.py`.
-//!
-//! [`ErrorClass`] is a closed classification of every public `LiteLLM` exception family.
-//! Each variant carries only the fields the matching Python class sets, so
-//! [`ErrorClass::metadata`] can reproduce the exact `getattr(e, field, "None")` three-state
-//! wire value (missing attribute, present-and-null, present-and-text) the proxy's catch-all
-//! handler reads.
-
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 
 use crate::envelope::{WireField, filter_unsafe_headers};
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
+pub mod details;
 mod tests;
 
-/// The fields common to every `openai.*Error`-derived `LiteLLM` exception: a message, the
-/// model/provider identity, and the retry counters threaded through the constructor.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+use details::{
+    ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
+    RateLimitDetails, SchemaValidationDetails, TimeoutDetails,
+};
+
+// the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ErrorContext {
     pub message: String,
     pub model: Option<String>,
     pub provider: Option<String>,
+    #[serde(default)]
     pub max_retries: Option<u32>,
+    #[serde(default)]
     pub num_retries: Option<u32>,
 }
 
 impl ErrorContext {
-    #[must_use]
-    pub const fn new(message: String, model: Option<String>, provider: Option<String>) -> Self {
-        Self {
-            message,
-            model,
-            provider,
-            max_retries: None,
-            num_retries: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn with_retry(mut self, max_retries: Option<u32>, num_retries: Option<u32>) -> Self {
-        self.max_retries = max_retries;
-        self.num_retries = num_retries;
-        self
-    }
-
-    /// `type` and `param` differ by family: most `openai.*Error` subclasses set them to
-    /// `None` (present, so the wire value is JSON `null`), a few set a literal string.
+    // type/param differ by family: most openai.*Error subclasses leave them null, a few set a literal string
     fn metadata(&self, status_code: u16, error_type: WireField, param: WireField) -> ErrorMetadata {
+        let retry = RetryMetadata {
+            max_retries: self.max_retries,
+            num_retries: self.num_retries,
+        };
         ErrorMetadata {
             status_code,
             model: self.model.clone(),
             provider: self.provider.clone(),
             error_type,
             param,
-            code: WireField::text(status_code.to_string()),
-            retry: RetryMetadata {
-                max_retries: self.max_retries,
-                num_retries: self.num_retries,
-            },
+            code: WireField::Text(status_code.to_string()),
+            retry,
             rate_limit_category: None,
             rate_limit_dimension: None,
             allowed_response_headers: BTreeMap::new(),
@@ -71,7 +52,6 @@ pub struct RetryMetadata {
     pub num_retries: Option<u32>,
 }
 
-/// Immutable, oracle-comparable metadata for one constructed [`ErrorClass`] value.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ErrorMetadata {
     pub status_code: u16,
@@ -87,69 +67,7 @@ pub struct ErrorMetadata {
     pub allowed_response_headers: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct TimeoutDetails {
-    pub context: ErrorContext,
-    /// `exception_status_code` in `Timeout.__init__`; `None` means the 408 default applies.
-    pub original_status: Option<u16>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct RateLimitDetails {
-    pub context: ErrorContext,
-    pub category: RateLimitCategory,
-    pub dimension: Option<RateLimitDimension>,
-    /// The explicit `headers=` kwarg. Unlike most families, `RateLimitError` never derives
-    /// these from a provider response, so they bypass `llm_provider-` projection entirely.
-    pub headers: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct ApiDetails {
-    pub context: ErrorContext,
-    pub status: u16,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct BudgetExceededDetails {
-    pub current_cost: f64,
-    pub max_budget: f64,
-    pub message: Option<String>,
-    pub provider: Option<String>,
-    pub entity_type: Option<String>,
-    pub entity_id: Option<String>,
-    /// `litellm.budget_exceeded_status_code`, 422 by default.
-    pub status_code: u16,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct GuardrailDetails {
-    pub guardrail_name: Option<String>,
-    pub message: String,
-    pub status_code: u16,
-    pub blocked_content: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct MidStreamFallbackDetails {
-    pub context: ErrorContext,
-    /// `getattr(original_exception, "status_code", None)`; `None` means the 503 default applies.
-    pub original_status: Option<u16>,
-    pub generated_content: String,
-    pub is_pre_first_chunk: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct SchemaValidationDetails {
-    pub model: String,
-    pub provider: String,
-    pub raw_response: String,
-    pub schema: String,
-}
-
-/// A closed classification of every public `LiteLLM` exception family this crate represents.
-/// Every variant is boxed so none of them dominate the enum's size.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
 pub enum ErrorClass {
     Authentication(Box<ErrorContext>),
@@ -172,85 +90,139 @@ pub enum ErrorClass {
     UnsupportedParams(Box<ErrorContext>),
     GuardrailRaised(Box<GuardrailDetails>),
     MidStreamFallback(Box<MidStreamFallbackDetails>),
-    /// A caught exception outside every known family: every wire field is genuinely
-    /// missing, matching a plain `Exception` the proxy's catch-all handler still wraps.
+    // a caught exception outside every known family: every wire field is genuinely missing, like a plain Exception
     Unclassified(Box<ErrorContext>),
 }
 
 impl ErrorClass {
-    /// One dispatch table over every family this crate represents; it is as long as the
-    /// enum it mirrors, so splitting it would only move its lines into an unreachable arm.
     #[must_use]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "a flat dispatch table over 21 variants, each one line"
-    )]
     pub fn metadata(&self) -> ErrorMetadata {
-        match self {
-            Self::Authentication(context) => {
-                context.metadata(401, WireField::Null, WireField::Null)
-            }
-            Self::NotFound(context) => context.metadata(404, WireField::Null, WireField::Null),
-            Self::PermissionDenied(context) => {
-                context.metadata(403, WireField::Null, WireField::Null)
-            }
-            Self::BadRequest(context)
-            | Self::ContextWindowExceeded(context)
-            | Self::ContentPolicyViolation(context) => {
-                context.metadata(400, WireField::Null, WireField::Null)
-            }
-            Self::UnprocessableEntity(context) => {
-                context.metadata(422, WireField::Null, WireField::Null)
-            }
-            Self::ServiceUnavailable(context) => {
-                context.metadata(503, WireField::Null, WireField::Null)
-            }
-            Self::BadGateway(context) => context.metadata(502, WireField::Null, WireField::Null),
-            Self::InternalServer(context) => context.metadata(
-                500,
-                WireField::text("internal_server_error".to_owned()),
-                WireField::Null,
-            ),
-            Self::ApiConnection(context) | Self::ApiResponseValidation(context) => {
-                context.metadata(500, WireField::Null, WireField::Null)
-            }
-            // UnsupportedParamsError never calls its openai.BadRequestError base constructor,
-            // so .type/.param are never set on the instance: a genuinely missing attribute.
-            Self::UnsupportedParams(context) => {
-                context.metadata(400, WireField::Missing, WireField::Missing)
-            }
-            Self::Unclassified(context) => {
-                context.metadata(500, WireField::Missing, WireField::Missing)
-            }
-            Self::Timeout(details) => {
-                let status = details.original_status.unwrap_or(408);
-                details
-                    .context
-                    .metadata(status, WireField::Null, WireField::Null)
-            }
-            Self::Api(details) => {
-                details
-                    .context
-                    .metadata(details.status, WireField::Null, WireField::Null)
-            }
-            Self::RateLimit(details) => rate_limit_metadata(details),
-            Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => guardrail_metadata(details),
-            Self::MidStreamFallback(details) => {
-                let status = details.original_status.unwrap_or(503);
-                details
-                    .context
-                    .metadata(status, WireField::Null, WireField::Null)
-            }
-            Self::JsonSchemaValidation(details) => schema_validation_metadata(details),
+        if let Some((context, status, error_type, param)) = plain_context_status(self) {
+            return context.metadata(status, error_type, param);
         }
+        details_metadata(self)
+    }
+}
+
+type PlainStatus<'a> = (&'a ErrorContext, u16, WireField, WireField);
+
+fn plain_context_status(class: &ErrorClass) -> Option<PlainStatus<'_>> {
+    let (context, status, error_type, param) = match class {
+        ErrorClass::Authentication(context) => (context, 401, WireField::Null, WireField::Null),
+        ErrorClass::NotFound(context) => (context, 404, WireField::Null, WireField::Null),
+        ErrorClass::PermissionDenied(context) => {
+            (context, 403, WireField::Null, WireField::Null)
+        }
+        ErrorClass::BadRequest(context)
+        | ErrorClass::ContextWindowExceeded(context)
+        | ErrorClass::ContentPolicyViolation(context) => {
+            (context, 400, WireField::Null, WireField::Null)
+        }
+        ErrorClass::UnprocessableEntity(context) => {
+            (context, 422, WireField::Null, WireField::Null)
+        }
+        ErrorClass::ServiceUnavailable(context) => {
+            (context, 503, WireField::Null, WireField::Null)
+        }
+        ErrorClass::BadGateway(context) => (context, 502, WireField::Null, WireField::Null),
+        ErrorClass::InternalServer(context) => (
+            context,
+            500,
+            WireField::Text("internal_server_error".to_owned()),
+            WireField::Null,
+        ),
+        ErrorClass::ApiConnection(context) | ErrorClass::ApiResponseValidation(context) => {
+            (context, 500, WireField::Null, WireField::Null)
+        }
+        // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
+        ErrorClass::UnsupportedParams(context) => {
+            (context, 400, WireField::MISSING, WireField::Null)
+        }
+        ErrorClass::Unclassified(context) => {
+            (context, 500, WireField::MISSING, WireField::MISSING)
+        }
+        _ => return None,
+    };
+    Some((context, status, error_type, param))
+}
+
+fn details_metadata(class: &ErrorClass) -> ErrorMetadata {
+    match class {
+        ErrorClass::Timeout(details) => {
+            let status = details.original_status.unwrap_or(408);
+            details
+                .context
+                .metadata(status, WireField::Null, WireField::Null)
+        }
+        ErrorClass::Api(details) => details
+            .context
+            .metadata(details.status, WireField::Null, WireField::Null),
+        ErrorClass::RateLimit(details) => rate_limit_metadata(details),
+        ErrorClass::BudgetExceeded(details) => {
+            let mut metadata = bare_metadata(
+                details.status_code,
+                None,
+                details.provider.clone(),
+                WireField::MISSING,
+                WireField::MISSING,
+            );
+            metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
+            metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
+            metadata
+        }
+        ErrorClass::GuardrailRaised(details) => bare_metadata(
+            details.status_code,
+            None,
+            None,
+            WireField::MISSING,
+            WireField::MISSING,
+        ),
+        ErrorClass::MidStreamFallback(details) => {
+            let status = details.original_status.unwrap_or(503);
+            details
+                .context
+                .metadata(status, WireField::Null, WireField::Null)
+        }
+        ErrorClass::JsonSchemaValidation(details) => bare_metadata(
+            500,
+            Some(details.model.clone()),
+            Some(details.provider.clone()),
+            WireField::Null,
+            WireField::Null,
+        ),
+        _ => unreachable!("plain_context_status already handles every Box<ErrorContext> variant"),
+    }
+}
+
+fn bare_metadata(
+    status_code: u16,
+    model: Option<String>,
+    provider: Option<String>,
+    error_type: WireField,
+    param: WireField,
+) -> ErrorMetadata {
+    let retry = RetryMetadata {
+        max_retries: None,
+        num_retries: None,
+    };
+    ErrorMetadata {
+        status_code,
+        model,
+        provider,
+        error_type,
+        param,
+        code: WireField::Text(status_code.to_string()),
+        retry,
+        rate_limit_category: None,
+        rate_limit_dimension: None,
+        allowed_response_headers: BTreeMap::new(),
     }
 }
 
 fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
     let mut metadata = details.context.metadata(
         429,
-        WireField::text("throttling_error".to_owned()),
+        WireField::Text("throttling_error".to_owned()),
         WireField::Null,
     );
     metadata.rate_limit_category = Some(details.category);
@@ -259,64 +231,7 @@ fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
     metadata
 }
 
-fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
-    ErrorMetadata {
-        status_code: details.status_code,
-        model: None,
-        provider: details.provider.clone(),
-        error_type: WireField::Missing,
-        param: WireField::Missing,
-        code: WireField::text(details.status_code.to_string()),
-        retry: RetryMetadata {
-            max_retries: None,
-            num_retries: None,
-        },
-        rate_limit_category: Some(RateLimitCategory::LitellmRateLimit),
-        rate_limit_dimension: Some(RateLimitDimension::Budget),
-        allowed_response_headers: BTreeMap::new(),
-    }
-}
-
-fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
-    ErrorMetadata {
-        status_code: details.status_code,
-        model: None,
-        provider: None,
-        error_type: WireField::Missing,
-        param: WireField::Missing,
-        code: WireField::text(details.status_code.to_string()),
-        retry: RetryMetadata {
-            max_retries: None,
-            num_retries: None,
-        },
-        rate_limit_category: None,
-        rate_limit_dimension: None,
-        allowed_response_headers: BTreeMap::new(),
-    }
-}
-
-fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
-    ErrorMetadata {
-        status_code: 500,
-        model: Some(details.model.clone()),
-        provider: Some(details.provider.clone()),
-        error_type: WireField::Null,
-        param: WireField::Null,
-        code: WireField::text("500".to_owned()),
-        retry: RetryMetadata {
-            max_retries: None,
-            num_retries: None,
-        },
-        rate_limit_category: None,
-        rate_limit_dimension: None,
-        allowed_response_headers: BTreeMap::new(),
-    }
-}
-
-/// Transport-level failures a provider adapter wraps before they reach [`ErrorClass`].
-///
-/// The `#[source]` cause stays reachable to internal logging; [`TaxonomyError::classify`]
-/// only ever hands the client a bounded, betterlite-owned message.
+// the #[source] cause stays reachable for logging; classify() only ever hands the client a bounded message
 #[derive(Debug, thiserror::Error)]
 pub enum TaxonomyError {
     #[error("the request to {provider} timed out")]
@@ -349,23 +264,33 @@ impl TaxonomyError {
             Self::Timeout {
                 provider, model, ..
             } => ErrorClass::Timeout(Box::new(TimeoutDetails {
-                context: ErrorContext::new(self.to_string(), model.clone(), Some(provider.clone())),
+                context: ErrorContext {
+                    message: self.to_string(),
+                    model: model.clone(),
+                    provider: Some(provider.clone()),
+                    max_retries: None,
+                    num_retries: None,
+                },
                 original_status: None,
             })),
             Self::Transport {
                 provider, model, ..
-            } => ErrorClass::ApiConnection(Box::new(ErrorContext::new(
-                self.to_string(),
-                model.clone(),
-                Some(provider.clone()),
-            ))),
+            } => ErrorClass::ApiConnection(Box::new(ErrorContext {
+                message: self.to_string(),
+                model: model.clone(),
+                provider: Some(provider.clone()),
+                max_retries: None,
+                num_retries: None,
+            })),
             Self::Parse {
                 provider, model, ..
-            } => ErrorClass::ApiResponseValidation(Box::new(ErrorContext::new(
-                self.to_string(),
-                model.clone(),
-                Some(provider.clone()),
-            ))),
+            } => ErrorClass::ApiResponseValidation(Box::new(ErrorContext {
+                message: self.to_string(),
+                model: model.clone(),
+                provider: Some(provider.clone()),
+                max_retries: None,
+                num_retries: None,
+            })),
         }
     }
 }

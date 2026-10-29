@@ -1178,6 +1178,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-lens",

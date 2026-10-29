@@ -2,24 +2,25 @@
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
-use std::fmt;
 
 use rstest::rstest;
 
-use super::{
-    ApiDetails, BudgetExceededDetails, ErrorClass, ErrorContext, GuardrailDetails,
-    MidStreamFallbackDetails, RateLimitDetails, SchemaValidationDetails, TaxonomyError,
-    TimeoutDetails,
+use super::details::{
+    ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
+    RateLimitDetails, SchemaValidationDetails, TimeoutDetails,
 };
+use super::{ErrorClass, ErrorContext, TaxonomyError};
 use crate::envelope::WireField;
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
 fn context(message: &str) -> ErrorContext {
-    ErrorContext::new(
-        message.to_owned(),
-        Some("gpt-4".to_owned()),
-        Some("openai".to_owned()),
-    )
+    ErrorContext {
+        message: message.to_owned(),
+        model: Some("gpt-4".to_owned()),
+        provider: Some("openai".to_owned()),
+        max_retries: None,
+        num_retries: None,
+    }
 }
 
 #[rstest]
@@ -44,20 +45,20 @@ fn context(message: &str) -> ErrorContext {
 #[case::internal_server_sets_a_literal_type(
     ErrorClass::InternalServer(Box::new(context("boom"))),
     500,
-    WireField::text("internal_server_error".to_owned()),
+    WireField::Text("internal_server_error".to_owned()),
     WireField::Null
 )]
-#[case::unsupported_params_never_sets_type_or_param(
+#[case::unsupported_params_never_sets_type_but_param_keeps_its_class_default(
     ErrorClass::UnsupportedParams(Box::new(context("unknown kwarg"))),
     400,
-    WireField::Missing,
-    WireField::Missing
+    WireField::MISSING,
+    WireField::Null
 )]
 #[case::unclassified_is_a_bare_exception(
     ErrorClass::Unclassified(Box::new(context("caught something unexpected"))),
     500,
-    WireField::Missing,
-    WireField::Missing
+    WireField::MISSING,
+    WireField::MISSING
 )]
 #[case::timeout_defaults_to_408(
     ErrorClass::Timeout(Box::new(TimeoutDetails {
@@ -85,7 +86,7 @@ fn context(message: &str) -> ErrorContext {
         headers: BTreeMap::new(),
     })),
     429,
-    WireField::text("throttling_error".to_owned()),
+    WireField::Text("throttling_error".to_owned()),
     WireField::Null
 )]
 #[case::api_error_keeps_its_given_status(
@@ -107,7 +108,7 @@ fn error_types_error_type_tests_behavior(
     assert_eq!(metadata.status_code, expected_status);
     assert_eq!(metadata.error_type, expected_type);
     assert_eq!(metadata.param, expected_param);
-    assert_eq!(metadata.code, WireField::text(expected_status.to_string()));
+    assert_eq!(metadata.code, WireField::Text(expected_status.to_string()));
 }
 
 #[test]
@@ -161,7 +162,7 @@ fn budget_exceeded_uses_the_configured_status_and_marks_the_budget_dimension() {
     }));
     let metadata = class.metadata();
     assert_eq!(metadata.status_code, 422);
-    assert_eq!(metadata.error_type, WireField::Missing);
+    assert_eq!(metadata.error_type, WireField::MISSING);
     assert_eq!(
         metadata.rate_limit_category,
         Some(RateLimitCategory::LitellmRateLimit)
@@ -182,8 +183,8 @@ fn guardrail_raised_never_sets_type_or_param() {
     }));
     let metadata = class.metadata();
     assert_eq!(metadata.status_code, 400);
-    assert_eq!(metadata.error_type, WireField::Missing);
-    assert_eq!(metadata.param, WireField::Missing);
+    assert_eq!(metadata.error_type, WireField::MISSING);
+    assert_eq!(metadata.param, WireField::MISSING);
 }
 
 #[test]
@@ -222,16 +223,9 @@ fn json_schema_validation_keeps_the_model_and_provider_identity() {
     assert_eq!(metadata.provider, Some("openai".to_owned()));
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 struct UpstreamFailure(&'static str);
-
-impl fmt::Display for UpstreamFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
-impl StdError for UpstreamFailure {}
 
 #[test]
 fn taxonomy_timeout_preserves_its_source() {

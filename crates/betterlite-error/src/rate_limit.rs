@@ -1,9 +1,6 @@
-//! Port of `litellm/exceptions.py` `RateLimitErrorCategory` and `RateLimitType`.
-
 mod tests;
 
-/// Who rate-limited the request: the upstream vendor or one of `LiteLLM`'s own limiters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitCategory {
     VendorRateLimit,
@@ -24,8 +21,7 @@ impl RateLimitCategory {
     }
 }
 
-/// Which limit dimension was exceeded, orthogonal to [`RateLimitCategory`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitDimension {
     Requests,

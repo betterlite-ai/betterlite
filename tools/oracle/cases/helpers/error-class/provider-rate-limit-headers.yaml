@@ -1,0 +1,19 @@
+kind: helper
+name: error-class-provider-rate-limit-headers
+call:
+  error_class:
+    family: rate_limit
+    context:
+      message: slow down
+      model: gpt-4
+      provider: openai
+    category: vendor_rate_limit
+    dimension: requests
+    headers:
+      retry-after: "12"
+      x-ratelimit-limit-tokens: "500"
+      set-cookie: a=b
+      llm_provider-set-cookie: a=b
+      access-control-allow-origin: "*"
+env: {}
+compare: {ignore: []}
