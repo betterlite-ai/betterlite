@@ -14,7 +14,10 @@ use rstest::rstest;
 #[case::absent_token(r#"{"mode":"extract_token","token":null}"#, "")]
 fn jinja_prompts_behavior_tests_behavior(#[case] wire: &str, #[case] expected: &str) {
     let input: Input = serde_json::from_str(wire).unwrap();
-    assert_eq!(Op::run(&input).unwrap(), serde_json::to_value(expected).unwrap());
+    assert_eq!(
+        Op::run(&input).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
 }
 
 #[test]

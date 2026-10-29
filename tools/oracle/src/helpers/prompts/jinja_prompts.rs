@@ -1,7 +1,9 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_prompts::builtin::Message;
-use betterlite_prompts::jinja::{LocalTemplate, RenderError, TokenValue, extract_token_value, hf_chat_template};
-use chrono::{TimeZone, Utc};
+use betterlite_prompts::jinja::{
+    LocalTemplate, RenderError, TokenValue, extract_token_value, hf_chat_template,
+};
+use chrono::{TimeZone as _, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 

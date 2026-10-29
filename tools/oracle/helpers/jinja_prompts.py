@@ -1,9 +1,11 @@
 from typing import TypeAlias, cast
 
 from jinja2.sandbox import ImmutableSandboxedEnvironment
-from litellm.litellm_core_utils.prompt_templates.factory import _render_chat_template
+from litellm.litellm_core_utils.prompt_templates.factory import (
+    _render_chat_template,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
+)
 from litellm.litellm_core_utils.prompt_templates.huggingface_template_handler import (
-    _extract_token_value,
+    _extract_token_value,  # pyright: ignore[reportPrivateUsage]
     strftime_now,
 )
 
@@ -17,8 +19,8 @@ class InputError(ValueError):
 
 def build_env() -> ImmutableSandboxedEnvironment:
     env = ImmutableSandboxedEnvironment()
-    env.globals["raise_exception"] = lambda msg: Exception(f"Error message - {msg}")
-    env.globals["strftime_now"] = strftime_now
+    env.globals["raise_exception"] = lambda msg: Exception(f"Error message - {msg}")  # pyright: ignore[reportArgumentType]
+    env.globals["strftime_now"] = strftime_now  # pyright: ignore[reportArgumentType]
     return env
 
 
