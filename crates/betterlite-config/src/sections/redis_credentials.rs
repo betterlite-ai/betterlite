@@ -4,6 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::{resolve_secret, resolve_string};
 use crate::sections::Section;
 
 #[derive(Debug, Default, Deserialize)]
@@ -101,37 +102,64 @@ fn resolve_connection<L>(
 where
     L: EnvironmentLookup,
 {
-    let configured_url = settings
-        .url
-        .clone()
-        .or_else(|| lookup.lookup("REDIS_URL").map(SecretString::from));
+    let configured_url = resolve_secret_opt(
+        settings
+            .url
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned()),
+        "litellm_settings.cache_params.url",
+        lookup,
+        "REDIS_URL",
+    )?;
     Ok(match provider {
-        Some(Provider::Azure(azure)) => (
-            configured_url
-                .map(|value| url_without_userinfo(&value))
-                .transpose()?,
-            azure.username.clone(),
-            None,
-        ),
-        Some(_) => (
-            configured_url
-                .map(|value| url_without_userinfo(&value))
-                .transpose()?,
-            None,
-            None,
-        ),
+        Some(Provider::Azure(azure)) => (stripped_url(configured_url)?, azure.username.clone(), None),
+        Some(_) => (stripped_url(configured_url)?, None, None),
         None => {
-            let username = settings
-                .username
-                .clone()
-                .or_else(|| lookup.lookup("REDIS_USERNAME"));
-            let password = settings
-                .password
-                .clone()
-                .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
+            let username = resolve_string_opt(
+                settings.username.clone(),
+                "litellm_settings.cache_params.username",
+                lookup,
+            )?
+            .or_else(|| lookup.lookup("REDIS_USERNAME"));
+            let password = resolve_secret_opt(
+                settings
+                    .password
+                    .as_ref()
+                    .map(|secret| secret.expose_secret().to_owned()),
+                "litellm_settings.cache_params.password",
+                lookup,
+                "REDIS_PASSWORD",
+            )?;
             (configured_url, username, password)
         }
     })
+}
+
+pub(super) fn resolve_secret_opt<L>(
+    configured: Option<String>,
+    path: &str,
+    lookup: &L,
+    env_name: &str,
+) -> Result<Option<SecretString>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let resolved = resolve_secret(configured, path, lookup)?;
+    Ok(resolved.or_else(|| lookup.lookup(env_name).map(SecretString::from)))
+}
+
+fn resolve_string_opt<L>(
+    value: Option<String>,
+    path: &str,
+    lookup: &L,
+) -> Result<Option<String>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(text) = value else {
+        return Ok(None);
+    };
+    resolve_string(text, path, lookup).map(Some)
 }
 
 fn environment_snapshot<L>(lookup: &L) -> BTreeMap<String, bool>
@@ -166,19 +194,27 @@ where
         .collect()
 }
 
-fn ssl_enabled<L>(settings: &RawSettings, lookup: &L) -> bool
+fn config_or_environment_flag<L>(
+    configured: Option<&ScalarBool>,
+    lookup: &L,
+    variable: &str,
+) -> bool
 where
     L: EnvironmentLookup,
 {
-    let configured = settings.ssl.as_ref();
-    configured.map_or_else(
-        || {
-            lookup
-                .lookup("REDIS_SSL")
-                .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)))
-        },
-        coerces_to_true,
-    )
+    let Some(value) = configured else {
+        return lookup
+            .lookup(variable)
+            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)));
+    };
+    coerces_to_true(value)
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+    match value {
+        Some(text) if !text.is_empty() => Some(text),
+        _ => None,
+    }
 }
 
 fn coerces_to_true(setting: &ScalarBool) -> bool {
@@ -190,16 +226,33 @@ fn coerces_to_true(setting: &ScalarBool) -> bool {
     }
 }
 
-fn url_without_userinfo(url: &SecretString) -> Result<SecretString, ConfigError> {
-    let mut parsed = url::Url::parse(url.expose_secret()).map_err(|_parse_error| invalid_url())?;
-    parsed.set_username("").map_err(|()| invalid_url())?;
-    parsed.set_password(None).map_err(|()| invalid_url())?;
-    Ok(SecretString::from(parsed.to_string()))
+fn stripped_url(configured_url: Option<SecretString>) -> Result<Option<SecretString>, ConfigError> {
+    let Some(value) = configured_url else {
+        return Ok(None);
+    };
+    url_without_userinfo(&value).map(Some)
 }
 
-fn invalid_url() -> ConfigError {
-    let path = "litellm_settings.cache_params.url".to_owned();
-    ConfigError::InvalidScalar { path, value: false }
+fn url_without_userinfo(url: &SecretString) -> Result<SecretString, ConfigError> {
+    let mut parsed = url::Url::parse(url.expose_secret()).map_err(|_parse_error| {
+        ConfigError::InvalidScalar {
+            path: "litellm_settings.cache_params.url".to_owned(),
+            value: false,
+        }
+    })?;
+    parsed
+        .set_username("")
+        .map_err(|()| ConfigError::InvalidScalar {
+            path: "litellm_settings.cache_params.url".to_owned(),
+            value: false,
+        })?;
+    parsed
+        .set_password(None)
+        .map_err(|()| ConfigError::InvalidScalar {
+            path: "litellm_settings.cache_params.url".to_owned(),
+            value: false,
+        })?;
+    Ok(SecretString::from(parsed.to_string()))
 }
 
 #[path = "redis_credentials/aws.rs"]

@@ -3,7 +3,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use super::aws::build_aws;
 use super::azure::resolve_azure;
 use super::gcp::build_gcp;
-use super::{Provider, ProviderWarning, RawSettings, ScalarBool, coerces_to_true};
+use super::{Provider, ProviderWarning, RawSettings, config_or_environment_flag, non_empty};
 
 pub(super) fn resolve_providers<L>(
     settings: &RawSettings,
@@ -13,11 +13,9 @@ where
     L: EnvironmentLookup,
 {
     let mut warnings = Vec::new();
-    let gcp = build_gcp(settings, lookup);
+    let gcp = build_gcp(settings, lookup)?;
 
-    let azure_ad_token = settings
-        .azure_redis_ad_token
-        .clone()
+    let azure_ad_token = non_empty(settings.azure_redis_ad_token.clone())
         .or_else(|| lookup.lookup("REDIS_AZURE_AD_TOKEN"));
     let azure_enabled = azure_ad_token.is_some_and(|value| value.eq_ignore_ascii_case("true"));
     let azure = resolve_provider(
@@ -25,10 +23,11 @@ where
         &[(gcp.is_some(), ProviderWarning::GcpOutranksAzure)],
         &mut warnings,
         || resolve_azure(settings, lookup),
-    );
+    )
+    .transpose()?;
 
     let aws = resolve_provider(
-        aws_iam_enabled(settings, lookup),
+        config_or_environment_flag(settings.aws_iam_auth.as_ref(), lookup, "REDIS_AWS_IAM_AUTH"),
         &[
             (gcp.is_some(), ProviderWarning::GcpOutranksAws),
             (
@@ -49,21 +48,6 @@ where
     };
 
     Ok((resolved, warnings))
-}
-
-fn aws_iam_enabled<L>(settings: &RawSettings, lookup: &L) -> bool
-where
-    L: EnvironmentLookup,
-{
-    let configured = settings.aws_iam_auth.as_ref();
-    configured.map_or_else(
-        || {
-            lookup
-                .lookup("REDIS_AWS_IAM_AUTH")
-                .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value)))
-        },
-        coerces_to_true,
-    )
 }
 
 fn resolve_provider<T, B>(

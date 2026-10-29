@@ -1,12 +1,18 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
-use super::aws::AwsSettings;
-use super::azure::AzureCredential;
+use super::aws::{AwsCredentials, AwsCredentialsResolver, AwsSettings, ElastiCacheIamProvider};
+use super::azure::{
+    AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureToken, AzureTokenError,
+    AzureTokenFetcher,
+};
+use super::gcp::{Clock, GcpIamCredentialProvider, GcpTokenCache, GcpTokenError, GcpTokenFetcher};
 use super::{Provider, ProviderWarning};
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -333,4 +339,232 @@ fn environment_snapshot_reports_unset_names_as_false() {
     let settings = load("{}", BTreeMap::new());
     assert!(!settings.environment_snapshot["REDIS_GCP_SERVICE_ACCOUNT"]);
     assert!(!settings.environment_snapshot["AWS_REGION"]);
+}
+
+struct FakeClock {
+    now: Mutex<Instant>,
+}
+
+impl FakeClock {
+    fn new() -> Self {
+        Self {
+            now: Mutex::new(Instant::now()),
+        }
+    }
+
+    fn advance(&self, duration: Duration) {
+        let mut now = self.now.lock().unwrap();
+        *now = now.checked_add(duration).unwrap();
+    }
+}
+
+impl Clock for FakeClock {
+    fn now(&self) -> Instant {
+        *self.now.lock().unwrap()
+    }
+}
+
+struct CountingGcpFetcher {
+    calls: Mutex<Vec<()>>,
+}
+
+impl CountingGcpFetcher {
+    fn new() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn call_count(&self) -> usize {
+        self.calls.lock().unwrap().len()
+    }
+}
+
+impl GcpTokenFetcher for CountingGcpFetcher {
+    fn fetch(&self, service_account: &str) -> Result<String, GcpTokenError> {
+        let mut calls = self
+            .calls
+            .lock()
+            .map_err(|_poisoned| GcpTokenError::LockPoisoned)?;
+        calls.push(());
+        let count = calls.len();
+        drop(calls);
+        Ok(format!("{service_account}-token-{count}"))
+    }
+}
+
+#[test]
+fn gcp_token_cache_reuses_token_within_ttl_and_refetches_after_expiry() {
+    let clock = FakeClock::new();
+    let fetcher = CountingGcpFetcher::new();
+    let cache = GcpTokenCache::default();
+    let ttl = Duration::from_mins(55);
+
+    let first = cache
+        .get_or_fetch("account-a", ttl, &clock, &fetcher)
+        .unwrap();
+    let second = cache
+        .get_or_fetch("account-a", ttl, &clock, &fetcher)
+        .unwrap();
+    assert_eq!(first, second);
+    assert_eq!(fetcher.call_count(), 1);
+
+    clock.advance(ttl + Duration::from_secs(1));
+    let third = cache
+        .get_or_fetch("account-a", ttl, &clock, &fetcher)
+        .unwrap();
+    assert_ne!(first, third);
+    assert_eq!(fetcher.call_count(), 2);
+}
+
+#[test]
+fn gcp_token_cache_is_keyed_by_service_account() {
+    let clock = FakeClock::new();
+    let fetcher = CountingGcpFetcher::new();
+    let cache = GcpTokenCache::default();
+    let ttl = Duration::from_mins(55);
+
+    let first_account = cache
+        .get_or_fetch("account-a", ttl, &clock, &fetcher)
+        .unwrap();
+    let second_account = cache
+        .get_or_fetch("account-b", ttl, &clock, &fetcher)
+        .unwrap();
+    assert_ne!(first_account, second_account);
+    assert_eq!(fetcher.call_count(), 2);
+}
+
+#[test]
+fn gcp_iam_credential_provider_fetches_through_its_cache() {
+    let clock = FakeClock::new();
+    let fetcher = CountingGcpFetcher::new();
+    let provider = GcpIamCredentialProvider {
+        service_account: SecretString::from("redis-sa".to_owned()),
+        ttl: Duration::from_mins(55),
+        cache: Arc::new(GcpTokenCache::default()),
+    };
+    let token = provider.get_credentials(&clock, &fetcher).unwrap();
+    assert_eq!(token, "redis-sa-token-1");
+}
+
+struct StaticAwsCredentials;
+
+impl AwsCredentialsResolver for StaticAwsCredentials {
+    fn resolve(&self) -> Result<AwsCredentials, super::aws::ElastiCacheSigningError> {
+        Ok(AwsCredentials {
+            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_owned(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned(),
+            session_token: None,
+        })
+    }
+}
+
+#[test]
+fn elasticache_provider_signs_connect_url_for_the_configured_cache() {
+    let settings = AwsSettings {
+        user_name: "app".to_owned(),
+        cache_name: "cache.example".to_owned(),
+        region: "eu-west-1".to_owned(),
+        serverless: false,
+        token_ttl_seconds: 900,
+    };
+    let provider = ElastiCacheIamProvider { settings };
+    let (user_name, signed) = provider
+        .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
+        .unwrap();
+    assert_eq!(user_name, "app");
+    assert!(signed.starts_with("cache.example/?"));
+    assert!(signed.contains("Action=connect"));
+    assert!(signed.contains("User=app"));
+    assert!(signed.contains("X-Amz-Signature="));
+    assert!(signed.contains("X-Amz-Expires=900"));
+    assert!(!signed.contains("ResourceType"));
+}
+
+#[test]
+fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
+    let settings = AwsSettings {
+        user_name: "app".to_owned(),
+        cache_name: "cache".to_owned(),
+        region: "eu-west-1".to_owned(),
+        serverless: true,
+        token_ttl_seconds: 900,
+    };
+    let provider = ElastiCacheIamProvider { settings };
+    let (_user_name, signed) = provider
+        .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
+        .unwrap();
+    assert!(signed.contains("ResourceType=ServerlessCache"));
+}
+
+struct FixedAzureTokenFetcher {
+    token: String,
+    scopes_seen: Mutex<Vec<String>>,
+}
+
+impl FixedAzureTokenFetcher {
+    fn call_count(&self) -> usize {
+        self.scopes_seen.lock().unwrap().len()
+    }
+}
+
+impl AzureTokenFetcher for FixedAzureTokenFetcher {
+    fn fetch_token(
+        &self,
+        _credential: AzureCredential,
+        scope: &str,
+    ) -> Result<AzureToken, AzureTokenError> {
+        let mut scopes_seen =
+            self.scopes_seen
+                .lock()
+                .map_err(|_poisoned| AzureTokenError::Fetch {
+                    reason: "lock poisoned".to_owned(),
+                })?;
+        scopes_seen.push(scope.to_owned());
+        drop(scopes_seen);
+        Ok(AzureToken {
+            token: self.token.clone(),
+        })
+    }
+}
+
+#[test]
+fn azure_ad_provider_returns_username_and_token_from_its_fetcher() {
+    let fetcher = Arc::new(FixedAzureTokenFetcher {
+        token: "access-token".to_owned(),
+        scopes_seen: Mutex::new(Vec::new()),
+    });
+    let cloned_fetcher = Arc::clone(&fetcher);
+    let fetcher_handle: Arc<dyn AzureTokenFetcher> = cloned_fetcher;
+    let provider = AzureAdCredentialProvider {
+        credential: AzureCredential::ManagedIdentity,
+        fetcher: fetcher_handle,
+        username: Some("app".to_owned()),
+    };
+    let (username, token) = provider.get_credentials().unwrap();
+    assert_eq!(username, Some("app".to_owned()));
+    assert_eq!(token, "access-token");
+    assert_eq!(
+        fetcher.scopes_seen.lock().unwrap().as_slice(),
+        [AZURE_REDIS_SCOPE]
+    );
+}
+
+#[test]
+fn azure_ad_provider_reuses_the_same_fetcher_across_calls() {
+    let fetcher = Arc::new(FixedAzureTokenFetcher {
+        token: "access-token".to_owned(),
+        scopes_seen: Mutex::new(Vec::new()),
+    });
+    let cloned_fetcher = Arc::clone(&fetcher);
+    let fetcher_handle: Arc<dyn AzureTokenFetcher> = cloned_fetcher;
+    let provider = AzureAdCredentialProvider {
+        credential: AzureCredential::Default,
+        fetcher: fetcher_handle,
+        username: None,
+    };
+    provider.get_credentials().unwrap();
+    provider.get_credentials().unwrap();
+    assert_eq!(fetcher.call_count(), 2);
+    assert_eq!(Arc::strong_count(&fetcher), 2);
 }

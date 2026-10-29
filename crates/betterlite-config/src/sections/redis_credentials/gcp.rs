@@ -1,8 +1,14 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use secrecy::SecretString;
+use thiserror::Error;
 
-use crate::loader::EnvironmentLookup;
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 
-use super::{RawSettings, ssl_enabled};
+use super::{RawSettings, config_or_environment_flag};
 
 const GCP_TOKEN_TTL_SECONDS: u64 = 3300;
 
@@ -11,25 +17,158 @@ pub struct GcpSettings {
     pub service_account: SecretString,
     pub ssl_ca_certs: Option<String>,
     pub token_ttl_seconds: u64,
+    pub token_cache: Arc<GcpTokenCache>,
 }
 
-pub(super) fn build_gcp<L>(settings: &RawSettings, lookup: &L) -> Option<GcpSettings>
+pub trait Clock: Send + Sync {
+    fn now(&self) -> Instant;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+pub trait GcpTokenFetcher: Send + Sync {
+    fn fetch(&self, service_account: &str) -> Result<String, GcpTokenError>;
+}
+
+#[derive(Debug, Error)]
+pub enum GcpTokenError {
+    #[error("failed to generate a GCP IAM access token: {reason}")]
+    Fetch { reason: String },
+    #[error("the GCP token cache lock was poisoned")]
+    LockPoisoned,
+}
+
+#[derive(Debug)]
+struct CachedToken {
+    token: String,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Default)]
+pub struct GcpTokenCache {
+    entries: Mutex<HashMap<String, CachedToken>>,
+}
+
+impl GcpTokenCache {
+    pub fn get_or_fetch(
+        &self,
+        service_account: &str,
+        ttl: Duration,
+        clock: &dyn Clock,
+        fetcher: &dyn GcpTokenFetcher,
+    ) -> Result<String, GcpTokenError> {
+        let now = clock.now();
+        if let Some(token) = self.fresh_token(service_account, now)? {
+            return Ok(token);
+        }
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_poisoned| GcpTokenError::LockPoisoned)?;
+        if let Some(cached) = entries.get(service_account)
+            && now < cached.expires_at
+        {
+            let token = cached.token.clone();
+            drop(entries);
+            return Ok(token);
+        }
+        let token = fetcher.fetch(service_account)?;
+        entries.insert(
+            service_account.to_owned(),
+            CachedToken {
+                token: token.clone(),
+                expires_at: now.checked_add(ttl).unwrap_or(now),
+            },
+        );
+        drop(entries);
+        Ok(token)
+    }
+
+    fn fresh_token(
+        &self,
+        service_account: &str,
+        now: Instant,
+    ) -> Result<Option<String>, GcpTokenError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_poisoned| GcpTokenError::LockPoisoned)?;
+        Ok(entries
+            .get(service_account)
+            .filter(|cached| now < cached.expires_at)
+            .map(|cached| cached.token.clone()))
+    }
+}
+
+pub struct GcpIamCredentialProvider {
+    pub service_account: SecretString,
+    pub ttl: Duration,
+    pub cache: Arc<GcpTokenCache>,
+}
+
+impl GcpIamCredentialProvider {
+    pub fn get_credentials(
+        &self,
+        clock: &dyn Clock,
+        fetcher: &dyn GcpTokenFetcher,
+    ) -> Result<String, GcpTokenError> {
+        use secrecy::ExposeSecret as _;
+        self.cache.get_or_fetch(
+            self.service_account.expose_secret(),
+            self.ttl,
+            clock,
+            fetcher,
+        )
+    }
+}
+
+pub(super) fn build_gcp<L>(
+    settings: &RawSettings,
+    lookup: &L,
+) -> Result<Option<GcpSettings>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let gcp_service_account = settings
+    let configured_service_account = settings
         .gcp_service_account
         .clone()
         .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup("REDIS_GCP_SERVICE_ACCOUNT"));
-    let gcp_ssl_ca_certs = settings
+        .map(|value| {
+            resolve_string(
+                value,
+                "litellm_settings.cache_params.gcp_service_account",
+                lookup,
+            )
+        })
+        .transpose()?;
+    let gcp_service_account =
+        configured_service_account.or_else(|| lookup.lookup("REDIS_GCP_SERVICE_ACCOUNT"));
+    let configured_ssl_ca_certs = settings
         .gcp_ssl_ca_certs
         .clone()
-        .or_else(|| lookup.lookup("REDIS_GCP_SSL_CA_CERTS"));
-    let ssl = ssl_enabled(settings, lookup);
-    gcp_service_account.map(|account| GcpSettings {
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            resolve_string(
+                value,
+                "litellm_settings.cache_params.gcp_ssl_ca_certs",
+                lookup,
+            )
+        })
+        .transpose()?;
+    let gcp_ssl_ca_certs =
+        configured_ssl_ca_certs.or_else(|| lookup.lookup("REDIS_GCP_SSL_CA_CERTS"));
+    let ssl = config_or_environment_flag(settings.ssl.as_ref(), lookup, "REDIS_SSL");
+    Ok(gcp_service_account.map(|account| GcpSettings {
         service_account: SecretString::from(account),
         ssl_ca_certs: gcp_ssl_ca_certs.filter(|_| ssl),
         token_ttl_seconds: GCP_TOKEN_TTL_SECONDS,
-    })
+        token_cache: Arc::new(GcpTokenCache::default()),
+    }))
 }
