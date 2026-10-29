@@ -1,0 +1,11 @@
+kind: helper
+name: titan-image-body
+call:
+  bedrock_other_image_models:
+    titan_image_body:
+      non_default: {size: "512x768", n: 3, quality: hd}
+      optional_params: {negativeText: "no cats, please", taskType: TEXT_IMAGE}
+      text: a dog in a park
+env: {}
+compare:
+  ignore: []
