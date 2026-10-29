@@ -55,6 +55,8 @@ settings:
     - Cargo.lock
     - "**/fixtures/**"
     - "**/snapshots/**"
+    - "**/tests.rs"
+    - "**/tests/**"
     - "**/fuzz/corpus/**"
     - tools/oracle/cases/**
     - tools/oracle/litellm/uv.lock
