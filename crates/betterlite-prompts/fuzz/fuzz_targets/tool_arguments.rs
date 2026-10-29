@@ -1,8 +1,9 @@
 #![no_main]
 
-use betterlite_prompts::builtin::{
-    Calls, Content, Message, ToolCall, ToolFunction, ollama::ollama,
+use betterlite_prompts::arguments::concatenated::{
+    salvage_concatenated_tool_arguments, split_concatenated_json_objects,
 };
+use betterlite_prompts::arguments::parse::parse_tool_call_arguments;
 use libfuzzer_sys::fuzz_target;
 use std::str;
 
@@ -11,21 +12,8 @@ fuzz_target!(|bytes: &[u8]| {
         return;
     }
     if let Ok(arguments) = str::from_utf8(bytes) {
-        let messages = [Message {
-            role: "assistant".to_owned(),
-            content: Content::Text(String::new()),
-            tool_calls: Calls::Present(vec![ToolCall {
-                id: "id".to_owned(),
-                kind: "function".to_owned(),
-                function: ToolFunction {
-                    name: "f".to_owned(),
-                    arguments: arguments.to_owned(),
-                    extra: Default::default(),
-                },
-                extra: Default::default(),
-            }]),
-            extra: Default::default(),
-        }];
-        drop(ollama("model", &messages));
+        drop(parse_tool_call_arguments(arguments, None, None));
+        drop(split_concatenated_json_objects(arguments));
+        drop(salvage_concatenated_tool_arguments(arguments));
     }
 });
