@@ -26,7 +26,7 @@ impl crate::helpers::Helper for Op {
                 Ok(params_value(&reader_shareable_params(params)))
             }
             Input::ConnectionParamsFromUrl { url } => run_connection_params_from_url(url),
-            Input::TokenRefreshParamsFromUrl { url } => run_token_refresh_params_from_url(url),
+            Input::TokenRefreshParamsFromUrl { url } => run_token_refresh_from_url(url),
             Input::UnsupportedDbScheme { database_url } => run_unsupported_db_scheme(database_url),
             Input::UnsupportedDbSchemeMessage { env_var, scheme } => Ok(serde_json::Value::String(
                 unsupported_db_scheme_message(env_var, scheme),
@@ -80,21 +80,24 @@ fn run_append_query_params(
 }
 
 fn run_connection_params_from_url(url: &str) -> crate::helpers::HelperResult {
-    value_error(connection_params_from_url(url), |params| {
-        params_value(&params)
-    })
+    match connection_params_from_url(url) {
+        Ok(params) => Ok(params_value(&params)),
+        Err(error) => Err(helper_error("ValueError", error.to_string())),
+    }
 }
 
-fn run_token_refresh_params_from_url(url: &str) -> crate::helpers::HelperResult {
-    value_error(token_refresh_params_from_url(url), |params| {
-        params_value(&params)
-    })
+fn run_token_refresh_from_url(url: &str) -> crate::helpers::HelperResult {
+    match token_refresh_params_from_url(url) {
+        Ok(params) => Ok(params_value(&params)),
+        Err(error) => Err(helper_error("ValueError", error.to_string())),
+    }
 }
 
 fn run_unsupported_db_scheme(database_url: &str) -> crate::helpers::HelperResult {
-    value_error(unsupported_db_scheme(database_url), |scheme| {
-        scheme.map_or(serde_json::Value::Null, serde_json::Value::String)
-    })
+    match unsupported_db_scheme(database_url) {
+        Ok(scheme) => Ok(scheme.map_or(serde_json::Value::Null, serde_json::Value::String)),
+        Err(error) => Err(helper_error("ValueError", error.to_string())),
+    }
 }
 
 fn value_error<T>(

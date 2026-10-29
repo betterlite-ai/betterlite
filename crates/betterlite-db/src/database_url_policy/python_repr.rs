@@ -1,5 +1,5 @@
-// Scientific notation only outside (-4, 16] on the decimal point, matching CPython's format_float_short threshold.
 pub(super) fn format_float(value: f64) -> String {
+    // Scientific notation only outside (-4, 16] on the decimal point, matching CPython's format_float_short threshold.
     if value.is_nan() {
         return "nan".to_owned();
     }
