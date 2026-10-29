@@ -91,11 +91,22 @@ fn mcp_output_matches_nulls(#[case] raw: &str, #[case] expected: &str, #[case] i
 
 #[test]
 fn mcp_object_result_is_python_json_dumps() {
-    let item: Item =
-        serde_json::from_str(r#"{"type":"mcp_tool_call","result":{"ok":true,"n":1}}"#).unwrap();
-    let projection = super::stream::tool_projection(&item);
-    assert_eq!(projection.output, r#"{"ok": true, "n": 1}"#);
-    assert!(!projection.is_error);
+    let mut state = CodexStreamState::default();
+    let line: JsonObject = serde_json::from_str(
+        r#"{"type":"item.completed","item":{"id":"tool-1","type":"mcp_tool_call","result":{"ok":true,"n":1}}}"#,
+    )
+    .unwrap();
+    let events = CodexHarnessConfig.transform_stream_line(&line, &mut state);
+    let Some(Event::ToolResult {
+        output, is_error, ..
+    }) = events.get(1)
+    else {
+        panic!("expected a ToolResult event, got {events:?}");
+    };
+    // the line arrives as a JsonObject (a BTreeMap), so the result object's keys are
+    // already sorted by the time they reach json.dumps; see docs/deviations/B4835.yaml
+    assert_eq!(output, r#"{"n": 1, "ok": true}"#);
+    assert!(!is_error);
 }
 
 #[test]

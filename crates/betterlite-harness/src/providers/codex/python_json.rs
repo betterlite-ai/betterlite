@@ -4,6 +4,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Number;
 
+// crate::payloads::python_json has the same formatter, but OrderedJson and python_json_text
+// there are pub(super) to payloads, and widening that is outside this task's scope.
 // mirrors how json.loads keeps a dict in written order and json.dumps writes it back out
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -58,6 +60,8 @@ fn write_escaped_char(encoded: &mut String, character: char) {
         '\n' => encoded.push_str("\\n"),
         '\r' => encoded.push_str("\\r"),
         '\t' => encoded.push_str("\\t"),
+        '\u{8}' => encoded.push_str("\\b"),
+        '\u{c}' => encoded.push_str("\\f"),
         plain if plain.is_ascii() && !plain.is_ascii_control() => encoded.push(plain),
         other => write_unicode_escape(encoded, other),
     }

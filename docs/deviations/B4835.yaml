@@ -18,3 +18,10 @@ deviations:
          value with the same name disappears without notice. The no-silent-drops rule in this repository
          forbids an earlier entry being overwritten without saying so."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L233
+  - what: "An mcp_tool_call result object comes out of ToolResult.output with its keys sorted
+         (such as {\"n\": 1, \"ok\": true}), not in the order the JSONL line wrote them."
+    why: "transform_stream_line receives each line as a JsonObject, a BTreeMap defined in
+         crate::types outside this task's scope, so key order is already gone by the time the
+         result object reaches json.dumps. LiteLLM's json.dumps(result) writes a dict in
+         insertion order, so a caller relying on that order sees a different string."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L117
