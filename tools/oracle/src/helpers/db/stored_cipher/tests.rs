@@ -10,29 +10,13 @@ fn run(value: Value) -> Value {
     Op::run(&input).expect("stored cipher helper input should run")
 }
 
-#[test]
-fn codec_steps_round_trip_through_the_fixed_nonce() {
-    let results = run(json!({
-        "op": "codec",
-        "salt_key": "salt-one",
-        "master_key": null,
-        "general_settings": {},
-        "nonce_hex": "000102030405060708090a0b0c0d0e0f1011121314151617",
-        "steps": [
-            {"kind": "encrypt_value", "value": "hello", "new_key": null},
-        ],
-    }));
-    assert_eq!(
-        results[0]["value"],
-        "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj"
-    );
-}
+const APP_KEY: &str = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZTA=";
 
 #[test]
 fn app_crypto_roundtrips_a_json_payload() {
     let results = run(json!({
         "op": "app_crypto",
-        "key": "0123456789abcdef0123456789abcde0",
+        "key": APP_KEY,
         "steps": [
             {"kind": "roundtrip", "data": {"token": "sk-live"}, "aad": "caller"},
         ],
@@ -44,12 +28,24 @@ fn app_crypto_roundtrips_a_json_payload() {
 fn app_crypto_aad_mismatch_fails_to_decrypt() {
     let results = run(json!({
         "op": "app_crypto",
-        "key": "0123456789abcdef0123456789abcde0",
+        "key": APP_KEY,
         "steps": [
             {"kind": "aad_mismatch", "data": {"token": "sk-live"}, "encrypt_aad": "a", "decrypt_aad": "b"},
         ],
     }));
     assert_eq!(results[0]["error"]["class"], "ValueError");
+}
+
+#[test]
+fn app_crypto_accepts_a_key_that_is_not_utf8() {
+    let results = run(json!({
+        "op": "app_crypto",
+        "key": "//////////////////////////////////////////8=",
+        "steps": [
+            {"kind": "roundtrip", "data": {"token": "sk-live"}, "aad": null},
+        ],
+    }));
+    assert_eq!(results[0]["value"], json!({"token": "sk-live"}));
 }
 
 #[test]

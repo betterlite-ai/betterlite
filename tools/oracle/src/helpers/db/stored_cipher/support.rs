@@ -46,19 +46,6 @@ pub(super) struct KeySource<'input> {
     pub(super) general_settings: Option<&'input Value>,
 }
 
-pub(super) fn key_source<'input>(
-    salt_key: Option<&'input String>,
-    master_key: Option<&'input String>,
-    general_settings: Option<&'input Value>,
-) -> KeySource<'input> {
-    let salt = salt_key.map(String::as_str);
-    KeySource {
-        salt_key: salt,
-        master_key: master_key.map(String::as_str),
-        general_settings,
-    }
-}
-
 fn load_cipher_settings(source: &KeySource<'_>) -> Option<CipherSettings> {
     let mut general = match source.general_settings {
         Some(Value::Object(settings)) => settings.clone(),

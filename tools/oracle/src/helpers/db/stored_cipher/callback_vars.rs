@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 
-use betterlite_secrets::callback::{decrypt_callback_vars, encrypt_callback_vars};
+use betterlite_secrets::callback::{
+    decrypt_callback_vars, encrypt_callback_vars, is_sensitive_callback_key,
+};
 use betterlite_secrets::secret_codec::StoredCipher;
 use serde_json::Value;
 
@@ -13,6 +15,7 @@ use crate::helpers::HelperResult;
 pub(crate) enum CallbackStep {
     Encrypt { metadata: Value },
     Decrypt { metadata: Value },
+    Sensitive { key: String },
 }
 
 pub(super) fn run_callback_vars(
@@ -43,7 +46,11 @@ fn call_callback(
     step: &CallbackStep,
 ) -> Value {
     match step {
-        CallbackStep::Encrypt { metadata } => encrypt_callback_vars(metadata, cipher, extra),
+        // The pinned encrypt_callback_vars/decrypt_callback_vars never forward an extra set.
+        CallbackStep::Encrypt { metadata } => {
+            encrypt_callback_vars(metadata, cipher, &BTreeSet::new())
+        }
         CallbackStep::Decrypt { metadata } => decrypt_callback_vars(metadata, cipher),
+        CallbackStep::Sensitive { key } => Value::Bool(is_sensitive_callback_key(key, extra)),
     }
 }

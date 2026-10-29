@@ -1166,6 +1166,7 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-bedrock",
