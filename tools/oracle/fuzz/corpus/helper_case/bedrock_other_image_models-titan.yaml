@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-other-image-models-titan
+call:
+  bedrock_other_image_models:
+    titan_image_body:
+      non_default: {size: "512x512", n: 2, quality: hd}
+      optional_params: {}
+      text: a cat on a mat
+env: {}
+compare:
+  ignore: []
