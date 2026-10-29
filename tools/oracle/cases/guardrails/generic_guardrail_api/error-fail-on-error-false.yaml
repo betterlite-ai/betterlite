@@ -1,5 +1,10 @@
 kind: helper
 name: error-fail-on-error-false
-call: {b3771: {metadata: {user_api_key_alias: alias}}}
+call:
+  b3771:
+    generic_call:
+      unreachable_fallback: fail_closed
+      fail_on_error: false
+      answer: {status: 500, headers: {}, body: {}}
 env: {}
 compare: {ignore: []}

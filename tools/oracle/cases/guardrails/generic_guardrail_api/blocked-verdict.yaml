@@ -1,5 +1,8 @@
 kind: helper
 name: blocked-verdict
-call: {b3771: {action: BLOCK, score: 0.5}}
+call:
+  b3771:
+    generic_call:
+      answer: {status: 200, headers: {}, body: {action: BLOCKED, blocked_reason: "nope"}}
 env: {}
-compare: {ignore: [{pointer: /error, why: "betterlite reports a typed provider error"}]}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

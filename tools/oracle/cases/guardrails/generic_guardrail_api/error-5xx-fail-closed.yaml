@@ -1,5 +1,10 @@
 kind: helper
 name: error-5xx-fail-closed
-call: {b3771: {metadata: {user_api_key_alias: alias}}}
+call:
+  b3771:
+    generic_call:
+      unreachable_fallback: fail_closed
+      fail_on_error: true
+      answer: {status: 502, headers: {}, body: {}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

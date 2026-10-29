@@ -1,11 +1,25 @@
-use std::collections::BTreeMap;
+use std::net::TcpListener;
+use std::time::Duration;
 
-use betterlite_guardrails::generic_guardrail_api::extract_user_api_key_metadata;
-use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::generic_guardrail_api::{
+    GenericGuardrailAPI, GenericGuardrailAPIError, GenericGuardrailAPITransport,
+    extract_user_api_key_metadata,
+};
+use betterlite_guardrails::generic_guardrail_contracts::{
+    GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPISettings,
+    GuardrailInputType, StreamingTransformMode, UnreachableFallback,
+};
 use betterlite_guardrails::grayswan::wire::GraySwanResponse;
-use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
+use betterlite_guardrails::grayswan::{
+    GraySwanGuardrail, GraySwanGuardrailAPIError, GraySwanSettings, OnFlaggedAction,
+};
 use secrecy::SecretString;
 use serde_json::json;
+use std::collections::BTreeMap;
+
+use crate::case::UpstreamAnswer;
+use crate::mock::MockProvider;
+use crate::routing_mock_scripts::MockScript;
 
 pub(crate) struct Op;
 
@@ -13,10 +27,12 @@ impl crate::helpers::Helper for Op {
     type Input = serde_json::Value;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        if input.get("metadata").is_some() || input.get("litellm_metadata").is_some() {
+        if input.get("generic_call").is_some() {
+            generic_call(input)
+        } else if input.get("metadata").is_some() || input.get("litellm_metadata").is_some() {
             metadata(input)
         } else if input.get("score").is_some() || input.get("action").is_some() {
-            verdict(input)
+            grayswan_verdict(input)
         } else {
             Self::not_built("b3771")
         }
@@ -44,7 +60,7 @@ fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
     ))
 }
 
-fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
+fn grayswan_verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let guardrail = grayswan_guardrail(input);
     let response = GraySwanResponse {
         violation: input
@@ -55,9 +71,18 @@ fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
         mutation: None,
         ipi: None,
     };
+    let is_output = input
+        .get("is_output")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let input_type = if is_output {
+        GuardrailInputType::Response
+    } else {
+        GuardrailInputType::Request
+    };
     let value = guardrail
-        .process_response(&response, GuardrailInputType::Request, Vec::new())
-        .map_err(|error| failure(error.to_string()))?;
+        .process_response(&response, input_type, Vec::new())
+        .map_err(|error| grayswan_failure(&error))?;
     serde_json::to_value(json!({"allowed": true, "flagged": value.flagged}))
         .map_err(|error| failure(error.to_string()))
 }
@@ -70,7 +95,7 @@ fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
     };
     GraySwanGuardrail::with_client(
         SecretString::from("oracle-key"),
-        Some("http://oracle.invalid".to_owned()),
+        "http://oracle.invalid".to_owned(),
         GraySwanSettings {
             on_flagged_action: action,
             violation_threshold: 0.5,
@@ -84,14 +109,121 @@ fn grayswan_guardrail(input: &serde_json::Value) -> GraySwanGuardrail {
     )
 }
 
+fn generic_call(input: &serde_json::Value) -> crate::helpers::HelperResult {
+    let request = input.get("generic_call").cloned().unwrap_or_else(|| json!({}));
+    let settings = generic_settings(&request);
+    let answer = request
+        .get("answer")
+        .cloned()
+        .map(serde_json::from_value::<UpstreamAnswer>)
+        .transpose()
+        .map_err(|error| failure(error.to_string()))?;
+
+    let io = |error: std::io::Error| failure(error.to_string());
+    let mock_error = |error: crate::OracleError| failure(error.to_string());
+    let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
+    let start =
+        |reply: &UpstreamAnswer| MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start);
+    let mock = answer.as_ref().map(start).transpose().map_err(mock_error)?;
+    let base = match &mock {
+        Some(provider) => provider.base_url.clone(),
+        None => format!("http://{}", silent.local_addr().map_err(io)?),
+    };
+
+    let guardrail = generic_guardrail(&base, settings);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(io)?;
+    let result = runtime.block_on(guardrail.apply_guardrail(generic_request()));
+    mock.map(MockProvider::finish).transpose().map_err(mock_error)?;
+    match result {
+        Ok(response) => serde_json::to_value(json!({"texts": response.texts, "blocked": false}))
+            .map_err(|error| failure(error.to_string())),
+        Err(error) => Err(generic_failure(&error)),
+    }
+}
+
+fn generic_settings(request: &serde_json::Value) -> GenericGuardrailAPISettings {
+    let unreachable_fallback = match request
+        .get("unreachable_fallback")
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("fail_open") => UnreachableFallback::FailOpen,
+        _ => UnreachableFallback::FailClosed,
+    };
+    let fail_on_error = request
+        .get("fail_on_error")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    GenericGuardrailAPISettings {
+        unreachable_fallback,
+        fail_on_error,
+        streaming_end_of_stream_only: false,
+        streaming_sampling_rate: 5,
+        streaming_transform_mode: StreamingTransformMode::BlockOnly,
+    }
+}
+
+fn generic_guardrail(base: &str, settings: GenericGuardrailAPISettings) -> GenericGuardrailAPI {
+    GenericGuardrailAPI::with_client(
+        None,
+        base,
+        settings,
+        None,
+        GenericGuardrailAPITransport {
+            client: reqwest::Client::default(),
+            timeout: Duration::from_millis(200),
+        },
+    )
+}
+
+fn generic_request() -> GenericGuardrailAPIRequest {
+    GenericGuardrailAPIRequest {
+        input_type: GuardrailInputType::Request,
+        litellm_call_id: None,
+        litellm_trace_id: None,
+        structured_messages: None,
+        images: None,
+        tools: None,
+        texts: Some(vec!["hello".to_owned()]),
+        request_data: GenericGuardrailAPIMetadata::default(),
+        request_headers: None,
+        litellm_version: None,
+        provider_params: None,
+        tool_calls: None,
+        model: None,
+    }
+}
+
+fn generic_failure(error: &GenericGuardrailAPIError) -> Box<crate::helpers::HelperError> {
+    let class = match error {
+        GenericGuardrailAPIError::Blocked { .. } => "GuardrailRaisedException",
+        GenericGuardrailAPIError::Timeout { .. }
+        | GenericGuardrailAPIError::Request { .. }
+        | GenericGuardrailAPIError::InvalidHeader { .. }
+        | GenericGuardrailAPIError::HttpStatus { .. }
+        | GenericGuardrailAPIError::ResponseTooLarge { .. }
+        | GenericGuardrailAPIError::ResponseJson { .. } => "Exception",
+    };
+    failure_with_class(class, error.to_string())
+}
+
+fn grayswan_failure(error: &GraySwanGuardrailAPIError) -> Box<crate::helpers::HelperError> {
+    failure_with_class("HTTPException", error.to_string())
+}
+
 fn failure(message: String) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
-        class: "GuardrailError".to_owned(),
-        status: Some(400),
-        error_type: Some(Some("invalid_request_error".to_owned())),
+    failure_with_class("GuardrailError", message)
+}
+
+fn failure_with_class(class_name: &str, message: String) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: class_name.to_owned(),
+        status: None,
+        error_type: None,
         param: None,
         code: None,
         message,
-    };
-    Box::new(error)
+    })
 }

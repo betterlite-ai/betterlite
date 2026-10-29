@@ -1,5 +1,5 @@
 kind: helper
 name: violation-passthrough-post-call
-call: {b3771: {action: PASSTHROUGH, score: 0.5}}
+call: {b3771: {action: PASSTHROUGH, score: 0.5, is_output: true}}
 env: {}
-compare: {ignore: [{pointer: /error, why: "betterlite reports a typed provider error"}]}
+compare: {ignore: []}
