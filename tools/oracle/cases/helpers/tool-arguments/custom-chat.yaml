@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "custom-chat", "call": {"tool_arguments": {"mode": "convert_custom_tool_format_to_chat_shape", "format_obj": {"type": "grammar", "definition": "g", "syntax": "lark"}}}, "env": {}, "compare": {"ignore": []}}

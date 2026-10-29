@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "function-call", "call": {"tool_arguments": {"mode": "check_is_function_call", "optional_params": {"functions": [{"name": "search"}]}}}, "env": {}, "compare": {"ignore": []}}

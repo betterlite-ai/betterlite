@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-other-image-models-stability3
+call:
+  bedrock_other_image_models:
+    stability3_prompt:
+      text: a cat on a mat
+      optional_params: {aspect_ratio: "1:1"}
+env: {}
+compare:
+  ignore: []

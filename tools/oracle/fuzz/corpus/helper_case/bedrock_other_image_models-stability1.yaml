@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-other-image-models-stability1
+call:
+  bedrock_other_image_models:
+    stability1_text_prompts:
+      non_default: {size: "640x512"}
+      optional_params: {user: ignored}
+      text: a cat on a mat
+      settings:
+        cfg_scale: 7
+        seed: 42
+        steps: 30
+env: {}
+compare:
+  ignore: []
