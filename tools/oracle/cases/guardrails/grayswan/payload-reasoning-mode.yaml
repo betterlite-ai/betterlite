@@ -1,5 +1,9 @@
 kind: helper
 name: payload-reasoning-mode
-call: {b3771: {action: MONITOR, score: 0.1}}
+call:
+  b3771:
+    grayswan_payload:
+      config: {reasoning_mode: "off"}
+      dynamic: {reasoning_mode: hybrid}
 env: {}
 compare: {ignore: []}

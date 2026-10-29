@@ -1,5 +1,10 @@
 kind: helper
 name: error-fail-open-false
-call: {b3771: {action: MONITOR, score: 0.1}}
+call:
+  b3771:
+    grayswan_call:
+      texts: ["hello"]
+      fail_open: false
+      answer: {status: 500, headers: {}, body: {detail: "gray swan is down"}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
