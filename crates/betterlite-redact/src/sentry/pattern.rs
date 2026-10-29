@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use regex::Regex;
 
-use super::fixture::{self, GENERATED_KEY_LENGTH, KEY_PREFIX, MINIMUM_CUSTOM_KEY_LENGTH};
+use super::fixture::{self, KEY_PREFIX};
 
 pub(super) const FILTERED: &str = "[Filtered]";
 
@@ -15,8 +15,11 @@ const SHA256_BODY: &str = "[0-9a-f]{64}";
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PatternError {
-    #[error("sentry scrubbing pattern failed to compile: {reason}")]
-    Compile { reason: String },
+    #[error("sentry scrubbing pattern failed to compile: {source}")]
+    Compile {
+        #[source]
+        source: regex::Error,
+    },
 }
 
 pub(super) struct Patterns {
@@ -46,19 +49,23 @@ fn field_pattern_source(names: &[&str]) -> String {
     )
 }
 
-fn key_pattern_source() -> String {
-    let generated_suffix_length = GENERATED_KEY_LENGTH
+fn key_pattern_source(custom_key_minimum: usize, generated_key_bytes: usize) -> String {
+    let generated_suffix_length = generated_key_bytes
         .saturating_mul(4)
         .saturating_add(2)
         .checked_div(3)
         .unwrap_or(0);
-    let floor = MINIMUM_CUSTOM_KEY_LENGTH
+    let floor = custom_key_minimum
         .saturating_sub(KEY_PREFIX.len())
         .min(generated_suffix_length);
     format!("{KEY_PREFIX}[A-Za-z0-9_-]{{{floor},}}")
 }
 
-pub(super) fn build(send_default_pii: bool) -> Result<Patterns, PatternError> {
+pub(super) fn build(
+    send_default_pii: bool,
+    custom_key_minimum: usize,
+    generated_key_bytes: usize,
+) -> Result<Patterns, PatternError> {
     let mut field_names = fixture::DEFAULT_DENYLIST
         .iter()
         .chain(fixture::SENTRY_DENYLIST)
@@ -75,21 +82,14 @@ pub(super) fn build(send_default_pii: bool) -> Result<Patterns, PatternError> {
     let (email, sha256) = if send_default_pii {
         (None, None)
     } else {
-        let email = Regex::new(EMAIL_BODY).map_err(|error| PatternError::Compile {
-            reason: error.to_string(),
-        })?;
-        let sha256 = Regex::new(SHA256_BODY).map_err(|error| PatternError::Compile {
-            reason: error.to_string(),
-        })?;
+        let email = Regex::new(EMAIL_BODY).map_err(|source| PatternError::Compile { source })?;
+        let sha256 = Regex::new(SHA256_BODY).map_err(|source| PatternError::Compile { source })?;
         (Some(email), Some(sha256))
     };
-    let field =
-        Regex::new(&field_pattern_source(&field_names)).map_err(|error| PatternError::Compile {
-            reason: error.to_string(),
-        })?;
-    let key = Regex::new(&key_pattern_source()).map_err(|error| PatternError::Compile {
-        reason: error.to_string(),
-    })?;
+    let field = Regex::new(&field_pattern_source(&field_names))
+        .map_err(|source| PatternError::Compile { source })?;
+    let key_source = key_pattern_source(custom_key_minimum, generated_key_bytes);
+    let key = Regex::new(&key_source).map_err(|source| PatternError::Compile { source })?;
     Ok(Patterns {
         field,
         key,
@@ -106,8 +106,19 @@ fn field_match_is_rejected(text: &str, start: usize, field: &str, value: &str) -
     let boundary_violation = field_is_bare
         && before_byte.is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_');
     let value_is_quoted_or_bracketed = value.starts_with(['\'', '"', '[', '{', '(']);
-    let none_violation = !value_is_quoted_or_bracketed && value == "None";
+    let none_violation = !value_is_quoted_or_bracketed && value_is_bare_none(value);
     boundary_violation || none_violation
+}
+
+fn value_is_bare_none(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let Some(prefix) = bytes.get(..4) else {
+        return false;
+    };
+    prefix.eq_ignore_ascii_case(b"none")
+        && bytes
+            .get(4)
+            .is_none_or(|byte| !(byte.is_ascii_alphanumeric() || *byte == b'_'))
 }
 
 fn push_filtered_field(output: &mut String, field: &str, value_starts_with_quote: bool) {
@@ -208,7 +219,21 @@ pub(super) fn apply(patterns: &Patterns, text: &str) -> String {
 }
 
 pub fn scrub(text: &str, send_default_pii: bool) -> Result<String, PatternError> {
-    let patterns = build(send_default_pii)?;
+    let patterns = build(
+        send_default_pii,
+        fixture::MINIMUM_CUSTOM_KEY_LENGTH,
+        fixture::GENERATED_KEY_LENGTH,
+    )?;
+    Ok(apply(&patterns, text))
+}
+
+pub fn scrub_with_key_lengths(
+    text: &str,
+    send_default_pii: bool,
+    custom_key_minimum: usize,
+    generated_key_bytes: usize,
+) -> Result<String, PatternError> {
+    let patterns = build(send_default_pii, custom_key_minimum, generated_key_bytes)?;
     Ok(apply(&patterns, text))
 }
 

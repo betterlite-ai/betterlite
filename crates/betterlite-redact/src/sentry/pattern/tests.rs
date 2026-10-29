@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::scrub;
+use super::{scrub, scrub_with_key_lengths};
 use rstest::rstest;
 use std::str::from_utf8;
 use std::{fs, path::PathBuf};
@@ -11,6 +11,8 @@ use std::{fs, path::PathBuf};
 #[case::matches_at_string_start("token=abc123 next", false, "token='[Filtered]' next")]
 #[case::allows_bare_field_after_non_word_boundary("(token=abc123)", false, "(token='[Filtered]')")]
 #[case::preserves_bare_none("token=None", false, "token=None")]
+#[case::preserves_bare_none_case_insensitive("token=none", false, "token=none")]
+#[case::preserves_bare_none_before_non_word_byte("token=None;", false, "token=None;")]
 #[case::redacts_nonetype_suffix("key=NoneType", false, "key='[Filtered]'")]
 #[case::quoted_key_form_skips_boundary_check(
     "mypassword': 'hunter2', 'password': 'hunter2'",
@@ -57,6 +59,16 @@ fn sentry_scrubbing_behavior_tests_behavior(
     #[case] expected: &str,
 ) {
     assert_eq!(scrub(input, send_default_pii).unwrap(), expected);
+}
+
+#[test]
+fn custom_key_minimum_lowers_the_scrubbed_key_floor() {
+    let text = "key is sk-abcde here";
+    assert_eq!(scrub(text, false).unwrap(), text);
+    assert_eq!(
+        scrub_with_key_lengths(text, false, 8, 16).unwrap(),
+        "key is [Filtered] here"
+    );
 }
 
 #[test]
