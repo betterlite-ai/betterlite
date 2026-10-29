@@ -32,6 +32,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use crate::checks::Selection;
 use crate::development::Development;
 use crate::error::GateError;
 use crate::spec::litellm::Litellm;
@@ -65,6 +66,8 @@ enum Command {
         task: String,
         #[arg(long, help = "Run only this check id (repeatable)")]
         only: Vec<String>,
+        #[arg(long, help = "Leave this check id out (repeatable)")]
+        skip: Vec<String>,
     },
     #[command(
         about = "Write the JSON Schemas generated from the format types into .development/schema/"
@@ -193,8 +196,12 @@ fn run_command(
             ))
         }
         Command::List { task } => Ok((listing(development, &task)?, true)),
-        Command::Run { task, only } => {
-            let verdict = checks::run(development, &development.task(&task)?, &only)?;
+        Command::Run { task, only, skip } => {
+            let verdict = checks::run(
+                development,
+                &development.task(&task)?,
+                &Selection { only, skip },
+            )?;
             Ok((verdict.lines, verdict.passed))
         }
         Command::Schema => Ok((schema::write(&development.root)?, true)),
