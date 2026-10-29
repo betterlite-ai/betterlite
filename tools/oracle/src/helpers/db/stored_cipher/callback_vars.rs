@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 
-use betterlite_secrets::callback_vars::{Transform, is_sensitive_callback_key, transform_callback_vars};
+use betterlite_secrets::callback_vars::{
+    Transform, is_sensitive_callback_key, transform_callback_vars,
+};
 use betterlite_secrets::secret_codec::StoredCipher;
 use serde_json::Value;
 
