@@ -133,9 +133,10 @@ pub fn with_query_value(url: &str, key: &str, value: &str) -> Result<String, Url
 }
 
 // Either a single value or a doseq list, matching the dict[str, str | int | float | list] LiteLLM passes to urlencode(doseq=True).
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(untagged)]
 pub enum AppendQueryParam {
+    Bool(bool),
     Scalar(QueryValue),
     List(Vec<QueryValue>),
 }
@@ -143,6 +144,9 @@ pub enum AppendQueryParam {
 impl AppendQueryParam {
     fn to_param_strings(&self) -> Vec<String> {
         match self {
+            // Matches Python's str(True)/str(False), the text urlencode(doseq=True) would emit for a bool value.
+            Self::Bool(true) => vec!["True".to_owned()],
+            Self::Bool(false) => vec!["False".to_owned()],
             Self::Scalar(value) => vec![value.to_param_string()],
             Self::List(values) => values.iter().map(QueryValue::to_param_string).collect(),
         }

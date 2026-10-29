@@ -25,6 +25,11 @@ from litellm_proxy_extras.utils import str_to_bool
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
+# litellm forwards general_settings.database_extra_connection_params, an untyped dict, straight
+# through urlencode(doseq=True), so build_db_connection_url_params must round-trip bool and list
+# values too, unlike every other params dict here, which only ever carries str | int | float.
+ExtraParamValue: TypeAlias = str | int | float | bool | list[str | int | float]
+
 
 def pairs_to_dict(pairs: Json) -> dict[str, str | int | float]:
     result: dict[str, str | int | float] = {}
@@ -35,6 +40,18 @@ def pairs_to_dict(pairs: Json) -> dict[str, str | int | float]:
 
 
 def dict_to_pairs(params: dict[str, str | int | float]) -> Json:
+    return [[key, value] for key, value in params.items()]
+
+
+def pairs_to_extra_params(pairs: Json) -> dict[str, ExtraParamValue]:
+    result: dict[str, ExtraParamValue] = {}
+    for pair in cast(list[Json], pairs):
+        key, value = cast(list[Json], pair)
+        result[cast(str, key)] = cast(ExtraParamValue, value)
+    return result
+
+
+def extra_params_to_pairs(params: dict[str, ExtraParamValue]) -> Json:
     return [[key, value] for key, value in params.items()]
 
 
@@ -81,9 +98,9 @@ def run_build_db_connection_url_params(input_value: dict[str, Json]) -> Json:
     connect_timeout = cast("float | None", input_value["connect_timeout"])
     socket_timeout = cast("float | None", input_value["socket_timeout"])
     disable_prepared_statements = cast(bool, input_value["disable_prepared_statements"])
-    extra_params = pairs_to_dict(input_value["extra_params"])
+    extra_params = pairs_to_extra_params(input_value["extra_params"])
     params = cast(
-        "dict[str, str | int | float]",
+        "dict[str, ExtraParamValue]",
         _build_db_connection_url_params(
             connection_limit,
             pool_timeout,
@@ -93,7 +110,7 @@ def run_build_db_connection_url_params(input_value: dict[str, Json]) -> Json:
             extra_params,
         ),
     )
-    return dict_to_pairs(params)
+    return extra_params_to_pairs(params)
 
 
 def run_pg_options_with_timeouts(input_value: dict[str, Json]) -> Json:

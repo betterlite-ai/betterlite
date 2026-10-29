@@ -1,4 +1,4 @@
-use super::query::QueryValue;
+use super::query::{AppendQueryParam, QueryValue};
 use super::url_codec::{UrlSplitError, urlsplit};
 use regex::Regex;
 use std::num::ParseFloatError;
@@ -20,11 +20,11 @@ pub fn build_db_connection_url_params(
     connection_limit: i64,
     timeouts: PoolTimeouts,
     disable_prepared_statements: bool,
-    extra_params: &[(String, QueryValue)],
-) -> Vec<(String, QueryValue)> {
+    extra_params: &[(String, AppendQueryParam)],
+) -> Vec<(String, AppendQueryParam)> {
     let mut params = vec![(
         "connection_limit".to_owned(),
-        QueryValue::Integer(connection_limit),
+        AppendQueryParam::Scalar(QueryValue::Integer(connection_limit)),
     )];
     for (key, timeout) in [
         ("pool_timeout", timeouts.pool_timeout),
@@ -32,11 +32,14 @@ pub fn build_db_connection_url_params(
         ("socket_timeout", timeouts.socket_timeout),
     ] {
         if let Some(timeout_value) = timeout {
-            params.push((key.to_owned(), timeout_value));
+            params.push((key.to_owned(), AppendQueryParam::Scalar(timeout_value)));
         }
     }
     if disable_prepared_statements {
-        params.push(("pgbouncer".to_owned(), QueryValue::Text("true".to_owned())));
+        params.push((
+            "pgbouncer".to_owned(),
+            AppendQueryParam::Scalar(QueryValue::Text("true".to_owned())),
+        ));
     }
     for (key, value) in extra_params {
         match params.iter_mut().find(|(existing, _)| existing == key) {

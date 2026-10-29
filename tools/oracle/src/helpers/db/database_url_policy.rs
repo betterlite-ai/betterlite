@@ -125,7 +125,7 @@ fn run_build_connection_params(input: &Input) -> serde_json::Value {
     else {
         return serde_json::Value::Null;
     };
-    params_value(&build_db_connection_url_params(
+    append_params_value(&build_db_connection_url_params(
         *connection_limit,
         PoolTimeouts {
             pool_timeout: pool_timeout.clone(),
@@ -135,6 +135,24 @@ fn run_build_connection_params(input: &Input) -> serde_json::Value {
         *disable_prepared_statements,
         extra_params,
     ))
+}
+
+fn append_params_value(params: &[(String, AppendQueryParam)]) -> serde_json::Value {
+    let entries: Vec<serde_json::Value> = params
+        .iter()
+        .map(|(key, value)| serde_json::json!([key, append_query_param_json(value)]))
+        .collect();
+    serde_json::Value::Array(entries)
+}
+
+fn append_query_param_json(value: &AppendQueryParam) -> serde_json::Value {
+    match value {
+        AppendQueryParam::Bool(flag) => serde_json::Value::Bool(*flag),
+        AppendQueryParam::Scalar(scalar) => query_value_json(scalar),
+        AppendQueryParam::List(values) => {
+            serde_json::Value::Array(values.iter().map(query_value_json).collect())
+        }
+    }
 }
 
 fn params_value(params: &[(String, QueryValue)]) -> serde_json::Value {
@@ -215,7 +233,7 @@ pub(crate) enum Input {
         connect_timeout: Option<QueryValue>,
         socket_timeout: Option<QueryValue>,
         disable_prepared_statements: bool,
-        extra_params: Vec<(String, QueryValue)>,
+        extra_params: Vec<(String, AppendQueryParam)>,
     },
     PgOptionsWithTimeouts {
         existing_options: String,
