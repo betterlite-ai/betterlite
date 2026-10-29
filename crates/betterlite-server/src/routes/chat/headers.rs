@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+use std::time::Duration;
+
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
+use betterlite_error::envelope::{filter_unsafe_headers, project_provider_headers};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
-use std::time::Duration;
 
 // LiteLLM's OPENAI_RESPONSE_HEADERS, repeated without the llm_provider- prefix on a success
 const RATE_LIMIT_HEADERS: [&str; 6] = [
@@ -12,8 +15,6 @@ const RATE_LIMIT_HEADERS: [&str; 6] = [
     "x-ratelimit-reset-requests",
     "x-ratelimit-reset-tokens",
 ];
-// on a failure LiteLLM's get_response_headers repeats only these four
-const FAILURE_RATE_LIMIT_HEADERS: usize = 4;
 
 pub(super) fn success_headers(
     upstream: &HeaderMap,
@@ -80,7 +81,8 @@ pub(super) fn failure_headers(
         | ChatError::Http { .. } => None,
     };
     let mut headers = upstream.map_or_else(HeaderMap::new, |forwarded| {
-        provider_headers(forwarded, FAILURE_RATE_LIMIT_HEADERS)
+        let projected = project_provider_headers(&header_map_to_btree(forwarded));
+        btree_to_header_map(&filter_unsafe_headers(projected))
     });
     if let Ok(value) = HeaderValue::from_str(call_id) {
         headers.insert("x-litellm-call-id", value);
@@ -113,6 +115,31 @@ fn provider_headers(upstream: &HeaderMap, rate_limit_count: usize) -> HeaderMap 
         }
     }
     headers
+}
+
+fn header_map_to_btree(headers: &HeaderMap) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (name.as_str().to_owned(), text.to_owned()))
+        })
+        .collect()
+}
+
+fn btree_to_header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
+    let mut result = HeaderMap::new();
+    for (name, value) in headers {
+        if let (Ok(header_name), Ok(header_value)) = (
+            HeaderName::try_from(name.as_str()),
+            HeaderValue::try_from(value.as_str()),
+        ) {
+            result.insert(header_name, header_value);
+        }
+    }
+    result
 }
 
 fn insert_all<Values>(headers: &mut HeaderMap, values: Values)
