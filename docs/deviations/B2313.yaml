@@ -1,0 +1,5 @@
+task: B2313
+deviations:
+  - what: Policy spend, budgets, and search scores reject nonfinite or out-of-Decimal-range values.
+    why: The native numeric policy forbids floating-point storage; ordinary finite values retain source defaults and signs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L314-L339

@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-other-image-models-family-selection
+call:
+  bedrock_other_image_models:
+    image_family_selection:
+      model: amazon.titan-image-generator-v1
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,11 @@
+kind: helper
+name: kill-switch-url-nfkc-separator
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "http://example.com\uff0fbad"}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own validation message

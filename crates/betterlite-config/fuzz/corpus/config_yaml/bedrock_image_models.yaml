@@ -1,0 +1,13 @@
+# cfg_scale, seed, steps, width and height are AmazonStabilityConfig class settings only
+model_list:
+  - model_name: stability
+    litellm_params:
+      model: bedrock/stability.stable-diffusion-xl-v1
+      cfg_scale: 7
+      seed: 42
+      steps: 30
+      width: 512
+      height: 512
+litellm_settings:
+  cfg_scale: os.environ/STABILITY_CFG_SCALE
+  seed: 0
