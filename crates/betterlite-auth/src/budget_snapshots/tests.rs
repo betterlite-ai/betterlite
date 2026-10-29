@@ -64,24 +64,177 @@ fn dates_keep_offset_and_naive_forms() {
     assert!(matches!(naive.budget_reset_at, Some(LaxDateTime::Naive(_))));
 }
 
-#[test]
-fn each_snapshot_field_alias() {
-    let metadata: BTreeMap<String, Box<RawValue>> =
-        serde_json::from_str(r#"{"user_api_key_budget_reset_at":null}"#).unwrap();
-    assert!(KeyBudgetSnapshot::from_metadata(&metadata).is_some());
+fn parse_metadata(json: &str) -> BTreeMap<String, Box<RawValue>> {
+    serde_json::from_str(json).unwrap()
 }
 
-#[test]
-fn snapshot_alias_wins_over_field_name() {
-    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
-        r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#,
-    )
-    .unwrap();
-    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-    assert_eq!(
-        snapshot.max_budget,
-        Some(Decimal::from_str_exact("2.5").unwrap())
+fn alias_value<T: super::BudgetSnapshot>(
+    metadata: &BTreeMap<String, Box<RawValue>>,
+    key: &str,
+) -> Option<String> {
+    let snapshot = T::from_metadata(metadata)?;
+    let entries = snapshot.metadata_entries().unwrap();
+    entries
+        .as_ref()
+        .get(key)
+        .map(|value| value.get().to_owned())
+}
+
+fn parses<T: super::BudgetSnapshot>(metadata: &BTreeMap<String, Box<RawValue>>) -> bool {
+    T::from_metadata(metadata).is_some()
+}
+
+#[rstest]
+#[case::key_budget_reset_at(
+    alias_value::<KeyBudgetSnapshot>,
+    r#"{"budget_reset_at":null}"#,
+    r#"{"user_api_key_budget_reset_at":null}"#,
+    "user_api_key_budget_reset_at"
+)]
+#[case::team_budget_reset_at(
+    alias_value::<TeamBudgetSnapshot>,
+    r#"{"budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#,
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#,
+    "user_api_key_team_budget_reset_at"
+)]
+#[case::team_max_budget(
+    alias_value::<TeamBudgetSnapshot>,
+    r#"{"user_api_key_team_budget_reset_at":null,"max_budget":1.5}"#,
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":1.5}"#,
+    "user_api_key_team_table_max_budget"
+)]
+#[case::user_budget_reset_at(
+    alias_value::<UserBudgetSnapshot>,
+    r#"{"budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#,
+    "user_api_key_user_budget_reset_at"
+)]
+#[case::user_max_budget(
+    alias_value::<UserBudgetSnapshot>,
+    r#"{"user_api_key_user_budget_reset_at":null,"max_budget":2.5,"user_api_key_user_alias":null}"#,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":2.5,"user_api_key_user_alias":null}"#,
+    "user_api_key_user_table_max_budget"
+)]
+#[case::user_user_alias(
+    alias_value::<UserBudgetSnapshot>,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_alias":"name"}"#,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":"name"}"#,
+    "user_api_key_user_alias"
+)]
+#[case::org_spend(
+    alias_value::<OrgBudgetSnapshot>,
+    r#"{"spend":1,"user_api_key_org_max_budget":null}"#,
+    r#"{"user_api_key_org_spend":1,"user_api_key_org_max_budget":null}"#,
+    "user_api_key_org_spend"
+)]
+#[case::org_max_budget(
+    alias_value::<OrgBudgetSnapshot>,
+    r#"{"user_api_key_org_spend":1,"max_budget":3}"#,
+    r#"{"user_api_key_org_spend":1,"user_api_key_org_max_budget":3}"#,
+    "user_api_key_org_max_budget"
+)]
+fn each_snapshot_field_alias(
+    #[case] resolver: fn(&BTreeMap<String, Box<RawValue>>, &str) -> Option<String>,
+    #[case] native_json: &str,
+    #[case] alias_json: &str,
+    #[case] alias_key: &str,
+) {
+    let native_value =
+        resolver(&parse_metadata(native_json), alias_key).expect("native spelling must parse");
+    let alias_value =
+        resolver(&parse_metadata(alias_json), alias_key).expect("alias spelling must parse");
+    assert_eq!(native_value, alias_value);
+}
+
+#[rstest]
+#[case::team(
+    alias_value::<TeamBudgetSnapshot>,
+    r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#,
+    "user_api_key_team_table_max_budget",
+    "2.5"
+)]
+#[case::user(
+    alias_value::<UserBudgetSnapshot>,
+    r#"{"budget_reset_at":null,"user_api_key_user_budget_reset_at":null,"max_budget":1.25,"user_api_key_user_table_max_budget":2.5,"user_alias":"native","user_api_key_user_alias":"alias"}"#,
+    "user_api_key_user_table_max_budget",
+    "2.5"
+)]
+#[case::org(
+    alias_value::<OrgBudgetSnapshot>,
+    r#"{"spend":1,"user_api_key_org_spend":2,"max_budget":1.25,"user_api_key_org_max_budget":2.5}"#,
+    "user_api_key_org_spend",
+    "2"
+)]
+fn snapshot_alias_wins_over_field_name(
+    #[case] resolver: fn(&BTreeMap<String, Box<RawValue>>, &str) -> Option<String>,
+    #[case] input: &str,
+    #[case] alias_key: &str,
+    #[case] expected: &str,
+) {
+    let value = resolver(&parse_metadata(input), alias_key).expect("alias spelling must win");
+    assert_eq!(value, expected);
+}
+
+#[rstest]
+#[case::key_budget_reset_at(
+    parses::<KeyBudgetSnapshot>,
+    "{}",
+    r#"{"user_api_key_budget_reset_at":null}"#,
+    true
+)]
+#[case::team_budget_reset_at(
+    parses::<TeamBudgetSnapshot>,
+    r#"{"user_api_key_team_table_max_budget":null}"#,
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#,
+    true
+)]
+#[case::team_max_budget(
+    parses::<TeamBudgetSnapshot>,
+    r#"{"user_api_key_team_budget_reset_at":null}"#,
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#,
+    true
+)]
+#[case::user_budget_reset_at(
+    parses::<UserBudgetSnapshot>,
+    r#"{"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#,
+    true
+)]
+#[case::user_max_budget(
+    parses::<UserBudgetSnapshot>,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_alias":null}"#,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#,
+    true
+)]
+#[case::user_user_alias(
+    parses::<UserBudgetSnapshot>,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null}"#,
+    r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":null}"#,
+    true
+)]
+#[case::org_spend(
+    parses::<OrgBudgetSnapshot>,
+    r#"{"user_api_key_org_max_budget":null}"#,
+    r#"{"user_api_key_org_spend":null,"user_api_key_org_max_budget":null}"#,
+    false
+)]
+#[case::org_max_budget(
+    parses::<OrgBudgetSnapshot>,
+    r#"{"user_api_key_org_spend":1}"#,
+    r#"{"user_api_key_org_spend":1,"user_api_key_org_max_budget":null}"#,
+    true
+)]
+fn snapshot_field_omission_and_null_discard_rules(
+    #[case] parses: fn(&BTreeMap<String, Box<RawValue>>) -> bool,
+    #[case] omitted_json: &str,
+    #[case] null_json: &str,
+    #[case] null_is_accepted: bool,
+) {
+    assert!(
+        !parses(&parse_metadata(omitted_json)),
+        "omitting a required field must discard the snapshot"
     );
+    assert_eq!(parses(&parse_metadata(null_json)), null_is_accepted);
 }
 
 #[rstest]
