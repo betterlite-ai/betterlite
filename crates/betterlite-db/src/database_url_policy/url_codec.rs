@@ -96,8 +96,7 @@ fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
     check_bracketed_host(hostname)
 }
 
-// Mirrors _check_bracketed_host: the host inside (or implied by) brackets must be an
-// IPvFuture spelling or a parseable address that is not IPv4.
+// Mirrors _check_bracketed_host: the bracketed host must be an IPvFuture spelling or a non-IPv4 address.
 fn check_bracketed_host(hostname: &str) -> Result<(), UrlSplitError> {
     if let Some(rest) = hostname.strip_prefix('v') {
         return if is_ipvfuture_rest(rest) {
