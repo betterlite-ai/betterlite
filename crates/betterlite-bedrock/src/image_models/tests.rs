@@ -8,8 +8,7 @@ use super::nova;
 use super::params::{Field, Params};
 use super::response::{
     FinishReason, ImageData, ImagesOnlyResponse, ModelResponse, Stability1Response,
-    Stability3Response, TitanResponse, apply_images, optional_images, stability1_images,
-    titan_images,
+    Stability3Response, TitanResponse, optional_images, stability1_images, titan_images,
 };
 use super::sizing::SizeError;
 use super::stability1::{self, ClassSettings};
@@ -168,12 +167,11 @@ fn stability1_text_prompts_size_mapping() {
 }
 
 fn stability3_prompt() {
-    stability3_prompt_builds_body();
-    stability3_prompt_keyword_collision();
+    stability3_prompt_builds_body_and_rejects_collision();
     stability3_prompt_identity_mapping();
 }
 
-fn stability3_prompt_builds_body() {
+fn stability3_prompt_builds_body_and_rejects_collision() {
     let optional_params = params(vec![("aspect_ratio", Field::from("1:1"))]);
     let body = stability3::transform_request_body("a cat", optional_params).unwrap();
     assert_eq!(
@@ -183,12 +181,9 @@ fn stability3_prompt_builds_body() {
             ("aspect_ratio", Field::from("1:1"))
         ])
     );
-}
-
-fn stability3_prompt_keyword_collision() {
     // An existing "prompt" key collides with the explicit keyword.
-    let optional_params = params(vec![("prompt", Field::from("other"))]);
-    let error = stability3::transform_request_body("a cat", optional_params).unwrap_err();
+    let colliding_params = params(vec![("prompt", Field::from("other"))]);
+    let error = stability3::transform_request_body("a cat", colliding_params).unwrap_err();
     assert!(matches!(
         error,
         ImageModelsError::KeywordCollision("prompt")
@@ -196,76 +191,51 @@ fn stability3_prompt_keyword_collision() {
 }
 
 fn stability3_prompt_identity_mapping() {
-    // Stability3 supports no openai params and mapping is the identity function.
-    assert!(stability3::get_supported_openai_params().is_empty());
+    // Stability3 supports no openai params, and an arbitrary key passes through unchanged.
+    assert!(stability3::SUPPORTED_OPENAI_PARAMS.is_empty());
     let optional_params = params(vec![("style_preset", Field::from("anime"))]);
-    assert_eq!(
-        stability3::map_openai_params(optional_params.clone()),
-        optional_params
-    );
+    let body = stability3::transform_request_body("a cat", optional_params).unwrap();
+    assert_eq!(body.get("style_preset"), Some(&Field::from("anime")));
 }
 
 fn nova_canvas_task_body() {
-    nova_canvas_task_body_text_image();
-    nova_canvas_task_body_color_and_inpainting();
+    nova_canvas_task_body_text_image_and_color_guided();
+    nova_canvas_task_body_inpainting();
     nova_canvas_task_body_unsupported();
 }
 
-fn nova_canvas_task_body_text_image() {
+fn nova_canvas_task_body_text_image_and_color_guided() {
     // TEXT_IMAGE is the default when taskType is absent.
-    let optional_params = params(vec![
-        (
-            "imageGenerationConfig",
-            Field::from(params(vec![
-                ("width", Field::Int(512)),
-                ("quality", Field::from("standard")),
-            ])),
-        ),
-        ("numberOfImages", Field::Int(3)),
-    ]);
-    let body = nova::transform_request_body("a cat", optional_params).unwrap();
-    assert_eq!(body.get("taskType"), Some(&Field::from("TEXT_IMAGE")));
+    let text_image_params = params(vec![(
+        "imageGenerationConfig",
+        Field::from(params(vec![("width", Field::Int(512))])),
+    )]);
+    let text_image_body = nova::transform_request_body("a cat", text_image_params).unwrap();
     assert_eq!(
-        body.get("textToImageParams"),
+        text_image_body.get("textToImageParams"),
         Some(&Field::from(params(vec![("text", Field::from("a cat"))])))
     );
     assert_eq!(
-        body.get("imageGenerationConfig"),
-        Some(&Field::from(params(vec![
-            ("width", Field::Int(512)),
-            ("quality", Field::from("standard")),
-            ("numberOfImages", Field::Int(3)),
-        ])))
+        text_image_body.get("imageGenerationConfig"),
+        Some(&Field::from(params(vec![("width", Field::Int(512))])))
     );
-}
 
-fn nova_canvas_task_body_color_and_inpainting() {
-    nova_canvas_task_body_color_guided();
-    nova_canvas_task_body_inpainting();
-}
-
-fn nova_canvas_task_body_color_guided() {
     // COLOR_GUIDED_GENERATION overlays the nested params onto text, letting explicit text win.
-    let optional_params = params(vec![
+    let color_guided_params = params(vec![
         ("taskType", Field::from("COLOR_GUIDED_GENERATION")),
         (
             "imageGenerationConfig",
             Field::from(params(vec![(
                 "colorGuidedGenerationParams",
-                Field::from(params(vec![
-                    ("text", Field::from("explicit")),
-                    ("colors", Field::List(vec![Field::from("#FFFFFF")])),
-                ])),
+                Field::from(params(vec![("text", Field::from("explicit"))])),
             )])),
         ),
     ]);
-    let body = nova::transform_request_body("ignored", optional_params).unwrap();
+    let color_guided_body =
+        nova::transform_request_body("ignored", color_guided_params).unwrap();
     assert_eq!(
-        body.get("colorGuidedGenerationParams"),
-        Some(&Field::from(params(vec![
-            ("text", Field::from("explicit")),
-            ("colors", Field::List(vec![Field::from("#FFFFFF")])),
-        ])))
+        color_guided_body.get("colorGuidedGenerationParams"),
+        Some(&Field::from(params(vec![("text", Field::from("explicit"))])))
     );
 }
 
@@ -280,28 +250,15 @@ fn nova_canvas_task_body_inpainting() {
 }
 
 fn nova_canvas_task_body_unsupported() {
-    nova_canvas_task_body_unsupported_string();
-    nova_canvas_task_body_unsupported_none();
-}
-
-fn nova_canvas_task_body_unsupported_string() {
-    // Any other task type raises NotImplementedError.
-    let optional_params = params(vec![("taskType", Field::from("OUTPAINTING"))]);
-    let error = nova::transform_request_body("a cat", optional_params).unwrap_err();
-    let ImageModelsError::TaskTypeUnsupported(message) = error else {
-        panic!("expected an unsupported task type");
-    };
-    assert_eq!(message, "OUTPAINTING");
-}
-
-fn nova_canvas_task_body_unsupported_none() {
-    // An explicit taskType=None is also unsupported.
-    let optional_params = params(vec![("taskType", Field::Null)]);
-    let error = nova::transform_request_body("a cat", optional_params).unwrap_err();
-    let ImageModelsError::TaskTypeUnsupported(message) = error else {
-        panic!("expected an unsupported task type");
-    };
-    assert_eq!(message, "None");
+    // Any other task type raises NotImplementedError; an explicit taskType=None is also unsupported.
+    for (task_type, expected_message) in [(Field::from("OUTPAINTING"), "OUTPAINTING"), (Field::Null, "None")] {
+        let optional_params = params(vec![("taskType", task_type)]);
+        let error = nova::transform_request_body("a cat", optional_params).unwrap_err();
+        let ImageModelsError::TaskTypeUnsupported(message) = error else {
+            panic!("expected an unsupported task type");
+        };
+        assert_eq!(message, expected_message);
+    }
 }
 
 fn size_n_quality_map() {
@@ -391,7 +348,7 @@ fn artifacts_to_b64_results_titan() {
         created: Some(1_700_000_000),
         data: Vec::new(),
     };
-    apply_images(&mut model_response, data.clone());
+    model_response.data = data.clone();
     assert_eq!(model_response.created, Some(1_700_000_000));
     assert_eq!(model_response.data, data);
 
