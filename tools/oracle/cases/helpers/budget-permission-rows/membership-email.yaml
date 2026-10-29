@@ -1,0 +1,9 @@
+kind: helper
+name: membership_dict_and_attribute_email
+call:
+  budget_permission_rows:
+    operation: budget
+    row: {budget_id: member}
+env: {}
+compare:
+  ignore: []
