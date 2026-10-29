@@ -1,0 +1,10 @@
+kind: helper
+name: otlp-ui-content-messages
+call:
+  otlp_normalization:
+    ui_content:
+      value:
+        - '[{"role": "assistant", "content": [{"type": "text", "text": "a"}, {"type": "thinking"}], "tool_calls": [{"name": "outer", "function": {"name": "", "arguments": {"x": [1.5e20, true]}}}, {"name": "raw", "arguments": [1]}]}]'
+env: {}
+compare:
+  ignore: []
