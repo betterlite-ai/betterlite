@@ -133,10 +133,10 @@ class _WarningCapture(logging.Handler):
 
 def run_append_query_params(input_value: dict[str, Json]) -> Json:
     url = cast("str | None", input_value["url"])
-    params: dict[str, list[str]] = {}
+    params: dict[str, str | int | float | list[str | int | float]] = {}
     for pair in cast(list[Json], input_value["params"]):
-        key, values = cast(list[Json], pair)
-        params[cast(str, key)] = cast("list[str]", values)
+        key, value = cast(list[Json], pair)
+        params[cast(str, key)] = cast("str | int | float | list[str | int | float]", value)
     capture = _WarningCapture()
     capture.setLevel(logging.WARNING)
     previous_level = verbose_proxy_logger.level
