@@ -115,118 +115,147 @@ fn owned_default_field(kind: &str, input: &str, field: &str) -> String {
     panic!("unknown case kind");
 }
 
+#[test]
+fn auth_discriminator_exact() {
+    serde_json::from_str::<AgentKillSwitchAuth>(r#"{"token":"s"}"#).unwrap_err();
+}
+
+#[test]
+fn auth_and_kill_config_extras_forbidden() {
+    serde_json::from_str::<AgentKillSwitchAuth>(r#"{"type":"bearer","token":"s","extra":1}"#)
+        .unwrap_err();
+    serde_json::from_str::<AgentKillSwitchConfig>(r#"{"url":"https://example.com","extra":1}"#)
+        .unwrap_err();
+}
+
+#[test]
+fn empty_credentials_preserved() {
+    let auth: AgentKillSwitchAuth =
+        serde_json::from_str(r#"{"type":"basic","username":"","password":""}"#).unwrap();
+    let AgentKillSwitchAuth::Basic { password, .. } = &auth else {
+        panic!("expected basic auth");
+    };
+    assert_eq!(password.expose_secret(), "");
+}
+
 #[rstest]
-#[case::auth_discriminator_exact("auth", r#"{"token":"s"}"#)]
-#[case::auth_and_kill_config_extras_forbidden(
-    "extras",
-    r#"{"type":"bearer","token":"s","extra":1}"#
-)]
-#[case::empty_credentials_preserved("empty", r#"{"type":"basic","username":"","password":""}"#)]
-#[case::kill_method_five_variants("methods", "POST,PUT,PATCH,DELETE,GET")]
-#[case::kill_maps_fresh("maps", "")]
-#[case::kill_url_original_not_normalized("original", "  HTTP://example.com/path")]
-#[case::kill_url_userinfo_and_port_not_restricted("authority", r#"{"url":"http://user@:80"}"#)]
-#[case::kill_headers_not_validated_here(
-    "headers",
-    r#"{"url":"https://example.com","headers":{"Bad Header":"\u0001"}}"#
-)]
-#[case::caller_header_spellings("caller", "")]
-#[case::agent_record_extras_ignored(
-    "response_extra",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{},"extra":true}"#
-)]
-#[case::response_open_objects_retained(
-    "open",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{"x":[1,1]}}"#
-)]
-#[case::response_sequence_order_duplicates(
-    "sequence",
-    r#"{"agent_id":"a","agent_name":"n","agent_card_params":{"x":[2,1,2]}}"#
-)]
-#[case::binding_ids_not_uuid_normalized("binding_id", r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"not-uuid","client_id":"c","issuer":"i","revision":"r"}"#)]
-#[case::binding_scopes_default_user_impersonation("scopes", "")]
-#[case::managed_mode_both_rejected("managed_both", r#"{"agent_id":"a","mode":"both"}"#)]
-fn named_owned_behaviors(#[case] kind: &str, #[case] input: &str) {
-    match kind {
-        "auth" => {
-            serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap_err();
-        }
-        "extras" => {
-            serde_json::from_str::<AgentKillSwitchAuth>(input).unwrap_err();
-            serde_json::from_str::<AgentKillSwitchConfig>(
-                r#"{"url":"https://example.com","extra":1}"#,
-            )
-            .unwrap_err();
-        }
-        "empty" => {
-            let auth: AgentKillSwitchAuth = serde_json::from_str(input).unwrap();
-            let AgentKillSwitchAuth::Basic { password, .. } = &auth else {
-                panic!("expected basic auth");
-            };
-            assert_eq!(password.expose_secret(), "");
-        }
-        "methods" => {
-            for method in input.split(',') {
-                let method_input =
-                    format!(r#"{{"url":"https://example.com","method":"{method}"}}"#);
-                let config: AgentKillSwitchConfig = serde_json::from_str(&method_input).unwrap();
-                assert_eq!(serde_json::to_value(config).unwrap()["method"], method);
-            }
-        }
-        "maps" => {
-            let mut first: AgentKillSwitchConfig =
-                serde_json::from_str(r#"{"url":"https://example.com"}"#).unwrap();
-            let second: AgentKillSwitchConfig =
-                serde_json::from_str(r#"{"url":"https://example.com"}"#).unwrap();
-            first.headers.insert(String::from("x"), String::from("y"));
-            assert!(second.headers.is_empty());
-        }
-        "original" => assert_eq!(
-            serde_json::from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":{input:?}}}"#))
-                .unwrap()
-                .url
-                .0,
-            input
-        ),
-        "authority" | "headers" => {
-            serde_json::from_str::<AgentKillSwitchConfig>(input).unwrap();
-        }
-        "caller" => assert_eq!(
-            (CALLER_USER_ID_HEADER, CALLER_TEAM_ID_HEADER),
-            ("x-litellm-user-id", "x-litellm-team-id")
-        ),
-        "response_extra" | "open" | "sequence" => {
-            let response: AgentResponse = serde_json::from_str(input).unwrap();
-            let expected = match kind {
-                "open" => r#"{"x":[1,1]}"#,
-                "sequence" => r#"{"x":[2,1,2]}"#,
-                _ => "{}",
-            };
-            let output = serde_json::to_value(response).unwrap();
-            assert_eq!(output["agent_card_params"].to_string(), expected);
-            assert!(output.get("extra").is_none());
-        }
-        "binding_id" => assert_eq!(
-            serde_json::from_str::<AgentIdentityBinding>(input)
-                .unwrap()
-                .tenant_id,
-            "not-uuid"
-        ),
-        "scopes" => {
-            let binding_input = r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#;
-            assert_eq!(
-                serde_json::from_str::<AgentIdentityBinding>(binding_input)
-                    .unwrap()
-                    .required_scopes
-                    .0,
-                vec!["user_impersonation"]
-            );
-        }
-        "managed_both" => {
-            serde_json::from_str::<ManagedAgentContext>(input).unwrap_err();
-        }
-        _ => panic!("unknown behavior case"),
-    }
+#[case::post("POST")]
+#[case::put("PUT")]
+#[case::patch("PATCH")]
+#[case::delete("DELETE")]
+#[case::get("GET")]
+fn kill_method_five_variants(#[case] method: &str) {
+    let input = format!(r#"{{"url":"https://example.com","method":"{method}"}}"#);
+    let config: AgentKillSwitchConfig = serde_json::from_str(&input).unwrap();
+    assert_eq!(serde_json::to_value(config).unwrap()["method"], method);
+}
+
+#[test]
+fn kill_maps_fresh() {
+    let mut first: AgentKillSwitchConfig =
+        serde_json::from_str(r#"{"url":"https://example.com"}"#).unwrap();
+    let second: AgentKillSwitchConfig =
+        serde_json::from_str(r#"{"url":"https://example.com"}"#).unwrap();
+    first.headers.insert(String::from("x"), String::from("y"));
+    assert!(second.headers.is_empty());
+}
+
+#[test]
+fn kill_url_original_not_normalized() {
+    let input = "  HTTP://example.com/path";
+    assert_eq!(
+        serde_json::from_str::<AgentKillSwitchConfig>(&format!(r#"{{"url":{input:?}}}"#))
+            .unwrap()
+            .url
+            .0,
+        input
+    );
+}
+
+#[test]
+fn kill_url_userinfo_and_port_not_restricted() {
+    serde_json::from_str::<AgentKillSwitchConfig>(r#"{"url":"http://user@:80"}"#).unwrap();
+}
+
+#[test]
+fn kill_headers_not_validated_here() {
+    serde_json::from_str::<AgentKillSwitchConfig>(
+        r#"{"url":"https://example.com","headers":{"Bad Header":"\u0001"}}"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn caller_header_spellings() {
+    assert_eq!(
+        (CALLER_USER_ID_HEADER, CALLER_TEAM_ID_HEADER),
+        ("x-litellm-user-id", "x-litellm-team-id")
+    );
+}
+
+#[test]
+fn agent_record_extras_ignored() {
+    let response: AgentResponse = serde_json::from_str(
+        r#"{"agent_id":"a","agent_name":"n","agent_card_params":{},"extra":true}"#,
+    )
+    .unwrap();
+    assert!(
+        serde_json::to_value(response)
+            .unwrap()
+            .get("extra")
+            .is_none()
+    );
+}
+
+#[test]
+fn response_open_objects_retained() {
+    let response: AgentResponse = serde_json::from_str(
+        r#"{"agent_id":"a","agent_name":"n","agent_card_params":{"x":[1,1]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap()["agent_card_params"].to_string(),
+        r#"{"x":[1,1]}"#
+    );
+}
+
+#[test]
+fn response_sequence_order_duplicates() {
+    let response: AgentResponse = serde_json::from_str(
+        r#"{"agent_id":"a","agent_name":"n","agent_card_params":{"x":[2,1,2]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap()["agent_card_params"].to_string(),
+        r#"{"x":[2,1,2]}"#
+    );
+}
+
+#[test]
+fn binding_ids_not_uuid_normalized() {
+    let input = r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"not-uuid","client_id":"c","issuer":"i","revision":"r"}"#;
+    assert_eq!(
+        serde_json::from_str::<AgentIdentityBinding>(input)
+            .unwrap()
+            .tenant_id,
+        "not-uuid"
+    );
+}
+
+#[test]
+fn binding_scopes_default_user_impersonation() {
+    assert_eq!(
+        serde_json::from_str::<AgentIdentityBinding>(BINDING_JSON)
+            .unwrap()
+            .required_scopes
+            .0,
+        vec!["user_impersonation"]
+    );
+}
+
+#[test]
+fn managed_mode_both_rejected() {
+    serde_json::from_str::<ManagedAgentContext>(r#"{"agent_id":"a","mode":"both"}"#).unwrap_err();
 }
 
 const BINDING_JSON: &str = r#"{"agent_id":"a","provider":"microsoft_entra","tenant_id":"t","client_id":"c","issuer":"i","revision":"r"}"#;

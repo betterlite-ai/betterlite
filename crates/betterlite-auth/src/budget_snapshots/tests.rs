@@ -64,115 +64,138 @@ fn dates_keep_offset_and_naive_forms() {
     assert!(matches!(naive.budget_reset_at, Some(LaxDateTime::Naive(_))));
 }
 
+#[test]
+fn each_snapshot_field_alias() {
+    let metadata: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(r#"{"user_api_key_budget_reset_at":null}"#).unwrap();
+    assert!(KeyBudgetSnapshot::from_metadata(&metadata).is_some());
+}
+
+#[test]
+fn snapshot_alias_wins_over_field_name() {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
+        r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#,
+    )
+    .unwrap();
+    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(
+        snapshot.max_budget,
+        Some(Decimal::from_str_exact("2.5").unwrap())
+    );
+}
+
 #[rstest]
-#[case::each_snapshot_field_alias("key_reset", r#"{"user_api_key_budget_reset_at":null}"#)]
-#[case::snapshot_required_nullable_fields(
-    "required",
-    r#"{"user_api_key_team_budget_reset_at":null}"#
+#[case::snapshot_extras_ignored(
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null,"unrelated":1}"#
 )]
-#[case::snapshot_alias_wins_over_field_name("precedence", r#"{"budget_reset_at":null,"user_api_key_team_budget_reset_at":null,"max_budget":1.25,"user_api_key_team_table_max_budget":2.5}"#)]
-#[case::snapshot_extras_ignored("extras", r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null,"unrelated":1}"#)]
-#[case::metadata_entries_aliases_and_nulls(
-    "metadata",
-    r#"{"budget_reset_at":null,"max_budget":null}"#
-)]
-#[case::metadata_dates_utc_offset_naive(
-    "dates",
-    r#"{"budget_reset_at":"2026-01-01T12:00:00+02:00","max_budget":null}"#
-)]
-#[case::metadata_mapping_readonly("readonly", r#"{"budget_reset_at":null,"max_budget":null}"#)]
-#[case::invalid_field_discards_snapshot(
-    "invalid",
-    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":"bad"}"#
-)]
-#[case::omitted_field_discards_snapshot("omitted", r#"{"user_api_key_team_budget_reset_at":null}"#)]
 #[case::all_null_valid_snapshot_retained(
-    "all_null",
     r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":null}"#
 )]
-#[case::embedded_json_string_not_decoded("embedded", r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":"{\"x\":1}"}"#)]
-#[case::snapshot_failure_silent(
-    "silent",
+fn snapshot_accepted_with_extras_or_all_null(#[case] input: &str) {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input).unwrap();
+    assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_some());
+}
+
+#[rstest]
+#[case::snapshot_required_nullable_fields(r#"{"user_api_key_team_budget_reset_at":null}"#)]
+#[case::invalid_field_discards_snapshot(
     r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":"bad"}"#
 )]
-#[case::negative_policy_numbers_preserved(
-    "negative",
-    r#"{"user_api_key_org_spend":-1,"user_api_key_org_max_budget":-2}"#
+#[case::omitted_field_discards_snapshot(r#"{"user_api_key_team_budget_reset_at":null}"#)]
+#[case::snapshot_failure_silent(
+    r#"{"user_api_key_team_budget_reset_at":null,"user_api_key_team_table_max_budget":"bad"}"#
 )]
-#[case::policy_decimal_exact(
-    "decimal",
-    r#"{"user_api_key_org_spend":1.2300,"user_api_key_org_max_budget":null}"#
-)]
-#[case::policy_nonfinite_or_out_of_range_rejected(
-    "range",
-    r#"{"user_api_key_org_spend":1e+1000,"user_api_key_org_max_budget":null}"#
-)]
-fn named_snapshot_contracts(#[case] name: &str, #[case] input: &str) {
+fn snapshot_discarded_on_missing_or_invalid_field(#[case] input: &str) {
     let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(input).unwrap();
-    match name {
-        "key_reset" => assert!(KeyBudgetSnapshot::from_metadata(&metadata).is_some()),
-        "extras" | "all_null" => {
-            assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_some());
-        }
-        "required" | "invalid" | "omitted" | "silent" => {
-            assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
-        }
-        "embedded" => {
-            let snapshot = UserBudgetSnapshot::from_metadata(&metadata).unwrap();
-            assert_eq!(snapshot.user_alias.as_deref(), Some(r#"{"x":1}"#));
-            assert_eq!(
-                snapshot.metadata_entries().unwrap().as_ref()["user_api_key_user_alias"].get(),
-                r#""{\"x\":1}""#
-            );
-        }
-        "negative" | "decimal" => {
-            let snapshot = OrgBudgetSnapshot::from_metadata(&metadata).unwrap();
-            let expected = if name == "negative" { "-1" } else { "1.2300" };
-            assert_eq!(snapshot.spend.to_string(), expected);
-            assert_eq!(
-                snapshot.max_budget,
-                (name == "negative").then(|| Decimal::from(-2_i32))
-            );
-            let entries = snapshot.metadata_entries().unwrap();
-            assert_eq!(entries.as_ref()["user_api_key_org_spend"].get(), expected);
-            assert_eq!(
-                entries.as_ref()["user_api_key_org_max_budget"].get(),
-                if name == "negative" { "-2" } else { "null" }
-            );
-        }
-        "range" => assert!(OrgBudgetSnapshot::from_metadata(&metadata).is_none()),
-        "precedence" => {
-            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-            assert_eq!(
-                snapshot.max_budget,
-                Some(Decimal::from_str_exact("2.5").unwrap())
-            );
-        }
-        "metadata" => {
-            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-            assert_eq!(
-                snapshot.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"]
-                    .get(),
-                "null"
-            );
-        }
-        "dates" => {
-            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-            assert_eq!(
-                snapshot.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"]
-                    .get(),
-                r#""2026-01-01T12:00:00+02:00""#
-            );
-        }
-        "readonly" => {
-            let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
-            let entries = snapshot.metadata_entries().unwrap();
-            let shared: &BTreeMap<String, Box<RawValue>> = entries.as_ref();
-            assert_eq!(shared["user_api_key_team_table_max_budget"].get(), "null");
-            assert_eq!(shared.len(), 2);
-        }
-        _ => panic!("unknown snapshot case"),
-    }
+    assert!(TeamBudgetSnapshot::from_metadata(&metadata).is_none());
+}
+
+#[test]
+fn metadata_entries_aliases_and_nulls() {
+    let metadata: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(r#"{"budget_reset_at":null,"max_budget":null}"#).unwrap();
+    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(
+        snapshot.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"].get(),
+        "null"
+    );
+}
+
+#[test]
+fn metadata_dates_utc_offset_naive() {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
+        r#"{"budget_reset_at":"2026-01-01T12:00:00+02:00","max_budget":null}"#,
+    )
+    .unwrap();
+    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(
+        snapshot.metadata_entries().unwrap().as_ref()["user_api_key_team_budget_reset_at"].get(),
+        r#""2026-01-01T12:00:00+02:00""#
+    );
+}
+
+#[test]
+fn metadata_mapping_readonly() {
+    let metadata: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(r#"{"budget_reset_at":null,"max_budget":null}"#).unwrap();
+    let snapshot = TeamBudgetSnapshot::from_metadata(&metadata).unwrap();
+    let entries = snapshot.metadata_entries().unwrap();
+    let shared: &BTreeMap<String, Box<RawValue>> = entries.as_ref();
+    assert_eq!(shared["user_api_key_team_table_max_budget"].get(), "null");
+    assert_eq!(shared.len(), 2);
+}
+
+#[test]
+fn embedded_json_string_not_decoded() {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
+        r#"{"user_api_key_user_budget_reset_at":null,"user_api_key_user_table_max_budget":null,"user_api_key_user_alias":"{\"x\":1}"}"#,
+    )
+    .unwrap();
+    let snapshot = UserBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(snapshot.user_alias.as_deref(), Some(r#"{"x":1}"#));
+    assert_eq!(
+        snapshot.metadata_entries().unwrap().as_ref()["user_api_key_user_alias"].get(),
+        r#""{\"x\":1}""#
+    );
+}
+
+#[test]
+fn negative_policy_numbers_preserved() {
+    let metadata: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(r#"{"user_api_key_org_spend":-1,"user_api_key_org_max_budget":-2}"#)
+            .unwrap();
+    let snapshot = OrgBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(snapshot.spend.to_string(), "-1");
+    assert_eq!(snapshot.max_budget, Some(Decimal::from(-2_i32)));
+    let entries = snapshot.metadata_entries().unwrap();
+    assert_eq!(entries.as_ref()["user_api_key_org_spend"].get(), "-1");
+    assert_eq!(entries.as_ref()["user_api_key_org_max_budget"].get(), "-2");
+}
+
+#[test]
+fn policy_decimal_exact() {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
+        r#"{"user_api_key_org_spend":1.2300,"user_api_key_org_max_budget":null}"#,
+    )
+    .unwrap();
+    let snapshot = OrgBudgetSnapshot::from_metadata(&metadata).unwrap();
+    assert_eq!(snapshot.spend.to_string(), "1.2300");
+    assert_eq!(snapshot.max_budget, None);
+    let entries = snapshot.metadata_entries().unwrap();
+    assert_eq!(entries.as_ref()["user_api_key_org_spend"].get(), "1.2300");
+    assert_eq!(
+        entries.as_ref()["user_api_key_org_max_budget"].get(),
+        "null"
+    );
+}
+
+#[test]
+fn policy_nonfinite_or_out_of_range_rejected() {
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
+        r#"{"user_api_key_org_spend":1e+1000,"user_api_key_org_max_budget":null}"#,
+    )
+    .unwrap();
+    assert!(OrgBudgetSnapshot::from_metadata(&metadata).is_none());
 }
 
 #[rstest]
