@@ -33,6 +33,9 @@ class ErrorContextInput(TypedDict):
     provider: NotRequired[str | None]
     max_retries: NotRequired[int | None]
     num_retries: NotRequired[int | None]
+    body_type: NotRequired[str | None]
+    body_param: NotRequired[str | None]
+    body_code: NotRequired[str | None]
 
 
 class RequiredErrorContextInput(TypedDict):
@@ -179,6 +182,17 @@ Input = (
 )
 
 
+def _body_from_input(context: ErrorContextInput) -> dict[str, str | None] | None:
+    keys = ("body_type", "body_param", "body_code")
+    if not any(context.get(key) is not None for key in keys):
+        return None
+    return {
+        "type": context.get("body_type"),
+        "param": context.get("body_param"),
+        "code": context.get("body_code"),
+    }
+
+
 def _filter_unsafe_headers(headers: dict[str, str]) -> dict[str, str]:
     return {
         name: value
@@ -213,6 +227,7 @@ def _metadata(
         "rate_limit_category": category,
         "rate_limit_dimension": rate_limit_type,
         "allowed_response_headers": _filter_unsafe_headers(headers) if headers else {},
+        "openai_code": getattr(exc, "code", None),
     }
 
 
@@ -257,6 +272,7 @@ def _bad_request(input_value: BadRequestInput) -> object:
         input_value.get("provider"),
         max_retries=input_value.get("max_retries"),
         num_retries=input_value.get("num_retries"),
+        body=_body_from_input(input_value),
     )
     return _metadata(exc)
 
@@ -281,7 +297,9 @@ def _context_window_exceeded(input_value: ContextWindowExceededInput) -> object:
 
 def _content_policy_violation(input_value: ContentPolicyViolationInput) -> object:
     model, provider = input_value.get("model"), input_value.get("provider")
-    exc = ContentPolicyViolationError(input_value["message"], model, provider)
+    exc = ContentPolicyViolationError(
+        input_value["message"], model, provider, body=_body_from_input(input_value)
+    )
     return _metadata(exc)
 
 
@@ -393,6 +411,7 @@ def _api(input_value: ApiInput) -> object:
         context.get("model"),
         max_retries=context.get("max_retries"),
         num_retries=context.get("num_retries"),
+        body=_body_from_input(context),
     )
     return _metadata(exc)
 
