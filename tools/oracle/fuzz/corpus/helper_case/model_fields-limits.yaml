@@ -1,0 +1,7 @@
+kind: helper
+name: limits
+call:
+  model_fields:
+    source: '{"litellm_provider":"openai","max_input_tokens":128000,"max_output_tokens":16384,"rpm":10000}'
+compare: {ignore: []}
+env: {}
