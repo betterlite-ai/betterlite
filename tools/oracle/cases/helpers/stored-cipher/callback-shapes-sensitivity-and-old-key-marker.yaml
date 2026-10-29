@@ -1,0 +1,59 @@
+kind: helper
+name: stored-cipher-callback-shapes-sensitivity-and-old-key-marker
+call:
+  stored_cipher:
+    op: callback_vars
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: [custom_secret]
+    steps:
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: sk-secret
+              custom_secret: also-sensitive
+              model: gpt-4
+              empty_value: ""
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::already-marked"
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              gcs_path_service_account: "{\"type\": \"service_account\"}"
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj"
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: plaintext-value
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::not-valid-base64*"
+      - kind: encrypt
+        metadata: null
+      - kind: encrypt
+        metadata:
+          logging:
+            - callback_vars: {api_key: sk-logging-secret}
+            - not_a_dict
+          callback_settings: {callback_vars: {api_key: sk-also-secret}}
+      - kind: sensitive
+        key: custom_secret
+      - kind: sensitive
+        key: model
+env: {}
+compare:
+  ignore: []

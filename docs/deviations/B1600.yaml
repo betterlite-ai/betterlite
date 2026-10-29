@@ -1,0 +1,5 @@
+task: B1600
+deviations:
+  - what: matches_raw returns false when either operand is not ASCII, instead of raising.
+    why: "_is_master_key calls secrets.compare_digest, which raises TypeError on a non-ASCII str operand; no caller of this comparison can rely on that crash, so betterlite reports the keys as not matching instead."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L89-L96

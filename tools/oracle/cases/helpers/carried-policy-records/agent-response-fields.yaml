@@ -1,0 +1,11 @@
+kind: helper
+name: agent-response-fields
+call:
+  carried_policy_records:
+    function: agent_response
+    value: {agent_id: a, agent_name: 'n', agent_card_params: {ordered: [a, a], score: -1.25}}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own validation message
