@@ -22,8 +22,9 @@ pub fn status_from_code(code: &str) -> SpanStatus {
 }
 
 fn ms_from_ns(nanos: i64) -> Decimal {
+    let divisor = Decimal::from(NANOS_PER_MS);
     Decimal::from(nanos)
-        .checked_div(Decimal::from(NANOS_PER_MS))
+        .checked_div(divisor)
         .unwrap_or_default()
 }
 
@@ -40,7 +41,8 @@ fn iso_from_ms(start_ms: i64) -> String {
 }
 
 fn i64_len(count: usize) -> i64 {
-    i64::try_from(count).unwrap_or(i64::MAX)
+    let converted = i64::try_from(count);
+    converted.unwrap_or(i64::MAX)
 }
 
 fn span_spend(row: &SpanQueryRow, spend_rows: &[SpendRow]) -> (Option<String>, Option<Decimal>) {
@@ -75,6 +77,7 @@ pub fn span_from_row(row: &SpanQueryRow, trace_start_ns: i64, spend_rows: &[Spen
 }
 
 fn trace_summary_shell(row: &TraceListRow) -> TraceSummary {
+    let status = status_from_code(&row.status);
     TraceSummary {
         trace_id: row.trace_id.clone(),
         trace_ref: None,
@@ -83,7 +86,7 @@ fn trace_summary_shell(row: &TraceListRow) -> TraceSummary {
         input_preview: row.input_preview.clone(),
         start_time: iso_from_ms(row.start_ms),
         duration_ms: Decimal::from(row.duration_ms),
-        status: status_from_code(&row.status),
+        status,
         span_count: row.span_count,
         agent_count: row.agent_count,
         agent_invocations: row.agent_invocations.unwrap_or(row.agent_count),
@@ -112,19 +115,16 @@ pub fn trace_summary_from_row(row: &TraceListRow, spend_rows: &[SpendRow]) -> Tr
 }
 
 fn root_span(spans: &[Span]) -> Option<&Span> {
-    spans
-        .iter()
-        .find(|span| span.parent_span_id.is_none())
-        .or_else(|| spans.first())
+    let explicit_root = spans.iter().find(|span| span.parent_span_id.is_none());
+    explicit_root.or_else(|| spans.first())
 }
 
 fn count_of(spans: &[Span], span_type: SpanType) -> i64 {
-    i64_len(
-        spans
-            .iter()
-            .filter(|span| span.span_type == span_type)
-            .count(),
-    )
+    let matching = spans
+        .iter()
+        .filter(|span| span.span_type == span_type)
+        .count();
+    i64_len(matching)
 }
 
 fn token_totals(spans: &[Span]) -> (i64, i64) {
@@ -138,14 +138,13 @@ fn token_totals(spans: &[Span]) -> (i64, i64) {
 }
 
 fn distinct_models(spans: &[Span]) -> Vec<String> {
-    spans
+    let models: BTreeSet<String> = spans
         .iter()
         .filter(|span| span.span_type == SpanType::Llm)
         .filter_map(|span| span.model.clone())
         .filter(|model| !model.is_empty())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+        .collect();
+    models.into_iter().collect()
 }
 
 struct TraceRowContext {
@@ -156,17 +155,11 @@ struct TraceRowContext {
 }
 
 fn trace_row_context(rows: &[SpanQueryRow]) -> TraceRowContext {
+    let first = rows.first();
     TraceRowContext {
-        service: rows
-            .first()
-            .map(|row| row.service.clone())
-            .unwrap_or_default(),
-        team_id: rows
-            .first()
-            .map(|row| row.team_id.clone())
-            .unwrap_or_default(),
-        api_key_hash: rows
-            .first()
+        service: first.map(|row| row.service.clone()).unwrap_or_default(),
+        team_id: first.map(|row| row.team_id.clone()).unwrap_or_default(),
+        api_key_hash: first
             .map(|row| row.api_key_hash.clone())
             .unwrap_or_default(),
         request_ids: rows
@@ -198,18 +191,16 @@ struct TraceSummaryContext<'ctx> {
 }
 
 fn summary_agent_invocations(agents: &[AgentNode]) -> i64 {
-    agents.iter().fold(0_i64, |total, agent| {
-        total.saturating_add(agent.invocations)
-    })
+    let invocations = agents.iter().map(|agent| agent.invocations);
+    invocations.fold(0_i64, i64::saturating_add)
 }
 
 fn summary_error_count(spans: &[Span]) -> i64 {
-    i64_len(
-        spans
-            .iter()
-            .filter(|span| span.status == SpanStatus::Error)
-            .count(),
-    )
+    let errors = spans
+        .iter()
+        .filter(|span| span.status == SpanStatus::Error)
+        .count();
+    i64_len(errors)
 }
 
 fn summary_time_bounds_ms(bounds: &TraceBounds) -> (i64, i64) {

@@ -47,6 +47,12 @@ pub struct TraceStore<S> {
     storage: S,
 }
 
+impl<S> From<S> for TraceStore<S> {
+    fn from(storage: S) -> Self {
+        Self { storage }
+    }
+}
+
 fn unique_nonempty(ids: &[String]) -> Vec<String> {
     let set: BTreeSet<&str> = ids
         .iter()
@@ -57,7 +63,8 @@ fn unique_nonempty(ids: &[String]) -> Vec<String> {
 }
 
 fn u64_from_usize(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
+    let converted = u64::try_from(value);
+    converted.unwrap_or(u64::MAX)
 }
 
 fn list_window(rows: &[TraceListRow], start_ms: i64, end_ms: i64) -> (i64, i64) {
@@ -78,7 +85,8 @@ fn first_of<T, E>(rows: Result<Vec<T>, E>) -> Result<Option<T>, StorageError<E>>
 where
     E: Error,
 {
-    Ok(rows.map_err(StorageError::Query)?.into_iter().next())
+    let values = rows.map_err(StorageError::Query)?;
+    Ok(values.into_iter().next())
 }
 
 fn span_error_query(
@@ -87,20 +95,23 @@ fn span_error_query(
     scope: &TraceScope,
     position: Option<&ErrorCursor>,
 ) -> SpanErrorQuery {
+    let error_offset = position.map_or(0, |requested| requested.offset);
     SpanErrorQuery {
         scope: scope.clone(),
         trace_id: trace_id.to_owned(),
         span_id: span_id.to_owned(),
-        error_offset: position.map_or(0, |requested| requested.offset),
+        error_offset,
         error_version: position.map_or_else(String::new, |requested| requested.version.clone()),
     }
 }
 
 fn span_detail_from_row(row: SpanDetailRow) -> SpanDetail {
+    let input_ui = to_ui_content(&row.input);
+    let output_ui = to_ui_content(&row.output);
     SpanDetail {
         span_id: row.span_id,
-        input_ui: to_ui_content(&row.input),
-        output_ui: to_ui_content(&row.output),
+        input_ui,
+        output_ui,
         input: row.input,
         output: row.output,
         attributes: row.attributes,
@@ -128,10 +139,6 @@ impl<S> TraceStore<S>
 where
     S: TraceStorage + Sync,
 {
-    pub const fn new(storage: S) -> Self {
-        Self { storage }
-    }
-
     async fn spend_rows(
         &self,
         scope: &TraceScope,

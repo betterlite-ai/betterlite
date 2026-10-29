@@ -58,7 +58,8 @@ pub struct ErrorCursor {
 
 #[must_use]
 pub fn encode_error_cursor(cursor: &ErrorCursor) -> String {
-    URL_SAFE.encode(serde_json::to_string(cursor).unwrap_or_default())
+    let encoded = serde_json::to_string(cursor).unwrap_or_default();
+    URL_SAFE.encode(encoded)
 }
 
 pub fn decode_error_cursor(cursor: Option<&str>) -> Result<Option<ErrorCursor>, CursorError> {
@@ -73,8 +74,8 @@ pub fn decode_error_cursor(cursor: Option<&str>) -> Result<Option<ErrorCursor>, 
 }
 
 fn is_valid_version(version: &str) -> bool {
-    version.len() == VERSION_LENGTH
-        && version
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_uppercase() && byte <= b'F')
+    let valid_chars = version
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (byte.is_ascii_uppercase() && byte <= b'F'));
+    version.len() == VERSION_LENGTH && valid_chars
 }
