@@ -14,15 +14,19 @@ use crate::secret_codec::{
     StoredValue,
 };
 
-fn cipher(key: Option<&str>) -> StoredCipher<OsNonces, TracingDiagnostics> {
+fn cipher_with<D>(key: Option<&str>, diagnostics: D) -> StoredCipher<OsNonces, D> {
     StoredCipher {
         settings: CipherSettings {
             signing_key: key.map(SecretString::from),
             algorithm: Algorithm::Aes256Gcm,
         },
         nonces: OsNonces,
-        diagnostics: TracingDiagnostics,
+        diagnostics,
     }
+}
+
+fn cipher(key: Option<&str>) -> StoredCipher<OsNonces, TracingDiagnostics> {
+    cipher_with(key, TracingDiagnostics)
 }
 
 fn encrypt_callback_vars<N, D>(metadata: &Value, cipher: &StoredCipher<N, D>) -> Value
@@ -273,16 +277,12 @@ impl SecretDiagnostics for CapturingDiagnostics {
 }
 
 fn capturing_cipher(key: Option<&str>) -> StoredCipher<OsNonces, CapturingDiagnostics> {
-    StoredCipher {
-        settings: CipherSettings {
-            signing_key: key.map(SecretString::from),
-            algorithm: Algorithm::Aes256Gcm,
-        },
-        nonces: OsNonces,
-        diagnostics: CapturingDiagnostics {
+    cipher_with(
+        key,
+        CapturingDiagnostics {
             messages: Mutex::new(Vec::new()),
         },
-    }
+    )
 }
 
 fn assert_no_leak(
