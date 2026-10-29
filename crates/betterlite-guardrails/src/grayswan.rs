@@ -71,23 +71,6 @@ pub struct GraySwanGuardrail {
 }
 
 impl GraySwanGuardrail {
-    #[must_use]
-    pub const fn with_client(
-        api_key: SecretString,
-        api_base: String,
-        settings: GraySwanSettings,
-        client: reqwest::Client,
-        timeout: Duration,
-    ) -> Self {
-        Self {
-            api_key,
-            api_base,
-            settings,
-            client,
-            timeout,
-        }
-    }
-
     pub fn prepare_headers(&self) -> Result<HeaderMap, GraySwanGuardrailAPIError> {
         let mut headers = HeaderMap::new();
         let mut authorization =

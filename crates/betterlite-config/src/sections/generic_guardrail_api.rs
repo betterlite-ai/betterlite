@@ -41,7 +41,8 @@ struct Parameters {
     api_base: Option<String>,
     unreachable_fallback: Option<UnreachableFallback>,
     fail_on_error: Option<bool>,
-    additional_provider_specific_params: Option<BTreeMap<String, GuardrailValue>>,
+    #[serde(rename = "additional_provider_specific_params")]
+    provider_params: Option<BTreeMap<String, GuardrailValue>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -56,7 +57,7 @@ pub struct Configured {
     pub api_base: String,
     pub unreachable_fallback: UnreachableFallback,
     pub fail_on_error: bool,
-    pub additional_provider_specific_params: Option<BTreeMap<String, GuardrailValue>>,
+    pub provider_params: Option<BTreeMap<String, GuardrailValue>>,
 }
 
 impl Section for Raw {
@@ -117,7 +118,7 @@ impl Entry {
             api_base,
             unreachable_fallback: parameters.unreachable_fallback.unwrap_or_default(),
             fail_on_error: parameters.fail_on_error.unwrap_or(true),
-            additional_provider_specific_params: parameters.additional_provider_specific_params,
+            provider_params: parameters.provider_params,
         })
     }
 }

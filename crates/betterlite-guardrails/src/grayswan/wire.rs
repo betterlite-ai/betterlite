@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -94,15 +93,6 @@ impl GraySwanRuleNumber {
         match self {
             Self::Integer(value) => *value != 0,
             Self::Text(value) => !value.is_empty(),
-        }
-    }
-}
-
-impl fmt::Display for GraySwanRuleNumber {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Integer(value) => write!(f, "{value}"),
-            Self::Text(value) => write!(f, "{value}"),
         }
     }
 }

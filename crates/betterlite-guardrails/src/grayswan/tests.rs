@@ -33,13 +33,13 @@ fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
         policy_id: None,
         fail_open: true,
     };
-    GraySwanGuardrail::with_client(
-        SecretString::from("secret"),
-        "http://example".to_owned(),
+    GraySwanGuardrail {
+        api_key: SecretString::from("secret"),
+        api_base: "http://example".to_owned(),
         settings,
-        reqwest::Client::default(),
-        super::DEFAULT_TIMEOUT,
-    )
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    }
 }
 
 fn message(role: &str, content: &str) -> GuardrailMessage {
@@ -364,13 +364,13 @@ async fn call_api_mock(
 ) -> Result<GraySwanResponse, GraySwanGuardrailAPIError> {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let instance = GraySwanGuardrail::with_client(
-        SecretString::from("secret"),
-        base,
-        GraySwanSettings::default(),
-        reqwest::Client::default(),
-        super::DEFAULT_TIMEOUT,
-    );
+    let instance = GraySwanGuardrail {
+        api_key: SecretString::from("secret"),
+        api_base: base,
+        settings: GraySwanSettings::default(),
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    };
     let answer = move || async move { (status, body) };
     let router = Router::new().route("/cygnal/monitor", post(answer));
     let mut server = JoinSet::new();
@@ -472,13 +472,13 @@ async fn apply_guardrail_against_a_failing_server(
         policy_id: None,
         fail_open,
     };
-    let instance = GraySwanGuardrail::with_client(
-        SecretString::from("secret"),
-        base,
+    let instance = GraySwanGuardrail {
+        api_key: SecretString::from("secret"),
+        api_base: base,
         settings,
-        reqwest::Client::default(),
-        super::DEFAULT_TIMEOUT,
-    );
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    };
     let answer = || async { (StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()) };
     let router = Router::new().route("/cygnal/monitor", post(answer));
     let mut server = JoinSet::new();

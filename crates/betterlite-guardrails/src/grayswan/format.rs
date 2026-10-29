@@ -35,9 +35,10 @@ pub(super) fn build_messages(
 }
 
 fn text_message(role: &str, content: String) -> GuardrailMessage {
+    let extra = BTreeMap::from([("content".to_owned(), GuardrailExtraValue::Text(content))]);
     GuardrailMessage {
         role: role.to_owned(),
-        extra: BTreeMap::from([("content".to_owned(), GuardrailExtraValue::Text(content))]),
+        extra,
     }
 }
 
@@ -45,25 +46,21 @@ fn text_message_with_tool_calls(
     content: String,
     tool_calls: &[GuardrailExtraValue],
 ) -> GuardrailMessage {
-    GuardrailMessage {
-        role: "assistant".to_owned(),
-        extra: BTreeMap::from([
-            ("content".to_owned(), GuardrailExtraValue::Text(content)),
-            (
-                "tool_calls".to_owned(),
-                GuardrailExtraValue::Array(tool_calls.to_vec()),
-            ),
-        ]),
-    }
+    let mut message = tool_calls_message(tool_calls);
+    message
+        .extra
+        .insert("content".to_owned(), GuardrailExtraValue::Text(content));
+    message
 }
 
 fn tool_calls_message(tool_calls: &[GuardrailExtraValue]) -> GuardrailMessage {
+    let extra = BTreeMap::from([(
+        "tool_calls".to_owned(),
+        GuardrailExtraValue::Array(tool_calls.to_vec()),
+    )]);
     GuardrailMessage {
         role: "assistant".to_owned(),
-        extra: BTreeMap::from([(
-            "tool_calls".to_owned(),
-            GuardrailExtraValue::Array(tool_calls.to_vec()),
-        )]),
+        extra,
     }
 }
 
@@ -112,7 +109,10 @@ fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
         .rule
         .as_ref()
         .filter(|number| number.is_truthy())
-        .map_or_else(|| name.to_owned(), |number| format!("#{number} {name}"));
+        .map_or_else(
+            || name.to_owned(),
+            |number| format!("#{} {name}", rule_number_text(number)),
+        );
     fields
         .description
         .as_deref()
@@ -121,6 +121,13 @@ fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
             || prefixed_name.clone(),
             |description| format!("{prefixed_name}: {description}"),
         )
+}
+
+fn rule_number_text(number: &GraySwanRuleNumber) -> String {
+    match number {
+        GraySwanRuleNumber::Integer(value) => value.to_string(),
+        GraySwanRuleNumber::Text(value) => value.clone(),
+    }
 }
 
 fn fallback_fields(fields: &GraySwanViolatedRuleFields) -> BTreeMap<String, GuardrailExtraValue> {

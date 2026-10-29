@@ -218,7 +218,8 @@ pub fn extract_user_api_key_metadata(
 }
 
 fn known_field(values: &BTreeMap<String, Option<String>>, name: &str) -> Option<String> {
-    values.get(name).cloned().flatten()
+    let value = values.get(name).cloned();
+    value.flatten()
 }
 
 fn normalize_api_base(api_base: &str) -> String {
