@@ -12,7 +12,6 @@ use crate::secret_codec::{
 
 const EXTRA_SENSITIVE_KEY: &str = "gcs_path_service_account";
 
-// Port of callback_utils.is_sensitive_callback_key.
 #[must_use]
 pub fn is_sensitive_callback_key(key: &str, extra: &BTreeSet<String>) -> bool {
     if extra.contains(key) {
@@ -25,7 +24,6 @@ pub fn is_sensitive_callback_key(key: &str, extra: &BTreeSet<String>) -> bool {
         .is_sensitive_key(key, &[])
 }
 
-// Port of callback_utils.encrypt_callback_vars.
 pub fn encrypt_callback_vars<N, D>(
     metadata: &Payload,
     cipher: &StoredCipher<N, D>,
@@ -39,7 +37,6 @@ where
     transform_callback_vars(metadata, transform)
 }
 
-// Port of callback_utils.decrypt_callback_vars.
 pub fn decrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
     D: SecretDiagnostics,
@@ -88,7 +85,6 @@ where
     }
 }
 
-// Port of callback_utils._encrypt_if_plaintext.
 fn encrypt_if_plaintext<N, D>(
     key: &str,
     value: &Payload,

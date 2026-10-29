@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use serde_json::json;
@@ -10,7 +12,17 @@ use serde_json::json;
 use super::app_crypto::{AppCrypto, AppCryptoError, Envelope};
 use crate::error::SecretError;
 use crate::secret_codec::diagnostics::TracingDiagnostics;
-use crate::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
+use crate::secret_codec::{Algorithm, CipherSettings, NonceSource, OsNonces, StoredCipher};
+
+struct FixedNonce<'bytes>(&'bytes [u8]);
+
+impl NonceSource for FixedNonce<'_> {
+    fn fill(&self, nonce: &mut [u8]) -> Result<(), SecretError> {
+        let bytes = self.0.get(..nonce.len()).ok_or(SecretError::Truncated)?;
+        nonce.copy_from_slice(bytes);
+        Ok(())
+    }
+}
 
 // bytes(range(32)) as the raw master key, Python's cryptography.AESGCM envelope for aad b"caller-prefix"
 const KEY: [u8; 32] = [
@@ -30,18 +42,15 @@ fn key_secret(bytes: &[u8; 32]) -> SecretSlice<u8> {
 fn rejects_a_key_that_is_not_32_bytes() {
     let short = SecretSlice::from(b"too-short".to_vec());
     assert!(matches!(
-        AppCrypto::new(&short),
-        Err(AppCryptoError::KeyLength {
-            length: 9,
-            expected: 32
-        })
+        AppCrypto::new(&short, OsNonces),
+        Err(AppCryptoError::KeyLength)
     ));
 }
 
 #[test]
 fn accepts_a_key_that_is_not_utf8() {
     let non_utf8 = SecretSlice::from(vec![0xff_u8; 32]);
-    let app = AppCrypto::new(&non_utf8).unwrap();
+    let app = AppCrypto::new(&non_utf8, OsNonces).unwrap();
     let data = json!({"a": 1_i64});
     let envelope = app.encrypt_json(&data, None).unwrap();
     let opened = app.decrypt_json(&envelope, None).unwrap();
@@ -50,7 +59,7 @@ fn accepts_a_key_that_is_not_utf8() {
 
 #[test]
 fn decrypts_a_vector_produced_by_pythons_aesgcm() {
-    let app = AppCrypto::new(&key_secret(&KEY)).unwrap();
+    let app = AppCrypto::new(&key_secret(&KEY), OsNonces).unwrap();
     let envelope = Envelope {
         nonce: PYTHON_NONCE.to_owned(),
         ciphertext: PYTHON_CIPHERTEXT.to_owned(),
@@ -62,16 +71,32 @@ fn decrypts_a_vector_produced_by_pythons_aesgcm() {
 
 #[test]
 fn round_trips_and_a_python_reader_would_accept_the_shape() {
-    let app = AppCrypto::new(&key_secret(&KEY)).unwrap();
+    let app = AppCrypto::new(&key_secret(&KEY), OsNonces).unwrap();
     let data = json!({"a": 1_i64, "b": "two"});
     let envelope = app.encrypt_json(&data, Some(AAD)).unwrap();
     let opened = app.decrypt_json(&envelope, Some(AAD)).unwrap();
     assert_eq!(opened, data);
 }
 
+// betterlite's own output for this key/aad/data under a fixed nonce; the oracle's app-envelope-aad case feeds it to LiteLLM's AppCrypto to decrypt.
+const RUST_MADE_CIPHERTEXT: &str = "PCC4Of/S7jn5Lvzu38tCT/C9qliZDTpRSwKG93gdIs8=";
+const RUST_MADE_TAG: &str = "ZWAwpoSsRsqkupkNCjl+xQ==";
+
+#[test]
+fn an_injected_fixed_nonce_makes_a_reproducible_envelope() {
+    let nonce_bytes = STANDARD.decode(PYTHON_NONCE).unwrap();
+    let app = AppCrypto::new(&key_secret(&KEY), FixedNonce(&nonce_bytes)).unwrap();
+    let data = json!({"token": "sk-live-secret", "n": 7_i64});
+    let envelope = app.encrypt_json(&data, Some(AAD)).unwrap();
+    assert_eq!(envelope.nonce, PYTHON_NONCE);
+    assert_eq!(envelope.ciphertext, RUST_MADE_CIPHERTEXT);
+    assert_eq!(envelope.tag, RUST_MADE_TAG);
+    assert_eq!(app.decrypt_json(&envelope, Some(AAD)).unwrap(), data);
+}
+
 #[test]
 fn wrong_aad_fails_authentication() {
-    let app = AppCrypto::new(&key_secret(&KEY)).unwrap();
+    let app = AppCrypto::new(&key_secret(&KEY), OsNonces).unwrap();
     let envelope = Envelope {
         nonce: PYTHON_NONCE.to_owned(),
         ciphertext: PYTHON_CIPHERTEXT.to_owned(),
@@ -87,7 +112,7 @@ fn wrong_aad_fails_authentication() {
 #[case::tampered_ciphertext(PYTHON_CIPHERTEXT.replacen('C', "D", 1), PYTHON_TAG.to_owned())]
 #[case::tampered_tag(PYTHON_CIPHERTEXT.to_owned(), PYTHON_TAG.replacen('S', "T", 1))]
 fn tampering_fails_authentication(#[case] ciphertext: String, #[case] tag: String) {
-    let app = AppCrypto::new(&key_secret(&KEY)).unwrap();
+    let app = AppCrypto::new(&key_secret(&KEY), OsNonces).unwrap();
     let envelope = Envelope {
         nonce: PYTHON_NONCE.to_owned(),
         ciphertext,

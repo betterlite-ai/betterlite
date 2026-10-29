@@ -142,7 +142,7 @@ def run_app_crypto(input_value: dict[str, Json]) -> Json:
         try:
             results.append({"value": call_app_crypto(app, step)})
         except (ValueError, KeyError, TypeError, InvalidTag) as error:
-            results.append({"error": {"class": "ValueError", "message": str(error)}})
+            results.append({"error": {"class": type(error).__name__, "message": str(error)}})
     return results
 
 
@@ -187,10 +187,7 @@ def run_callback_vars(input_value: dict[str, Json]) -> Json:
 def run_master_key_match(input_value: dict[str, Json]) -> Json:
     presented = optional_text(input_value, "presented")
     master_key = optional_text(input_value, "master_key")
-    try:
-        return spend_tracking_utils._is_master_key(presented, master_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    except TypeError:
-        return False
+    return spend_tracking_utils._is_master_key(presented, master_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
 
 def run(input_value: Json) -> Json:

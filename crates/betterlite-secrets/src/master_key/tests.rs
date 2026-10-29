@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use std::fmt::Write as _;
+
 use rstest::rstest;
+use sha2::{Digest as _, Sha256};
 
 use super::matches_raw;
 
@@ -13,11 +16,23 @@ use super::matches_raw;
 #[case::both_absent(None, None, false)]
 #[case::non_ascii_presented(Some("sk-m\u{e4}ster"), Some("sk-m\u{e4}ster"), false)]
 #[case::non_ascii_master(Some("plain"), Some("pla\u{131}n"), false)]
-#[case::digest_is_not_raw(Some("hashed-jwt-aaaa"), Some("sk-master-1234"), false)]
 fn reports_raw_master_key_equality(
     #[case] presented: Option<&str>,
     #[case] master_key: Option<&str>,
     #[case] expected: bool,
 ) {
     assert_eq!(matches_raw(presented, master_key), expected);
+}
+
+#[test]
+fn digest_is_not_raw() {
+    let master_key = "sk-master-1234";
+    let digest =
+        Sha256::digest(master_key.as_bytes())
+            .iter()
+            .fold(String::new(), |mut hex, byte| {
+                write!(hex, "{byte:02x}").unwrap();
+                hex
+            });
+    assert!(!matches_raw(Some(&digest), Some(master_key)));
 }

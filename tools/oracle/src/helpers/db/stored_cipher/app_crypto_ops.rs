@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_secrets::secret_codec::OsNonces;
 use betterlite_secrets::stored_cipher::app_crypto::{AppCrypto, AppCryptoError, Envelope};
 use secrecy::SecretSlice;
 use serde_json::{Value, json};
@@ -29,13 +30,13 @@ pub(super) fn run_app_crypto(key: &str, steps: &[AppCryptoStep]) -> HelperResult
     let decoded = STANDARD
         .decode(key)
         .map_err(|error| invalid(&error.to_string()))?;
-    let app: AppCrypto =
-        AppCrypto::new(&SecretSlice::from(decoded)).map_err(|error| invalid(&error.to_string()))?;
+    let app: AppCrypto<OsNonces> = AppCrypto::new(&SecretSlice::from(decoded), OsNonces)
+        .map_err(|error| invalid(&error.to_string()))?;
     let results = steps.iter().map(|step| call_app_crypto(&app, step));
     Ok(Value::Array(results.collect()))
 }
 
-fn call_app_crypto(app: &AppCrypto, step: &AppCryptoStep) -> Value {
+fn call_app_crypto(app: &AppCrypto<OsNonces>, step: &AppCryptoStep) -> Value {
     match step {
         AppCryptoStep::Roundtrip { data, aad } => {
             let aad_bytes = aad.as_ref().map(String::as_bytes);
@@ -66,6 +67,17 @@ fn call_app_crypto(app: &AppCrypto, step: &AppCryptoStep) -> Value {
 fn app_result(result: Result<Value, AppCryptoError>) -> Value {
     match result {
         Ok(value) => json!({"value": value}),
-        Err(error) => json!({"error": {"class": "ValueError", "message": error.to_string()}}),
+        Err(error) => {
+            let class = match error {
+                AppCryptoError::Seal { .. } => "InvalidTag",
+                AppCryptoError::KeyLength
+                | AppCryptoError::Random { .. }
+                | AppCryptoError::JsonEncode { .. }
+                | AppCryptoError::Decode { .. }
+                | AppCryptoError::Truncated
+                | AppCryptoError::JsonDecode { .. } => "ValueError",
+            };
+            json!({"error": {"class": class, "message": error.to_string()}})
+        }
     }
 }

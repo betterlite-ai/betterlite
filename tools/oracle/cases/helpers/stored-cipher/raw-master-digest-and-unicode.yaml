@@ -7,4 +7,6 @@ call:
     master_key: "sk-héllo"
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: ""
+      why: B1600 keeps matches_raw false on a non-ASCII operand instead of raising; LiteLLM's secrets.compare_digest raises TypeError there (docs/deviations/B1600.yaml)

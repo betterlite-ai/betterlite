@@ -7,26 +7,26 @@ use secrecy::{ExposeSecret as _, SecretSlice};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-const KEY_LEN: usize = 32;
+use crate::error::SecretError;
+use crate::secret_codec::NonceSource;
+
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 
-// Both directions seal the same way under the hood; only which AEAD call runs differs.
 #[derive(Clone, Copy)]
 enum Direction {
     Encrypt,
     Decrypt,
 }
 
-// AppCrypto's own envelope errors, distinct from the stored-value codec's SecretError.
 #[derive(Debug, Error)]
 pub enum AppCryptoError {
-    #[error("the master key is {length} bytes, not the required {expected}")]
-    KeyLength { length: usize, expected: usize },
+    #[error("the master key is not a valid 32-byte AES-256 key")]
+    KeyLength,
     #[error("could not draw a random nonce")]
     Random {
         #[source]
-        source: getrandom::Error,
+        source: SecretError,
     },
     #[error("could not encode the payload as JSON")]
     JsonEncode {
@@ -53,9 +53,9 @@ pub enum AppCryptoError {
     },
 }
 
-// Port of app_crypto.AppCrypto: an exact 32-byte key, no SHA-256 derivation.
-pub struct AppCrypto {
+pub struct AppCrypto<N> {
     cipher: Aes256Gcm,
+    nonces: N,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,20 +65,14 @@ pub struct Envelope {
     pub tag: String,
 }
 
-impl AppCrypto {
-    pub fn new(master_key: &SecretSlice<u8>) -> Result<Self, AppCryptoError> {
-        let bytes = master_key.expose_secret();
-        if bytes.len() != KEY_LEN {
-            return Err(AppCryptoError::KeyLength {
-                length: bytes.len(),
-                expected: KEY_LEN,
-            });
-        }
-        let key = aes_gcm::Key::<Aes256Gcm>::try_from(bytes)
-            .map_err(|_slice| AppCryptoError::Truncated)?;
-        Ok(Self {
-            cipher: Aes256Gcm::new(&key),
-        })
+impl<N> AppCrypto<N>
+where
+    N: NonceSource,
+{
+    pub fn new(master_key: &SecretSlice<u8>, nonces: N) -> Result<Self, AppCryptoError> {
+        let cipher = Aes256Gcm::new_from_slice(master_key.expose_secret())
+            .map_err(|_error| AppCryptoError::KeyLength)?;
+        Ok(Self { cipher, nonces })
     }
 
     pub fn encrypt_json(
@@ -87,7 +81,9 @@ impl AppCrypto {
         aad: Option<&[u8]>,
     ) -> Result<Envelope, AppCryptoError> {
         let mut nonce = [0_u8; NONCE_LEN];
-        getrandom::fill(&mut nonce).map_err(|source| AppCryptoError::Random { source })?;
+        self.nonces
+            .fill(&mut nonce)
+            .map_err(|source| AppCryptoError::Random { source })?;
         let plaintext =
             serde_json::to_vec(data).map_err(|source| AppCryptoError::JsonEncode { source })?;
         let sealed = self.transcode(nonce, &plaintext, aad, Direction::Encrypt)?;

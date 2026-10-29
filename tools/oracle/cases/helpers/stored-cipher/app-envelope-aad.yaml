@@ -17,6 +17,15 @@ call:
           ciphertext: svx5qAA0pNDiiY80UkuXsYv0V4kEQppXeS9AN+VC4F/Z+4U=
           tag: YvF4vk9f1nOfC1kTTQFbOA==
         aad: null
+      # betterlite's own AppCrypto, built with a fixed nonce, produced this envelope for
+      # {"token": "sk-live-secret", "n": 7} under AAD "caller-prefix"; LiteLLM's AESGCM
+      # must decrypt it to the same value, proving a Rust-made envelope is interoperable.
+      - kind: decrypt
+        envelope:
+          nonce: AAECAwQFBgcICQoL
+          ciphertext: PCC4Of/S7jn5Lvzu38tCT/C9qliZDTpRSwKG93gdIs8=
+          tag: ZWAwpoSsRsqkupkNCjl+xQ==
+        aad: caller-prefix
       - kind: roundtrip
         data: {token: sk-live-secret, n: 7}
         aad: caller-prefix
