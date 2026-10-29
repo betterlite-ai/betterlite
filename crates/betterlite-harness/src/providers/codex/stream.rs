@@ -50,7 +50,11 @@ impl ScalarJson {
 }
 
 fn python_bool_str(flag: bool) -> String {
-    if flag { "True" } else { "False" }.to_owned()
+    if flag {
+        "True".to_owned()
+    } else {
+        "False".to_owned()
+    }
 }
 
 #[derive(Debug, Deserialize)]

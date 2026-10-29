@@ -163,7 +163,7 @@ fn turn_failed_accepts_non_string_error_shapes(#[case] raw: &str, #[case] expect
 }
 
 #[test]
-fn unparseable_turn_failed_still_marks_the_turn_failed() {
+fn unparsable_turn_failed_still_marks_the_turn_failed() {
     let mut state = CodexStreamState::default();
     let line: JsonObject = serde_json::from_str(r#"{"type":"turn.failed","error":[1,2]}"#).unwrap();
     CodexHarnessConfig.transform_stream_line(&line, &mut state);
