@@ -104,9 +104,7 @@ pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
         return Err(DbError::MissingScheme);
     }
     let (user, password, host, port) = parse_netloc(&parsed.netloc)?;
-    // Mirrors query.rs's redact_credentials guard: once the netloc itself parses, an unencoded
-    // '/', '?' or '#' in the password has still truncated it early, leaving the rest of the
-    // credentials sitting unparsed (and unredacted) in the path, query or fragment.
+    // Mirrors query.rs's redact_credentials guard: an unencoded '/', '?' or '#' in the password truncated the netloc early.
     if !parsed.netloc.is_empty()
         && (parsed.path.contains('@')
             || parsed.query.contains('@')

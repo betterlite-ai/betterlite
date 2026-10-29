@@ -3,8 +3,7 @@ use std::fmt::Write as _;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use unicode_normalization::UnicodeNormalization as _;
 
-// Mirrors CPython's quote_plus: alphanumerics and _.-~ pass through literally, a space becomes
-// a literal space here and is turned into '+' after encoding, everything else is percent-escaped.
+// Mirrors CPython's quote_plus: alphanumerics and _.-~ pass through literally, everything else is percent-escaped.
 const QUOTE_PLUS_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
@@ -80,8 +79,7 @@ fn split_netloc(rest: &str) -> Result<(String, &str), UrlSplitError> {
     Ok((netloc.to_owned(), tail))
 }
 
-// Mirrors _checknetloc: a non-ASCII netloc that NFKC-normalizes into one of '/?#@:' can smuggle a
-// separator past code that only inspected the pre-normalization text (CPython's homoglyph guard).
+// Mirrors _checknetloc: a non-ASCII netloc that NFKC-normalizes into one of '/?#@:' is a homoglyph attack.
 fn check_netloc_nfkc(netloc: &str) -> Result<(), UrlSplitError> {
     if netloc.is_ascii() {
         return Ok(());
@@ -91,13 +89,13 @@ fn check_netloc_nfkc(netloc: &str) -> Result<(), UrlSplitError> {
         .filter(|character| !matches!(character, '@' | ':' | '#' | '?'))
         .collect();
     let normalized: String = stripped.nfkc().collect();
-    if stripped == normalized {
-        return Ok(());
+    let smuggled_a_separator =
+        stripped != normalized && normalized.contains(['/', '?', '#', '@', ':']);
+    if smuggled_a_separator {
+        Err(UrlSplitError::InvalidNfkcNetloc)
+    } else {
+        Ok(())
     }
-    if normalized.contains(['/', '?', '#', '@', ':']) {
-        return Err(UrlSplitError::InvalidNfkcNetloc);
-    }
-    Ok(())
 }
 
 // Mirrors _check_bracketed_netloc: an unmatched, misplaced or invalid-host bracket is an error.
@@ -260,11 +258,12 @@ pub(super) fn urlencode_doseq(groups: &[(String, Vec<String>)]) -> String {
 // Matches urllib.parse.unquote_plus: percent_decode leaves a bad escape as a literal '%', like CPython.
 fn unquote_plus(text: &str) -> String {
     let space_separated = text.replace('+', " ");
-    decode_percent_bytes(percent_decode(space_separated.as_bytes()).collect())
+    let decoded: Vec<u8> = percent_decode(space_separated.as_bytes()).collect();
+    decode_percent_bytes(&decoded)
 }
 
 // Replicates bytes.decode("utf-8", errors="replace") using the standard library's own chunking.
-fn decode_percent_bytes(bytes: Vec<u8>) -> String {
+fn decode_percent_bytes(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len());
     for chunk in bytes.utf8_chunks() {
         text.push_str(chunk.valid());

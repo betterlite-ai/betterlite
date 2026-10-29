@@ -458,9 +458,7 @@ fn bracketed_hostname_and_ipv4_are_errors() {
     assert_eq!(unsupported_db_scheme(ipv6_url), Ok(None));
 }
 
-// Python's _checknetloc rejects a non-ASCII netloc that NFKC-normalizes into a separator: here
-// U+FF1A (FULLWIDTH COLON) collapses to ':', which could smuggle a host/port split past a reader
-// that only inspected the pre-normalization text.
+// U+FF1A (FULLWIDTH COLON) NFKC-normalizes to ':', the homoglyph attack _checknetloc rejects.
 #[test]
 fn nfkc_homoglyph_netloc_is_an_error() {
     let url = "postgresql://evil\u{ff1a}host/db";
@@ -610,8 +608,7 @@ fn native_url_debug_redaction_covers_query_secrets() {
     assert!(debug.contains('1'));
 }
 
-// An unencoded '/' in the path pushes a leftover '@' credential past the netloc, where it would
-// otherwise land unredacted in the database field and leak through Debug.
+// An unencoded '/' in the path pushes a leftover '@' credential past the netloc.
 #[test]
 fn native_url_rejects_credentials_past_netloc() {
     let error = decode_database_url(b"postgresql://admin:12345/xyz@host/db").unwrap_err();

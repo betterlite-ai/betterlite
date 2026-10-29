@@ -52,7 +52,7 @@ def pairs_to_extra_params(pairs: Json) -> dict[str, ExtraParamValue]:
 
 
 def extra_params_to_pairs(params: dict[str, ExtraParamValue]) -> Json:
-    return [[key, value] for key, value in params.items()]
+    return cast(Json, [[key, value] for key, value in params.items()])
 
 
 def run_idle_lifetime_params(input_value: dict[str, Json]) -> Json:
