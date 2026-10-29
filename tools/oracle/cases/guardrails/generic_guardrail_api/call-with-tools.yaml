@@ -1,5 +1,12 @@
 kind: helper
 name: call-with-tools
-call: {b3771: {metadata: {user_api_key_alias: alias}}}
+call:
+  b3771:
+    generic_call:
+      inputs:
+        tools:
+          - type: function
+            function: {name: get_weather, description: "Get the weather", parameters: {}}
+      answer: {status: 200, headers: {}, body: {action: NONE}}
 env: {}
 compare: {ignore: []}

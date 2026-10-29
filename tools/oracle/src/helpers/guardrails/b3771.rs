@@ -7,7 +7,8 @@ use betterlite_guardrails::generic_guardrail_api::{
 };
 use betterlite_guardrails::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPISettings,
-    GuardrailInputType, StreamingTransformMode, UnreachableFallback,
+    GuardrailInputType, GuardrailMessage, GuardrailToolParam, StreamingTransformMode,
+    UnreachableFallback,
 };
 use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
 use betterlite_guardrails::grayswan::wire::GraySwanResponse;
@@ -138,13 +139,28 @@ fn generic_call(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .enable_all()
         .build()
         .map_err(io)?;
-    let result = runtime.block_on(guardrail.apply_guardrail(generic_request()));
+    let result = runtime.block_on(guardrail.apply_guardrail(generic_request(&request)?));
     mock.map(MockProvider::finish)
         .transpose()
         .map_err(mock_error)?;
+    generic_result(result)
+}
+
+fn generic_result(
+    result: Result<
+        betterlite_guardrails::generic_guardrail_contracts::GenericGuardrailAPIResponse,
+        GenericGuardrailAPIError,
+    >,
+) -> crate::helpers::HelperResult {
     match result {
-        Ok(response) => serde_json::to_value(json!({"texts": response.texts, "blocked": false}))
-            .map_err(|error| failure(error.to_string())),
+        Ok(response) => serde_json::to_value(json!({
+            "texts": response.texts,
+            "images": response.images,
+            "tools": response.tools,
+            "structured_messages": response.structured_messages,
+            "blocked": false,
+        }))
+        .map_err(|error| failure(error.to_string())),
         Err(error) => Err(generic_failure(&error)),
     }
 }
@@ -183,22 +199,49 @@ fn generic_guardrail(base: &str, settings: GenericGuardrailAPISettings) -> Gener
     )
 }
 
-fn generic_request() -> GenericGuardrailAPIRequest {
-    GenericGuardrailAPIRequest {
+fn generic_request(
+    request: &serde_json::Value,
+) -> Result<GenericGuardrailAPIRequest, Box<crate::helpers::HelperError>> {
+    let inputs = request.get("inputs");
+    let field = |name: &str| inputs.and_then(|value| value.get(name)).cloned();
+    let texts = field("texts")
+        .map(serde_json::from_value::<Vec<String>>)
+        .transpose()
+        .map_err(|error| failure(error.to_string()))?
+        .or_else(|| {
+            Some(if inputs.is_none() {
+                vec!["hello".to_owned()]
+            } else {
+                Vec::new()
+            })
+        });
+    let images = field("images")
+        .map(serde_json::from_value::<Vec<String>>)
+        .transpose()
+        .map_err(|error| failure(error.to_string()))?;
+    let tools = field("tools")
+        .map(serde_json::from_value::<Vec<GuardrailToolParam>>)
+        .transpose()
+        .map_err(|error| failure(error.to_string()))?;
+    let structured_messages = field("structured_messages")
+        .map(serde_json::from_value::<Vec<GuardrailMessage>>)
+        .transpose()
+        .map_err(|error| failure(error.to_string()))?;
+    Ok(GenericGuardrailAPIRequest {
         input_type: GuardrailInputType::Request,
         litellm_call_id: None,
         litellm_trace_id: None,
-        structured_messages: None,
-        images: None,
-        tools: None,
-        texts: Some(vec!["hello".to_owned()]),
+        structured_messages,
+        images,
+        tools,
+        texts,
         request_data: GenericGuardrailAPIMetadata::default(),
         request_headers: None,
         litellm_version: None,
         provider_params: None,
         tool_calls: None,
         model: None,
-    }
+    })
 }
 
 fn generic_failure(error: &GenericGuardrailAPIError) -> Box<crate::helpers::HelperError> {

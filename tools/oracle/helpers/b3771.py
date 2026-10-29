@@ -34,6 +34,8 @@ def generic_call(fields: dict[str, Json]) -> Json:
     answer = cast(dict[str, Json], fields.get("answer")) if fields.get("answer") is not None else None
     unreachable_fallback = cast(str, fields.get("unreachable_fallback", "fail_closed"))
     fail_on_error = cast(bool, fields.get("fail_on_error", True))
+    driven_inputs = cast(dict[str, Json] | None, fields.get("inputs"))
+    inputs: dict[str, Json] = dict(driven_inputs) if driven_inputs is not None else {"texts": ["hello"]}
 
     def handle(request: httpx.Request) -> httpx.Response:
         if answer is not None:
@@ -47,8 +49,14 @@ def generic_call(fields: dict[str, Json]) -> Json:
             fail_on_error=fail_on_error,
         )
         api.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
-        result = await api.apply_guardrail(inputs={"texts": ["hello"]}, request_data={}, input_type="request")
-        return {"texts": cast(Json, result.get("texts", ["hello"])), "blocked": False}
+        result = await api.apply_guardrail(inputs=cast(Json, inputs), request_data={}, input_type="request")
+        return {
+            "texts": cast(Json, result.get("texts")),
+            "images": cast(Json, result.get("images")),
+            "tools": cast(Json, result.get("tools")),
+            "structured_messages": cast(Json, result.get("structured_messages")),
+            "blocked": False,
+        }
 
     return asyncio.run(call())
 
