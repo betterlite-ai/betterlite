@@ -1,5 +1,4 @@
-from collections.abc import Callable
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 import httpx
 import litellm
@@ -178,8 +177,7 @@ Input = (
     | JsonSchemaValidationInput
 )
 
-# `UNSAFE_PROXY_RESPONSE_HEADERS` from `litellm/proxy/common_request_processing.py`, plus the
-# raw-and-prefixed cookie/CORS names the B184 security deviation also strips.
+# UNSAFE_PROXY_RESPONSE_HEADERS, plus the B184 deviation stripping cookie/CORS both raw and prefixed
 _UNSAFE_RESPONSE_HEADERS = frozenset(
     {
         "content-length",
@@ -505,30 +503,47 @@ def _json_schema_validation(input_value: JsonSchemaValidationInput) -> object:
     return _metadata(exc)
 
 
-HANDLERS: dict[str, Callable[[Any], object]] = {
-    "authentication": _authentication,
-    "not_found": _not_found,
-    "permission_denied": _permission_denied,
-    "bad_request": _bad_request,
-    "unprocessable_entity": _unprocessable_entity,
-    "context_window_exceeded": _context_window_exceeded,
-    "content_policy_violation": _content_policy_violation,
-    "service_unavailable": _service_unavailable,
-    "bad_gateway": _bad_gateway,
-    "internal_server": _internal_server,
-    "api_connection": _api_connection,
-    "api_response_validation": _api_response_validation,
-    "unsupported_params": _unsupported_params,
-    "unclassified": _unclassified,
-    "timeout": _timeout,
-    "rate_limit": _rate_limit,
-    "api": _api,
-    "mid_stream_fallback": _mid_stream_fallback,
-    "budget_exceeded": _budget_exceeded,
-    "guardrail_raised": _guardrail_raised,
-    "json_schema_validation": _json_schema_validation,
-}
-
-
-def run(input_value: Input) -> object:
-    return HANDLERS[input_value["family"]](input_value)
+def run(input_value: Input) -> object:  # noqa: C901, PLR0911, PLR0912 # one branch per exception family
+    match input_value["family"]:
+        case "authentication":
+            return _authentication(input_value)
+        case "not_found":
+            return _not_found(input_value)
+        case "permission_denied":
+            return _permission_denied(input_value)
+        case "bad_request":
+            return _bad_request(input_value)
+        case "unprocessable_entity":
+            return _unprocessable_entity(input_value)
+        case "context_window_exceeded":
+            return _context_window_exceeded(input_value)
+        case "content_policy_violation":
+            return _content_policy_violation(input_value)
+        case "service_unavailable":
+            return _service_unavailable(input_value)
+        case "bad_gateway":
+            return _bad_gateway(input_value)
+        case "internal_server":
+            return _internal_server(input_value)
+        case "api_connection":
+            return _api_connection(input_value)
+        case "api_response_validation":
+            return _api_response_validation(input_value)
+        case "unsupported_params":
+            return _unsupported_params(input_value)
+        case "unclassified":
+            return _unclassified(input_value)
+        case "timeout":
+            return _timeout(input_value)
+        case "rate_limit":
+            return _rate_limit(input_value)
+        case "api":
+            return _api(input_value)
+        case "mid_stream_fallback":
+            return _mid_stream_fallback(input_value)
+        case "budget_exceeded":
+            return _budget_exceeded(input_value)
+        case "guardrail_raised":
+            return _guardrail_raised(input_value)
+        case "json_schema_validation":
+            return _json_schema_validation(input_value)
