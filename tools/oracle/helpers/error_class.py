@@ -2,6 +2,7 @@ from typing import Literal, NotRequired, TypedDict
 
 import httpx
 import litellm
+from litellm.constants import UNSAFE_PROXY_RESPONSE_HEADERS
 from litellm.exceptions import APIConnectionError as LitellmAPIConnectionError
 from litellm.exceptions import APIError as LitellmAPIError
 from litellm.exceptions import APIResponseValidationError as LitellmAPIResponseValidationError
@@ -177,57 +178,13 @@ Input = (
     | JsonSchemaValidationInput
 )
 
-# UNSAFE_PROXY_RESPONSE_HEADERS, plus the B184 deviation stripping cookie/CORS both raw and prefixed
-_UNSAFE_RESPONSE_HEADERS = frozenset(
-    {
-        "content-length",
-        "transfer-encoding",
-        "content-encoding",
-        "content-type",
-        "set-cookie",
-        "cookie",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "access-control-allow-origin",
-        "access-control-allow-credentials",
-        "access-control-allow-methods",
-        "access-control-allow-headers",
-        "access-control-expose-headers",
-        "content-security-policy",
-        "content-security-policy-report-only",
-        "clear-site-data",
-        "strict-transport-security",
-        "x-frame-options",
-        "cross-origin-opener-policy",
-        "cross-origin-embedder-policy",
-        "cross-origin-resource-policy",
-    }
-)
-_COOKIE_AND_CORS_HEADERS = frozenset(
-    {
-        "set-cookie",
-        "cookie",
-        "access-control-allow-origin",
-        "access-control-allow-credentials",
-        "access-control-allow-methods",
-        "access-control-allow-headers",
-        "access-control-expose-headers",
-    }
-)
-_LLM_PROVIDER_PREFIX = "llm_provider-"
-
 
 def _filter_unsafe_headers(headers: dict[str, str]) -> dict[str, str]:
-    kept: dict[str, str] = {}
-    for name, value in headers.items():
-        lower = name.lower()
-        if lower in _UNSAFE_RESPONSE_HEADERS:
-            continue
-        suffix = lower.removeprefix(_LLM_PROVIDER_PREFIX)
-        if suffix != lower and suffix in _COOKIE_AND_CORS_HEADERS:
-            continue
-        kept[name] = value
-    return kept
+    return {
+        name: value
+        for name, value in headers.items()
+        if name.lower() not in UNSAFE_PROXY_RESPONSE_HEADERS
+    }
 
 
 def _mock_response(status_code: int) -> httpx.Response:

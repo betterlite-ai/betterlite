@@ -16,4 +16,9 @@ call:
       llm_provider-set-cookie: a=b
       access-control-allow-origin: "*"
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/allowed_response_headers/llm_provider-set-cookie
+      why: >-
+        B184 deviation drops llm_provider-set-cookie too, unlike real LiteLLM which filters
+        UNSAFE_PROXY_RESPONSE_HEADERS only on the unprefixed name and keeps the prefixed copy.
