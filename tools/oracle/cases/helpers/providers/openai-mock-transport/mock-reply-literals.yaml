@@ -1,0 +1,5 @@
+kind: helper
+name: mock-reply-literals
+call: {openai_mock_transport: {case: mock_reply_literals, model: gpt-4, clock: 1700000000, uuid: "01234567-89ab-cdef-0123-456789abcdef"}}
+env: {}
+compare: {ignore: []}
