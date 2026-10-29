@@ -112,7 +112,9 @@ where
         "REDIS_URL",
     )?;
     Ok(match provider {
-        Some(Provider::Azure(azure)) => (stripped_url(configured_url)?, azure.username.clone(), None),
+        Some(Provider::Azure(azure)) => {
+            (stripped_url(configured_url)?, azure.username.clone(), None)
+        }
         Some(_) => (stripped_url(configured_url)?, None, None),
         None => {
             let username = resolve_string_opt(
