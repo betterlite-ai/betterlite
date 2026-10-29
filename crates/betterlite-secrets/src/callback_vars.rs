@@ -42,21 +42,26 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let transform = |key: &str, value: &Payload| encrypt_if_plaintext(key, value, cipher);
-    transform_callback_vars(metadata, transform)
+    transform_callback_vars(metadata, &Transform::Encrypt(cipher))
 }
 
 pub fn decrypt_callback_vars<N, D>(metadata: &Payload, cipher: &StoredCipher<N, D>) -> Payload
 where
+    N: NonceSource,
     D: SecretDiagnostics,
 {
-    let transform = |key: &str, value: &Payload| decrypt_or_passthrough(key, value, cipher);
-    transform_callback_vars(metadata, transform)
+    transform_callback_vars(metadata, &Transform::Decrypt(cipher))
 }
 
-fn transform_callback_vars<F>(metadata: &Payload, transform: F) -> Payload
+enum Transform<'cipher, N, D> {
+    Encrypt(&'cipher StoredCipher<N, D>),
+    Decrypt(&'cipher StoredCipher<N, D>),
+}
+
+fn transform_callback_vars<N, D>(metadata: &Payload, transform: &Transform<'_, N, D>) -> Payload
 where
-    F: Fn(&str, &Payload) -> Payload,
+    N: NonceSource,
+    D: SecretDiagnostics,
 {
     let Some(map) = metadata.as_object() else {
         return metadata.clone();
@@ -64,18 +69,19 @@ where
     let mut out = map.clone();
     if let Some(entries) = out.get_mut("logging").and_then(Payload::as_array_mut) {
         for entry in entries.iter_mut() {
-            visit_callback_vars(entry, &transform);
+            visit_callback_vars(entry, transform);
         }
     }
     if let Some(settings) = out.get_mut("callback_settings") {
-        visit_callback_vars(settings, &transform);
+        visit_callback_vars(settings, transform);
     }
     Payload::Object(out)
 }
 
-fn visit_callback_vars<F>(slot: &mut Payload, transform: F)
+fn visit_callback_vars<N, D>(slot: &mut Payload, transform: &Transform<'_, N, D>)
 where
-    F: Fn(&str, &Payload) -> Payload,
+    N: NonceSource,
+    D: SecretDiagnostics,
 {
     let Some(vars) = slot
         .as_object()
@@ -86,7 +92,13 @@ where
     };
     let transformed = vars
         .iter()
-        .map(|(key, value)| (key.clone(), transform(key, value)))
+        .map(|(key, value)| {
+            let result = match transform {
+                Transform::Encrypt(cipher) => encrypt_if_plaintext(key, value, cipher),
+                Transform::Decrypt(cipher) => decrypt_or_passthrough(key, value, cipher),
+            };
+            (key.clone(), result)
+        })
         .collect();
     if let Some(fields) = slot.as_object_mut() {
         fields.insert("callback_vars".to_owned(), Payload::Object(transformed));

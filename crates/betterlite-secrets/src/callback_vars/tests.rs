@@ -257,33 +257,65 @@ impl SecretDiagnostics for CapturingDiagnostics {
     }
 }
 
-#[test]
-fn secret_debug_redaction() {
-    let plaintext = "sk-super-secret-value";
-    let metadata = json!({"callback_settings": {"callback_vars": {"api_key": plaintext}}});
-    let encrypted = encrypt_callback_vars(&metadata, &cipher(Some("salt-one")));
-    let ciphertext = encrypted["callback_settings"]["callback_vars"]["api_key"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let codec = StoredCipher {
+fn capturing_cipher(key: Option<&str>) -> StoredCipher<OsNonces, CapturingDiagnostics> {
+    StoredCipher {
         settings: CipherSettings {
-            signing_key: Some(SecretString::from("salt-two")),
+            signing_key: key.map(SecretString::from),
             algorithm: Algorithm::Aes256Gcm,
         },
         nonces: OsNonces,
         diagnostics: CapturingDiagnostics {
             messages: Mutex::new(Vec::new()),
         },
-    };
-    let decrypted = decrypt_callback_vars(&encrypted, &codec);
-    assert_eq!(decrypted, encrypted);
+    }
+}
+
+fn assert_no_leak(
+    codec: &StoredCipher<OsNonces, CapturingDiagnostics>,
+    plaintext: &str,
+    ciphertext: &str,
+) {
     let recorded = codec.diagnostics.messages.lock().unwrap();
-    let is_empty = recorded.is_empty();
     let all_redacted = recorded
         .iter()
-        .all(|message| !message.contains(plaintext) && !message.contains(&ciphertext));
+        .all(|message| !message.contains(plaintext) && !message.contains(ciphertext));
+    drop(recorded);
+    assert!(all_redacted);
+}
+
+#[test]
+fn secret_debug_redaction() {
+    let plaintext = "sk-super-secret-value";
+    let metadata = json!({"callback_settings": {"callback_vars": {"api_key": plaintext}}});
+
+    let encrypt_codec = capturing_cipher(Some("salt-one"));
+    let encrypted = encrypt_callback_vars(&metadata, &encrypt_codec);
+    let ciphertext = encrypted["callback_settings"]["callback_vars"]["api_key"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(ciphertext, plaintext);
+    assert_no_leak(&encrypt_codec, plaintext, &ciphertext);
+
+    let missing_key_codec = capturing_cipher(None);
+    let fallback = encrypt_callback_vars(&metadata, &missing_key_codec);
+    assert_eq!(fallback, metadata);
+    assert_no_leak(&missing_key_codec, plaintext, &ciphertext);
+
+    let decrypt_codec = capturing_cipher(Some("salt-one"));
+    let decrypted = decrypt_callback_vars(&encrypted, &decrypt_codec);
+    assert_eq!(
+        decrypted["callback_settings"]["callback_vars"]["api_key"],
+        json!(plaintext)
+    );
+    assert_no_leak(&decrypt_codec, plaintext, &ciphertext);
+
+    let wrong_salt_codec = capturing_cipher(Some("salt-two"));
+    let unchanged = decrypt_callback_vars(&encrypted, &wrong_salt_codec);
+    assert_eq!(unchanged, encrypted);
+    let recorded = wrong_salt_codec.diagnostics.messages.lock().unwrap();
+    let is_empty = recorded.is_empty();
     drop(recorded);
     assert!(!is_empty);
-    assert!(all_redacted);
+    assert_no_leak(&wrong_salt_codec, plaintext, &ciphertext);
 }
