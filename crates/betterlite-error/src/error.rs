@@ -31,22 +31,17 @@ impl ErrorContext {
             max_retries: self.max_retries,
             num_retries: self.num_retries,
         };
-        ErrorMetadata {
+        build_metadata(
             status_code,
-            model: self.model.clone(),
-            provider: self.provider.clone(),
+            (self.model.clone(), self.provider.clone()),
             error_type,
             param,
-            code: WireField::Text(status_code.to_string()),
             retry,
-            rate_limit_category: None,
-            rate_limit_dimension: None,
-            allowed_response_headers: BTreeMap::new(),
-        }
+        )
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct RetryMetadata {
     pub max_retries: Option<u32>,
     pub num_retries: Option<u32>,
@@ -98,32 +93,28 @@ impl ErrorClass {
     #[must_use]
     pub fn metadata(&self) -> ErrorMetadata {
         match self {
-            Self::Authentication(context) => context.metadata(401, WireField::Null, WireField::Null),
-            Self::NotFound(context) => context.metadata(404, WireField::Null, WireField::Null),
-            Self::PermissionDenied(context) => context.metadata(403, WireField::Null, WireField::Null),
-            Self::BadRequest(context)
-            | Self::ContextWindowExceeded(context)
-            | Self::ContentPolicyViolation(context) => {
-                context.metadata(400, WireField::Null, WireField::Null)
+            Self::Authentication(ctx) => ctx.metadata(401, WireField::Null, WireField::Null),
+            Self::NotFound(ctx) => ctx.metadata(404, WireField::Null, WireField::Null),
+            Self::PermissionDenied(ctx) => ctx.metadata(403, WireField::Null, WireField::Null),
+            Self::BadRequest(ctx)
+            | Self::ContextWindowExceeded(ctx)
+            | Self::ContentPolicyViolation(ctx) => {
+                ctx.metadata(400, WireField::Null, WireField::Null)
             }
-            Self::UnprocessableEntity(context) => {
-                context.metadata(422, WireField::Null, WireField::Null)
-            }
-            Self::ServiceUnavailable(context) => context.metadata(503, WireField::Null, WireField::Null),
-            Self::BadGateway(context) => context.metadata(502, WireField::Null, WireField::Null),
-            Self::InternalServer(context) => context.metadata(
+            Self::UnprocessableEntity(ctx) => ctx.metadata(422, WireField::Null, WireField::Null),
+            Self::ServiceUnavailable(ctx) => ctx.metadata(503, WireField::Null, WireField::Null),
+            Self::BadGateway(ctx) => ctx.metadata(502, WireField::Null, WireField::Null),
+            Self::InternalServer(ctx) => ctx.metadata(
                 500,
                 WireField::Text("internal_server_error".to_owned()),
                 WireField::Null,
             ),
-            Self::ApiConnection(context) | Self::ApiResponseValidation(context) => {
-                context.metadata(500, WireField::Null, WireField::Null)
+            Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => {
+                ctx.metadata(500, WireField::Null, WireField::Null)
             }
             // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
-            Self::UnsupportedParams(context) => {
-                context.metadata(400, WireField::MISSING, WireField::Null)
-            }
-            Self::Unclassified(context) => context.metadata(500, WireField::MISSING, WireField::MISSING),
+            Self::UnsupportedParams(ctx) => ctx.metadata(400, WireField::MISSING, WireField::Null),
+            Self::Unclassified(ctx) => ctx.metadata(500, WireField::MISSING, WireField::MISSING),
             Self::Timeout(details) => timeout_metadata(details),
             Self::Api(details) => {
                 details
@@ -147,26 +138,16 @@ fn timeout_metadata(details: &TimeoutDetails) -> ErrorMetadata {
 }
 
 fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
-    let mut metadata = bare_metadata(
+    let mut metadata = build_metadata(
         details.status_code,
-        None,
-        details.provider.clone(),
+        (None, details.provider.clone()),
         WireField::MISSING,
         WireField::MISSING,
+        RetryMetadata::default(),
     );
     metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
     metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
     metadata
-}
-
-fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
-    bare_metadata(
-        details.status_code,
-        None,
-        None,
-        WireField::MISSING,
-        WireField::MISSING,
-    )
 }
 
 fn mid_stream_fallback_metadata(details: &MidStreamFallbackDetails) -> ErrorMetadata {
@@ -176,34 +157,39 @@ fn mid_stream_fallback_metadata(details: &MidStreamFallbackDetails) -> ErrorMeta
         .metadata(status, WireField::Null, WireField::Null)
 }
 
-fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
-    bare_metadata(
-        500,
-        Some(details.model.clone()),
-        Some(details.provider.clone()),
-        WireField::Null,
-        WireField::Null,
+fn guardrail_metadata(details: &GuardrailDetails) -> ErrorMetadata {
+    let retry = RetryMetadata::default();
+    build_metadata(
+        details.status_code,
+        (None, None),
+        WireField::MISSING,
+        WireField::MISSING,
+        retry,
     )
 }
 
-fn bare_metadata(
+fn schema_validation_metadata(details: &SchemaValidationDetails) -> ErrorMetadata {
+    let retry = RetryMetadata::default();
+    let identity = (Some(details.model.clone()), Some(details.provider.clone()));
+    build_metadata(500, identity, WireField::Null, WireField::Null, retry)
+}
+
+fn build_metadata(
     status_code: u16,
-    model: Option<String>,
-    provider: Option<String>,
+    identity: (Option<String>, Option<String>),
     error_type: WireField,
     param: WireField,
+    retry: RetryMetadata,
 ) -> ErrorMetadata {
-    let retry = RetryMetadata {
-        max_retries: None,
-        num_retries: None,
-    };
+    let (model, provider) = identity;
+    let code = WireField::Text(status_code.to_string());
     ErrorMetadata {
         status_code,
         model,
         provider,
         error_type,
         param,
-        code: WireField::Text(status_code.to_string()),
+        code,
         retry,
         rate_limit_category: None,
         rate_limit_dimension: None,
@@ -256,33 +242,28 @@ impl TaxonomyError {
             Self::Timeout {
                 provider, model, ..
             } => ErrorClass::Timeout(Box::new(TimeoutDetails {
-                context: ErrorContext {
-                    message: self.to_string(),
-                    model: model.clone(),
-                    provider: Some(provider.clone()),
-                    max_retries: None,
-                    num_retries: None,
-                },
+                context: self.context(provider, model.as_deref()),
                 original_status: None,
             })),
             Self::Transport {
                 provider, model, ..
-            } => ErrorClass::ApiConnection(Box::new(ErrorContext {
-                message: self.to_string(),
-                model: model.clone(),
-                provider: Some(provider.clone()),
-                max_retries: None,
-                num_retries: None,
-            })),
+            } => ErrorClass::ApiConnection(Box::new(self.context(provider, model.as_deref()))),
             Self::Parse {
                 provider, model, ..
-            } => ErrorClass::ApiResponseValidation(Box::new(ErrorContext {
-                message: self.to_string(),
-                model: model.clone(),
-                provider: Some(provider.clone()),
-                max_retries: None,
-                num_retries: None,
-            })),
+            } => ErrorClass::ApiResponseValidation(Box::new(
+                self.context(provider, model.as_deref()),
+            )),
+        }
+    }
+
+    fn context(&self, provider: &str, model: Option<&str>) -> ErrorContext {
+        let message = self.to_string();
+        ErrorContext {
+            message,
+            model: model.map(str::to_owned),
+            provider: Some(provider.to_owned()),
+            max_retries: None,
+            num_retries: None,
         }
     }
 }
