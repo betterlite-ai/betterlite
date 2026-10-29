@@ -214,6 +214,8 @@ fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {
         WireField::Text("throttling_error".to_owned()),
         WireField::Null,
     );
+    // litellm.RateLimitError.__init__ sets self.code = "429" as a literal, after the base openai.APIError body handling
+    metadata.openai_code = Some("429".to_owned());
     metadata.rate_limit_category = Some(details.category);
     metadata.rate_limit_dimension = details.dimension;
     metadata.allowed_response_headers = details

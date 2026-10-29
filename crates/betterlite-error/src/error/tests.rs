@@ -225,6 +225,17 @@ fn rate_limit_carries_its_category_and_dimension() {
 }
 
 #[test]
+fn rate_limit_openai_code_is_always_the_429_literal() {
+    let class = ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: context("slow down"),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    }));
+    assert_eq!(class.metadata().openai_code, Some("429".to_owned()));
+}
+
+#[test]
 fn rate_limit_metadata_drops_unsafe_headers_before_they_become_allowed() {
     let headers = BTreeMap::from([
         ("retry-after".to_owned(), "5".to_owned()),
