@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::redis_credentials::Provider;
+use betterlite_config::sections::redis_credentials::aws::{
+    AwsCredentials, AwsCredentialsResolver, ElastiCacheIamProvider, ElastiCacheSigningError,
+};
 use betterlite_config::sections::redis_credentials::azure::AzureCredential;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
@@ -42,6 +46,20 @@ enum Failure {
         expected: &'static str,
         resolved: &'static str,
     },
+    #[error(transparent)]
+    Signing(#[from] ElastiCacheSigningError),
+}
+
+struct StaticAwsCredentials;
+
+impl AwsCredentialsResolver for StaticAwsCredentials {
+    fn resolve(&self) -> Result<AwsCredentials, ElastiCacheSigningError> {
+        Ok(AwsCredentials {
+            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_owned(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned(),
+            session_token: None,
+        })
+    }
 }
 
 impl Helper for Op {
@@ -121,12 +139,24 @@ fn elasticache_sig_generation(cache_name: &str, serverless: bool) -> Result<Valu
         "ssl": true,
     }))?;
     match loaded.sections.redis_credentials.provider {
-        Some(Provider::Aws(aws)) => Ok(json!({
-            "provider": "aws",
-            "cache_name": aws.cache_name,
-            "token_ttl_seconds": aws.token_ttl_seconds,
-            "query": aws.connect_query(),
-        })),
+        Some(Provider::Aws(aws)) => {
+            let provider = ElastiCacheIamProvider { settings: aws };
+            let (_user_name, signed) =
+                provider.get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)?;
+            let (host, query) = signed.split_once("/?").unwrap_or((signed.as_str(), ""));
+            let params: BTreeMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                .collect();
+            let mut result = serde_json::Map::new();
+            result.insert("provider".to_owned(), json!("aws"));
+            result.insert("host".to_owned(), json!(host));
+            result.insert("User".to_owned(), json!(params.get("User")));
+            result.insert("Action".to_owned(), json!(params.get("Action")));
+            if let Some(resource_type) = params.get("ResourceType") {
+                result.insert("ResourceType".to_owned(), json!(resource_type));
+            }
+            Ok(Value::Object(result))
+        }
         other => Err(Failure::WrongProvider {
             expected: "aws",
             resolved: other.as_ref().map_or("none", provider_name),
@@ -172,6 +202,7 @@ impl From<Failure> for Box<HelperError> {
         let class = match &failure {
             Failure::Config(_) => "ConfigError",
             Failure::WrongProvider { .. } => "AssertionError",
+            Failure::Signing(_) => "RuntimeError",
         };
         Self::new(HelperError {
             class: class.to_owned(),

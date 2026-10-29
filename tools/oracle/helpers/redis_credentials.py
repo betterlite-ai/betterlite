@@ -3,20 +3,24 @@ import sys
 import types
 from typing import TypedDict
 from unittest import mock
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl
 
+from botocore.credentials import Credentials
 from litellm._redis import (
     _build_azure_credential,  # pyright: ignore[reportPrivateUsage]
-    _build_elasticache_iam_provider,  # pyright: ignore[reportPrivateUsage]
 )
 from litellm._redis_credential_provider import (
-    _ELASTICACHE_SERVERLESS_RESOURCE_TYPE,  # pyright: ignore[reportPrivateUsage]
-    _ELASTICACHE_TOKEN_TTL_SECONDS,  # pyright: ignore[reportPrivateUsage]
     _GCP_IAM_TOKEN_TTL_SECONDS,  # pyright: ignore[reportPrivateUsage]
+    ElastiCacheIAMCredentialProvider,
     GCPIAMCredentialProvider,
 )
 
 Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+_STATIC_AWS_CREDENTIALS = Credentials(
+    access_key="AKIAIOSFODNN7EXAMPLE",
+    secret_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",  # noqa: S106
+)
 
 AZURE_ENVIRONMENT_NAMES = ("AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_CLIENT_SECRET")
 AZURE_CREDENTIAL_NAMES = {
@@ -49,30 +53,25 @@ def gcp_token_caching(service_account: str) -> Json:
 
 
 def elasticache_sig_generation(cache_name: str, *, serverless: bool) -> Json:
-    provider = _build_elasticache_iam_provider(
-        {
-            "aws_iam_user_name": "connect",
-            "aws_iam_cache_name": cache_name,
-            "aws_iam_region": "us-east-1",
-            "aws_iam_serverless": serverless,
-        }
+    provider = ElastiCacheIAMCredentialProvider(
+        user_name="connect",
+        cache_name=cache_name,
+        region="us-east-1",
+        is_serverless=serverless,
+        credentials_resolver=lambda: _STATIC_AWS_CREDENTIALS,
     )
-    user_name = provider._user_name  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    is_serverless = provider._is_serverless  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    cache_name_resolved = provider._cache_name  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    query = urlencode(
-        (
-            ("Action", "connect"),
-            ("User", user_name),
-            *((("ResourceType", _ELASTICACHE_SERVERLESS_RESOURCE_TYPE),) if is_serverless else ()),
-        )
-    )
-    return {
+    _user_name, signed_url = provider.get_credentials()
+    host, _, query = signed_url.partition("/?")
+    params = dict(parse_qsl(query))
+    result: dict[str, Json] = {
         "provider": "aws",
-        "cache_name": cache_name_resolved,
-        "token_ttl_seconds": _ELASTICACHE_TOKEN_TTL_SECONDS,
-        "query": query,
+        "host": host,
+        "User": params.get("User"),
+        "Action": params.get("Action"),
     }
+    if "ResourceType" in params:
+        result["ResourceType"] = params["ResourceType"]
+    return result
 
 
 class _StubAzureCredential:
