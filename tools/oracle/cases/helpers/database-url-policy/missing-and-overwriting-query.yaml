@@ -1,0 +1,10 @@
+kind: helper
+name: missing-and-overwriting-query
+call:
+  database_url_policy:
+    function: add_missing_query_params
+    url: "postgresql://h/db?a=1&b="
+    params: [["a", "9"], ["c", "3"]]
+env: {}
+compare:
+  ignore: []

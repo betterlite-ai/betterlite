@@ -1,7 +1,7 @@
 id: B2307
 milestone: M4 keys, spend and management
 title: Database URL query policy and boolean parsing
-status: todo
+status: done
 depends_on: [B171, B700, B856]
 file: tasks/B2307-database-url-primitives.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 304

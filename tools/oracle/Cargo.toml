@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+aws-credential-types = "1.3.1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
@@ -16,6 +17,7 @@ betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-core = { path = "../../crates/betterlite-core" }
 betterlite-db = { path = "../../crates/betterlite-db" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
+betterlite-harness = { path = "../../crates/betterlite-harness" }
 betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-lens = { path = "../../crates/betterlite-lens" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
@@ -42,13 +44,14 @@ reqwest = { version = "0.13.5", default-features = false, features = ["blocking"
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
-serde_json = { version = "1.0.145", features = ["raw_value"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "time", "io-util", "macros", "process", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
 ulid = "3.0.0"
+url = "2.5.8"
 uuid = { version = "1.28.0", default-features = false }
 
 [dev-dependencies]

@@ -1,0 +1,5 @@
+kind: helper
+name: elasticache-sig-generation
+call: {redis_credentials: {function: elasticache_sig_generation, cache_name: Cache.EXAMPLE, serverless: true}}
+env: {}
+compare: {ignore: []}

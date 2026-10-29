@@ -1,0 +1,7 @@
+kind: helper
+name: codex-turn1-bash
+call:
+  b4835:
+    fixture: tools/oracle/cases/codex/fixtures/turn1_bash.jsonl
+env: {}
+compare: {ignore: []}
