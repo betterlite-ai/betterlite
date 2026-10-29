@@ -1,0 +1,7 @@
+kind: helper
+name: codex-turn-failed
+call:
+  b4835:
+    fixture: tools/oracle/cases/codex/fixtures/turn_failed.jsonl
+env: {}
+compare: {ignore: []}

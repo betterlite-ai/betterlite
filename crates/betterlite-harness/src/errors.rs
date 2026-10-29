@@ -1,4 +1,5 @@
 use crate::events::RunResult;
+use crate::payloads::PayloadError;
 use crate::state::Incompatibility;
 use crate::types::{Capability, Harness, Usage};
 use std::io;
@@ -23,6 +24,10 @@ pub enum HarnessError {
         harness: Harness,
         expected: &'static str,
     },
+    #[error("CodexOptions.config key {key:?} must be a non-empty key without '='")]
+    InvalidConfigKey { key: String },
+    #[error("CodexOptions.config[{key:?}] is managed by Harness.{}; use the matching agent() argument instead", .harness.name())]
+    ManagedConfigKey { key: String, harness: Harness },
     #[error("the runtime is missing from the sandbox or failed to start: {0}")]
     InstallFailed(#[source] io::Error),
     #[error("the sandbox failed: {source}")]
@@ -54,5 +59,10 @@ pub enum HarnessError {
     ContentLimitExceeded {
         operation: CappedOperation,
         limit: usize,
+    },
+    #[error("the output schema could not be prepared: {source}")]
+    OutputSchema {
+        #[source]
+        source: PayloadError,
     },
 }

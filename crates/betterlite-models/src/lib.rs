@@ -45,6 +45,7 @@ pub mod ollama_model_metadata;
 pub mod params;
 pub(crate) mod passthrough;
 pub(crate) mod passthrough_policies;
+pub mod price_fields;
 pub mod price_lookup;
 pub mod projections;
 pub mod prompt_contracts;

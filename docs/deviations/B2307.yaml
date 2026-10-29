@@ -1,0 +1,11 @@
+task: B2307
+deviations:
+  - what: Database URL input larger than 1048576 bytes fails decoding before a connection is attempted.
+    why: Bound the native URL byte boundary; the pinned urllib helpers impose no byte cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L122-L136
+  - what: append_query_params diagnostics redact URL credentials and secret query values instead of logging the raw URL and parameter map.
+    why: Database credentials must not enter operator logs; query results and warnings remain unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L166-L181
+  - what: A non-ASCII netloc that fails the NFKC homoglyph check reports a fixed message instead of echoing the raw netloc text back.
+    why: CPython's urlsplit embeds the attacker-controlled netloc verbatim in its ValueError; a database URL error must not become a place to smuggle unredacted text into logs.
+    link: https://github.com/python/cpython/blob/v3.13.1/Lib/urllib/parse.py#L423-L439

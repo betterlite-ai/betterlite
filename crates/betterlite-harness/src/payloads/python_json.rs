@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::ser::Formatter;
 
 // json.loads keeps keys in written order with the last duplicate's value, and json.dumps writes them back so
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-pub(super) enum OrderedJson {
+pub(crate) enum OrderedJson {
     Null,
     Bool(bool),
     Number(serde_json::Number),
@@ -105,7 +105,7 @@ fn python_float(value: f64) -> String {
     format!("{mantissa}e{sign}{digits:0>2}")
 }
 
-pub(super) fn python_json_text<Document>(document: &Document) -> Result<String, serde_json::Error>
+pub(crate) fn python_json_text<Document>(document: &Document) -> Result<String, serde_json::Error>
 where
     Document: Serialize,
 {

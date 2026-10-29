@@ -12,15 +12,19 @@ workspace = true
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono.workspace = true
 deadpool-postgres.workspace = true
-rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
+percent-encoding.workspace = true
+regex.workspace = true
+rust_decimal.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
+tokio-postgres.workspace = true
+unicode-general-category = "1.1.0"
+unicode-normalization = "0.1.26"
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 rstest = "=0.27.0"
-secrecy.workspace = true
 serde_json = { version = "1.0.145", features = ["raw_value"] }
 tokio.workspace = true
