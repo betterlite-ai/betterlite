@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::answer::parse_answer;
 use crate::checks;
+use crate::checks::Selection;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
 use crate::error::GateError;
@@ -106,7 +107,11 @@ pub(crate) fn hook(input: &str) -> Result<Vec<String>, GateError> {
     if report.status == ReportStatus::Blocked && !report.blocker.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let verdict = checks::run(&development, &development.task(task_id)?, &[])?;
+    let verdict = checks::run(
+        &development,
+        &development.task(task_id)?,
+        &Selection::default(),
+    )?;
     let added = added_dependencies(&development.root, &resolve_base(&development.root)?)?;
     let problems = report_problems(&report, task_id, &added);
     if verdict.passed && problems.is_empty() {
