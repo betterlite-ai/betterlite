@@ -129,24 +129,13 @@ fn requested_error_cursor() -> String {
     URL_SAFE.encode(json)
 }
 
-fn storage_with_trace_rows(rows: Vec<SpanQueryRow>) -> StubStorage {
+fn storage_with_rows(
+    list_traces_rows: Vec<TraceListRow>,
+    trace_spans_rows: Vec<SpanQueryRow>,
+) -> StubStorage {
     StubStorage {
-        list_traces_rows: Vec::new(),
-        trace_spans_rows: rows,
-        span_detail_rows: Vec::new(),
-        span_error_rows: Vec::new(),
-        spend_rows: Vec::new(),
-        spend_fails: false,
-        seen_scope: Mutex::new(None),
-        seen_trace_ref: Mutex::new(None),
-        spend_query: Mutex::new(None),
-    }
-}
-
-fn storage_with_list_rows(rows: Vec<TraceListRow>) -> StubStorage {
-    StubStorage {
-        list_traces_rows: rows,
-        trace_spans_rows: Vec::new(),
+        list_traces_rows,
+        trace_spans_rows,
         span_detail_rows: Vec::new(),
         span_error_rows: Vec::new(),
         spend_rows: Vec::new(),
@@ -673,7 +662,7 @@ async fn get_trace_expands_the_spend_window_around_span_bounds() {
     root.start_ns = 1_000_000;
     root.duration_ns = 5_000_000;
     root.litellm_request_id = Some("req-1".to_owned());
-    let storage = storage_with_trace_rows(vec![root]);
+    let storage = storage_with_rows(Vec::new(), vec![root]);
     let store = store(storage);
     store
         .get_trace("trace-1", &scope(), "")
@@ -694,7 +683,7 @@ async fn get_trace_expands_the_spend_window_around_span_bounds() {
 async fn list_traces_expands_the_spend_window_around_row_bounds() {
     let mut row = list_row("trace-1", 100);
     row.request_ids = vec!["req-1".to_owned()];
-    let storage = storage_with_list_rows(vec![row]);
+    let storage = storage_with_rows(vec![row], Vec::new());
     let store = store(storage);
     store
         .list_traces(&scope(), (0, 1_000), None)
