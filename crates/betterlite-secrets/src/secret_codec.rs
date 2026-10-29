@@ -14,7 +14,6 @@ use crate::error::SecretError;
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
 use crate::secret_codec::python_base64::decode_lenient;
 use crate::secret_codec::sealing::{open, seal};
-use crate::stored_cipher::as_utf8;
 
 pub const CALLBACK_VAR_ENCRYPTED_PREFIX: &str = "litellm_enc::";
 pub const MAX_ENCODED_BYTES: usize = 0x0010_0000;
@@ -153,23 +152,25 @@ where
         }
     }
 
-    // Decodes a raw byte slice as a stored scalar secret.
     pub fn decode_stored_secret(&self, bytes: &[u8]) -> Option<SecretString> {
         let policy = DecryptPolicy {
             log: FailureLog::Debug,
             value: FailureValue::Nothing,
         };
-        let stored = StoredValue::<()>::Text(SecretString::from(as_utf8(bytes)?));
+        let text = str::from_utf8(bytes).ok()?;
+        let stored = StoredValue::<()>::Text(SecretString::from(text));
         let StoredValue::Text(opened) = self.decrypt_value(stored, "fuzz", policy)? else {
             return None;
         };
         Some(opened)
     }
 
-    // Decodes a raw byte slice as a stored secret map.
-    pub fn decode_secret_map(&self, bytes: &[u8]) -> Option<secret_map::SecretMap> {
-        let decoded = secret_map::decode_secret_map(self, as_utf8(bytes), "fuzz");
-        decoded.ok()?
+    pub fn decode_secret_map(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Option<secret_map::SecretMap>, SecretError> {
+        let text = str::from_utf8(bytes).map_err(|source| SecretError::Utf8 { source })?;
+        secret_map::decode_secret_map(self, Some(text), "fuzz")
     }
 }
 
