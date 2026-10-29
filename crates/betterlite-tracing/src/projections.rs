@@ -167,7 +167,7 @@ struct TraceSummaryContext<'ctx> {
     spend_rows: &'ctx [SpendRow],
 }
 
-fn summary_time_bounds_ns(bounds: &TraceBounds) -> (i64, i64) {
+fn summary_time_bounds(bounds: &TraceBounds) -> (i64, i64) {
     let start_ms = bounds.start_ns.checked_div(NANOS_PER_MS).unwrap_or(0);
     let duration_ns = bounds.end_ns.saturating_sub(bounds.start_ns);
     (start_ms, duration_ns)
@@ -219,7 +219,7 @@ fn trace_summary(
     let (input_tokens, output_tokens) = token_totals(spans);
     let (span_count, agent_count, agent_invocations, llm_calls, tool_calls, error_count) =
         summary_counts(spans, agents);
-    let (start_ms, duration_ns) = summary_time_bounds_ns(context.bounds);
+    let (start_ms, duration_ns) = summary_time_bounds(context.bounds);
     let root = spans
         .iter()
         .find(|span| span.parent_span_id.is_none())
