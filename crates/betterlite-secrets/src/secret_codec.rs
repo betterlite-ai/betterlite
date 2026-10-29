@@ -111,7 +111,13 @@ where
             Algorithm::XSalsa20Poly1305 => sealed,
         })
     }
+}
 
+// decrypt_value and its callers never draw a nonce, so this impl needs no NonceSource bound.
+impl<N, D> StoredCipher<N, D>
+where
+    D: SecretDiagnostics,
+{
     pub fn decrypt_value<T>(
         &self,
         value: StoredValue<T>,
@@ -151,9 +157,30 @@ where
             FailureValue::Nothing => None,
         }
     }
+
+    pub fn decode_stored_secret(&self, bytes: &[u8]) -> Option<SecretString> {
+        let policy = DecryptPolicy {
+            log: FailureLog::Debug,
+            value: FailureValue::Nothing,
+        };
+        let text = str::from_utf8(bytes).ok()?;
+        let stored = StoredValue::<()>::Text(SecretString::from(text));
+        let StoredValue::Text(opened) = self.decrypt_value(stored, "fuzz", policy)? else {
+            return None;
+        };
+        Some(opened)
+    }
+
+    pub fn decode_secret_map(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Option<secret_map::SecretMap>, SecretError> {
+        let text = str::from_utf8(bytes).map_err(|source| SecretError::Utf8 { source })?;
+        secret_map::decode_secret_map(self, Some(text), "fuzz")
+    }
 }
 
-fn open_stored(text: &str, key: &SecretString) -> Result<SecretString, SecretError> {
+pub(crate) fn open_stored(text: &str, key: &SecretString) -> Result<SecretString, SecretError> {
     if let Some(encoded) = text.strip_prefix(AES_PREFIX) {
         let sealed = decode_lenient(encoded, true)?;
         return open(Algorithm::Aes256Gcm, key, &sealed, b"");

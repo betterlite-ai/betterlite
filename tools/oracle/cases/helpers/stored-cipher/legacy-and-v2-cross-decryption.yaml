@@ -1,0 +1,19 @@
+kind: helper
+name: stored-cipher-legacy-and-v2-cross-decryption
+call:
+  secret_codec:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    steps:
+      - {op: encrypt_value, value: hello, new_key: null}
+      - {op: decrypt_value, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_with, value: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj", signing_key: salt-one}
+      - {op: decrypt_with, value: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L", signing_key: salt-one}
+      - {op: decrypt_with, value: "v2:gcm:", signing_key: salt-one}
+      - {op: decrypt_value, value: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1", field: api_key, report: error, keep_original: false}
+env: {}
+compare:
+  ignore: []

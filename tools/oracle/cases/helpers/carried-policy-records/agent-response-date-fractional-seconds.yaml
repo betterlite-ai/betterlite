@@ -1,0 +1,9 @@
+kind: helper
+name: agent-response-date-fractional-seconds
+call:
+  carried_policy_records:
+    function: agent_response
+    value: {agent_id: a, agent_name: 'n', agent_card_params: {}, created_at: '2026-01-01T12:00:00.4Z', updated_at: '2026-01-01T12:00:00.123456789Z'}
+env: {}
+compare:
+  ignore: []
