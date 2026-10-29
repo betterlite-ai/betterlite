@@ -11,12 +11,14 @@ workspace = true
 [dependencies]
 chrono.workspace = true
 deadpool-postgres.workspace = true
+percent-encoding.workspace = true
 regex.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio-postgres.workspace = true
+unicode-general-category = "1.1.0"
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
