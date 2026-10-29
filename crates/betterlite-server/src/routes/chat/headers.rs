@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
+use axum::http::header::InvalidHeaderName;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
-use betterlite_error::envelope::{filter_unsafe_headers, project_provider_headers};
+use betterlite_error::envelope::is_unsafe_header_name;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 
@@ -80,19 +80,7 @@ pub(super) fn failure_headers(
         | ChatError::TooLarge
         | ChatError::Http { .. } => None,
     };
-    let mut headers = upstream.map_or_else(HeaderMap::new, |forwarded| {
-        let as_btree: BTreeMap<String, String> = forwarded
-            .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
-            })
-            .collect();
-        let projected = project_provider_headers(&as_btree);
-        btree_to_header_map(&filter_unsafe_headers(projected))
-    });
+    let mut headers = upstream.map_or_else(HeaderMap::new, forwardable_failure_headers);
     if let Ok(value) = HeaderValue::from_str(call_id) {
         headers.insert("x-litellm-call-id", value);
     }
@@ -105,16 +93,19 @@ pub(super) fn failure_headers(
     headers
 }
 
+fn provider_prefixed_name(name: &HeaderName) -> Result<HeaderName, InvalidHeaderName> {
+    if name.as_str().contains("llm_provider") {
+        Ok(name.clone())
+    } else {
+        HeaderName::try_from(format!("llm_provider-{name}"))
+    }
+}
+
 // LiteLLM forwards every provider header as llm_provider-{name} and repeats OpenAI's rate limit headers as they are
 fn provider_headers(upstream: &HeaderMap, rate_limit_count: usize) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in upstream {
-        let forwarded = if name.as_str().contains("llm_provider") {
-            Ok(name.clone())
-        } else {
-            HeaderName::try_from(format!("llm_provider-{name}"))
-        };
-        if let Ok(forwarded_name) = forwarded {
+        if let Ok(forwarded_name) = provider_prefixed_name(name) {
             headers.append(forwarded_name, value.clone());
         }
     }
@@ -126,17 +117,21 @@ fn provider_headers(upstream: &HeaderMap, rate_limit_count: usize) -> HeaderMap 
     headers
 }
 
-fn btree_to_header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
-    let mut result = HeaderMap::new();
-    for (name, value) in headers {
-        if let (Ok(header_name), Ok(header_value)) = (
-            HeaderName::try_from(name.as_str()),
-            HeaderValue::try_from(value.as_str()),
-        ) {
-            result.insert(header_name, header_value);
+// get_response_headers() projected through llm_provider- then UNSAFE_PROXY_RESPONSE_HEADERS, kept on HeaderMap so a non-UTF-8 value never needs a lossy to_str
+fn forwardable_failure_headers(upstream: &HeaderMap) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for (name, value) in upstream {
+        match provider_prefixed_name(name) {
+            Ok(forwarded_name) if is_unsafe_header_name(forwarded_name.as_str()) => {}
+            Ok(forwarded_name) => {
+                headers.append(forwarded_name, value.clone());
+            }
+            Err(error) => {
+                tracing::warn!(header = %name, %error, "upstream header name cannot be forwarded");
+            }
         }
     }
-    result
+    headers
 }
 
 fn insert_all<Values>(headers: &mut HeaderMap, values: Values)
