@@ -18,4 +18,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "sentry_scrubbing"
+path = "fuzz_targets/sentry_scrubbing.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "factory-builtin", "call": {"prompt_factory": {"mode": "factory", "model": "anthropic.claude-v2", "custom_llm_provider": "bedrock", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}]}}, "env": {}, "compare": {"ignore": []}}
