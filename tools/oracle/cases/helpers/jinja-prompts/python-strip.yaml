@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "python-strip", "call": {"jinja_prompts": {"mode": "render", "chat_template": "{{ messages[0]['content'].strip() }}", "messages": [{"role": "user", "content": "  padded  "}]}}, "env": {}, "compare": {"ignore": []}}

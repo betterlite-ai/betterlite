@@ -1,0 +1,10 @@
+kind: helper
+name: otlp_ui_content_role_mapping_langchain
+call:
+  otlp_normalization:
+    ui_content:
+      value:
+        - '[{"lc": 1, "type": "constructor", "kwargs": {"type": "human", "content": "hi"}}, {"type": "ai", "content": "yo", "tool_calls": [{"name": "f", "args": {"q": 1}}]}, {"role": "", "type": "system", "content": "s"}]'
+env: {}
+compare:
+  ignore: []

@@ -55,6 +55,8 @@ settings:
     - Cargo.lock
     - "**/fixtures/**"
     - "**/snapshots/**"
+    - "**/tests.rs"
+    - "**/tests/**"
     - "**/fuzz/corpus/**"
     - tools/oracle/cases/**
     - tools/oracle/litellm/uv.lock
@@ -87,6 +89,9 @@ base:
       why: every change must be committed, so the branch is exactly what gets merged
       run: |-
         git status --porcelain --untracked-files=all | sed "s/^/uncommitted: /" | grep . && exit 1 || exit 0
+    - id: whitespace
+      why: the change adds no trailing whitespace or conflict markers, the same check CI runs on every pull request
+      run: git diff --check "$GATE_BASE" HEAD
     - id: specs-untouched
       why: a task branch changes nothing in .development/, .claude/, .codex/ or .cargo/config.toml except its own task file and backlog entry, and only the architect edits those
       run: git diff --exit-code --stat "$GATE_BASE" -- .development .claude .codex .cargo/config.toml ":(exclude,glob).development/tasks/$GATE_TASK-*.yaml" ":(exclude).development/backlog/$GATE_TASK.yaml"
@@ -138,14 +143,14 @@ optional:
     after_green: true
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
-    why: every mutant in the changed Rust code is caught by a test
+    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; the oracle tests start LiteLLM once per case, so mutants there take hours; the tests check still runs them
     after_green: true
     run: |-
       set -e
       scratch="$GATE_LOG_DIR/mutants-tmp"
       mkdir -p "$scratch"
       trap 'rm -rf "$scratch"' EXIT
-      git diff "$GATE_BASE" -- '*.rs' > "$GATE_LOG_DIR/mutants.diff"
+      git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' > "$GATE_LOG_DIR/mutants.diff"
       TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --output "$GATE_LOG_DIR"
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
