@@ -1,14 +1,14 @@
 id: B2236
 milestone: M3 providers
 title: Configured OpenAI mock transport
-status: todo
+status: done
 depends_on: [B002, B171]
 file: tasks/B2236-openai-mock-transport.yaml
 covers:
   - "litellm/llms/custom_httpx/mock_transport.py"
 parent: B009
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 290
