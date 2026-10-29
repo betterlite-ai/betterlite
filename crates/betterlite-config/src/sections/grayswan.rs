@@ -113,9 +113,27 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let base = resolve_api_base(parameters.api_base, &prefix, lookup)?;
-        let violation_threshold =
-            resolve_violation_threshold(parameters.violation_threshold, &prefix, lookup)?;
+        let base = resolve_explicit_or_env(
+            parameters.api_base.filter(|value| !value.is_empty()),
+            &format!("{prefix}.api_base"),
+            lookup,
+            resolve_string,
+            |env| {
+                env.lookup("GRAYSWAN_API_BASE")
+                    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned())
+            },
+        )?;
+        let violation_threshold = resolve_explicit_or_env(
+            parameters.violation_threshold,
+            &format!("{prefix}.violation_threshold"),
+            lookup,
+            |value, path, _lookup| parse_float(&value, path),
+            |env| {
+                env.lookup("GRAYSWAN_VIOLATION_THRESHOLD")
+                    .and_then(|text| text.parse::<f64>().ok())
+                    .unwrap_or(DEFAULT_VIOLATION_THRESHOLD)
+            },
+        )?;
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
@@ -134,47 +152,24 @@ impl Entry {
     }
 }
 
-fn resolve_api_base<L>(
-    api_base: Option<String>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    api_base.filter(|value| !value.is_empty()).map_or_else(
-        || {
-            Ok(lookup
-                .lookup("GRAYSWAN_API_BASE")
-                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
-        },
-        |value| resolve_string(value, &format!("{prefix}.api_base"), lookup),
-    )
-}
-
-fn resolve_violation_threshold<L>(
-    violation_threshold: Option<String>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    violation_threshold.map_or_else(
-        || {
-            Ok(lookup
-                .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
-                .and_then(|text| text.parse::<f64>().ok())
-                .unwrap_or(DEFAULT_VIOLATION_THRESHOLD))
-        },
-        |text| parse_float(&text, &format!("{prefix}.violation_threshold")),
-    )
+fn resolve_explicit_or_env<T>(
+    explicit: Option<String>,
+    path: &str,
+    lookup: &dyn EnvironmentLookup,
+    parse: impl FnOnce(String, &str, &dyn EnvironmentLookup) -> Result<T, ConfigError>,
+    env_fallback: impl FnOnce(&dyn EnvironmentLookup) -> T,
+) -> Result<T, ConfigError> {
+    if let Some(value) = explicit {
+        return parse(value, path, lookup);
+    }
+    Ok(env_fallback(lookup))
 }
 
 fn resolve_guardrail_timeout(guardrail_timeout: Option<f64>) -> Duration {
-    guardrail_timeout.map_or(DEFAULT_GUARDRAIL_TIMEOUT, |secs| {
-        Duration::try_from_secs_f64(secs).unwrap_or(DEFAULT_GUARDRAIL_TIMEOUT)
-    })
+    if let Some(secs) = guardrail_timeout {
+        return Duration::try_from_secs_f64(secs).unwrap_or(DEFAULT_GUARDRAIL_TIMEOUT);
+    }
+    DEFAULT_GUARDRAIL_TIMEOUT
 }
 
 fn resolve_api_key<L>(
@@ -204,17 +199,17 @@ fn resolve_on_flagged_action(
     value: Option<&str>,
     prefix: &str,
 ) -> Result<OnFlaggedAction, ConfigError> {
-    value.map_or_else(
-        || Ok(OnFlaggedAction::default()),
-        |text| match text.to_ascii_lowercase().as_str() {
-            "block" => Ok(OnFlaggedAction::Block),
-            "monitor" => Ok(OnFlaggedAction::Monitor),
-            "passthrough" => Ok(OnFlaggedAction::Passthrough),
-            _ => Err(ConfigError::Unsupported {
-                paths: vec![format!("{prefix}.on_flagged_action: '{text}'")],
-            }),
-        },
-    )
+    let Some(text) = value else {
+        return Ok(OnFlaggedAction::default());
+    };
+    match text.to_ascii_lowercase().as_str() {
+        "block" => Ok(OnFlaggedAction::Block),
+        "monitor" => Ok(OnFlaggedAction::Monitor),
+        "passthrough" => Ok(OnFlaggedAction::Passthrough),
+        _ => Err(ConfigError::Unsupported {
+            paths: vec![format!("{prefix}.on_flagged_action: '{text}'")],
+        }),
+    }
 }
 
 fn resolve_reasoning_mode<L>(value: Option<&str>, lookup: &L) -> Option<ReasoningMode>

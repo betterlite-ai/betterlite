@@ -5,79 +5,62 @@ use crate::generic_guardrail_contracts::{GuardrailExtraValue, GuardrailMessage};
 use crate::grayswan::ReasoningMode;
 use crate::grayswan::wire::{GraySwanInput, GraySwanResponse};
 
+fn as_text(value: &GuardrailExtraValue) -> Option<&str> {
+    match value {
+        GuardrailExtraValue::Text(text) => Some(text),
+        GuardrailExtraValue::Null
+        | GuardrailExtraValue::Boolean(_)
+        | GuardrailExtraValue::SignedInteger(_)
+        | GuardrailExtraValue::UnsignedInteger(_)
+        | GuardrailExtraValue::Decimal(_)
+        | GuardrailExtraValue::Array(_)
+        | GuardrailExtraValue::Object(_) => None,
+    }
+}
+
 pub(super) fn category_override(
     metadata: &BTreeMap<String, GuardrailExtraValue>,
 ) -> Option<BTreeMap<String, String>> {
     let GuardrailExtraValue::Object(categories) = metadata.get("categories")? else {
         return None;
     };
-    Some(
-        categories
-            .iter()
-            .filter_map(|(name, value)| match value {
-                GuardrailExtraValue::Text(text) => Some((name.clone(), text.clone())),
-                GuardrailExtraValue::Null
-                | GuardrailExtraValue::Boolean(_)
-                | GuardrailExtraValue::SignedInteger(_)
-                | GuardrailExtraValue::UnsignedInteger(_)
-                | GuardrailExtraValue::Decimal(_)
-                | GuardrailExtraValue::Array(_)
-                | GuardrailExtraValue::Object(_) => None,
-            })
-            .collect(),
-    )
+    let mut result = BTreeMap::new();
+    for (name, value) in categories {
+        if let Some(text) = as_text(value) {
+            result.insert(name.clone(), text.to_owned());
+        }
+    }
+    Some(result)
 }
 
 pub(super) fn text_override(
     metadata: &BTreeMap<String, GuardrailExtraValue>,
     name: &str,
 ) -> Option<String> {
-    match metadata.get(name)? {
-        GuardrailExtraValue::Text(text) => Some(text.clone()),
-        GuardrailExtraValue::Null
-        | GuardrailExtraValue::Boolean(_)
-        | GuardrailExtraValue::SignedInteger(_)
-        | GuardrailExtraValue::UnsignedInteger(_)
-        | GuardrailExtraValue::Decimal(_)
-        | GuardrailExtraValue::Array(_)
-        | GuardrailExtraValue::Object(_) => None,
-    }
+    let value = metadata.get(name)?;
+    as_text(value).map(str::to_owned)
 }
+
+const REASONING_MODE_NAMES: [(&str, ReasoningMode); 3] = [
+    ("off", ReasoningMode::Off),
+    ("hybrid", ReasoningMode::Hybrid),
+    ("thinking", ReasoningMode::Thinking),
+];
 
 pub(super) fn reasoning_mode_override(
     metadata: &BTreeMap<String, GuardrailExtraValue>,
 ) -> Option<ReasoningMode> {
-    match metadata.get("reasoning_mode")? {
-        GuardrailExtraValue::Text(text) => match text.to_ascii_lowercase().as_str() {
-            "off" => Some(ReasoningMode::Off),
-            "hybrid" => Some(ReasoningMode::Hybrid),
-            "thinking" => Some(ReasoningMode::Thinking),
-            _ => None,
-        },
-        GuardrailExtraValue::Null
-        | GuardrailExtraValue::Boolean(_)
-        | GuardrailExtraValue::SignedInteger(_)
-        | GuardrailExtraValue::UnsignedInteger(_)
-        | GuardrailExtraValue::Decimal(_)
-        | GuardrailExtraValue::Array(_)
-        | GuardrailExtraValue::Object(_) => None,
-    }
+    let text = text_override(metadata, "reasoning_mode")?.to_ascii_lowercase();
+    REASONING_MODE_NAMES
+        .iter()
+        .find(|(name, _)| *name == text)
+        .map(|(_, mode)| *mode)
 }
 
 pub(super) fn conversation_messages(input: &GraySwanInput) -> Vec<GuardrailMessage> {
     let mut messages = input.request_history.clone();
     messages.extend(input.messages.clone());
     messages
-}
-
-pub(super) fn violation_guardrail_message(text: &str) -> GuardrailMessage {
-    GuardrailMessage {
-        role: "assistant".to_owned(),
-        extra: BTreeMap::from([(
-            "content".to_owned(),
-            GuardrailExtraValue::Text(text.to_owned()),
-        )]),
-    }
 }
 
 pub(super) fn format_violation_message(response: &GraySwanResponse, is_output: bool) -> String {

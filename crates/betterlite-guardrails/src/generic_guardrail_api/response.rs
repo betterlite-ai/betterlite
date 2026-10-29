@@ -22,8 +22,11 @@ pub(super) fn passthrough_response(
     }
 }
 
-fn is_empty<T>(values: Option<&Vec<T>>) -> bool {
-    values.is_none_or(Vec::is_empty)
+const fn is_empty<T>(values: Option<&Vec<T>>) -> bool {
+    if let Some(items) = values {
+        return items.is_empty();
+    }
+    true
 }
 
 fn field_or_original<T>(value: Option<Vec<T>>, original: Option<&Vec<T>>) -> Option<Vec<T>>

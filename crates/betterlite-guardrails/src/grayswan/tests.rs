@@ -62,7 +62,9 @@ fn input(messages: Vec<GuardrailMessage>, request_history: Vec<GuardrailMessage>
 fn response(violation: f64) -> GraySwanResponse {
     GraySwanResponse {
         violation,
-        ..GraySwanResponse::default()
+        violated_rule_descriptions: Vec::new(),
+        mutation: None,
+        ipi: None,
     }
 }
 

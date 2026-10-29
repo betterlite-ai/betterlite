@@ -16,7 +16,7 @@ pub mod wire;
 
 use format::{
     category_override, conversation_messages, format_violation_message, reasoning_mode_override,
-    text_override, violation_guardrail_message,
+    text_override,
 };
 use wire::{GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult};
 
@@ -238,11 +238,20 @@ impl GraySwanGuardrail {
             (OnFlaggedAction::Passthrough, GuardrailInputType::Request) => {
                 Err(GraySwanGuardrailAPIError::PreCallPassthrough { reason })
             }
-            (OnFlaggedAction::Passthrough, GuardrailInputType::Response) => Ok(GraySwanResult {
-                flagged: true,
-                messages: vec![violation_guardrail_message(&violation_message)],
-                violation_message: Some(violation_message),
-            }),
+            (OnFlaggedAction::Passthrough, GuardrailInputType::Response) => {
+                let guardrail_message = GuardrailMessage {
+                    role: "assistant".to_owned(),
+                    extra: BTreeMap::from([(
+                        "content".to_owned(),
+                        GuardrailExtraValue::Text(violation_message.clone()),
+                    )]),
+                };
+                Ok(GraySwanResult {
+                    flagged: true,
+                    messages: vec![guardrail_message],
+                    violation_message: Some(violation_message),
+                })
+            }
             (OnFlaggedAction::Monitor, _) => Ok(GraySwanResult {
                 flagged,
                 messages: original,

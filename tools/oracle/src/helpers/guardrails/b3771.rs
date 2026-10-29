@@ -51,7 +51,9 @@ fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
             .get("score")
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(0.0_f64),
-        ..GraySwanResponse::default()
+        violated_rule_descriptions: Vec::new(),
+        mutation: None,
+        ipi: None,
     };
     let value = guardrail
         .process_response(&response, GuardrailInputType::Request, Vec::new())
