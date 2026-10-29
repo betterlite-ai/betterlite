@@ -44,10 +44,7 @@ fn reasoning_levels_share_one_superset_enum() {
         r#"{"litellm_provider":"bedrock","bedrock_output_config_effort_ceiling":"xhigh"}"#,
     )
     .unwrap();
-    assert_eq!(
-        fields.bedrock_output_config_effort_ceiling,
-        Some(ReasoningEffort::Xhigh)
-    );
+    assert_eq!(fields.bedrock_output_ceiling, Some(ReasoningEffort::Xhigh));
 }
 
 #[test]

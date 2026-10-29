@@ -53,14 +53,15 @@ fn run_fallback_generalizations(source: &str) -> crate::helpers::HelperResult {
 }
 
 fn model_field_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+    let error = crate::helpers::HelperError {
         class: "ModelFieldError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message,
-    })
+    };
+    Box::new(error)
 }
 
 mod tests;

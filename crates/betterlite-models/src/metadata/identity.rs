@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Primary API surface the model serves, per the pinned schema's `mode` enum.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -23,8 +22,7 @@ pub enum Mode {
     VideoGeneration,
 }
 
-/// Input or output modality. The schema allows `code` only on output, but a
-/// shared enum is still exact: no pinned entry ever puts `code` on input.
+// code appears only on output in the pinned schema, but one enum covers both directions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Modality {
@@ -35,7 +33,6 @@ pub enum Modality {
     Code,
 }
 
-/// Audio container format the model can return.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioFormat {

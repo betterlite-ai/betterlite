@@ -12,10 +12,7 @@ use serde_json::value::RawValue;
 pub mod generalizations;
 mod unknown;
 
-/// Every non-price field a pinned catalog entry carries, composed from `metadata` and `capabilities`.
-///
-/// B204's price groups compose beside this into the record B193 deserializes; this type never
-/// pulls them in itself.
+// B204's price groups compose beside this into the record B193 deserializes; not pulled in here.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelFields {
@@ -37,10 +34,7 @@ pub enum ModelFieldError {
     Unknown(String),
 }
 
-/// An immutable, read-only view of the fields a provider resolution needs.
-///
-/// `litellm_provider` and `mode` stay plain validated catalog data here; mapping the slug onto an
-/// executable provider is left to its own crate.
+// litellm_provider and mode stay plain validated data; mapping to an executable provider is its own crate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProviderProjection<'fields> {
     pub litellm_provider: &'fields str,
@@ -48,18 +42,14 @@ pub struct ProviderProjection<'fields> {
 }
 
 impl ModelFields {
-    /// Parses one catalog entry, accepting any field this type does not
-    /// recognize rather than rejecting the entry, and reports each such
-    /// field's complete path so a remote refresh stays forward compatible.
+    // Accepts an unrecognized field and reports its path so a remote refresh stays compatible.
     pub fn parse(input: &RawValue) -> Result<(Self, Vec<String>), ModelFieldError> {
         let fields = Self::decode(input)?;
         let warnings = unknown::unknown_paths(input, true);
         Ok((fields, warnings))
     }
 
-    /// Parses one catalog entry, rejecting any field neither this type nor
-    /// B204's price fields recognize. Only the bundled-map inventory tests
-    /// use this; runtime parsing always accepts and warns instead.
+    // Only the bundled-map inventory tests use this; runtime parsing always accepts and warns.
     pub fn parse_strict(input: &RawValue) -> Result<Self, ModelFieldError> {
         let fields = Self::decode(input)?;
         if let Some(path) = unknown::unknown_paths(input, true).into_iter().next() {
@@ -68,12 +58,11 @@ impl ModelFields {
         Ok(fields)
     }
 
-    /// Projects the fields a provider resolution needs, without this crate
-    /// importing betterlite-provider.
     #[must_use]
     pub fn provider_projection(&self) -> ProviderProjection<'_> {
+        let litellm_provider = self.metadata.litellm_provider.as_str();
         ProviderProjection {
-            litellm_provider: &self.metadata.litellm_provider,
+            litellm_provider,
             mode: self.metadata.mode,
         }
     }
@@ -94,11 +83,10 @@ impl ModelFields {
         })
     }
 
-    // Recovers the path a flattened field lost by re-checking each group
-    // alone: none of these deny unknown fields, so a direct decode against
-    // the same full entry validates only that group's own keys.
+    // Recovers the path a flattened field lost by re-checking each group alone.
     fn locate_flat_field_error(input: &RawValue) -> Option<ModelFieldError> {
-        try_leaf::<MetadataFields>(input)
+        let metadata = try_leaf::<MetadataFields>(input);
+        metadata
             .or_else(|| try_leaf::<ReasoningCapabilities>(input))
             .or_else(|| try_leaf::<MediaCapabilities>(input))
             .or_else(|| try_leaf::<ToolingCapabilities>(input))

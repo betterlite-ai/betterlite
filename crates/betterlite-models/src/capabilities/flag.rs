@@ -1,5 +1,3 @@
-// Mirrors price_fields::price_struct, generating Option<bool> capability flags
-// so an absent flag stays distinct from an explicit false (see pitfalls).
 macro_rules! capability_struct {
     (
         $(#[$meta:meta])*
@@ -18,4 +16,5 @@ macro_rules! capability_struct {
         }
     };
 }
+// Mirrors price_fields::price_struct; Option<bool> keeps an absent flag distinct from false.
 pub(crate) use capability_struct;

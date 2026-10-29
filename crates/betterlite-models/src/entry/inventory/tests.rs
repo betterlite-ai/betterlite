@@ -70,9 +70,7 @@ fn assert_field_round_trips(name: &str) {
     );
 }
 
-// A boolean sentinel fits every capability flag; the metadata fields that
-// are not booleans are covered by name here since a numeric/string/array
-// sentinel would need a per-field table for one inventory sweep.
+// A boolean sentinel fits every capability flag; non-boolean metadata fields are matched by name below.
 fn field_sentinel(name: &str) -> &'static str {
     match name {
         "litellm_provider" | "audio_transcription_config" | "source" | "comment" => r#""sentinel""#,

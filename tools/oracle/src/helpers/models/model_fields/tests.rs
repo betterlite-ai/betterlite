@@ -39,8 +39,15 @@ fn reports_an_unknown_fields_complete_path() {
     )
     .unwrap();
     let output = Op::run(&input).unwrap();
-    let unknown_fields = output.pointer("/unknown_fields").unwrap().as_array().unwrap();
-    let paths: Vec<&str> = unknown_fields.iter().filter_map(|value| value.as_str()).collect();
+    let unknown_fields = output
+        .pointer("/unknown_fields")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    let paths: Vec<&str> = unknown_fields
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
     assert_eq!(paths, ["metadata.brand_new_note", "totally_new_field"]);
 }
 

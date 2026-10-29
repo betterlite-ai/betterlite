@@ -9,10 +9,6 @@ pub mod levels;
 pub mod notes;
 pub mod vendor;
 
-/// The non-price, non-capability fields of a pinned catalog entry.
-///
-/// Covers provider and mode identity, token/context limits, endpoint/modality/region support,
-/// reasoning levels, and deprecation/source documentation.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MetadataFields {
@@ -49,8 +45,11 @@ pub struct MetadataFields {
     pub default_reasoning_effort: Option<ReasoningEffort>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub reasoning_effort_levels: Vec<ReasoningEffort>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bedrock_output_config_effort_ceiling: Option<ReasoningEffort>,
+    #[serde(
+        rename = "bedrock_output_config_effort_ceiling",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub bedrock_output_ceiling: Option<ReasoningEffort>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vertex_ai_audio_api: Option<VertexAudioApi>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,8 +65,7 @@ pub struct MetadataFields {
 }
 
 impl MetadataFields {
-    // Lets entry::unknown_paths recognize every field here, and recovers a
-    // path lost through the #[serde(flatten)] that composes ModelFields.
+    // Lets entry::unknown_paths recognize every field here, see flag.rs.
     pub(crate) const WIRE_NAMES: &'static [&'static str] = &[
         "litellm_provider",
         "mode",

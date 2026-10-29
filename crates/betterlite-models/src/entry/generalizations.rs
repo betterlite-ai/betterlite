@@ -1,11 +1,7 @@
 use super::ModelFields;
 use serde::{Deserialize, Serialize};
 
-/// One rule from the pinned catalog's `fallback_generalizations.rules`.
-///
-/// This is the shape `LiteLLM` uses to generalize an unmapped model id to a known family. It
-/// types the declaration only; matching an id against `pattern` and applying `model_info` is
-/// B018's `catalog_generalizations` engine.
+// Types the declaration only; matching pattern against an id is B018's catalog_generalizations.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FallbackGeneralizationRule {
@@ -20,8 +16,7 @@ pub struct FallbackGeneralizationRule {
     pub model_info: ModelFields,
 }
 
-/// The pinned catalog's `fallback_generalizations` sentinel entry: a list of
-/// rules, never a model itself (see pitfalls).
+// This sentinel entry is a list of rules, never a model itself (see pitfalls).
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FallbackGeneralizations {
