@@ -103,8 +103,8 @@ pub(super) fn item_id(item: &Item) -> String {
         | Item::Reasoning { id, .. }
         | Item::CommandExecution { id, .. }
         | Item::FileChange { id, .. }
-        | Item::WebSearch { id, .. }
-        | Item::McpToolCall { id, .. } => id.as_ref(),
+        | Item::WebSearch { id, .. } => id.as_ref(),
+        Item::McpToolCall(call) => call.id.as_ref(),
         Item::Other => None,
     };
     id.filter(|value| value.is_truthy())

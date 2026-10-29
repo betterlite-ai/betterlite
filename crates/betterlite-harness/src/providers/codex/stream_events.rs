@@ -32,7 +32,7 @@ pub(super) fn transform_item_event(
         Item::CommandExecution { .. }
         | Item::FileChange { .. }
         | Item::WebSearch { .. }
-        | Item::McpToolCall { .. } => tool_events(&item, event_type, state),
+        | Item::McpToolCall(..) => tool_events(&item, event_type, state),
         Item::Other => Vec::new(),
     }
 }

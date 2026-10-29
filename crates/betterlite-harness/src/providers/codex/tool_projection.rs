@@ -7,6 +7,7 @@ use crate::types::JsonObject;
 
 use super::FileChangeEntry;
 use super::Item;
+use super::McpToolCallItem;
 
 pub(crate) struct ToolProjection {
     pub(crate) name: String,
@@ -37,7 +38,7 @@ pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
         Item::WebSearch { query, status, .. } => {
             web_search_projection(query.as_deref(), status.as_deref())
         }
-        Item::McpToolCall { .. } => mcp_tool_call_projection(item),
+        Item::McpToolCall(call) => mcp_tool_call_projection(call),
         Item::AgentMessage { .. } | Item::Reasoning { .. } | Item::Other => ToolProjection {
             name: String::new(),
             native_name: String::new(),
@@ -49,29 +50,17 @@ pub(crate) fn tool_projection(item: &Item) -> ToolProjection {
     }
 }
 
-fn mcp_tool_call_projection(item: &Item) -> ToolProjection {
-    let Item::McpToolCall {
-        server,
-        tool,
-        arguments,
-        result,
-        error,
-        status,
-        ..
-    } = item
-    else {
-        return ToolProjection {
-            name: String::new(),
-            native_name: String::new(),
-            input: JsonObject::new(),
-            builtin: false,
-            output: String::new(),
-            is_error: false,
-        };
-    };
-    let (name, native_name, input) =
-        mcp_tool_input(server.as_deref(), tool.as_deref(), arguments.as_ref());
-    let (output, is_error) = mcp_tool_output(result.as_ref(), error.as_ref(), status.as_deref());
+fn mcp_tool_call_projection(call: &McpToolCallItem) -> ToolProjection {
+    let (name, native_name, input) = mcp_tool_input(
+        call.server.as_deref(),
+        call.tool.as_deref(),
+        call.arguments.as_ref(),
+    );
+    let (output, is_error) = mcp_tool_output(
+        call.result.as_ref(),
+        call.error.as_ref(),
+        call.status.as_deref(),
+    );
     ToolProjection {
         name,
         native_name,

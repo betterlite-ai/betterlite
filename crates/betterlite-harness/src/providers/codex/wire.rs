@@ -67,24 +67,27 @@ pub(crate) enum Item {
         status: Option<String>,
     },
     #[serde(rename = "mcp_tool_call")]
-    McpToolCall {
-        #[serde(default)]
-        id: Option<ScalarJson>,
-        #[serde(default)]
-        server: Option<String>,
-        #[serde(default)]
-        tool: Option<String>,
-        #[serde(default)]
-        arguments: Option<Value>,
-        #[serde(default)]
-        result: Option<OrderedJson>,
-        #[serde(default)]
-        error: Option<Value>,
-        #[serde(default)]
-        status: Option<String>,
-    },
+    McpToolCall(McpToolCallItem),
     #[serde(other)]
     Other,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct McpToolCallItem {
+    #[serde(default)]
+    pub(crate) id: Option<ScalarJson>,
+    #[serde(default)]
+    pub(crate) server: Option<String>,
+    #[serde(default)]
+    pub(crate) tool: Option<String>,
+    #[serde(default)]
+    pub(crate) arguments: Option<Value>,
+    #[serde(default)]
+    pub(crate) result: Option<OrderedJson>,
+    #[serde(default)]
+    pub(crate) error: Option<Value>,
+    #[serde(default)]
+    pub(crate) status: Option<String>,
 }
 
 pub(crate) fn parse(line: &JsonObject) -> Option<super::StreamEvent> {
