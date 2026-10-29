@@ -435,7 +435,7 @@ fn invalid_ipv6_netloc_is_an_error() {
     );
     assert!(matches!(
         decode_database_url(url.as_bytes()),
-        Err(DbError::InvalidIpv6Url(UrlSplitError::InvalidIpv6Url))
+        Err(DbError::MalformedNetloc(UrlSplitError::InvalidIpv6Url))
     ));
 }
 
@@ -535,7 +535,7 @@ fn extras_whitespace_and_on_false() {
 fn malformed_url_bytes() {
     assert!(matches!(
         decode_database_url(b"postgresql://[::1/db"),
-        Err(DbError::InvalidIpv6Url(UrlSplitError::InvalidIpv6Url))
+        Err(DbError::MalformedNetloc(UrlSplitError::InvalidIpv6Url))
     ));
     assert!(matches!(
         decode_database_url(b"postgresql://host:abc/db"),
@@ -616,6 +616,15 @@ fn native_url_rejects_credentials_past_netloc() {
     let message = error.to_string();
     assert!(!message.contains("admin"));
     assert!(!message.contains("xyz"));
+}
+
+// A schemeless "user:pass@host/db" DSN parses "user" as the scheme and leaves an empty netloc.
+#[test]
+fn native_url_rejects_user_pass_without_slashes() {
+    let error = decode_database_url(b"user:s3cr3t@host/db").unwrap_err();
+    assert!(matches!(error, DbError::CredentialsPastNetloc));
+    assert!(!error.to_string().contains("s3cr3t"));
+    assert!(!format!("{error:?}").contains("s3cr3t"));
 }
 
 #[test]

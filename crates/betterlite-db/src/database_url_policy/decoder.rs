@@ -68,7 +68,7 @@ pub enum DbError {
     #[error("database URL host has an unterminated or misplaced '[' bracket")]
     MalformedBracket,
     #[error(transparent)]
-    InvalidIpv6Url(#[from] UrlSplitError),
+    MalformedNetloc(#[from] UrlSplitError),
     #[error("database URL port ({len} bytes) is not a valid port number")]
     MalformedPort {
         len: usize,
@@ -104,12 +104,8 @@ pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
         return Err(DbError::MissingScheme);
     }
     let (user, password, host, port) = parse_netloc(&parsed.netloc)?;
-    // Mirrors query.rs's redact_credentials guard: an unencoded '/', '?' or '#' in the password truncated the netloc early.
-    if !parsed.netloc.is_empty()
-        && (parsed.path.contains('@')
-            || parsed.query.contains('@')
-            || parsed.fragment.contains('@'))
-    {
+    // Mirrors query.rs's redact_credentials guard; an empty netloc still leaks a schemeless "user:pass@host/db" password past it.
+    if parsed.path.contains('@') || parsed.query.contains('@') || parsed.fragment.contains('@') {
         return Err(DbError::CredentialsPastNetloc);
     }
     let database = percent_decode(parsed.path.strip_prefix('/').unwrap_or(&parsed.path))?;
