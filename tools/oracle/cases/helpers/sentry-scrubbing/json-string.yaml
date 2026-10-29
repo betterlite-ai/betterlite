@@ -1,0 +1,15 @@
+kind: helper
+name: sentry-json-string
+call:
+  sentry_scrubbing:
+    function: scrub_event
+    event:
+      message: "contact user@example.com for help"
+      extra:
+        api_key: "abc123"
+        tags: ["ok", "token=def456"]
+      count: 3
+    send_default_pii: false
+env: {}
+compare:
+  ignore: []
