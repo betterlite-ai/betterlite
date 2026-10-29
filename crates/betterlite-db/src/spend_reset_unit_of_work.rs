@@ -9,7 +9,7 @@ mod tests;
 
 use batch::{BudgetCascadeBatch, CommitError, SpendResetBatch};
 use queue::{
-    BudgetWindowWrites, KeySpendResetWrites, LinkedSpendResetWrites, TeamSpendResetWrites,
+    BudgetWindowWrites, KeySpendResetWrites, LinkedSpendResetWrites, Queue, TeamSpendResetWrites,
     UserSpendResetWrites,
 };
 
@@ -38,14 +38,29 @@ pub const fn spend_reset_data(
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SpendResetUnitOfWork {
     pub keys: KeySpendResetWrites,
     pub users: UserSpendResetWrites,
     pub teams: TeamSpendResetWrites,
 }
 
-#[derive(Debug, Default)]
+impl Default for SpendResetUnitOfWork {
+    fn default() -> Self {
+        let queue = Queue::default();
+        Self {
+            keys: KeySpendResetWrites {
+                queue: Queue::clone(&queue),
+            },
+            users: UserSpendResetWrites {
+                queue: Queue::clone(&queue),
+            },
+            teams: TeamSpendResetWrites { queue },
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct BudgetCascadeUnitOfWork {
     pub team_memberships: LinkedSpendResetWrites,
     pub keys: LinkedSpendResetWrites,
@@ -55,6 +70,43 @@ pub struct BudgetCascadeUnitOfWork {
     pub projects: LinkedSpendResetWrites,
     pub endusers: LinkedSpendResetWrites,
     pub budgets: BudgetWindowWrites,
+}
+
+impl Default for BudgetCascadeUnitOfWork {
+    fn default() -> Self {
+        let queue = Queue::default();
+        Self {
+            team_memberships: LinkedSpendResetWrites {
+                table: "LiteLLM_TeamMembership",
+                queue: Queue::clone(&queue),
+            },
+            keys: LinkedSpendResetWrites {
+                table: "LiteLLM_VerificationToken",
+                queue: Queue::clone(&queue),
+            },
+            organizations: LinkedSpendResetWrites {
+                table: "LiteLLM_OrganizationTable",
+                queue: Queue::clone(&queue),
+            },
+            tags: LinkedSpendResetWrites {
+                table: "LiteLLM_TagTable",
+                queue: Queue::clone(&queue),
+            },
+            model_access_groups: LinkedSpendResetWrites {
+                table: "LiteLLM_ModelAccessGroupBudgetTable",
+                queue: Queue::clone(&queue),
+            },
+            projects: LinkedSpendResetWrites {
+                table: "LiteLLM_ProjectTable",
+                queue: Queue::clone(&queue),
+            },
+            endusers: LinkedSpendResetWrites {
+                table: "LiteLLM_EndUserTable",
+                queue: Queue::clone(&queue),
+            },
+            budgets: BudgetWindowWrites { queue },
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

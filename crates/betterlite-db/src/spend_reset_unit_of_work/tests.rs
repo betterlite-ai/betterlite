@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::batch::{BudgetCascadeBatch, CommitError, SpendResetBatch};
-use super::queue::{BudgetIdFilter, LinkedResetFilter};
+use super::queue::{BudgetIdFilter, LinkedResetFilter, SpendRange};
 use super::{
     BudgetCascadeUnitOfWork, SpendDecrement, SpendResetUnitOfWork, UnitOfWorkError,
     budget_cascade_unit_of_work, spend_reset_data, spend_reset_unit_of_work,
@@ -412,15 +412,11 @@ async fn rejected_commit_propagates_and_releases_connection() {
     .await;
     assert!(matches!(
         result,
-        Err(UnitOfWorkError::Commit(CommitError::Commit(_)))
+        Err(UnitOfWorkError::Commit(CommitError::Rejected(_)))
     ));
     let probe = store.session().await.unwrap();
-    let count: i64 = probe
-        .query_one("SELECT count(*) FROM \"LiteLLM_UserTable\"", &[])
-        .await
-        .unwrap()
-        .get(0);
-    assert_eq!(count, 2);
+    assert_spend(&probe, "LiteLLM_UserTable", "user_id", "dup-a", 10.0_f64).await;
+    assert_spend(&probe, "LiteLLM_UserTable", "user_id", "dup-b", 8.0_f64).await;
     drop(probe);
     finish(fixture, store, client).await;
 }
@@ -436,7 +432,7 @@ async fn commit_ack_loss_has_no_retry() {
         .await
         .unwrap();
     client
-        .batch_execute("CREATE SEQUENCE attempt_seq; CREATE FUNCTION boom() RETURNS trigger AS $$ BEGIN PERFORM nextval('attempt_seq'); RAISE EXCEPTION 'synthetic failure'; RETURN NEW; END; $$ LANGUAGE plpgsql; CREATE TRIGGER boom_trigger BEFORE UPDATE ON \"LiteLLM_UserTable\" FOR EACH ROW WHEN (OLD.user_id = 'retry-user') EXECUTE FUNCTION boom();")
+        .batch_execute("CREATE SEQUENCE commit_seq; CREATE FUNCTION terminate_on_commit() RETURNS trigger AS $$ BEGIN PERFORM nextval('commit_seq'); PERFORM pg_terminate_backend(pg_backend_pid()); RETURN NULL; END; $$ LANGUAGE plpgsql; CREATE CONSTRAINT TRIGGER terminate_trigger AFTER UPDATE ON \"LiteLLM_UserTable\" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (OLD.user_id = 'retry-user') EXECUTE FUNCTION terminate_on_commit();")
         .await
         .unwrap();
     let result = spend_reset_unit_of_work(
@@ -452,10 +448,10 @@ async fn commit_ack_loss_has_no_retry() {
     .await;
     assert!(matches!(
         result,
-        Err(UnitOfWorkError::Commit(CommitError::Statement(_)))
+        Err(UnitOfWorkError::Commit(CommitError::OutcomeUnknown(_)))
     ));
     let attempts: i64 = client
-        .query_one("SELECT last_value FROM attempt_seq", &[])
+        .query_one("SELECT last_value FROM commit_seq", &[])
         .await
         .unwrap()
         .get(0);
@@ -501,7 +497,7 @@ async fn postgres_decrement_keeps_concurrent_spend() {
 async fn linked_filters_preserved_in_queue_order() {
     let (fixture, store, client) = schema().await;
     client
-        .batch_execute("INSERT INTO \"LiteLLM_TagTable\" (tag_name, budget_id, spend) VALUES ('tag-a', 'budget-a', 10), ('tag-b', 'budget-b', 10);")
+        .batch_execute("INSERT INTO \"LiteLLM_TagTable\" (tag_name, budget_id, spend) VALUES ('tag-a', 'budget-a', 10), ('tag-b', NULL, 10), ('tag-c', 'other-budget', 20);")
         .await
         .unwrap();
     budget_cascade_unit_of_work(
@@ -509,24 +505,37 @@ async fn linked_filters_preserved_in_queue_order() {
             store: store.clone(),
         },
         async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
-            unit.tags.queue_spend_zero(LinkedResetFilter {
-                budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
-                spend: None,
-            });
             unit.tags.queue_spend_decrement(
                 LinkedResetFilter {
-                    budget_id: BudgetIdFilter::Equals("budget-b".to_owned()),
-                    spend: None,
+                    budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
+                    spend: Some(SpendRange {
+                        greater_than: Some(Decimal::from(5_i32)),
+                        less_than_or_equal: None,
+                    }),
                 },
-                Decimal::from(4_i32),
+                Decimal::from(3_i32),
             );
+            unit.tags.queue_spend_zero(LinkedResetFilter {
+                budget_id: BudgetIdFilter::Equals("budget-a".to_owned()),
+                spend: Some(SpendRange {
+                    greater_than: None,
+                    less_than_or_equal: Some(Decimal::from(8_i32)),
+                }),
+            });
+            unit.tags.queue_spend_zero(LinkedResetFilter {
+                budget_id: BudgetIdFilter::IsNull,
+                spend: None,
+            });
             Ok(())
         },
     )
     .await
     .unwrap();
+    // tag-a only reads 0 if the decrement (10 -> 7) ran before the <= 8 zero filter was
+    // evaluated; a reordering or a dropped filter would leave it at 10 or 7.
     assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-a", 0.0_f64).await;
-    assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-b", 6.0_f64).await;
+    assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-b", 0.0_f64).await;
+    assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-c", 20.0_f64).await;
     finish(fixture, store, client).await;
 }
 
@@ -554,17 +563,43 @@ async fn unmatched_linked_update_succeeds() {
 async fn deleted_budget_window_update_is_noop() {
     let (fixture, store, client) = schema().await;
     let at = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
+    client
+        .batch_execute("INSERT INTO \"LiteLLM_BudgetTable\" (budget_id) VALUES ('budget-del'); INSERT INTO \"LiteLLM_EndUserTable\" (user_id, budget_id, spend) VALUES ('enduser-del', 'budget-del', 10);")
+        .await
+        .unwrap();
+    let deleter = store.session().await.unwrap();
     budget_cascade_unit_of_work(
         || BudgetCascadeBatch {
             store: store.clone(),
         },
         async move |unit: &mut BudgetCascadeUnitOfWork| -> Result<(), TestError> {
-            unit.budgets.queue_window_advance("deleted-budget", at);
+            unit.budgets.queue_window_advance("budget-del", at);
+            unit.endusers.queue_spend_zero(LinkedResetFilter {
+                budget_id: BudgetIdFilter::Equals("budget-del".to_owned()),
+                spend: None,
+            });
+            // Delete the budget on a separate connection before the batch commits, so the
+            // window advance targets a row that is already gone by the time it runs.
+            deleter
+                .execute(
+                    "DELETE FROM \"LiteLLM_BudgetTable\" WHERE budget_id = 'budget-del'",
+                    &[],
+                )
+                .await
+                .unwrap();
             Ok(())
         },
     )
     .await
     .unwrap();
+    assert_spend(
+        &client,
+        "LiteLLM_EndUserTable",
+        "user_id",
+        "enduser-del",
+        0.0_f64,
+    )
+    .await;
     finish(fixture, store, client).await;
 }
 
