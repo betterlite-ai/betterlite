@@ -65,6 +65,7 @@ description: >-
   no event is missed and every ToolCall precedes its ToolResult.
 scope:
   paths:
+    - crates/betterlite-harness/src/errors.rs
     - crates/betterlite-harness/src/payloads/python_json.rs
     - crates/betterlite-harness/src/providers/codex.rs
     - crates/betterlite-harness/src/providers/codex/**
