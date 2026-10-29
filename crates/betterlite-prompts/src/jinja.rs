@@ -25,6 +25,7 @@ pub struct TokenObject {
     pub content: Option<String>,
 }
 
+#[must_use]
 pub fn extract_token_value(token: Option<TokenValue>) -> String {
     match token {
         None => String::new(),
