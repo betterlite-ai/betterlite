@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 import sys
@@ -10,35 +11,9 @@ import nacl.secret
 from cryptography.exceptions import InvalidTag
 from litellm.litellm_core_utils.app_crypto import AppCrypto
 from litellm.proxy.common_utils import callback_utils
-from litellm.proxy.common_utils import encrypt_decrypt_utils as codec
 from litellm.proxy.spend_tracking import spend_tracking_utils
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-DOCS_LINK = "https://docs.litellm.ai/docs/proxy/prod#5-set-litellm-salt-key"
-
-encrypt_value = cast(Callable[[Json, str | None], Json], codec.encrypt_value_helper)
-decrypt_value = cast(Callable[[Json, str, str, bool], Json], codec.decrypt_value_helper)
-decode_map = cast(Callable[..., Json], codec.decode_secret_map)
-encrypt_map = cast(Callable[[Json, str | None], str], codec.encrypt_secret_map)
-
-
-class LogCapture(logging.Filter):
-    def __init__(self, field: str) -> None:
-        super().__init__()
-        self.field = field
-        self.records: list[Json] = []
-
-    @override
-    def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        self.records.append(
-            {
-                "level": record.levelname.lower(),
-                "names_field": bool(self.field) and self.field in message,
-                "salt_advice": DOCS_LINK in message,
-            }
-        )
-        return False
 
 
 class DropAll(logging.Filter):
@@ -78,46 +53,6 @@ def optional_text(step: dict[str, Json], name: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise ValueError(f"{name} must be a string or null")
     return value
-
-
-def call_codec(step: dict[str, Json]) -> Json:
-    match text(step, "kind"):
-        case "encrypt_value":
-            result = encrypt_value(step.get("value"), optional_text(step, "new_key"))
-        case "decrypt_value":
-            keep = step.get("keep_original") is True
-            report = text(step, "report")
-            result = decrypt_value(step.get("value"), text(step, "field"), report, keep)
-        case "decrypt_with":
-            signing_key = text(step, "signing_key")
-            result = codec.decrypt_if_encrypted_with(text(step, "value"), signing_key)
-        case "encrypt_bearer":
-            result = codec.encrypt_bearer_token(text(step, "value"), text(step, "prefix"))
-        case "decrypt_bearer":
-            result = codec.decrypt_bearer_token(text(step, "value"), text(step, "prefix"))
-        case "encrypt_map":
-            result = encrypt_map(step.get("value"), optional_text(step, "new_key"))
-        case "decode_map":
-            result = decode_map(step.get("value"), key=text(step, "field"))
-        case other:
-            raise ValueError(f"unknown codec step: {other}")
-    return result
-
-
-def run_codec_step(step: Json) -> Json:
-    if not isinstance(step, dict):
-        raise ValueError("each step must be an object")
-    capture = LogCapture(optional_text(step, "field") or "")
-    logger = logging.getLogger("LiteLLM Proxy")
-    logger.filters.insert(0, capture)
-    try:
-        result: dict[str, Json] = {"value": call_codec(step)}
-    except (ValueError, AttributeError, TypeError, codec.SecretMapDecodeError) as error:
-        result = {"error": {"class": type(error).__name__, "message": str(error)}}
-    finally:
-        logger.removeFilter(capture)
-    result["logs"] = capture.records
-    return result
 
 
 @contextmanager
@@ -162,19 +97,6 @@ def restored_globals(
             os.environ["LITELLM_SALT_KEY"] = saved_salt
 
 
-def run_codec(input_value: dict[str, Json]) -> Json:
-    steps = input_value["steps"]
-    if not isinstance(steps, list):
-        raise ValueError("steps must be a list")
-    with restored_globals(
-        optional_text(input_value, "salt_key"),
-        optional_text(input_value, "master_key"),
-        input_value.get("general_settings"),
-        text(input_value, "nonce_hex"),
-    ):
-        return [run_codec_step(step) for step in steps]
-
-
 def app_aad(step: dict[str, Json], name: str) -> bytes | None:
     value = optional_text(step, name)
     return value.encode("utf-8") if value is not None else None
@@ -209,7 +131,7 @@ def call_app_crypto(app: AppCrypto, step: dict[str, Json]) -> Json:
 
 
 def run_app_crypto(input_value: dict[str, Json]) -> Json:
-    app = AppCrypto(text(input_value, "key").encode("utf-8"))
+    app = AppCrypto(base64.b64decode(text(input_value, "key")))
     steps = input_value["steps"]
     if not isinstance(steps, list):
         raise ValueError("steps must be a list")
@@ -224,48 +146,15 @@ def run_app_crypto(input_value: dict[str, Json]) -> Json:
     return results
 
 
-def encrypt_callback_var(key: str, value: object, extra: set[str]) -> object:
-    if not isinstance(value, str) or not value:
-        return value
-    if not callback_utils.is_sensitive_callback_key(key, extra):
-        return value
-    if value.startswith(callback_utils.CALLBACK_VAR_ENCRYPTED_PREFIX):
-        return value
-    try:
-        return callback_utils.CALLBACK_VAR_ENCRYPTED_PREFIX + codec.encrypt_value_helper(value)
-    except Exception:  # noqa: BLE001 - no salt/master key leaves the value as-is, matching the source
-        return value
-
-
-def decrypt_callback_var(key: str, value: object) -> object:
-    if not isinstance(value, str) or not value:
-        return value
-    if not value.startswith(callback_utils.CALLBACK_VAR_ENCRYPTED_PREFIX):
-        return value
-    inner = value[len(callback_utils.CALLBACK_VAR_ENCRYPTED_PREFIX) :]
-    decrypted = codec.decrypt_value_helper(
-        value=inner, key=key, exception_type="debug", return_original_value=False
-    )
-    return decrypted if decrypted is not None else value
-
-
 def call_callback(step: dict[str, Json], extra: set[str]) -> Json:
     metadata = step.get("metadata")
     match text(step, "kind"):
         case "encrypt":
-            return cast(
-                Json,
-                callback_utils._transform_callback_vars(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                    metadata, lambda key, value: encrypt_callback_var(key, value, extra)
-                ),
-            )
+            return cast(Json, callback_utils.encrypt_callback_vars(metadata))
         case "decrypt":
-            return cast(
-                Json,
-                callback_utils._transform_callback_vars(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                    metadata, decrypt_callback_var
-                ),
-            )
+            return cast(Json, callback_utils.decrypt_callback_vars(metadata))
+        case "sensitive":
+            return callback_utils.is_sensitive_callback_key(text(step, "key"), extra)
         case other:
             raise ValueError(f"unknown callback_vars step: {other}")
 
@@ -287,7 +176,12 @@ def run_callback_vars(input_value: dict[str, Json]) -> Json:
         ),
         silenced_proxy_logger(),
     ):
-        return [call_callback(step, extra) for step in steps if isinstance(step, dict)]
+        results: list[Json] = []
+        for step in steps:
+            if not isinstance(step, dict):
+                raise ValueError("each step must be an object")
+            results.append(call_callback(step, extra))
+        return results
 
 
 def run_master_key_match(input_value: dict[str, Json]) -> Json:
@@ -303,8 +197,6 @@ def run(input_value: Json) -> Json:
     if not isinstance(input_value, dict):
         raise ValueError("input must be an object")
     match text(input_value, "op"):
-        case "codec":
-            return run_codec(input_value)
         case "app_crypto":
             return run_app_crypto(input_value)
         case "callback_vars":

@@ -3,7 +3,7 @@ name: stored-cipher-app-envelope-aad
 call:
   stored_cipher:
     op: app_crypto
-    key: "0123456789abcdef0123456789abcde0"
+    key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZTA="
     steps:
       - kind: decrypt
         envelope:

@@ -1,21 +1,20 @@
 kind: helper
 name: stored-cipher-empty-and-corrupt-values
 call:
-  stored_cipher:
-    op: codec
+  secret_codec:
     salt_key: salt-one
     master_key: null
     general_settings: {encryption_algorithm: " aes-256-gcm"}
     nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
     steps:
-      - {kind: decrypt_value, value: "", field: api_key, report: error, keep_original: false}
-      - {kind: decrypt_value, value: "*", field: api_key, report: debug, keep_original: true}
-      - {kind: decrypt_value, value: "AAAA-", field: api_key, report: debug, keep_original: false}
-      - {kind: decrypt_value, value: "v2:gcm:AAEC", field: api_key, report: debug, keep_original: true}
-      - {kind: encrypt_value, value: {api_key: sk-live-secret}, new_key: null}
-      - {kind: encrypt_value, value: [1, 2], new_key: null}
-      - {kind: encrypt_value, value: null, new_key: null}
-      - {kind: decrypt_value, value: false, field: api_key, report: debug, keep_original: false}
+      - {op: decrypt_value, value: "", field: api_key, report: error, keep_original: false}
+      - {op: decrypt_value, value: "*", field: api_key, report: debug, keep_original: true}
+      - {op: decrypt_value, value: "AAAA-", field: api_key, report: debug, keep_original: false}
+      - {op: decrypt_value, value: "v2:gcm:AAEC", field: api_key, report: debug, keep_original: true}
+      - {op: encrypt_value, value: {api_key: sk-live-secret}, new_key: null}
+      - {op: encrypt_value, value: [1, 2], new_key: null}
+      - {op: encrypt_value, value: null, new_key: null}
+      - {op: decrypt_value, value: false, field: api_key, report: debug, keep_original: false}
 env: {}
 compare:
   ignore: []
