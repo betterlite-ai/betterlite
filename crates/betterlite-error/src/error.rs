@@ -46,7 +46,7 @@ pub struct RetryMetadata {
     pub num_retries: Option<u32>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ErrorMetadata {
     pub status_code: u16,
     pub model: Option<String>,
@@ -120,11 +120,7 @@ impl ErrorClass {
             }
             Self::RateLimit(details) => rate_limit_metadata(details),
             Self::BudgetExceeded(details) => budget_exceeded_metadata(details),
-            Self::GuardrailRaised(details) => ErrorMetadata {
-                status_code: details.status_code,
-                code: WireField::Text(details.status_code.to_string()),
-                ..ErrorMetadata::default()
-            },
+            Self::GuardrailRaised(details) => guardrail_raised_metadata(details),
             Self::MidStreamFallback(details) => mid_stream_fallback_metadata(details),
             Self::JsonSchemaValidation(details) => {
                 let identity = (Some(details.model.clone()), Some(details.provider.clone()));
@@ -152,6 +148,16 @@ fn budget_exceeded_metadata(details: &BudgetExceededDetails) -> ErrorMetadata {
     metadata.rate_limit_category = Some(RateLimitCategory::LitellmRateLimit);
     metadata.rate_limit_dimension = Some(RateLimitDimension::Budget);
     metadata
+}
+
+fn guardrail_raised_metadata(details: &GuardrailDetails) -> ErrorMetadata {
+    let wire = (WireField::MISSING, WireField::MISSING);
+    build_metadata(
+        details.status_code,
+        (None, None),
+        wire,
+        RetryMetadata::default(),
+    )
 }
 
 fn mid_stream_fallback_metadata(details: &MidStreamFallbackDetails) -> ErrorMetadata {

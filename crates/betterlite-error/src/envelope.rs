@@ -22,12 +22,6 @@ impl WireField {
     pub const MISSING: Self = Self::Missing(NoneMarker::None);
 }
 
-impl Default for WireField {
-    fn default() -> Self {
-        Self::MISSING
-    }
-}
-
 // never the Debug dump of the underlying cause
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ErrorObject {
@@ -114,7 +108,8 @@ pub fn project_provider_headers(
 
 #[must_use]
 pub fn is_bare_rate_limit_header(name: &str) -> bool {
-    BARE_RATE_LIMIT_HEADERS.contains(&name.to_lowercase().as_str())
+    let lower = name.to_lowercase();
+    BARE_RATE_LIMIT_HEADERS.contains(&lower.as_str())
 }
 
 // UNSAFE_PROXY_RESPONSE_HEADERS, plus the raw-and-prefixed cookie/CORS deviation
@@ -131,14 +126,13 @@ pub fn is_unsafe_header_name(name: &str) -> bool {
 
 #[must_use]
 pub fn filter_unsafe_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    headers
+    let kept = headers
         .into_iter()
-        .filter(|(name, _)| !is_unsafe_header_name(name))
-        .collect()
+        .filter(|(name, _)| !is_unsafe_header_name(name));
+    kept.collect()
 }
 
-// explicit_headers (a headers= kwarg, e.g. RateLimitError) bypasses projection; response_headers goes through project_provider_headers first.
-// getattr(e, "headers", None) or {} treats an explicitly empty map the same as a missing one
+// explicit_headers (a headers= kwarg, e.g. RateLimitError) bypasses projection and an empty map counts as missing, same as getattr(e, "headers", None) or {}
 #[must_use]
 pub fn allowed_response_headers(
     explicit_headers: &BTreeMap<String, String>,
