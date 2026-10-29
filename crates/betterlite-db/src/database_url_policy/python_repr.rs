@@ -1,3 +1,58 @@
+use std::fmt::{self, Write as _};
+use unicode_general_category::{GeneralCategory, get_general_category};
+
+// Matches Python's repr() of a str, including str.isprintable()'s Unicode Other/Separator escaping.
+pub(super) fn python_repr(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::new();
+    out.push(quote);
+    for character in text.chars() {
+        match character {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ if character == quote => {
+                out.push('\\');
+                out.push(quote);
+            }
+            // str.isprintable() rejects every Other and Separator category except the ASCII space.
+            _ if character != ' '
+                && matches!(
+                    get_general_category(character),
+                    GeneralCategory::Control
+                        | GeneralCategory::Format
+                        | GeneralCategory::PrivateUse
+                        | GeneralCategory::Unassigned
+                        | GeneralCategory::LineSeparator
+                        | GeneralCategory::ParagraphSeparator
+                        | GeneralCategory::SpaceSeparator
+                ) =>
+            {
+                if write_hex_escape(character, &mut out).is_err() {
+                    return out;
+                }
+            }
+            _ => out.push(character),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+fn write_hex_escape(character: char, out: &mut String) -> fmt::Result {
+    let code = u32::from(character);
+    match code {
+        0..=0xff => write!(out, "\\x{code:02x}"),
+        0x100..=0xffff => write!(out, "\\u{code:04x}"),
+        _ => write!(out, "\\U{code:08x}"),
+    }
+}
+
 pub(super) fn format_float(value: f64) -> String {
     // Scientific notation only outside (-4, 16] on the decimal point, matching CPython's format_float_short threshold.
     if value.is_nan() {

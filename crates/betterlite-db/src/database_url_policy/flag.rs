@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use super::python_repr::python_repr;
 
 const TRUTHY_TOKEN_AUTH_VALUES: [&str; 6] = ["1", "on", "t", "true", "y", "yes"];
 const FALSY_TOKEN_AUTH_VALUES: [&str; 7] = ["", "0", "f", "false", "n", "no", "off"];
@@ -50,37 +50,6 @@ fn not_recognized(env_var: &str, raw: &str) -> TokenFlagError {
             python_repr(raw)
         ),
     }
-}
-
-// Matches Python's repr() so the raised message reads the same as upstream.
-fn python_repr(text: &str) -> String {
-    let quote = if text.contains('\'') && !text.contains('"') {
-        '"'
-    } else {
-        '\''
-    };
-    let mut out = String::new();
-    out.push(quote);
-    for character in text.chars() {
-        match character {
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ if character == quote => {
-                out.push('\\');
-                out.push(quote);
-            }
-            _ if u32::from(character) < 0x20 || u32::from(character) == 0x7f => {
-                if write!(out, "\\x{:02x}", u32::from(character)).is_err() {
-                    return out;
-                }
-            }
-            _ => out.push(character),
-        }
-    }
-    out.push(quote);
-    out
 }
 
 // Deliberately permissive and distinct from token_auth_flag_enabled: no stripping, no "on".
