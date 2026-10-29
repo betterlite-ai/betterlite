@@ -22,11 +22,15 @@ pub enum PatternError {
     },
 }
 
+struct PiiPatterns {
+    email: Regex,
+    sha256: Regex,
+}
+
 pub(super) struct Patterns {
     field: Regex,
     key: Regex,
-    email: Option<Regex>,
-    sha256: Option<Regex>,
+    pii: Option<PiiPatterns>,
 }
 
 fn bracketed_value_pattern() -> String {
@@ -79,23 +83,18 @@ pub(super) fn build(
                 .copied(),
         );
     }
-    let (email, sha256) = if send_default_pii {
-        (None, None)
+    let pii = if send_default_pii {
+        None
     } else {
         let email = Regex::new(EMAIL_BODY).map_err(|source| PatternError::Compile { source })?;
         let sha256 = Regex::new(SHA256_BODY).map_err(|source| PatternError::Compile { source })?;
-        (Some(email), Some(sha256))
+        Some(PiiPatterns { email, sha256 })
     };
     let field = Regex::new(&field_pattern_source(&field_names))
         .map_err(|source| PatternError::Compile { source })?;
     let key_source = key_pattern_source(custom_key_minimum, generated_key_bytes);
     let key = Regex::new(&key_source).map_err(|source| PatternError::Compile { source })?;
-    Ok(Patterns {
-        field,
-        key,
-        email,
-        sha256,
-    })
+    Ok(Patterns { field, key, pii })
 }
 
 fn field_match_is_rejected(text: &str, start: usize, field: &str, value: &str) -> bool {
@@ -134,11 +133,15 @@ fn advance_past_char(text: &str, start: usize) -> usize {
     next.map_or(text.len(), |ch| start.saturating_add(ch.len_utf8()))
 }
 
-fn scan_and_filter<M>(
+fn scan_and_filter<M, Find, Push>(
     text: &str,
-    mut next_match: impl FnMut(&str, usize) -> Option<(Range<usize>, bool, M)>,
-    mut push_replacement: impl FnMut(&mut String, M),
-) -> String {
+    mut next_match: Find,
+    mut push_replacement: Push,
+) -> String
+where
+    Find: FnMut(&str, usize) -> Option<(Range<usize>, bool, M)>,
+    Push: FnMut(&mut String, M),
+{
     let mut output = String::with_capacity(text.len());
     let mut copied_until = 0_usize;
     let mut scan_from = 0_usize;
@@ -206,16 +209,11 @@ pub(super) fn apply(patterns: &Patterns, text: &str) -> String {
         .key
         .replace_all(&fields_scrubbed, FILTERED)
         .into_owned();
-    let Some(email_pattern) = patterns.email.as_ref() else {
+    let Some(pii) = patterns.pii.as_ref() else {
         return keys_scrubbed;
     };
-    let emails_scrubbed = email_pattern
-        .replace_all(&keys_scrubbed, FILTERED)
-        .into_owned();
-    let Some(sha256_pattern) = patterns.sha256.as_ref() else {
-        return emails_scrubbed;
-    };
-    scrub_sha256(&emails_scrubbed, sha256_pattern)
+    let emails_scrubbed = pii.email.replace_all(&keys_scrubbed, FILTERED).into_owned();
+    scrub_sha256(&emails_scrubbed, &pii.sha256)
 }
 
 pub fn scrub(text: &str, send_default_pii: bool) -> Result<String, PatternError> {

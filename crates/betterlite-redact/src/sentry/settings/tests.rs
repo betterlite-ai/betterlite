@@ -35,9 +35,41 @@ fn defaults_apply_when_env_is_empty_or_blank() {
     assert!((defaults.sample_rate - 1.0).abs() < f64::EPSILON);
     assert!(!defaults.send_default_pii);
     assert_eq!(defaults.environment, "production");
+    assert_eq!(defaults.custom_key_minimum, 16);
+    assert_eq!(defaults.generated_key_bytes, 16);
 
     let blank_rate = build_sentry_init_options(&env(&[("SENTRY_API_TRACE_RATE", "")])).unwrap();
     assert!((blank_rate.traces_sample_rate - 1.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn key_lengths_are_read_from_their_own_env_vars() {
+    let configured = build_sentry_init_options(&env(&[
+        ("MINIMUM_CUSTOM_KEY_LENGTH", "8"),
+        ("LENGTH_OF_LITELLM_GENERATED_KEY", "32"),
+    ]))
+    .unwrap();
+    assert_eq!(configured.custom_key_minimum, 8);
+    assert_eq!(configured.generated_key_bytes, 32);
+}
+
+#[test]
+fn malformed_key_lengths_fail_with_typed_errors() {
+    let minimum_error =
+        build_sentry_init_options(&env(&[("MINIMUM_CUSTOM_KEY_LENGTH", "not-a-number")]))
+            .unwrap_err();
+    assert!(matches!(
+        minimum_error,
+        SettingsError::InvalidCustomKeyMinimum { .. }
+    ));
+
+    let generated_error =
+        build_sentry_init_options(&env(&[("LENGTH_OF_LITELLM_GENERATED_KEY", "not-a-number")]))
+            .unwrap_err();
+    assert!(matches!(
+        generated_error,
+        SettingsError::InvalidGeneratedKeyLength { .. }
+    ));
 }
 
 #[test]

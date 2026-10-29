@@ -80,13 +80,20 @@ def _install_sentry_sdk_stub() -> None:
 
 
 _install_sentry_sdk_stub()
-_ss = import_module("litellm.litellm_core_utils.sentry_scrubbing")
+sentry_scrubbing_module = import_module("litellm.litellm_core_utils.sentry_scrubbing")
 
-build_string_scrubber = cast(Callable[[bool], Callable[[str], str]], _ss.build_string_scrubber)
-scrub_json_strings = cast(Callable[[Json, Callable[[str], str]], Json], _ss.scrub_json_strings)
-send_default_pii_from_env = cast(Callable[[Mapping[str, str]], bool], _ss.send_default_pii_from_env)
+build_string_scrubber = cast(
+    Callable[[bool], Callable[[str], str]], sentry_scrubbing_module.build_string_scrubber
+)
+scrub_json_strings = cast(
+    Callable[[Json, Callable[[str], str]], Json], sentry_scrubbing_module.scrub_json_strings
+)
+send_default_pii_from_env = cast(
+    Callable[[Mapping[str, str]], bool], sentry_scrubbing_module.send_default_pii_from_env
+)
 build_sentry_init_options = cast(
-    Callable[[Mapping[str, str]], dict[str, Json]], _ss.build_sentry_init_options
+    Callable[[Mapping[str, str]], dict[str, Json]],
+    sentry_scrubbing_module.build_sentry_init_options,
 )
 
 

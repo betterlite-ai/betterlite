@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use super::{EventValue, MAX_SCRUB_DEPTH, scrub_event};
+use super::super::settings::build_sentry_init_options;
+use super::{EventValue, MAX_SCRUB_DEPTH, scrub_event, scrub_event_with_key_lengths};
 use std::collections::BTreeMap;
 
 fn object(pairs: &[(&str, EventValue)]) -> EventValue {
@@ -69,6 +70,26 @@ fn sentry_scrubbing_behavior_tests_behavior() {
         innermost_object(&scrubbed_beyond_limit),
         &text("[Filtered]")
     );
+}
+
+#[test]
+fn a_lowered_custom_key_minimum_scrubs_shorter_keys() {
+    let event = text("key is sk-abcde here");
+
+    let default_lengths = scrub_event(&event, false).unwrap();
+    assert_eq!(default_lengths, event);
+
+    let mut env = BTreeMap::new();
+    env.insert("MINIMUM_CUSTOM_KEY_LENGTH".to_owned(), "8".to_owned());
+    let options = build_sentry_init_options(&env).unwrap();
+    let lowered_minimum = scrub_event_with_key_lengths(
+        &event,
+        false,
+        options.custom_key_minimum,
+        options.generated_key_bytes,
+    )
+    .unwrap();
+    assert_eq!(lowered_minimum, text("key is [Filtered] here"));
 }
 
 #[test]

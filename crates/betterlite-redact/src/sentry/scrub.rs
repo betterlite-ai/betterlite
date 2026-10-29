@@ -26,11 +26,21 @@ pub enum EventValue {
 }
 
 pub fn scrub_event(event: &EventValue, send_default_pii: bool) -> Result<EventValue, PatternError> {
-    let patterns = pattern::build(
+    scrub_event_with_key_lengths(
+        event,
         send_default_pii,
         fixture::MINIMUM_CUSTOM_KEY_LENGTH,
         fixture::GENERATED_KEY_LENGTH,
-    )?;
+    )
+}
+
+pub fn scrub_event_with_key_lengths(
+    event: &EventValue,
+    send_default_pii: bool,
+    custom_key_minimum: usize,
+    generated_key_bytes: usize,
+) -> Result<EventValue, PatternError> {
+    let patterns = pattern::build(send_default_pii, custom_key_minimum, generated_key_bytes)?;
     Ok(walk(event, &patterns, &[]))
 }
 

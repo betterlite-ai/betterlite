@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
-use std::num::ParseFloatError;
+use std::num::{ParseFloatError, ParseIntError};
 
 use super::fixture;
 
 const SEND_DEFAULT_PII_ENV: &str = "SENTRY_SEND_DEFAULT_PII";
+const MINIMUM_CUSTOM_KEY_LENGTH_ENV: &str = "MINIMUM_CUSTOM_KEY_LENGTH";
+const GENERATED_KEY_LENGTH_ENV: &str = "LENGTH_OF_LITELLM_GENERATED_KEY";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventScrubberConfig {
@@ -19,6 +21,8 @@ pub struct SentryInitOptions {
     pub send_default_pii: bool,
     pub environment: String,
     pub event_scrubber: EventScrubberConfig,
+    pub custom_key_minimum: usize,
+    pub generated_key_bytes: usize,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -33,6 +37,16 @@ pub enum SettingsError {
         #[source]
         source: ParseFloatError,
     },
+    #[error("MINIMUM_CUSTOM_KEY_LENGTH is not a valid integer")]
+    InvalidCustomKeyMinimum {
+        #[source]
+        source: ParseIntError,
+    },
+    #[error("LENGTH_OF_LITELLM_GENERATED_KEY is not a valid integer")]
+    InvalidGeneratedKeyLength {
+        #[source]
+        source: ParseIntError,
+    },
 }
 
 #[must_use]
@@ -44,12 +58,25 @@ pub fn send_default_pii_from_env(env: &BTreeMap<String, String>) -> bool {
 fn parse_rate(
     env: &BTreeMap<String, String>,
     key: &str,
-    build_error: impl Fn(ParseFloatError) -> SettingsError,
+    build_error: fn(ParseFloatError) -> SettingsError,
 ) -> Result<f64, SettingsError> {
     match env.get(key) {
         None => Ok(1.0),
         Some(raw) if raw.is_empty() => Ok(1.0),
         Some(raw) => raw.trim().parse::<f64>().map_err(build_error),
+    }
+}
+
+fn parse_key_length(
+    env: &BTreeMap<String, String>,
+    key: &str,
+    default: usize,
+    build_error: fn(ParseIntError) -> SettingsError,
+) -> Result<usize, SettingsError> {
+    match env.get(key) {
+        None => Ok(default),
+        Some(raw) if raw.is_empty() => Ok(default),
+        Some(raw) => raw.trim().parse::<usize>().map_err(build_error),
     }
 }
 
@@ -91,6 +118,18 @@ pub fn build_sentry_init_options(
             denylist: event_scrubber_denylist(send_default_pii),
             recursive: true,
         },
+        custom_key_minimum: parse_key_length(
+            env,
+            MINIMUM_CUSTOM_KEY_LENGTH_ENV,
+            fixture::MINIMUM_CUSTOM_KEY_LENGTH,
+            |source| SettingsError::InvalidCustomKeyMinimum { source },
+        )?,
+        generated_key_bytes: parse_key_length(
+            env,
+            GENERATED_KEY_LENGTH_ENV,
+            fixture::GENERATED_KEY_LENGTH,
+            |source| SettingsError::InvalidGeneratedKeyLength { source },
+        )?,
     })
 }
 
