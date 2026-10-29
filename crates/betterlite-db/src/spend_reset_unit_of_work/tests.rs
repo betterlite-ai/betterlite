@@ -531,8 +531,7 @@ async fn linked_filters_preserved_in_queue_order() {
     )
     .await
     .unwrap();
-    // tag-a only reads 0 if the decrement (10 -> 7) ran before the <= 8 zero filter was
-    // evaluated; a reordering or a dropped filter would leave it at 10 or 7.
+    // tag-a reads 0 only if the decrement (10 -> 7) ran before the <= 8 zero filter.
     assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-a", 0.0_f64).await;
     assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-b", 0.0_f64).await;
     assert_spend(&client, "LiteLLM_TagTable", "tag_name", "tag-c", 20.0_f64).await;
@@ -578,8 +577,7 @@ async fn deleted_budget_window_update_is_noop() {
                 budget_id: BudgetIdFilter::Equals("budget-del".to_owned()),
                 spend: None,
             });
-            // Delete the budget on a separate connection before the batch commits, so the
-            // window advance targets a row that is already gone by the time it runs.
+            // Delete the budget on a separate connection before the batch commits.
             deleter
                 .execute(
                     "DELETE FROM \"LiteLLM_BudgetTable\" WHERE budget_id = 'budget-del'",

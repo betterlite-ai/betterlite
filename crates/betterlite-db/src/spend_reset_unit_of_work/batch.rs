@@ -44,41 +44,60 @@ pub struct BudgetCascadeBatch {
 impl SpendResetBatch {
     pub async fn commit(&self, unit: SpendResetUnitOfWork) -> Result<(), CommitError> {
         let entries = unit.keys.queue.take();
-        let mut client = self.store.session().await.map_err(CommitError::Statement)?;
-        let transaction = client
-            .transaction()
-            .await
-            .map_err(|source| CommitError::Statement(backend(source)))?;
-        for entry in &entries {
-            apply_single_reset(&transaction, entry).await?;
-        }
-        transaction.commit().await.map_err(classify_commit_failure)
+        commit_entries(&self.store, entries).await
     }
 }
 
 impl BudgetCascadeBatch {
     pub async fn commit(&self, unit: BudgetCascadeUnitOfWork) -> Result<(), CommitError> {
         let entries = unit.budgets.queue.take();
-        let mut client = self.store.session().await.map_err(CommitError::Statement)?;
-        let transaction = client
-            .transaction()
-            .await
-            .map_err(|source| CommitError::Statement(backend(source)))?;
-        for entry in &entries {
-            match entry {
-                CascadeEntry::Linked { table, write } => {
-                    apply_linked_write(&transaction, table, write).await?;
-                }
-                CascadeEntry::Window {
-                    budget_id,
-                    budget_reset_at,
-                } => {
-                    apply_window_advance(&transaction, budget_id, *budget_reset_at).await?;
-                }
-            }
-        }
-        transaction.commit().await.map_err(classify_commit_failure)
+        commit_entries(&self.store, entries).await
     }
+}
+
+trait QueuedWrite {
+    async fn apply<C>(&self, client: &C) -> Result<(), CommitError>
+    where
+        C: GenericClient + Sync;
+}
+
+impl QueuedWrite for SpendResetEntry {
+    async fn apply<C>(&self, client: &C) -> Result<(), CommitError>
+    where
+        C: GenericClient + Sync,
+    {
+        apply_single_reset(client, self).await
+    }
+}
+
+impl QueuedWrite for CascadeEntry {
+    async fn apply<C>(&self, client: &C) -> Result<(), CommitError>
+    where
+        C: GenericClient + Sync,
+    {
+        match self {
+            Self::Linked { table, write } => apply_linked_write(client, table, write).await,
+            Self::Window {
+                budget_id,
+                budget_reset_at,
+            } => apply_window_advance(client, budget_id, *budget_reset_at).await,
+        }
+    }
+}
+
+async fn commit_entries<E>(store: &PostgresStore, entries: Vec<E>) -> Result<(), CommitError>
+where
+    E: QueuedWrite + Send + Sync,
+{
+    let mut client = store.session().await.map_err(CommitError::Statement)?;
+    let transaction = client
+        .transaction()
+        .await
+        .map_err(|source| CommitError::Statement(backend(source)))?;
+    for entry in &entries {
+        entry.apply(&transaction).await?;
+    }
+    transaction.commit().await.map_err(classify_commit_failure)
 }
 
 async fn apply_single_reset<C>(client: &C, entry: &SpendResetEntry) -> Result<(), CommitError>
