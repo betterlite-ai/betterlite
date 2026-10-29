@@ -55,6 +55,7 @@ pub struct OffPeakPricing {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PriceWindow {
     pub hours_utc: HoursUtc,
     #[serde(default, skip_serializing_if = "Option::is_none")]

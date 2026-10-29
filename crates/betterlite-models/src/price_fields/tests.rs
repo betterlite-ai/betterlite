@@ -88,6 +88,10 @@ use std::path::Path;
     r#"{"off_peak_pricing":{"windows":[{"hours_utc":"00:00-01:00","weekdays":["funday"]}]}}"#,
     "off_peak_pricing.windows[0].weekdays[0]"
 )]
+#[case::off_peak_window_rejects_unknown_key(
+    r#"{"off_peak_pricing":{"windows":[{"hours_utc":"00:00-06:00","weekday":[6,7]}]}}"#,
+    "unknown field `weekday`"
+)]
 fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] expected: &str) {
     let raw: Result<Box<RawValue>, _> = serde_json::from_str(source);
     let parsed = match raw {
