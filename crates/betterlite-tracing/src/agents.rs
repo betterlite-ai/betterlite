@@ -39,8 +39,7 @@ fn agent_spend(spans: &[Span], agent_name: &str) -> Option<Decimal> {
     let mut total = Decimal::ZERO;
     for recorded in by_request.values() {
         let cost = (*recorded)?;
-        // Decimal has no saturating_add; summed spend across one agent never approaches its 28-digit range
-        total = total.checked_add(cost).unwrap_or(total);
+        total = total.checked_add(cost)?;
     }
     Some(total)
 }
@@ -78,7 +77,6 @@ fn accumulate_calls(nodes: &mut IndexMap<String, AgentNode>, span: &Span) {
     }
 }
 
-// One node per distinct agent name (200 `researcher` invocations = one node), with who invoked it.
 #[must_use]
 pub fn agent_nodes(spans: &[Span]) -> Vec<AgentNode> {
     let by_id: HashMap<&str, &Span> = spans

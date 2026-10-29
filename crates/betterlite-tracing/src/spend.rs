@@ -51,8 +51,7 @@ pub fn trace_spend(
     let mut total = Decimal::ZERO;
     for request_id in ids {
         let cost = spend_for(request_id, team_id, api_key_hash, rows)?;
-        // Decimal has no saturating_add; summed spend across one trace never approaches its 28-digit range
-        total = total.checked_add(cost).unwrap_or(total);
+        total = total.checked_add(cost)?;
     }
     Some(total)
 }
