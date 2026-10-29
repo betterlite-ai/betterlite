@@ -16,7 +16,8 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::wire::{
-    GraySwanDynamicParams, GraySwanRuleNumber, GraySwanViolatedRule, GraySwanViolatedRuleFields,
+    GraySwanDynamicParams, GraySwanRuleNumber, GraySwanVerdict, GraySwanViolatedRule,
+    GraySwanViolatedRuleFields,
 };
 use super::{
     GraySwanGuardrail, GraySwanGuardrailAPIError, GraySwanInput, GraySwanPayload, GraySwanResponse,
@@ -88,7 +89,11 @@ fn grayswan_payload_forwards_messages_and_merges_dynamic_parameters() {
     });
     scan.metadata.policy_id = Some("request-policy".to_owned());
     let messages = vec![message("user", "new")];
-    let payload = guardrail(OnFlaggedAction::Block).prepare_payload(&scan, messages.clone());
+    let payload = guardrail(OnFlaggedAction::Block).prepare_payload(
+        &scan,
+        messages.clone(),
+        scan.tools.clone(),
+    );
     assert_eq!(payload.messages, messages);
     assert_eq!(payload.policy_id.as_deref(), Some("request-policy"));
 }
@@ -102,7 +107,7 @@ fn grayswan_payload_dynamic_categories_override_configured_categories() {
     )]));
     let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
     scan.metadata.categories = Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())]));
-    let payload = instance.prepare_payload(&scan, Vec::new());
+    let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
     assert_eq!(
         payload.categories,
         Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())]))
@@ -110,11 +115,40 @@ fn grayswan_payload_dynamic_categories_override_configured_categories() {
 }
 
 #[test]
+fn grayswan_payload_empty_dynamic_categories_fall_back_to_configured_categories() {
+    let mut instance = guardrail(OnFlaggedAction::Block);
+    instance.settings.categories = Some(BTreeMap::from([(
+        "configured".to_owned(),
+        "monitor".to_owned(),
+    )]));
+    let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
+    scan.metadata.categories = Some(BTreeMap::new());
+    let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
+    assert_eq!(
+        payload.categories,
+        Some(BTreeMap::from([(
+            "configured".to_owned(),
+            "monitor".to_owned()
+        )]))
+    );
+}
+
+#[test]
+fn grayswan_payload_empty_dynamic_policy_id_falls_back_to_configured_policy_id() {
+    let mut instance = guardrail(OnFlaggedAction::Block);
+    instance.settings.policy_id = Some("configured-policy".to_owned());
+    let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
+    scan.metadata.policy_id = Some(String::new());
+    let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
+    assert_eq!(payload.policy_id.as_deref(), Some("configured-policy"));
+}
+
+#[test]
 fn grayswan_payload_falls_back_to_configured_reasoning_mode() {
     let mut instance = guardrail(OnFlaggedAction::Block);
     instance.settings.reasoning_mode = Some(ReasoningMode::Hybrid);
     let scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
-    let payload = instance.prepare_payload(&scan, Vec::new());
+    let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
     assert_eq!(payload.reasoning_mode, Some(ReasoningMode::Hybrid));
 }
 
@@ -124,7 +158,7 @@ fn grayswan_payload_dynamic_reasoning_mode_overrides_configured_mode() {
     instance.settings.reasoning_mode = Some(ReasoningMode::Off);
     let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
     scan.metadata.reasoning_mode = Some(ReasoningMode::Hybrid);
-    let payload = instance.prepare_payload(&scan, Vec::new());
+    let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
     assert_eq!(payload.reasoning_mode, Some(ReasoningMode::Hybrid));
 }
 
@@ -192,17 +226,34 @@ fn grayswan_passthrough_replaces_post_call_messages() {
         .process_response(&response(0.5), GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(result.messages.len(), 1);
-    assert!(result.violation_message.is_some());
+    assert!(matches!(result.verdict, GraySwanVerdict::Replaced { .. }));
 }
 
 #[test]
-fn grayswan_passthrough_replaces_pre_call_messages_instead_of_erroring() {
+fn grayswan_passthrough_short_circuits_pre_call_instead_of_replacing_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
+    let original = vec![message("user", "hello")];
     let result = guardrail
-        .process_response(&response(0.5), GuardrailInputType::Request, vec![])
-        .expect("pre-call passthrough no longer errors");
-    assert_eq!(result.messages.len(), 1);
-    assert!(result.violation_message.is_some());
+        .process_response(
+            &response(0.5),
+            GuardrailInputType::Request,
+            original.clone(),
+        )
+        .expect("pre-call passthrough short-circuits instead of erroring");
+    assert_eq!(result.messages, original);
+    assert!(matches!(
+        result.verdict,
+        GraySwanVerdict::ShortCircuited { .. }
+    ));
+}
+
+fn violation_message(verdict: &GraySwanVerdict) -> Option<&str> {
+    match verdict {
+        GraySwanVerdict::Pass => None,
+        GraySwanVerdict::Monitored { violation_message }
+        | GraySwanVerdict::Replaced { violation_message }
+        | GraySwanVerdict::ShortCircuited { violation_message } => Some(violation_message),
+    }
 }
 
 fn structured_rule(
@@ -230,7 +281,7 @@ fn grayswan_verdict_message_includes_rule_name_and_description() {
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): self_harm: content promotes self-harm."
@@ -246,7 +297,7 @@ fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): self_harm."
@@ -266,7 +317,7 @@ fn grayswan_verdict_message_prefixes_the_rule_number_when_present() {
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): #6 Illegal Activities: content promotes illegal activities."
@@ -286,7 +337,7 @@ fn grayswan_verdict_message_omits_the_rule_number_when_it_is_zero() {
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): Illegal Activities: content promotes illegal activities."
@@ -306,7 +357,7 @@ fn grayswan_verdict_message_omits_the_rule_number_when_it_is_an_empty_string() {
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): Illegal Activities: content promotes illegal activities."
@@ -324,7 +375,7 @@ fn grayswan_verdict_message_falls_back_to_a_typed_plain_value_for_an_unrecognize
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): profanity."
@@ -344,7 +395,7 @@ fn grayswan_verdict_message_falls_back_to_typed_fields_for_a_nameless_rule_objec
         .process_response(&scan_response, GuardrailInputType::Response, vec![])
         .expect("post-call passthrough");
     assert_eq!(
-        result.violation_message.as_deref(),
+        violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
              It violated rule(s): {description: content promotes illegal activities, rule: 6}."
@@ -357,7 +408,7 @@ fn grayswan_monitor_verdict_passes_through() {
     let result = guardrail(OnFlaggedAction::Monitor)
         .process_response(&response(0.5), GuardrailInputType::Request, Vec::new())
         .expect("monitor action");
-    assert!(result.flagged);
+    assert!(matches!(result.verdict, GraySwanVerdict::Monitored { .. }));
 }
 
 #[test]
@@ -371,7 +422,7 @@ fn grayswan_below_threshold_passes_through_even_when_the_action_is_block() {
     let result = guardrail
         .process_response(&response(0.1), GuardrailInputType::Request, vec![])
         .expect("below threshold is not blocked");
-    assert!(!result.flagged);
+    assert_eq!(result.verdict, GraySwanVerdict::Pass);
 }
 
 #[test]
@@ -480,7 +531,7 @@ async fn grayswan_apply_guardrail_skips_the_api_call_when_there_are_no_messages(
         )
         .await
         .expect("empty scans pass through without calling the API");
-    assert!(!result.flagged);
+    assert_eq!(result.verdict, GraySwanVerdict::Pass);
 }
 
 #[tokio::test]
@@ -495,7 +546,7 @@ async fn grayswan_apply_guardrail_ignores_tool_calls_on_pre_call_requests() {
         .apply_guardrail(scan, GuardrailInputType::Request)
         .await
         .expect("tool calls are not scanned on a pre-call request");
-    assert!(!result.flagged);
+    assert_eq!(result.verdict, GraySwanVerdict::Pass);
 }
 
 fn single_message_input() -> GraySwanInput {
@@ -536,7 +587,7 @@ async fn grayswan_apply_guardrail_falls_open_on_an_unreachable_api_when_fail_ope
     let result = apply_guardrail_against_a_failing_server(true)
         .await
         .expect("fail open passes through");
-    assert!(!result.flagged);
+    assert_eq!(result.verdict, GraySwanVerdict::Pass);
 }
 
 #[tokio::test]
@@ -598,6 +649,53 @@ async fn grayswan_apply_guardrail_drops_tool_calls_and_history_for_a_request() {
         Some(&GuardrailExtraValue::Text("hello".to_owned()))
     );
     assert!(!payload.messages[0].extra.contains_key("tool_calls"));
+}
+
+#[derive(Deserialize)]
+struct CapturedToolsPayload {
+    #[serde(default)]
+    tools: Option<Vec<GuardrailToolParam>>,
+}
+
+async fn apply_guardrail_capturing_raw_payload(scan: GraySwanInput) -> CapturedToolsPayload {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let captured_for_handler = Arc::clone(&captured);
+    let answer = move |body: Bytes| {
+        let captured_for_body = Arc::clone(&captured_for_handler);
+        async move {
+            *captured_for_body.lock().unwrap() = body.to_vec();
+            (StatusCode::OK, "{}".to_owned())
+        }
+    };
+    let router = Router::new().route("/cygnal/monitor", post(answer));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let instance = GraySwanGuardrail {
+        api_key: SecretString::from("secret"),
+        api_base: base,
+        settings: GraySwanSettings::default(),
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    };
+    instance
+        .apply_guardrail(scan, GuardrailInputType::Request)
+        .await
+        .expect("guardrail call succeeds");
+    let body = captured.lock().unwrap().clone();
+    serde_json::from_slice(&body).expect("captured payload is valid JSON")
+}
+
+#[tokio::test]
+async fn grayswan_payload_omits_tools_on_a_pre_call_request() {
+    let mut scan = single_message_input();
+    scan.tools.push(GuardrailToolParam {
+        tool_type: "function".to_owned(),
+        extra: BTreeMap::new(),
+    });
+    let payload = apply_guardrail_capturing_raw_payload(scan).await;
+    assert!(payload.tools.is_none());
 }
 
 #[tokio::test]

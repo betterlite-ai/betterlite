@@ -97,9 +97,16 @@ impl GraySwanRuleNumber {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraySwanVerdict {
+    Pass,
+    Monitored { violation_message: String },
+    Replaced { violation_message: String },
+    ShortCircuited { violation_message: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct GraySwanResult {
-    pub flagged: bool,
+    pub verdict: GraySwanVerdict,
     pub messages: Vec<GuardrailMessage>,
-    pub violation_message: Option<String>,
 }
