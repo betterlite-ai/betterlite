@@ -3,17 +3,13 @@
 use super::{EventValue, MAX_SCRUB_DEPTH, scrub_event};
 use std::collections::BTreeMap;
 
-fn obj(pairs: &[(&str, EventValue)]) -> EventValue {
+fn object(pairs: &[(&str, EventValue)]) -> EventValue {
     EventValue::Object(
         pairs
             .iter()
             .map(|(key, value)| ((*key).to_owned(), value.clone()))
             .collect(),
     )
-}
-
-fn arr(items: Vec<EventValue>) -> EventValue {
-    EventValue::Array(items)
 }
 
 fn text(value: &str) -> EventValue {
@@ -53,7 +49,7 @@ fn innermost_object(value: &EventValue) -> &EventValue {
 fn nested_array(depth: usize, leaf: EventValue) -> EventValue {
     let mut current = leaf;
     for _ in 0..depth {
-        current = arr(vec![current]);
+        current = EventValue::Array(vec![current]);
     }
     current
 }
@@ -89,13 +85,13 @@ fn array_nesting_also_counts_toward_scrub_depth() {
 }
 
 fn wrap_frame_in_stacktrace(frame: EventValue) -> EventValue {
-    obj(&[(
+    object(&[(
         "exception",
-        obj(&[(
+        object(&[(
             "values",
-            arr(vec![obj(&[(
+            EventValue::Array(vec![object(&[(
                 "stacktrace",
-                obj(&[("frames", arr(vec![frame]))]),
+                object(&[("frames", EventValue::Array(vec![frame]))]),
             )])]),
         )]),
     )])
@@ -128,29 +124,38 @@ fn first_frame(event: &EventValue) -> &BTreeMap<String, EventValue> {
 
 #[test]
 fn source_context_keys_survive_inside_known_stack_frame_shapes() {
-    let built_frame = obj(&[
-        ("pre_context", arr(vec![text("user@example.com")])),
+    let built_frame = object(&[
+        (
+            "pre_context",
+            EventValue::Array(vec![text("user@example.com")]),
+        ),
         ("context_line", text("token=abc")),
-        ("post_context", arr(vec![text("other")])),
-        ("vars", obj(&[("details", text("api_key='abc'"))])),
+        ("post_context", EventValue::Array(vec![text("other")])),
+        ("vars", object(&[("details", text("api_key='abc'"))])),
     ]);
     let event = wrap_frame_in_stacktrace(built_frame);
 
     let scrubbed = scrub_event(&event, false).unwrap();
     let frame = first_frame(&scrubbed);
 
-    assert_eq!(frame["pre_context"], arr(vec![text("user@example.com")]));
+    assert_eq!(
+        frame["pre_context"],
+        EventValue::Array(vec![text("user@example.com")])
+    );
     assert_eq!(frame["context_line"], text("token=abc"));
-    assert_eq!(frame["post_context"], arr(vec![text("other")]));
+    assert_eq!(
+        frame["post_context"],
+        EventValue::Array(vec![text("other")])
+    );
     assert_eq!(
         frame["vars"],
-        obj(&[("details", text("api_key='[Filtered]'"))])
+        object(&[("details", text("api_key='[Filtered]'"))])
     );
 }
 
 #[test]
 fn source_context_keys_are_scrubbed_outside_a_known_stack_frame_shape() {
-    let event = obj(&[("context_line", text("token=abc"))]);
+    let event = object(&[("context_line", text("token=abc"))]);
     let scrubbed = scrub_event(&event, false).unwrap();
     let EventValue::Object(root) = &scrubbed else {
         panic!("expected an object root");
