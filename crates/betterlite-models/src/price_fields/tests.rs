@@ -99,92 +99,111 @@ fn model_price_types_price_field_tests_behavior(#[case] source: &str, #[case] ex
     if expected == "absent" {
         assert_eq!(parsed.unwrap(), PriceFields::default());
     } else if expected == "nested" {
-        let parsed_value = parsed.unwrap();
-        assert_eq!(
-            parsed_value.provider_specific.us.unwrap().to_string(),
-            "0.000000000000000001"
-        );
-        assert_eq!(parsed_value.guardrail_units.len(), 1);
-        assert_eq!(
-            parsed_value.guardrail_units["contentPolicyUnits"].to_string(),
-            "0.0000001"
-        );
-        assert_eq!(
-            parsed_value.metadata.per_minute.unwrap().to_string(),
-            "0.020833333333333333"
-        );
-        assert_eq!(
-            parsed_value
-                .sample_spec
-                .computer_use_input
-                .unwrap()
-                .to_string(),
-            "0.00001"
-        );
-        assert_eq!(
-            parsed_value
-                .sample_spec
-                .file_search_calls
-                .unwrap()
-                .to_string(),
-            "0.003"
-        );
-        assert_eq!(
-            parsed_value
-                .off_peak
-                .unwrap()
-                .input_cost_per_token
-                .unwrap()
-                .to_string(),
-            "0.0000002"
-        );
-        assert_eq!(
-            parsed_value
-                .search_context
-                .unwrap()
-                .search_context_size_high
-                .unwrap()
-                .to_string(),
-            "0.01"
-        );
-        assert_eq!(parsed_value.tiers.len(), 1);
-        assert_eq!(parsed_value.tiers[0].range.as_ref().unwrap().len(), 2);
-        assert_eq!(
-            parsed_value.tiers[0].range.as_ref().unwrap()[1].to_string(),
-            "256000"
-        );
+        assert_nested_price_fields(&parsed.unwrap());
     } else if expected
         .chars()
         .any(|character| character.is_ascii_alphabetic())
     {
-        let error = parsed.unwrap_err();
-        if expected.contains("duplicate") || expected.contains("unknown field") {
-            assert!(error.to_string().contains(expected));
-        } else {
-            let PriceFieldError::Json { path, .. } = error;
-            assert_eq!(path, expected);
-        }
+        assert_price_field_error(&parsed.unwrap_err(), expected);
     } else {
-        let numbers: BTreeMap<String, Box<RawValue>> = serde_json::from_str(source).unwrap();
-        let number = numbers.values().next().unwrap();
-        assert_eq!(
-            super::decimal_lexeme::parse_decimal_lexeme(number.get())
-                .unwrap()
-                .to_string(),
-            expected
-        );
-        let parsed_value = parsed.unwrap();
-        assert_eq!(
-            parsed_value
-                .values
-                .input
-                .input_token
-                .or(parsed_value.values.output.output_token)
-                .unwrap()
-                .to_string(),
-            expected
-        );
+        assert_decimal_value(source, &parsed.unwrap(), expected);
     }
+}
+
+fn assert_nested_price_fields(parsed_value: &PriceFields) {
+    assert_nested_top_level_fields(parsed_value);
+    assert_nested_grouped_fields(parsed_value);
+}
+
+fn assert_nested_top_level_fields(parsed_value: &PriceFields) {
+    assert_eq!(
+        parsed_value.provider_specific.us.unwrap().to_string(),
+        "0.000000000000000001"
+    );
+    assert_eq!(parsed_value.guardrail_units.len(), 1);
+    assert_eq!(
+        parsed_value.guardrail_units["contentPolicyUnits"].to_string(),
+        "0.0000001"
+    );
+    assert_eq!(
+        parsed_value.metadata.per_minute.unwrap().to_string(),
+        "0.020833333333333333"
+    );
+    assert_eq!(
+        parsed_value
+            .sample_spec
+            .computer_use_input
+            .unwrap()
+            .to_string(),
+        "0.00001"
+    );
+    assert_eq!(
+        parsed_value
+            .sample_spec
+            .file_search_calls
+            .unwrap()
+            .to_string(),
+        "0.003"
+    );
+}
+
+fn assert_nested_grouped_fields(parsed_value: &PriceFields) {
+    assert_eq!(
+        parsed_value
+            .off_peak
+            .as_ref()
+            .unwrap()
+            .input_cost_per_token
+            .unwrap()
+            .to_string(),
+        "0.0000002"
+    );
+    assert_eq!(
+        parsed_value
+            .search_context
+            .as_ref()
+            .unwrap()
+            .search_context_size_high
+            .unwrap()
+            .to_string(),
+        "0.01"
+    );
+    assert_eq!(parsed_value.tiers.len(), 1);
+    assert_eq!(parsed_value.tiers[0].range.as_ref().unwrap().len(), 2);
+    assert_eq!(
+        parsed_value.tiers[0].range.as_ref().unwrap()[1].to_string(),
+        "256000"
+    );
+}
+
+fn assert_price_field_error(error: &PriceFieldError, expected: &str) {
+    if expected.contains("duplicate") || expected.contains("unknown field") {
+        assert!(error.to_string().contains(expected));
+    } else {
+        let PriceFieldError::Json { path, .. } = error;
+        assert_eq!(path, expected);
+    }
+}
+
+fn assert_decimal_value(source: &str, parsed_value: &PriceFields, expected: &str) {
+    let numbers: BTreeMap<String, Box<RawValue>> = serde_json::from_str(source).unwrap();
+    let number = numbers.values().next().unwrap();
+    assert_eq!(
+        super::decimal_lexeme::parse_decimal_lexeme(number.get())
+            .unwrap()
+            .to_string(),
+        expected
+    );
+    assert_eq!(
+        parsed_value
+            .values
+            .input
+            .input_token
+            .or(parsed_value.values.output.output_token)
+            .unwrap()
+            .to_string(),
+        expected
+    );
 }
 
 #[path = "inventory/tests.rs"]

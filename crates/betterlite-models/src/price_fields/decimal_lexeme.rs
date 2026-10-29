@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use std::num::ParseIntError;
+use std::num::{ParseIntError, TryFromIntError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecimalLexemeError {
@@ -9,7 +9,10 @@ pub enum DecimalLexemeError {
         source: ParseIntError,
     },
     #[error("the exponent moves the decimal point out of the supported range")]
-    ScaleOverflow,
+    ScaleOverflow {
+        #[source]
+        source: TryFromIntError,
+    },
     #[error(transparent)]
     Decimal(#[from] rust_decimal::Error),
 }
@@ -20,21 +23,18 @@ pub fn parse_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
     };
     let decimal = Decimal::from_str_exact(coefficient)?;
     let exponent = exponent_text
-        .parse::<i32>()
+        .parse::<i64>()
         .map_err(|source| DecimalLexemeError::Exponent { source })?;
-    let scale = i32::try_from(decimal.scale())
-        .map_err(|_source| DecimalLexemeError::ScaleOverflow)?
-        .checked_sub(exponent)
-        .ok_or(DecimalLexemeError::ScaleOverflow)?;
-    if !scale.is_negative() {
-        return Ok(Decimal::try_from_i128_with_scale(
-            decimal.mantissa(),
-            u32::try_from(scale).map_err(|_source| DecimalLexemeError::ScaleOverflow)?,
-        )
-        .map(|value| value.normalize())?);
+    let signed_scale = i64::from(decimal.scale()).saturating_sub(exponent);
+    if !signed_scale.is_negative() {
+        let scale = u32::try_from(signed_scale)
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        return Ok(Decimal::try_from_i128_with_scale(decimal.mantissa(), scale)
+            .map(|value| value.normalize())?);
     }
+    let magnitude = u32::try_from(signed_scale.unsigned_abs()).unwrap_or(u32::MAX);
     let multiplier = 10_i128
-        .checked_pow(scale.unsigned_abs())
+        .checked_pow(magnitude)
         .ok_or(rust_decimal::Error::ExceedsMaximumPossibleValue)?;
     let mantissa = decimal
         .mantissa()
