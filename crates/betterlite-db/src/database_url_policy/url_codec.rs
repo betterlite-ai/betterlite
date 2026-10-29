@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::from_utf8;
 
-// Mirrors urllib.parse's urlsplit/urlunsplit/parse_qsl/urlencode for postgres/postgresql schemes only; semicolon-params and forced "//" branches never fire and are left out.
+// Mirrors urllib.parse's urlsplit/urlunsplit/parse_qsl/urlencode for postgres/postgresql connection strings.
 
 pub(super) struct SplitUrl {
     pub(super) scheme: String,
@@ -35,7 +35,11 @@ pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
     let mut scheme = String::new();
     if let Some((prefix, remainder)) = rest.split_once(':') {
         let starts_alpha = prefix.starts_with(|character: char| character.is_ascii_alphabetic());
-        if starts_alpha && prefix.bytes().all(is_scheme_byte) {
+        if starts_alpha
+            && prefix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+        {
             scheme = prefix.to_ascii_lowercase();
             rest = remainder;
         }
@@ -54,7 +58,6 @@ pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
     })
 }
 
-// Splits off the "//netloc" prefix, if any, and validates its brackets.
 fn split_netloc(rest: &str) -> Result<(String, &str), UrlSplitError> {
     let Some(after) = rest.strip_prefix("//") else {
         return Ok((String::new(), rest));
@@ -81,9 +84,7 @@ fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
         let after_open = hostname_and_port
             .strip_prefix('[')
             .ok_or(UrlSplitError::InvalidIpv6Url)?;
-        let (hostname, after_close) = after_open
-            .split_once(']')
-            .ok_or(UrlSplitError::InvalidIpv6Url)?;
+        let (hostname, after_close) = after_open.split_once(']').unwrap_or((after_open, ""));
         if !after_close.is_empty() && !after_close.starts_with(':') {
             return Err(UrlSplitError::InvalidIpv6Url);
         }
@@ -98,7 +99,7 @@ fn check_netloc_brackets(netloc: &str) -> Result<(), UrlSplitError> {
 
 // Mirrors _check_bracketed_host: the bracketed host must be an IPvFuture spelling or a non-IPv4 address.
 fn check_bracketed_host(hostname: &str) -> Result<(), UrlSplitError> {
-    if let Some(rest) = hostname.strip_prefix('v') {
+    if let Some(rest) = hostname.strip_prefix(['v', 'V']) {
         return if is_ipvfuture_rest(rest) {
             Ok(())
         } else {
@@ -108,12 +109,22 @@ fn check_bracketed_host(hostname: &str) -> Result<(), UrlSplitError> {
     if hostname.parse::<Ipv4Addr>().is_ok() {
         return Err(UrlSplitError::Ipv4AddressInBrackets);
     }
-    if hostname.parse::<Ipv6Addr>().is_ok() {
+    if is_ipv6_with_optional_zone(hostname) {
         return Ok(());
     }
     Err(UrlSplitError::NotIpAddress {
         hostname: hostname.to_owned(),
     })
+}
+
+// Mirrors ipaddress.IPv6Address._split_scope_id: a %zone suffix is kept raw, never empty, never doubled.
+fn is_ipv6_with_optional_zone(hostname: &str) -> bool {
+    match hostname.split_once('%') {
+        Some((address, zone)) => {
+            !zone.is_empty() && !zone.contains('%') && address.parse::<Ipv6Addr>().is_ok()
+        }
+        None => hostname.parse::<Ipv6Addr>().is_ok(),
+    }
 }
 
 // Matches r"\Av[a-fA-F0-9]+\..+\Z" against "v" + rest, with the leading 'v' already stripped.
@@ -129,8 +140,12 @@ fn is_ipvfuture_rest(rest: &str) -> bool {
 
 pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
     let mut url = parts.path.clone();
-    // Postgres/postgresql never appear in urllib's uses_netloc table, so only the netloc branch applies here.
-    if !parts.netloc.is_empty() {
+    if parts.netloc.is_empty() {
+        // An empty netloc with a path starting "//" (postgresql:////db) still forces a leading "//".
+        if url.starts_with("//") {
+            url = format!("//{url}");
+        }
+    } else {
         if !url.is_empty() && !url.starts_with('/') {
             url.insert(0, '/');
         }
@@ -146,11 +161,6 @@ pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
         return url;
     }
     url
-}
-
-const fn is_scheme_byte(byte: u8) -> bool {
-    let is_alnum = byte.is_ascii_alphanumeric();
-    is_alnum || matches!(byte, b'+' | b'-' | b'.')
 }
 
 // Mirrors urllib.parse.parse_qsl(query, keep_blank_values=keep_blank_values).
@@ -186,10 +196,10 @@ pub(super) fn parse_qs(query: &str) -> Vec<(String, Vec<String>)> {
 
 // Mirrors urllib.parse.urlencode(pairs) with no doseq.
 pub(super) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
-    let parts: Vec<String> = pairs
-        .iter()
-        .map(|(name, value)| format!("{}={}", quote_plus(name), quote_plus(value)))
-        .collect();
+    let mut parts = Vec::new();
+    for (name, value) in pairs {
+        parts.push(format!("{}={}", quote_plus(name), quote_plus(value)));
+    }
     parts.join("&")
 }
 
@@ -205,18 +215,13 @@ pub(super) fn urlencode_doseq(groups: &[(String, Vec<String>)]) -> String {
     parts.join("&")
 }
 
-const fn is_unreserved_byte(byte: u8) -> bool {
-    let is_alnum = byte.is_ascii_alphanumeric();
-    is_alnum || matches!(byte, b'_' | b'.' | b'-' | b'~')
-}
-
 fn percent_decode_digits(digits: &[u8]) -> Option<u8> {
     let text = from_utf8(digits).ok()?;
     u8::from_str_radix(text, 16).ok()
 }
 
 fn percent_encode_byte(byte: u8) -> String {
-    if is_unreserved_byte(byte) {
+    if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-' | b'~') {
         char::from(byte).to_string()
     } else if byte == b' ' {
         "+".to_owned()
@@ -226,11 +231,11 @@ fn percent_encode_byte(byte: u8) -> String {
 }
 
 fn quote_plus(text: &str) -> String {
-    let bytes = text.as_bytes();
-    bytes
-        .iter()
-        .map(|&byte| percent_encode_byte(byte))
-        .collect()
+    let mut encoded = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        encoded.push_str(&percent_encode_byte(byte));
+    }
+    encoded
 }
 
 fn next_percent_escape(tail: &[u8]) -> Option<(u8, &[u8])> {

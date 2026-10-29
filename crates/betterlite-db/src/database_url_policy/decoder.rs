@@ -4,7 +4,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::num::ParseIntError;
 use std::str::{self, Utf8Error};
 
-// 1 MiB cap on a database URL before decoding is attempted.
 const MAX_DATABASE_URL_BYTES: usize = 0x0010_0000;
 
 type Netloc = (Option<String>, Option<SecretString>, String, Option<u16>);
@@ -72,7 +71,6 @@ pub enum DbError {
     MalformedPercentEscape,
 }
 
-// The native URL byte boundary; does not reuse the Python-parity helpers above.
 pub fn decode_database_url(bytes: &[u8]) -> Result<DbEndpoint, DbError> {
     if bytes.len() > MAX_DATABASE_URL_BYTES {
         return Err(DbError::TooLarge { len: bytes.len() });
@@ -125,24 +123,31 @@ fn parse_hostport(hostport: &str) -> Result<(String, Option<u16>), DbError> {
             .split_once(']')
             .ok_or(DbError::MalformedBracket)?;
         let port = match tail.strip_prefix(':') {
-            Some(text) => Some(parse_port(text)?),
+            Some(text) => Some(
+                text.parse::<u16>()
+                    .map_err(|source| DbError::MalformedPort {
+                        text: text.to_owned(),
+                        source,
+                    })?,
+            ),
             None if tail.is_empty() => None,
             None => return Err(DbError::MalformedBracket),
         };
         return Ok((percent_decode(host)?, port));
     }
     match hostport.rsplit_once(':') {
-        Some((host, text)) => Ok((percent_decode(host)?, Some(parse_port(text)?))),
+        Some((host, text)) => Ok((
+            percent_decode(host)?,
+            Some(
+                text.parse::<u16>()
+                    .map_err(|source| DbError::MalformedPort {
+                        text: text.to_owned(),
+                        source,
+                    })?,
+            ),
+        )),
         None => Ok((percent_decode(hostport)?, None)),
     }
-}
-
-fn parse_port(text: &str) -> Result<u16, DbError> {
-    let parsed = text.parse::<u16>();
-    parsed.map_err(|source| DbError::MalformedPort {
-        text: text.to_owned(),
-        source,
-    })
 }
 
 fn percent_decode(text: &str) -> Result<String, DbError> {
