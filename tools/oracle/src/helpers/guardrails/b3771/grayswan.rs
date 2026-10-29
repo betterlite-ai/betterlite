@@ -6,7 +6,7 @@ use betterlite_guardrails::generic_guardrail_contracts::{
 };
 use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
 use betterlite_guardrails::grayswan::wire::{
-    GraySwanDynamicParams, GraySwanInput, GraySwanResponse,
+    GraySwanDynamicParams, GraySwanInput, GraySwanResponse, GraySwanVerdict,
 };
 use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
 use secrecy::SecretString;
@@ -31,10 +31,15 @@ pub(super) fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult
     let value = guardrail(input)?
         .process_response(&response, input_type(input), Vec::new())
         .map_err(|error| failure(&error))?;
+    let (flagged, replaced) = match value.verdict {
+        GraySwanVerdict::Pass => (false, false),
+        GraySwanVerdict::Monitored { .. } => (true, false),
+        GraySwanVerdict::Replaced { .. } | GraySwanVerdict::ShortCircuited { .. } => (true, true),
+    };
     Ok(json!({
         "allowed": true,
-        "flagged": value.flagged,
-        "replaced": !value.messages.is_empty(),
+        "flagged": flagged,
+        "replaced": replaced,
     }))
 }
 
@@ -185,12 +190,12 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
     let prepared = GraySwanInput {
         texts: Vec::new(),
         tool_calls: Vec::new(),
-        tools: parsed.tools,
+        tools: parsed.tools.clone(),
         metadata: parsed.dynamic_params,
         request_history: Vec::new(),
         litellm_metadata: BTreeMap::new(),
     };
-    let payload = guardrail.prepare_payload(&prepared, parsed.messages);
+    let payload = guardrail.prepare_payload(&prepared, parsed.messages, parsed.tools);
     serde_json::to_value(payload).map_err(guardrail_error)
 }
 
