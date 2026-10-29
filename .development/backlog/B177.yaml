@@ -1,14 +1,14 @@
 id: B177
 milestone: M1 openai data plane
 title: Text prompt templates and local Jinja rendering
-status: todo
+status: done
 depends_on: [B214, B215]
 file: tasks/B177-prompt-templates.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 294
