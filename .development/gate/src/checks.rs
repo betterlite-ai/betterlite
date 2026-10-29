@@ -17,6 +17,12 @@ pub(crate) struct Verdict {
     pub(crate) passed: bool,
 }
 
+#[derive(Default)]
+pub(crate) struct Selection {
+    pub(crate) only: Vec<String>,
+    pub(crate) skip: Vec<String>,
+}
+
 pub(crate) enum Outcome {
     Pass,
     Skip(String),
@@ -49,7 +55,7 @@ fn builtin_outcomes(
     development: &Development,
     task: &Task,
     facts: &Facts,
-    only: &[String],
+    selection: &Selection,
 ) -> Vec<(String, u64, Outcome)> {
     let context = Context {
         development,
@@ -59,7 +65,9 @@ fn builtin_outcomes(
     let mut outcomes = Vec::new();
     for builtin in &development.catalog.base.builtin {
         let id: &str = builtin.id.into();
-        if !only.is_empty() && !only.iter().any(|selected| selected == id) {
+        if (!selection.only.is_empty() && !selection.only.iter().any(|selected| selected == id))
+            || selection.skip.iter().any(|skipped| skipped == id)
+        {
             continue;
         }
         let started = Instant::now();
@@ -82,7 +90,7 @@ fn builtin_outcomes(
 pub(crate) fn run(
     development: &Development,
     task: &Task,
-    only: &[String],
+    selection: &Selection,
 ) -> Result<Verdict, GateError> {
     let root = &development.root;
     let facts = Facts::collect(root)?;
@@ -91,7 +99,7 @@ pub(crate) fn run(
         path: log_dir.clone(),
         source,
     })?;
-    let mut outcomes = builtin_outcomes(development, task, &facts, only);
+    let mut outcomes = builtin_outcomes(development, task, &facts, selection);
     let environment = [
         ("GATE_TASK", task.id.clone()),
         ("GATE_BASE", facts.base.clone()),
@@ -100,7 +108,10 @@ pub(crate) fn run(
     ];
     let (later, first): (Vec<&Command>, Vec<&Command>) = commands(development, task)?
         .into_iter()
-        .filter(|check| only.is_empty() || only.contains(&check.id))
+        .filter(|check| {
+            (selection.only.is_empty() || selection.only.contains(&check.id))
+                && !selection.skip.contains(&check.id)
+        })
         .partition(|check| check.after_green);
     for command in first {
         let started = Instant::now();

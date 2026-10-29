@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::answer::parse_answer;
 use crate::checks;
+use crate::checks::Selection;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
 use crate::deviations;
@@ -58,7 +59,7 @@ fn failures(
     task_id: &str,
     report: &Report,
 ) -> Result<Vec<String>, GateError> {
-    let verdict = checks::run(worktree, &worktree.task(task_id)?, &[])?;
+    let verdict = checks::run(worktree, &worktree.task(task_id)?, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
     let mut problems = report_problems(report, task_id, &added);
     let logged = deviations::read_log(&worktree.root, task_id)?;
