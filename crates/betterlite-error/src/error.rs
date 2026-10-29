@@ -32,8 +32,7 @@ pub struct ErrorContext {
 }
 
 impl ErrorContext {
-    // type/param differ by family: most openai.*Error subclasses leave them null, a few set a literal string;
-    // a body dict overrides either with its own value, the same way openai.APIError.__init__ does
+    // a body dict overrides either default, the same way openai.APIError.__init__ reads body.get("type"/"param")
     fn metadata(
         &self,
         status_code: u16,
@@ -112,7 +111,8 @@ pub enum ErrorClass {
 
 // the common case: a status code with both wire fields null, before any per-context body override
 const fn null_wire(ctx: &ErrorContext, status: u16) -> (&ErrorContext, u16, WireField, WireField) {
-    (ctx, status, WireField::Null, WireField::Null)
+    let error_type = WireField::Null;
+    (ctx, status, error_type, WireField::Null)
 }
 
 impl ErrorClass {
