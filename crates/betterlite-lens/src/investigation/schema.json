@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["read", "observations", "catalog", "feedback", "submit", "inconclusive"]
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "execution_id": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "finding": {
+      "anyOf": [{ "type": "object" }, { "type": "null" }]
+    }
+  }
+}
