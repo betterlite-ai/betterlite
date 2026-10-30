@@ -33,8 +33,8 @@ fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
         on_flagged_action: action,
         violation_threshold: 0.5,
         reasoning_mode: None,
-        categories: None,
-        policy_id: None,
+        categories: BTreeMap::new(),
+        policy_id: String::new(),
         fail_open: true,
     };
     GraySwanGuardrail {
@@ -100,10 +100,8 @@ fn grayswan_payload_forwards_messages_and_merges_dynamic_parameters() {
 #[test]
 fn grayswan_payload_dynamic_categories_override_configured_categories() {
     let mut instance = guardrail(OnFlaggedAction::Block);
-    instance.settings.categories = Some(BTreeMap::from([(
-        "configured".to_owned(),
-        "monitor".to_owned(),
-    )]));
+    instance.settings.categories =
+        BTreeMap::from([("configured".to_owned(), "monitor".to_owned())]);
     let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
     scan.metadata.categories = Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())]));
     let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
@@ -115,10 +113,8 @@ fn grayswan_payload_dynamic_categories_override_configured_categories() {
 #[test]
 fn grayswan_payload_empty_dynamic_categories_fall_back_to_configured_categories() {
     let mut instance = guardrail(OnFlaggedAction::Block);
-    instance.settings.categories = Some(BTreeMap::from([(
-        "configured".to_owned(),
-        "monitor".to_owned(),
-    )]));
+    instance.settings.categories =
+        BTreeMap::from([("configured".to_owned(), "monitor".to_owned())]);
     let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
     scan.metadata.categories = Some(BTreeMap::new());
     let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
@@ -133,7 +129,7 @@ fn grayswan_payload_empty_dynamic_categories_fall_back_to_configured_categories(
 #[test]
 fn grayswan_payload_empty_dynamic_policy_id_falls_back_to_configured_policy_id() {
     let mut instance = guardrail(OnFlaggedAction::Block);
-    instance.settings.policy_id = Some("configured-policy".to_owned());
+    instance.settings.policy_id = "configured-policy".to_owned();
     let mut scan = input(vec!["new".to_owned()], Vec::new(), Vec::new());
     scan.metadata.policy_id = Some(String::new());
     let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
@@ -545,8 +541,8 @@ async fn apply_guardrail_against_a_failing_server(
         on_flagged_action: OnFlaggedAction::Block,
         violation_threshold: 0.5,
         reasoning_mode: None,
-        categories: None,
-        policy_id: None,
+        categories: BTreeMap::new(),
+        policy_id: String::new(),
         fail_open,
     };
     let instance = GraySwanGuardrail {

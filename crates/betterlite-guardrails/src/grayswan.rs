@@ -43,8 +43,8 @@ pub struct GraySwanSettings {
     pub on_flagged_action: OnFlaggedAction,
     pub violation_threshold: f64,
     pub reasoning_mode: Option<ReasoningMode>,
-    pub categories: Option<BTreeMap<String, String>>,
-    pub policy_id: Option<String>,
+    pub categories: BTreeMap<String, String>,
+    pub policy_id: String,
     pub fail_open: bool,
 }
 impl Default for GraySwanSettings {
@@ -53,8 +53,8 @@ impl Default for GraySwanSettings {
             on_flagged_action: OnFlaggedAction::Monitor,
             violation_threshold: 0.5,
             reasoning_mode: None,
-            categories: None,
-            policy_id: None,
+            categories: BTreeMap::new(),
+            policy_id: String::new(),
             fail_open: true,
         }
     }
@@ -92,17 +92,16 @@ impl GraySwanGuardrail {
             .clone()
             .filter(|values| !values.is_empty())
             .or_else(|| {
-                self.settings
-                    .categories
-                    .clone()
-                    .filter(|values| !values.is_empty())
+                (!self.settings.categories.is_empty()).then(|| self.settings.categories.clone())
             });
         let policy_id = input
             .metadata
             .policy_id
             .clone()
             .filter(|id| !id.is_empty())
-            .or_else(|| self.settings.policy_id.clone().filter(|id| !id.is_empty()));
+            .or_else(|| {
+                (!self.settings.policy_id.is_empty()).then(|| self.settings.policy_id.clone())
+            });
         let reasoning_mode = input
             .metadata
             .reasoning_mode

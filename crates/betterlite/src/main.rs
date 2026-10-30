@@ -1,4 +1,5 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::sections::grayswan::error_category;
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -130,17 +131,8 @@ fn log_config_error(error: &ConfigError, location: &Path) {
         | ConfigError::InvalidInteger { .. }
         | ConfigError::InvalidDuration { .. }
         | ConfigError::InvalidScalar { .. } => {
-            let category = match error {
-                ConfigError::Yaml { .. } => "yaml",
-                ConfigError::InvalidFloat { .. } => "invalid_float",
-                ConfigError::InvalidInteger { .. } => "invalid_integer",
-                ConfigError::InvalidDuration { .. } => "invalid_duration",
-                ConfigError::InvalidScalar { .. } => "invalid_scalar",
-                ConfigError::Unsupported { .. } => "unsupported_key",
-                ConfigError::MissingEnvironment { .. } => "missing_environment",
-            };
             tracing::error!(
-                category,
+                category = error_category(error),
                 location = %location.display(),
                 "failed to load configuration"
             );

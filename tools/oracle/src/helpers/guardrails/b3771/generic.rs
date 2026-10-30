@@ -20,7 +20,7 @@ use super::support::{guardrail_error, parse_json_field};
 pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let litellm_values = metadata_field(input, "litellm_metadata")?;
     let metadata_values = metadata_field(input, "metadata")?;
-    let merged = extract_user_api_key_metadata(Some(&litellm_values), Some(&metadata_values));
+    let merged = extract_user_api_key_metadata(&litellm_values, &metadata_values);
     let serialized = serde_json::to_value(merged).map_err(guardrail_error)?;
     let mut object = serialized.as_object().cloned().unwrap_or_default();
     object.retain(|_, item| !item.is_null());

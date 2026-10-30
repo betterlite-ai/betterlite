@@ -92,7 +92,7 @@ fn generic_guardrail_metadata_merges_litellm_metadata_first() {
         ("user_api_key_team_id".to_owned(), Some("team".to_owned())),
     ]);
     let litellm = BTreeMap::from([("user_api_key_hash".to_owned(), Some("preferred".to_owned()))]);
-    let result = extract_user_api_key_metadata(Some(&litellm), Some(&metadata));
+    let result = extract_user_api_key_metadata(&litellm, &metadata);
     assert_eq!(result.user_api_key_hash.as_deref(), Some("preferred"));
     assert_eq!(result.user_api_key_team_id.as_deref(), Some("team"));
 }
@@ -102,7 +102,7 @@ fn generic_guardrail_metadata_token_alias_overrides_hash() {
         ("user_api_key_hash".to_owned(), Some("hash".to_owned())),
         ("user_api_key_token".to_owned(), Some("token".to_owned())),
     ]);
-    let result = extract_user_api_key_metadata(None, Some(&metadata));
+    let result = extract_user_api_key_metadata(&BTreeMap::new(), &metadata);
     assert_eq!(result.user_api_key_hash.as_deref(), Some("token"));
 }
 #[test]
@@ -128,7 +128,7 @@ fn generic_guardrail_metadata_maps_every_known_field_and_drops_unknown_keys() {
         ("user_api_key_custom".to_owned(), Some("custom".to_owned())),
         ("unrelated".to_owned(), Some("dropped".to_owned())),
     ]);
-    let result = extract_user_api_key_metadata(None, Some(&metadata));
+    let result = extract_user_api_key_metadata(&BTreeMap::new(), &metadata);
     assert_eq!(result.user_api_key_hash.as_deref(), Some("hash"));
     assert_eq!(result.user_api_key_alias.as_deref(), Some("alias"));
     assert_eq!(result.user_api_key_user_id.as_deref(), Some("user"));

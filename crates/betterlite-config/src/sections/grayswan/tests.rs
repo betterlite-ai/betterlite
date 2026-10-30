@@ -62,8 +62,8 @@ fn grayswan_config_defaults_match_litellm() {
     );
     assert!((configured.violation_threshold - 0.5).abs() < f64::EPSILON);
     assert_eq!(configured.reasoning_mode, None);
-    assert_eq!(configured.categories, None);
-    assert_eq!(configured.policy_id, None);
+    assert!(configured.categories.is_empty());
+    assert!(configured.policy_id.is_empty());
     assert!(configured.fail_open);
     assert_eq!(configured.guardrail_timeout, Duration::from_secs(30));
     assert!(!configured.streaming_end_of_stream_only);
@@ -121,6 +121,13 @@ fn grayswan_config_rejects_a_negative_guardrail_timeout() {
 }
 
 #[test]
+fn grayswan_config_logs_invalid_duration_category() {
+    let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
+    let error = resolve(&source, &BTreeMap::new()).unwrap_err();
+    assert_eq!(super::error_category(&error), "invalid_duration");
+}
+
+#[test]
 fn grayswan_config_rejects_a_nan_guardrail_timeout() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: .nan\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();
@@ -160,12 +167,9 @@ fn grayswan_config_explicit_values_win() {
     assert!((configured.violation_threshold - 0.9).abs() < f64::EPSILON);
     assert_eq!(
         configured.categories,
-        Some(BTreeMap::from([(
-            "jailbreak".to_owned(),
-            "block".to_owned()
-        )]))
+        BTreeMap::from([("jailbreak".to_owned(), "block".to_owned())])
     );
-    assert_eq!(configured.policy_id.as_deref(), Some("policy-1"));
+    assert_eq!(configured.policy_id, "policy-1");
     assert!(!configured.fail_open);
     assert_eq!(configured.guardrail_timeout, Duration::from_secs(5));
     assert!(configured.streaming_end_of_stream_only);

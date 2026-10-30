@@ -159,13 +159,11 @@ impl GenericGuardrailAPI {
 }
 #[must_use]
 pub fn extract_user_api_key_metadata(
-    litellm_metadata: Option<&BTreeMap<String, Option<String>>>,
-    metadata: Option<&BTreeMap<String, Option<String>>>,
+    litellm_metadata: &BTreeMap<String, Option<String>>,
+    metadata: &BTreeMap<String, Option<String>>,
 ) -> GenericGuardrailAPIMetadata {
-    let mut merged = metadata.cloned().unwrap_or_default();
-    if let Some(values) = litellm_metadata {
-        merged.extend(values.clone());
-    }
+    let mut merged = metadata.clone();
+    merged.extend(litellm_metadata.clone());
     let mut result = GenericGuardrailAPIMetadata {
         user_api_key_hash: merged.get("user_api_key_hash").cloned().flatten(),
         user_api_key_alias: merged.get("user_api_key_alias").cloned().flatten(),

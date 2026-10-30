@@ -15,6 +15,19 @@ pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(30);
 
+#[must_use]
+pub const fn error_category(error: &ConfigError) -> &'static str {
+    match error {
+        ConfigError::Yaml { .. } => "yaml",
+        ConfigError::Unsupported { .. } => "unsupported_key",
+        ConfigError::MissingEnvironment { .. } => "missing_environment",
+        ConfigError::InvalidFloat { .. } => "invalid_float",
+        ConfigError::InvalidInteger { .. } => "invalid_integer",
+        ConfigError::InvalidDuration { .. } => "invalid_duration",
+        ConfigError::InvalidScalar { .. } => "invalid_scalar",
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OnFlaggedAction {
     Block,
@@ -83,8 +96,8 @@ pub struct Configured {
     pub on_flagged_action: OnFlaggedAction,
     pub violation_threshold: f64,
     pub reasoning_mode: Option<ReasoningMode>,
-    pub categories: Option<BTreeMap<String, String>>,
-    pub policy_id: Option<String>,
+    pub categories: BTreeMap<String, String>,
+    pub policy_id: String,
     pub fail_open: bool,
     pub guardrail_timeout: Duration,
     pub streaming_end_of_stream_only: bool,
@@ -143,8 +156,8 @@ impl Entry {
             on_flagged_action: resolve_on_flagged_action(parameters.on_flagged_action.as_deref()),
             violation_threshold,
             reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode.as_deref(), lookup),
-            categories: parameters.categories,
-            policy_id: parameters.policy_id,
+            categories: parameters.categories.unwrap_or_default(),
+            policy_id: parameters.policy_id.unwrap_or_default(),
             fail_open: parameters.fail_open.unwrap_or(true),
             guardrail_timeout: resolve_guardrail_timeout(
                 parameters.guardrail_timeout,

@@ -89,12 +89,13 @@ fn parse_settings(
     let policy_id = value
         .get("policy_id")
         .and_then(serde_json::Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .unwrap_or_default();
     Ok(GraySwanSettings {
         on_flagged_action: action,
         violation_threshold,
         reasoning_mode: parse_json_field(value, "reasoning_mode")?,
-        categories: parse_json_field(value, "categories")?,
+        categories: parse_json_field(value, "categories")?.unwrap_or_default(),
         policy_id,
         fail_open,
     })
