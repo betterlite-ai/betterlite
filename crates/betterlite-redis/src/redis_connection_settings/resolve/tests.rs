@@ -8,6 +8,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::{resolve_redis_kwargs, settings_uses_tls};
+use crate::redis_connection_settings::model::nodes::{ClusterNodeConfig, NodesInput};
 use crate::redis_connection_settings::model::settings::{ClientKind, RedisOverrides};
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -118,6 +119,51 @@ fn redis_tls_is_true_end_to_end_for_a_rediss_url() {
     let settings =
         resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
     assert!(settings_uses_tls(&settings));
+}
+
+#[test]
+fn redis_tls_is_false_end_to_end_for_a_plain_redis_url() {
+    let overrides = RedisOverrides {
+        url: Some(SecretString::from("redis://cache.internal:6379")),
+        ..blank_overrides()
+    };
+    let settings =
+        resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
+    assert!(!settings_uses_tls(&settings));
+}
+
+#[test]
+fn redis_ssl_stays_unset_without_an_override_or_environment_value() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        ..blank_overrides()
+    };
+    let settings =
+        resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("host names a target");
+    assert_eq!(settings.ssl, None);
+}
+
+#[test]
+fn redis_ssl_reads_false_from_the_environment() {
+    let env = env(&[("REDIS_HOST", "cache.internal"), ("REDIS_SSL", "false")]);
+    let settings = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &env)
+        .expect("host names a target");
+    assert_eq!(settings.ssl, Some(false));
+}
+
+#[test]
+fn redis_precedence_ignores_the_environment_url_once_startup_nodes_are_configured() {
+    let overrides = RedisOverrides {
+        startup_nodes: Some(NodesInput::Nodes(vec![ClusterNodeConfig {
+            host: "a".to_owned(),
+            port: 7000,
+        }])),
+        ..blank_overrides()
+    };
+    let env = env(&[("REDIS_URL", "redis://from-environment:6379")]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env)
+        .expect("startup_nodes names a target");
+    assert!(settings.url.is_none());
 }
 
 #[test]
