@@ -1,10 +1,15 @@
 use chrono::{DateTime, Utc};
+use jiff::tz::TimeZoneDatabase;
 
 use super::schema::{OffPeakBlock, WindowRuleEntry, WindowsField};
 use super::weekday::matches_weekdays;
 use super::window::{matches_any_window, window_strings};
 
-pub(crate) fn is_off_peak(block: &OffPeakBlock, moment: DateTime<Utc>) -> bool {
+pub(crate) fn is_off_peak(
+    block: &OffPeakBlock,
+    moment: DateTime<Utc>,
+    database: &TimeZoneDatabase,
+) -> bool {
     let flat_windows = window_strings(block.hours_utc.as_ref());
     if !flat_windows.is_empty() && matches_any_window(&flat_windows, moment.time()) {
         return true;
@@ -22,6 +27,7 @@ pub(crate) fn is_off_peak(block: &OffPeakBlock, moment: DateTime<Utc>) -> bool {
                 moment,
                 rule.weekdays.as_ref(),
                 block.weekday_timezone.as_ref(),
+                database,
             )
             && matches_any_window(&rule_windows, moment.time())
     })

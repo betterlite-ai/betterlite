@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, Datelike as _, Utc};
 use jiff::Timestamp;
-use jiff::tz::TimeZone;
+use jiff::tz::TimeZoneDatabase;
 
 use super::schema::{TimezoneField, WeekdayEntry, WeekdaysField};
 
@@ -10,6 +10,7 @@ pub(super) fn matches_weekdays(
     moment: DateTime<Utc>,
     weekdays: Option<&WeekdaysField>,
     weekday_timezone: Option<&TimezoneField>,
+    database: &TimeZoneDatabase,
 ) -> bool {
     let Some(weekdays_field) = weekdays else {
         return true;
@@ -18,7 +19,7 @@ pub(super) fn matches_weekdays(
         return false;
     };
     let allowed: BTreeSet<u32> = entries.iter().filter_map(normalize_weekday).collect();
-    allowed.contains(&iso_weekday(moment, weekday_timezone))
+    allowed.contains(&iso_weekday(moment, weekday_timezone, database))
 }
 
 fn normalize_weekday(entry: &WeekdayEntry) -> Option<u32> {
@@ -40,7 +41,11 @@ fn normalize_weekday(entry: &WeekdayEntry) -> Option<u32> {
     }
 }
 
-fn iso_weekday(moment: DateTime<Utc>, weekday_timezone: Option<&TimezoneField>) -> u32 {
+fn iso_weekday(
+    moment: DateTime<Utc>,
+    weekday_timezone: Option<&TimezoneField>,
+    database: &TimeZoneDatabase,
+) -> u32 {
     let name = match weekday_timezone {
         Some(TimezoneField::Text(text)) => text.trim(),
         _ => "",
@@ -48,7 +53,7 @@ fn iso_weekday(moment: DateTime<Utc>, weekday_timezone: Option<&TimezoneField>) 
     if name.is_empty() {
         return moment.weekday().number_from_monday();
     }
-    let Ok(zone) = TimeZone::get(name) else {
+    let Ok(zone) = database.get(name) else {
         return moment.weekday().number_from_monday();
     };
     let Ok(nanosecond) = i32::try_from(moment.timestamp_subsec_nanos()) else {

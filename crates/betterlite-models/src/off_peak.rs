@@ -6,6 +6,7 @@ mod weekday;
 pub mod window;
 
 use chrono::{DateTime, Utc};
+use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -53,11 +54,12 @@ pub fn apply_off_peak_pricing(
     off_peak_pricing: Option<&OffPeakBlock>,
     moment: DateTime<Utc>,
     rates: TokenRates,
+    database: &TimeZoneDatabase,
 ) -> Result<TokenRates, OffPeakRateError> {
     let Some(block) = off_peak_pricing else {
         return Ok(rates);
     };
-    if !block::is_off_peak(block, moment) {
+    if !block::is_off_peak(block, moment, database) {
         return Ok(rates);
     }
     let off_peak_reasoning_rate = rate::parse_rate(
@@ -90,6 +92,7 @@ pub fn apply_off_peak_to_base_costs(
     off_peak_pricing: Option<&OffPeakBlock>,
     moment: DateTime<Utc>,
     base_costs: BaseCosts,
+    database: &TimeZoneDatabase,
 ) -> Result<ResolvedBaseCosts, OffPeakRateError> {
     let rates = apply_off_peak_pricing(
         off_peak_pricing,
@@ -101,6 +104,7 @@ pub fn apply_off_peak_to_base_costs(
             cache_creation_rate: base_costs.cache_creation_rate,
             reasoning_rate: None,
         },
+        database,
     )?;
     Ok(ResolvedBaseCosts {
         prompt_rate: rates.input_rate,
