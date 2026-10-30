@@ -6,7 +6,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::chat::provider_error::{ProviderFailure, classify};
+use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, classify};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
 use serde::Serialize;
 use std::str;
@@ -123,7 +123,9 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
 
 fn embedding_failure(error: &EmbeddingError) -> ProviderFailure {
     match error {
-        EmbeddingError::Provider { response } => classify(response.status, &response.body),
+        EmbeddingError::Provider { response } => {
+            classify(response.status, &response.body, ErrorBodyKind::MessageOnly)
+        }
         EmbeddingError::UnknownModel { .. } | EmbeddingError::Body { .. } => ProviderFailure {
             status: 400,
             error_type: String::from("invalid_request_error"),

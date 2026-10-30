@@ -12,7 +12,7 @@ use axum::{Json, Router};
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::chat::provider_error::classify;
+use betterlite_openai::chat::provider_error::{ErrorBodyKind, classify};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Instant;
@@ -101,7 +101,9 @@ async fn chat_completion(
 
 fn failure(error: &ChatError, call_id: &str, deployment: Option<&ChatDeployment>) -> Response {
     let failure = match error {
-        ChatError::Provider { response } => classify(response.status, &response.body),
+        ChatError::Provider { response } => {
+            classify(response.status, &response.body, ErrorBodyKind::Structured)
+        }
         ChatError::UnknownModel { .. }
         | ChatError::Request { .. }
         | ChatError::Streaming

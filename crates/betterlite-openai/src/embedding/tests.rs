@@ -150,3 +150,60 @@ fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
     };
     (executor, deployment)
 }
+
+#[test]
+fn embedding_post_preserves_fields() {
+    let (_, deployment) = embedding_executor("https://provider.test/v1/");
+    let request = EmbeddingRequest::parse(
+        br#"{"model":"alias","input":[1,2],"dimensions":2,"user":"reader","encoding_format":"float"}"#,
+    )
+    .expect("request");
+    let (model, key) = servable(&deployment).expect("deployment");
+    let post = super::post(&deployment, &request, model, key).expect("post");
+    assert_eq!(post.url.as_str(), "https://provider.test/v1/embeddings");
+    let body: EmbeddingRequest = serde_json::from_slice(&post.body).expect("upstream body");
+    assert_eq!(body.model.as_deref(), Some("embed"));
+    assert_eq!(body.input, request.input);
+    assert_eq!(body.dimensions, Some(2));
+    assert_eq!(body.user.as_deref(), Some("reader"));
+    assert_eq!(body.encoding_format, Some(EncodingFormat::Float));
+}
+
+#[rstest::rstest]
+#[case::alias(Some("alias"), "alias")]
+#[case::provider(None, "upstream")]
+fn embedding_response_model_mapping(#[case] requested: Option<&str>, #[case] expected: &str) {
+    let response: super::EmbeddingResponse = serde_json::from_str(
+        r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,-1]}],"model":"upstream","usage":{"prompt_tokens":2,"total_tokens":2}}"#,
+    )
+    .expect("response");
+    let mapped = response.clone().for_client(requested);
+    assert_eq!(mapped.model, expected);
+    assert_eq!(mapped.data, response.data);
+    assert_eq!(mapped.usage, response.usage);
+    assert_eq!(mapped.object, "list");
+    assert_eq!(mapped.usage.completion_tokens, 0);
+    assert_eq!(mapped.usage.completion_tokens_details, None);
+    assert_eq!(mapped.usage.prompt_tokens_details, None);
+}
+
+#[rstest::rstest]
+fn replays_the_embedding_corpus(#[files("fuzz/corpus/embedding/*")] path: std::path::PathBuf) {
+    let bytes = std::fs::read(path).expect("corpus file");
+    let _request = EmbeddingRequest::parse(&bytes);
+    let _response = serde_json::from_slice::<super::EmbeddingResponse>(&bytes);
+}
+
+#[rstest::rstest]
+#[case::malformed("{")]
+#[case::missing_input(r#"{"model":"embed"}"#)]
+#[case::mixed_input(r#"{"input":["text",2]}"#)]
+#[case::negative_token(r#"{"input":[-1]}"#)]
+#[case::overflow_token(r#"{"input":[4294967296]}"#)]
+#[case::bad_encoding(r#"{"input":"text","encoding_format":"binary"}"#)]
+fn rejects_invalid_embedding_input(#[case] body: &str) {
+    assert!(matches!(
+        EmbeddingRequest::parse(body.as_bytes()),
+        Err(EmbeddingError::Body { .. })
+    ));
+}

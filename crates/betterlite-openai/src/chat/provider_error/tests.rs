@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::{ProviderFailure, classify};
+use super::{ErrorBodyKind, ProviderFailure, classify};
 use crate::chat::RequestError;
 use crate::chat::execution::ChatError;
 
@@ -184,7 +184,7 @@ fn maps_provider_errors_like_litellm(
     #[case] param: Option<&str>,
 ) {
     assert_eq!(
-        classify(status, body.as_bytes()),
+        classify(status, body.as_bytes(), ErrorBodyKind::Structured),
         expected(mapped_status, error_type, param)
     );
 }
