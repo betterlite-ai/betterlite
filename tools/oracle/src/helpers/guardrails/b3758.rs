@@ -45,7 +45,7 @@ fn outcome(input: &Input) -> Result<Value, serde_json::Error> {
     }
     if let Input::NormalizeAction { action } = input {
         return Ok(json!(
-            betterlite_guardrails::cisco_verdict::normalize_action(action)
+            betterlite_guardrails::cisco_verdict::normalize_action(action).as_str()
         ));
     }
     if let Input::ExtractJsonrpcError { response } = input {
