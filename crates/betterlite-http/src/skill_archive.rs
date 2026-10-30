@@ -202,7 +202,7 @@ fn repack(members: &[(String, Vec<u8>)]) -> ZipResult<Vec<u8>> {
             DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
                 .map_err(|error| ZipError::InvalidArchive(Cow::Owned(error.to_string())))?,
         )
-        .unix_permissions(0o644);
+        .external_attributes(0o644 << 16);
     for (name, data) in members {
         writer.start_file(name, options)?;
         writer.write_all(data).map_err(ZipError::Io)?;
