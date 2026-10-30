@@ -53,3 +53,19 @@ fn azure_content_policy_cases(#[case] body: JsonValue, #[case] expected: Option<
         );
     }
 }
+
+#[test]
+fn azure_policy_provider_non_string_message_is_rendered() {
+    let input = ContentPolicyInput {
+        message: "caller".to_owned(),
+        model: "gpt".to_owned(),
+        extra_information: "debug".to_owned(),
+        body: value(r#"{"message":7}"#),
+        response: None,
+    };
+    let error = content_policy_error(&input);
+    assert_eq!(
+        error.message,
+        "litellm.BadRequestError: litellm.ContentPolicyViolationError: 7"
+    );
+}
