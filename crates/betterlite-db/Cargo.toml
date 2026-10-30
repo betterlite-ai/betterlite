@@ -17,6 +17,8 @@ regex.workspace = true
 rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
 secrecy.workspace = true
 serde.workspace = true
+serde_json = { version = "1.0.145", features = ["raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 thiserror.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 unicode-general-category = "1.1.0"
