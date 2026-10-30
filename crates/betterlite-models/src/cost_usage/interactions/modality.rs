@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
+use serde_json::Number;
 use serde_json::value::RawValue;
 
 use crate::cost_usage::error::CostUsageError;
-use crate::cost_usage::token_count::TokenCount;
+use crate::cost_usage::token_count::token_count_from_raw;
 
 fn modality_field_name(modality: &str) -> Option<&'static str> {
     match modality {
@@ -45,11 +46,15 @@ impl ModalityName {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct ModalityEntryRecord {
-    modality: ModalityName,
-    tokens: TokenCount,
+type ModalityEntryFields = BTreeMap<Box<str>, Box<RawValue>>;
+
+fn modality_entry_field_name(fields: &ModalityEntryFields) -> Option<&'static str> {
+    let modality: ModalityName = fields
+        .get("modality")
+        .map_or_else(ModalityName::default, |raw| {
+            serde_json::from_str(raw.get()).unwrap_or_default()
+        });
+    modality.field_name()
 }
 
 // A non-mapping entry is a transformation error, never silently skipped.
@@ -58,17 +63,76 @@ pub(crate) fn modality_token_sums(
 ) -> Result<BTreeMap<&'static str, i64>, CostUsageError> {
     let mut sums: BTreeMap<&'static str, i64> = BTreeMap::new();
     for entry in entries {
-        let record: ModalityEntryRecord = serde_json::from_str(entry.get())
+        let fields: ModalityEntryFields = serde_json::from_str(entry.get())
             .map_err(|_error| CostUsageError::ModalityEntryNotObject)?;
-        let Some(field) = record.modality.field_name() else {
+        let Some(field) = modality_entry_field_name(&fields) else {
             continue;
+        };
+        let tokens = match fields.get("tokens") {
+            Some(raw) => token_count_from_raw(raw)?,
+            None => 0,
         };
         let sum = sums.entry(field).or_insert(0);
         *sum = sum
-            .checked_add(record.tokens.0)
+            .checked_add(tokens)
             .ok_or(CostUsageError::ModalitySumOverflow { field })?;
     }
     Ok(sums)
+}
+
+// A falsy non-array value (false, 0, "", {}, null) is an empty list; a truthy one errors.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(try_from = "Box<RawValue>")]
+pub(super) enum ModalityList {
+    #[default]
+    Empty,
+    Entries(Vec<Box<RawValue>>),
+}
+
+impl ModalityList {
+    pub(super) fn entries(&self) -> &[Box<RawValue>] {
+        match self {
+            Self::Empty => &[],
+            Self::Entries(entries) => entries,
+        }
+    }
+}
+
+impl TryFrom<Box<RawValue>> for ModalityList {
+    type Error = CostUsageError;
+
+    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+        if let Ok(entries) = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) {
+            return Ok(Self::Entries(entries));
+        }
+        if is_truthy(&raw) {
+            return Err(CostUsageError::ModalityListNotArray);
+        }
+        Ok(Self::Empty)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum RawJsonShape {
+    Null,
+    Bool(bool),
+    Number(Box<Number>),
+    Str(Box<str>),
+    Array(Vec<IgnoredAny>),
+    Object(BTreeMap<Box<str>, Box<IgnoredAny>>),
+}
+
+fn is_truthy(raw: &RawValue) -> bool {
+    let shape = serde_json::from_str::<RawJsonShape>(raw.get()).unwrap_or(RawJsonShape::Null);
+    match shape {
+        RawJsonShape::Null => false,
+        RawJsonShape::Bool(flag) => flag,
+        RawJsonShape::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
+        RawJsonShape::Str(text) => !text.is_empty(),
+        RawJsonShape::Array(entries) => !entries.is_empty(),
+        RawJsonShape::Object(fields) => !fields.is_empty(),
+    }
 }
 
 mod tests;

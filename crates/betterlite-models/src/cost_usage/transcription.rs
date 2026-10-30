@@ -1,6 +1,21 @@
 use serde::Deserialize;
+use thiserror::Error;
 
 use super::{CostUsage, PromptDetails};
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptionUsageError {
+    #[error("missing field `seconds`")]
+    MissingSeconds,
+    #[error("missing field `input_tokens`")]
+    MissingInputTokens,
+    #[error("missing field `output_tokens`")]
+    MissingOutputTokens,
+    #[error("missing field `total_tokens`")]
+    MissingTotalTokens,
+    #[error("missing field `input_token_details`")]
+    MissingInputTokenDetails,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(try_from = "RawTranscriptionUsage")]
@@ -29,21 +44,27 @@ struct RawTranscriptionUsage {
 }
 
 impl TryFrom<RawTranscriptionUsage> for TranscriptionUsage {
-    type Error = &'static str;
+    type Error = TranscriptionUsageError;
 
     fn try_from(raw: RawTranscriptionUsage) -> Result<Self, Self::Error> {
         match raw.kind {
             TranscriptionUsageKind::Duration => {
-                let seconds = raw.seconds.ok_or("missing field `seconds`")?;
+                let seconds = raw.seconds.ok_or(TranscriptionUsageError::MissingSeconds)?;
                 Ok(Self::Duration { seconds })
             }
             TranscriptionUsageKind::Tokens => {
-                let input_tokens = raw.input_tokens.ok_or("missing field `input_tokens`")?;
-                let output_tokens = raw.output_tokens.ok_or("missing field `output_tokens`")?;
-                let total_tokens = raw.total_tokens.ok_or("missing field `total_tokens`")?;
+                let input_tokens = raw
+                    .input_tokens
+                    .ok_or(TranscriptionUsageError::MissingInputTokens)?;
+                let output_tokens = raw
+                    .output_tokens
+                    .ok_or(TranscriptionUsageError::MissingOutputTokens)?;
+                let total_tokens = raw
+                    .total_tokens
+                    .ok_or(TranscriptionUsageError::MissingTotalTokens)?;
                 let input_token_details = raw
                     .input_token_details
-                    .ok_or("missing field `input_token_details`")?;
+                    .ok_or(TranscriptionUsageError::MissingInputTokenDetails)?;
                 Ok(Self::Tokens(Box::new(TranscriptionTokens {
                     input_tokens,
                     output_tokens,

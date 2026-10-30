@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{
-    TranscriptionTokenDetails, TranscriptionTokens, TranscriptionUsage,
+    TranscriptionTokenDetails, TranscriptionTokens, TranscriptionUsage, TranscriptionUsageError,
     transform_transcription_usage,
 };
 
@@ -40,4 +40,33 @@ fn duration_usage_deserializes_from_json() {
     let usage: TranscriptionUsage =
         serde_json::from_str(r#"{"type":"duration","seconds":1.5}"#).expect("valid JSON");
     assert!(transform_transcription_usage(&usage).is_none());
+}
+
+#[test]
+fn missing_seconds_is_a_typed_error() {
+    let error = serde_json::from_str::<TranscriptionUsage>(r#"{"type":"duration"}"#)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("missing field `seconds`"));
+}
+
+#[test]
+fn missing_token_fields_are_typed_errors() {
+    use super::RawTranscriptionUsage;
+
+    let missing_input = RawTranscriptionUsage {
+        kind: super::TranscriptionUsageKind::Tokens,
+        seconds: None,
+        input_tokens: None,
+        output_tokens: Some(1),
+        total_tokens: Some(1),
+        input_token_details: Some(TranscriptionTokenDetails {
+            audio_tokens: 0,
+            text_tokens: 0,
+        }),
+    };
+    assert_eq!(
+        TranscriptionUsage::try_from(missing_input).unwrap_err(),
+        TranscriptionUsageError::MissingInputTokens
+    );
 }

@@ -1,7 +1,8 @@
 use serde::Deserialize;
-use serde_json::value::RawValue;
 
 use crate::cost_usage::field::Field;
+use crate::cost_usage::interactions::modality::ModalityList;
+use crate::cost_usage::interactions::search::GroundingToolCount;
 use crate::cost_usage::token_count::TokenCount;
 
 #[derive(Debug, Default, Deserialize)]
@@ -16,11 +17,11 @@ pub struct InteractionsUsage {
     pub(super) total_reasoning_tokens: TokenCount,
     pub(super) total_thought_tokens: TokenCount,
     pub(super) total_tokens: TokenCount,
-    pub(super) input_tokens_by_modality: Option<Vec<Box<RawValue>>>,
-    pub(super) tool_use_tokens_by_modality: Option<Vec<Box<RawValue>>>,
-    pub(super) cached_tokens_by_modality: Option<Vec<Box<RawValue>>>,
-    pub(super) output_tokens_by_modality: Option<Vec<Box<RawValue>>>,
-    pub(super) grounding_tool_count: Option<Vec<Box<RawValue>>>,
+    pub(super) input_tokens_by_modality: ModalityList,
+    pub(super) tool_use_tokens_by_modality: ModalityList,
+    pub(super) cached_tokens_by_modality: ModalityList,
+    pub(super) output_tokens_by_modality: ModalityList,
+    pub(super) grounding_tool_count: GroundingToolCount,
 }
 
 // A present prompt_tokens or input_tokens disqualifies, even when its value is null.

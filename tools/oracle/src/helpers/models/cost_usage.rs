@@ -64,6 +64,8 @@ fn interactions_result(raw: &Value) -> crate::helpers::HelperResult {
 
 fn cost_usage_error(error: CostUsageError) -> Box<HelperError> {
     let class = match error {
+        CostUsageError::CounterOverflow => "CounterOverflow",
+        CostUsageError::ModalityListNotArray => "ModalityListNotArray",
         CostUsageError::ModalityEntryNotObject => "ModalityEntryNotObject",
         CostUsageError::ModalitySumOverflow { .. } => "ModalitySumOverflow",
         CostUsageError::CacheSubtractionOverflow { .. } => "CacheSubtractionOverflow",

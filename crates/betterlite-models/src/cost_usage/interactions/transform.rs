@@ -18,35 +18,31 @@ struct ModalitySums {
 fn compute_modality_sums(usage: &InteractionsUsage) -> Result<ModalitySums, CostUsageError> {
     let mut input_entries: Vec<&RawValue> = usage
         .input_tokens_by_modality
-        .as_ref()
-        .into_iter()
-        .flatten()
+        .entries()
+        .iter()
         .map(Box::as_ref)
         .collect();
     input_entries.extend(
         usage
             .tool_use_tokens_by_modality
-            .as_ref()
-            .into_iter()
-            .flatten()
+            .entries()
+            .iter()
             .map(Box::as_ref),
     );
     let input_sums_raw = modality_token_sums(&input_entries)?;
 
     let cached_entries: Vec<&RawValue> = usage
         .cached_tokens_by_modality
-        .as_ref()
-        .into_iter()
-        .flatten()
+        .entries()
+        .iter()
         .map(Box::as_ref)
         .collect();
     let cached_sums = modality_token_sums(&cached_entries)?;
 
     let output_entries: Vec<&RawValue> = usage
         .output_tokens_by_modality
-        .as_ref()
-        .into_iter()
-        .flatten()
+        .entries()
+        .iter()
         .map(Box::as_ref)
         .collect();
     let output = modality_token_sums(&output_entries)?;
@@ -141,9 +137,8 @@ pub fn transform_interactions_usage(
     let totals = compute_token_totals(usage)?;
     let search_entries: Vec<&RawValue> = usage
         .grounding_tool_count
-        .as_ref()
-        .into_iter()
-        .flatten()
+        .entries()
+        .iter()
         .map(Box::as_ref)
         .collect();
     let web_search_requests = google_search_query_count(&search_entries)?;
