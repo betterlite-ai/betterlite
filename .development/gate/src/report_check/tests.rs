@@ -18,7 +18,12 @@ fn added(names: &[&str]) -> BTreeSet<String> {
 }
 
 fn task(file: &str) -> Task {
-    read_yaml(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../tasks").join(file)).unwrap()
+    read_yaml(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tasks")
+            .join(file),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -118,6 +123,8 @@ fn an_owned_behavior_names_its_test() {
             &task("B005-chat-streaming.yaml"),
             &added(&["eventsource-stream"])
         ),
-        ["owned 'each chunk keeps the id of the first chunk' needs an https link to the LiteLLM line, the code that does it and the test that proves it"]
+        [
+            "owned 'each chunk keeps the id of the first chunk' needs an https link to the LiteLLM line, the code that does it and the test that proves it"
+        ]
     );
 }
