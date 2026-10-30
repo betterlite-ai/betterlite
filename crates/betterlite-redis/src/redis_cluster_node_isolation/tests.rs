@@ -11,6 +11,7 @@ use super::{
 fn redis_cluster_node_isolation_behaviors() {
     isolated_timeout_disconnects_only_one_node();
     redirects_keep_the_target_node();
+    timeout_counts_are_per_node_and_reset_after_success();
 }
 
 fn isolated_timeout_disconnects_only_one_node() {
@@ -94,4 +95,66 @@ fn state(
         },
         "a",
     )
+}
+
+#[rstest]
+#[case::legacy(IsolationBranch::Legacy)]
+#[case::newer(IsolationBranch::PerNodeRecovery)]
+fn commands_each_have_their_own_ttl(#[case] branch: IsolationBranch) {
+    let mut state = state(branch, 1, 0, false);
+    assert_eq!(
+        execute_command(&mut state, "a", &[CommandOutcome::Success])
+            .unwrap()
+            .node,
+        "a"
+    );
+    assert_eq!(
+        execute_command(&mut state, "b", &[CommandOutcome::Success])
+            .unwrap()
+            .node,
+        "b"
+    );
+    assert_eq!(state.request_ttl, 1);
+}
+
+#[test]
+fn newer_connection_failure_requests_reinitialization() {
+    let mut state = state(IsolationBranch::PerNodeRecovery, 4, 0, false);
+    assert_eq!(
+        execute_command(&mut state, "a", &[CommandOutcome::ConnectionError]),
+        Err(IsolationError::Connection)
+    );
+    assert!(state.initialize);
+}
+
+#[test]
+fn timeout_counts_are_per_node_and_reset_after_success() {
+    let mut state = state(IsolationBranch::PerNodeRecovery, 1, 0, false);
+    assert_eq!(
+        execute_command(&mut state, "a", &[CommandOutcome::Timeout]),
+        Err(IsolationError::Timeout)
+    );
+    assert_eq!(
+        execute_command(&mut state, "b", &[CommandOutcome::Timeout]),
+        Err(IsolationError::Timeout)
+    );
+    assert_eq!(
+        execute_command(&mut state, "b", &[CommandOutcome::Success])
+            .unwrap()
+            .node,
+        "b"
+    );
+    assert_eq!(state.timeout_counts.get("a"), Some(&1));
+    assert!(!state.timeout_counts.contains_key("b"));
+    assert_eq!(
+        execute_command(&mut state, "a", &[CommandOutcome::Timeout]),
+        Err(IsolationError::Timeout)
+    );
+    assert!(!state.initialize);
+    assert_eq!(
+        execute_command(&mut state, "a", &[CommandOutcome::Timeout]),
+        Err(IsolationError::Timeout)
+    );
+    assert!(state.initialize);
+    assert!(state.timeout_counts.is_empty());
 }

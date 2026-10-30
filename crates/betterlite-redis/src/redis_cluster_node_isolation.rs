@@ -173,10 +173,9 @@ pub fn execute_command(
         events: Vec::new(),
     };
     let mut outcome_index = 0_usize;
-    let original_ttl = state.request_ttl;
-    while state.request_ttl > 0 {
-        state.request_ttl = state
-            .request_ttl
+    let mut remaining_ttl = state.request_ttl;
+    while remaining_ttl > 0 {
+        remaining_ttl = remaining_ttl
             .checked_sub(1)
             .ok_or(IsolationError::TtlExhausted)?;
         context.prepare(initial_node);
@@ -186,7 +185,7 @@ pub fn execute_command(
         outcome_index = outcome_index
             .checked_add(1)
             .ok_or(IsolationError::TtlExhausted)?;
-        if apply_outcome(state, &mut context, outcome, original_ttl)? {
+        if apply_outcome(state, &mut context, outcome, remaining_ttl)? {
             return Ok(CommandResult {
                 node: context.node,
                 events: context.events,
@@ -223,7 +222,7 @@ fn apply_outcome(
     state: &mut IsolationState,
     context: &mut CommandContext,
     outcome: &CommandOutcome,
-    original_ttl: u32,
+    remaining_ttl: u32,
 ) -> Result<bool, IsolationError> {
     match outcome {
         CommandOutcome::Success => {
@@ -231,6 +230,7 @@ fn apply_outcome(
             Ok(true)
         }
         CommandOutcome::ConnectionError => {
+            state.initialize |= state.branch == IsolationBranch::PerNodeRecovery;
             state.disconnect(&context.node, &mut context.events);
             Err(IsolationError::Connection)
         }
@@ -255,7 +255,7 @@ fn apply_outcome(
             sleep_for_topology_change(state, context, IsolationError::SlotNotCovered)
         }
         CommandOutcome::TryAgain => {
-            if state.request_ttl.saturating_mul(2) < original_ttl {
+            if u64::from(remaining_ttl) * 2 < u64::from(state.request_ttl) {
                 state.sleeps.push(0.05_f64);
                 context.events.push(IsolationEvent::Slept(0.05_f64));
             }
