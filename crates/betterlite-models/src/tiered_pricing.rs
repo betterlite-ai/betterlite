@@ -2,6 +2,7 @@ use crate::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexe
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
+use std::collections::BTreeMap;
 
 // The source's tolerant scalar coercion inspects a cost field's runtime shape, not just a number.
 #[derive(Debug, Clone, Deserialize)]
@@ -12,7 +13,7 @@ pub enum Scalar {
     Number(serde_json::Number),
     Text(String),
     Array(Vec<IgnoredAny>),
-    Object(serde_json::Value),
+    Object(BTreeMap<String, IgnoredAny>),
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -57,8 +58,7 @@ pub enum TieredPricingError {
 // A string float() rejects becomes zero; one float() accepts but exact Decimal cannot is a typed error.
 pub fn coerce_cost_per_token(value: Option<&Scalar>) -> Result<Decimal, TieredPricingError> {
     match value {
-        None => Ok(Decimal::ZERO),
-        Some(Scalar::Null) => Ok(Decimal::ZERO),
+        None | Some(Scalar::Null) => Ok(Decimal::ZERO),
         Some(Scalar::Bool(flag)) => Ok(Decimal::from(u8::from(*flag))),
         Some(Scalar::Number(number)) => Ok(parse_decimal_lexeme(&number.to_string())?),
         Some(Scalar::Text(text)) => {
@@ -152,10 +152,7 @@ fn range_sort_key(tier: &Tier) -> Result<Decimal, TieredPricingError> {
 }
 
 fn range_endpoint(value: &Scalar) -> Result<Decimal, TieredPricingError> {
-    if matches!(
-        value,
-        Scalar::Null | Scalar::Object(serde_json::Value::Null)
-    ) {
+    if matches!(value, Scalar::Null) {
         return Err(TieredPricingError::MalformedRange);
     }
     if let Scalar::Bool(flag) = value {
