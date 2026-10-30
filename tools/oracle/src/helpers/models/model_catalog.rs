@@ -18,8 +18,8 @@ impl crate::helpers::Helper for Op {
             "canonical_lookup"
             | "aliases"
             | "alias_canonical_conflict"
-            | "alias_alias_conflict" => summarize_source(input.get("source"), operation),
-            "generalizations_excluded" => summarize_source(input.get("source"), operation),
+            | "alias_alias_conflict"
+            | "generalizations_excluded" => summarize_source(input.get("source"), operation),
             _ => Err(invalid("unknown model catalog operation")),
         }
     }
@@ -29,32 +29,42 @@ fn summarize_source(
     source: Option<&serde_json::Value>,
     operation: &str,
 ) -> crate::helpers::HelperResult {
-    let source = source.ok_or_else(|| invalid("source is required"))?;
-    let bytes = serde_json::to_vec(source).map_err(|error| invalid(error.to_string()))?;
+    let raw_source = source.ok_or_else(|| invalid("source is required"))?;
+    let bytes = serde_json::to_vec(raw_source).map_err(|error| invalid(error.to_string()))?;
     let catalog = betterlite_models::catalog::ModelCatalog::parse_remote(&bytes)
         .map_err(|error| invalid(error.to_string()))?;
-    let mut result = serde_json::json!({"warnings": catalog.warnings()});
-    if let Some(lookup) = source.get("lookup").and_then(serde_json::Value::as_array) {
-        result["lookup"] = serde_json::Value::Array(
+    let mut result = serde_json::Map::from_iter([(
+        "warnings".to_owned(),
+        serde_json::json!(catalog.warnings()),
+    )]);
+    if let Some(lookup) = raw_source
+        .get("lookup")
+        .and_then(serde_json::Value::as_array)
+    {
+        result.insert("lookup".to_owned(), serde_json::Value::Array(
             lookup.iter().filter_map(serde_json::Value::as_str).map(|name| {
                 catalog.metadata(name).map_or(serde_json::Value::Null, |metadata| serde_json::json!({"model": metadata.model, "provider": metadata.provider, "mode": metadata.mode.map(|mode| format!("{mode:?}").to_lowercase())}))
             }).collect(),
-        );
+        ));
     }
     if operation == "generalizations_excluded" {
-        result["count"] = serde_json::json!(catalog.len());
+        result.insert("count".to_owned(), serde_json::json!(catalog.len()));
     }
-    Ok(result)
+    Ok(serde_json::Value::Object(result))
 }
 
 fn invalid(message: impl Into<String>) -> Box<crate::helpers::HelperError> {
+    let message = message.into();
     let error = Box::new(crate::helpers::HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.into(),
+        message,
     });
+    if message.is_empty() {
+        return error;
+    }
     error
 }
