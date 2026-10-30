@@ -166,6 +166,18 @@ fn redis_tls_is_false_end_to_end_for_a_plain_redis_url() {
 }
 
 #[test]
+fn redis_tls_uses_the_url_when_startup_nodes_are_empty() {
+    let overrides = RedisOverrides {
+        startup_nodes: Some(NodesInput::Nodes(Vec::new())),
+        url: Some(SecretString::from("rediss://cache.internal:6379")),
+        ..blank_overrides()
+    };
+    let settings =
+        resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
+    assert!(settings_uses_tls(&settings));
+}
+
+#[test]
 fn redis_ssl_stays_unset_without_an_override_or_environment_value() {
     let overrides = RedisOverrides {
         host: Some("cache.internal".to_owned()),

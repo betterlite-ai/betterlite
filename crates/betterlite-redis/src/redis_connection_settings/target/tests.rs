@@ -45,6 +45,14 @@ fn redis_target_resolution_prefers_url_over_host() {
 }
 
 #[test]
+fn redis_target_resolution_uses_sentinel_when_url_and_cluster_are_absent() {
+    let sentinels = some_sentinel();
+    let target = resolve_target(None, Some(&sentinels), None, Some("host"))
+        .expect("sentinel_nodes names a target");
+    assert_eq!(target, Target::Sentinel);
+}
+
+#[test]
 fn redis_target_resolution_falls_back_to_direct_host() {
     let target = resolve_target(None, None, None, Some("host")).expect("host names a target");
     assert_eq!(target, Target::Direct);
