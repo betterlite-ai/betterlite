@@ -1,4 +1,0 @@
-encryption_classification:
-  values:
-    - "v2:gcm:seed"
-    - "plain"

@@ -1,0 +1,10 @@
+kind: helper
+name: encryption-classification-seed
+call:
+  encryption_classification:
+    values:
+      - "v2:gcm:seed"
+      - "plain"
+env: {}
+compare:
+  ignore: []
