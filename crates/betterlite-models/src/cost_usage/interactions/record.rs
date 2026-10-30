@@ -40,3 +40,5 @@ pub(super) const fn field_value(field: &Field<TokenCount>) -> Result<i64, CostUs
         Field::Absent => Ok(0),
     }
 }
+
+mod tests;

@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use super::error::CostUsageError;
 use super::interactions::record::{InteractionsUsage, is_interactions_usage_object};
 use super::interactions::transform::transform_interactions_usage;
 use super::transcription::{
@@ -44,16 +43,4 @@ fn chat_shaped_usage_is_not_recognized_as_interactions() {
         serde_json::from_str(r#"{"prompt_tokens":4,"total_input_tokens":4}"#)
             .expect("valid JSON object");
     assert!(!is_interactions_usage_object(&usage));
-}
-
-#[test]
-fn checked_totals_report_overflow() {
-    let usage: InteractionsUsage = serde_json::from_str(
-        r#"{"total_input_tokens":9223372036854775807,"total_tool_use_tokens":1}"#,
-    )
-    .expect("valid JSON object");
-    assert_eq!(
-        transform_interactions_usage(&usage).expect_err("prompt overflow"),
-        CostUsageError::PromptTotalOverflow
-    );
 }

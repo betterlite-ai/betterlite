@@ -48,3 +48,5 @@ fn subtract_total_from_text(
     result.insert(ModalityField::Text, subtracted.max(0));
     Ok(result)
 }
+
+mod tests;
