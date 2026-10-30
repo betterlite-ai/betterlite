@@ -1147,11 +1147,13 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "chrono",
+ "hex",
  "pem",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
 ]
 
@@ -1309,6 +1311,10 @@ dependencies = [
 [[package]]
 name = "betterlite-prometheus"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-prompts"
