@@ -4,30 +4,34 @@ const DIGEST_LENGTH: usize = 8;
 const IDENTIFIER_MAX_BYTES: usize = 63;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RequestLogIndex<'a> {
-    pub table: &'a str,
-    pub name: &'a str,
-    pub definition: &'a str,
+pub struct RequestLogIndex<'definition> {
+    pub table: &'definition str,
+    pub name: &'definition str,
+    pub definition: &'definition str,
 }
 
-impl<'a> RequestLogIndex<'a> {
-    pub fn columns(self) -> Vec<&'a str> {
+impl<'definition> RequestLogIndex<'definition> {
+    #[must_use]
+    pub fn columns(self) -> Vec<&'definition str> {
         let mut columns = Vec::new();
-        let mut rest = self.definition;
-        while let Some(start) = rest.find('"') {
-            let after_start = &rest[start + 1..];
-            let Some(end) = after_start.find('"') else {
-                break;
-            };
-            let column = &after_start[..end];
-            if !column.is_empty() {
-                columns.push(column);
+        let mut open = None;
+        for (index, character) in self.definition.char_indices() {
+            if character != '"' {
+                continue;
             }
-            rest = &after_start[end + 1..];
+            if let Some(start) = open.take()
+                && start < index
+                && let Some(column) = self.definition.get(start..index)
+            {
+                columns.push(column);
+            } else {
+                open = index.checked_add(1);
+            }
         }
         columns
     }
 
+    #[must_use]
     pub fn partition_index_name(self, partition: &str) -> String {
         let prefix = format!("{}_", self.table);
         let index_suffix = self.name.strip_prefix(&prefix).unwrap_or(self.name);
@@ -35,17 +39,21 @@ impl<'a> RequestLogIndex<'a> {
         if name.len() <= IDENTIFIER_MAX_BYTES {
             return name;
         }
-        let digest = Sha256::digest(name.as_bytes());
-        let digest = hex::encode(digest);
-        let digest = &digest[..DIGEST_LENGTH];
+        let digest_bytes = Sha256::digest(name.as_bytes());
+        let digest_hex = hex::encode(digest_bytes);
+        let digest = digest_hex.chars().take(DIGEST_LENGTH).collect::<String>();
         let prefix_budget = IDENTIFIER_MAX_BYTES - DIGEST_LENGTH - 1;
         let kept = name
             .char_indices()
             .take_while(|(index, _)| *index <= prefix_budget)
-            .map(|(index, character)| (index + character.len_utf8(), character))
+            .filter_map(|(index, character)| {
+                index
+                    .checked_add(character.len_utf8())
+                    .map(|end| (end, character))
+            })
             .take_while(|(end, _)| *end <= prefix_budget)
             .last()
-            .map_or("", |(end, _)| &name[..end]);
+            .map_or("", |(end, _)| name.get(..end).unwrap_or(""));
         format!("{kept}_{digest}")
     }
 }

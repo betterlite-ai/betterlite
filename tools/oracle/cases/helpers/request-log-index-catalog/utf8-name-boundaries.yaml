@@ -7,6 +7,6 @@ call:
     name: LiteLLM_SpendLogs_litellm_call_id_idx
     definition: '("litellm_call_id")'
     partition: '界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界'
-  env: {}
+env: {}
 compare:
   ignore: []
