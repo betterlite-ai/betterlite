@@ -54,7 +54,7 @@ fn threshold_suffixes_are_copied_without_priority_extensions() {
 #[test]
 fn rejects_non_numeric_non_null_prices() {
     let raw: &RawValue = serde_json::from_str(r#"{"input_cost_per_token":"invalid"}"#).unwrap();
-    assert!(project("model", "model", "openai", raw).is_err());
+    assert!(project("model", "model", "openai", raw).err().is_some());
 }
 
 #[test]
