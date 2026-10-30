@@ -8,10 +8,49 @@ use super::coercion::{coerce_bool, coerce_float, coerce_int, coerce_passthrough}
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
 use super::model::nodes::{ClusterNodeConfig, NodesInput, SentinelNodesInput, StartupNodesInput};
-use super::model::scalars::{BoolOrText, FloatOrText, IntOrText};
+use super::model::scalars::{BoolOrText, FloatOrText, IntOrText, PassthroughValue};
 use super::model::settings::{ClientKind, RedisConnectionSettings, RedisOverrides, Target};
 use super::target::resolve_target;
 use super::url_parts::{strip_userinfo, uses_tls};
+use std::collections::BTreeMap;
+
+const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
+    "ENCODING",
+    "ENCODING_ERRORS",
+    "DECODE_RESPONSES",
+    "RETRY_ON_TIMEOUT",
+    "RETRY_ON_ERROR",
+    "CLIENT_NAME",
+    "LIB_NAME",
+    "LIB_VERSION",
+    "PROTOCOL",
+    "SOCKET_KEEPALIVE_OPTIONS",
+    "SINGLE_CONNECTION_CLIENT",
+    "AUTO_CLOSE_CONNECTION_POOL",
+    "SSL_CERT_REQS",
+    "SSL_CHECK_HOSTNAME",
+    "SSL_CA_CERTS",
+    "SSL_VALIDATE_OCSP",
+    "SSL_VALIDATE_OCSP_STAPLED",
+    "SSL_OCSP_EXPECTED_CERT",
+    "CLUSTER_ERROR_RETRY_ATTEMPTS",
+    "REQUIRE_FULL_COVERAGE",
+    "REINITIALIZE_STEPS",
+    "READ_FROM_REPLICAS",
+    "DYNAMIC_STARTUP_NODES",
+    "CONNECTION_ERROR_RETRY_ATTEMPTS",
+    "GCP_SERVICE_ACCOUNT",
+    "GCP_SSL_CA_CERTS",
+    "AZURE_REDIS_AD_TOKEN",
+    "AZURE_CLIENT_ID",
+    "AZURE_TENANT_ID",
+    "AZURE_CLIENT_SECRET",
+    "AWS_IAM_AUTH",
+    "AWS_IAM_USER_NAME",
+    "AWS_IAM_CACHE_NAME",
+    "AWS_IAM_REGION",
+    "AWS_IAM_SERVERLESS",
+];
 
 // Mirrors litellm._redis._get_redis_client_logic: merge, resolve the target, coerce.
 pub fn resolve_redis_kwargs<E>(
@@ -25,12 +64,12 @@ where
     let startup_nodes = resolve_nodes(
         overrides.startup_nodes.clone(),
         env.lookup("REDIS_CLUSTER_NODES"),
-        RedisSettingsError::InvalidClusterNodesJson,
+        |source| RedisSettingsError::InvalidClusterNodesJson { source },
     )?;
     let sentinel_nodes = resolve_nodes(
         overrides.sentinel_nodes.clone(),
         env.lookup("REDIS_SENTINEL_NODES"),
-        RedisSettingsError::InvalidSentinelNodesJson,
+        |source| RedisSettingsError::InvalidSentinelNodesJson { source },
     )?;
     let mut settings = merge_settings(overrides, env, startup_nodes, sentinel_nodes);
 
@@ -47,7 +86,7 @@ where
         settings.db = None;
         settings.password = None;
     }
-    coerce_passthrough(&mut settings.passthrough);
+    coerce_passthrough(target, client, &mut settings.passthrough);
     filter_passthrough_for_target(target, client, &mut settings.passthrough);
     Ok(settings)
 }
@@ -95,7 +134,7 @@ where
         service_name: overrides
             .service_name
             .or_else(|| env.lookup("REDIS_SERVICE_NAME")),
-        passthrough: overrides.passthrough,
+        passthrough: resolve_passthrough(overrides.passthrough, env),
     }
 }
 
@@ -121,21 +160,50 @@ where
     })
 }
 
+fn resolve_passthrough<E>(
+    mut passthrough: BTreeMap<String, PassthroughValue>,
+    env: &E,
+) -> BTreeMap<String, PassthroughValue>
+where
+    E: EnvironmentLookup,
+{
+    for suffix in ENV_PASSTHROUGH_KWARGS {
+        let name = format!("REDIS_{suffix}");
+        if let Some(value) = env.lookup(&name) {
+            passthrough.insert(suffix.to_lowercase(), PassthroughValue::Text(value));
+        }
+    }
+    passthrough
+}
+
 #[must_use]
 pub fn settings_uses_tls(settings: &RedisConnectionSettings) -> bool {
     let url = settings.url.as_ref().map(ExposeSecret::expose_secret);
-    uses_tls(settings.uses_startup_nodes(), settings.ssl, url)
+    uses_tls(
+        settings
+            .startup_nodes
+            .as_ref()
+            .is_some_and(|nodes| !nodes.is_empty()),
+        settings.ssl,
+        url,
+    )
 }
 
-fn resolve_nodes<T>(
+fn resolve_nodes<T, F>(
     overrides: Option<NodesInput<T>>,
     env_text: Option<String>,
-    on_error: impl FnOnce(serde_json::Error) -> RedisSettingsError,
+    on_error: F,
 ) -> Result<Option<Vec<T>>, RedisSettingsError>
 where
     T: DeserializeOwned,
+    F: FnOnce(serde_json::Error) -> RedisSettingsError,
 {
-    match overrides.or_else(|| env_text.map(NodesInput::Text)) {
+    let input = overrides.filter(NodesInput::is_truthy).or_else(|| {
+        env_text
+            .filter(|text| !text.is_empty())
+            .map(NodesInput::Text)
+    });
+    match input {
         None => Ok(None),
         Some(NodesInput::Nodes(nodes)) => Ok(Some(nodes)),
         Some(NodesInput::Text(text)) => serde_json::from_str(&text).map(Some).map_err(on_error),

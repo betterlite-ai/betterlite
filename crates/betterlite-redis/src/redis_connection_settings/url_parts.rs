@@ -29,7 +29,8 @@ fn url_scheme(url: &str) -> Option<&str> {
 
 // litellm._redis's credential_provider branch uses urlsplit/urlunsplit; url::Url::parse is stricter (docs/deviations/B4321.yaml).
 pub fn strip_userinfo(url: &str) -> Result<String, RedisSettingsError> {
-    let mut parsed = url::Url::parse(url).map_err(RedisSettingsError::InvalidUrl)?;
+    let mut parsed =
+        url::Url::parse(url).map_err(|source| RedisSettingsError::InvalidUrl { source })?;
     parsed
         .set_username("")
         .map_err(|()| RedisSettingsError::UrlCannotStripUserinfo)?;

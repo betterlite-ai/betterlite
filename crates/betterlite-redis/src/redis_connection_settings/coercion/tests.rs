@@ -6,6 +6,7 @@ use super::{coerce_bool, coerce_float, coerce_int, coerce_passthrough};
 use crate::redis_connection_settings::model::scalars::{
     BoolOrText, FloatOrText, IntOrText, PassthroughValue,
 };
+use crate::redis_connection_settings::model::settings::{ClientKind, Target};
 
 #[test]
 fn coerce_int_parses_a_digit_string() {
@@ -60,7 +61,7 @@ fn coerce_passthrough_drops_a_failed_int_conversion() {
         "cluster_error_retry_attempts".to_owned(),
         PassthroughValue::Text("three".to_owned()),
     );
-    coerce_passthrough(&mut passthrough);
+    coerce_passthrough(Target::Cluster, ClientKind::Sync, &mut passthrough);
     assert!(!passthrough.contains_key("cluster_error_retry_attempts"));
 }
 
@@ -71,7 +72,7 @@ fn coerce_passthrough_coerces_a_recognized_bool_name() {
         "require_full_coverage".to_owned(),
         PassthroughValue::Text("yes".to_owned()),
     );
-    coerce_passthrough(&mut passthrough);
+    coerce_passthrough(Target::Cluster, ClientKind::Sync, &mut passthrough);
     assert_eq!(
         passthrough.get("require_full_coverage"),
         Some(&PassthroughValue::Bool(true))
@@ -85,9 +86,44 @@ fn coerce_passthrough_leaves_an_unrecognized_name_untouched() {
         "some_unmodeled_kwarg".to_owned(),
         PassthroughValue::Text("3".to_owned()),
     );
-    coerce_passthrough(&mut passthrough);
+    coerce_passthrough(Target::Direct, ClientKind::Sync, &mut passthrough);
     assert_eq!(
         passthrough.get("some_unmodeled_kwarg"),
         Some(&PassthroughValue::Text("3".to_owned()))
+    );
+}
+
+#[test]
+fn coerce_numbers_accept_whitespace_and_digit_separators() {
+    assert_eq!(
+        coerce_int(Some(IntOrText::Text(" 6_380\n".to_owned()))),
+        Some(6380)
+    );
+    assert_eq!(
+        coerce_float(Some(FloatOrText::Text(" 1_5.0 ".to_owned()))),
+        Some(15.0_f64)
+    );
+}
+
+#[test]
+fn coerce_signature_boolean_names() {
+    let mut passthrough = BTreeMap::from([
+        (
+            "retry_on_timeout".to_owned(),
+            PassthroughValue::Text("false".to_owned()),
+        ),
+        (
+            "single_connection_client".to_owned(),
+            PassthroughValue::Text("true".to_owned()),
+        ),
+    ]);
+    coerce_passthrough(Target::Direct, ClientKind::Sync, &mut passthrough);
+    assert_eq!(
+        passthrough["retry_on_timeout"],
+        PassthroughValue::Bool(false)
+    );
+    assert_eq!(
+        passthrough["single_connection_client"],
+        PassthroughValue::Bool(true)
     );
 }

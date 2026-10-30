@@ -2,27 +2,14 @@ mod tests;
 
 use std::collections::BTreeMap;
 
-use super::model::scalars::{
-    BoolOrText, CoercionKind, FloatOrText, IntOrText, PassthroughValue, str_to_bool,
-};
-
-// litellm._redis._coerce_redis_kwargs_types's explicit_param_types: picks the target type directly, instead of inferring it from a signature default.
-const PASSTHROUGH_COERCION: &[(&str, CoercionKind)] = &[
-    ("cluster_error_retry_attempts", CoercionKind::Int),
-    ("reinitialize_steps", CoercionKind::Int),
-    ("connection_error_retry_attempts", CoercionKind::Int),
-    ("require_full_coverage", CoercionKind::Bool),
-    ("read_from_replicas", CoercionKind::Bool),
-    ("dynamic_startup_nodes", CoercionKind::Bool),
-    ("ssl_check_hostname", CoercionKind::Bool),
-    ("decode_responses", CoercionKind::Bool),
-];
+use super::model::scalars::{BoolOrText, CoercionKind, FloatOrText, IntOrText, PassthroughValue};
+use super::model::settings::{ClientKind, Target};
 
 #[must_use]
 pub fn coerce_int(value: Option<IntOrText>) -> Option<i64> {
     match value? {
         IntOrText::Int(parsed) => Some(parsed),
-        IntOrText::Text(text) => text.parse().ok(),
+        IntOrText::Text(text) => text.trim().replace('_', "").parse().ok(),
     }
 }
 
@@ -30,7 +17,7 @@ pub fn coerce_int(value: Option<IntOrText>) -> Option<i64> {
 pub fn coerce_float(value: Option<FloatOrText>) -> Option<f64> {
     match value? {
         FloatOrText::Float(parsed) => Some(parsed),
-        FloatOrText::Text(text) => text.parse().ok(),
+        FloatOrText::Text(text) => text.trim().replace('_', "").parse().ok(),
     }
 }
 
@@ -39,13 +26,19 @@ pub fn coerce_float(value: Option<FloatOrText>) -> Option<f64> {
 pub fn coerce_bool(value: Option<BoolOrText>) -> Option<bool> {
     match value? {
         BoolOrText::Bool(parsed) => Some(parsed),
-        BoolOrText::Text(text) => Some(str_to_bool(&text)),
+        BoolOrText::Text(text) => {
+            Some(matches!(text.to_lowercase().as_str(), "true" | "1" | "yes"))
+        }
     }
 }
 
 // A failed int()/float() conversion deletes the key outright in litellm; bool never fails.
-pub fn coerce_passthrough(passthrough: &mut BTreeMap<String, PassthroughValue>) {
-    for (name, kind) in PASSTHROUGH_COERCION {
+pub fn coerce_passthrough(
+    target: Target,
+    _client: ClientKind,
+    passthrough: &mut BTreeMap<String, PassthroughValue>,
+) {
+    for (name, kind) in coercion_table(target) {
         let Some(PassthroughValue::Text(text)) = passthrough.get(*name) else {
             continue;
         };
@@ -69,6 +62,43 @@ fn coerce_passthrough_value(kind: CoercionKind, text: &str) -> Option<Passthroug
         CoercionKind::Float => {
             serde_json::Number::from_f64(text.parse::<f64>().ok()?).map(PassthroughValue::Number)
         }
-        CoercionKind::Bool => Some(PassthroughValue::Bool(str_to_bool(text))),
+        CoercionKind::Bool => Some(PassthroughValue::Bool(matches!(
+            text.to_lowercase().as_str(),
+            "true" | "1" | "yes"
+        ))),
+    }
+}
+
+// This table mirrors the bool/int/float defaults in the pinned redis.Redis, Connection and RedisCluster signatures.
+const fn coercion_table(target: Target) -> &'static [(&'static str, CoercionKind)] {
+    const CLIENT: &[(&str, CoercionKind)] = &[
+        ("retry_on_timeout", CoercionKind::Bool),
+        ("single_connection_client", CoercionKind::Bool),
+        ("decode_responses", CoercionKind::Bool),
+        ("health_check_interval", CoercionKind::Int),
+        ("protocol", CoercionKind::Int),
+        ("ssl_check_hostname", CoercionKind::Bool),
+        ("ssl_validate_ocsp", CoercionKind::Bool),
+        ("ssl_validate_ocsp_stapled", CoercionKind::Bool),
+    ];
+    const CLUSTER: &[(&str, CoercionKind)] = &[
+        ("retry_on_timeout", CoercionKind::Bool),
+        ("single_connection_client", CoercionKind::Bool),
+        ("decode_responses", CoercionKind::Bool),
+        ("health_check_interval", CoercionKind::Int),
+        ("protocol", CoercionKind::Int),
+        ("ssl_check_hostname", CoercionKind::Bool),
+        ("ssl_validate_ocsp", CoercionKind::Bool),
+        ("ssl_validate_ocsp_stapled", CoercionKind::Bool),
+        ("cluster_error_retry_attempts", CoercionKind::Int),
+        ("reinitialize_steps", CoercionKind::Int),
+        ("connection_error_retry_attempts", CoercionKind::Int),
+        ("require_full_coverage", CoercionKind::Bool),
+        ("read_from_replicas", CoercionKind::Bool),
+        ("dynamic_startup_nodes", CoercionKind::Bool),
+    ];
+    match target {
+        Target::Cluster => CLUSTER,
+        Target::Direct | Target::Url | Target::Sentinel => CLIENT,
     }
 }

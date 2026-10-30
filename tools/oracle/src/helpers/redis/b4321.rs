@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_redis::redis_connection_settings::model::settings::{ClientKind, RedisOverrides};
-use betterlite_redis::redis_connection_settings::resolve::{
-    resolve_redis_kwargs, settings_uses_tls,
-};
+use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::json;
@@ -60,7 +58,14 @@ impl Helper for Op {
         let settings =
             resolve_redis_kwargs(overrides.clone(), ClientKind::from(*client), environment)
                 .map_err(Failure::from)?;
-        let uses_tls = settings_uses_tls(&settings);
+        let uses_tls = betterlite_redis::redis_connection_settings::url_parts::uses_tls(
+            settings
+                .startup_nodes
+                .as_ref()
+                .is_some_and(|nodes| !nodes.is_empty()),
+            settings.ssl,
+            settings.url.as_ref().map(ExposeSecret::expose_secret),
+        );
         Ok(json!({
             "host": settings.host,
             "port": settings.port,
@@ -91,11 +96,11 @@ impl From<Failure> for Box<HelperError> {
         let class = match &failure {
             Failure::Settings(error) => match error {
                 betterlite_redis::redis_connection_settings::error::RedisSettingsError::MissingTarget => "ValueError",
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidClusterNodesJson(_)
-                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidSentinelNodesJson(_) => {
+                betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidClusterNodesJson { .. }
+                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidSentinelNodesJson { .. } => {
                     "JSONDecodeError"
                 }
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidUrl(_)
+                betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidUrl { .. }
                 | betterlite_redis::redis_connection_settings::error::RedisSettingsError::UrlCannotStripUserinfo => {
                     "RuntimeError"
                 }

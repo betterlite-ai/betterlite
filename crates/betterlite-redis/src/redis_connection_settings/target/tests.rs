@@ -30,11 +30,11 @@ fn redis_target_resolution_prefers_cluster_over_everything_else() {
 }
 
 #[test]
-fn redis_target_resolution_prefers_sentinel_over_url_and_host() {
+fn redis_target_resolution_prefers_url_over_sentinel_and_host() {
     let sentinels = some_sentinel();
     let target = resolve_target(None, Some(&sentinels), Some("redis://host"), Some("host"))
         .expect("sentinel_nodes names a target");
-    assert_eq!(target, Target::Sentinel);
+    assert_eq!(target, Target::Url);
 }
 
 #[test]

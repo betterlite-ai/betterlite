@@ -9,6 +9,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::{resolve_redis_kwargs, settings_uses_tls};
 use crate::redis_connection_settings::model::nodes::{ClusterNodeConfig, NodesInput};
+use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::{ClientKind, RedisOverrides};
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -54,6 +55,38 @@ fn redis_coerce_turns_environment_strings_into_typed_fields() {
     assert_eq!(settings.port, Some(6380));
     assert_eq!(settings.socket_timeout, Some(2.5_f64));
     assert_eq!(settings.ssl, Some(true));
+}
+
+#[test]
+fn redis_coerce_reads_signature_kwargs_from_environment() {
+    let env = env(&[
+        ("REDIS_HOST", "cache.internal"),
+        ("REDIS_RETRY_ON_TIMEOUT", "false"),
+        ("REDIS_SSL_CA_CERTS", "/etc/redis/ca.pem"),
+    ]);
+    let settings = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &env)
+        .expect("host names a target");
+    assert_eq!(
+        settings.passthrough["retry_on_timeout"],
+        PassthroughValue::Bool(false)
+    );
+    assert_eq!(
+        settings.passthrough["ssl_ca_certs"],
+        PassthroughValue::Text("/etc/redis/ca.pem".to_owned())
+    );
+}
+
+#[test]
+fn redis_precedence_uses_environment_nodes_for_an_empty_override() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        startup_nodes: Some(NodesInput::Text(String::new())),
+        ..blank_overrides()
+    };
+    let env = env(&[("REDIS_CLUSTER_NODES", r#"[{"host":"a","port":7000}]"#)]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env)
+        .expect("environment startup_nodes names a target");
+    assert_eq!(settings.startup_nodes.map(|nodes| nodes.len()), Some(1));
 }
 
 #[test]

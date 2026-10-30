@@ -31,15 +31,22 @@ _OWN_FIELDS = (
 
 
 def _kwargs_from_overrides(overrides: dict[str, Json]) -> dict[str, object]:
-    passthrough = overrides.get("passthrough") or {}
-    if not isinstance(passthrough, dict):
-        raise ValueError("passthrough must be an object")
     kwargs: dict[str, object] = {
         name: overrides[name] for name in _OWN_FIELDS if overrides.get(name) is not None
     }
     if kwargs.get("credential_provider") is True:
         kwargs["credential_provider"] = object()
+    passthrough = overrides.get("passthrough") or {}
+    if not isinstance(passthrough, dict):
+        raise ValueError("passthrough must be an object")
     kwargs.update({name: value for name, value in passthrough.items() if value is not None})
+    kwargs.update(
+        {
+            name: value
+            for name, value in overrides.items()
+            if name not in _OWN_FIELDS and name != "passthrough" and value is not None
+        }
+    )
     return kwargs
 
 

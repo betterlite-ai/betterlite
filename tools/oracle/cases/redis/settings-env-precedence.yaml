@@ -7,5 +7,6 @@ call:
       REDIS_URL: redis://from-environment.internal:6379
     overrides:
       host: configured.internal
+      retry_on_timeout: "false"
 env: {}
 compare: {ignore: []}

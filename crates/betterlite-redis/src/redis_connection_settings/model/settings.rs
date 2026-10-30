@@ -43,6 +43,7 @@ pub struct RedisOverrides {
     pub sentinel_nodes: Option<SentinelNodesInput>,
     pub sentinel_password: Option<SecretString>,
     pub service_name: Option<String>,
+    #[serde(flatten)]
     pub passthrough: BTreeMap<String, PassthroughValue>,
 }
 
@@ -67,12 +68,4 @@ pub struct RedisConnectionSettings {
     pub sentinel_password: Option<SecretString>,
     pub service_name: Option<String>,
     pub passthrough: BTreeMap<String, PassthroughValue>,
-}
-
-impl RedisConnectionSettings {
-    #[must_use]
-    pub fn uses_startup_nodes(&self) -> bool {
-        let nodes = self.startup_nodes.as_ref();
-        nodes.is_some_and(|list| !list.is_empty())
-    }
 }

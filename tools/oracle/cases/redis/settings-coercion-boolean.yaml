@@ -8,5 +8,6 @@ call:
       host: cache.internal
       ssl: "true"
       socket_keepalive: "false"
+      retry_on_timeout: "false"
 env: {}
 compare: {ignore: []}

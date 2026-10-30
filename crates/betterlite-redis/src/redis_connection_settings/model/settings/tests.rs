@@ -47,27 +47,6 @@ fn overrides_deserialize_from_a_sparse_object() {
 }
 
 #[test]
-fn uses_startup_nodes_is_false_when_the_list_is_empty() {
-    let settings = RedisConnectionSettings {
-        startup_nodes: Some(Vec::new()),
-        ..blank_settings()
-    };
-    assert!(!settings.uses_startup_nodes());
-}
-
-#[test]
-fn uses_startup_nodes_is_true_when_nodes_are_present() {
-    let settings = RedisConnectionSettings {
-        startup_nodes: Some(vec![super::ClusterNodeConfig {
-            host: "a".to_owned(),
-            port: 7000,
-        }]),
-        ..blank_settings()
-    };
-    assert!(settings.uses_startup_nodes());
-}
-
-#[test]
 fn password_round_trips_through_expose_secret() {
     let secret = SecretString::from("s3cret".to_owned());
     let settings = RedisConnectionSettings {

@@ -14,13 +14,16 @@ fn passthrough_with(names: &[&str]) -> BTreeMap<String, PassthroughValue> {
 }
 
 #[test]
-fn cluster_only_kwargs_do_not_reach_a_url_target() {
-    let mut passthrough =
-        passthrough_with(&["ssl_cert_reqs", "require_full_coverage", "socket_timeout"]);
+fn url_target_keeps_connection_kwargs_and_drops_client_or_cluster_kwargs() {
+    let mut passthrough = passthrough_with(&[
+        "ssl_cert_reqs",
+        "single_connection_client",
+        "decode_responses",
+    ]);
     filter_passthrough_for_target(Target::Url, ClientKind::Sync, &mut passthrough);
     assert!(!passthrough.contains_key("ssl_cert_reqs"));
-    assert!(!passthrough.contains_key("require_full_coverage"));
-    assert!(passthrough.contains_key("socket_timeout"));
+    assert!(!passthrough.contains_key("single_connection_client"));
+    assert!(passthrough.contains_key("decode_responses"));
 }
 
 #[test]
@@ -44,10 +47,10 @@ fn decode_responses_reaches_an_async_cluster_but_not_a_sync_cluster() {
 }
 
 #[test]
-fn direct_and_sentinel_targets_also_drop_cluster_only_kwargs() {
+fn direct_keeps_redis_tls_kwargs_and_sentinel_drops_cluster_only_kwargs() {
     let mut direct_passthrough = passthrough_with(&["ssl_ca_certs"]);
     filter_passthrough_for_target(Target::Direct, ClientKind::Sync, &mut direct_passthrough);
-    assert!(direct_passthrough.is_empty());
+    assert!(direct_passthrough.contains_key("ssl_ca_certs"));
 
     let mut sentinel_passthrough = passthrough_with(&["reinitialize_steps"]);
     filter_passthrough_for_target(

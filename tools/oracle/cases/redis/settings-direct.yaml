@@ -7,5 +7,6 @@ call:
     overrides:
       host: cache.internal
       port: 6379
-env: {}
+env:
+  REDIS_RETRY_ON_TIMEOUT: "false"
 compare: {ignore: []}

@@ -1,5 +1,3 @@
-mod tests;
-
 use serde::{Deserialize, Serialize};
 
 // Helm `--set` and environment variables stringify everything, so a redis-py int/float/bool field can arrive as its real type or a digit string.
@@ -38,10 +36,4 @@ pub enum CoercionKind {
     Int,
     Float,
     Bool,
-}
-
-#[must_use]
-pub fn str_to_bool(value: &str) -> bool {
-    let normalized = value.to_lowercase();
-    matches!(normalized.as_str(), "true" | "1" | "yes")
 }
