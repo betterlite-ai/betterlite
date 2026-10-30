@@ -181,9 +181,26 @@ fn redis_tls_uses_the_url_when_startup_nodes_are_empty() {
 
 #[test]
 fn redis_tls_does_not_treat_an_empty_startup_list_as_cluster_mode() {
-    let mut settings = RedisConnectionSettings::default();
-    settings.startup_nodes = Some(Vec::new());
-    settings.url = Some(SecretString::from("rediss://cache.internal:6379"));
+    let settings = RedisConnectionSettings {
+        host: None,
+        port: None,
+        db: None,
+        username: None,
+        password: None,
+        url: Some(SecretString::from("rediss://cache.internal:6379")),
+        ssl: None,
+        socket_timeout: None,
+        socket_connect_timeout: None,
+        socket_keepalive: None,
+        max_connections: None,
+        health_check_interval: None,
+        credential_provider: false,
+        startup_nodes: Some(Vec::new()),
+        sentinel_nodes: None,
+        sentinel_password: None,
+        service_name: None,
+        passthrough: BTreeMap::new(),
+    };
     assert!(settings_uses_tls(&settings));
 }
 
