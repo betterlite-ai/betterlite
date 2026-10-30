@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-jwt-after-bearer-equals
+call:
+  redaction:
+    function: redact_string
+    text: "Bearer abcdefghijk=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBj"
+env: {}
+compare:
+  ignore: []

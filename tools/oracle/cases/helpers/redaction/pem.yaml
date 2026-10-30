@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-pem
+call:
+  redaction:
+    function: redact_string
+    text: "key is -----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD91aNMvB3KVbV4AdI=\n-----END RSA PRIVATE KEY----- end"
+env: {}
+compare:
+  ignore: []

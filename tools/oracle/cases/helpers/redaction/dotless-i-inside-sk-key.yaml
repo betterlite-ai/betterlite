@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-dotless-i-inside-sk-key
+call:
+  redaction:
+    function: redact_string
+    text: "sk-abcdefghijklmnopıqrstuvwxyzSECRET"
+env: {}
+compare:
+  ignore: []
