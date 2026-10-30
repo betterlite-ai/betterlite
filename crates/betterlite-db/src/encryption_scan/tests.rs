@@ -21,14 +21,14 @@ fn cipher() -> DbCipher {
 #[case("ordinary text", ValueClass::Plaintext)]
 fn classification_trusts_prefix_and_plaintext(#[case] text: &str, #[case] expected: ValueClass) {
     assert_eq!(
-        classify_value(&Value::String(text.to_owned()), &cipher(), "scan"),
+        classify_value(&MigrationJson::String(text.to_owned()), &cipher(), "scan"),
         expected
     );
 }
 
 #[test]
 fn nested_walker_is_iterative_and_only_yields_string_leaves() {
-    let value = serde_json::json!({"a": ["one", {"b": "two"}], "n": 3});
+    let value: MigrationJson = serde_json::from_str(r#"{"a":["one",{"b":"two"}],"n":3}"#).unwrap();
     let mut leaves: Vec<&str> = iter_encrypted_strings(&value).collect();
     leaves.sort_unstable();
     assert_eq!(leaves, vec!["one", "two"]);
@@ -47,7 +47,7 @@ fn migration_json_is_bounded_and_typed() {
 
 #[test]
 fn report_wire_keys_and_checked_totals_are_stable() {
-    let mut report = LocationReport::new("credentials");
+    let mut report = LocationReport::new(String::from("credentials"));
     report.count(ValueClass::Legacy).unwrap();
     report.count(ValueClass::Migrated).unwrap();
     let aggregate = MigrationReport {
@@ -65,4 +65,10 @@ fn report_wire_keys_and_checked_totals_are_stable() {
             "undecryptable"
         ]
     );
+}
+
+#[test]
+fn replays_the_migration_json_corpus() {
+    let corpus = include_bytes!("../../fuzz/corpus/migration_json/nested-map");
+    decode_migration_json(corpus).unwrap();
 }

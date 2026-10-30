@@ -1,6 +1,5 @@
-name: encryption-classification-unverified-v2-prefix
 kind: helper
-operation: encryption_classification
-input:
-  values: ["v2:gcm:not-a-ciphertext", "plain"]
-  key: scan
+name: encryption-classification-unverified-v2-prefix
+call: {encryption_classification: {values: ["v2:gcm:not-a-ciphertext", "plain"]}}
+env: {}
+compare: {ignore: []}

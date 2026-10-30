@@ -1,6 +1,5 @@
-name: encryption-classification-marked-callback-shapes
 kind: helper
-operation: encryption_classification
-input:
-  values: ["v2:gcm:callback"]
-  callbacks: ["litellm_enc::plain", "v2:gcm:callback"]
+name: encryption-classification-marked-callback-shapes
+call: {encryption_classification: {values: ["v2:gcm:callback"], callbacks: ["litellm_enc::plain", "v2:gcm:callback"]}}
+env: {}
+compare: {ignore: []}

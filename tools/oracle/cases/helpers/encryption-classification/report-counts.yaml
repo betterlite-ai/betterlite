@@ -1,5 +1,5 @@
-name: encryption-classification-report-counts
 kind: helper
-operation: encryption_classification
-input:
-  values: ["v2:gcm:a", "v2:gcm:b", "one"]
+name: encryption-classification-report-counts
+call: {encryption_classification: {values: ["v2:gcm:a", "v2:gcm:b", "one"]}}
+env: {}
+compare: {ignore: []}
