@@ -82,7 +82,12 @@ pub fn get_policy_templates(loaded_categories: &[(Option<String>, String)]) -> O
     }
     let names = loaded_categories
         .iter()
-        .map(|(description, category_name)| description.as_deref().unwrap_or(category_name))
+        .map(|(description, category_name)| {
+            description
+                .as_deref()
+                .filter(|description_text| !description_text.is_empty())
+                .unwrap_or(category_name)
+        })
         .collect::<Vec<_>>();
     Some(names.join(", "))
 }

@@ -53,12 +53,9 @@ pub fn log_guardrail_information(
     input: &GuardrailTraceInput<'_>,
 ) -> GuardrailTracingDetail {
     let tracing_detail = tracing_detail(input);
-    let guardrail_response = if input.status == GuardrailStatus::Success {
-        format!("{:?}", input.detections)
-    } else if let Some(exception) = input.exception_str {
-        exception.to_owned()
-    } else {
-        format!("{:?}", input.detections)
+    let guardrail_response = match (input.status, input.exception_str) {
+        (status, Some(exception)) if status != GuardrailStatus::Success => exception.to_owned(),
+        _ => serde_json::to_string(input.detections).unwrap_or_else(|_| "[]".to_owned()),
     };
     records.push(GuardrailLogRecord {
         guardrail_name: input.guardrail_name.to_owned(),

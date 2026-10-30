@@ -62,4 +62,8 @@ fn sums_patterns_and_templates() {
         get_policy_templates(&[(Some("strict".to_owned()), "pii".to_owned())]),
         Some("strict".to_owned())
     );
+    assert_eq!(
+        get_policy_templates(&[(Some(String::new()), "pii".to_owned())]),
+        Some("pii".to_owned())
+    );
 }
