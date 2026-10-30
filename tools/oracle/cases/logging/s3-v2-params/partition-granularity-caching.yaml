@@ -1,0 +1,5 @@
+kind: helper
+name: partition-granularity-caching
+call: {b3992: {operation: partition, values: [day, hour]}}
+env: {S3_PARTITION_GRANULARITY: hour}
+compare: {ignore: []}

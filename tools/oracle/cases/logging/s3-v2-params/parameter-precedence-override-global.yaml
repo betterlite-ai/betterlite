@@ -1,0 +1,5 @@
+kind: helper
+name: parameter-precedence-override-global
+call: {b3992: {operation: precedence, global: {s3_bucket_name: global}, audit: {s3_bucket_name: audit}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: base64-stripping
+call: {b3992: {operation: strip, payload: {messages: [{content: [{type: image_url, image_url: {url: data:image/png;base64,AAAA}}]}]}}}
+env: {}
+compare: {ignore: []}

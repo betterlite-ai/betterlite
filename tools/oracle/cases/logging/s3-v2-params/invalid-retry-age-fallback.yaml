@@ -1,0 +1,5 @@
+kind: helper
+name: invalid-retry-age-fallback
+call: {b3992: {operation: retry, source: {s3_max_retry_age_seconds: -1}}}
+env: {}
+compare: {ignore: []}

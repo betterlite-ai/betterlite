@@ -1,0 +1,5 @@
+kind: helper
+name: cold-storage-key-validation-day
+call: {b3992: {operation: cold, granularity: day, cold_storage_object_key: accepted}}
+env: {}
+compare: {ignore: []}
