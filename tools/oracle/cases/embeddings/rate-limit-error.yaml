@@ -1,4 +1,4 @@
-name: embeddings-upstream-429
+name: embeddings-rate-limit-error
 config: |
   model_list:
     - model_name: embed-model
@@ -11,9 +11,9 @@ request:
   headers: {content-type: application/json, authorization: Bearer oracle-master}
   body: {model: embed-model, input: hello}
 upstream:
-  - status: 429
+  - status: 400
     headers: {content-type: application/json, x-request-id: embedding-error}
-    body: {error: {message: bad input, type: requests, param: input, code: invalid}}
+    body: {error: {message: Rate limit reached, type: requests, param: input, code: invalid}}
 compare:
   headers: [content-type, llm_provider-x-request-id]
   headers_present: []
