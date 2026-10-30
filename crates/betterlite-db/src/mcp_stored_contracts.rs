@@ -19,9 +19,9 @@ pub enum JsonValue {
 }
 
 impl Debug for JsonValue {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Stored input can contain credentials before it reaches the typed credential record.
-        formatter.write_str("[REDACTED]")
+        f.write_str("[REDACTED]")
     }
 }
 
