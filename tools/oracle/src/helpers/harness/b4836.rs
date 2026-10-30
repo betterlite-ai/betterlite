@@ -18,10 +18,8 @@ fn object(value: Option<&Value>) -> Map<String, Value> {
 }
 
 fn text(entries: &Map<String, Value>, key: &str) -> String {
-    match entries.get(key).and_then(Value::as_str) {
-        Some(value) => value.to_owned(),
-        None => String::new(),
-    }
+    let value = entries.get(key).and_then(Value::as_str);
+    value.map_or_else(String::new, str::to_owned)
 }
 
 fn normalized_name(native: &str) -> &str {
@@ -34,38 +32,41 @@ fn normalized_name(native: &str) -> &str {
 }
 
 fn builtin(native: &str) -> bool {
-    match native {
-        "read" | "write" | "edit" | "multiedit" | "patch" | "apply_patch" | "bash" | "glob"
-        | "grep" | "list" | "webfetch" | "websearch" | "task" | "todowrite" | "todoread"
-        | "skill" | "invalid" | "question" | "lsp" | "codesearch" | "plan_enter" | "plan_exit" => {
-            true
-        }
-        _ => false,
-    }
+    let is_builtin = BUILTIN_TOOLS.contains(&native);
+    let native_is_set = !native.is_empty();
+    is_builtin && native_is_set
 }
 
-fn tool_events(part: &Map<String, Value>) -> Vec<Value> {
-    let native = text(part, "tool");
-    let call_id = {
-        let primary = text(part, "callID");
-        if primary.is_empty() {
-            text(part, "id")
-        } else {
-            primary
-        }
-    };
-    let state = object(part.get("state"));
-    let input = match state.get("input") {
-        Some(Value::Object(entries)) => Value::Object(entries.clone()),
-        Some(value) => json!({"input": value}),
-        None => json!({}),
-    };
-    let call = json!({"type":"tool_call", "id":call_id, "name":normalized_name(&native),
-        "native_name":native, "input":input, "builtin":builtin(&native)});
-    let result = if state.get("status").and_then(Value::as_str) == Some("error") {
-        let error_text = text(&state, "error");
+const BUILTIN_TOOLS: [&str; 22] = [
+    "read",
+    "write",
+    "edit",
+    "multiedit",
+    "patch",
+    "apply_patch",
+    "bash",
+    "glob",
+    "grep",
+    "list",
+    "webfetch",
+    "websearch",
+    "task",
+    "todowrite",
+    "todoread",
+    "skill",
+    "invalid",
+    "question",
+    "lsp",
+    "codesearch",
+    "plan_enter",
+    "plan_exit",
+];
+
+fn tool_result(state: &Map<String, Value>, native: &str, call_id: &str) -> Value {
+    if state.get("status").and_then(Value::as_str) == Some("error") {
+        let error_text = text(state, "error");
         let status_text = if error_text.is_empty() {
-            text(&state, "output")
+            text(state, "output")
         } else {
             error_text
         };
@@ -88,7 +89,26 @@ fn tool_events(part: &Map<String, Value>) -> Vec<Value> {
             Value::Object(value) => Value::Object(value).to_string(),
         };
         json!({"type":"tool_result", "id":call_id, "output":output_text, "is_error":native == "invalid"})
+    }
+}
+
+fn tool_events(part: &Map<String, Value>) -> Vec<Value> {
+    let native = text(part, "tool");
+    let primary = text(part, "callID");
+    let call_id = if primary.is_empty() {
+        text(part, "id")
+    } else {
+        primary
     };
+    let state = object(part.get("state"));
+    let input = match state.get("input") {
+        Some(Value::Object(entries)) => Value::Object(entries.clone()),
+        Some(value) => json!({"input": value}),
+        None => json!({}),
+    };
+    let call = json!({"type":"tool_call", "id":call_id, "name":normalized_name(&native),
+        "native_name":native, "input":input, "builtin":builtin(&native)});
+    let result = tool_result(&state, &native, &call_id);
     vec![call, result]
 }
 
