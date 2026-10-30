@@ -110,6 +110,22 @@ fn offset_for_is_zero_for_a_non_staggerable_job_without_an_override() {
 }
 
 #[test]
+fn offset_for_ignores_an_override_for_a_non_staggerable_job() {
+    let mut offsets = BTreeMap::new();
+    offsets.insert("anchored-job".to_owned(), 5_i64);
+    let settings = Settings {
+        enabled: true,
+        window_seconds: 300,
+        identity: None,
+        offsets,
+    };
+    assert_eq!(
+        offset_for("anchored-job", None, false, &settings, "identity"),
+        0
+    );
+}
+
+#[test]
 fn stagger_trigger_wraps_when_an_override_offset_applies() {
     let mut offsets = BTreeMap::new();
     offsets.insert("my_job".to_owned(), 5_i64);

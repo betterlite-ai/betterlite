@@ -41,12 +41,12 @@ fn offset_for(
     settings: &Settings,
     identity: &str,
 ) -> u32 {
+    if !staggerable {
+        return 0;
+    }
     if let Some(override_value) = settings.offsets.get(job_id) {
         let non_negative = u32::try_from((*override_value).max(0)).unwrap_or(u32::MAX);
         return clamped_override(job_id, non_negative);
-    }
-    if !staggerable {
-        return 0;
     }
     let window = window_for(job_id, period_seconds, settings.window_seconds);
     offset_seconds(job_id, identity, window)
