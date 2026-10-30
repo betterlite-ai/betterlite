@@ -85,4 +85,4 @@ pitfalls:
   - Discard removes its suppression marker only when the ordered discard event becomes deliverable.
   - Configuring a stream does not mint credentials or establish gRPC until audio arrives.
 budget: {max_changed_lines: 725, max_new_expects: 1}
-review_level: security
+review_level: standard

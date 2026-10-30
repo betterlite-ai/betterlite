@@ -71,11 +71,16 @@ description: >-
   with the fixture name, operations to parse the fixture and check that no event is missed and every ToolCall
   precedes its ToolResult. For endpoint_requests.jsonl, write a distinct case that verifies the recorded HTTP
   requests carry the session auth_prefix, Content-Type header, the tool list and message counts the fixture shows.
+  The helper cases run through oracle operation b4836, registered with a stub in the harness helper group.
 scope:
   paths:
     - crates/betterlite-harness/src/providers/opencode.rs
     - crates/betterlite-harness/src/providers/opencode/**
     - tools/oracle/cases/opencode/**
+    - tools/oracle/helpers/b4836.py
+    - tools/oracle/helpers/b4836/**
+    - tools/oracle/src/helpers/harness/b4836.rs
+    - tools/oracle/src/helpers/harness/b4836/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py
@@ -129,27 +134,26 @@ checks:
   commands:
     - id: opencode-validation-tests
       why: Config key conflict detection and permission rule building fail or do not exist
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^opencode.*validation/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::.*validation/)'
     - id: opencode-config-tests
       why: Config assembly and instructions building fail or miss managed keys
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^opencode.*config/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::.*config/)'
     - id: opencode-setup-tests
       why: Session setup, XDG remapping, or file creation fail or do not exist
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^opencode.*setup/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::.*setup/)'
     - id: opencode-argv-tests
       why: First turn or resume turn argv construction misses flags or model format
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^opencode.*argv/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::.*argv/)'
     - id: opencode-parsing-tests
       why: JSONL event parsing skips event types, tool normalization or error accumulation
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^opencode.*parsing/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::.*parsing/)'
     - id: opencode-response-tests
       why: Turn response handling misses error-first checking or structured output extraction
-      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^opencode.*response/)'
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::.*response/)'
     - id: opencode-fixtures-pinned
       why: a JSONL fixture is missing or differs from LiteLLM's file at the pinned commit
-      run: >-
-        test -d tools/oracle/cases/opencode/fixtures && test "$(ls tools/oracle/cases/opencode/fixtures | wc -l)" -ge 5
-        && cd tools/oracle/cases/opencode/fixtures && sha256sum --check --quiet <<'SUMS'
+      run: |
+        test -d tools/oracle/cases/opencode/fixtures && test "$(ls tools/oracle/cases/opencode/fixtures | wc -l)" -ge 5 && cd tools/oracle/cases/opencode/fixtures && sha256sum --check --quiet <<'SUMS'
         4748140c0df04e2a226e2cc612807243e13f6b73890888337d3ef77713972cda  api_error.jsonl
         4358894a7049f2d183f4417cc08906b07d0b8294c686ca5066d05ee7b5258227  endpoint_requests.jsonl
         706db45b717993126d5b4bc972e2b44d32b0389d7b59bbe1e5be258a6290eb1b  readonly_denied_bash.jsonl

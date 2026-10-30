@@ -100,7 +100,7 @@ pitfalls:
 - SDK list pagination kwargs are accepted but never forwarded to the provider method.
 - List and delete use different exception classes for invalid async flags.
 - A null list result is a bad request, while a null delete result is an internal server error.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

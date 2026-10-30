@@ -241,7 +241,7 @@ pitfalls:
   - "The Logs Ingestion API returns 200 for success and 204 for success with no body; both are treated as successful delivery."
   - "Cancellation exceptions (BatchSendCancelled, asyncio.CancelledError) restore the batch and mark the awaiting_retry flag; permanent errors log and clear the queue."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

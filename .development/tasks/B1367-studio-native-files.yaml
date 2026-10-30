@@ -89,4 +89,4 @@ pitfalls:
   - File creation returns the provider uri as its OpenAI file ID rather than the name field.
   - HTTP 204 is not treated as a successful delete by this transformer.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

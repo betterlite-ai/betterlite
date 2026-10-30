@@ -133,7 +133,7 @@ pitfalls:
   - "_responses_api_input_to_str transforms input field (string or list of messages) via LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages, converting to messages where instructions become a system message. When raise_on_failure=True (blocking mode), raises HTTPException 400 on transformation error; when False (logging mode), logs warning and returns None so audit can still run on response side."
   - "_resolve_user_id_for_blocking first tries _resolve_trusted_user_id (owned by B3738, returns only UserAPIKeyAuth.user_id). If None, checks whether any other _resolve_user_id source returns a value (untrusted available). If untrusted identity exists, raise HTTPException 400 'No proxy-authenticated user identity' with guidance to bind to API key. If no identity at all, raise HTTPException 400 'No proxy-authenticated user identity' with guidance to bind for blocking DLP. Both messages must guide caller remediation."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500
