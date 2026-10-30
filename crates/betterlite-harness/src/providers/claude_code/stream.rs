@@ -26,17 +26,17 @@ impl ClaudeCodeStreamState {
     }
 
     #[must_use]
-    pub fn structured_output_json(&self) -> String {
+    pub fn structured_output_json(&self) -> Option<String> {
         if let Some(object) = self.structured_output.as_ref()
             && let Ok(text) = python_json_text(object)
         {
-            return text;
+            return Some(text);
         }
-        last_json_object(&self.final_text()).unwrap_or_default()
+        last_json_object(&self.final_text())
     }
 }
 
-pub(super) fn transform(line: &JsonObject, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
+pub fn transform(line: &JsonObject, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
     match wire::parse(line) {
         Some(Line::Assistant(assistant)) => assistant_events(assistant, state),
         Some(Line::User(user)) => user_events(user),
@@ -47,7 +47,11 @@ pub(super) fn transform(line: &JsonObject, state: &mut ClaudeCodeStreamState) ->
 }
 
 fn assistant_events(assistant: AssistantLine, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
-    if assistant.parent_tool_use_id.is_some() {
+    if assistant
+        .parent_tool_use_id
+        .as_deref()
+        .is_some_and(|id| !id.is_empty())
+    {
         return Vec::new();
     }
     if assistant.message.model.as_deref() == Some(wire::SYNTHETIC_MODEL) {
@@ -57,8 +61,10 @@ fn assistant_events(assistant: AssistantLine, state: &mut ClaudeCodeStreamState)
         MessageContent::Text(text) => text_block_event(text, state).into_iter().collect(),
         MessageContent::Blocks(blocks) => blocks
             .into_iter()
+            .filter_map(|value| wire::block(&value))
             .filter_map(|block| block_event(block, state))
             .collect(),
+        MessageContent::Other(_) => Vec::new(),
     }
 }
 
@@ -81,14 +87,18 @@ fn block_event(block: Block, state: &mut ClaudeCodeStreamState) -> Option<Event>
             name: normalize_tool_name(&name),
             builtin: !name.starts_with("mcp__"),
             native_name: name,
-            input,
+            input: input.as_ref().map(wire::object).unwrap_or_default(),
         }),
         Block::Thinking { .. } | Block::ToolResult { .. } | Block::Other => None,
     }
 }
 
 fn user_events(user: UserLine) -> Vec<Event> {
-    if user.parent_tool_use_id.is_some() {
+    if user
+        .parent_tool_use_id
+        .as_deref()
+        .is_some_and(|id| !id.is_empty())
+    {
         return Vec::new();
     }
     let MessageContent::Blocks(blocks) = user.message.content else {
@@ -96,6 +106,7 @@ fn user_events(user: UserLine) -> Vec<Event> {
     };
     blocks
         .into_iter()
+        .filter_map(|value| wire::block(&value))
         .filter_map(|block| match block {
             Block::ToolResult {
                 tool_use_id,
@@ -103,7 +114,7 @@ fn user_events(user: UserLine) -> Vec<Event> {
                 is_error,
             } => Some(Event::ToolResult {
                 id: tool_use_id,
-                output: content.stringify(),
+                output: wire::stringify_tool_output(&content),
                 is_error,
             }),
             Block::Text { .. } | Block::Thinking { .. } | Block::ToolUse { .. } | Block::Other => {
@@ -116,7 +127,7 @@ fn user_events(user: UserLine) -> Vec<Event> {
 fn system_events(system: SystemLine, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
     match system.subtype.as_deref() {
         Some("init") => {
-            if let Some(id) = system.session_id {
+            if let Some(id) = system.session_id.filter(|id| !id.is_empty()) {
                 state.session_id = Some(id);
             }
             Vec::new()
@@ -132,12 +143,19 @@ fn system_events(system: SystemLine, state: &mut ClaudeCodeStreamState) -> Vec<E
 fn result_events(result: ResultLine, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
     state.result_seen = true;
     state.is_error = result.is_error;
-    state.result_text = result.result;
+    state.result_text = result.result.and_then(|value| match value {
+        wire::WireValue::Text(text) => Some(text),
+        wire::WireValue::Null
+        | wire::WireValue::Bool(_)
+        | wire::WireValue::Number(_)
+        | wire::WireValue::Array(_)
+        | wire::WireValue::Object(_) => None,
+    });
     state.errors = result.errors.unwrap_or_default();
     state.structured_output = result
         .structured_output
         .and_then(wire::StructuredOutputField::into_dict);
-    if let Some(id) = result.session_id {
+    if let Some(id) = result.session_id.filter(|id| !id.is_empty()) {
         state.session_id = Some(id);
     }
     Vec::new()
@@ -154,6 +172,7 @@ pub(super) fn turn_error(
     let reason = state
         .result_text
         .clone()
+        .filter(|text| !text.is_empty())
         .or_else(|| (!state.errors.is_empty()).then(|| state.errors.join("; ")))
         .unwrap_or_else(|| {
             if state.result_seen {

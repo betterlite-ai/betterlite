@@ -75,15 +75,17 @@ pub(super) fn validate_options(options: &ClaudeCodeOptions) -> Result<(), Harnes
         return Err(HarnessError::OptionsMismatch {
             given: "ClaudeCodeOptions.env",
             harness: Harness::ClaudeCode,
-            expected: "keys other than managed Claude Code environment keys",
+            expected: "keys other than ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_SMALL_FAST_MODEL, CLAUDE_CONFIG_DIR",
         });
     }
-    if let Some(key) = MANAGED_CONFIG_KEYS
+    let config_conflicts = MANAGED_CONFIG_KEYS
         .iter()
-        .find(|key| options.config.keys().any(|candidate| candidate == *key))
-    {
+        .filter(|key| options.config.contains_key(**key))
+        .copied()
+        .collect::<Vec<_>>();
+    if !config_conflicts.is_empty() {
         return Err(HarnessError::ManagedConfigKey {
-            key: (*key).to_owned(),
+            key: config_conflicts.join(", "),
             harness: Harness::ClaudeCode,
         });
     }

@@ -26,7 +26,7 @@ pub enum HarnessError {
     },
     #[error("CodexOptions.config key {key:?} must be a non-empty key without '='")]
     InvalidConfigKey { key: String },
-    #[error("CodexOptions.config[{key:?}] is managed by Harness.{}; use the matching agent() argument instead", .harness.name())]
+    #[error("{}Options.config keys [{key}] are managed by Harness.{}; use the matching agent() argument instead", options_name(*harness), .harness.name())]
     ManagedConfigKey { key: String, harness: Harness },
     #[error("the runtime is missing from the sandbox or failed to start: {0}")]
     InstallFailed(#[source] io::Error),
@@ -65,4 +65,13 @@ pub enum HarnessError {
         #[source]
         source: PayloadError,
     },
+}
+
+const fn options_name(harness: Harness) -> &'static str {
+    match harness {
+        Harness::ClaudeCode => "ClaudeCode",
+        Harness::Codex => "Codex",
+        Harness::OpenCode => "OpenCode",
+        Harness::DeepAgents => "DeepAgents",
+    }
 }

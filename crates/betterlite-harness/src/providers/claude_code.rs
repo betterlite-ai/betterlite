@@ -231,7 +231,7 @@ impl BaseCLIHarnessConfig for ClaudeCodeHarnessConfig {
             .settings
             .output_schema
             .as_ref()
-            .map(|_| state.structured_output_json());
+            .and_then(|_| state.structured_output_json());
         Ok(HarnessTurnResponse {
             final_text: state.final_text(),
             output_json,
