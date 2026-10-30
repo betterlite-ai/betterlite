@@ -1,41 +1,71 @@
 use super::AgentProviderError;
 use crate::agents::json::AgentJson;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
-pub type JsonRpcId = AgentJson;
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum JsonRpcId {
+    String(String),
+    Integer(IntegerId),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(try_from = "serde_json::Number")]
+pub struct IntegerId(serde_json::Number);
+
+impl TryFrom<serde_json::Number> for IntegerId {
+    type Error = AgentProviderError;
+
+    fn try_from(number: serde_json::Number) -> Result<Self, Self::Error> {
+        if number.to_string().contains(['.', 'e', 'E']) {
+            return Err(AgentProviderError::InvalidResponse {
+                message: String::from("A2A JSON-RPC id must be an integer"),
+            });
+        }
+        Ok(Self(number))
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LiteLLMSendMessageResponse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<JsonRpcId>,
     #[serde(default)]
-    pub jsonrpc: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jsonrpc: Version,
     pub result: Option<BTreeMap<String, AgentJson>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<BTreeMap<String, AgentJson>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<BTreeMap<String, AgentJson>>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, AgentJson>,
     #[serde(skip)]
-    pub _hidden_params: BTreeMap<String, AgentJson>,
+    pub hidden_params: BTreeMap<String, AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Version(pub String);
+
+impl Default for Version {
+    fn default() -> Self {
+        Self(String::from("2.0"))
+    }
 }
 
 impl LiteLLMSendMessageResponse {
     pub fn from_a2a_response(
-        response: &Value,
-        request_id: Option<&Value>,
+        response: &AgentJson,
+        request_id: Option<&AgentJson>,
     ) -> Result<Self, AgentProviderError> {
-        let converted = Self::from_dict(response, request_id)?;
-        Ok(converted)
+        let mut payload = response.clone();
+        if let AgentJson::Object(fields) = &mut payload {
+            fields.retain(|_, value| !value.is_null());
+        }
+        Self::from_dict(&payload, request_id)
     }
 
     pub fn from_dict(
-        response: &Value,
-        request_id: Option<&Value>,
+        response: &AgentJson,
+        request_id: Option<&AgentJson>,
     ) -> Result<Self, AgentProviderError> {
         let normalized = normalize_a2a_jsonrpc_response(response, request_id)?;
         serde_json::from_value(normalized).map_err(|source| AgentProviderError::Decode { source })
@@ -43,33 +73,32 @@ impl LiteLLMSendMessageResponse {
 }
 
 pub fn normalize_a2a_jsonrpc_response(
-    response: &Value,
-    request_id: Option<&Value>,
-) -> Result<Value, AgentProviderError> {
-    let Value::Object(mut normalized) = response.clone() else {
+    response: &AgentJson,
+    request_id: Option<&AgentJson>,
+) -> Result<AgentJson, AgentProviderError> {
+    let AgentJson::Object(mut normalized) = response.clone() else {
         return Err(AgentProviderError::InvalidResponse {
             message: String::from("A2A JSON-RPC response must be an object"),
         });
     };
     match normalized.get("id") {
-        Some(Value::Bool(value)) => {
-            normalized.insert(String::from("id"), Value::String(value.to_string()));
+        Some(AgentJson::Bool(value)) => {
+            let id = if *value { "True" } else { "False" };
+            normalized.insert(String::from("id"), AgentJson::String(String::from(id)));
         }
-        Some(Value::Null) | None => {
-            if let Some(request_id) = request_id {
-                let id = match request_id {
-                    Value::String(_) | Value::Number(_) => request_id.clone(),
-                    other => Value::String(other.to_string()),
+        Some(AgentJson::Null) | None => {
+            if let Some(id) = request_id.filter(|id| !id.is_null()) {
+                let encoded = match id {
+                    AgentJson::String(_) => id.clone(),
+                    AgentJson::Number(number) if !number.to_string().contains(['.', 'e', 'E']) => {
+                        id.clone()
+                    }
+                    other => AgentJson::String(super::request_id::python_string(other)),
                 };
-                normalized.insert(String::from("id"), id);
+                normalized.insert(String::from("id"), encoded);
             }
         }
-        Some(Value::String(_) | Value::Number(_)) => {}
-        Some(_) => {
-            return Err(AgentProviderError::InvalidResponse {
-                message: String::from("A2A JSON-RPC id must be a string or integer"),
-            });
-        }
+        Some(_) => {}
     }
-    Ok(Value::Object(normalized))
+    Ok(AgentJson::Object(normalized))
 }

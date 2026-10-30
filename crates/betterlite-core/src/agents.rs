@@ -36,11 +36,6 @@ pub type AgentKillSwitchAuth = kill_switch::AgentKillSwitchAuth;
 pub type AgentKillSwitchConfig = kill_switch::AgentKillSwitchConfig;
 pub type AgentKillSwitchMethod = kill_switch::AgentKillSwitchMethod;
 pub type AgentKillSwitchResult = kill_switch::AgentKillSwitchResult;
-pub use provider::{
-    AgentCreateResponse, AgentDeleteResult, AgentHttpResponse, AgentListResponse,
-    AgentProviderError, AgentRequest, AgentVersionsResponse, BaseAgentsAPIConfig, JsonRpcId,
-    ListAgentsResponse, LiteLLMSendMessageResponse,
-};
 
 pub const CALLER_USER_ID_HEADER: &str = "x-litellm-user-id";
 pub const CALLER_TEAM_ID_HEADER: &str = "x-litellm-team-id";

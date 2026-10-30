@@ -1,62 +1,66 @@
 pub mod a2a;
+mod request_id;
 mod tests;
 use super::AgentResponse;
 use super::json::AgentJson;
-pub use a2a::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AgentCreateResponse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub name: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, AgentJson>,
     #[serde(skip)]
-    pub _hidden_params: BTreeMap<String, AgentJson>,
+    pub hidden_params: BTreeMap<String, AgentJson>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentDeleteResult {
-    #[serde(default)]
     pub name: String,
-    #[serde(default = "deleted_by_default")]
-    pub deleted: bool,
+    #[serde(default)]
+    pub deleted: Deleted,
     #[serde(flatten)]
     pub extra: BTreeMap<String, AgentJson>,
     #[serde(skip)]
-    pub _hidden_params: BTreeMap<String, AgentJson>,
+    pub hidden_params: BTreeMap<String, AgentJson>,
 }
 
-fn deleted_by_default() -> bool {
-    let default_deleted = true;
-    default_deleted
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct Deleted(pub bool);
+
+impl Default for Deleted {
+    fn default() -> Self {
+        Self(true)
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AgentListResponse {
     #[serde(default)]
     pub agents: Vec<BTreeMap<String, AgentJson>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub next_page_token: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, AgentJson>,
     #[serde(skip)]
-    pub _hidden_params: BTreeMap<String, AgentJson>,
+    pub hidden_params: BTreeMap<String, AgentJson>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AgentVersionsResponse {
-    #[serde(default, rename = "agentVersions")]
+    #[serde(default)]
     pub agent_versions: Vec<BTreeMap<String, AgentJson>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub next_page_token: Option<String>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, AgentJson>,
     #[serde(skip)]
-    pub _hidden_params: BTreeMap<String, AgentJson>,
+    pub hidden_params: BTreeMap<String, AgentJson>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -71,7 +75,7 @@ pub struct AgentRequest {
     pub query_params: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub body: Option<AgentJson>,
 }
 
@@ -131,92 +135,92 @@ impl AgentProviderError {
 }
 
 pub trait BaseAgentsAPIConfig {
+    type Error: From<AgentProviderError>;
+
     fn get_complete_url(
         &self,
         api_base: Option<&str>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<String, AgentProviderError>;
+    ) -> Result<String, Self::Error>;
 
     fn validate_environment(
         &self,
         headers: &BTreeMap<String, String>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<BTreeMap<String, String>, AgentProviderError>;
+    ) -> Result<BTreeMap<String, String>, Self::Error>;
 
     fn transform_create_request(
         &self,
         name: &str,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<AgentRequest, AgentProviderError>;
+    ) -> Result<AgentRequest, Self::Error>;
 
     fn transform_create_response(
         &self,
         response: &AgentHttpResponse,
         name: &str,
-    ) -> Result<AgentCreateResponse, AgentProviderError>;
+    ) -> Result<AgentCreateResponse, Self::Error>;
 
     fn transform_list_request(
         &self,
         api_base: Option<&str>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<AgentRequest, AgentProviderError>;
+    ) -> Result<AgentRequest, Self::Error>;
 
     fn transform_list_response(
         &self,
         response: &AgentHttpResponse,
-    ) -> Result<AgentListResponse, AgentProviderError>;
+    ) -> Result<AgentListResponse, Self::Error>;
 
     fn transform_get_request(
         &self,
         name: &str,
         api_base: Option<&str>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<AgentRequest, AgentProviderError>;
+    ) -> Result<AgentRequest, Self::Error>;
 
     fn transform_get_response(
         &self,
         response: &AgentHttpResponse,
         name: &str,
-    ) -> Result<AgentCreateResponse, AgentProviderError>;
+    ) -> Result<AgentCreateResponse, Self::Error>;
 
     fn transform_delete_request(
         &self,
         name: &str,
         api_base: Option<&str>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<AgentRequest, AgentProviderError>;
+    ) -> Result<AgentRequest, Self::Error>;
 
     fn transform_delete_response(
         &self,
         response: &AgentHttpResponse,
         name: &str,
-    ) -> Result<AgentDeleteResult, AgentProviderError>;
+    ) -> Result<AgentDeleteResult, Self::Error>;
 
     fn transform_versions_request(
         &self,
         name: &str,
         api_base: Option<&str>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<AgentRequest, AgentProviderError>;
+    ) -> Result<AgentRequest, Self::Error>;
 
     fn transform_versions_response(
         &self,
         response: &AgentHttpResponse,
         name: &str,
-    ) -> Result<AgentVersionsResponse, AgentProviderError>;
+    ) -> Result<AgentVersionsResponse, Self::Error>;
 
     fn get_error_class(
+        &self,
         error_message: &str,
         status_code: u16,
-        headers: &[(String, String)],
-    ) -> AgentProviderError
-    where
-        Self: Sized,
-    {
-        AgentProviderError::Http {
+        headers: &BTreeMap<String, String>,
+    ) -> Self::Error {
+        Self::Error::from(AgentProviderError::Http {
             status_code,
             message: String::from(error_message),
-            headers: headers.iter().cloned().collect(),
-        }
+            headers: headers.clone(),
+        })
     }
 }
