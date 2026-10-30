@@ -1,6 +1,26 @@
 kind: helper
-name: member_empty_identity_and_both_allowed
+name: member-identity-and-role
 call:
-  team_rows: {operation: member, row: {user_id: '', user_email: '', role: admin}}
+  team_rows:
+    calls:
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":null}
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":[]}
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":1}
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":"x"}
+      - {"name":"member_missing_and_null_identity_error","operation":"member_base","row":{}}
+      - {"name":"member_missing_and_null_identity_error","operation":"member_base","row":{"user_id":null,"user_email":null}}
+      - {"name":"member_empty_identity_and_both_allowed","operation":"member_base","row":{"user_id":""}}
+      - {"name":"member_empty_identity_and_both_allowed","operation":"member_base","row":{"user_email":""}}
+      - {"name":"member_empty_identity_and_both_allowed","operation":"member_base","row":{"user_id":"","user_email":"A@EXAMPLE.org"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":null}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"Admin"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"user"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"admin"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"owner"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u"}}
+      - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{}}
+      - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{"budget_duration":"x"}}
+      - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{"max_budget":1}}
+      - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{"budget_duration":"nonsense","max_budget":-1.5}}
 env: {}
 compare: {ignore: []}

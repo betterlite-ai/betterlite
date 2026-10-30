@@ -1,6 +1,42 @@
 kind: helper
-name: team_all_eight_string_fields_and_error_order
+name: ordered-json-validation
 call:
-  team_rows: {operation: team, row: {team_id: team-a, metadata: '{"ok": true}'} }
+  team_rows:
+    calls:
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":{}}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":null}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":{"x":1}}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":"[]"}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":[{"role":"user","user_id":"u"},{"role":"user","user_id":"u"}]}}
+      - {"name":"team_base_has_no_string_prepass","operation":"team_base","row":{"metadata":"{}"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"metadata":"bad","aliases":"bad","config":"bad","permissions":"bad","model_max_budget":"bad","model_aliases":"bad","router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"aliases":"bad","config":"bad","permissions":"bad","model_max_budget":"bad","model_aliases":"bad","router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"config":"bad","permissions":"bad","model_max_budget":"bad","model_aliases":"bad","router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"permissions":"bad","model_max_budget":"bad","model_aliases":"bad","router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"model_max_budget":"bad","model_aliases":"bad","router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"model_aliases":"bad","router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"router_settings":"bad","budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"budget_limits":"bad"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"metadata":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"aliases":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"config":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"permissions":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"model_max_budget":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"model_aliases":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"router_settings":"[]"}}
+      - {"name":"team_all_eight_string_fields_and_error_order","operation":"validator","row":{"budget_limits":"[]"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","aliases":"bad"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","config":"bad"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","permissions":"bad"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","model_aliases":"bad"}}
+      - {"name":"valid_extra_fields_ignored","operation":"team","row":{"team_id":"t","aliases":"1","config":"null","permissions":"[]","model_aliases":"true","unknown":"bad"}}
+      - {"name":"model_spend_not_model_max_budget_decode","operation":"team","row":{"team_id":"t","model_spend":"{}"}}
+      - {"name":"model_spend_not_model_max_budget_decode","operation":"team","row":{"team_id":"t","model_max_budget":"{}"}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":"[{\"budget_duration\":\"x\",\"max_budget\":-1}]"}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":"null"}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":null}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":"{}"}}
+      - {"name":"validator_mutates_prior_fields_before_error","operation":"validator","row":{"members_with_roles":{},"metadata":"{}","aliases":"bad"}}
+      - {"name":"base_model_input_is_dumped","operation":"base_model","row":{"team_id":"t","metadata":{"x":true}}}
 env: {}
 compare: {ignore: []}

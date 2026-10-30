@@ -1,8 +1,16 @@
-use serde_json::Value;
 use std::str::{Utf8Error, from_utf8};
 
-const MAX_ROW_BYTES: usize = 1_048_576;
-const MAX_JSON_DEPTH: usize = 64;
+use super::{
+    aliases::LiteLLMModelTable,
+    archived::{LiteLLMDeletedTeamTable, LiteLLMTeamTableCachedObj},
+    member::{BudgetLimitEntry, Member, MemberBase},
+    membership::LiteLLMTeamMembership,
+    team::{LiteLLMTeamTable, TeamBase},
+};
+use crate::budget_permission_rows::JsonData;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+pub const MAX_ROW_BYTES: usize = 0x0010_0000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TeamRowError {
@@ -15,34 +23,108 @@ pub enum TeamRowError {
     #[error("stored row is invalid JSON: {0}")]
     Json(#[source] serde_json::Error),
     #[error("{0}")]
-    Validation(String),
-    #[error("Field {0} should be a valid dictionary")]
-    Field(String),
-    #[error("missing required field {0}")]
-    Missing(&'static str),
+    Validation(&'static str),
+    #[error("Field {field} should be a valid dictionary")]
+    Field {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
-pub fn decode_team_rows(bytes: &[u8]) -> Result<Value, TeamRowError> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "row", rename_all = "snake_case")]
+pub enum TeamRow {
+    MemberBase(MemberBase),
+    Member(Member),
+    BudgetLimit(BudgetLimitEntry),
+    Model(Box<LiteLLMModelTable>),
+    TeamBase(Box<TeamBase>),
+    Team(Box<LiteLLMTeamTable>),
+    Cached(Box<LiteLLMTeamTableCachedObj>),
+    Deleted(Box<LiteLLMDeletedTeamTable>),
+    Membership(Box<LiteLLMTeamMembership>),
+}
+
+pub fn decode_team_rows(bytes: &[u8]) -> Result<TeamRow, TeamRowError> {
+    let value = parse_data(bytes)?;
+    if let JsonData::Object(envelope) = &value
+        && let (Some(JsonData::String(kind)), Some(row)) =
+            (envelope.get("kind"), envelope.get("row"))
+    {
+        validate_nested(row, kind)?;
+    }
+    convert(&value)
+}
+
+pub fn parse_data(bytes: &[u8]) -> Result<JsonData, TeamRowError> {
     if bytes.len() > MAX_ROW_BYTES {
         return Err(TeamRowError::TooLarge { len: bytes.len() });
     }
     let text = from_utf8(bytes).map_err(TeamRowError::InvalidUtf8)?;
-    let value: Value = serde_json::from_str(text).map_err(TeamRowError::Json)?;
-    check_depth(&value, 0)?;
-    Ok(value)
+    check_depth(text)?;
+    serde_json::from_str(text).map_err(TeamRowError::Json)
 }
 
-fn check_depth(value: &Value, depth: usize) -> Result<(), TeamRowError> {
-    if depth > MAX_JSON_DEPTH {
-        return Err(TeamRowError::TooDeep);
+pub(super) fn convert<T>(value: &JsonData) -> Result<T, TeamRowError>
+where
+    T: DeserializeOwned,
+{
+    let text = serde_json::to_string(value).map_err(TeamRowError::Json)?;
+    if text.len() > MAX_ROW_BYTES {
+        return Err(TeamRowError::TooLarge { len: text.len() });
     }
-    match value {
-        Value::Array(items) => items
-            .iter()
-            .try_for_each(|item| check_depth(item, depth + 1)),
-        Value::Object(items) => items
-            .values()
-            .try_for_each(|item| check_depth(item, depth + 1)),
-        _ => Ok(()),
+    check_depth(&text)?;
+    serde_json::from_str(&text).map_err(TeamRowError::Json)
+}
+
+fn check_depth(text: &str) -> Result<(), TeamRowError> {
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut depth = 0_u8;
+    for byte in text.bytes() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => quoted = !quoted,
+            b'[' | b'{' if !quoted => {
+                depth = depth.saturating_add(1);
+                if depth > 64 {
+                    return Err(TeamRowError::TooDeep);
+                }
+            }
+            b']' | b'}' if !quoted => depth = depth.saturating_sub(1),
+            _ => {}
+        }
     }
+    Ok(())
+}
+
+fn validate_nested(row: &JsonData, kind: &str) -> Result<(), TeamRowError> {
+    let JsonData::Object(fields) = row else {
+        return Ok(());
+    };
+    let relation = match kind {
+        "team" | "cached" | "deleted" => {
+            let mut normalized = row.clone();
+            super::validator::set_model_info(&mut normalized)?;
+            let text = serde_json::to_string(&normalized).map_err(TeamRowError::Json)?;
+            if text.len() > MAX_ROW_BYTES {
+                return Err(TeamRowError::TooLarge { len: text.len() });
+            }
+            check_depth(&text)?;
+            fields
+                .get("litellm_model_table")
+                .map(|model| (model, "model"))
+        }
+        "model" => fields.get("team").map(|team| (team, "team")),
+        _ => None,
+    };
+    if let Some((nested, shape)) = relation {
+        validate_nested(nested, shape)?;
+    }
+    Ok(())
 }

@@ -1,0 +1,9 @@
+kind: helper
+name: member_missing_and_null_identity_error
+call:
+  team_rows:
+    calls:
+      - {"name":"member_missing_and_null_identity_error","operation":"member_base","row":{}}
+      - {"name":"member_missing_and_null_identity_error","operation":"member_base","row":{"user_id":null,"user_email":null}}
+env: {}
+compare: {ignore: []}

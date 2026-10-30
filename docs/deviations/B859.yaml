@@ -6,3 +6,6 @@ deviations:
   - what: Team, budget-window and membership amounts outside Decimal's finite range fail decoding.
     why: Checked monetary conversion is required by the repository money-is-decimal contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L45-L50
+  - what: Duplicate keys in stored team JSON are rejected instead of overwriting earlier values.
+    why: Reuse B2310's duplicate-checking JsonData boundary and the repository no-silent-drops rule; the parser corpus includes a duplicate team_id row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L107-L133
