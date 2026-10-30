@@ -21,6 +21,7 @@ pub struct ProviderFailure {
     pub param: Option<String>,
 }
 
+#[derive(Clone, Copy)]
 pub enum ErrorBodyKind {
     Structured,
     MessageOnly,
