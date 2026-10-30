@@ -1,0 +1,8 @@
+kind: helper
+name: team_base_all_defaults
+call:
+  team_rows:
+    calls:
+      - {"name":"team_base_all_defaults","operation":"team_base","row":{}}
+env: {}
+compare: {ignore: []}
