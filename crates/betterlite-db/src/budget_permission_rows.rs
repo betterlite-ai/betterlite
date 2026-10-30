@@ -86,7 +86,7 @@ impl LiteLLMBudgetTable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PermissionList(Option<Vec<String>>);
+pub struct PermissionList(pub Option<Vec<String>>);
 impl Default for PermissionList {
     fn default() -> Self {
         Self(Some(Vec::new()))
@@ -135,7 +135,7 @@ pub enum JsonData {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ProjectedUserEmail(JsonData);
+pub struct ProjectedUserEmail(pub JsonData);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "OrganizationMembershipInput")]

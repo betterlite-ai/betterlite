@@ -44,6 +44,14 @@ fn budget_all_twelve_defaults() {
 #[test]
 fn full_requires_created_at() {
     serde_json::from_str::<super::LiteLLMBudgetTableFull>(r#"{"budget": {}}"#).unwrap_err();
+    let full: super::LiteLLMBudgetTableFull = serde_json::from_str(
+        r#"{"budget_id":"b","max_budget":5,"created_at":"2026-01-01T00:00:00"}"#,
+    )
+    .unwrap();
+    assert_eq!(full.budget.budget_id.as_deref(), Some("b"));
+    assert_eq!(full.budget.max_budget, Some(Decimal::from(5_i32)));
+    assert_eq!(full.budget_reset_at, None);
+    assert_eq!(full.created_at.utc(), now());
 }
 
 #[test]
@@ -283,17 +291,22 @@ async fn postgres_budget_decimal_roundtrip() {
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
     client
-        .batch_execute("CREATE TEMP TABLE budget_rows (max_budget DOUBLE PRECISION)")
+        .batch_execute(include_str!(
+            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
+        ))
         .await
         .unwrap();
     let row = budget(r#"{"max_budget":12.5}"#);
     let value = row.max_budget.unwrap().to_f64().unwrap();
     client
-        .execute("INSERT INTO budget_rows VALUES ($1)", &[&value])
+        .execute(r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by) VALUES ('b', $1, 'test', 'test')"#, &[&value])
         .await
         .unwrap();
     let read: f64 = client
-        .query_one("SELECT max_budget FROM budget_rows", &[])
+        .query_one(
+            r#"SELECT max_budget FROM "LiteLLM_BudgetTable" WHERE budget_id = 'b'"#,
+            &[],
+        )
         .await
         .unwrap()
         .get(0);
