@@ -23,30 +23,35 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let (function, table, name, definition, partition) = match input {
+        match input {
             Input::Columns {
                 table,
                 name,
                 definition,
-                partition,
-            } => ("columns", table, name, definition, partition),
+                partition: _partition,
+            } => {
+                let index = RequestLogIndex {
+                    table: table.as_str(),
+                    name: name.as_str(),
+                    definition: definition.as_str(),
+                };
+                Ok(serde_json::json!(index.columns()))
+            }
             Input::PartitionIndexName {
                 table,
                 name,
                 definition,
                 partition,
-            } => ("partition_index_name", table, name, definition, partition),
-        };
-        let index = RequestLogIndex {
-            table: table.as_str(),
-            name: name.as_str(),
-            definition: definition.as_str(),
-        };
-        match function {
-            "columns" => Ok(serde_json::json!(index.columns())),
-            _ => Ok(serde_json::Value::String(
-                index.partition_index_name(partition),
-            )),
+            } => {
+                let index = RequestLogIndex {
+                    table: table.as_str(),
+                    name: name.as_str(),
+                    definition: definition.as_str(),
+                };
+                Ok(serde_json::Value::String(
+                    index.partition_index_name(partition),
+                ))
+            }
         }
     }
 }
