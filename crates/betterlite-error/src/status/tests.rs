@@ -8,18 +8,22 @@ use crate::facts::{ProviderErrorBody, RequestFacts};
 use super::*;
 
 #[rstest]
-#[case::unauthorized(401, StatusFamily::Authentication)]
-#[case::forbidden(403, StatusFamily::PermissionDenied)]
-#[case::missing(404, StatusFamily::NotFound)]
-#[case::timeout(408, StatusFamily::Timeout)]
-#[case::limited(429, StatusFamily::RateLimit)]
-#[case::server(500, StatusFamily::InternalServer)]
-#[case::bad_gateway(502, StatusFamily::BadGateway)]
-#[case::unavailable(503, StatusFamily::ServiceUnavailable)]
-#[case::bad_request(400, StatusFamily::BadRequest)]
-#[case::unknown_client(422, StatusFamily::BadRequest)]
-#[case::unknown_server(599, StatusFamily::Api)]
-fn error_facts_behavior_tests_behavior(#[case] status: u16, #[case] expected: StatusFamily) {
+#[case::unauthorized(401, StatusFamily::Authentication, 401)]
+#[case::forbidden(403, StatusFamily::PermissionDenied, 403)]
+#[case::missing(404, StatusFamily::NotFound, 404)]
+#[case::timeout(408, StatusFamily::Timeout, 408)]
+#[case::limited(429, StatusFamily::RateLimit, 429)]
+#[case::server(500, StatusFamily::InternalServer, 500)]
+#[case::bad_gateway(502, StatusFamily::BadGateway, 502)]
+#[case::unavailable(503, StatusFamily::ServiceUnavailable, 503)]
+#[case::bad_request(400, StatusFamily::BadRequest, 400)]
+#[case::unknown_client(422, StatusFamily::BadRequest, 400)]
+#[case::unknown_server(599, StatusFamily::Api, 599)]
+fn error_facts_behavior_tests_behavior(
+    #[case] status: u16,
+    #[case] expected: StatusFamily,
+    #[case] expected_wire_status: u16,
+) {
     let error = ProviderErrorFacts {
         status_code: Some(status),
         response: matches!(status, 502 | 503).then(|| ResponseFacts {
@@ -47,6 +51,8 @@ fn error_facts_behavior_tests_behavior(#[case] status: u16, #[case] expected: St
         mapping.map(|value| value.response_present),
         Some(matches!(status, 502 | 503))
     );
+    let mapped = status_error_class(&error, "failed", "Provider", None, None).unwrap();
+    assert_eq!(mapped.metadata().status_code, expected_wire_status);
 }
 
 #[test]
@@ -101,25 +107,6 @@ fn error_facts_behavior_tests_behavior_status_class_maps_server_error() {
 fn error_facts_behavior_tests_behavior_stub_uses_requested_status() {
     let error = ProviderErrorFacts::default();
     assert_eq!(response_or_stub(&error, 403).status_code, 403);
-}
-
-#[rstest]
-#[case::rate_limit(429, 429)]
-#[case::unknown_server(599, 599)]
-#[case::unknown_client(422, 400)]
-fn error_facts_behavior_tests_behavior_wire_status(#[case] status: u16, #[case] expected: u16) {
-    let error = ProviderErrorFacts {
-        status_code: Some(status),
-        status_code_is_synthesized: false,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    let mapped = status_error_class(&error, "failed", "Provider", None, None).unwrap();
-    assert_eq!(mapped.metadata().status_code, expected);
 }
 
 #[test]

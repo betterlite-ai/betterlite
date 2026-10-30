@@ -30,7 +30,8 @@ fn error_facts_behavior_tests_behavior(
         litellm_response_headers: None,
         request: None,
     };
-    assert_eq!(get_error_message(&facts).as_deref(), expected);
+    let message = get_error_message(&facts);
+    assert_eq!(message.as_deref(), expected);
 }
 
 #[test]
@@ -152,6 +153,9 @@ fn error_facts_behavior_tests_behavior_body_code(
 #[case::missing_name("litellm.Error", None)]
 #[case::missing_error_suffix("litellm.ContextWindowExceeded", None)]
 #[case::not_litellm("provider error", None)]
+#[case::unknown("litellm.UnknownProviderFailureError", None)]
+#[case::later_match("litellm.invalid litellm.BadRequestError", Some("BadRequestError"))]
+#[case::suffix("litellm.BadRequestErrorSuffix", Some("BadRequestError"))]
 fn error_facts_behavior_tests_behavior_exception_name(
     #[case] text: &str,
     #[case] expected: Option<&str>,
@@ -224,17 +228,4 @@ fn error_facts_behavior_tests_behavior_code_fields(
     #[case] expected: Option<i64>,
 ) {
     assert_eq!(get_body_error_code(body), expected);
-}
-
-#[rstest]
-#[case::unknown("litellm.UnknownProviderFailureError", None)]
-#[case::later_match("litellm.invalid litellm.BadRequestError", Some("BadRequestError"))]
-#[case::suffix("litellm.BadRequestErrorSuffix", Some("BadRequestError"))]
-fn exception_search_matches_python(#[case] text: &str, #[case] expected: Option<&str>) {
-    assert_eq!(
-        extract_exception(None, text, "model", "provider", None)
-            .unwrap()
-            .map(|error| error.name),
-        expected.map(str::to_owned)
-    );
 }
