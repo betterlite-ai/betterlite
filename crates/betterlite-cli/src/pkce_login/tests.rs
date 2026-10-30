@@ -11,10 +11,8 @@ use super::{
     callback::LoopbackServer,
     discovery::{discover_cli_auth, origin},
     models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
-    oauth::{
-        RedeemCodeRequest, RevocationUnavailableOrFailure, pkce_pair, redeem_code, register_client,
-        revoke_credential,
-    },
+    oauth::{RedeemCodeRequest, pkce_pair, redeem_code, register_client},
+    revoke::{RevocationUnavailableOrFailure, revoke_credential},
 };
 
 struct FixedEntropy;

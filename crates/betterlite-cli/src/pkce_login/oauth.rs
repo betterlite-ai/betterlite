@@ -1,11 +1,11 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest as _, Sha256};
-use std::str::from_utf8;
 use url::form_urlencoded::Serializer;
 
 use super::{
     Entropy, HTTP_TIMEOUT_SECONDS, Http, HttpBody,
-    models::{CliAuthContract, PkceCredential, PkceFailure, RevocationUnavailable},
+    models::{CliAuthContract, PkceCredential, PkceFailure},
+    wire::{ClientRegistration, RegisteredClient, error_detail, parse_token, refuse_redirect},
 };
 
 pub fn pkce_pair<E>(entropy: &mut E) -> Result<(String, String), PkceFailure>
@@ -185,72 +185,6 @@ where
     token_request(contract, &request.client_id, http, now_seconds, input)
 }
 
-pub fn revoke_credential<H>(
-    contract: &CliAuthContract,
-    client_id: &str,
-    refresh_token: &str,
-    http: &H,
-) -> Result<(), RevocationUnavailableOrFailure>
-where
-    H: Http,
-{
-    let response = http
-        .post(
-            &contract.revocation_endpoint,
-            HttpBody::Form(form(vec![
-                ("token", refresh_token),
-                ("token_type_hint", "refresh_token"),
-                ("client_id", client_id),
-            ])),
-            HTTP_TIMEOUT_SECONDS,
-            false,
-        )
-        .map_err(RevocationUnavailableOrFailure::Failure)?;
-    refuse_redirect("revocation", &response).map_err(RevocationUnavailableOrFailure::Failure)?;
-    if response.status == 503 {
-        return Err(RevocationUnavailableOrFailure::Unavailable(
-            RevocationUnavailable {
-                reason: error_detail(&response),
-            },
-        ));
-    }
-    if response.status != 200 {
-        return Err(RevocationUnavailableOrFailure::Failure(
-            PkceFailure::new_owned(error_detail(&response)),
-        ));
-    }
-    Ok(())
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum RevocationUnavailableOrFailure {
-    Unavailable(RevocationUnavailable),
-    Failure(PkceFailure),
-}
-
-#[derive(serde::Deserialize)]
-struct RegisteredClient {
-    client_id: String,
-}
-
-#[derive(serde::Serialize)]
-struct ClientRegistration {
-    client_name: &'static str,
-    redirect_uris: Vec<String>,
-    grant_types: [&'static str; 2],
-    response_types: [&'static str; 1],
-    token_endpoint_auth_method: &'static str,
-}
-
-#[derive(serde::Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    expires_in: i64,
-    refresh_token: String,
-    user_id: Option<String>,
-    team_id: Option<String>,
-}
-
 #[derive(Clone, Copy)]
 enum TokenInput<'request> {
     Code(&'request RedeemCodeRequest),
@@ -328,48 +262,4 @@ fn token_fields(contract: &CliAuthContract, input: TokenInput<'_>) -> Vec<(Strin
             (String::from("resource"), contract.resource.clone()),
         ],
     }
-}
-
-fn form(fields: Vec<(&str, &str)>) -> Vec<(String, String)> {
-    if fields.is_empty() {
-        return Vec::new();
-    }
-    fields
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value.to_owned()))
-        .collect()
-}
-
-fn refuse_redirect(name: &str, response: &super::HttpResponse) -> Result<(), PkceFailure> {
-    if response.status == 307 || response.status == 308 {
-        return Err(PkceFailure::new_owned(format!(
-            "{name} redirected; refusing to follow it"
-        )));
-    }
-    Ok(())
-}
-
-fn error_detail(response: &super::HttpResponse) -> String {
-    let fallback = from_utf8(&response.body).unwrap_or("");
-    let detail = serde_json::from_slice::<ErrorBody>(&response.body)
-        .ok()
-        .and_then(|body| body.error_description.or(body.error).or(body.detail))
-        .unwrap_or_else(|| String::from(fallback));
-    detail.chars().take(200).collect()
-}
-
-#[derive(serde::Deserialize)]
-struct ErrorBody {
-    error_description: Option<String>,
-    error: Option<String>,
-    detail: Option<String>,
-}
-
-fn parse_token(response: &super::HttpResponse) -> Result<TokenResponse, PkceFailure> {
-    let token: TokenResponse = serde_json::from_slice(&response.body)
-        .map_err(|error| PkceFailure::new_owned(format!("invalid token response: {error}")))?;
-    if token.access_token.is_empty() || token.refresh_token.is_empty() || token.expires_in <= 0 {
-        return Err(PkceFailure::new("invalid token response fields"));
-    }
-    Ok(token)
 }
