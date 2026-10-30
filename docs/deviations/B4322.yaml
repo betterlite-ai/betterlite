@@ -1,0 +1,5 @@
+task: B4322
+deviations:
+  - what: redis-py version detection relies on the reconnect-method capability rather than string version comparison; a warning is emitted for versions outside the verified 5.3.1 set.
+    why: The pinned LiteLLM implementation selects its copied and wrapper branches by runtime capability and warns for unverified legacy-library versions without silently disabling isolation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_node_isolation.py#L82-L83

@@ -1,0 +1,16 @@
+kind: helper
+name: redis-cluster-node-5x-copy
+call:
+  redis_cluster_node_isolation:
+    version: 6.0.0
+    has_update_active_connections_for_reconnect: false
+    node: node-a
+    ttl: 3
+    reinitialize_steps: 0
+    initialize: false
+    read_from_replicas: false
+    outcomes:
+      - {kind: timeout, node: ""}
+env: {}
+compare:
+  ignore: []
