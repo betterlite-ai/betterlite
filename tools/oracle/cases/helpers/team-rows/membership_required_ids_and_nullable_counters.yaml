@@ -1,0 +1,12 @@
+kind: helper
+name: membership_required_ids_and_nullable_counters
+call:
+  team_rows:
+    calls:
+      - {"name":"membership_required_ids_and_nullable_counters","operation":"membership","row":{}}
+      - {"name":"membership_required_ids_and_nullable_counters","operation":"membership","row":{"team_id":"t"}}
+      - {"name":"membership_required_ids_and_nullable_counters","operation":"membership","row":{"user_id":"u"}}
+      - {"name":"membership_required_ids_and_nullable_counters","operation":"membership","row":{"user_id":"u","team_id":"t"}}
+      - {"name":"membership_required_ids_and_nullable_counters","operation":"membership","row":{"user_id":"u","team_id":"t","spend":null,"total_spend":null}}
+env: {}
+compare: {ignore: []}
