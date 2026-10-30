@@ -452,6 +452,22 @@ fn decoded_stored_debug_redacts() {
     assert_eq!(format!("{decoded:?}"), "[REDACTED]");
 }
 
+#[test]
+fn stored_decoder_accepts_comma_delimited_array() {
+    assert_eq!(
+        decode_mcp_stored_contract(br#"[1, {"nested": true}]"#).unwrap(),
+        wire(r#"[1, {"nested": true}]"#)
+    );
+}
+
+#[test]
+fn stored_decoder_accepts_comma_delimited_object() {
+    assert_eq!(
+        decode_mcp_stored_contract(br#"{"first": 1, "second": [false]}"#).unwrap(),
+        wire(r#"{"first": 1, "second": [false]}"#)
+    );
+}
+
 #[rstest]
 #[case::transport(r#"{"sse":null}"#)]
 #[case::auth(r#"{"none":null}"#)]
