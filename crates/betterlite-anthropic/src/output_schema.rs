@@ -223,8 +223,6 @@ fn matches_type(value: &Json, kind: &str) -> bool {
         "integer" => matches!(value, Json::Number(number) if number.is_i64() || number.is_u64()),
         "number" => matches!(value, Json::Number(_)),
         "string" => matches!(value, Json::Text(_)),
-        "array" => matches!(value, Json::List(_)),
-        "object" => matches!(value, Json::Object(_)),
         _ => true,
     }
 }
