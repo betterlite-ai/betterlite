@@ -55,69 +55,17 @@ fn error_facts_behavior_tests_behavior(
     assert_eq!(mapped.metadata().status_code, expected_wire_status);
 }
 
-#[test]
-fn error_facts_behavior_tests_behavior_synthesized_status_is_ignored() {
-    let error = ProviderErrorFacts {
-        status_code: Some(500),
-        status_code_is_synthesized: true,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    assert_eq!(map_exception_by_status(&error, "failed", "Provider"), None);
-}
+#[path = "tests/synthesized_status/tests.rs"]
+mod synthesized_status;
 
-#[test]
-fn error_facts_behavior_tests_behavior_status_below_http_errors_is_ignored() {
-    let error = ProviderErrorFacts {
-        status_code: Some(399),
-        status_code_is_synthesized: false,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    assert_eq!(map_exception_by_status(&error, "failed", "Provider"), None);
-}
+#[path = "tests/non_error_status/tests.rs"]
+mod non_error_status;
 
-#[test]
-fn error_facts_behavior_tests_behavior_status_class_maps_server_error() {
-    let error = ProviderErrorFacts {
-        status_code: Some(502),
-        status_code_is_synthesized: false,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    assert!(matches!(
-        status_error_class(&error, "failed", "Provider", None, None),
-        Some(ErrorClass::BadGateway(_))
-    ));
-}
+#[path = "tests/server_class/tests.rs"]
+mod server_class;
 
-#[test]
-fn error_facts_behavior_tests_behavior_stub_uses_requested_status() {
-    let error = ProviderErrorFacts::default();
-    assert_eq!(response_or_stub(&error, 403).status_code, 403);
-}
+#[path = "tests/stub_status/tests.rs"]
+mod stub_status;
 
-#[test]
-fn stub_has_the_pinned_request() {
-    let error = ProviderErrorFacts::default();
-    let stub = response_or_stub(&error, 403);
-    assert_eq!(
-        stub.request,
-        Some(RequestFacts {
-            method: "POST".to_owned(),
-            url: "https://docs.litellm.ai/docs".to_owned(),
-        })
-    );
-}
+#[path = "tests/stub_request/tests.rs"]
+mod stub_request;
