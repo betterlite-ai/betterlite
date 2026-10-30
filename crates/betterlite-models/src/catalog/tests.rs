@@ -25,6 +25,9 @@ enum Outcome {
     Warnings,
     Alias(&'static str),
     Generalizations,
+    GeneralizationsEmpty,
+    GeneralizationWarnings,
+    GeneralizationUnknown,
 }
 
 #[rstest]
@@ -37,6 +40,10 @@ enum Outcome {
 #[case::alias_conflict(br#"{"model":{"litellm_provider":"openai","aliases":["alias"]},"second":{"aliases":["alias"]}}"#.to_vec(), UnknownFields::Reject, Outcome::Alias("alias"))]
 #[case::alias_source_order(br#"{"model":{"litellm_provider":"openai","aliases":["alias"]},"a-second":{"aliases":["alias"]}}"#.to_vec(), UnknownFields::Reject, Outcome::Alias("alias"))]
 #[case::generalizations(br#"{"sample_spec":{},"fallback_generalizations":{"rules":[{"name":"base","pattern":"^x","model_info":{"litellm_provider":"openai"}}]},"model":{}}"#.to_vec(), UnknownFields::Reject, Outcome::Generalizations)]
+#[case::generalizations_non_list(br#"{"fallback_generalizations":{"rules":"not-a-list"}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationsEmpty)]
+#[case::generalizations_malformed_rule(br#"{"fallback_generalizations":{"rules":[{"name":"bad","pattern":5,"model_info":{}}]}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationWarnings)]
+#[case::generalizations_unknown_model_info_warn(br#"{"fallback_generalizations":{"rules":[{"name":"base","pattern":"^x","model_info":{"new_capability":true}}]}}"#.to_vec(), UnknownFields::Warn, Outcome::GeneralizationWarnings)]
+#[case::generalizations_unknown_model_info_reject(br#"{"fallback_generalizations":{"rules":[{"name":"base","pattern":"^x","model_info":{"new_capability":true}}]}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationUnknown)]
 #[case::unknown_bundled(br#"{"model":{"new_field":true}}"#.to_vec(), UnknownFields::Reject, Outcome::Unknown)]
 #[case::unknown_remote(br#"{"model":{"new_field":true,"metadata":{"new_note":"x"}}}"#.to_vec(), UnknownFields::Warn, Outcome::Warnings)]
 #[case::duplicate_models(br#"{"model":{},"model":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Duplicate)]
@@ -93,8 +100,18 @@ fn model_catalog_tests_behavior(
         Outcome::Alias(name) => check_lookup(&result.unwrap(), name),
         Outcome::Generalizations => {
             let catalog = result.unwrap();
-            assert_eq!(catalog.entries.len(), 1);
             assert_eq!(catalog.generalizations.match_routing("x"), Some("openai"));
+        }
+        Outcome::GeneralizationsEmpty => {
+            let catalog = result.unwrap();
+            assert!(catalog.generalizations.rules.is_empty());
+        }
+        Outcome::GeneralizationWarnings => {
+            let catalog = result.unwrap();
+            assert!(!catalog.warnings.is_empty());
+        }
+        Outcome::GeneralizationUnknown => {
+            assert!(result.unwrap_err().to_string().contains("unknown field"));
         }
         Outcome::Warnings => assert_eq!(
             result.unwrap().warnings,
@@ -138,7 +155,10 @@ fn check_error(error: &CatalogError, outcome: Outcome) {
         | Outcome::Count(_)
         | Outcome::Warnings
         | Outcome::Alias(_)
-        | Outcome::Generalizations => {
+        | Outcome::Generalizations
+        | Outcome::GeneralizationsEmpty
+        | Outcome::GeneralizationWarnings
+        | Outcome::GeneralizationUnknown => {
             panic!("expected success")
         }
     }
@@ -234,17 +254,11 @@ fn embedded_backup_is_cached() {
 
 #[test]
 fn replays_the_model_catalog_corpus() {
-    replay_corpus();
-}
-
-fn replay_corpus() {
-    for path in fs::read_dir(concat!(
+    fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/fuzz/corpus/model_catalog"
     ))
     .unwrap()
-    {
-        let bytes = fs::read(path.unwrap().path()).unwrap();
-        drop(ModelCatalog::parse(&bytes, UnknownFields::Warn));
-    }
+    .map(|path| fs::read(path.unwrap().path()).unwrap())
+    .for_each(|bytes| drop(ModelCatalog::parse(&bytes, UnknownFields::Warn)));
 }

@@ -4,17 +4,16 @@ use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use super::{
-    CatalogEntry, CatalogError, CatalogParts, FALLBACK_GENERALIZATIONS, SAMPLE_SPEC, UnknownFields,
+    CatalogEntry, CatalogError, FALLBACK_GENERALIZATIONS, ModelCatalog, SAMPLE_SPEC, UnknownFields,
 };
 use crate::catalog_generalizations::{CatalogGeneralizations, decode_generalization_rules};
-use crate::entry::ModelFields;
-use crate::entry::generalizations::FallbackGeneralizations;
+use crate::entry::{ModelFieldError, ModelFields};
 use crate::price_fields::PriceFields;
 
 pub(super) fn build_catalog(
     raw: IndexMap<String, Box<RawValue>>,
     unknown: UnknownFields,
-) -> Result<CatalogParts, CatalogError> {
+) -> Result<ModelCatalog, CatalogError> {
     let mut entries = BTreeMap::new();
     let mut lookup = BTreeMap::new();
     let mut warnings = Vec::new();
@@ -24,7 +23,7 @@ pub(super) fn build_catalog(
             continue;
         }
         if name == FALLBACK_GENERALIZATIONS {
-            generalizations = install_generalizations(value.as_ref(), &mut warnings)?;
+            generalizations = install_generalizations(value.as_ref(), unknown, &mut warnings)?;
             continue;
         }
         let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
@@ -49,7 +48,7 @@ pub(super) fn build_catalog(
     for (alias, canonical) in alias_claims {
         insert_lookup(&mut lookup, &alias, &canonical, &mut warnings);
     }
-    Ok(CatalogParts {
+    Ok(ModelCatalog {
         entries,
         lookup,
         generalizations,
@@ -69,13 +68,49 @@ fn add_alias_claims(
 
 fn install_generalizations(
     value: &RawValue,
+    unknown: UnknownFields,
     warnings: &mut Vec<String>,
 ) -> Result<CatalogGeneralizations, CatalogError> {
-    let declaration: FallbackGeneralizations = serde_json::from_str(value.get())?;
-    let decoded = decode_generalization_rules(&serde_json::to_vec(&declaration.rules)?)?;
+    let Ok(declaration) = serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(value.get())
+    else {
+        return Ok(CatalogGeneralizations::default());
+    };
+    let Some(rules) = declaration.get("rules") else {
+        return Ok(CatalogGeneralizations::default());
+    };
+    let decoded = decode_generalization_rules(rules.get().as_bytes())?;
+    for (index, rule) in decoded.iter().enumerate() {
+        validate_model_info(rule, index, unknown, warnings)?;
+    }
     let (installed, install_warnings) = CatalogGeneralizations::install(decoded);
     warnings.extend(install_warnings.into_iter().map(|error| error.to_string()));
     Ok(installed)
+}
+
+fn validate_model_info(
+    rule: &RawValue,
+    index: usize,
+    unknown: UnknownFields,
+    warnings: &mut Vec<String>,
+) -> Result<(), CatalogError> {
+    let Ok(rule_fields) = serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(rule.get())
+    else {
+        return Ok(());
+    };
+    let Some(fields) = rule_fields.get("model_info") else {
+        return Ok(());
+    };
+    let path = format!("fallback_generalizations.rules[{index}].model_info");
+    match parse_fields(&path, fields.as_ref(), unknown, warnings) {
+        Err(
+            error @ CatalogError::Fields {
+                source: ModelFieldError::Unknown(_),
+                ..
+            },
+        ) => Err(error),
+        Ok(_) | Err(CatalogError::Fields { .. }) => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn parse_fields(
@@ -84,15 +119,17 @@ fn parse_fields(
     unknown: UnknownFields,
     warnings: &mut Vec<String>,
 ) -> Result<ModelFields, CatalogError> {
-    let parsed = if unknown == UnknownFields::Reject {
-        ModelFields::parse_strict(value)
-    } else {
-        let (fields, paths) = ModelFields::parse(value).map_err(|source| CatalogError::Fields {
-            model: name.to_owned(),
-            source,
-        })?;
-        warnings.extend(paths.into_iter().map(|path| format!("{name}.{path}")));
-        Ok(fields)
+    let parsed = match unknown {
+        UnknownFields::Reject => ModelFields::parse_strict(value),
+        UnknownFields::Warn => {
+            let (fields, paths) =
+                ModelFields::parse(value).map_err(|source| CatalogError::Fields {
+                    model: name.to_owned(),
+                    source,
+                })?;
+            warnings.extend(paths.into_iter().map(|path| format!("{name}.{path}")));
+            Ok(fields)
+        }
     };
     parsed.map_err(|source| CatalogError::Fields {
         model: name.to_owned(),

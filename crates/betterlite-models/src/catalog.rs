@@ -69,13 +69,6 @@ pub struct ModelCatalog {
     pub warnings: Vec<String>,
 }
 
-struct CatalogParts {
-    pub entries: BTreeMap<String, CatalogEntry>,
-    pub lookup: BTreeMap<String, String>,
-    pub generalizations: CatalogGeneralizations,
-    pub warnings: Vec<String>,
-}
-
 impl ModelCatalog {
     #[must_use]
     pub fn lookup(&self, name: &str) -> Option<&CatalogEntry> {
@@ -105,13 +98,7 @@ impl ModelCatalog {
                 limit: MAX_CATALOG_ENTRIES,
             });
         }
-        let parts = loader::build_catalog(raw, unknown)?;
-        Ok(Self {
-            entries: parts.entries,
-            lookup: parts.lookup,
-            generalizations: parts.generalizations,
-            warnings: parts.warnings,
-        })
+        loader::build_catalog(raw, unknown)
     }
 }
 

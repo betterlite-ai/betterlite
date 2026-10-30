@@ -12,6 +12,7 @@ CostMap: TypeAlias = dict[str, dict[str, Json]]
 
 load_backup = cast(Callable[[], CostMap], GetModelCostMap.load_local_model_cost_map)
 finalize = cast(Callable[[CostMap], CostMap], cost_map._finalize_model_cost_map)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+count_entries = cast(Callable[[CostMap], int], cost_map._count_model_entries)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -20,8 +21,7 @@ def run(input_value: dict[str, Json]) -> Json:
         raise ValueError("operation must be a string")
     if operation == "packaged_map":
         value = load_backup()
-        count = sum(name not in {"sample_spec", "fallback_generalizations"} for name in value)
-        return {"count": count, "warnings": []}
+        return {"count": count_entries(value), "warnings": []}
     if operation == "bundled_catalog_read_failure":
         return _bundled_failure()
     source = input_value.get("source")
