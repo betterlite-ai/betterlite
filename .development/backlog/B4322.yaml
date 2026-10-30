@@ -1,14 +1,14 @@
 id: B4322
 milestone: M8 platform
 title: Isolate Redis Cluster node failures and preserve redirects
-status: todo
+status: done
 depends_on: [B4320, B4324]
 file: tasks/B4322-redis-cluster-isolation.yaml
 covers:
   - "litellm/caching/redis_cluster_node_isolation.py"
 parent: B126
 split_from: B126
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 321

@@ -1,0 +1,5 @@
+kind: helper
+name: azure-error-body-shape
+call: {azure_content_policy: {message: caller, model: gpt, extra_information: debug, body: {error: {message: nested}}, response: null}}
+env: {}
+compare: {ignore: []}
