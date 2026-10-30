@@ -1,0 +1,11 @@
+kind: helper
+name: error-class-guardrail-midstream
+call:
+  error_class:
+    family: guardrail_raised
+    guardrail_name: pii-filter
+    message: blocked by guardrail
+    status_code: 400
+    blocked_content: true
+env: {}
+compare: {ignore: []}

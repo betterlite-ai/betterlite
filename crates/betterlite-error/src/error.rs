@@ -1,1 +1,224 @@
+use std::collections::BTreeMap;
+use std::io::Error as IoError;
 
+use crate::envelope::WireField;
+
+pub mod details;
+pub mod metadata;
+mod tests;
+
+use details::{
+    ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
+    RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
+};
+use metadata::{ErrorMetadata, Family, RetryMetadata, family_metadata, rate_limit_metadata};
+
+// the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ErrorContext {
+    pub message: String,
+    pub model: Option<String>,
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub max_retries: Option<u32>,
+    #[serde(default)]
+    pub num_retries: Option<u32>,
+    // openai.APIError.__init__ reads these off a body dict; only the LiteLLM subclasses with a body= kwarg ever set them
+    #[serde(default)]
+    pub body_type: Option<String>,
+    #[serde(default)]
+    pub body_param: Option<String>,
+    #[serde(default)]
+    pub body_code: Option<String>,
+}
+
+// which wire fields a body dict fills, matching which LiteLLM subclass forwards body= to openai.APIError.__init__
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BodyOverride {
+    // most families: openai.APIError never receives a body, so type/param/code stay at their class default
+    None,
+    // BadRequest, ContentPolicyViolation, Api: openai.APIError reads type/param/code straight off the body
+    Full,
+    // InternalServer, RateLimit: the subclass overwrites self.type with a literal right after openai.APIError runs
+    TypeLiteral,
+}
+
+impl ErrorContext {
+    fn metadata(
+        &self,
+        status_code: u16,
+        default_type: WireField,
+        default_param: WireField,
+        body: BodyOverride,
+    ) -> ErrorMetadata {
+        let retry = RetryMetadata {
+            max_retries: self.max_retries,
+            num_retries: self.num_retries,
+        };
+        let (error_type, param, code) = match body {
+            BodyOverride::None => (default_type, default_param, None),
+            BodyOverride::Full => (
+                self.body_type.clone().map_or(default_type, WireField::Text),
+                self.body_param
+                    .clone()
+                    .map_or(default_param, WireField::Text),
+                self.body_code.clone(),
+            ),
+            BodyOverride::TypeLiteral => (
+                default_type,
+                self.body_param
+                    .clone()
+                    .map_or(default_param, WireField::Text),
+                self.body_code.clone(),
+            ),
+        };
+        ErrorMetadata {
+            status_code,
+            model: self.model.clone(),
+            provider: self.provider.clone(),
+            error_type,
+            param,
+            code: status_code.to_string(),
+            retry,
+            rate_limit_category: None,
+            rate_limit_dimension: None,
+            allowed_response_headers: BTreeMap::new(),
+            openai_code: code,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "family", rename_all = "snake_case")]
+pub enum ErrorClass {
+    Authentication(Box<ErrorContext>),
+    NotFound(Box<ErrorContext>),
+    PermissionDenied(Box<ErrorContext>),
+    BadRequest(Box<ErrorContext>),
+    UnprocessableEntity(Box<ErrorContext>),
+    Timeout(Box<TimeoutDetails>),
+    RateLimit(Box<RateLimitDetails>),
+    BudgetExceeded(Box<BudgetExceededDetails>),
+    ContextWindowExceeded(Box<ErrorContext>),
+    ContentPolicyViolation(Box<ErrorContext>),
+    ServiceUnavailable(Box<ErrorContext>),
+    BadGateway(Box<ErrorContext>),
+    InternalServer(Box<ErrorContext>),
+    Api(Box<ApiDetails>),
+    ApiConnection(Box<ErrorContext>),
+    ApiResponseValidation(Box<ErrorContext>),
+    JsonSchemaValidation(Box<SchemaValidationDetails>),
+    UnsupportedParams(Box<ErrorContext>),
+    GuardrailRaised(Box<GuardrailDetails>),
+    MidStreamFallback(Box<MidStreamFallbackDetails>),
+    // a caught exception outside every known family: every wire field is genuinely missing, like a plain Exception
+    Unclassified(Box<ErrorContext>),
+}
+
+impl ErrorClass {
+    // openai.APIError defaults code/param to None as class attributes; type has no such default and stays unset
+    #[must_use]
+    pub fn metadata(&self) -> ErrorMetadata {
+        use BodyOverride::{Full, None as Absent, TypeLiteral};
+        use WireField::Null;
+        const MISSING: WireField = WireField::MISSING;
+        match self {
+            Self::Authentication(ctx) => ctx.metadata(401, Null, Null, Absent),
+            Self::NotFound(ctx) => ctx.metadata(404, Null, Null, Absent),
+            Self::PermissionDenied(ctx) => ctx.metadata(403, Null, Null, Absent),
+            Self::BadRequest(ctx) | Self::ContentPolicyViolation(ctx) => {
+                ctx.metadata(400, Null, Null, Full)
+            }
+            Self::ContextWindowExceeded(ctx) => ctx.metadata(400, Null, Null, Absent),
+            Self::UnprocessableEntity(ctx) => ctx.metadata(422, Null, Null, Absent),
+            Self::ServiceUnavailable(ctx) => ctx.metadata(503, Null, Null, Absent),
+            Self::BadGateway(ctx) => ctx.metadata(502, Null, Null, Absent),
+            Self::InternalServer(ctx) => {
+                let internal_server_type = WireField::Text("internal_server_error".to_owned());
+                ctx.metadata(500, internal_server_type, Null, TypeLiteral)
+            }
+            Self::ApiConnection(ctx) | Self::ApiResponseValidation(ctx) => {
+                ctx.metadata(500, Null, Null, Absent)
+            }
+            Self::UnsupportedParams(ctx) => ctx.metadata(400, MISSING, Null, Absent),
+            Self::Unclassified(ctx) => ctx.metadata(500, MISSING, MISSING, Absent),
+            Self::Timeout(timeout) => {
+                timeout
+                    .context
+                    .metadata(timeout.original_status.0, Null, Null, Absent)
+            }
+            Self::RateLimit(details) => rate_limit_metadata(details),
+            Self::BudgetExceeded(details) => family_metadata(&Family::Budget(details)),
+            Self::Api(api) => api.context.metadata(api.status, Null, Null, Full),
+            Self::MidStreamFallback(fallback) => {
+                fallback
+                    .context
+                    .metadata(fallback.original_status.0, Null, Null, Absent)
+            }
+            Self::GuardrailRaised(details) => family_metadata(&Family::Guardrail(details)),
+            Self::JsonSchemaValidation(details) => family_metadata(&Family::Schema(details)),
+        }
+    }
+}
+
+// the #[source] cause stays reachable for logging; classify() only ever hands the client a bounded message
+#[derive(Debug, thiserror::Error)]
+pub enum TaxonomyError {
+    #[error("the request to {provider} timed out")]
+    Timeout {
+        provider: String,
+        model: Option<String>,
+        #[source]
+        cause: IoError,
+    },
+    #[error("the connection to {provider} failed")]
+    Transport {
+        provider: String,
+        model: Option<String>,
+        #[source]
+        cause: IoError,
+    },
+    #[error("the response from {provider} could not be parsed")]
+    Parse {
+        provider: String,
+        model: Option<String>,
+        #[source]
+        cause: serde_json::Error,
+    },
+}
+
+impl TaxonomyError {
+    #[must_use]
+    pub fn classify(&self) -> ErrorClass {
+        match self {
+            Self::Timeout {
+                provider, model, ..
+            } => ErrorClass::Timeout(Box::new(TimeoutDetails {
+                context: self.context(provider, model.as_deref()),
+                original_status: TimeoutStatus(408),
+            })),
+            Self::Transport {
+                provider, model, ..
+            } => ErrorClass::ApiConnection(Box::new(self.context(provider, model.as_deref()))),
+            Self::Parse {
+                provider, model, ..
+            } => ErrorClass::ApiResponseValidation(Box::new(
+                self.context(provider, model.as_deref()),
+            )),
+        }
+    }
+
+    fn context(&self, provider: &str, model: Option<&str>) -> ErrorContext {
+        let message = self.to_string();
+        ErrorContext {
+            message,
+            model: model.map(str::to_owned),
+            provider: Some(provider.to_owned()),
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        }
+    }
+}

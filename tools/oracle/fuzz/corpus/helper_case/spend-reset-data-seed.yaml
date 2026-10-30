@@ -1,0 +1,10 @@
+kind: helper
+name: spend-reset-data-seed
+call:
+  spend_reset_data:
+    cases:
+      seed:
+        budget_reset_at: "2026-08-06T00:30:00Z"
+        spend_decrement: 1
+env: {}
+compare: {ignore: []}

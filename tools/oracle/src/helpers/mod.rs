@@ -76,6 +76,7 @@ use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
 use crate::process::sync_litellm;
+use answers::Answers;
 use python::run_python;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
@@ -229,15 +230,21 @@ pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
 }
 
 pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
-    let python_input =
-        serde_json::json!({"operation": case.call.operation, "input": case.call.input});
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    sync_litellm(&root)?;
-    let left = match left_side(self_check) {
-        HelperLeft::Native => invoke(&case.call),
-        HelperLeft::Python => run_python(&root, &python_input, &case.env)?,
+    let (left, right) = match left_side(self_check) {
+        HelperLeft::Native => {
+            let answers = Answers::from_env(&root)?;
+            (
+                invoke(&case.call),
+                answers.answer(&root, &case.call, &case.env)?,
+            )
+        }
+        HelperLeft::Python => {
+            sync_litellm(&root)?;
+            let first = run_python(&root, &case.call, &case.env)?;
+            (first, run_python(&root, &case.call, &case.env)?)
+        }
     };
-    let right = run_python(&root, &python_input, &case.env)?;
     if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
         let pointer = difference.pointer;
         writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name)
@@ -287,5 +294,6 @@ pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
     }
 }
 
+mod answers;
 mod python;
 mod tests;

@@ -1,0 +1,28 @@
+kind: helper
+name: callback-secret-fields-decrypt-failure-passthrough
+call:
+  callback_secret_fields:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: []
+    steps:
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXLNK4SYDk9HQY5gdaOlLL_w=="
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::not-valid-ciphertext"
+      - kind: decrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: "litellm_enc::"
+env: {}
+compare:
+  ignore: []

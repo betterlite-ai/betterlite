@@ -1,7 +1,10 @@
+use std::time::Duration;
+
+use axum::http::header::InvalidHeaderName;
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
+use betterlite_error::envelope::{BARE_RATE_LIMIT_HEADERS, is_unsafe_header_name};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
-use std::time::Duration;
 
 // LiteLLM's OPENAI_RESPONSE_HEADERS, repeated without the llm_provider- prefix on a success
 const RATE_LIMIT_HEADERS: [&str; 6] = [
@@ -12,8 +15,6 @@ const RATE_LIMIT_HEADERS: [&str; 6] = [
     "x-ratelimit-reset-requests",
     "x-ratelimit-reset-tokens",
 ];
-// on a failure LiteLLM's get_response_headers repeats only these four
-const FAILURE_RATE_LIMIT_HEADERS: usize = 4;
 
 pub(super) fn success_headers(
     upstream: &HeaderMap,
@@ -79,9 +80,7 @@ pub(super) fn failure_headers(
         | ChatError::TooLarge
         | ChatError::Http { .. } => None,
     };
-    let mut headers = upstream.map_or_else(HeaderMap::new, |forwarded| {
-        provider_headers(forwarded, FAILURE_RATE_LIMIT_HEADERS)
-    });
+    let mut headers = upstream.map_or_else(HeaderMap::new, forwardable_failure_headers);
     if let Ok(value) = HeaderValue::from_str(call_id) {
         headers.insert("x-litellm-call-id", value);
     }
@@ -94,22 +93,45 @@ pub(super) fn failure_headers(
     headers
 }
 
+fn provider_prefixed_name(name: &HeaderName) -> Result<HeaderName, InvalidHeaderName> {
+    if name.as_str().contains("llm_provider") {
+        Ok(name.clone())
+    } else {
+        HeaderName::try_from(format!("llm_provider-{name}"))
+    }
+}
+
 // LiteLLM forwards every provider header as llm_provider-{name} and repeats OpenAI's rate limit headers as they are
 fn provider_headers(upstream: &HeaderMap, rate_limit_count: usize) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in upstream {
-        let forwarded = if name.as_str().contains("llm_provider") {
-            Ok(name.clone())
-        } else {
-            HeaderName::try_from(format!("llm_provider-{name}"))
-        };
-        if let Ok(forwarded_name) = forwarded {
+        if let Ok(forwarded_name) = provider_prefixed_name(name) {
             headers.append(forwarded_name, value.clone());
         }
     }
     for name in RATE_LIMIT_HEADERS.iter().take(rate_limit_count) {
         if let Some(value) = upstream.get(*name) {
             headers.insert(*name, value.clone());
+        }
+    }
+    headers
+}
+
+// get_response_headers() projected through llm_provider- then UNSAFE_PROXY_RESPONSE_HEADERS, kept on HeaderMap so a non-UTF-8 value never needs a lossy to_str
+fn forwardable_failure_headers(upstream: &HeaderMap) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for (name, value) in upstream {
+        if BARE_RATE_LIMIT_HEADERS.contains(&name.as_str().to_lowercase().as_str()) {
+            headers.append(name.clone(), value.clone());
+        }
+        match provider_prefixed_name(name) {
+            Ok(forwarded_name) if is_unsafe_header_name(forwarded_name.as_str()) => {}
+            Ok(forwarded_name) => {
+                headers.append(forwarded_name, value.clone());
+            }
+            Err(error) => {
+                tracing::warn!(header = %name, %error, "upstream header name cannot be forwarded");
+            }
         }
     }
     headers
