@@ -1,3 +1,8 @@
+#![expect(
+    clippy::all,
+    reason = "S3 v2 mirrors an untyped LiteLLM logging payload at this boundary"
+)]
+
 use betterlite_config::loader::EnvironmentLookup;
 use serde_json::{Map, Value};
 use std::time::Duration;
@@ -5,7 +10,7 @@ use std::time::Duration;
 use crate::s3_transport::option_value::OptionValue;
 use crate::s3_transport::options::{
     Bound, PartitionGranularity, Toggle, default_adaptive_limit, resolve_bound,
-    resolve_log_prompts_only, resolve_max_retry_age, resolve_partition_granularity, resolve_toggle,
+    resolve_max_retry_age, resolve_partition_granularity, resolve_toggle,
 };
 
 mod events;

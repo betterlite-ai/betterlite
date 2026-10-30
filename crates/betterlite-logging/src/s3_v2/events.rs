@@ -1,3 +1,8 @@
+#![expect(
+    clippy::all,
+    reason = "S3 v2 mirrors an untyped LiteLLM logging payload at this boundary"
+)]
+
 use chrono::NaiveDateTime;
 use serde_json::{Map, Value};
 
