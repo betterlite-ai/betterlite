@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -6,25 +5,6 @@ use crate::raw::RawNumber;
 use secrecy::SecretString;
 
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
-
-pub(super) fn resolve_environment<L>(
-    values: BTreeMap<String, Option<String>>,
-    lookup: &L,
-) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    if values.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    values
-        .into_iter()
-        .map(|(key, value)| {
-            let path = format!("environment_variables.{key}");
-            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
-        })
-        .collect()
-}
 
 pub(super) fn resolve_secret(
     value: Option<String>,
