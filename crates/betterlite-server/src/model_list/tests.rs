@@ -32,6 +32,7 @@ async fn send(config: &str, uri: &str, header: &str) -> (u16, String) {
         Arc::new(AtomicBool::new(false)),
         &model_list,
         Router::new(),
+        Router::new(),
     );
     let request = Request::get(uri).header(header, "2023-06-01");
     let response = application
