@@ -969,6 +969,7 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "hex",
  "percent-encoding",
  "regex",
  "rstest",
@@ -976,11 +977,13 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tokio-postgres",
  "unicode-general-category",
  "unicode-normalization",
+ "uuid",
 ]
 
 [[package]]
