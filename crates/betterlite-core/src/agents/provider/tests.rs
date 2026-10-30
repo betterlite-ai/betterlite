@@ -7,20 +7,23 @@ use super::{
     ListAgentsResponse,
 };
 use crate::agents::json::AgentJson;
-use serde_json::json;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 #[test]
 fn provider_records_keep_unknown_fields() {
-    let response: AgentCreateResponse = serde_json::from_value(json!({
+    let response: AgentCreateResponse = serde_json::from_value(json(
+        r#"{
         "id": "agents/worker",
         "base_agent": "gemini",
         "system_instruction": {"parts": [{"text": "work"}]},
         "base_environment": "prod"
-    }))
+    }"#,
+    ))
     .unwrap();
     assert_eq!(response.id.as_deref(), Some("agents/worker"));
-    assert_eq!(response.extra.get("base_agent"), Some(&json!("gemini")));
+    assert_eq!(response.extra.get("base_agent"), Some(&json(r#""gemini""#)));
 
     let encoded = serde_json::to_value(response).unwrap();
     assert_eq!(encoded["base_environment"], "prod");
@@ -28,18 +31,20 @@ fn provider_records_keep_unknown_fields() {
 
 #[test]
 fn list_agents_response_wraps_agent_records() {
-    let response: ListAgentsResponse = serde_json::from_value(json!({
+    let response: ListAgentsResponse = serde_json::from_value(json(
+        r#"{
         "agents": [{"agent_id": "a", "agent_name": "worker", "agent_card_params": {}}]
-    }))
+    }"#,
+    ))
     .unwrap();
     assert_eq!(response.agents[0].agent_id, "a");
 }
 
 #[test]
 fn a2a_error_gets_request_id_and_bool_is_stringified() {
-    let request_id = json!(true);
+    let request_id = json("true");
     let response = LiteLLMSendMessageResponse::from_dict(
-        &json!({"jsonrpc": "2.0", "error": {"code": -32600}}),
+        &json(r#"{"jsonrpc": "2.0", "error": {"code": -32600}}"#),
         Some(&request_id),
     )
     .unwrap();
@@ -53,7 +58,7 @@ fn a2a_error_gets_request_id_and_bool_is_stringified() {
 #[test]
 fn a2a_existing_bool_id_is_stringified() {
     let response = LiteLLMSendMessageResponse::from_dict(
-        &json!({"jsonrpc": "2.0", "id": true, "result": {}}),
+        &json(r#"{"jsonrpc": "2.0", "id": true, "result": {}}"#),
         None,
     )
     .unwrap();
@@ -187,31 +192,35 @@ provider_fixture!(
     CustomProvider,
     fn get_error_class(
         &self,
-        message: &str,
+        error_message: &str,
         _status_code: u16,
         _headers: &BTreeMap<String, String>,
     ) -> Self::Error {
         AgentProviderError::InvalidResponse {
-            message: format!("provider: {message}"),
+            message: format!("provider: {error_message}"),
         }
     }
 );
 
 #[test]
 fn a2a_defaults_preserve_null_fields() {
-    let response = LiteLLMSendMessageResponse::from_dict(&json!({}), None).unwrap();
+    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), None).unwrap();
     assert_eq!(
         serde_json::to_value(response).unwrap(),
-        json!({
+        json(
+            r#"{
             "id": null, "jsonrpc": "2.0", "result": null, "error": null, "usage": null
-        })
+        }"#
+        )
     );
 }
 
 #[test]
 fn versions_use_model_field_name() {
-    let payload = json!({"agent_versions": [{"name": "agents/a/versions/v1"}],
-        "next_page_token": null, "agentVersions": [{"provider": true}]});
+    let payload = json(
+        r#"{"agent_versions": [{"name": "agents/a/versions/v1"}],
+        "next_page_token": null, "agentVersions": [{"provider": true}]}"#,
+    );
     let response: AgentVersionsResponse = serde_json::from_value(payload.clone()).unwrap();
     assert_eq!(response.agent_versions.len(), 1);
     assert_eq!(response.agent_versions[0]["name"], "agents/a/versions/v1");
@@ -220,20 +229,32 @@ fn versions_use_model_field_name() {
 
 #[test]
 fn deletion_requires_name() {
-    assert!(serde_json::from_value::<AgentDeleteResult>(json!({})).is_err());
+    drop(serde_json::from_value::<AgentDeleteResult>(json("{}")).unwrap_err());
 }
 
 #[test]
 fn a2a_fractional_response_id_is_rejected() {
     let payload = serde_json::from_str(r#"{"id": 1.5}"#).unwrap();
-    assert!(LiteLLMSendMessageResponse::from_dict(&payload, None).is_err());
+    drop(LiteLLMSendMessageResponse::from_dict(&payload, None).unwrap_err());
 }
 
 #[rstest::rstest]
-#[case::create(json!({"id":null,"name":null,"custom":{"x":[true,null]}}), "create")]
-#[case::delete(json!({"name":"a","deleted":true,"custom":{"x":[true,null]}}), "delete")]
-#[case::list(json!({"agents":[{"vendor":42}],"next_page_token":"page","custom":null}), "list")]
-#[case::versions(json!({"agent_versions":[{"vendor":42}],"next_page_token":"page","custom":null}), "versions")]
+#[case::create(
+    json(r#"{"id":null,"name":null,"custom":{"x":[true,null]}}"#),
+    "create"
+)]
+#[case::delete(
+    json(r#"{"name":"a","deleted":true,"custom":{"x":[true,null]}}"#),
+    "delete"
+)]
+#[case::list(
+    json(r#"{"agents":[{"vendor":42}],"next_page_token":"page","custom":null}"#),
+    "list"
+)]
+#[case::versions(
+    json(r#"{"agent_versions":[{"vendor":42}],"next_page_token":"page","custom":null}"#),
+    "versions"
+)]
 fn all_records_preserve_extras(#[case] payload: AgentJson, #[case] kind: &str) {
     let output = match kind {
         "create" => serde_json::to_value(
@@ -262,34 +283,34 @@ fn record_defaults_match_litellm() {
     let versions: AgentVersionsResponse = serde_json::from_str("{}").unwrap();
     assert_eq!(
         serde_json::to_value(create).unwrap(),
-        json!({"id":null,"name":null})
+        json(r#"{"id":null,"name":null}"#)
     );
     assert_eq!(
         serde_json::to_value(delete).unwrap(),
-        json!({"name":"a","deleted":true})
+        json(r#"{"name":"a","deleted":true}"#)
     );
     assert_eq!(
         serde_json::to_value(list).unwrap(),
-        json!({"agents":[],"next_page_token":null})
+        json(r#"{"agents":[],"next_page_token":null}"#)
     );
     assert_eq!(
         serde_json::to_value(versions).unwrap(),
-        json!({"agent_versions":[],"next_page_token":null})
+        json(r#"{"agent_versions":[],"next_page_token":null}"#)
     );
 }
 
 #[rstest::rstest]
-#[case::false_id(json!(false), json!("False"))]
-#[case::true_id(json!(true), json!("True"))]
-#[case::string_id(json!("request"), json!("request"))]
-#[case::zero_id(json!(0), json!(0))]
-#[case::negative_id(json!(-42), json!(-42))]
-#[case::max_unsigned(json!(u64::MAX), json!(u64::MAX))]
-#[case::null_id(json!(null), json!(null))]
-#[case::list_id(json!([true, null, "hello"]), json!("[True, None, 'hello']"))]
-#[case::object_id(json!({"a": false}), json!("{'a': False}"))]
+#[case::false_id(json("false"), json(r#""False""#))]
+#[case::true_id(json("true"), json(r#""True""#))]
+#[case::string_id(json(r#""request""#), json(r#""request""#))]
+#[case::zero_id(json("0"), json("0"))]
+#[case::negative_id(json("-42"), json("-42"))]
+#[case::max_unsigned(AgentJson::from(u64::MAX), AgentJson::from(u64::MAX))]
+#[case::null_id(json("null"), json("null"))]
+#[case::list_id(json(r#"[true, null, "hello"]"#), json(r#""[True, None, 'hello']""#))]
+#[case::object_id(json(r#"{"a": false}"#), json(r#""{'a': False}""#))]
 fn request_id_normalization(#[case] request: AgentJson, #[case] expected: AgentJson) {
-    let payload = json!({"error":{"code":-32600},"id":null});
+    let payload = json(r#"{"error":{"code":-32600},"id":null}"#);
     let direct = LiteLLMSendMessageResponse::from_dict(&payload, Some(&request)).unwrap();
     let sdk = LiteLLMSendMessageResponse::from_a2a_response(&payload, Some(&request)).unwrap();
     assert_eq!(serde_json::to_value(&direct).unwrap()["id"], expected);
@@ -297,30 +318,32 @@ fn request_id_normalization(#[case] request: AgentJson, #[case] expected: AgentJ
         serde_json::to_value(&direct).unwrap(),
         serde_json::to_value(sdk).unwrap()
     );
-    assert_eq!(payload["id"], json!(null));
+    assert_eq!(payload["id"], json("null"));
 }
 
 #[test]
 fn a2a_preserves_existing_id_and_metadata() {
-    let payload = json!({"id":42,"jsonrpc":"2.0","result":{"text":"answer"},
-        "error":null,"usage":{"cost":"0.001"},"vendor":[1,2]});
-    let mut response = LiteLLMSendMessageResponse::from_dict(&payload, Some(&json!(99))).unwrap();
+    let payload = json(
+        r#"{"id":42,"jsonrpc":"2.0","result":{"text":"answer"},
+        "error":null,"usage":{"cost":"0.001"},"vendor":[1,2]}"#,
+    );
+    let mut response = LiteLLMSendMessageResponse::from_dict(&payload, Some(&json("99"))).unwrap();
     assert!(response.hidden_params.is_empty());
     response
         .hidden_params
-        .insert(String::from("cost"), json!("0.001"));
+        .insert(String::from("cost"), json(r#""0.001""#));
     assert_eq!(serde_json::to_value(response).unwrap(), payload);
 }
 
 #[rstest::rstest]
-#[case::array(json!([]))]
-#[case::null(json!(null))]
-#[case::array_id(json!({"id":[]}))]
-#[case::object_id(json!({"id":{}}))]
-#[case::invalid_result(json!({"result":[]}))]
-#[case::invalid_error(json!({"error":"oops"}))]
+#[case::array(json("[]"))]
+#[case::null(json("null"))]
+#[case::array_id(json(r#"{"id":[]}"#))]
+#[case::object_id(json(r#"{"id":{}}"#))]
+#[case::invalid_result(json(r#"{"result":[]}"#))]
+#[case::invalid_error(json(r#"{"error":"oops"}"#))]
 fn invalid_a2a_records_fail(#[case] payload: AgentJson) {
-    assert!(LiteLLMSendMessageResponse::from_dict(&payload, None).is_err());
+    drop(LiteLLMSendMessageResponse::from_dict(&payload, None).unwrap_err());
 }
 
 #[rstest::rstest]
@@ -328,7 +351,7 @@ fn invalid_a2a_records_fail(#[case] payload: AgentJson) {
 #[case::integer_float("1.0", "1.0")]
 fn fractional_request_ids_become_strings(#[case] input: &str, #[case] expected: &str) {
     let request: AgentJson = serde_json::from_str(input).unwrap();
-    let response = LiteLLMSendMessageResponse::from_dict(&json!({}), Some(&request)).unwrap();
+    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], expected);
 }
 
@@ -351,11 +374,11 @@ fn response_decoding_keeps_error_cause() {
     use std::error::Error;
     let response = AgentHttpResponse {
         status_code: 200,
-        body: json!({"agents":false}),
+        body: json(r#"{"agents":false}"#),
         headers: BTreeMap::new(),
     };
     let error = response.decode::<AgentListResponse>().unwrap_err();
-    assert!(error.source().is_some());
+    assert!(Error::source(&error).is_some());
     assert_eq!(error.status_code(), 500);
     assert!(error.message().contains("sequence"));
 }
@@ -364,7 +387,7 @@ fn response_decoding_keeps_error_cause() {
 fn http_failure_preserves_context() {
     let response = AgentHttpResponse {
         status_code: 429,
-        body: json!({"error":"slow down"}),
+        body: json(r#"{"error":"slow down"}"#),
         headers: BTreeMap::from([(String::from("retry-after"), String::from("5"))]),
     };
     let error = response.decode::<AgentListResponse>().unwrap_err();
@@ -377,12 +400,11 @@ fn http_failure_preserves_context() {
 
 #[test]
 fn replays_agent_provider_corpus() {
-    let folder =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/agent_provider");
-    let entries = std::fs::read_dir(folder).unwrap();
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/agent_provider");
+    let entries = fs::read_dir(folder).unwrap();
     let count = entries
         .map(|entry| {
-            let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+            let bytes = fs::read(entry.unwrap().path()).unwrap();
             drop(serde_json::from_slice::<AgentCreateResponse>(&bytes));
             drop(serde_json::from_slice::<AgentDeleteResult>(&bytes));
             drop(serde_json::from_slice::<AgentListResponse>(&bytes));
@@ -443,7 +465,7 @@ fn native_contract_exposes_responses() {
     let provider = TestProvider;
     let raw = AgentHttpResponse {
         status_code: 200,
-        body: json!({"id":"a","name":"a"}),
+        body: json(r#"{"id":"a","name":"a"}"#),
         headers: BTreeMap::new(),
     };
     let create = provider.transform_create_response(&raw, "a").unwrap();
@@ -462,18 +484,18 @@ fn native_contract_exposes_responses() {
 fn arbitrary_integer_ids_keep_precision() {
     let request: AgentJson =
         serde_json::from_str("1234567890123456789012345678901234567890").unwrap();
-    let response = LiteLLMSendMessageResponse::from_dict(&json!({}), Some(&request)).unwrap();
+    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], request);
-    let existing = json!({"id":request});
-    assert!(LiteLLMSendMessageResponse::from_dict(&existing, None).is_ok());
+    let existing = json(&format!(r#"{{"id":{request}}}"#));
+    drop(LiteLLMSendMessageResponse::from_dict(&existing, None).unwrap());
 }
 
 #[rstest::rstest]
-#[case::apostrophe(json!(["can't"]), "[\"can't\"]")]
-#[case::quotes(json!(["say 'hi' and \"bye\""]), "['say \\'hi\\' and \"bye\"']")]
-#[case::controls(json!(["\n\r\t\u{0000}\\"]), "['\\n\\r\\t\\x00\\\\']")]
+#[case::apostrophe(json(r#"["can't"]"#), "[\"can't\"]")]
+#[case::quotes(json(r#"["say 'hi' and \"bye\""]"#), "['say \\'hi\\' and \"bye\"']")]
+#[case::controls(json(r#"["\n\r\t\u0000\\"]"#), "['\\n\\r\\t\\x00\\\\']")]
 fn compound_request_ids_use_python_spelling(#[case] request: AgentJson, #[case] expected: &str) {
-    let response = LiteLLMSendMessageResponse::from_dict(&json!({}), Some(&request)).unwrap();
+    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], expected);
 }
 
@@ -483,34 +505,38 @@ fn private_tracking_is_local_to_each_record() {
     let second: AgentCreateResponse = serde_json::from_str("{}").unwrap();
     first
         .hidden_params
-        .insert(String::from("cost"), json!("0.01"));
+        .insert(String::from("cost"), json(r#""0.01""#));
     assert!(second.hidden_params.is_empty());
     assert_eq!(
         serde_json::to_value(first).unwrap(),
-        json!({"id":null,"name":null})
+        json(r#"{"id":null,"name":null}"#)
     );
     let mut deleted: AgentDeleteResult =
         serde_json::from_str(r#"{"name":"a","deleted":false}"#).unwrap();
     deleted
         .hidden_params
-        .insert(String::from("cost"), json!("0.01"));
+        .insert(String::from("cost"), json(r#""0.01""#));
     assert_eq!(
         serde_json::to_value(deleted).unwrap(),
-        json!({"name":"a","deleted":false})
+        json(r#"{"name":"a","deleted":false}"#)
     );
     let mut list = AgentListResponse::default();
     let mut versions = AgentVersionsResponse::default();
     list.hidden_params
-        .insert(String::from("cost"), json!("0.01"));
+        .insert(String::from("cost"), json(r#""0.01""#));
     versions
         .hidden_params
-        .insert(String::from("cost"), json!("0.01"));
+        .insert(String::from("cost"), json(r#""0.01""#));
     assert_eq!(
         serde_json::to_value(list).unwrap(),
-        json!({"agents":[],"next_page_token":null})
+        json(r#"{"agents":[],"next_page_token":null}"#)
     );
     assert_eq!(
         serde_json::to_value(versions).unwrap(),
-        json!({"agent_versions":[],"next_page_token":null})
+        json(r#"{"agent_versions":[],"next_page_token":null}"#)
     );
+}
+
+fn json(text: &str) -> AgentJson {
+    serde_json::from_str(text).unwrap()
 }
