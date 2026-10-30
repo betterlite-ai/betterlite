@@ -61,15 +61,19 @@ fn resolve_api_key<L>(
 where
     L: EnvironmentLookup,
 {
-    let selected = configured
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup("CISCO_AI_DEFENSE_API_KEY"))
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: "CISCO_AI_DEFENSE_API_KEY".to_owned(),
-            path: format!("{prefix}.api_key"),
-        })?;
-    let secret = resolve_string(selected, &format!("{prefix}.api_key"), lookup)?;
-    Ok(SecretString::from(secret))
+    let non_empty = configured.filter(|value| !value.is_empty());
+    optional(
+        non_empty,
+        "CISCO_AI_DEFENSE_API_KEY",
+        prefix,
+        "api_key",
+        lookup,
+    )?
+    .ok_or_else(|| ConfigError::MissingEnvironment {
+        variable: "CISCO_AI_DEFENSE_API_KEY".to_owned(),
+        path: format!("{prefix}.api_key"),
+    })
+    .map(SecretString::from)
 }
 
 fn resolve_endpoint<L>(
@@ -100,18 +104,12 @@ where
         },
         lookup,
     )?;
-    let inspection_type = inspection_type(&inspection, prefix)?;
+    let inspection_type = if inspection == "chat" {
+        InspectionType::Chat
+    } else {
+        InspectionType::Mcp
+    };
     Ok((api_base, inspection_type))
-}
-
-fn inspection_type(value: &str, prefix: &str) -> Result<InspectionType, ConfigError> {
-    match value {
-        "chat" => Ok(InspectionType::Chat),
-        "mcp" => Ok(InspectionType::Mcp),
-        _ => Err(ConfigError::Unsupported {
-            paths: vec![format!("{prefix}.inspection_type")],
-        }),
-    }
 }
 
 fn resolve_actions<L>(
@@ -176,13 +174,15 @@ where
                 parse_float(&text, &format!("{prefix}.timeout"))
             })?,
     };
-    if !(1.0_f64..=60.0_f64).contains(&timeout) {
+    let clamped = timeout.clamp(1.0_f64, 60.0_f64);
+    let out_of_range = !(1.0_f64..=60.0_f64).contains(&timeout);
+    if out_of_range {
         tracing::warn!(
             timeout,
             "Cisco AI Defense timeout is outside 1-60 seconds; clamping"
         );
     }
-    Ok(timeout.clamp(1.0_f64, 60.0_f64))
+    Ok(clamped)
 }
 
 struct Choice<'choice> {
