@@ -98,6 +98,24 @@ fn local_ttl_cache_cases(#[case] name: &str) {
                 .set("key", CacheValue::Integer(2), Some(100.0_f64))
                 .unwrap();
             assert_eq!(cache.expiry("key"), Some(10.0_f64));
+            let equality_clock = Arc::new(Mutex::new(0.0_f64));
+            let source = Arc::clone(&equality_clock);
+            let mut equality = LocalTtlCache::with_clock(
+                Some(2),
+                Some(600.0_f64),
+                Some(1024),
+                Arc::new(move || *source.lock().unwrap()),
+            )
+            .unwrap();
+            equality
+                .set("key", CacheValue::Integer(1), Some(10.0_f64))
+                .unwrap();
+            *equality_clock.lock().unwrap() = 10.0_f64;
+            equality.expiries.insert("key".to_owned(), 5.0_f64);
+            equality
+                .set("key", CacheValue::Integer(2), Some(100.0_f64))
+                .unwrap();
+            assert_eq!(equality.expiry("key"), Some(110.0_f64));
             cache.delete("key");
             assert!(cache.get("key").is_none());
             let clock = Arc::new(Mutex::new(0.0_f64));
