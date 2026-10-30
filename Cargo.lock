@@ -1306,6 +1306,7 @@ dependencies = [
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
+ "regex",
  "rstest",
  "serde",
  "serde_json",
