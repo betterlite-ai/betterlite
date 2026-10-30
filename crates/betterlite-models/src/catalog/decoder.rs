@@ -2,9 +2,15 @@ use std::collections::BTreeSet;
 
 use super::{CatalogError, MAX_CATALOG_DEPTH};
 
+#[derive(Clone, Copy)]
+enum Container {
+    Object,
+    Array,
+}
+
 pub(super) fn check_duplicates(bytes: &[u8]) -> Result<(), CatalogError> {
     let mut cursor = 0;
-    scan_value(bytes, &mut cursor, 0, String::new())?;
+    scan_value(bytes, &mut cursor, 0, "")?;
     Ok(())
 }
 
@@ -12,7 +18,7 @@ fn scan_value(
     bytes: &[u8],
     cursor: &mut usize,
     depth: usize,
-    path: String,
+    path: &str,
 ) -> Result<(), CatalogError> {
     if depth >= MAX_CATALOG_DEPTH {
         return Err(scan_error("model catalog nesting exceeds limit"));
@@ -22,109 +28,100 @@ fn scan_value(
         .get(*cursor)
         .copied()
         .ok_or_else(|| scan_error("unexpected end"))?;
-    match byte {
-        b'{' => scan_object(bytes, cursor, depth, path),
-        b'[' => scan_array(bytes, cursor, depth, &path),
-        b'"' => {
-            scan_string(bytes, cursor)?;
-            Ok(())
-        }
-        _ => {
-            scan_scalar(bytes, cursor);
-            Ok(())
-        }
-    }
+    scan_value_kind(bytes, cursor, depth, path, byte)
 }
 
-fn scan_object(
+fn scan_value_kind(
     bytes: &[u8],
     cursor: &mut usize,
     depth: usize,
-    path: String,
+    path: &str,
+    byte: u8,
 ) -> Result<(), CatalogError> {
+    if byte == b'{' {
+        return scan_container(bytes, cursor, depth, path, Container::Object);
+    }
+    if byte == b'[' {
+        return scan_container(bytes, cursor, depth, path, Container::Array);
+    }
+    if byte == b'"' {
+        scan_string(bytes, cursor)?;
+    } else {
+        scan_scalar(bytes, cursor);
+    }
+    Ok(())
+}
+
+fn scan_container(
+    bytes: &[u8],
+    cursor: &mut usize,
+    depth: usize,
+    path: &str,
+    kind: Container,
+) -> Result<(), CatalogError> {
+    let close = match kind {
+        Container::Object => b'}',
+        Container::Array => b']',
+    };
     *cursor = cursor.saturating_add(1);
     let mut keys = BTreeSet::new();
-    loop {
-        skip_space(bytes, cursor);
-        if bytes.get(*cursor) == Some(&b'}') {
-            *cursor = cursor.saturating_add(1);
-            return Ok(());
-        }
-        let key_start = *cursor;
-        scan_string(bytes, cursor)?;
-        let key_bytes = bytes
-            .get(key_start..*cursor)
-            .ok_or_else(|| scan_error("invalid object key"))?;
-        let key: String =
-            serde_json::from_slice(key_bytes).map_err(|_error| scan_error("invalid object key"))?;
-        if !keys.insert(key.clone()) {
-            return Err(CatalogError::DuplicateKey { path, key });
-        }
-        skip_space(bytes, cursor);
-        expect_byte(bytes, cursor, b':')?;
-        scan_child(bytes, cursor, depth, path.as_str(), key)?;
-        skip_space(bytes, cursor);
-        if bytes.get(*cursor) == Some(&b',') {
-            *cursor = cursor.saturating_add(1);
-            continue;
-        }
-        expect_byte(bytes, cursor, b'}')?;
-        return Ok(());
-    }
-}
-
-fn scan_child(
-    bytes: &[u8],
-    cursor: &mut usize,
-    depth: usize,
-    path: &str,
-    key: String,
-) -> Result<(), CatalogError> {
-    let child_path = if path.is_empty() {
-        key
-    } else {
-        format!("{path}.{key}")
-    };
-    let child_depth = depth
-        .checked_add(1)
-        .ok_or_else(|| scan_error("depth overflow"))?;
-    scan_value(bytes, cursor, child_depth, child_path)
-}
-
-fn scan_array(
-    bytes: &[u8],
-    cursor: &mut usize,
-    depth: usize,
-    path: &str,
-) -> Result<(), CatalogError> {
-    *cursor = cursor.saturating_add(1);
     let mut index = 0_usize;
     loop {
         skip_space(bytes, cursor);
-        if bytes.get(*cursor) == Some(&b']') {
+        if bytes.get(*cursor) == Some(&close) {
             *cursor = cursor.saturating_add(1);
             return Ok(());
         }
-        let child_path = format!("{path}[{index}]");
-        scan_value(
-            bytes,
-            cursor,
-            depth
-                .checked_add(1)
-                .ok_or_else(|| scan_error("depth overflow"))?,
-            child_path,
-        )?;
-        index = index
+        let child_path = match kind {
+            Container::Object => scan_object_key(bytes, cursor, path, &mut keys)?,
+            Container::Array => {
+                let value = format!("{path}[{index}]");
+                index = index
+                    .checked_add(1)
+                    .ok_or_else(|| scan_error("array index overflow"))?;
+                value
+            }
+        };
+        let child_depth = depth
             .checked_add(1)
-            .ok_or_else(|| scan_error("array index overflow"))?;
+            .ok_or_else(|| scan_error("depth overflow"))?;
+        scan_value(bytes, cursor, child_depth, &child_path)?;
         skip_space(bytes, cursor);
         if bytes.get(*cursor) == Some(&b',') {
             *cursor = cursor.saturating_add(1);
             continue;
         }
-        expect_byte(bytes, cursor, b']')?;
+        expect_byte(bytes, cursor, close)?;
         return Ok(());
     }
+}
+
+fn scan_object_key(
+    bytes: &[u8],
+    cursor: &mut usize,
+    path: &str,
+    keys: &mut BTreeSet<String>,
+) -> Result<String, CatalogError> {
+    let key_start = *cursor;
+    scan_string(bytes, cursor)?;
+    let key_bytes = bytes
+        .get(key_start..*cursor)
+        .ok_or_else(|| scan_error("invalid object key"))?;
+    let key: String =
+        serde_json::from_slice(key_bytes).map_err(|_error| scan_error("invalid object key"))?;
+    if !keys.insert(key.clone()) {
+        return Err(CatalogError::DuplicateKey {
+            path: path.to_owned(),
+            key,
+        });
+    }
+    skip_space(bytes, cursor);
+    expect_byte(bytes, cursor, b':')?;
+    Ok(if path.is_empty() {
+        key
+    } else {
+        format!("{path}.{key}")
+    })
 }
 
 fn scan_string(bytes: &[u8], cursor: &mut usize) -> Result<(), CatalogError> {
