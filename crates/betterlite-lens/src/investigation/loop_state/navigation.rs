@@ -1,11 +1,17 @@
 use super::super::loop_state::{Context, State};
 use crate::analysis::{AnalysisError, Decision, DecisionAction};
+use crate::models::execution::TracePart;
+
+pub(super) enum Outcome {
+    Continue,
+    Terminal(Vec<TracePart>),
+}
 
 pub(super) async fn advance(
     context: &Context<'_>,
     state: &mut State,
     decision: Decision,
-) -> Result<(), AnalysisError> {
+) -> Result<Outcome, AnalysisError> {
     state.reads.push(decision.clone());
     match decision.action {
         DecisionAction::Observations => {
@@ -17,29 +23,27 @@ pub(super) async fn advance(
         DecisionAction::Feedback => {
             state.feedback_page = usize::try_from(decision.page).unwrap_or(usize::MAX);
         }
-        DecisionAction::Read => read_page(context, state, decision).await?,
+        DecisionAction::Read => return read_page(context, state, decision).await,
         DecisionAction::Submit | DecisionAction::Inconclusive => {}
     }
-    Ok(())
+    Ok(Outcome::Continue)
 }
 
 async fn read_page(
     context: &Context<'_>,
     state: &mut State,
     decision: Decision,
-) -> Result<(), AnalysisError> {
-    let Some(execution_id) = decision.execution_id else {
-        state.stalled = true;
-        return Ok(());
-    };
-    if !context
-        .examined
-        .iter()
-        .any(|item| item.execution.id == execution_id)
-    {
-        state.stalled = true;
-        return Ok(());
+) -> Result<Outcome, AnalysisError> {
+    let known = decision.execution_id.as_ref().is_some_and(|execution_id| {
+        context
+            .examined
+            .iter()
+            .any(|item| item.execution.id == *execution_id)
+    });
+    if !known {
+        return Ok(Outcome::Terminal(state.additional.clone()));
     }
+    let execution_id = decision.execution_id.unwrap_or_default();
     let page = (context.read)(execution_id, decision.cursor, decision.offset).await?;
     if !page
         .parts
@@ -50,5 +54,5 @@ async fn read_page(
     }
     state.additional.clone_from(&page.parts);
     state.navigation = Some(page);
-    Ok(())
+    Ok(Outcome::Continue)
 }
