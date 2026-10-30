@@ -5,6 +5,26 @@ use std::collections::BTreeMap;
 use secrecy::ExposeSecret as _;
 
 #[test]
+fn cisco_config_loads_through_loader() {
+    let loader = crate::loader::ConfigLoader {
+        lookup: BTreeMap::new(),
+    };
+    let config = loader
+        .load(
+            "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: test-key\n",
+        )
+        .expect("Cisco configuration must load through the public loader");
+    let configured = config
+        .sections
+        .cisco_verdict_contracts
+        .guardrails
+        .first()
+        .expect("Cisco settings");
+    assert_eq!(configured.api_key.expose_secret(), "test-key");
+    assert_eq!(configured.inspect_path, "/api/v1/inspect/chat");
+}
+
+#[test]
 fn cisco_config_loads_secret_and_defaults() {
     let entry = super::Entry {
         guardrail_name: Some("cisco".to_owned()),
