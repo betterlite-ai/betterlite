@@ -1,0 +1,5 @@
+kind: helper
+name: azure-policy-provider-fields
+call: {azure_content_policy: {message: caller, model: gpt, extra_information: debug, body: {message: provider, type: '', code: null}, response: null}}
+env: {}
+compare: {ignore: []}

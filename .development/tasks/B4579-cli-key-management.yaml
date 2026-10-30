@@ -74,7 +74,7 @@ checks:
   commands:
     - id: list-command
       why: keys list command does not accept all options or does not pass them to the client
-      run: grep -qF '@keys.command()' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '--include-team-keys' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '--return-full-object' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.list' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+      run: grep -qF '@keys.command()' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF -- '--include-team-keys' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF -- '--return-full-object' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.list' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
     - id: generate-command
       why: keys generate command does not handle JSON parsing or pass all parameters to the client
       run: grep -qF 'def generate' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'json.loads' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'BadParameter' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.generate' tools/management-cli/litellm/proxy/client/cli/commands/keys.py

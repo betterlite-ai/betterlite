@@ -2,6 +2,7 @@ worktrees: ../betterlite-worktrees
 vendors:
   - id: openai
     limit_markers: ["You've hit your usage limit"]
+    max_parallel: 12
   - id: anthropic
     limit_markers: ["You've hit your"]
 runners:

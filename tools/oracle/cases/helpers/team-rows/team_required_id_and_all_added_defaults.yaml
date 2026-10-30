@@ -1,0 +1,9 @@
+kind: helper
+name: team_required_id_and_all_added_defaults
+call:
+  team_rows:
+    calls:
+      - {"name":"team_required_id_and_all_added_defaults","operation":"team","row":{}}
+      - {"name":"team_required_id_and_all_added_defaults","operation":"team","row":{"team_id":"t"}}
+env: {}
+compare: {ignore: []}
