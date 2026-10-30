@@ -51,93 +51,140 @@ pub struct DbError {
 }
 
 impl DbError {
-    pub fn new(error_type: ErrorType) -> Self {
-        let value = Self {
+    #[must_use]
+    pub const fn new(error_type: ErrorType) -> Self {
+        if matches!(error_type, ErrorType::Other) {
+            return Self {
+                error_type,
+                message: String::new(),
+                code: None,
+                meta_code: None,
+                traceback_modules: Vec::new(),
+            };
+        }
+        Self {
             error_type,
             message: String::new(),
             code: None,
             meta_code: None,
             traceback_modules: Vec::new(),
-        };
-        value
+        }
     }
 }
-pub fn is_database_connection_error(error: &DbError) -> bool {
-    let result = matches!(
-        error.error_type,
+
+impl ErrorType {
+    const fn is_data_type(self) -> bool {
+        match self {
+            Self::Data
+            | Self::UniqueViolation
+            | Self::ForeignKeyViolation
+            | Self::MissingRequiredValue
+            | Self::RawQuery
+            | Self::TableNotFound
+            | Self::RecordNotFound => true,
+            Self::Connection
+            | Self::Deadline
+            | Self::EngineConnection
+            | Self::NoDbConnection
+            | Self::Prisma
+            | Self::ClientNotConnected
+            | Self::HttpClientClosed
+            | Self::Other => false,
+        }
+    }
+}
+
+const fn is_transport_type(error_type: ErrorType) -> bool {
+    match error_type {
         ErrorType::Connection
-            | ErrorType::Deadline
-            | ErrorType::EngineConnection
-            | ErrorType::NoDbConnection
-    );
-    result
-}
-pub fn is_prisma_data_error(error: &DbError) -> bool {
-    let result = error.error_type == ErrorType::Data;
-    result
-}
-pub fn is_database_infrastructure(error: &DbError) -> bool {
-    if matches!(
-        error.error_type,
+        | ErrorType::Deadline
+        | ErrorType::EngineConnection
+        | ErrorType::NoDbConnection
+        | ErrorType::ClientNotConnected
+        | ErrorType::HttpClientClosed => true,
         ErrorType::Data
-            | ErrorType::UniqueViolation
-            | ErrorType::ForeignKeyViolation
-            | ErrorType::MissingRequiredValue
-            | ErrorType::RawQuery
-            | ErrorType::TableNotFound
-            | ErrorType::RecordNotFound
-    ) {
-        return false;
+        | ErrorType::UniqueViolation
+        | ErrorType::ForeignKeyViolation
+        | ErrorType::MissingRequiredValue
+        | ErrorType::RawQuery
+        | ErrorType::TableNotFound
+        | ErrorType::RecordNotFound
+        | ErrorType::Prisma
+        | ErrorType::Other => false,
     }
-    let result = matches!(
-        error.error_type,
-        ErrorType::Connection
-            | ErrorType::Deadline
-            | ErrorType::EngineConnection
-            | ErrorType::NoDbConnection
-            | ErrorType::Prisma
-    );
-    result
 }
-pub fn is_database_transport_error(error: &DbError) -> bool {
+
+fn contains_any(message: &str, phrases: &[&str]) -> bool {
+    let lower = message.to_ascii_lowercase();
+    phrases.iter().any(|phrase| lower.contains(phrase))
+}
+
+#[must_use]
+pub const fn is_database_connection_error(error: &DbError) -> bool {
     if matches!(
         error.error_type,
         ErrorType::Connection
             | ErrorType::Deadline
             | ErrorType::EngineConnection
             | ErrorType::NoDbConnection
-            | ErrorType::ClientNotConnected
-            | ErrorType::HttpClientClosed
     ) {
         return true;
     }
-    error.error_type == ErrorType::Prisma
-        && TRANSPORT_WORDS
-            .iter()
-            .any(|word| error.message.to_ascii_lowercase().contains(word))
+    false
 }
+
+#[must_use]
+pub fn is_prisma_data_error(error: &DbError) -> bool {
+    if error.error_type == ErrorType::Data {
+        return true;
+    }
+    false
+}
+
+#[must_use]
+pub fn is_database_infrastructure(error: &DbError) -> bool {
+    if error.error_type.is_data_type() {
+        return false;
+    }
+    is_database_connection_error(error) || error.error_type == ErrorType::Prisma
+}
+
+#[must_use]
+pub fn is_database_transport_error(error: &DbError) -> bool {
+    if is_transport_type(error.error_type) {
+        return true;
+    }
+    error.error_type == ErrorType::Prisma && contains_any(&error.message, &TRANSPORT_WORDS)
+}
+
+#[must_use]
 pub fn is_prisma_error(error: &DbError) -> bool {
-    let result = matches!(
-        error.error_type,
-        ErrorType::Data
-            | ErrorType::UniqueViolation
-            | ErrorType::ForeignKeyViolation
-            | ErrorType::MissingRequiredValue
-            | ErrorType::RawQuery
-            | ErrorType::TableNotFound
-            | ErrorType::RecordNotFound
-            | ErrorType::Prisma
-    );
-    result
+    if error.error_type.is_data_type() {
+        return true;
+    }
+    error.error_type == ErrorType::Prisma
 }
+
+#[must_use]
+fn has_deadlock_marker(error: &DbError) -> bool {
+    if error.code.as_deref() == Some("P2034") {
+        return true;
+    }
+    contains_any(
+        &error.message,
+        &["deadlock detected", "40p01", "write conflict or a deadlock"],
+    )
+}
+
+#[must_use]
 pub fn is_deadlock_error(error: &DbError) -> bool {
-    let result = is_prisma_error(error)
-        && (error.code.as_deref() == Some("P2034")
-            || ["deadlock detected", "40p01", "write conflict or a deadlock"]
-                .iter()
-                .any(|word| error.message.to_ascii_lowercase().contains(word)));
-    result
+    if is_prisma_error(error) {
+        return has_deadlock_marker(error);
+    }
+    false
 }
+
+#[must_use]
 pub fn postgres_sqlstate(error: &DbError) -> Option<String> {
     if !is_prisma_data_error(error) {
         return None;
@@ -153,49 +200,60 @@ pub fn postgres_sqlstate(error: &DbError) -> Option<String> {
         .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit())
         .then(|| value.to_owned())
 }
+
+#[must_use]
 pub fn is_read_only_transaction_error(error: &DbError) -> bool {
-    let result = is_prisma_error(error)
-        && (error.message.to_ascii_lowercase().contains("\"25006\"")
-            || error
-                .message
-                .to_ascii_lowercase()
-                .contains("read-only transaction"));
-    result
+    if !is_prisma_error(error) {
+        return false;
+    }
+    contains_any(&error.message, &["\"25006\"", "read-only transaction"])
 }
+
+#[must_use]
 pub fn is_prisma_engine_internal(error: &DbError) -> bool {
-    let result = !is_prisma_error(error)
-        && error
-            .traceback_modules
-            .iter()
-            .any(|module| module.starts_with("prisma.engine"));
-    result
+    if is_prisma_error(error) {
+        return false;
+    }
+    error
+        .traceback_modules
+        .iter()
+        .any(|module| module.starts_with("prisma.engine"))
 }
+
+#[must_use]
 pub fn is_permanent_database_fault(error: &DbError) -> bool {
-    let result = is_database_infrastructure(error)
-        && !is_database_connection_error(error)
-        && !is_database_transport_error(error);
-    result
+    if !is_database_infrastructure(error) {
+        return false;
+    }
+    !is_database_connection_error(error) && !is_database_transport_error(error)
 }
+
 pub trait DbReconnect {
-    fn attempt_db_reconnect<'a>(
-        &'a mut self,
-        reason: &'a str,
+    fn attempt_db_reconnect<'client>(
+        &'client mut self,
+        reason: &'client str,
         timeout_seconds: f64,
         lock_timeout_seconds: f64,
-    ) -> Pin<Box<dyn Future<Output = Result<bool, DbError>> + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<bool, DbError>> + Send + 'client>>;
 }
+
+pub struct RetryPolicy<'reason> {
+    pub reason: &'reason str,
+    pub retry_safe_error_types: Option<&'reason [ErrorType]>,
+    pub timeout_seconds: Option<f64>,
+    pub lock_timeout_seconds: Option<f64>,
+}
+
 pub async fn call_with_db_reconnect_retry<T, Read, ReadFuture, Client>(
     client: &mut Client,
     mut read: Read,
-    reason: &str,
-    retry_safe_error_types: Option<&[ErrorType]>,
-    timeout_seconds: Option<f64>,
-    lock_timeout_seconds: Option<f64>,
+    policy: RetryPolicy<'_>,
 ) -> Result<T, DbError>
 where
-    Read: FnMut() -> ReadFuture,
-    ReadFuture: Future<Output = Result<T, DbError>>,
-    Client: DbReconnect,
+    Read: FnMut() -> ReadFuture + Send,
+    ReadFuture: Future<Output = Result<T, DbError>> + Send,
+    Client: DbReconnect + Send,
+    T: Send,
 {
     let first = read().await;
     let error = match first {
@@ -203,15 +261,17 @@ where
         Err(error) => error,
     };
     if !is_database_transport_error(&error)
-        || retry_safe_error_types.is_some_and(|allowed| !allowed.contains(&error.error_type))
+        || policy
+            .retry_safe_error_types
+            .is_some_and(|allowed| !allowed.contains(&error.error_type))
     {
         return Err(error);
     }
     match client
         .attempt_db_reconnect(
-            reason,
-            timeout_seconds.unwrap_or(2.0),
-            lock_timeout_seconds.unwrap_or(0.1),
+            policy.reason,
+            policy.timeout_seconds.unwrap_or(2.0_f64),
+            policy.lock_timeout_seconds.unwrap_or(0.1_f64),
         )
         .await
     {

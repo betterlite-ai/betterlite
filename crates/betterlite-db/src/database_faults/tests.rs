@@ -110,24 +110,26 @@ async fn read_success() {
     let mut client = TestClient;
     let result = call_with_db_reconnect_retry(
         &mut client,
-        || async { Ok::<_, DbError>(7) },
-        "read",
-        None,
-        None,
-        None,
+        || async { Ok::<_, DbError>(7_i32) },
+        RetryPolicy {
+            reason: "read",
+            retry_safe_error_types: None,
+            timeout_seconds: None,
+            lock_timeout_seconds: None,
+        },
     )
     .await;
-    assert_eq!(result.ok(), Some(7));
+    assert_eq!(result.ok(), Some(7_i32));
 }
 
 struct TestClient;
 impl DbReconnect for TestClient {
-    fn attempt_db_reconnect<'a>(
-        &'a mut self,
-        _reason: &'a str,
+    fn attempt_db_reconnect<'client>(
+        &'client mut self,
+        _reason: &'client str,
         _timeout: f64,
         _lock: f64,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool, DbError>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<bool, DbError>> + Send + 'client>> {
         Box::pin(async { Ok(true) })
     }
 }
