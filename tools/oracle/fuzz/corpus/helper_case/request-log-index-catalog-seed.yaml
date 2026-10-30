@@ -1,0 +1,12 @@
+kind: helper
+name: request-log-index-catalog-seed
+call:
+  request_log_index_catalog:
+    function: partition_index_name
+    table: LiteLLM_SpendLogs
+    name: LiteLLM_SpendLogs_api_key_startTime_idx
+    definition: '("api_key", "startTime")'
+    partition: partition
+  env: {}
+compare:
+  ignore: []

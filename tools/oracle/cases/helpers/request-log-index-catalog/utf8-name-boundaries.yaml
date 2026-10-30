@@ -1,0 +1,12 @@
+kind: helper
+name: utf8-name-boundaries
+call:
+  request_log_index_catalog:
+    function: partition_index_name
+    table: LiteLLM_SpendLogs
+    name: LiteLLM_SpendLogs_litellm_call_id_idx
+    definition: '("litellm_call_id")'
+    partition: '界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界'
+  env: {}
+compare:
+  ignore: []
