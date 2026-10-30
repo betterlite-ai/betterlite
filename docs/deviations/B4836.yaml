@@ -1,0 +1,14 @@
+task: B4836
+deviations:
+  - what: "Session token is never in argv or environment; the config references it with `{file:<path>}` inside OPENCODE_CONFIG_CONTENT JSON."
+    why: "Command-line arguments are visible in process listings. The token is a secret and must stay out of argv and env."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L324-L333
+  - what: "XDG_*_HOME environment variables are set to persist session state across resume, overriding user's ~/.opencode."
+    why: "OpenCode reads XDG dirs by default. This deployment isolates each session with its own persisted directories so previous sessions do not interfere."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L340-L342
+  - what: "`--pure` flag is always passed to disable plugins, even though opencode.json in the repo might define them."
+    why: "Plugins run arbitrary code as the host user before any tool permission applies. The flag is always on for security."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L363-L367
+  - what: "An error event in OpenCode fails a turn even when the process exits with code 0."
+    why: "OpenCode may report errors via JSONL events after successfully starting. state.error is checked before exit code."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L419-L421
