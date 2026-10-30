@@ -1,0 +1,11 @@
+kind: helper
+name: alias_table_required_authors_and_string_preservation
+call:
+  team_rows:
+    calls:
+      - {"name":"alias_table_required_authors_and_string_preservation","operation":"model","row":{}}
+      - {"name":"alias_table_required_authors_and_string_preservation","operation":"model","row":{"created_by":"c"}}
+      - {"name":"alias_table_required_authors_and_string_preservation","operation":"model","row":{"updated_by":"u"}}
+      - {"name":"alias_table_required_authors_and_string_preservation","operation":"model","row":{"created_by":"c","updated_by":"u","model_aliases":"{bad"}}
+env: {}
+compare: {ignore: []}
