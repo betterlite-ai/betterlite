@@ -12,6 +12,8 @@ use super::*;
 #[case::number_with_other_status("429", Some(400), false)]
 #[case::number_inside_word("429abc", None, false)]
 #[case::number_inside_long_number("1429", None, false)]
+#[case::number_after_underscore("x_429", None, false)]
+#[case::number_before_underscore("429_", None, false)]
 #[case::service_tier("service tier capacity exceeded", Some(400), true)]
 #[case::hyphenated("rate-limit reached", Some(400), true)]
 #[case::ordinary("bad request", None, false)]
@@ -32,6 +34,10 @@ fn error_facts_behavior_tests_behavior(
 #[case::validation_with_context_phrase(
     "string_above_max_length this model's maximum context length is 10",
     false
+)]
+#[case::invalid_user_with_context_phrase(
+    "invalid 'user' this model's maximum context length is 10",
+    true
 )]
 #[case::ordinary("bad request", false)]
 fn error_facts_behavior_tests_behavior_context_window(
