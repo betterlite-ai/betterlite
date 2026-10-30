@@ -1,12 +1,16 @@
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
+use betterlite_secrets::secret_codec::secret_map::decode_secret_map;
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, OsNonces, StoredCipher, StoredValue,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use tokio::time::error::Elapsed;
+
+pub mod secret_text;
+use secret_text::SecretText;
 use std::collections::BTreeMap;
-use std::fmt;
 
 pub type DbCipher = StoredCipher<OsNonces, TracingDiagnostics>;
 pub const V2_GCM_PREFIX: &str = "v2:gcm:";
@@ -25,31 +29,31 @@ pub struct CoveredTableSpec {
 pub const COVERED_TABLE_SPECS: &[CoveredTableSpec] = &[
     CoveredTableSpec {
         location: "model_table",
-        table: "litellm_proxymodeltable",
+        table: "LiteLLM_ProxyModelTable",
         json_columns: &["litellm_params"],
         scalar_columns: &[],
     },
     CoveredTableSpec {
         location: "credentials",
-        table: "litellm_credentialstable",
+        table: "LiteLLM_CredentialsTable",
         json_columns: &["credential_values"],
         scalar_columns: &[],
     },
     CoveredTableSpec {
         location: "mcp_server",
-        table: "litellm_mcpservertable",
+        table: "LiteLLM_MCPServerTable",
         json_columns: &["credentials", "env_vars", "static_headers", "env"],
         scalar_columns: &[],
     },
     CoveredTableSpec {
         location: "mcp_user_credentials",
-        table: "litellm_mcpusercredentials",
+        table: "LiteLLM_MCPUserCredentials",
         json_columns: &[],
         scalar_columns: &["credential_b64"],
     },
     CoveredTableSpec {
         location: "mcp_user_env_vars",
-        table: "litellm_mcpuserenvvars",
+        table: "LiteLLM_MCPUserEnvVars",
         json_columns: &[],
         scalar_columns: &["values_b64"],
     },
@@ -59,6 +63,8 @@ pub const COVERED_TABLE_SPECS: &[CoveredTableSpec] = &[
 pub enum ScanError {
     #[error("counter overflow")]
     CounterOverflow,
+    #[error("database scan timed out")]
+    Timeout(#[source] Elapsed),
     #[error("stored migration JSON exceeds {MAX_MIGRATION_JSON_BYTES} bytes")]
     InputTooLarge,
     #[error("invalid stored migration JSON: {0}")]
@@ -84,26 +90,6 @@ pub enum MigrationJson {
     Object(BTreeMap<String, Self>),
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SecretText(String);
-
-impl fmt::Debug for SecretText {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SecretText(REDACTED)")
-    }
-}
-
-impl SecretText {
-    #[must_use]
-    pub const fn new(value: String) -> Self {
-        if value.is_empty() {
-            return Self(value);
-        }
-        Self(value)
-    }
-}
-
 pub fn decode_migration_json(bytes: &[u8]) -> Result<MigrationJson, ScanError> {
     if bytes.len() > MAX_MIGRATION_JSON_BYTES {
         return Err(ScanError::InputTooLarge);
@@ -116,14 +102,14 @@ pub fn classify_value(value: &MigrationJson, cipher: &DbCipher, key: &str) -> Va
     let MigrationJson::String(text) = value else {
         return ValueClass::NotAString;
     };
-    if text.0.starts_with(V2_GCM_PREFIX) {
+    if text.0.expose_secret().starts_with(V2_GCM_PREFIX) {
         return ValueClass::Migrated;
     }
-    if text.0.is_empty() {
+    if text.0.expose_secret().is_empty() {
         return ValueClass::Plaintext;
     }
     let stored = cipher.decrypt_value(
-        StoredValue::<()>::Text(SecretString::from(text.0.as_str())),
+        StoredValue::<()>::Text(text.0.clone()),
         key,
         DecryptPolicy {
             log: FailureLog::Debug,
@@ -145,11 +131,11 @@ pub fn reencrypt_value(
     let MigrationJson::String(text) = value else {
         return Ok(value.clone());
     };
-    if text.0.is_empty() || text.0.starts_with(V2_GCM_PREFIX) {
+    if text.0.expose_secret().is_empty() || text.0.expose_secret().starts_with(V2_GCM_PREFIX) {
         return Ok(value.clone());
     }
     let Some(StoredValue::Text(plain)) = cipher.decrypt_value(
-        StoredValue::<()>::Text(SecretString::from(text.0.as_str())),
+        StoredValue::<()>::Text(text.0.clone()),
         key,
         DecryptPolicy {
             log: FailureLog::Debug,
@@ -159,9 +145,7 @@ pub fn reencrypt_value(
         return Ok(value.clone());
     };
     match cipher.encrypt_value(StoredValue::Text(plain), None) {
-        Ok(StoredValue::Text(sealed)) => Ok(MigrationJson::String(SecretText::new(
-            sealed.expose_secret().to_owned(),
-        ))),
+        Ok(StoredValue::Text(sealed)) => Ok(MigrationJson::String(SecretText(sealed))),
         Ok(StoredValue::Other(())) => Ok(value.clone()),
         Err(source) => Err(ScanError::Encrypt(source)),
     }
@@ -214,10 +198,11 @@ pub fn classify_callback_value(value: &MigrationJson, cipher: &DbCipher) -> Valu
     };
     let inner = text
         .0
+        .expose_secret()
         .strip_prefix("litellm_enc::")
-        .unwrap_or(text.0.as_str());
+        .unwrap_or_else(|| text.0.expose_secret());
     classify_value(
-        &MigrationJson::String(SecretText::new(inner.to_owned())),
+        &MigrationJson::String(SecretText(SecretString::from(inner))),
         cipher,
         "callback",
     )
@@ -227,30 +212,32 @@ pub fn classify_callback_value(value: &MigrationJson, cipher: &DbCipher) -> Valu
 pub fn classify_secret_map(
     value: &MigrationJson,
     cipher: &DbCipher,
-    _key: &str,
+    key: &str,
 ) -> Option<ValueClass> {
-    let text = match value {
-        MigrationJson::String(text) => text.0.clone(),
-        MigrationJson::Object(values) => match serde_json::to_string(values) {
-            Ok(text) => text,
-            Err(_) => return Some(ValueClass::Undecryptable),
-        },
-        MigrationJson::Null
-        | MigrationJson::Bool(_)
-        | MigrationJson::Number(_)
-        | MigrationJson::Array(_) => return Some(ValueClass::Undecryptable),
+    let encoded = match serde_json::to_string(value) {
+        Ok(text) => SecretString::from(text),
+        Err(_) => return Some(ValueClass::Undecryptable),
     };
-    let unquoted = serde_json::from_str::<String>(&text).unwrap_or(text);
-    if unquoted.starts_with(V2_GCM_PREFIX) {
-        return Some(ValueClass::Migrated);
-    }
-    let Ok(Some(decoded)) = cipher.decode_secret_map(unquoted.as_bytes()) else {
-        return Some(ValueClass::Undecryptable);
+    let decoded = match decode_secret_map(cipher, Some(encoded.expose_secret()), key) {
+        Ok(map) => map?,
+        Err(_) => return Some(ValueClass::Undecryptable),
     };
     if decoded.is_empty() {
         return None;
     }
-    Some(if unquoted.starts_with(V2_GCM_PREFIX) {
+    let migrated = match value {
+        MigrationJson::String(text) => {
+            let unquoted = serde_json::from_str::<SecretString>(text.0.expose_secret()).ok();
+            let ciphertext = unquoted.as_ref().unwrap_or(&text.0);
+            ciphertext.expose_secret().starts_with(V2_GCM_PREFIX)
+        }
+        MigrationJson::Null
+        | MigrationJson::Bool(_)
+        | MigrationJson::Number(_)
+        | MigrationJson::Array(_)
+        | MigrationJson::Object(_) => false,
+    };
+    Some(if migrated {
         ValueClass::Migrated
     } else {
         ValueClass::Legacy

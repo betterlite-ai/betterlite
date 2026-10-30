@@ -5,6 +5,8 @@ call:
     values:
       - "v2:gcm:seed"
       - "plain"
-env: {}
+    maps: [{}, "v2:gcm:invalid", {key: plain}]
+    callbacks: ["litellm_enc::v2:gcm:seed"]
+env: {LITELLM_SALT_KEY: scan-key}
 compare:
   ignore: []

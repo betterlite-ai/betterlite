@@ -1,5 +1,18 @@
 kind: helper
 name: encryption-classification-report-counts
-call: {encryption_classification: {values: ["v2:gcm:a", "v2:gcm:b", "one"]}}
-env: {}
-compare: {ignore: []}
+call:
+  encryption_classification:
+    values:
+    - AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg==
+    - v2:gcm:b
+    - one
+    - null
+    maps:
+    - {}
+    - bad
+    callbacks:
+    - litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg==
+env:
+  LITELLM_SALT_KEY: scan-key
+compare:
+  ignore: []

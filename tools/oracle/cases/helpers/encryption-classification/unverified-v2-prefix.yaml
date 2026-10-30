@@ -1,5 +1,11 @@
 kind: helper
 name: encryption-classification-unverified-v2-prefix
-call: {encryption_classification: {values: ["v2:gcm:not-a-ciphertext", "plain"]}}
-env: {}
-compare: {ignore: []}
+call:
+  encryption_classification:
+    values:
+    - v2:gcm:not-a-ciphertext
+    - plain
+env:
+  LITELLM_SALT_KEY: scan-key
+compare:
+  ignore: []

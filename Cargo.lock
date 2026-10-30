@@ -969,6 +969,7 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "futures-util",
  "percent-encoding",
  "regex",
  "rstest",
@@ -976,6 +977,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -3980,8 +3982,6 @@ dependencies = [
  "chrono",
  "fallible-iterator 0.2.0",
  "postgres-protocol",
- "serde_core",
- "serde_json",
 ]
 
 [[package]]
