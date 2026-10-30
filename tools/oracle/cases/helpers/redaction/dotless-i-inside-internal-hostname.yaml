@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-dotless-i-inside-internal-hostname
+call:
+  redaction:
+    function: redact_internal_details
+    text: "see dbı.internal now"
+env: {}
+compare:
+  ignore: []

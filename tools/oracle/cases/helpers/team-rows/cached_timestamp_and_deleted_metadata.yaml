@@ -1,0 +1,12 @@
+kind: helper
+name: cached_timestamp_and_deleted_metadata
+call:
+  team_rows:
+    calls:
+      - {"name":"cached_timestamp_and_deleted_metadata","operation":"cached","row":{"team_id":"t"}}
+      - {"name":"cached_timestamp_and_deleted_metadata","operation":"cached","row":{"team_id":"t","last_refreshed_at":123.5}}
+      - {"name":"cached_timestamp_and_deleted_metadata","operation":"deleted","row":{"team_id":"t"}}
+      - {"name":"cached_timestamp_and_deleted_metadata","operation":"deleted","row":{"team_id":"t","id":"d","deleted_at":"2026-01-01T00:00:00","deleted_by":"a","deleted_by_api_key":"key-id","litellm_changed_by":"c","policies":["p"],"members_with_roles":{}}}
+      - {"name":"cached_timestamp_is_not_a_monetary_amount","operation":"cached","row":{"team_id":"t","last_refreshed_at":1e+100}}
+env: {}
+compare: {ignore: []}

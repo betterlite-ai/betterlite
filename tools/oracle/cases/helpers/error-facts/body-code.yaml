@@ -1,0 +1,9 @@
+kind: helper
+name: error-facts-body-code
+call:
+  error_facts:
+    kind: body_code
+    text: '{"error":{"code":"429"}}'
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-combining-mark-before-private-ipv4
+call:
+  redaction:
+    function: redact_internal_details
+    text: "́10.0.0.5 is down"
+env: {}
+compare:
+  ignore: []
