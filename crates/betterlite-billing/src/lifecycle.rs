@@ -14,10 +14,10 @@ pub struct LicenseData {
     pub user_id: Option<String>,
 }
 
-pub struct RecorderContext<'a> {
-    pub settings: &'a Settings,
-    pub proxy: &'a Arc<ProxyPolicy>,
-    pub registry: &'a ActiveRecorderRegistry,
+pub struct RecorderContext<'startup> {
+    pub settings: &'startup Settings,
+    pub proxy: &'startup Arc<ProxyPolicy>,
+    pub registry: &'startup ActiveRecorderRegistry,
 }
 
 #[must_use]

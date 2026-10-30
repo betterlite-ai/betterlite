@@ -5,7 +5,7 @@ use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -122,7 +122,7 @@ fn rejects_oversized_response_before_buffering() {
 
 fn serve<T>(listener: &TcpListener, sender: &thread::JoinHandle<T>, reply: &[u8]) -> String {
     listener.set_nonblocking(true).unwrap();
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     let mut stream = loop {
         if let Ok((stream, _peer)) = listener.accept() {
             break stream;
@@ -147,9 +147,9 @@ fn serve<T>(listener: &TcpListener, sender: &thread::JoinHandle<T>, reply: &[u8]
 }
 
 #[rstest]
-#[case::at_limit(4_194_304, "", true)]
-#[case::over_limit(4_194_305, "", false)]
-#[case::declared_at_limit(4_194_304, "content-length: 4194304\r\n", true)]
+#[case::at_limit(0x0040_0000, "", true)]
+#[case::over_limit(0x0040_0001, "", false)]
+#[case::declared_at_limit(0x0040_0000, "content-length: 4194304\r\n", true)]
 fn bounds_collector_responses(#[case] length: usize, #[case] header: &str, #[case] accepted: bool) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

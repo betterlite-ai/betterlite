@@ -1,4 +1,5 @@
 use std::io::{self, Read as _};
+use std::mem;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -10,7 +11,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opentelemetry_http::{HttpClient, HttpError, Request, Response, ResponseBodyTooLarge};
 use reqwest::Proxy;
-use reqwest::blocking::Client;
+use reqwest::blocking::{self, Client};
 use rustls::ClientConfig;
 use secrecy::ExposeSecret as _;
 use thiserror::Error;
@@ -131,9 +132,7 @@ impl HttpClient for OtlpClient {
     }
 }
 
-fn bounded_response(
-    mut response: reqwest::blocking::Response,
-) -> Result<Response<Bytes>, HttpError> {
+fn bounded_response(mut response: blocking::Response) -> Result<Response<Bytes>, HttpError> {
     let limit = u64::try_from(MAX_RESPONSE_BYTES)?;
     if response
         .content_length()
@@ -142,7 +141,7 @@ fn bounded_response(
         return Err(Box::new(ResponseBodyTooLarge::new()));
     }
     let status = response.status();
-    let headers = std::mem::take(response.headers_mut());
+    let headers = mem::take(response.headers_mut());
     let mut body = Vec::new();
     response
         .take(limit.saturating_add(1))
