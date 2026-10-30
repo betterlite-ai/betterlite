@@ -4,7 +4,11 @@ description: >-
   Create betterlite-cost and its adjustments module for cost_calculator.py's
   _apply_cost_discount and _apply_cost_margin. Define the loaded adjustment records in
   betterlite-config so the calculator and later management routes share them without
-  making billing depend on the server. litellm_settings.cost_discount_config and
+  making billing depend on the server. Load them as the cost_adjustments config section:
+  add cost_adjustments to the sections! list in sections.rs, and make
+  sections/cost_adjustments.rs re-export Raw and Settings from crate::cost_adjustments,
+  where Raw reads litellm_settings.cost_discount_config and cost_margin_config; loader.rs,
+  raw.rs and types.rs stay as they are. litellm_settings.cost_discount_config and
   cost_margin_config both default to empty maps. Keep discount keys as configured names;
   only a truthy matching provider gets a discount, with no global fallback. Return the
   discounted amount, selected fraction and saved amount. Margin lookup prefers an existing
@@ -38,6 +42,8 @@ scope:
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/cost_adjustments.rs
     - crates/betterlite-config/src/cost_adjustments/**
+    - crates/betterlite-config/src/sections.rs
+    - crates/betterlite-config/src/sections/cost_adjustments.rs
     - crates/betterlite-config/fuzz/corpus/config_yaml/cost-adjustment-*
     - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/cost/adjustments.rs
