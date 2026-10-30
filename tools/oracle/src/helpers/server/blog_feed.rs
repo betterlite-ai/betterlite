@@ -1,12 +1,11 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
-use chrono::DateTime;
-use quick_xml::Reader;
-use quick_xml::escape::unescape;
-use quick_xml::events::Event;
+use parser::parse_rss_to_posts;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::time::Duration;
 use thiserror::Error;
+
+mod parser;
 
 pub(crate) struct Op;
 
@@ -16,14 +15,14 @@ pub(crate) enum Input {
     LoadLocalBlogPosts,
     FetchRssFeed {
         url: String,
-        #[serde(default = "default_timeout")]
-        timeout: u64,
+        #[serde(default)]
+        timeout: Option<u64>,
         response: MockResponse,
     },
     ParseRssToPosts {
         xml: String,
-        #[serde(default = "default_max_posts")]
-        max_posts: usize,
+        #[serde(default)]
+        max_posts: Option<usize>,
     },
     ValidateBlogPosts {
         posts: Value,
@@ -70,30 +69,21 @@ enum Failure {
     Parse { message: String },
 }
 
-const fn default_timeout() -> u64 {
-    let timeout = 5;
-    timeout
-}
-const fn default_max_posts() -> usize {
-    let max_posts = 1;
-    max_posts
-}
-
 impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::LoadLocalBlogPosts => {
-                serde_json::to_value(local_posts()).map_err(serialization_error)?
+                serde_json::to_value(local_posts()).map_err(|error| serialization_error(&error))?
             }
             Input::FetchRssFeed {
                 url,
                 timeout,
                 response,
-            } => json!(fetch_rss_feed(url, *timeout, response)?),
+            } => json!(fetch_rss_feed(url, timeout.unwrap_or(5), response)?),
             Input::ParseRssToPosts { xml, max_posts } => {
-                serde_json::to_value(parse_rss_to_posts(xml, *max_posts)?)
-                    .map_err(serialization_error)?
+                serde_json::to_value(parse_rss_to_posts(xml, max_posts.unwrap_or(1))?)
+                    .map_err(|error| serialization_error(&error))?
             }
             Input::ValidateBlogPosts { posts } => json!(validate_blog_posts(posts)),
             Input::GetBlogPosts {
@@ -103,15 +93,15 @@ impl Helper for Op {
                 cached_posts,
                 last_fetch_time,
                 response,
-            } => serde_json::to_value(get_blog_posts(
+            } => serde_json::to_value(get_blog_posts(&BlogPostsRequest {
                 url,
-                *now,
-                *local_only,
-                cached_posts.as_deref(),
-                *last_fetch_time,
+                now: *now,
+                local_only: *local_only,
+                cached_posts: cached_posts.as_deref(),
+                last_fetch_time: *last_fetch_time,
                 response,
-            ))
-            .map_err(serialization_error)?,
+            }))
+            .map_err(|error| serialization_error(&error))?,
         };
         Ok(value)
     }
@@ -142,118 +132,34 @@ fn fetch_rss_feed(url: &str, timeout: u64, response: &MockResponse) -> Result<St
     Ok(response.text.clone())
 }
 
-fn parse_rss_to_posts(xml: &str, max_posts: usize) -> Result<Vec<BlogPost>, Failure> {
-    let mut reader = Reader::from_str(xml);
-    let mut posts = Vec::new();
-    let mut fields: BTreeMap<String, String> = BTreeMap::new();
-    let mut current = String::new();
-    let mut in_item = false;
-    let mut in_channel = false;
-    let mut channel_seen = false;
-    loop {
-        match reader.read_event() {
-            Ok(Event::Start(tag)) => {
-                let name = String::from_utf8_lossy(tag.name().as_ref()).into_owned();
-                if name == "channel" {
-                    in_channel = true;
-                    channel_seen = true;
-                } else if name == "item" && in_channel {
-                    in_item = true;
-                    fields.clear();
-                }
-                current = name;
-            }
-            Ok(Event::Text(text)) if in_item => {
-                let decoded = text.decode().map_err(|error| Failure::Parse {
-                    message: error.to_string(),
-                })?;
-                let value = unescape(decoded.as_ref()).map_err(|error| Failure::Parse {
-                    message: error.to_string(),
-                })?;
-                fields.entry(current.clone()).or_default().push_str(&value);
-            }
-            Ok(Event::CData(text)) if in_item => {
-                fields
-                    .entry(current.clone())
-                    .or_default()
-                    .push_str(&String::from_utf8_lossy(text.as_ref()));
-            }
-            Ok(Event::End(tag)) => {
-                let tag_name = tag.name();
-                let name = String::from_utf8_lossy(tag_name.as_ref()).into_owned();
-                if name == "item" {
-                    if let (Some(title), Some(url)) = (fields.get("title"), fields.get("link")) {
-                        if posts.len() < max_posts {
-                            posts.push(BlogPost {
-                                title: title.clone(),
-                                description: fields.get("description").cloned().unwrap_or_default(),
-                                date: parse_date(
-                                    fields
-                                        .get("pubDate")
-                                        .map(String::as_str)
-                                        .unwrap_or_default(),
-                                ),
-                                url: url.clone(),
-                            });
-                        }
-                    }
-                    in_item = false;
-                    if posts.len() >= max_posts {
-                        break;
-                    }
-                } else if name == "channel" {
-                    in_channel = false;
-                }
-                current.clear();
-            }
-            Ok(Event::Empty(tag)) if tag.name().as_ref() == b"channel" => {
-                channel_seen = true;
-            }
-            Ok(Event::Eof) => break,
-            Ok(_) => {}
-            Err(error) => {
-                return Err(Failure::Parse {
-                    message: error.to_string(),
-                });
-            }
-        }
-    }
-    if channel_seen {
-        Ok(posts)
-    } else {
-        Err(Failure::Parse {
-            message: "RSS feed missing <channel> element".to_owned(),
-        })
-    }
-}
-
-fn parse_date(value: &str) -> String {
-    let parsed = DateTime::parse_from_rfc2822(value).map_or_else(
-        |_| value.to_owned(),
-        |date| date.format("%Y-%m-%d").to_string(),
-    );
-    parsed
-}
 fn validate_blog_posts(posts: &Value) -> bool {
-    let valid = posts.as_array().is_some_and(|items| !items.is_empty());
-    valid
+    let items = posts.as_array();
+    if items.is_none() {
+        return false;
+    }
+    items.is_some_and(|entries| !entries.is_empty())
 }
 
-fn get_blog_posts(
-    url: &str,
+struct BlogPostsRequest<'request> {
+    url: &'request str,
     now: f64,
     local_only: bool,
-    cached_posts: Option<&[BlogPost]>,
+    cached_posts: Option<&'request [BlogPost]>,
     last_fetch_time: f64,
-    response: &MockResponse,
-) -> Vec<BlogPost> {
-    if local_only {
+    response: &'request MockResponse,
+}
+
+fn get_blog_posts(request: &BlogPostsRequest<'_>) -> Vec<BlogPost> {
+    if request.local_only {
         return local_posts();
     }
-    if let Some(posts) = cached_posts.filter(|_| now - last_fetch_time < 3600.0) {
+    if let Some(posts) = request
+        .cached_posts
+        .filter(|_| within_ttl(request.now, request.last_fetch_time))
+    {
         return posts.to_vec();
     }
-    let Ok(xml) = fetch_rss_feed(url, 5, response) else {
+    let Ok(xml) = fetch_rss_feed(request.url, 5, request.response) else {
         return local_posts();
     };
     let Ok(posts) = parse_rss_to_posts(&xml, 1) else {
@@ -266,7 +172,18 @@ fn get_blog_posts(
     }
 }
 
-fn serialization_error(error: serde_json::Error) -> Box<HelperError> {
+fn within_ttl(now_seconds: f64, last_fetch_time_seconds: f64) -> bool {
+    let Ok(now) = Duration::try_from_secs_f64(now_seconds) else {
+        return false;
+    };
+    let Ok(last_fetch_time) = Duration::try_from_secs_f64(last_fetch_time_seconds) else {
+        return false;
+    };
+    now.checked_sub(last_fetch_time)
+        .is_some_and(|elapsed| elapsed < Duration::from_secs(3_600))
+}
+
+fn serialization_error(error: &serde_json::Error) -> Box<HelperError> {
     let helper_error = HelperError {
         class: "SerializationError".to_owned(),
         status: None,
@@ -279,7 +196,7 @@ fn serialization_error(error: serde_json::Error) -> Box<HelperError> {
 }
 impl From<Failure> for Box<HelperError> {
     fn from(error: Failure) -> Self {
-        Box::new(HelperError {
+        Self::new(HelperError {
             class: "RuntimeError".to_owned(),
             status: None,
             error_type: None,
