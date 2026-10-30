@@ -34,6 +34,14 @@ fn object(text: &str) -> Object {
     r#"{"$defs":{"x":{}},"allOf":[{}],"additionalProperties":{},"properties":{"x":{}}}"#
 )]
 #[case::escaped_marker(r#"{"pattern":"\\\\p{Cc}"}"#, r#"{"pattern":"\\\\p{Cc}"}"#)]
+#[case::bare_property(r#"{"pattern":"\\pL"}"#, "{}")]
+#[case::bare_negated_property(r#"{"pattern":"\\PL"}"#, "{}")]
+#[case::escaped_bare_property(r#"{"pattern":"\\\\pL"}"#, r#"{"pattern":"\\\\pL"}"#)]
+#[case::escaped_bare_negated_property(r#"{"pattern":"\\\\PL"}"#, r#"{"pattern":"\\\\PL"}"#)]
+#[case::bare_pattern_properties(
+    r#"{"patternProperties":{"\\pL":{},"\\PL":{},"\\\\pL":{},"\\\\PL":{}}}"#,
+    r#"{"patternProperties":{"\\\\pL":{},"\\\\PL":{}}}"#
+)]
 #[case::invalid_regex(r#"{"pattern":"["}"#, "{}")]
 #[case::mid_pattern_flag(r#"{"pattern":"a(?i)b"}"#, r#"{"pattern":"a(?i)b"}"#)]
 #[case::search_anchor(r#"{"pattern":"\\G"}"#, r#"{"pattern":"\\G"}"#)]

@@ -34,7 +34,7 @@ fn process_schema_child(value: &mut Json, key: &str, depth: usize) {
                 drop_pattern_properties(children, depth);
             }
         }
-        map_key if is_schema_map_key(map_key) => {
+        "$defs" | "definitions" | "dependentSchemas" | "properties" => {
             if let Json::Object(children) = value {
                 drop_map_children(children, depth);
             }
@@ -44,12 +44,21 @@ fn process_schema_child(value: &mut Json, key: &str, depth: usize) {
             Json::Object(child_schema) => drop_regexes(child_schema, depth),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
         },
-        list_key if is_schema_list_key(list_key) => {
+        "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
             if let Json::List(children) = value {
                 drop_list_children(children, depth);
             }
         }
-        object_key if is_schema_object_key(object_key) => {
+        "additionalItems"
+        | "additionalProperties"
+        | "contains"
+        | "else"
+        | "if"
+        | "not"
+        | "propertyNames"
+        | "then"
+        | "unevaluatedItems"
+        | "unevaluatedProperties" => {
             if let Json::Object(child_schema) = value {
                 drop_regexes(child_schema, depth);
             }
@@ -85,8 +94,8 @@ fn drop_list_children(children: &mut [Json], depth: usize) {
 }
 
 fn is_python_regex(pattern: &str) -> bool {
-    if has_unescaped(pattern, "\\p{")
-        || has_unescaped(pattern, "\\P{")
+    if has_unescaped(pattern, "\\p")
+        || has_unescaped(pattern, "\\P")
         || has_unescaped(pattern, "\\z")
     {
         return false;
@@ -107,36 +116,6 @@ fn has_unescaped(pattern: &str, needle: &str) -> bool {
         }
     }
     false
-}
-
-fn is_schema_map_key(key: &str) -> bool {
-    let result = matches!(
-        key,
-        "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties"
-    );
-    result
-}
-
-fn is_schema_list_key(key: &str) -> bool {
-    let result = matches!(key, "allOf" | "anyOf" | "oneOf" | "prefixItems");
-    result
-}
-
-fn is_schema_object_key(key: &str) -> bool {
-    let result = matches!(
-        key,
-        "additionalItems"
-            | "additionalProperties"
-            | "contains"
-            | "else"
-            | "if"
-            | "not"
-            | "propertyNames"
-            | "then"
-            | "unevaluatedItems"
-            | "unevaluatedProperties"
-    );
-    result
 }
 
 mod tests;

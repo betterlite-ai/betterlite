@@ -11,5 +11,14 @@ call:
         lookahead: {type: string, pattern: 'a(?=b)'}
         backreference: {type: string, pattern: '(a)\1'}
         literal_braces: {type: string, pattern: 'a{word}'}
+        bare_property: {type: string, pattern: '\pL'}
+        bare_negated_property: {type: string, pattern: '\PL'}
+        escaped_property: {type: string, pattern: '\\pL'}
+        escaped_negated_property: {type: string, pattern: '\\PL'}
+      patternProperties:
+        '\pL': {type: string}
+        '\PL': {type: string}
+        '\\pL': {type: string}
+        '\\PL': {type: string}
 env: {}
 compare: {ignore: []}
