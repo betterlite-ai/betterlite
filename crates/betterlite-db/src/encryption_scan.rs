@@ -1,3 +1,4 @@
+use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, OsNonces, StoredCipher, StoredValue,
@@ -5,11 +6,14 @@ use betterlite_secrets::secret_codec::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use tokio_postgres::GenericClient;
+use std::fmt;
 
 pub type DbCipher = StoredCipher<OsNonces, TracingDiagnostics>;
 pub const V2_GCM_PREFIX: &str = "v2:gcm:";
 pub const MAX_MIGRATION_JSON_BYTES: usize = 0x0010_0000;
+
+pub mod report;
+use report::{LocationReport, MigrationReport, ValueClass};
 
 pub struct CoveredTableSpec {
     pub location: &'static str,
@@ -51,102 +55,6 @@ pub const COVERED_TABLE_SPECS: &[CoveredTableSpec] = &[
     },
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ValueClass {
-    Migrated,
-    Legacy,
-    Plaintext,
-    Undecryptable,
-    NotAString,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LocationReport {
-    pub location: String,
-    pub scanned: u64,
-    pub migrated: u64,
-    pub already_v2: u64,
-    pub plaintext: u64,
-    pub undecryptable: u64,
-    pub legacy: u64,
-}
-
-impl LocationReport {
-    pub fn count(&mut self, class: Option<ValueClass>) -> Result<(), ScanError> {
-        let Some(class) = class else { return Ok(()) };
-        self.scanned = self
-            .scanned
-            .checked_add(1)
-            .ok_or(ScanError::CounterOverflow)?;
-        let counter = match class {
-            ValueClass::Migrated => &mut self.already_v2,
-            ValueClass::Legacy => &mut self.legacy,
-            ValueClass::Undecryptable => &mut self.undecryptable,
-            ValueClass::Plaintext | ValueClass::NotAString => &mut self.plaintext,
-        };
-        *counter = counter.checked_add(1).ok_or(ScanError::CounterOverflow)?;
-        Ok(())
-    }
-
-    #[must_use]
-    pub fn as_dict(&self) -> BTreeMap<String, u64> {
-        let mut fields = BTreeMap::new();
-        fields.insert(String::from("scanned"), self.scanned);
-        fields.insert(String::from("migrated"), self.migrated);
-        fields.insert(String::from("already_v2"), self.already_v2);
-        fields.insert(String::from("plaintext"), self.plaintext);
-        fields.insert(String::from("undecryptable"), self.undecryptable);
-        fields.insert(String::from("legacy"), self.legacy);
-        fields
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrationReport {
-    pub locations: Vec<LocationReport>,
-}
-
-impl MigrationReport {
-    pub fn residual_legacy(&self) -> Result<u64, ScanError> {
-        let mut total = 0_u64;
-        for report in &self.locations {
-            total = total
-                .checked_add(report.legacy)
-                .ok_or(ScanError::CounterOverflow)?;
-        }
-        Ok(total)
-    }
-
-    pub fn total_undecryptable(&self) -> Result<u64, ScanError> {
-        let mut total = 0_u64;
-        for report in &self.locations {
-            total = total
-                .checked_add(report.undecryptable)
-                .ok_or(ScanError::CounterOverflow)?;
-        }
-        Ok(total)
-    }
-
-    pub fn as_dict(&self) -> Result<BTreeMap<String, serde_json::Value>, ScanError> {
-        let residual = self.residual_legacy()?;
-        let undecryptable = self.total_undecryptable()?;
-        let locations = self
-            .locations
-            .iter()
-            .map(|report| (report.location.clone(), serde_json::json!(report.as_dict())))
-            .collect::<BTreeMap<_, _>>();
-        Ok(BTreeMap::from([
-            (String::from("residual_legacy"), serde_json::json!(residual)),
-            (
-                String::from("total_undecryptable"),
-                serde_json::json!(undecryptable),
-            ),
-            (String::from("locations"), serde_json::json!(locations)),
-        ]))
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
     #[error("counter overflow")]
@@ -162,18 +70,38 @@ pub enum ScanError {
         source: tokio_postgres::Error,
     },
     #[error("encryption failed")]
-    Encrypt(#[source] betterlite_secrets::error::SecretError),
+    Encrypt(#[source] SecretError),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MigrationJson {
     Null,
     Bool(bool),
     Number(serde_json::Number),
-    String(SecretString),
+    String(SecretText),
     Array(Vec<Self>),
     Object(BTreeMap<String, Self>),
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SecretText(String);
+
+impl fmt::Debug for SecretText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretText(REDACTED)")
+    }
+}
+
+impl SecretText {
+    #[must_use]
+    pub const fn new(value: String) -> Self {
+        if value.is_empty() {
+            return Self(value);
+        }
+        Self(value)
+    }
 }
 
 pub fn decode_migration_json(bytes: &[u8]) -> Result<MigrationJson, ScanError> {
@@ -184,19 +112,18 @@ pub fn decode_migration_json(bytes: &[u8]) -> Result<MigrationJson, ScanError> {
 }
 
 #[must_use]
-#[must_use]
 pub fn classify_value(value: &MigrationJson, cipher: &DbCipher, key: &str) -> ValueClass {
     let MigrationJson::String(text) = value else {
         return ValueClass::NotAString;
     };
-    if text.expose_secret().starts_with(V2_GCM_PREFIX) {
+    if text.0.starts_with(V2_GCM_PREFIX) {
         return ValueClass::Migrated;
     }
-    if text.is_empty() {
+    if text.0.is_empty() {
         return ValueClass::Plaintext;
     }
     let stored = cipher.decrypt_value(
-        StoredValue::<()>::Text(text.clone()),
+        StoredValue::<()>::Text(SecretString::from(text.0.as_str())),
         key,
         DecryptPolicy {
             log: FailureLog::Debug,
@@ -210,7 +137,6 @@ pub fn classify_value(value: &MigrationJson, cipher: &DbCipher, key: &str) -> Va
     }
 }
 
-#[must_use]
 pub fn reencrypt_value(
     value: &MigrationJson,
     cipher: &DbCipher,
@@ -219,11 +145,11 @@ pub fn reencrypt_value(
     let MigrationJson::String(text) = value else {
         return Ok(value.clone());
     };
-    if text.expose_secret().is_empty() || text.expose_secret().starts_with(V2_GCM_PREFIX) {
+    if text.0.is_empty() || text.0.starts_with(V2_GCM_PREFIX) {
         return Ok(value.clone());
     }
     let Some(StoredValue::Text(plain)) = cipher.decrypt_value(
-        StoredValue::<()>::Text(text.clone()),
+        StoredValue::<()>::Text(SecretString::from(text.0.as_str())),
         key,
         DecryptPolicy {
             log: FailureLog::Debug,
@@ -233,13 +159,15 @@ pub fn reencrypt_value(
         return Ok(value.clone());
     };
     match cipher.encrypt_value(StoredValue::Text(plain), None) {
-        Ok(StoredValue::Text(sealed)) => Ok(MigrationJson::String(sealed)),
+        Ok(StoredValue::Text(sealed)) => Ok(MigrationJson::String(SecretText::new(
+            sealed.expose_secret().to_owned(),
+        ))),
         Ok(StoredValue::Other(())) => Ok(value.clone()),
         Err(source) => Err(ScanError::Encrypt(source)),
     }
 }
 
-pub fn iter_encrypted_strings(value: &MigrationJson) -> impl Iterator<Item = &SecretString> {
+pub fn iter_encrypted_strings(value: &MigrationJson) -> impl Iterator<Item = &SecretText> {
     let mut stack = vec![value];
     let mut leaves = Vec::new();
     while let Some(current) = stack.pop() {
@@ -280,39 +208,44 @@ fn callback_vars_from_entry(value: &MigrationJson) -> Option<&BTreeMap<String, M
 }
 
 #[must_use]
-pub fn _classify_callback_value(value: &MigrationJson, cipher: &DbCipher) -> ValueClass {
+pub fn classify_callback_value(value: &MigrationJson, cipher: &DbCipher) -> ValueClass {
     let MigrationJson::String(text) = value else {
         return ValueClass::NotAString;
     };
-    let inner = text.strip_prefix("litellm_enc::").unwrap_or(text);
+    let inner = text
+        .0
+        .strip_prefix("litellm_enc::")
+        .unwrap_or(text.0.as_str());
     classify_value(
-        &MigrationJson::String(SecretString::from(inner)),
+        &MigrationJson::String(SecretText::new(inner.to_owned())),
         cipher,
         "callback",
     )
 }
 
 #[must_use]
-pub fn _classify_secret_map(
+pub fn classify_secret_map(
     value: &MigrationJson,
     cipher: &DbCipher,
     _key: &str,
 ) -> Option<ValueClass> {
     let text = match value {
-        MigrationJson::String(text) => text.expose_secret().to_owned(),
+        MigrationJson::String(text) => text.0.clone(),
         MigrationJson::Object(values) => match serde_json::to_string(values) {
             Ok(text) => text,
             Err(_) => return Some(ValueClass::Undecryptable),
         },
-        _ => return Some(ValueClass::Undecryptable),
+        MigrationJson::Null
+        | MigrationJson::Bool(_)
+        | MigrationJson::Number(_)
+        | MigrationJson::Array(_) => return Some(ValueClass::Undecryptable),
     };
     let unquoted = serde_json::from_str::<String>(&text).unwrap_or(text);
     if unquoted.starts_with(V2_GCM_PREFIX) {
         return Some(ValueClass::Migrated);
     }
-    let decoded = match cipher.decode_secret_map(unquoted.as_bytes()) {
-        Ok(Some(decoded)) => decoded,
-        Ok(None) | Err(_) => return Some(ValueClass::Undecryptable),
+    let Ok(Some(decoded)) = cipher.decode_secret_map(unquoted.as_bytes()) else {
+        return Some(ValueClass::Undecryptable);
     };
     if decoded.is_empty() {
         return None;
@@ -324,156 +257,6 @@ pub fn _classify_secret_map(
     })
 }
 
-fn row_value(row: &tokio_postgres::Row, column: &str) -> Option<MigrationJson> {
-    if let Ok(value) = row.try_get::<_, serde_json::Value>(column) {
-        return serde_json::from_value(value).ok();
-    }
-    row.try_get::<_, String>(column).ok().and_then(|value| {
-        serde_json::from_str(&value)
-            .ok()
-            .or(Some(MigrationJson::String(SecretString::from(value))))
-    })
-}
-
-async fn _scan_one_table<C: GenericClient + Sync>(
-    client: &C,
-    spec: &CoveredTableSpec,
-    cipher: &DbCipher,
-) -> Result<LocationReport, ScanError> {
-    let columns = spec
-        .json_columns
-        .iter()
-        .chain(spec.scalar_columns.iter())
-        .map(|column| format!("\"{column}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!("SELECT {columns} FROM \"{}\"", spec.table);
-    let rows = match client.query(&sql, &[]).await {
-        Ok(rows) => rows,
-        Err(source) => {
-            return Err(ScanError::Read {
-                location: spec.location.to_owned(),
-                source,
-            });
-        }
-    };
-    let mut report = LocationReport {
-        location: spec.location.to_owned(),
-        scanned: 0,
-        migrated: 0,
-        already_v2: 0,
-        plaintext: 0,
-        undecryptable: 0,
-        legacy: 0,
-    };
-    for row in &rows {
-        for column in spec.json_columns {
-            let Some(value) = row_value(row, column) else {
-                continue;
-            };
-            if spec.table == "litellm_mcpservertable"
-                && (*column == "static_headers" || *column == "env")
-            {
-                report.count(_classify_secret_map(&value, cipher, column))?;
-            } else {
-                for text in iter_encrypted_strings(&value) {
-                    report.count(Some(classify_value(
-                        &MigrationJson::String(text.clone()),
-                        cipher,
-                        "scan",
-                    )))?;
-                }
-            }
-        }
-        for column in spec.scalar_columns {
-            let Some(value) = row_value(row, column) else {
-                continue;
-            };
-            if let MigrationJson::String(text) = value {
-                let class = classify_value(&MigrationJson::String(text), cipher, column);
-                report.count(Some(class))?;
-            }
-        }
-    }
-    Ok(report)
-}
-
-async fn _scan_config_env_vars<C: GenericClient + Sync>(
-    client: &C,
-    cipher: &DbCipher,
-) -> Result<LocationReport, ScanError> {
-    let mut report = LocationReport {
-        location: String::from("config_environment_variables"),
-        scanned: 0,
-        migrated: 0,
-        already_v2: 0,
-        plaintext: 0,
-        undecryptable: 0,
-        legacy: 0,
-    };
-    let row = match client
-        .query_opt(
-            "SELECT \"param_value\" FROM \"litellm_config\" WHERE \"param_name\" = $1",
-            &[&"environment_variables"],
-        )
-        .await
-    {
-        Ok(row) => row,
-        Err(source) => {
-            return Err(ScanError::Read {
-                location: report.location.clone(),
-                source,
-            });
-        }
-    };
-    if let Some(row) = row
-        && let Some(value) = row_value(&row, "param_value")
-    {
-        for text in iter_encrypted_strings(&value) {
-            report.count(Some(classify_value(
-                &MigrationJson::String(text.clone()),
-                cipher,
-                "scan",
-            )))?;
-        }
-    }
-    Ok(report)
-}
-
-pub async fn _scan_covered_tables<C: GenericClient + Sync>(
-    client: &C,
-    cipher: &DbCipher,
-) -> MigrationReport {
-    let mut locations = Vec::new();
-    for spec in COVERED_TABLE_SPECS {
-        locations.push(
-            _scan_one_table(client, spec, cipher)
-                .await
-                .unwrap_or_else(|_| LocationReport {
-                    location: spec.location.to_owned(),
-                    scanned: 0,
-                    migrated: 0,
-                    already_v2: 0,
-                    plaintext: 0,
-                    undecryptable: 0,
-                    legacy: 0,
-                }),
-        );
-    }
-    locations.push(
-        _scan_config_env_vars(client, cipher)
-            .await
-            .unwrap_or_else(|_| LocationReport {
-                location: String::from("config_environment_variables"),
-                scanned: 0,
-                migrated: 0,
-                already_v2: 0,
-                plaintext: 0,
-                undecryptable: 0,
-                legacy: 0,
-            }),
-    );
-    MigrationReport { locations }
-}
+pub mod storage;
 
 mod tests;

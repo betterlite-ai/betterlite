@@ -1,6 +1,6 @@
+use betterlite_db::encryption_scan::report::{LocationReport, ValueClass};
 use betterlite_db::encryption_scan::{
-    _classify_callback_value, _classify_secret_map, DbCipher, LocationReport, MigrationJson,
-    classify_value,
+    DbCipher, MigrationJson, classify_callback_value, classify_secret_map, classify_value,
 };
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
@@ -15,13 +15,8 @@ pub(crate) struct Input {
     pub values: Vec<MigrationJson>,
     #[serde(default)]
     pub callbacks: Vec<MigrationJson>,
-    #[serde(default = "default_key")]
+    #[serde(default)]
     pub key: String,
-}
-
-fn default_key() -> String {
-    let key = String::from("scan");
-    key
 }
 
 impl crate::helpers::Helper for Op {
@@ -45,37 +40,39 @@ impl crate::helpers::Helper for Op {
             undecryptable: 0,
             legacy: 0,
         };
+        let key = if input.key.is_empty() {
+            "scan"
+        } else {
+            &input.key
+        };
         for value in &input.values {
             let class = if matches!(value, MigrationJson::Object(_)) {
-                _classify_secret_map(value, &cipher, &input.key)
+                classify_secret_map(value, &cipher, key)
             } else {
-                Some(classify_value(value, &cipher, &input.key))
+                Some(classify_value(value, &cipher, key))
             };
-            report.count(class).map_err(|error| {
-                Box::new(crate::helpers::HelperError {
-                    class: "OverflowError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+            count_value(&mut report, class)?;
         }
         for value in &input.callbacks {
-            report
-                .count(Some(_classify_callback_value(value, &cipher)))
-                .map_err(|error| {
-                    Box::new(crate::helpers::HelperError {
-                        class: "OverflowError".to_owned(),
-                        status: None,
-                        error_type: None,
-                        param: None,
-                        code: None,
-                        message: error.to_string(),
-                    })
-                })?;
+            count_value(&mut report, Some(classify_callback_value(value, &cipher)))?;
         }
         Ok(serde_json::json!({"counts": report.as_dict()}))
+    }
+}
+
+fn count_value(
+    report: &mut LocationReport,
+    class: Option<ValueClass>,
+) -> Result<(), Box<crate::helpers::HelperError>> {
+    match report.count(class) {
+        Ok(()) => Ok(()),
+        Err(error) => Err(Box::new(crate::helpers::HelperError {
+            class: "OverflowError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })),
     }
 }

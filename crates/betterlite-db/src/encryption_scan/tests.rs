@@ -3,7 +3,7 @@
 use super::*;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings};
 use rstest::rstest;
-use secrecy::ExposeSecret;
+use std::{fs, path::Path};
 
 fn cipher() -> DbCipher {
     DbCipher {
@@ -23,7 +23,7 @@ fn cipher() -> DbCipher {
 fn classification_trusts_prefix_and_plaintext(#[case] text: &str, #[case] expected: ValueClass) {
     assert_eq!(
         classify_value(
-            &MigrationJson::String(SecretString::from(text)),
+            &MigrationJson::String(SecretText::new(text.to_owned())),
             &cipher(),
             "scan"
         ),
@@ -34,11 +34,11 @@ fn classification_trusts_prefix_and_plaintext(#[case] text: &str, #[case] expect
 #[test]
 fn secret_map_classification_matches_storage_shapes() {
     assert_eq!(
-        _classify_secret_map(&serde_json::from_str("{}").unwrap(), &cipher(), "env"),
+        classify_secret_map(&serde_json::from_str("{}").unwrap(), &cipher(), "env"),
         None
     );
     assert_eq!(
-        _classify_secret_map(
+        classify_secret_map(
             &serde_json::from_str("{\"a\":\"1\"}").unwrap(),
             &cipher(),
             "env"
@@ -46,20 +46,20 @@ fn secret_map_classification_matches_storage_shapes() {
         Some(ValueClass::Legacy)
     );
     assert_eq!(
-        _classify_secret_map(
-            &MigrationJson::String(SecretString::from("{bad")),
+        classify_secret_map(
+            &MigrationJson::String(SecretText::new(String::from("{bad"))),
             &cipher(),
             "env"
         ),
         Some(ValueClass::Undecryptable)
     );
     assert_eq!(
-        _classify_secret_map(&MigrationJson::Object(BTreeMap::new()), &cipher(), "env"),
+        classify_secret_map(&MigrationJson::Object(BTreeMap::new()), &cipher(), "env"),
         None
     );
     assert_eq!(
-        _classify_secret_map(
-            &MigrationJson::String(SecretString::from("\"v2:gcm:map\"")),
+        classify_secret_map(
+            &MigrationJson::String(SecretText::new(String::from("\"v2:gcm:map\""))),
             &cipher(),
             "env"
         ),
@@ -71,7 +71,7 @@ fn secret_map_classification_matches_storage_shapes() {
 fn nested_walker_is_iterative_and_only_yields_string_leaves() {
     let value: MigrationJson = serde_json::from_str(r#"{"a":["one",{"b":"two"}],"n":3}"#).unwrap();
     let mut leaves: Vec<&str> = iter_encrypted_strings(&value)
-        .map(ExposeSecret::expose_secret)
+        .map(|secret| secret.0.as_str())
         .collect();
     leaves.sort_unstable();
     assert_eq!(leaves, vec!["one", "two"]);
@@ -104,7 +104,7 @@ fn report_wire_keys_and_checked_totals_are_stable() {
     let aggregate = MigrationReport {
         locations: vec![report.clone()],
     };
-    assert_eq!(aggregate.residual_legacy().unwrap(), 1);
+    assert_eq!(aggregate.as_dict().unwrap().residual_legacy, 1);
     assert_eq!(
         report.as_dict().keys().collect::<Vec<_>>(),
         vec![
@@ -116,20 +116,19 @@ fn report_wire_keys_and_checked_totals_are_stable() {
             "undecryptable"
         ]
     );
-    let projection = aggregate.as_dict().unwrap();
-    assert!(projection.contains_key("residual_legacy"));
-    assert!(projection.contains_key("total_undecryptable"));
-    assert!(projection.contains_key("locations"));
+    let projection = serde_json::to_value(aggregate.as_dict().unwrap()).unwrap();
+    assert!(projection.get("residual_legacy").is_some());
+    assert!(projection.get("total_undecryptable").is_some());
+    assert!(projection.get("locations").is_some());
 }
 
 #[test]
 fn replays_the_migration_json_corpus() {
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/migration_json");
-    std::fs::read_dir(directory)
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/migration_json");
+    fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_file())
-        .try_for_each(|path| decode_migration_json(&std::fs::read(path).unwrap()).map(drop))
+        .try_for_each(|path| decode_migration_json(&fs::read(path).unwrap()).map(drop))
         .unwrap();
 }
