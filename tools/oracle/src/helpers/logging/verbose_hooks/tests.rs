@@ -21,11 +21,9 @@ fn helper_seeds_select_verbose_hooks() {
         .collect();
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
+        let case = serde_saphyr::from_str::<HelperCase>(source).expect("seed should parse");
         parse_helper_case(source).is_ok()
-            && serde_saphyr::from_str::<HelperCase>(source)
-                .expect("seed should parse")
-                .call
-                .operation
-                == "verbose_hooks"
+            && case.call.operation == "verbose_hooks"
+            && case.call.input.get("function").is_some()
     }));
 }

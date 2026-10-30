@@ -53,12 +53,13 @@ impl VerboseHooks {
                 set_verbose,
                 logger_fails,
                 console_fails,
-            } => Self::main(MainOptions {
+            } => Self::emit(
                 payload,
+                Some("DEBUG"),
                 set_verbose,
-                logger_failure: failure(logger_fails),
-                console_failure: failure(console_fails),
-            }),
+                logger_fails,
+                console_fails,
+            ),
             HookInput::Utils {
                 payload,
                 set_verbose,
@@ -66,14 +67,19 @@ impl VerboseHooks {
                 logger_only,
                 logger_fails,
                 console_fails,
-            } => Self::utils(UtilsOptions {
-                payload,
-                set_verbose,
-                log_level,
-                logger_only,
-                logger_failure: failure(logger_fails),
-                console_failure: failure(console_fails),
-            }),
+            } => {
+                let level = match log_level.as_str() {
+                    "DEBUG" | "INFO" | "ERROR" => Some(log_level.as_str()),
+                    _ => None,
+                };
+                Self::emit(
+                    payload,
+                    level,
+                    set_verbose && !logger_only,
+                    logger_fails,
+                    console_fails,
+                )
+            }
             HookInput::Active {
                 set_verbose,
                 logger_debug_enabled,
@@ -85,84 +91,28 @@ impl VerboseHooks {
         }
     }
 
-    fn main(options: MainOptions) -> HookResult {
-        Self::emit(EmitOptions {
-            payload: options.payload,
-            level: Some("DEBUG"),
-            console_enabled: options.set_verbose,
-            logger_failure: options.logger_failure,
-            console_failure: options.console_failure,
-        })
-    }
-
-    fn utils(options: UtilsOptions) -> HookResult {
-        let level = match options.log_level.as_str() {
-            "DEBUG" | "INFO" | "ERROR" => Some(options.log_level.as_str()),
-            _ => None,
-        };
-        Self::emit(EmitOptions {
-            payload: options.payload,
-            level,
-            console_enabled: options.set_verbose && !options.logger_only,
-            logger_failure: options.logger_failure,
-            console_failure: options.console_failure,
-        })
-    }
-
-    fn emit(options: EmitOptions<'_>) -> HookResult {
-        let redacted = redact(options.payload);
+    fn emit(
+        payload: Payload,
+        level: Option<&str>,
+        console_enabled: bool,
+        logger_fails: bool,
+        console_fails: bool,
+    ) -> HookResult {
+        let redacted = redact(payload);
         let mut result = HookResult::default();
-        if matches!(options.logger_failure, SinkFailure::Failed) {
+        if logger_fails {
             return result;
         }
-        if let Some(level_name) = options.level {
+        if let Some(level_name) = level {
             result.logs.push(LogRecord {
                 level: level_name.to_owned(),
                 payload: redacted.clone(),
             });
         }
-        if options.console_enabled && matches!(options.console_failure, SinkFailure::Succeeded) {
+        if console_enabled && !console_fails {
             result.console.push(redacted);
         }
         result
-    }
-}
-
-struct EmitOptions<'payload> {
-    payload: Payload,
-    level: Option<&'payload str>,
-    console_enabled: bool,
-    logger_failure: SinkFailure,
-    console_failure: SinkFailure,
-}
-
-struct UtilsOptions {
-    payload: Payload,
-    set_verbose: bool,
-    log_level: String,
-    logger_only: bool,
-    logger_failure: SinkFailure,
-    console_failure: SinkFailure,
-}
-
-struct MainOptions {
-    payload: Payload,
-    set_verbose: bool,
-    logger_failure: SinkFailure,
-    console_failure: SinkFailure,
-}
-
-#[derive(Clone, Copy)]
-enum SinkFailure {
-    Succeeded,
-    Failed,
-}
-
-const fn failure(failed: bool) -> SinkFailure {
-    if failed {
-        SinkFailure::Failed
-    } else {
-        SinkFailure::Succeeded
     }
 }
 
