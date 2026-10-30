@@ -1,0 +1,9 @@
+kind: helper
+name: error-facts-context-text
+call:
+  error_facts:
+    kind: context_window
+    text: this model's maximum context length is 8192
+env: {}
+compare:
+  ignore: []

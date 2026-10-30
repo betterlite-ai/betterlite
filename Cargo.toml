@@ -99,3 +99,9 @@ multiple_crate_versions = "allow" # cargo deny reports duplicate versions where 
 
 [profile.release]
 panic = "unwind" # a panic that slips through ends one request's task, not every request in flight
+
+[profile.dev]
+debug = "line-tables-only" # backtraces keep file and line; full debug info added gigabytes to every worktree
+
+[profile.dev.package."*"]
+debug = false # a dependency frame still shows its function name

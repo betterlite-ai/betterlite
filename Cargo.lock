@@ -802,6 +802,9 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
+ "betterlite-logging",
+ "betterlite-models",
  "hex",
  "indexmap 2.14.2",
  "rstest",
@@ -969,6 +972,7 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "hex",
  "percent-encoding",
  "regex",
  "rstest",
@@ -976,6 +980,8 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -1137,11 +1143,13 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "chrono",
+ "hex",
  "pem",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
 ]
 
@@ -1152,6 +1160,7 @@ dependencies = [
  "chrono",
  "fancy-regex",
  "indexmap 2.14.2",
+ "jiff",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1238,6 +1247,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "quick-xml",
  "reqwest",
  "rstest",
@@ -1297,6 +1307,10 @@ dependencies = [
 [[package]]
 name = "betterlite-prometheus"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-prompts"
@@ -1304,6 +1318,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-logging",
  "chrono",
+ "fancy-regex",
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
