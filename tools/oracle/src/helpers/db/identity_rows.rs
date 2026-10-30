@@ -16,7 +16,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let output = match input.operation.as_str() {
+        match input.operation.as_str() {
             "key" => serde_json::to_value(decode::<LiteLLMVerificationToken>(&input.row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
             "deleted_key" => serde_json::to_value(decode::<DeletedVerificationToken>(&input.row)?)
@@ -37,20 +37,18 @@ impl crate::helpers::Helper for Op {
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
             "end_user" => serde_json::to_value(decode::<LiteLLMEndUserTable>(&input.row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
-            _ => {
-                return Err(helper_error(
-                    "InvalidInput",
-                    "unsupported identity row operation",
-                ));
-            }
-        };
-        output
+            _ => Err(helper_error(
+                "InvalidInput",
+                "unsupported identity row operation",
+            )),
+        }
     }
 }
 
-fn decode<T: serde::de::DeserializeOwned>(
-    value: &serde_json::Value,
-) -> Result<T, Box<crate::helpers::HelperError>> {
+fn decode<T>(value: &serde_json::Value) -> Result<T, Box<crate::helpers::HelperError>>
+where
+    T: serde::de::DeserializeOwned,
+{
     let decoded = serde_json::from_value(value.clone());
     decoded.map_err(|error| helper_error("ValidationError", &error.to_string()))
 }

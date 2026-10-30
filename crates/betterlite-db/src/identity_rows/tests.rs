@@ -1,13 +1,29 @@
 #![cfg(test)]
 
 use super::{
-    IdentityRowsDecodeError, decode_identity_rows, key::LiteLLMVerificationToken,
-    user::LiteLLMUserTable,
+    IdentityRowsDecodeError, decode_identity_rows, end_user::LiteLLMEndUserTable,
+    key::LiteLLMVerificationToken, user::LiteLLMUserTable,
 };
+use crate::budget_permission_rows::JsonData;
+use betterlite_postgres_fixture::connection::PostgresFixture;
+use clap::Parser;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::fs;
 use std::path::PathBuf;
+use tokio::task::JoinSet;
+
+#[derive(Parser)]
+struct Environment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    url: Option<String>,
+}
+
+fn postgres_test_url() -> Option<SecretString> {
+    let environment = Environment::parse_from(["postgres-tests"]);
+    environment.url.map(SecretString::from)
+}
 
 #[test]
 fn identity_rows_defaults_and_password_exclusion() {
@@ -43,4 +59,73 @@ fn native_identity_row_size_and_depth_limits() {
 #[rstest]
 fn replays_the_identity_rows_corpus(#[files("fuzz/corpus/identity_rows/*")] path: PathBuf) {
     drop(decode_identity_rows(&fs::read(path).unwrap()));
+}
+
+#[tokio::test]
+async fn postgres_identity_rows_preserve_storage_types() {
+    let url = postgres_test_url();
+    let fixture = PostgresFixture::provision_schema(url.as_ref())
+        .resolve()
+        .await
+        .unwrap();
+    let (client, connection) =
+        tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
+            .await
+            .unwrap();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(connection);
+    client
+        .batch_execute(include_str!(
+            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
+        ))
+        .await
+        .unwrap();
+    client
+        .batch_execute(
+            r#"INSERT INTO "LiteLLM_VerificationToken" (token, spend, models, aliases, model_spend)
+               VALUES ('k', 0.0, ARRAY['m'], '{"a": 1}', '{"m": 2}');
+               INSERT INTO "LiteLLM_UserTable" (user_id, spend, metadata)
+               VALUES ('u', 0.0, '{"x": true}');
+               INSERT INTO "LiteLLM_EndUserTable" (user_id, blocked, spend)
+               VALUES ('e', false, 0.0);"#,
+        )
+        .await
+        .unwrap();
+    let key_json: String = client
+        .query_one(
+            r#"SELECT row_to_json(row)::TEXT FROM "LiteLLM_VerificationToken" row"#,
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    let user_json: String = client
+        .query_one(
+            r#"SELECT row_to_json(row)::TEXT FROM "LiteLLM_UserTable" row"#,
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    let end_user_json: String = client
+        .query_one(
+            r#"SELECT row_to_json(row)::TEXT FROM "LiteLLM_EndUserTable" row"#,
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    let key: LiteLLMVerificationToken = serde_json::from_str(&key_json).unwrap();
+    let user: LiteLLMUserTable = serde_json::from_str(&user_json).unwrap();
+    let end_user: LiteLLMEndUserTable = serde_json::from_str(&end_user_json).unwrap();
+    assert_eq!(key.spend, Decimal::ZERO);
+    assert_eq!(
+        key.model_spend.get("m"),
+        Some(&JsonData::Number(serde_json::Number::from(2)))
+    );
+    assert_eq!(user.spend, Decimal::ZERO);
+    assert_eq!(end_user.spend, Decimal::ZERO);
+    drop(client);
+    tasks.join_next().await.unwrap().unwrap().unwrap();
+    fixture.close_async().await.unwrap();
 }
