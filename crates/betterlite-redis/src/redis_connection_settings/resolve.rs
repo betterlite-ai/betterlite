@@ -7,7 +7,7 @@ use super::allowlists::filter_passthrough_for_target;
 use super::coercion::{coerce_bool, coerce_float, coerce_int, coerce_passthrough};
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
-use super::model::nodes::{ClusterNodeConfig, NodesInput, SentinelNodesInput, StartupNodesInput};
+use super::model::nodes::{ClusterNodeConfig, NodesInput};
 use super::model::scalars::{BoolOrText, FloatOrText, IntOrText, PassthroughValue};
 use super::model::settings::{ClientKind, RedisConnectionSettings, RedisOverrides, Target};
 use super::target::resolve_target;
@@ -143,14 +143,8 @@ where
     E: EnvironmentLookup,
 {
     let caller_named_a_target = overrides.host.is_some()
-        || overrides
-            .startup_nodes
-            .as_ref()
-            .is_some_and(StartupNodesInput::is_truthy)
-        || overrides
-            .sentinel_nodes
-            .as_ref()
-            .is_some_and(SentinelNodesInput::is_truthy);
+        || overrides.startup_nodes.is_some()
+        || overrides.sentinel_nodes.is_some();
     overrides.url.clone().or_else(|| {
         if caller_named_a_target {
             None

@@ -239,6 +239,16 @@ fn redis_precedence_ignores_the_environment_url_once_startup_nodes_are_configure
 }
 
 #[test]
+fn redis_precedence_ignores_the_environment_url_for_an_empty_explicit_target() {
+    let overrides = RedisOverrides {
+        startup_nodes: Some(NodesInput::Nodes(Vec::new())),
+        ..blank_overrides()
+    };
+    let env = env(&[("REDIS_URL", "redis://from-environment:6379")]);
+    resolve_redis_kwargs(overrides, ClientKind::Sync, &env).unwrap_err();
+}
+
+#[test]
 fn missing_target_is_an_error_end_to_end() {
     resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &env(&[])).unwrap_err();
 }
