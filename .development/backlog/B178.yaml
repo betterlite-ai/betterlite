@@ -1,7 +1,7 @@
 id: B178
 milestone: M1 openai data plane
 title: Tool argument parsing and schema transforms
-status: todo
+status: done
 depends_on: [B214, B216, B217]
 file: tasks/B178-tool-schemas.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/utils.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 345

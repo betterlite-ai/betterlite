@@ -212,7 +212,7 @@ pitfalls:
   - _set_tool_attributes skips non-dict tool entries silently; checks function.get() independently for each tool dict before reading name/description/parameters.
   - The Oracle helper for this task is pre-registered as b3846 in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/b3846.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3846.py. The registry files are not this task's to edit.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

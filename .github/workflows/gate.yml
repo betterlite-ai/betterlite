@@ -155,7 +155,8 @@ jobs:
           fi
           cargo fmt --check --manifest-path .development/gate/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path .development/gate/Cargo.toml -- -D warnings
-          cargo test --locked --manifest-path .development/gate/Cargo.toml
+          # one thread: a child process spawned by one test holds another test's seat lock until it execs
+          cargo test --locked --manifest-path .development/gate/Cargo.toml -- --test-threads=1
 
       - name: Install the pinned tools
         if: github.event_name != 'pull_request'

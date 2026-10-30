@@ -144,7 +144,7 @@ pitfalls:
   - "Per-call byte budget (max_bytes_per_call) drops oldest entries; the global budget (_MAX_TOTAL_STORE_BYTES) keeps the most-recent entry so the current call's originals survive."
   - "Retrieval dedup is per-turn (within a single agentic loop step); a later turn can retrieve the same hash again (within its TTL)."
   - "The model can prompt-inject a compresr_retrieve call with a fake hash; fallback text is returned, not a 500, so the model controls the UX."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

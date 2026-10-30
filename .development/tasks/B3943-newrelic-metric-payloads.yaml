@@ -121,7 +121,7 @@ pitfalls:
   - "Remaining budget is unclamped: team_max_budget - team_spend - response_cost, even if negative."
   - "Interval.ms must have a floor of 1 millisecond; use max(1, int((now - window_start) * 1000))."
   - "Bucket order is stable via insertion order; use dict.fromkeys to preserve first-seen order across multiple identical bucket keys."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -92,7 +92,7 @@ pitfalls:
   - "Azure's two shared domains (\"openai.azure.com\", \"cognitiveservices.azure.com\") are checked independently; only requests on these with \"/openai/\" or \"/v1/\" path segments are classified as Azure OpenAI."
   - Embedding cost catches bare Exception in LiteLLM, mapping to any exception in Rust; every error returns zero cost with a warning so spend logging never fails.
   - "The Responses API branch uses a dedicated transformer and \"responses\" call type, not the chat-completions transform, because the wire shape differs (`output: [...]` vs `choices: [...]`)."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

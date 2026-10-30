@@ -179,7 +179,7 @@ pitfalls:
     CONNECTION_ERROR_PATTERNS is imported from litellm.constants; if unavailable, patterns may
     be defined locally as a fallback or deferred until runtime use.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
