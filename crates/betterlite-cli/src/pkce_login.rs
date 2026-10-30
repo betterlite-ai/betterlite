@@ -2,6 +2,8 @@ pub mod callback;
 pub mod discovery;
 pub mod models;
 pub mod oauth;
+pub mod revoke;
+mod wire;
 
 use models::PkceFailure;
 
