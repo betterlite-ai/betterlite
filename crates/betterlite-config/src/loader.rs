@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
 use std::time::TryFromFloatSecsError;
 
+use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -10,8 +11,7 @@ use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
 };
 use crate::resolve::{
-    parse_float, parse_integer, resolve_environment, resolve_number as number, resolve_secret,
-    resolve_string,
+    parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
 use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
@@ -28,6 +28,25 @@ impl EnvironmentLookup for BTreeMap<String, String> {
     fn lookup(&self, name: &str) -> Option<String> {
         self.get(name).cloned()
     }
+}
+
+fn resolve_environment<L>(
+    values: BTreeMap<String, Option<String>>,
+    lookup: &L,
+) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    if values.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    values
+        .into_iter()
+        .map(|(key, value)| {
+            let path = format!("environment_variables.{key}");
+            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
+        })
+        .collect()
 }
 
 #[derive(Debug, Error)]
