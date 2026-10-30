@@ -4,7 +4,7 @@ use rstest::rstest;
 
 use super::{
     CommandOutcome, IsolationBranch, IsolationConfig, IsolationError, IsolationEvent,
-    IsolationState, execute_command, select_branch,
+    IsolationState, execute_command, select_branch, version_warning,
 };
 
 #[test]
@@ -77,6 +77,19 @@ fn redis_cluster_node_isolation_boundaries(
             .events
             .contains(&IsolationEvent::FullReinitialize)
     );
+}
+
+#[test]
+fn version_warning_only_applies_to_legacy_branch() {
+    assert_eq!(
+        version_warning(IsolationBranch::Legacy, "8.0.0"),
+        Some("redis-py 8.0.0 is not a verified cluster-isolation version".to_owned())
+    );
+    assert_eq!(
+        version_warning(IsolationBranch::PerNodeRecovery, "8.0.0"),
+        None
+    );
+    assert_eq!(version_warning(IsolationBranch::Legacy, "5.3.1"), None);
 }
 
 fn state(

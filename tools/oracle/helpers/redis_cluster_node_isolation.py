@@ -295,10 +295,14 @@ class _Fixture:
                 "reinitialize_counter": cluster.reinitialize_counter,
                 "sleeps": self.sleeps,
                 "read_from_replicas": self.input["read_from_replicas"],
-                "version_warning": None
-                if self.input["version"] == "5.3.1"
-                else (
-                    f"redis-py {self.input['version']} is not a verified cluster-isolation version"
+                "version_warning": (
+                    None
+                    if self.input["has_update_active_connections_for_reconnect"]
+                    or self.input["version"] == "5.3.1"
+                    else (
+                        f"redis-py {self.input['version']} is not a verified "
+                        "cluster-isolation version"
+                    )
                 ),
             },
         )

@@ -51,7 +51,7 @@ impl crate::helpers::Helper for Op {
             "reinitialize_counter": state.reinitialize_counter,
             "sleeps": state.sleeps,
             "read_from_replicas": state.read_from_replicas,
-            "version_warning": version_warning(&input.version),
+            "version_warning": version_warning(branch, &input.version),
         }))
     }
 }

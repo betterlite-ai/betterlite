@@ -3,6 +3,7 @@ mod tests;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 const TIMEOUT_REINIT_LIMIT: u32 = 3;
 
@@ -13,8 +14,8 @@ pub enum IsolationBranch {
 }
 
 #[must_use]
-pub fn version_warning(version: &str) -> Option<String> {
-    if version == "5.3.1" {
+pub fn version_warning(branch: IsolationBranch, version: &str) -> Option<String> {
+    if branch == IsolationBranch::PerNodeRecovery || version == "5.3.1" {
         None
     } else {
         Some(format!(
@@ -47,14 +48,21 @@ pub enum IsolationEvent {
     Slept(f64),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum IsolationError {
+    #[error("redis cluster command failed with a connection error")]
     Connection,
+    #[error("redis cluster command timed out")]
     Timeout,
+    #[error("redis cluster is down")]
     ClusterDown,
+    #[error("redis cluster slot is not covered")]
     SlotNotCovered,
+    #[error("redis server is busy loading")]
     BusyLoading,
+    #[error("redis cluster connection limit was reached")]
     MaxConnections,
+    #[error("redis cluster request TTL was exhausted")]
     TtlExhausted,
 }
 
