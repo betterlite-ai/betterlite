@@ -179,9 +179,9 @@ fn error_facts_behavior_tests_behavior_body_code_size_boundary() {
 #[case::unknown("litellm.UnknownProviderFailureError", None)]
 #[case::later_match("litellm.invalid litellm.BadRequestError", Some("BadRequestError"))]
 #[case::suffix("litellm.BadRequestErrorSuffix", Some("BadRequestError"))]
-#[case::underscore_does_not_split_unknown_name(
-    "litellm.APIConnection_Error litellm.RateLimitError",
-    None
+#[case::keeps_first_exception_before_later_one(
+    "litellm.RateLimitError details litellm.BadRequestError",
+    Some("RateLimitError")
 )]
 fn error_facts_behavior_tests_behavior_exception_name(
     #[case] text: &str,
