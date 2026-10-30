@@ -1,0 +1,5 @@
+kind: helper
+name: enum-type-conflict
+call: {anthropic_output_schema: {function: filter, schema: {type: string, enum: [1, two]}}}
+env: {}
+compare: {ignore: []}

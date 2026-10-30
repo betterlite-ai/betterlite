@@ -1,0 +1,5 @@
+kind: helper
+name: constraint-description
+call: {anthropic_output_schema: {function: filter, schema: {type: array, description: values, minItems: 2, uniqueItems: true, maximum: 10, contains: {type: string}}}}
+env: {}
+compare: {ignore: []}
