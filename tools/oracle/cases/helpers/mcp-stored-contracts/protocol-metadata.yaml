@@ -1,0 +1,5 @@
+kind: helper
+name: protocol-metadata
+call: {mcp_stored_contracts: {function: protocol_metadata, value: {protocol_version: auto, custom: {enabled: true}}}}
+env: {}
+compare: {ignore: []}

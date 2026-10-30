@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-stored-contracts-seed
+call: {mcp_stored_contracts: {function: pinned_tool_contract, value: {tool: {description: pinned}}}}
+env: {}
+compare: {ignore: []}

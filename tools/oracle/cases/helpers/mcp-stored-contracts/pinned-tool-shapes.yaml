@@ -1,0 +1,5 @@
+kind: helper
+name: pinned-tool-shapes
+call: {mcp_stored_contracts: {function: pinned_tool_contract, value: '{"weather":{"input_schema":{"properties":{"city":{"type":"string"}}}}}'}}
+env: {}
+compare: {ignore: []}
