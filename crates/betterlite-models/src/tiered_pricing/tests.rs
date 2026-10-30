@@ -28,6 +28,10 @@ fn selected_is<'tier>(selected: Option<&'tier Tier>, expected: &'tier Tier) -> b
 #[case::false_boolean(Some(number("false")), "0")]
 #[case::invalid_string(Some(number("\"not-a-number\"")), "0")]
 #[case::incomplete_exponent(Some(number("\"5e\"")), "0")]
+#[case::underscored_fraction(Some(number("\"0.000_003\"")), "0.000003")]
+#[case::underscored_integer(Some(number("\"1_000\"")), "1000")]
+#[case::doubled_underscore(Some(number("\"1__0\"")), "0")]
+#[case::leading_underscore(Some(number("\"_1\"")), "0")]
 fn coerce_cost_per_token_tolerates_loose_scalars(
     #[case] value: Option<Scalar>,
     #[case] expected: &str,
@@ -152,6 +156,24 @@ fn select_tier_for_input_errors_on_an_empty_range_during_the_sort_before_the_len
 }
 
 #[test]
+fn select_tier_for_input_errors_on_a_range_endpoint_that_is_not_a_number() {
+    let tiers = vec![tier(r#"[0,"100"]"#, "1")];
+    select_tier_for_input(&tiers, 30).unwrap_err();
+}
+
+#[test]
+fn select_tier_for_input_errors_on_a_null_range_endpoint() {
+    let tiers = vec![tier("[0,null]", "1")];
+    select_tier_for_input(&tiers, 30).unwrap_err();
+}
+
+#[test]
+fn select_tier_for_input_propagates_an_endpoint_exact_decimal_cannot_hold() {
+    let tiers = vec![tier("[0,1e30]", "1")];
+    select_tier_for_input(&tiers, 30).unwrap_err();
+}
+
+#[test]
 fn coerce_cost_per_token_errors_on_a_string_that_overflows_exact_decimal() {
     let overflowing = number("\"1e999999999999999999999\"");
     coerce_cost_per_token(Some(&overflowing)).unwrap_err();
@@ -167,6 +189,13 @@ fn coerce_cost_per_token_errors_on_a_string_with_too_many_significant_digits() {
 fn coerce_cost_per_token_errors_on_a_string_float_accepts_but_decimal_cannot_represent() {
     let infinite = number("\"inf\"");
     coerce_cost_per_token(Some(&infinite)).unwrap_err();
+}
+
+#[test]
+fn tier_deserialization_rejects_an_unmodeled_key_by_name() {
+    let error = serde_json::from_str::<Tier>(r#"{"not_a_real_field":1}"#)
+        .expect_err("an unmodeled key fails deserialization");
+    assert!(error.to_string().contains("not_a_real_field"));
 }
 
 #[test]

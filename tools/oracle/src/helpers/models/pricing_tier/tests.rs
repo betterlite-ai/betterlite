@@ -96,6 +96,32 @@ fn a_null_primary_uses_the_fallback() {
     assert_eq!(output["rate"], "5");
 }
 
+#[test]
+fn cost_key_reads_the_1hr_cache_field_over_the_short_lived_fallback() {
+    let tiers = r#"[{"range":[0,100],"cache_creation_input_token_cost":1,"cache_creation_input_token_cost_above_1hr":5}]"#;
+    let request = input(
+        tiers,
+        50,
+        "cache_creation_input_token_cost_above_1hr",
+        Some("cache_creation_input_token_cost"),
+    );
+    let output = Op::run(&request).expect("selection and rate succeed");
+    assert_eq!(output["rate"], "5");
+}
+
+#[test]
+fn cost_key_falls_back_to_the_short_lived_cache_field_when_the_1hr_field_is_absent() {
+    let tiers = r#"[{"range":[0,100],"cache_creation_input_token_cost":1}]"#;
+    let request = input(
+        tiers,
+        50,
+        "cache_creation_input_token_cost_above_1hr",
+        Some("cache_creation_input_token_cost"),
+    );
+    let output = Op::run(&request).expect("selection and rate succeed");
+    assert_eq!(output["rate"], "1");
+}
+
 #[rstest]
 #[case::scientific_string(r#""4e-7""#, "0.0000004")]
 #[case::boolean_true("true", "1")]

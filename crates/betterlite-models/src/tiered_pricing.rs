@@ -52,7 +52,7 @@ pub fn coerce_cost_per_token(value: Option<&Scalar>) -> Result<Decimal, TieredPr
         Some(Scalar::Text(text)) => {
             let trimmed = text.trim();
             if is_python_float_literal(trimmed) {
-                Ok(parse_decimal_lexeme(trimmed)?)
+                Ok(parse_decimal_lexeme(&trimmed.replace('_', ""))?)
             } else {
                 Ok(Decimal::ZERO)
             }
@@ -80,16 +80,37 @@ fn is_python_float_literal(text: &str) -> bool {
 
 fn is_decimal_mantissa(text: &str) -> bool {
     let Some((int_part, frac_part)) = text.split_once('.') else {
-        return !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+        return is_underscored_digits(text);
     };
     (!int_part.is_empty() || !frac_part.is_empty())
-        && (int_part.is_empty() || int_part.bytes().all(|byte| byte.is_ascii_digit()))
-        && (frac_part.is_empty() || frac_part.bytes().all(|byte| byte.is_ascii_digit()))
+        && (int_part.is_empty() || is_underscored_digits(int_part))
+        && (frac_part.is_empty() || is_underscored_digits(frac_part))
 }
 
 fn is_signed_digits(text: &str) -> bool {
     let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
-    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+    is_underscored_digits(digits)
+}
+
+// PEP 515: a digit run may carry single underscores between two digits, never leading, trailing or doubled.
+fn is_underscored_digits(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let (Some(&first), Some(&last)) = (bytes.first(), bytes.last()) else {
+        return false;
+    };
+    if first == b'_' || last == b'_' {
+        return false;
+    }
+    let mut previous_was_underscore = false;
+    for &current in bytes {
+        match current {
+            b'_' if previous_was_underscore => return false,
+            b'_' => previous_was_underscore = true,
+            digit if digit.is_ascii_digit() => previous_was_underscore = false,
+            _ => return false,
+        }
+    }
+    true
 }
 
 // A present primary wins even when it is explicit zero; only a null/missing primary reads the fallback.
