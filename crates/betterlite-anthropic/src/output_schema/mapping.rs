@@ -76,15 +76,14 @@ fn expand_definitions(schema: Json) -> Result<Json, SchemaError> {
 }
 
 pub fn map_tool(value: Option<&ResponseFormat>) -> Result<Option<Tool>, SchemaError> {
-    let Some(format) = value else { return Ok(None) };
-    match &format.type_name {
-        Field::Missing => return Err(SchemaError::MissingType),
-        Field::Value(Json::Text(kind)) if kind == "text" => return Ok(None),
-        Field::Value(_) => {}
+    match value.map(|format| &format.type_name) {
+        None => Ok(None),
+        Some(Field::Missing) => Err(SchemaError::MissingType),
+        Some(Field::Value(Json::Text(kind))) if kind == "text" => Ok(None),
+        Some(Field::Value(_)) => schema_from_response(value)
+            .map(|schema| json_tool(Some(schema)))
+            .transpose(),
     }
-    schema_from_response(value)
-        .map(|schema| json_tool(Some(schema)))
-        .transpose()
 }
 
 pub fn json_tool(schema: Option<&Json>) -> Result<Tool, SchemaError> {
