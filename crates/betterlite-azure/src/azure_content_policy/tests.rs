@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::{ContentPolicyInput, JsonValue, content_policy_error, extract_azure_error};
+use betterlite_error::error::ErrorClass;
 use rstest::rstest;
 
 fn value(source: &str) -> JsonValue {
@@ -98,4 +99,21 @@ fn azure_policy_provider_non_string_message_is_rendered() {
         error.message,
         "litellm.BadRequestError: litellm.ContentPolicyViolationError: 7"
     );
+}
+
+#[test]
+fn azure_policy_classification_keeps_provider_wire_fields() {
+    let input = ContentPolicyInput {
+        message: "caller".to_owned(),
+        model: "gpt".to_owned(),
+        extra_information: "debug".to_owned(),
+        body: value(r#"{"type":"provider-type","code":"provider-code"}"#),
+        response: None,
+    };
+    let error = content_policy_error(&input);
+    let ErrorClass::ContentPolicyViolation(context) = error.classification else {
+        panic!("expected content-policy classification");
+    };
+    assert_eq!(context.body_type.as_deref(), Some("provider-type"));
+    assert_eq!(context.body_code.as_deref(), Some("provider-code"));
 }
