@@ -81,6 +81,13 @@ fn tier_rate_uses_the_fallback_when_the_primary_is_null() {
 }
 
 #[test]
+fn tier_rate_uses_fallback_for_a_null_scalar() {
+    let fallback = number("5");
+    let rate = tier_rate(Some(&Scalar::Null), Some(&fallback)).expect("fallback coerces");
+    assert_eq!(rate, Decimal::from(5));
+}
+
+#[test]
 fn tier_rate_defaults_to_zero_when_both_fields_are_absent() {
     let rate = tier_rate(None, None).expect("fallback coerces");
     assert_eq!(rate, Decimal::ZERO);

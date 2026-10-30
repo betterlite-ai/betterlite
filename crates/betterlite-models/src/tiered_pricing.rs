@@ -2,7 +2,6 @@ use crate::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexe
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
-use std::collections::BTreeMap;
 
 // The source's tolerant scalar coercion inspects a cost field's runtime shape, not just a number.
 #[derive(Debug, Clone, Deserialize)]
@@ -13,7 +12,7 @@ pub enum Scalar {
     Number(serde_json::Number),
     Text(String),
     Array(Vec<IgnoredAny>),
-    Object(BTreeMap<String, Option<IgnoredAny>>),
+    Object(IgnoredAny),
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -131,7 +130,7 @@ pub fn tier_rate(
     fallback: Option<&Scalar>,
 ) -> Result<Decimal, TieredPricingError> {
     match primary {
-        None => coerce_cost_per_token(fallback),
+        None | Some(Scalar::Null) => coerce_cost_per_token(fallback),
         present => coerce_cost_per_token(present),
     }
 }
