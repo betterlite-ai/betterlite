@@ -44,6 +44,15 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
         }
         if expected == "enum" {
             assert!(filtered.get("type").is_none());
+            for source in [
+                r#"{"type":"array","enum":[]}"#,
+                r#"{"type":"object","enum":[{}]}"#,
+            ] {
+                let schema: Json = serde_json::from_str(source).unwrap();
+                let filtered =
+                    serde_json::to_value(filter_anthropic_output_schema(schema)).unwrap();
+                assert!(filtered.get("type").is_none());
+            }
         }
         if expected == "anyOf" {
             assert!(filtered.get("anyOf").is_some());
