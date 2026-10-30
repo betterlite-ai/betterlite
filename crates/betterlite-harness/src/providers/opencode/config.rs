@@ -48,39 +48,67 @@ const AGENT_MANAGED_KEYS: [&str; 3] = ["permission", "tools", "model"];
 const AGENT_SECTIONS: [&str; 2] = ["agent", "mode"];
 
 pub(super) fn validate_user_config(config: &JsonObject) -> Result<(), HarnessError> {
-    for key in config.keys() {
-        if MANAGED_CONFIG_KEYS.contains(&key.as_str()) {
-            return Err(HarnessError::ManagedConfigKey {
-                key: key.clone(),
-                harness: Harness::OpenCode,
-            });
-        }
-    }
+    reject_managed_keys(config)?;
     for section in AGENT_SECTIONS {
-        let Some(entries) = config.get(section) else {
-            continue;
+        reject_agent_keys(config, section)?;
+    }
+    Ok(())
+}
+
+fn reject_managed_keys(config: &JsonObject) -> Result<(), HarnessError> {
+    let managed: Vec<String> = config
+        .keys()
+        .filter(|key| MANAGED_CONFIG_KEYS.contains(&key.as_str()))
+        .cloned()
+        .collect();
+    if managed.len() == 1 {
+        let Some(key) = managed.first() else {
+            return Ok(());
         };
-        let Value::Object(agents) = entries else {
+        return Err(HarnessError::ManagedConfigKey {
+            key: key.clone(),
+            harness: Harness::OpenCode,
+        });
+    }
+    if !managed.is_empty() {
+        return Err(HarnessError::ManagedConfigKey {
+            key: managed.join(", "),
+            harness: Harness::OpenCode,
+        });
+    }
+    Ok(())
+}
+
+fn reject_agent_keys(config: &JsonObject, section: &str) -> Result<(), HarnessError> {
+    let Some(entries) = config.get(section) else {
+        return Ok(());
+    };
+    let Value::Object(agents) = entries else {
+        return Err(HarnessError::OptionsMismatch {
+            given: "OpenCodeOptions.config[agent] or [mode]",
+            harness: Harness::OpenCode,
+            expected: "a mapping of names to agent config",
+        });
+    };
+    for (agent_name, agent) in agents {
+        let Value::Object(agent_fields) = agent else {
             return Err(HarnessError::OptionsMismatch {
-                given: "OpenCodeOptions.config[agent] or [mode]",
+                given: "OpenCodeOptions.config[agent/mode]",
                 harness: Harness::OpenCode,
                 expected: "a mapping of names to agent config",
             });
         };
-        for agent in agents.values() {
-            let Value::Object(agent_fields) = agent else {
-                continue;
-            };
-            if agent_fields
-                .keys()
-                .any(|key| AGENT_MANAGED_KEYS.contains(&key.as_str()))
-            {
-                return Err(HarnessError::OptionsMismatch {
-                    given: "OpenCodeOptions.config[agent/mode] entry",
-                    harness: Harness::OpenCode,
-                    expected: "permissions=, disable_tools= or model= instead of permission, tools or model",
-                });
-            }
+        let mut keys: Vec<String> = agent_fields
+            .keys()
+            .filter(|key| AGENT_MANAGED_KEYS.contains(&key.as_str()))
+            .cloned()
+            .collect();
+        if !keys.is_empty() {
+            keys.sort();
+            return Err(HarnessError::ManagedConfigKey {
+                key: format!("{section}.{agent_name}: {}", keys.join(", ")),
+                harness: Harness::OpenCode,
+            });
         }
     }
     Ok(())
@@ -131,23 +159,34 @@ fn provider_block(base_url: &str, token_path: &str, model: &str) -> JsonObject {
     providers
 }
 
-fn merged_instructions(user_config: &JsonObject, extra: Option<&str>) -> Vec<String> {
+fn merged_instructions(
+    user_config: &JsonObject,
+    extra: Option<&str>,
+) -> Result<Vec<String>, HarnessError> {
     let mut instructions: Vec<String> =
         if let Some(Value::Array(items)) = user_config.get("instructions") {
             items
                 .iter()
-                .filter_map(|item| item.as_str().map(str::to_owned))
-                .collect()
+                .map(|item| item.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+                .ok_or(HarnessError::OptionsMismatch {
+                    given: "OpenCodeOptions.config[instructions]",
+                    harness: Harness::OpenCode,
+                    expected: "a list containing only strings",
+                })?
         } else {
             Vec::new()
         };
     if let Some(path) = extra {
         instructions.push(path.to_owned());
     }
-    instructions
+    Ok(instructions)
 }
 
-fn merged_skills(user_config: &JsonObject, extra: Option<&str>) -> Option<JsonObject> {
+fn merged_skills(
+    user_config: &JsonObject,
+    extra: Option<&str>,
+) -> Result<Option<JsonObject>, HarnessError> {
     let mut skills = if let Some(Value::Object(entries)) = user_config.get("skills") {
         entries
             .iter()
@@ -159,8 +198,13 @@ fn merged_skills(user_config: &JsonObject, extra: Option<&str>) -> Option<JsonOb
     let mut paths: Vec<String> = if let Some(Value::Array(items)) = skills.get("paths") {
         items
             .iter()
-            .filter_map(|item| item.as_str().map(str::to_owned))
-            .collect()
+            .map(|item| item.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()
+            .ok_or(HarnessError::OptionsMismatch {
+                given: "OpenCodeOptions.config[skills.paths]",
+                harness: Harness::OpenCode,
+                expected: "a list containing only strings",
+            })?
     } else {
         Vec::new()
     };
@@ -168,13 +212,13 @@ fn merged_skills(user_config: &JsonObject, extra: Option<&str>) -> Option<JsonOb
         paths.push(path.to_owned());
     }
     if paths.is_empty() {
-        return None;
+        return Ok(None);
     }
     skills.insert(
         "paths".to_owned(),
         Value::Array(paths.into_iter().map(Value::String).collect()),
     );
-    Some(skills)
+    Ok(Some(skills))
 }
 
 fn insert_managed_fields(
@@ -212,8 +256,9 @@ fn insert_managed_fields(
 
 pub(super) fn build_opencode_config(inputs: &ConfigInputs<'_>) -> Result<JsonObject, HarnessError> {
     validate_user_config(inputs.user_config)?;
-    let instructions = merged_instructions(inputs.user_config, inputs.instructions_path.as_deref());
-    let skills = merged_skills(inputs.user_config, inputs.skills_path.as_deref());
+    let instructions =
+        merged_instructions(inputs.user_config, inputs.instructions_path.as_deref())?;
+    let skills = merged_skills(inputs.user_config, inputs.skills_path.as_deref())?;
     let permission = permission_rules(inputs.permissions, inputs.disable_tools);
     let mut config = inputs.user_config.clone();
     insert_managed_fields(&mut config, inputs, permission);

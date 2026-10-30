@@ -27,11 +27,8 @@ fn opencode_validation_rejects_agent_managed_keys() {
         serde_json::from_str(r#"{"agent":{"build":{"model":"other"}}}"#).unwrap();
     assert!(matches!(
         super::config::validate_user_config(&config),
-        Err(HarnessError::OptionsMismatch {
-            given: "OpenCodeOptions.config[agent/mode] entry",
-            harness: Harness::OpenCode,
-            ..
-        })
+        Err(HarnessError::ManagedConfigKey { key, harness: Harness::OpenCode })
+            if key == "agent.build: model"
     ));
 }
 

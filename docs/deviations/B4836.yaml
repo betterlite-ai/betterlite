@@ -12,3 +12,9 @@ deviations:
   - what: "An error event in OpenCode fails a turn even when the process exits with code 0."
     why: "OpenCode may report errors via JSONL events after successfully starting. state.error is checked before exit code."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L419-L421
+  - what: "The session config uses SessionSettings.gateway.api_base and api_key instead of Sandbox.host_url(endpoint.port) and the scoped endpoint token."
+    why: "The shared harness context has no endpoint object or endpoint port yet; B4841 owns rewiring this stand-in when endpoint-scoped session settings land."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L324-L333
+  - what: "Non-string OpenCode tool output is serialized with sorted JSON object keys because betterlite's JsonObject is a BTreeMap."
+    why: "LiteLLM uses plain json.dumps, while the typed Rust event boundary receives ordered JsonObject values; B4835 records the same wire-order limitation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L168-L190

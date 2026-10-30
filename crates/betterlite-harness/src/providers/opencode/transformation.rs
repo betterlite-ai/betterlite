@@ -29,6 +29,8 @@ mod permissions;
 #[path = "stream.rs"]
 pub mod stream;
 mod tests;
+#[path = "wire.rs"]
+mod wire;
 
 use config::{
     ConfigInputs, INSTRUCTIONS_FILENAME, OPENCODE_BINARY, OPENCODE_ISOLATION_ENV,

@@ -1,8 +1,8 @@
-use serde_json::Value;
-
 use crate::events::Event;
 use crate::payloads::python_json::python_json_text;
 use crate::types::JsonObject;
+
+use super::wire::{Line, ToolPart};
 
 #[derive(Clone, Debug, Default)]
 pub struct OpenCodeStreamState {
@@ -12,125 +12,67 @@ pub struct OpenCodeStreamState {
     pub step_texts: Vec<String>,
 }
 
-pub(super) fn truthy_string(object: &JsonObject, key: &str) -> Option<String> {
-    match object.get(key) {
-        Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
-        _ => None,
-    }
-}
-
-fn as_object(object: &JsonObject, key: &str) -> JsonObject {
-    match object.get(key) {
-        Some(Value::Object(entries)) => entries
-            .iter()
-            .map(|(field, value)| (field.clone(), value.clone()))
-            .collect(),
-        _ => JsonObject::new(),
-    }
-}
-
-fn json_dumps_like(object: &JsonObject, key: &str) -> String {
-    let value = object.get(key).cloned().unwrap_or(Value::Null);
-    python_json_text(&value).unwrap_or_else(|_| value.to_string())
-}
-
-// opencode gates write, edit and apply_patch with the single `edit` permission (NATIVE_TO_NORMALIZED)
-fn normalized_name(native: &str) -> String {
-    match native {
-        "write" => "write".to_owned(),
-        "edit" | "multiedit" | "patch" | "apply_patch" => "edit".to_owned(),
-        "bash" => "bash".to_owned(),
-        "glob" => "glob".to_owned(),
-        "grep" => "grep".to_owned(),
-        "list" => "ls".to_owned(),
-        "webfetch" | "websearch" => "web_search".to_owned(),
-        other => other.to_owned(),
-    }
-}
-
-const BUILTIN_TOOLS: [&str; 22] = [
-    "read",
-    "write",
-    "edit",
-    "multiedit",
-    "patch",
-    "apply_patch",
-    "bash",
-    "glob",
-    "grep",
-    "list",
-    "webfetch",
-    "websearch",
-    "task",
-    "todowrite",
-    "todoread",
-    "skill",
-    "invalid",
-    "question",
-    "lsp",
-    "codesearch",
-    "plan_enter",
-    "plan_exit",
-];
-
-fn error_message(line: &JsonObject) -> String {
-    match line.get("error") {
-        Some(Value::Object(error_entries)) => {
-            let error_fields: JsonObject = error_entries
-                .iter()
-                .map(|(field, value)| (field.clone(), value.clone()))
-                .collect();
-            let data = as_object(&error_fields, "data");
-            truthy_string(&data, "message")
-                .or_else(|| truthy_string(&error_fields, "name"))
-                .unwrap_or_else(|| "opencode reported an error".to_owned())
-        }
-        Some(Value::String(text)) if !text.is_empty() => text.clone(),
-        _ => "opencode reported an error".to_owned(),
-    }
-}
-
-fn tool_input(state: &JsonObject) -> JsonObject {
-    match state.get("input") {
-        Some(Value::Object(entries)) => entries
-            .iter()
-            .map(|(field, value)| (field.clone(), value.clone()))
-            .collect(),
-        Some(other) => JsonObject::from([("input".to_owned(), other.clone())]),
+fn tool_input(part: &ToolPart) -> JsonObject {
+    match &part.state.input {
+        Some(serde_json::Value::Object(entries)) => entries.clone().into_iter().collect(),
+        Some(value) => JsonObject::from([(String::from("input"), value.clone())]),
         None => JsonObject::new(),
     }
 }
 
-fn tool_events(part: &JsonObject) -> Vec<Event> {
-    let native = truthy_string(part, "tool").unwrap_or_default();
-    let call_id = truthy_string(part, "callID")
-        .or_else(|| truthy_string(part, "id"))
+fn tool_events(part: ToolPart) -> Vec<Event> {
+    let native = part.tool.clone().unwrap_or_default();
+    let call_id = part
+        .call_id
+        .clone()
+        .or_else(|| part.id.clone())
         .unwrap_or_default();
-    let state = as_object(part, "state");
     let call = Event::ToolCall {
         id: call_id.clone(),
-        name: normalized_name(&native),
+        name: super::permissions::normalize_tool_name(&native),
         native_name: native.clone(),
-        input: tool_input(&state),
-        builtin: BUILTIN_TOOLS.contains(&native.as_str()),
+        input: tool_input(&part),
+        builtin: matches!(
+            native.as_str(),
+            "read"
+                | "write"
+                | "edit"
+                | "multiedit"
+                | "patch"
+                | "apply_patch"
+                | "bash"
+                | "glob"
+                | "grep"
+                | "list"
+                | "webfetch"
+                | "websearch"
+                | "task"
+                | "todowrite"
+                | "todoread"
+                | "skill"
+                | "invalid"
+                | "question"
+                | "lsp"
+                | "codesearch"
+                | "plan_enter"
+                | "plan_exit"
+        ),
     };
-    let status = state.get("status").and_then(Value::as_str);
-    if status == Some("error") {
-        let message = truthy_string(&state, "error")
-            .or_else(|| truthy_string(&state, "output"))
-            .unwrap_or_else(|| "tool failed".to_owned());
+    if part.state.status.as_deref() == Some("error") {
+        let output = failed_tool_output(part.state);
         return vec![
             call,
             Event::ToolResult {
                 id: call_id,
-                output: message,
+                output,
                 is_error: true,
             },
         ];
     }
-    let output = match state.get("output") {
-        Some(Value::String(text)) => text.clone(),
-        _ => json_dumps_like(&state, "output"),
+    let output = match part.state.output {
+        Some(serde_json::Value::String(text)) => text,
+        Some(value) => python_json_text(&value).unwrap_or_else(|_| value.to_string()),
+        None => String::from("null"),
     };
     vec![
         call,
@@ -142,38 +84,50 @@ fn tool_events(part: &JsonObject) -> Vec<Event> {
     ]
 }
 
-// step_finish token counts are ignored on purpose: the session endpoint accounts usage
-pub(super) fn transform_line(line: &JsonObject, state: &mut OpenCodeStreamState) -> Vec<Event> {
-    if state.session_id.is_none() {
-        state.session_id = truthy_string(line, "sessionID");
+fn failed_tool_output(state: super::wire::ToolState) -> String {
+    if let Some(error) = state.error {
+        return error;
     }
-    let event_type = line.get("type").and_then(Value::as_str);
-    let part = as_object(line, "part");
-    match event_type {
-        Some("step_start") => {
+    if let Some(value) = state.output
+        && let Some(text) = value.as_str()
+    {
+        return text.to_owned();
+    }
+    "tool failed".to_owned()
+}
+
+pub(super) fn transform_line(line: &JsonObject, state: &mut OpenCodeStreamState) -> Vec<Event> {
+    let wire = super::wire::parse(line);
+    if state.session_id.is_none() {
+        state.session_id = wire.session_id().map(str::to_owned);
+    }
+    match wire {
+        Line::StepStart { .. } => {
             state.step_texts.clear();
             Vec::new()
         }
-        Some("text") => {
-            let Some(text) = truthy_string(&part, "text") else {
-                return Vec::new();
-            };
-            state.step_texts.push(text.clone());
-            state.final_text = state.step_texts.join("\n\n");
-            vec![Event::Text { delta: text }]
-        }
-        Some("reasoning") => truthy_string(&part, "text")
-            .map(|text| vec![Event::Reasoning { delta: text }])
+        Line::Text { part, .. } => match part.text.filter(|text| !text.is_empty()) {
+            Some(text) => {
+                state.step_texts.push(text.clone());
+                state.final_text = state.step_texts.join("\n\n");
+                vec![Event::Text { delta: text }]
+            }
+            None => Vec::new(),
+        },
+        Line::Reasoning { part, .. } => part
+            .text
+            .filter(|text| !text.is_empty())
+            .map(|delta| vec![Event::Reasoning { delta }])
             .unwrap_or_default(),
-        Some("tool_use") => tool_events(&part),
-        Some("error") => {
-            let message = error_message(line);
+        Line::ToolUse { part, .. } => tool_events(part),
+        Line::Error { error, .. } => {
+            let message = error.message();
             state.error = Some(match state.error.take() {
                 Some(existing) => format!("{existing}\n{message}"),
                 None => message,
             });
             Vec::new()
         }
-        _ => Vec::new(),
+        Line::Other => Vec::new(),
     }
 }

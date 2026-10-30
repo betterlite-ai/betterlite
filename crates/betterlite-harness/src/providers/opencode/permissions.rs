@@ -40,3 +40,12 @@ pub(super) fn permission_rules(
     }
     rules
 }
+
+pub(super) fn normalize_tool_name(native: &str) -> String {
+    match native {
+        "edit" | "multiedit" | "patch" | "apply_patch" => "edit".to_owned(),
+        "list" => "ls".to_owned(),
+        "webfetch" | "websearch" => "web_search".to_owned(),
+        other => other.to_owned(),
+    }
+}
