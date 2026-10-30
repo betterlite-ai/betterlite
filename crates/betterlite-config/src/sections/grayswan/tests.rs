@@ -117,11 +117,11 @@ fn grayswan_config_defaults_an_unsupported_on_flagged_action_to_monitor() {
 }
 
 #[test]
-fn grayswan_config_rejects_a_guardrail_timeout_that_duration_cannot_represent() {
+fn grayswan_config_defaults_a_guardrail_timeout_that_duration_cannot_represent() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
-    let error = resolve(&source, &BTreeMap::new()).unwrap_err();
-    assert!(matches!(error, ConfigError::Unsupported { paths }
-        if paths == ["guardrails.0.litellm_params.guardrail_timeout: '-1'"]));
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(configured.guardrail_timeout, Duration::from_secs(30));
 }
 
 #[test]

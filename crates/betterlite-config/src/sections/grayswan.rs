@@ -6,7 +6,8 @@ use serde::Deserialize;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::{parse_float, resolve_string};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number, resolve_string};
 
 mod tests;
 
@@ -59,7 +60,7 @@ struct Parameters {
     api_key: Option<SecretString>,
     api_base: Option<String>,
     on_flagged_action: Option<String>,
-    violation_threshold: Option<String>,
+    violation_threshold: Option<RawNumber>,
     reasoning_mode: Option<String>,
     categories: Option<BTreeMap<String, String>>,
     policy_id: Option<String>,
@@ -117,70 +118,53 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let base = resolve_explicit_or_env(
-            parameters.api_base.filter(|value| !value.is_empty()),
-            &format!("{prefix}.api_base"),
-            lookup,
-            resolve_string,
-            |env| {
-                env.lookup("GRAYSWAN_API_BASE")
-                    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned())
-            },
-        )?;
-        let violation_threshold = resolve_explicit_or_env(
+        let api_base = match parameters.api_base.filter(|value| !value.is_empty()) {
+            Some(value) => resolve_string(value, &format!("{prefix}.api_base"), lookup)?,
+            None => lookup
+                .lookup("GRAYSWAN_API_BASE")
+                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
+        };
+        let violation_threshold = resolve_number(
             parameters.violation_threshold,
             &format!("{prefix}.violation_threshold"),
             lookup,
-            |value, path, _lookup| parse_float(&value, path),
-            |env| {
-                env.lookup("GRAYSWAN_VIOLATION_THRESHOLD")
-                    .and_then(|text| text.parse::<f64>().ok())
-                    .unwrap_or(DEFAULT_VIOLATION_THRESHOLD)
-            },
-        )?;
+            parse_float,
+        )?
+        .unwrap_or_else(|| {
+            lookup
+                .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
+                .and_then(|text| text.parse::<f64>().ok())
+                .unwrap_or(DEFAULT_VIOLATION_THRESHOLD)
+        });
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
-            api_base: base.trim_end_matches('/').to_owned(),
+            api_base: api_base.trim_end_matches('/').to_owned(),
             on_flagged_action: resolve_on_flagged_action(parameters.on_flagged_action.as_deref()),
             violation_threshold,
             reasoning_mode: resolve_reasoning_mode(parameters.reasoning_mode.as_deref(), lookup),
             categories: parameters.categories,
             policy_id: parameters.policy_id,
             fail_open: parameters.fail_open.unwrap_or(true),
-            guardrail_timeout: resolve_guardrail_timeout(parameters.guardrail_timeout, &prefix)?,
+            guardrail_timeout: resolve_guardrail_timeout(parameters.guardrail_timeout),
             streaming_end_of_stream_only: parameters.streaming_end_of_stream_only.unwrap_or(false),
             streaming_sampling_rate: parameters.streaming_sampling_rate.unwrap_or(5),
         })
     }
 }
 
-fn resolve_explicit_or_env<T, P, F>(
-    explicit: Option<String>,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-    parse: P,
-    env_fallback: F,
-) -> Result<T, ConfigError>
-where
-    P: FnOnce(String, &str, &dyn EnvironmentLookup) -> Result<T, ConfigError>,
-    F: FnOnce(&dyn EnvironmentLookup) -> T,
-{
-    if let Some(value) = explicit {
-        return parse(value, path, lookup);
-    }
-    Ok(env_fallback(lookup))
-}
-
-fn resolve_guardrail_timeout(
-    guardrail_timeout: Option<f64>,
-    prefix: &str,
-) -> Result<Duration, ConfigError> {
+fn resolve_guardrail_timeout(guardrail_timeout: Option<f64>) -> Duration {
     let Some(secs) = guardrail_timeout else {
-        return Ok(DEFAULT_GUARDRAIL_TIMEOUT);
+        return DEFAULT_GUARDRAIL_TIMEOUT;
     };
-    Duration::try_from_secs_f64(secs).map_err(|_source| ConfigError::Unsupported {
-        paths: vec![format!("{prefix}.guardrail_timeout: '{secs}'")],
+    Duration::try_from_secs_f64(secs).unwrap_or_else(|source| {
+        tracing::warn!(
+            secs,
+            error = %source,
+            default = ?DEFAULT_GUARDRAIL_TIMEOUT,
+            "Gray Swan Guardrail: guardrail_timeout cannot be represented as a duration, defaulting"
+        );
+        DEFAULT_GUARDRAIL_TIMEOUT
     })
 }
 
