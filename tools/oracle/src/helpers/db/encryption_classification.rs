@@ -1,34 +1,81 @@
+use betterlite_db::encryption_scan::{
+    _classify_callback_value, _classify_secret_map, DbCipher, LocationReport, MigrationJson,
+    classify_value,
+};
+use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
+use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    pub values: Vec<Value>,
+    pub values: Vec<MigrationJson>,
     #[serde(default)]
-    pub callbacks: Vec<Value>,
+    pub callbacks: Vec<MigrationJson>,
+    #[serde(default = "default_key")]
+    pub key: String,
+}
+
+fn default_key() -> String {
+    let key = String::from("scan");
+    key
 }
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let mut counts = std::collections::BTreeMap::new();
-        for value in input.values.iter().chain(input.callbacks.iter()) {
-            let class = if value
-                .as_str()
-                .is_some_and(|text| text.starts_with("v2:gcm:"))
-            {
-                "migrated"
-            } else if value.is_string() {
-                "plaintext"
+        let cipher = DbCipher {
+            settings: CipherSettings {
+                signing_key: Some(SecretString::from("scan-key")),
+                algorithm: Algorithm::XSalsa20Poly1305,
+            },
+            nonces: OsNonces,
+            diagnostics: TracingDiagnostics,
+        };
+        let mut report = LocationReport {
+            location: String::from("values"),
+            scanned: 0,
+            migrated: 0,
+            already_v2: 0,
+            plaintext: 0,
+            undecryptable: 0,
+            legacy: 0,
+        };
+        for value in &input.values {
+            let class = if matches!(value, MigrationJson::Object(_)) {
+                _classify_secret_map(value, &cipher, &input.key)
             } else {
-                "not-a-string"
+                Some(classify_value(value, &cipher, &input.key))
             };
-            *counts.entry(class).or_insert(0_u64) += 1;
+            report.count(class).map_err(|error| {
+                Box::new(crate::helpers::HelperError {
+                    class: "OverflowError".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?;
         }
-        Ok(serde_json::json!({"counts": counts}))
+        for value in &input.callbacks {
+            report
+                .count(Some(_classify_callback_value(value, &cipher)))
+                .map_err(|error| {
+                    Box::new(crate::helpers::HelperError {
+                        class: "OverflowError".to_owned(),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                })?;
+        }
+        Ok(serde_json::json!({"counts": report.as_dict()}))
     }
 }

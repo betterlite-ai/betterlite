@@ -1,23 +1,13 @@
 from typing import TypeAlias, cast
 
-from litellm.proxy.common_utils.encrypt_decrypt_utils import (
-    decrypt_value_helper,
+from litellm.proxy.management_endpoints.credential_migration import (
+    LocationReport,
+    _classify_callback_value,  # pyright: ignore[reportPrivateUsage]
+    _classify_secret_map,  # pyright: ignore[reportPrivateUsage]
+    classify_value,
 )
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-
-
-def classify(value: Json, key: str) -> str:
-    if not isinstance(value, str):
-        return "not-a-string"
-    if value.startswith("v2:gcm:"):
-        return "migrated"
-    if not value:
-        return "plaintext"
-    decrypted = decrypt_value_helper(
-        value=value, key=key, exception_type="debug", return_original_value=False
-    )
-    return "legacy" if decrypted is not None else "plaintext"
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -27,8 +17,17 @@ def run(input_value: dict[str, Json]) -> Json:
     key = input_value.get("key", "scan")
     if not isinstance(key, str):
         raise ValueError("key must be a string")
-    counts: dict[str, int] = {}
+    callbacks = input_value.get("callbacks", [])
+    if not isinstance(callbacks, list):
+        raise ValueError("callbacks must be a list")
+    report = LocationReport(location="values")
     for value in values:
-        category = classify(value, key)
-        counts[category] = counts.get(category, 0) + 1
-    return cast(Json, {"counts": counts})
+        category = (
+            _classify_secret_map(value, key)
+            if isinstance(value, dict)
+            else classify_value(value, key)
+        )
+        report.count(category)
+    for value in callbacks:
+        report.count(_classify_callback_value(value))
+    return cast(Json, {"counts": report.as_dict()})
