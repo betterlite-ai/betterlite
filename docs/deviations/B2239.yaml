@@ -1,0 +1,5 @@
+task: B2239
+deviations:
+  - what: Verbose logger and console payloads are redacted before emission; LiteLLM can print raw supplied payloads.
+    why: The repository requires secrets and message bodies to stay out of diagnostic logs. Sink ordering and failure suppression remain preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L544-L559

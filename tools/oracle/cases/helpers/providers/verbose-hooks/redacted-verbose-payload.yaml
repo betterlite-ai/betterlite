@@ -1,0 +1,5 @@
+kind: helper
+name: redacted-verbose-payload
+call: {verbose_hooks: {function: main, payload: {api_key: sk-secret, message: body}, set_verbose: true}}
+env: {}
+compare: {ignore: []}
