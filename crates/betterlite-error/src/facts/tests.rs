@@ -45,6 +45,12 @@ fn error_facts_behavior_tests_behavior(
     true
 )]
 #[case::ordinary("bad request", false)]
+#[case::current_length_without_while_limit("current length is 500", false)]
+#[case::while_limit_without_current_length("while limit is 400", false)]
+#[case::current_length_and_while_limit("current length is 500 while limit is 400", true)]
+#[case::maximum_input_length_without_tokens("maximum input length is 10", false)]
+#[case::tokens_without_maximum_input_length("some tokens here", false)]
+#[case::maximum_input_length_with_tokens("maximum input length is 10 tokens", true)]
 fn error_facts_behavior_tests_behavior_context_window(
     #[case] message: &str,
     #[case] expected: bool,
