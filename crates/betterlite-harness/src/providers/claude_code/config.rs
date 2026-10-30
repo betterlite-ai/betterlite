@@ -1,9 +1,13 @@
+use std::collections::BTreeMap;
+
 use crate::errors::HarnessError;
 use crate::options::ClaudeCodeOptions;
-use crate::types::{Harness, PermissionMode};
+use crate::payloads::native_tool_names as shared_native_tool_names;
+use crate::payloads::python_json::python_json_text;
+use crate::types::{Harness, JsonObject, PermissionMode};
 
-pub const CLAUDE_BINARY: &str = "claude";
-pub const BASE_COMMAND: [&str; 6] = [
+pub(super) const CLAUDE_BINARY: &str = "claude";
+pub(super) const BASE_COMMAND: [&str; 6] = [
     "-p",
     "--output-format",
     "stream-json",
@@ -11,7 +15,7 @@ pub const BASE_COMMAND: [&str; 6] = [
     "--input-format",
     "text",
 ];
-pub const MANAGED_ENV_KEYS: [&str; 6] = [
+pub(super) const MANAGED_ENV_KEYS: [&str; 6] = [
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_API_KEY",
@@ -19,7 +23,7 @@ pub const MANAGED_ENV_KEYS: [&str; 6] = [
     "ANTHROPIC_SMALL_FAST_MODEL",
     "CLAUDE_CONFIG_DIR",
 ];
-pub const MANAGED_CONFIG_KEYS: [&str; 7] = [
+pub(super) const MANAGED_CONFIG_KEYS: [&str; 7] = [
     "env",
     "apiKeyHelper",
     "model",
@@ -28,20 +32,20 @@ pub const MANAGED_CONFIG_KEYS: [&str; 7] = [
     "awsCredentialExport",
     "forceLoginMethod",
 ];
-pub const STATIC_ENV: [(&str, &str); 4] = [
+pub(super) const STATIC_ENV: [(&str, &str); 4] = [
     ("DISABLE_TELEMETRY", "1"),
     ("DISABLE_ERROR_REPORTING", "1"),
     ("DISABLE_AUTOUPDATER", "1"),
     ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
 ];
-pub const STRUCTURED_OUTPUT_INSTRUCTION: &str = "When you have finished the task, end your final reply with only a single JSON object (no code fences, no prose after it) that matches this JSON schema:\n{schema}";
-pub const PERMISSION_MODES: [(&str, &str); 4] = [
+pub(super) const STRUCTURED_OUTPUT_INSTRUCTION: &str = "When you have finished the task, end your final reply with only a single JSON object (no code fences, no prose after it) that matches this JSON schema:\n{schema}";
+pub(super) const PERMISSION_MODES: [(&str, &str); 4] = [
     ("read-only", "plan"),
     ("ask", "default"),
     ("edit", "acceptEdits"),
     ("full", "bypassPermissions"),
 ];
-pub const NATIVE_TO_NORMALIZED: [(&str, &str); 9] = [
+pub(super) const NATIVE_TO_NORMALIZED: [(&str, &str); 9] = [
     ("Read", "read"),
     ("Write", "write"),
     ("Edit", "edit"),
@@ -52,7 +56,7 @@ pub const NATIVE_TO_NORMALIZED: [(&str, &str); 9] = [
     ("WebSearch", "web_search"),
     ("LS", "ls"),
 ];
-pub const NORMALIZED_TO_NATIVE: [(&str, &[&str]); 8] = [
+pub(super) const NORMALIZED_TO_NATIVE: [(&str, &[&str]); 8] = [
     ("read", &["Read"]),
     ("write", &["Write"]),
     ("edit", &["Edit", "MultiEdit"]),
@@ -100,29 +104,40 @@ pub(super) fn permission_mode(mode: PermissionMode) -> &'static str {
 }
 
 pub(super) fn native_tool_names(disabled: &[String]) -> Vec<String> {
-    let mut names = Vec::new();
-    for normalized in disabled {
-        if let Some((_, native)) = NORMALIZED_TO_NATIVE
-            .iter()
-            .find(|(key, _)| *key == normalized)
-        {
-            names.extend(native.iter().map(|name| (*name).to_owned()));
-        } else {
-            names.push(normalized.clone());
-        }
-    }
-    names.sort();
-    names.dedup();
-    names
+    let mapping: BTreeMap<String, Vec<String>> = NORMALIZED_TO_NATIVE
+        .iter()
+        .map(|(key, native)| {
+            (
+                (*key).to_owned(),
+                native.iter().map(|name| (*name).to_owned()).collect(),
+            )
+        })
+        .collect();
+    shared_native_tool_names(disabled, &mapping)
 }
 
 pub(super) fn normalize_tool_name(native: &str) -> String {
-    let normalized = NATIVE_TO_NORMALIZED
-        .iter()
-        .find(|(key, _)| *key == native)
-        .map_or_else(
-            || native.to_owned(),
-            |(_, normalized)| (*normalized).to_owned(),
-        );
-    normalized
+    match NATIVE_TO_NORMALIZED.iter().find(|(key, _)| *key == native) {
+        Some((_, normalized)) => (*normalized).to_owned(),
+        None => native.to_owned(),
+    }
+}
+
+pub(super) fn build_system_prompt(
+    instructions: Option<&str>,
+    output_schema: Option<&JsonObject>,
+) -> Result<Option<String>, HarnessError> {
+    let schema_part = output_schema
+        .map(|schema| {
+            python_json_text(schema)
+                .map(|text| STRUCTURED_OUTPUT_INSTRUCTION.replace("{schema}", &text))
+        })
+        .transpose()
+        .map_err(|source| HarnessError::StateEncode { source })?;
+    let parts: Vec<&str> = [instructions, schema_part.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|part| !part.is_empty())
+        .collect();
+    Ok((!parts.is_empty()).then(|| parts.join("\n\n")))
 }

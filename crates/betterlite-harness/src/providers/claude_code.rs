@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use secrecy::SecretString;
 
-use crate::context::SessionContext;
+use crate::context::{GatewayTarget, SessionContext};
 use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::options::ClaudeCodeOptions;
@@ -16,14 +16,86 @@ use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode
 #[path = "claude_code/config.rs"]
 mod config;
 #[path = "claude_code/stream.rs"]
-mod stream;
+pub mod stream;
 mod tests;
 
-pub use config::{
-    BASE_COMMAND, CLAUDE_BINARY, MANAGED_CONFIG_KEYS, MANAGED_ENV_KEYS, NATIVE_TO_NORMALIZED,
-    NORMALIZED_TO_NATIVE, PERMISSION_MODES, STATIC_ENV, STRUCTURED_OUTPUT_INSTRUCTION,
-};
-pub use stream::ClaudeCodeStreamState;
+use config::{BASE_COMMAND, CLAUDE_BINARY, STATIC_ENV};
+use stream::ClaudeCodeStreamState;
+
+fn session_env(
+    options: &ClaudeCodeOptions,
+    gateway: &GatewayTarget,
+    private_dir: &str,
+    model: Option<&str>,
+) -> BTreeMap<String, SecretString> {
+    let mut env = options
+        .env
+        .iter()
+        .map(|(key, value)| (key.clone(), SecretString::from(value.clone())))
+        .collect::<BTreeMap<_, _>>();
+    env.extend(
+        STATIC_ENV
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), SecretString::from((*value).to_owned()))),
+    );
+    env.insert(
+        "ANTHROPIC_BASE_URL".to_owned(),
+        SecretString::from(gateway.api_base.clone()),
+    );
+    env.insert("ANTHROPIC_AUTH_TOKEN".to_owned(), gateway.api_key.clone());
+    env.insert(
+        "ANTHROPIC_API_KEY".to_owned(),
+        SecretString::from(String::new()),
+    );
+    env.insert(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        SecretString::from(private_dir.to_owned()),
+    );
+    if let Some(model_name) = model {
+        env.insert(
+            "ANTHROPIC_MODEL".to_owned(),
+            SecretString::from(model_name.to_owned()),
+        );
+        env.insert(
+            "ANTHROPIC_SMALL_FAST_MODEL".to_owned(),
+            SecretString::from(model_name.to_owned()),
+        );
+    }
+    env
+}
+
+fn turn_argv<S>(
+    context: &SessionContext<S>,
+    options: &ClaudeCodeOptions,
+    native_session_id: Option<&str>,
+) -> Result<Vec<String>, HarnessError> {
+    let mut argv = Vec::new();
+    if !options.config.is_empty() {
+        argv.extend([
+            "--settings".to_owned(),
+            serde_json::to_string(&options.config)
+                .map_err(|source| HarnessError::StateEncode { source })?,
+        ]);
+    }
+    let system_prompt = config::build_system_prompt(
+        context.settings.instructions.as_deref(),
+        context.settings.output_schema.as_ref(),
+    )?;
+    if let Some(prompt) = system_prompt {
+        argv.extend(["--append-system-prompt".to_owned(), prompt]);
+    }
+    if let Some(max_turns) = context.settings.max_turns {
+        argv.extend(["--max-turns".to_owned(), max_turns.to_string()]);
+    }
+    let disallowed = config::native_tool_names(&context.settings.disable_tools);
+    if !disallowed.is_empty() {
+        argv.extend(["--disallowedTools".to_owned(), disallowed.join(",")]);
+    }
+    if let Some(session_id) = native_session_id {
+        argv.extend(["--resume".to_owned(), session_id.to_owned()]);
+    }
+    Ok(argv)
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ClaudeCodeHarnessConfig;
@@ -83,39 +155,12 @@ impl BaseCLIHarnessConfig for ClaudeCodeHarnessConfig {
             })?;
         let options = self.get_options(context)?;
         config::validate_options(&options)?;
-        let mut env = options
-            .env
-            .iter()
-            .map(|(key, value)| (key.clone(), SecretString::from(value.clone())))
-            .collect::<BTreeMap<_, _>>();
-        env.extend(
-            STATIC_ENV
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), SecretString::from((*value).to_owned()))),
+        let env = session_env(
+            &options,
+            gateway,
+            private_dir,
+            context.settings.model.as_deref(),
         );
-        env.insert(
-            "ANTHROPIC_BASE_URL".to_owned(),
-            SecretString::from(gateway.api_base.clone()),
-        );
-        env.insert("ANTHROPIC_AUTH_TOKEN".to_owned(), gateway.api_key.clone());
-        env.insert(
-            "ANTHROPIC_API_KEY".to_owned(),
-            SecretString::from(String::new()),
-        );
-        env.insert(
-            "CLAUDE_CONFIG_DIR".to_owned(),
-            SecretString::from(private_dir.to_owned()),
-        );
-        if let Some(model) = context.settings.model.as_ref() {
-            env.insert(
-                "ANTHROPIC_MODEL".to_owned(),
-                SecretString::from(model.clone()),
-            );
-            env.insert(
-                "ANTHROPIC_SMALL_FAST_MODEL".to_owned(),
-                SecretString::from(model.clone()),
-            );
-        }
         Ok(HarnessSessionSetup {
             files: BTreeMap::new(),
             persisted_dirs: vec![PersistedDir {
@@ -149,26 +194,7 @@ impl BaseCLIHarnessConfig for ClaudeCodeHarnessConfig {
             argv.extend(["--model".to_owned(), model.clone()]);
         }
         argv.extend(["--setting-sources".to_owned(), "user".to_owned()]);
-        if !options.config.is_empty() {
-            argv.extend([
-                "--settings".to_owned(),
-                serde_json::to_string(&options.config)
-                    .map_err(|source| HarnessError::StateEncode { source })?,
-            ]);
-        }
-        if let Some(instructions) = context.settings.instructions.as_ref() {
-            argv.extend(["--append-system-prompt".to_owned(), instructions.clone()]);
-        }
-        if let Some(max_turns) = context.settings.max_turns {
-            argv.extend(["--max-turns".to_owned(), max_turns.to_string()]);
-        }
-        let disallowed = config::native_tool_names(&context.settings.disable_tools);
-        if !disallowed.is_empty() {
-            argv.extend(["--disallowedTools".to_owned(), disallowed.join(",")]);
-        }
-        if let Some(session_id) = turn.native_session_id {
-            argv.extend(["--resume".to_owned(), session_id.to_owned()]);
-        }
+        argv.extend(turn_argv(context, &options, turn.native_session_id)?);
         Ok(HarnessTurnRequest {
             argv,
             env: turn.setup.env.clone(),
