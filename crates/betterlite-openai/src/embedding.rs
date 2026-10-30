@@ -22,10 +22,14 @@ pub enum EmbeddingInput {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EmbeddingRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub input: EmbeddingInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub encoding_format: Option<EncodingFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dimensions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
     #[serde(flatten)]
     pub passthrough: serde_json::Map<String, Value>,
