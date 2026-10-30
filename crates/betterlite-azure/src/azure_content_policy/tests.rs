@@ -147,19 +147,39 @@ fn azure_policy_null_message_uses_python_repr() {
     assert_eq!(super::display_message(&JsonValue::Null), "None");
 }
 
-#[test]
-fn azure_policy_classification_keeps_provider_wire_fields() {
+#[rstest]
+#[case::strings(
+    r#"{"type":"provider-type","code":"provider-code"}"#,
+    Some("provider-type"),
+    Some("provider-code")
+)]
+#[case::non_strings(r#"{"type":true,"code":7}"#, None, None)]
+#[case::mixed(
+    r#"{"type":[],"code":{"reason":"filtered"}}"#,
+    Some("invalid_request_error"),
+    None
+)]
+#[case::fallbacks(
+    r#"{"type":"","code":null}"#,
+    Some("invalid_request_error"),
+    Some("content_policy_violation")
+)]
+fn azure_policy_classification_keeps_provider_wire_fields(
+    #[case] body: &str,
+    #[case] expected_type: Option<&str>,
+    #[case] expected_code: Option<&str>,
+) {
     let input = ContentPolicyInput {
         message: "caller".to_owned(),
         model: "gpt".to_owned(),
         extra_information: "debug".to_owned(),
-        body: value(r#"{"type":"provider-type","code":"provider-code"}"#),
+        body: value(body),
         response: None,
     };
     let error = content_policy_error(&input);
     let ErrorClass::ContentPolicyViolation(context) = error.classification else {
         panic!("expected content-policy classification");
     };
-    assert_eq!(context.body_type.as_deref(), Some("provider-type"));
-    assert_eq!(context.body_code.as_deref(), Some("provider-code"));
+    assert_eq!(context.body_type.as_deref(), expected_type);
+    assert_eq!(context.body_code.as_deref(), expected_code);
 }
