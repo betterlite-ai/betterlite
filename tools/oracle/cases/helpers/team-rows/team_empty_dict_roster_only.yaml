@@ -1,0 +1,12 @@
+kind: helper
+name: team_empty_dict_roster_only
+call:
+  team_rows:
+    calls:
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":{}}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":null}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":{"x":1}}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":"[]"}}
+      - {"name":"team_empty_dict_roster_only","operation":"team","row":{"team_id":"t","members_with_roles":[{"role":"user","user_id":"u"},{"role":"user","user_id":"u"}]}}
+env: {}
+compare: {ignore: []}

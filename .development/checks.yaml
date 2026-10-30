@@ -144,10 +144,11 @@ optional:
     run: |-
       set -e
       scratch="$GATE_LOG_DIR/mutants-tmp"
+      rm -rf "$scratch"
       mkdir -p "$scratch"
       trap 'rm -rf "$scratch"' EXIT
       git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' > "$GATE_LOG_DIR/mutants.diff"
-      TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --output "$GATE_LOG_DIR"
+      TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --gitignore true --output "$GATE_LOG_DIR"
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
     run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES

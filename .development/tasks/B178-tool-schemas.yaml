@@ -5,7 +5,7 @@ description: >-
   combinator/local-ref helpers, top-level flattening, Python regex filtering, flatten_combinators_and_drop_non_python_regex_patterns
   and tool_with_sanitized_parameters. Compose B217 definitions and B216 argument/tool helpers without implementing
   a general schema validator. Preserve bounded schema passthrough and output-work limits; tool_schema fuzzing calls
-  this production normalizer. Budget 250 normalization, 100 adapters, 320 tests/fuzz and 50 wiring (720 total).
+  this production normalizer. Only the 1500 changed-lines budget binds; how it splits between normalization, adapters, tests and wiring is the worker's call. Check Python regex syntax with fancy-regex 0.19.2, which betterlite-models already uses, and keep the explicit \p, \P and \z rejections; list the patterns Python 3.13 rejects but fancy-regex accepts (an inline flag after the start, \G, stacked repeats such as a{1,2}{3}) in docs/deviations/B178.yaml.
   Write the behavior rstest functions tool_schemas_tool_schema_tests_behavior in adjacent tests.rs files, with a named case
   for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation tool_schema is already registered; each operation has its own
   Rust and Python adapter file and corpus seed.
