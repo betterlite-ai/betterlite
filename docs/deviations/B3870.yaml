@@ -1,0 +1,8 @@
+task: B3870
+deviations:
+  - what: UserAPIKeyLabelValues.model_dump returns a typed Rust BTreeMap rather than a dynamic Python dictionary.
+    why: Rust has no Pydantic model_dump; the typed representation preserves null, string, list, and metadata-map values while satisfying the crate's typed-wire rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1035-L1127
+  - what: Label validation messages use the caller-identity mode supplied with the error instead of reading mutable global state during formatting.
+    why: The task requires constructor-supplied context; label resolution still validates the current caller-supplied mode on every call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L97-L113
