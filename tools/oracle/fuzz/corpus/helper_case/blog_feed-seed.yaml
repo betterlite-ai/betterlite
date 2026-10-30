@@ -1,0 +1,5 @@
+kind: helper
+name: blog-feed-corpus-seed
+call: {blog_feed: {function: validate_blog_posts, posts: [{title: seed}]}}
+env: {}
+compare: {ignore: []}

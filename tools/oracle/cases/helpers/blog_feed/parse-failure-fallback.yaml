@@ -1,0 +1,5 @@
+kind: helper
+name: parse-failure-fallback
+call: {blog_feed: {function: get_blog_posts, url: https://example.test/feed, now: 100, response: {status: 200, text: '<rss>'}}}
+env: {}
+compare: {ignore: []}

@@ -44,5 +44,6 @@ deny = [
 ]
 
 [sources]
+# quick-xml is sourced from crates.io and covered by the allowed MIT/Apache-2.0 licenses above.
 unknown-registry = "deny"
 unknown-git = "deny"

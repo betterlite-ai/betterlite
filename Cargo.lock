@@ -1238,6 +1238,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "quick-xml",
  "reqwest",
  "rstest",
  "rust_decimal",
