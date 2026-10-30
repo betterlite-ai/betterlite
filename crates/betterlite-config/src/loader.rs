@@ -1,11 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::num::{ParseFloatError, ParseIntError};
-use std::time::TryFromFloatSecsError;
-
-use secrecy::SecretString;
-use serde::de::DeserializeOwned;
-use thiserror::Error;
-
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
@@ -19,36 +11,20 @@ use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     ProxyTrust, RouterSettings,
 };
-
+use secrecy::SecretString;
+use serde::de::DeserializeOwned;
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::{ParseFloatError, ParseIntError};
+use std::time::TryFromFloatSecsError;
+use thiserror::Error;
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
 }
-
 impl EnvironmentLookup for BTreeMap<String, String> {
     fn lookup(&self, name: &str) -> Option<String> {
         self.get(name).cloned()
     }
 }
-
-fn resolve_environment<L>(
-    values: BTreeMap<String, Option<String>>,
-    lookup: &L,
-) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    if values.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    values
-        .into_iter()
-        .map(|(key, value)| {
-            let path = format!("environment_variables.{key}");
-            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
-        })
-        .collect()
-}
-
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("invalid YAML: {source}")]
@@ -84,7 +60,6 @@ pub enum ConfigError {
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
-
 impl<L> ConfigLoader<L>
 where
     L: EnvironmentLookup,
@@ -101,7 +76,6 @@ where
         convert(raw, sections, &self.lookup)
     }
 }
-
 pub(crate) fn parse_view<View>(source: &str) -> Result<(View, BTreeSet<String>), ConfigError>
 where
     View: DeserializeOwned,
@@ -115,7 +89,6 @@ where
     .map_err(|yaml_error| ConfigError::Yaml { source: yaml_error })?;
     Ok((value, ignored))
 }
-
 // a key is unknown when every view ignored it or one of its parents; only the outermost such paths are reported
 pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
     let mut unknown = BTreeSet::new();
@@ -142,7 +115,6 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .map(|path| (*path).to_owned())
         .collect()
 }
-
 fn convert<L>(raw: RawConfig, sections: Sections, lookup: &L) -> Result<Config, ConfigError>
 where
     L: EnvironmentLookup,
@@ -156,11 +128,10 @@ where
         general_settings: convert_general(raw.general_settings, lookup)?,
         router_settings: convert_router(raw.router_settings, lookup)?,
         litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
-        environment_variables: resolve_environment(raw.environment_variables, lookup)?,
+        environment_variables: convert_environment(raw.environment_variables, lookup)?,
         sections,
     })
 }
-
 fn convert_deployment<L>(
     raw: RawDeployment,
     index: usize,
@@ -182,7 +153,6 @@ where
         model_info,
     })
 }
-
 fn convert_params<L>(raw: RawParams, index: usize, lookup: &L) -> Result<LiteLlmParams, ConfigError>
 where
     L: EnvironmentLookup,
@@ -218,7 +188,6 @@ where
         weight,
     })
 }
-
 fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, ConfigError>
 where
     L: EnvironmentLookup,
@@ -229,7 +198,6 @@ where
         .transpose()?;
     Ok(ModelInfo { id })
 }
-
 fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -241,7 +209,6 @@ where
         lookup,
     ))
 }
-
 fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -250,17 +217,17 @@ where
         routing_strategy,
         num_retries: retries,
         timeout: router_timeout,
-        allowed_fails,
-        cooldown_time,
-        fallbacks,
+        allowed_fails: allowed_failures,
+        cooldown_time: raw_cooldown_time,
+        fallbacks: raw_fallbacks,
     } = raw;
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let num_retries = integer(retries, "router_settings.num_retries")?;
     let timeout = float(router_timeout, "router_settings.timeout")?;
-    let allowed_fails = integer(allowed_fails, "router_settings.allowed_fails")?;
-    let cooldown_time = float(cooldown_time, "router_settings.cooldown_time")?;
-    let fallbacks = fallbacks.into_iter().collect::<Vec<_>>();
+    let allowed_fails = integer(allowed_failures, "router_settings.allowed_fails")?;
+    let cooldown_time = float(raw_cooldown_time, "router_settings.cooldown_time")?;
+    let fallbacks = raw_fallbacks.into_iter().collect::<Vec<_>>();
     Ok(RouterSettings {
         routing_strategy,
         num_retries,
@@ -270,7 +237,6 @@ where
         fallbacks,
     })
 }
-
 fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -280,7 +246,26 @@ where
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
-    let modify_params = raw.modify_params.unwrap_or_else(|| {
+    let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
+    Ok(LiteLlmSettings {
+        num_retries,
+        request_timeout,
+        drop_params: raw.drop_params,
+        proxy_trust: ProxyTrust {
+            aiohttp_trust_env: raw.aiohttp_trust_env,
+            disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
+        },
+        bedrock_metadata_fields: metadata_fields(raw.bedrock_metadata_fields),
+        modify_params,
+        default_max_tokens,
+    })
+}
+fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
+    let modify_params = configured.unwrap_or_else(|| {
         lookup
             .lookup("LITELLM_MODIFY_PARAMS")
             .is_some_and(|value| !value.is_empty())
@@ -295,16 +280,21 @@ where
                     source,
                 })
         })?;
-    Ok(LiteLlmSettings {
-        num_retries,
-        request_timeout,
-        drop_params: raw.drop_params,
-        proxy_trust: ProxyTrust {
-            aiohttp_trust_env: raw.aiohttp_trust_env,
-            disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
-        },
-        bedrock_metadata_fields: metadata_fields(raw.bedrock_metadata_fields),
-        modify_params,
-        default_max_tokens,
-    })
+    Ok((modify_params, default_max_tokens))
+}
+fn convert_environment<L>(
+    values: BTreeMap<String, Option<String>>,
+    lookup: &L,
+) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let resolved = values
+        .into_iter()
+        .map(|(key, value)| {
+            let path = format!("environment_variables.{key}");
+            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
+        })
+        .collect::<Result<BTreeMap<_, _>, ConfigError>>()?;
+    Ok(resolved)
 }
