@@ -1,4 +1,4 @@
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{Configured, Entry, FallbackAction, FlaggedAction, InspectionType};
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -14,18 +14,13 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let (api_base, inspection_type) = resolve_endpoint(
+        let (api_base, inspection_type, inspect_path) = resolve_endpoint(
             parameters.api_base,
             parameters.inspection_type,
+            parameters.inspect_path,
             &prefix,
             lookup,
         )?;
-        let inspect_path = parameters
-            .inspect_path
-            .unwrap_or_else(|| match inspection_type {
-                InspectionType::Chat => "/api/v1/inspect/chat".to_owned(),
-                InspectionType::Mcp => "/api/v1/inspect/mcp".to_owned(),
-            });
         let (on_flagged_action, fallback_on_error, timeout) = resolve_actions(
             parameters.on_flagged_action,
             parameters.fallback_on_error,
@@ -41,7 +36,11 @@ impl Entry {
             api_base,
             inspection_type,
             inspect_path,
-            enabled_rules: parameters.enabled_rules,
+            enabled_rules: parameters
+                .enabled_rules
+                .into_iter()
+                .map(super::RawRule::resolve)
+                .collect(),
             on_flagged_action,
             fallback_on_error,
             timeout,
@@ -54,16 +53,16 @@ impl Entry {
 }
 
 fn resolve_api_key<L>(
-    configured: Option<String>,
+    configured: Option<SecretString>,
     prefix: &str,
     lookup: &L,
 ) -> Result<SecretString, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let non_empty = configured.filter(|value| !value.is_empty());
+    let non_empty = configured.filter(|value| !value.expose_secret().is_empty());
     optional(
-        non_empty,
+        non_empty.map(|value| value.expose_secret().to_owned()),
         "CISCO_AI_DEFENSE_API_KEY",
         prefix,
         "api_key",
@@ -79,9 +78,10 @@ where
 fn resolve_endpoint<L>(
     configured_base: Option<String>,
     configured_inspection: Option<String>,
+    configured_path: Option<String>,
     prefix: &str,
     lookup: &L,
-) -> Result<(String, InspectionType), ConfigError>
+) -> Result<(String, InspectionType, String), ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -109,7 +109,11 @@ where
     } else {
         InspectionType::Mcp
     };
-    Ok((api_base, inspection_type))
+    let inspect_path = configured_path.unwrap_or_else(|| match inspection_type {
+        InspectionType::Chat => "/api/v1/inspect/chat".to_owned(),
+        InspectionType::Mcp => "/api/v1/inspect/mcp".to_owned(),
+    });
+    Ok((api_base, inspection_type, inspect_path))
 }
 
 fn resolve_actions<L>(

@@ -20,11 +20,11 @@ struct Entry {
 #[serde(default)]
 struct Parameters {
     guardrail: String,
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
     api_base: Option<String>,
     inspection_type: Option<String>,
     inspect_path: Option<String>,
-    enabled_rules: Option<Vec<Rule>>,
+    enabled_rules: Vec<RawRule>,
     on_flagged_action: Option<String>,
     fallback_on_error: Option<String>,
     timeout: Option<f64>,
@@ -35,10 +35,38 @@ struct Parameters {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum RawRule {
+    Name(String),
+    Entry {
+        rule_name: String,
+        #[serde(default)]
+        entity_types: Vec<String>,
+    },
+}
+
+impl RawRule {
+    fn resolve(self) -> Rule {
+        match self {
+            Self::Name(rule_name) => Rule {
+                rule_name,
+                entity_types: Vec::new(),
+            },
+            Self::Entry {
+                rule_name,
+                entity_types,
+            } => Rule {
+                rule_name,
+                entity_types,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Rule {
     pub rule_name: String,
-    #[serde(default)]
-    pub entity_types: Option<Vec<String>>,
+    pub entity_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -53,7 +81,7 @@ pub struct Configured {
     pub api_base: String,
     pub inspection_type: InspectionType,
     pub inspect_path: String,
-    pub enabled_rules: Option<Vec<Rule>>,
+    pub enabled_rules: Vec<Rule>,
     pub on_flagged_action: FlaggedAction,
     pub fallback_on_error: FallbackAction,
     pub timeout: f64,
