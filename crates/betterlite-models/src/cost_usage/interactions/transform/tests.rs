@@ -172,3 +172,17 @@ fn total_tokens_overflow_is_reported_only_when_computing_the_fallback() {
     let error = transform_interactions_usage(&usage).expect_err("overflowing total fallback");
     assert_eq!(error, CostUsageError::TotalTokensOverflow);
 }
+
+#[test]
+fn total_input_counter_overflow_is_a_typed_transform_error() {
+    let usage = parse(r#"{"total_input_tokens":9223372036854775808,"total_output_tokens":0}"#);
+    let error = transform_interactions_usage(&usage).expect_err("counter overflow");
+    assert_eq!(error, CostUsageError::CounterOverflow);
+}
+
+#[test]
+fn truthy_non_array_modality_is_a_typed_transform_error() {
+    let usage = parse(r#"{"total_input_tokens":1,"input_tokens_by_modality":"x"}"#);
+    let error = transform_interactions_usage(&usage).expect_err("modality list shape");
+    assert_eq!(error, CostUsageError::ModalityListNotArray);
+}

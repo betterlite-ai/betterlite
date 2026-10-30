@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use crate::cost_usage::error::CostUsageError;
 use crate::cost_usage::field::Field;
 use crate::cost_usage::interactions::modality::ModalityList;
 use crate::cost_usage::interactions::search::GroundingToolCount;
@@ -33,10 +34,10 @@ pub const fn is_interactions_usage_object(usage: &InteractionsUsage) -> bool {
     usage.total_input_tokens.is_present() || usage.total_output_tokens.is_present()
 }
 
-pub(super) const fn field_value(field: &Field<TokenCount>) -> i64 {
+pub(super) fn field_value(field: &Field<TokenCount>) -> Result<i64, CostUsageError> {
     match field {
-        Field::Present(count) => count.0,
-        Field::Absent => 0,
+        Field::Present(count) => count.value(),
+        Field::Absent => Ok(0),
     }
 }
 

@@ -31,6 +31,13 @@ fn null_prompt_tokens_still_disqualifies() {
 }
 
 #[test]
+fn prompt_tokens_with_truthy_non_array_modality_is_not_recognized() {
+    let usage =
+        parse(r#"{"prompt_tokens":1,"total_input_tokens":1,"input_tokens_by_modality":"x"}"#);
+    assert!(!is_interactions_usage_object(&usage));
+}
+
+#[test]
 fn input_tokens_key_disqualifies() {
     let usage = parse(r#"{"input_tokens":1,"total_output_tokens":5}"#);
     assert!(!is_interactions_usage_object(&usage));

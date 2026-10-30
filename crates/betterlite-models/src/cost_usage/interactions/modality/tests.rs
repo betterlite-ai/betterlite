@@ -95,11 +95,10 @@ fn modality_list_falsy_shapes_are_empty(#[case] source: &str) {
 #[case::one("1")]
 #[case::non_empty_string("\"x\"")]
 #[case::non_empty_object(r#"{"a":1}"#)]
+#[case::large_number("1e400")]
 fn modality_list_truthy_non_array_is_an_error(#[case] source: &str) {
-    let error = serde_json::from_str::<ModalityList>(source)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("not an array"), "{source}: {error}");
+    let list: ModalityList = serde_json::from_str(source).expect("valid JSON");
+    assert!(matches!(list, ModalityList::NotArray), "{source}");
 }
 
 #[test]

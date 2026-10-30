@@ -6,9 +6,18 @@ use serde_json::value::RawValue;
 use crate::cost_usage::error::CostUsageError;
 
 // A bool counts, an out-of-range integer is a typed overflow, anything else counts as 0.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "RawTokenCount")]
-pub(super) struct TokenCount(pub(super) i64);
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "RawTokenCount")]
+pub(super) enum TokenCount {
+    Value(i64),
+    Overflow(Box<Number>),
+}
+
+impl Default for TokenCount {
+    fn default() -> Self {
+        Self::Value(0)
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -18,38 +27,44 @@ enum RawTokenCount {
     Other(Box<IgnoredAny>),
 }
 
-impl TryFrom<RawTokenCount> for TokenCount {
-    type Error = CostUsageError;
-
-    fn try_from(raw: RawTokenCount) -> Result<Self, Self::Error> {
-        Ok(Self(count_from_raw(raw)?))
+impl From<RawTokenCount> for TokenCount {
+    fn from(raw: RawTokenCount) -> Self {
+        match raw {
+            RawTokenCount::Bool(value) => Self::Value(i64::from(value)),
+            RawTokenCount::Number(number) => match parse_integer_counter(&number) {
+                Some(value) => Self::Value(value),
+                None => Self::Overflow(number),
+            },
+            RawTokenCount::Other(_ignored) => Self::Value(0),
+        }
     }
 }
 
-fn count_from_raw(raw: RawTokenCount) -> Result<i64, CostUsageError> {
-    match raw {
-        RawTokenCount::Bool(value) => Ok(i64::from(value)),
-        RawTokenCount::Number(number) => parse_integer_counter(&number),
-        RawTokenCount::Other(_ignored) => Ok(0),
+impl TokenCount {
+    pub(super) fn value(&self) -> Result<i64, CostUsageError> {
+        match self {
+            Self::Value(value) => Ok(*value),
+            Self::Overflow(_number) => Err(CostUsageError::CounterOverflow),
+        }
     }
 }
 
 // A decimal point or exponent in the source digits marks a float, which counts as 0.
-fn parse_integer_counter(number: &Number) -> Result<i64, CostUsageError> {
+fn parse_integer_counter(number: &Number) -> Option<i64> {
     if let Some(value) = number.as_i64() {
-        return Ok(value);
+        return Some(value);
     }
     if number.to_string().contains(['.', 'e', 'E']) {
-        return Ok(0);
+        return Some(0);
     }
-    Err(CostUsageError::CounterOverflow)
+    None
 }
 
 // For a field the caller already found inside a validated mapping entry.
 pub(super) fn token_count_from_raw(raw: &RawValue) -> Result<i64, CostUsageError> {
     let parsed = serde_json::from_str(raw.get())
         .unwrap_or_else(|_error| RawTokenCount::Other(Box::new(IgnoredAny)));
-    count_from_raw(parsed)
+    TokenCount::from(parsed).value()
 }
 
 mod tests;

@@ -16,6 +16,21 @@ struct ModalitySums {
 }
 
 fn compute_modality_sums(usage: &InteractionsUsage) -> Result<ModalitySums, CostUsageError> {
+    if matches!(
+        usage.input_tokens_by_modality,
+        super::modality::ModalityList::NotArray
+    ) || matches!(
+        usage.tool_use_tokens_by_modality,
+        super::modality::ModalityList::NotArray
+    ) || matches!(
+        usage.cached_tokens_by_modality,
+        super::modality::ModalityList::NotArray
+    ) || matches!(
+        usage.output_tokens_by_modality,
+        super::modality::ModalityList::NotArray
+    ) {
+        return Err(CostUsageError::ModalityListNotArray);
+    }
     let mut input_entries: Vec<&RawValue> = usage
         .input_tokens_by_modality
         .entries()
@@ -47,7 +62,7 @@ fn compute_modality_sums(usage: &InteractionsUsage) -> Result<ModalitySums, Cost
         .collect();
     let output = modality_token_sums(&output_entries)?;
 
-    let total_cached_tokens = usage.total_cached_tokens.0;
+    let total_cached_tokens = usage.total_cached_tokens.value()?;
     let input = subtract_cached_from_input(&input_sums_raw, &cached_sums, total_cached_tokens)?;
 
     Ok(ModalitySums {
@@ -66,21 +81,22 @@ struct TokenTotals {
 
 // A falsy total_tokens (including 0) is replaced by the prompt+completion sum.
 fn compute_token_totals(usage: &InteractionsUsage) -> Result<TokenTotals, CostUsageError> {
-    let reasoning = if usage.total_reasoning_tokens.0 != 0 {
-        usage.total_reasoning_tokens.0
+    let reasoning_tokens = usage.total_reasoning_tokens.value()?;
+    let reasoning = if reasoning_tokens != 0 {
+        reasoning_tokens
     } else {
-        usage.total_thought_tokens.0
+        usage.total_thought_tokens.value()?
     };
 
-    let prompt = field_value(&usage.total_input_tokens)
-        .checked_add(usage.total_tool_use_tokens.0)
+    let prompt = field_value(&usage.total_input_tokens)?
+        .checked_add(usage.total_tool_use_tokens.value()?)
         .ok_or(CostUsageError::PromptTotalOverflow)?;
 
-    let completion = field_value(&usage.total_output_tokens)
+    let completion = field_value(&usage.total_output_tokens)?
         .checked_add(reasoning)
         .ok_or(CostUsageError::CompletionTotalOverflow)?;
 
-    let explicit_total = usage.total_tokens.0;
+    let explicit_total = usage.total_tokens.value()?;
     let total = if explicit_total != 0 {
         explicit_total
     } else {

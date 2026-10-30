@@ -76,13 +76,14 @@ pub(crate) fn modality_token_sums(
     Ok(sums)
 }
 
-// A falsy non-array value (false, 0, "", {}, null) is an empty list; a truthy one errors.
+// A falsy non-array value (false, 0, "", {}, null) is an empty list; a truthy one is retained for transformation.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
+#[serde(from = "Box<RawValue>")]
 pub(super) enum ModalityList {
     #[default]
     Empty,
     Entries(Vec<Box<RawValue>>),
+    NotArray,
 }
 
 impl ModalityList {
@@ -90,21 +91,20 @@ impl ModalityList {
         match self {
             Self::Empty => &[],
             Self::Entries(entries) => entries,
+            Self::NotArray => &[],
         }
     }
 }
 
-impl TryFrom<Box<RawValue>> for ModalityList {
-    type Error = CostUsageError;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+impl From<Box<RawValue>> for ModalityList {
+    fn from(raw: Box<RawValue>) -> Self {
         if let Ok(entries) = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) {
-            return Ok(Self::Entries(entries));
+            return Self::Entries(entries);
         }
         if is_truthy(&raw) {
-            return Err(CostUsageError::ModalityListNotArray);
+            return Self::NotArray;
         }
-        Ok(Self::Empty)
+        Self::Empty
     }
 }
 
@@ -124,11 +124,21 @@ fn is_truthy(raw: &RawValue) -> bool {
     match shape {
         RawJsonShape::Null => false,
         RawJsonShape::Bool(flag) => flag,
-        RawJsonShape::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
+        RawJsonShape::Number(number) => number_is_truthy(&number),
         RawJsonShape::Str(text) => !text.is_empty(),
         RawJsonShape::Array(entries) => !entries.is_empty(),
         RawJsonShape::Object(fields) => !fields.is_empty(),
     }
+}
+
+fn number_is_truthy(number: &Number) -> bool {
+    let source = number.to_string();
+    let mantissa = source
+        .split_once(['e', 'E'])
+        .map_or(source.as_str(), |parts| parts.0);
+    mantissa
+        .chars()
+        .any(|character| character.is_ascii_digit() && character != '0')
 }
 
 mod tests;
