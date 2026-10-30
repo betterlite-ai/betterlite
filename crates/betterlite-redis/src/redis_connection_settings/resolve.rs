@@ -1,12 +1,13 @@
 mod tests;
 
 use secrecy::{ExposeSecret, SecretString};
+use serde::de::DeserializeOwned;
 
 use super::allowlists::filter_passthrough_for_target;
 use super::coercion::{coerce_bool, coerce_float, coerce_int, coerce_passthrough};
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
-use super::model::nodes::{ClusterNodeConfig, SentinelNodesInput, StartupNodesInput};
+use super::model::nodes::{ClusterNodeConfig, NodesInput, SentinelNodesInput, StartupNodesInput};
 use super::model::scalars::{BoolOrText, FloatOrText, IntOrText};
 use super::model::settings::{ClientKind, RedisConnectionSettings, RedisOverrides, Target};
 use super::target::resolve_target;
@@ -21,13 +22,15 @@ pub fn resolve_redis_kwargs<E>(
 where
     E: EnvironmentLookup,
 {
-    let startup_nodes = resolve_startup_nodes(
+    let startup_nodes = resolve_nodes(
         overrides.startup_nodes.clone(),
         env.lookup("REDIS_CLUSTER_NODES"),
+        RedisSettingsError::InvalidClusterNodesJson,
     )?;
-    let sentinel_nodes = resolve_sentinel_nodes(
+    let sentinel_nodes = resolve_nodes(
         overrides.sentinel_nodes.clone(),
         env.lookup("REDIS_SENTINEL_NODES"),
+        RedisSettingsError::InvalidSentinelNodesJson,
     )?;
     let mut settings = merge_settings(overrides, env, startup_nodes, sentinel_nodes);
 
@@ -124,29 +127,18 @@ pub fn settings_uses_tls(settings: &RedisConnectionSettings) -> bool {
     uses_tls(settings.uses_startup_nodes(), settings.ssl, url)
 }
 
-fn resolve_startup_nodes(
-    overrides: Option<StartupNodesInput>,
+fn resolve_nodes<T>(
+    overrides: Option<NodesInput<T>>,
     env_text: Option<String>,
-) -> Result<Option<Vec<ClusterNodeConfig>>, RedisSettingsError> {
-    match overrides.or_else(|| env_text.map(StartupNodesInput::Text)) {
+    on_error: impl FnOnce(serde_json::Error) -> RedisSettingsError,
+) -> Result<Option<Vec<T>>, RedisSettingsError>
+where
+    T: DeserializeOwned,
+{
+    match overrides.or_else(|| env_text.map(NodesInput::Text)) {
         None => Ok(None),
-        Some(StartupNodesInput::Nodes(nodes)) => Ok(Some(nodes)),
-        Some(StartupNodesInput::Text(text)) => serde_json::from_str(&text)
-            .map(Some)
-            .map_err(RedisSettingsError::InvalidClusterNodesJson),
-    }
-}
-
-fn resolve_sentinel_nodes(
-    overrides: Option<SentinelNodesInput>,
-    env_text: Option<String>,
-) -> Result<Option<Vec<(String, i64)>>, RedisSettingsError> {
-    match overrides.or_else(|| env_text.map(SentinelNodesInput::Text)) {
-        None => Ok(None),
-        Some(SentinelNodesInput::Nodes(nodes)) => Ok(Some(nodes)),
-        Some(SentinelNodesInput::Text(text)) => serde_json::from_str(&text)
-            .map(Some)
-            .map_err(RedisSettingsError::InvalidSentinelNodesJson),
+        Some(NodesInput::Nodes(nodes)) => Ok(Some(nodes)),
+        Some(NodesInput::Text(text)) => serde_json::from_str(&text).map(Some).map_err(on_error),
     }
 }
 

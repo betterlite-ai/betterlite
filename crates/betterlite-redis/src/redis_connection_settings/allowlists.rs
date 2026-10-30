@@ -36,21 +36,19 @@ pub fn filter_passthrough_for_target(
 }
 
 fn filter_for_cluster(client: ClientKind, passthrough: &mut BTreeMap<String, PassthroughValue>) {
-    for name in NON_CLUSTER_ONLY_KWARGS {
-        passthrough.remove(*name);
-    }
+    remove_all(passthrough, NON_CLUSTER_ONLY_KWARGS);
     if client == ClientKind::Sync {
-        for name in CLUSTER_ASYNC_ONLY_KWARGS {
-            passthrough.remove(*name);
-        }
+        remove_all(passthrough, CLUSTER_ASYNC_ONLY_KWARGS);
     }
 }
 
 fn filter_for_non_cluster(passthrough: &mut BTreeMap<String, PassthroughValue>) {
-    for name in CLUSTER_ONLY_KWARGS {
-        passthrough.remove(*name);
-    }
-    for name in CLUSTER_ASYNC_ONLY_KWARGS {
+    remove_all(passthrough, CLUSTER_ONLY_KWARGS);
+    remove_all(passthrough, CLUSTER_ASYNC_ONLY_KWARGS);
+}
+
+fn remove_all(passthrough: &mut BTreeMap<String, PassthroughValue>, names: &[&str]) {
+    for name in names {
         passthrough.remove(*name);
     }
 }
