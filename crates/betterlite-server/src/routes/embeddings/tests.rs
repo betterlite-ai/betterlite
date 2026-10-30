@@ -11,4 +11,8 @@ fn embedding_failure_returns_bad_request() {
     };
     let response = failure(&error, "embedding-test", None);
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.headers().get("x-litellm-call-id").unwrap(),
+        "embedding-test"
+    );
 }
