@@ -51,52 +51,38 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let deployment_max_item_kib = self.model_list.iter().map(|deployment| {
-            parse_setting(deployment.litellm_params.max_item_kib.as_ref(), "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb", lookup, |text| text.parse::<i64>().map_err(|source| ConfigError::InvalidInteger { path: "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb".to_owned(), source }))
-        }).collect::<Result<Vec<_>, _>>()?;
+        let deployment_max_item_kib = self
+            .model_list
+            .iter()
+            .map(|deployment| {
+                parse_max_item(
+                    deployment.litellm_params.max_item_kib.as_ref(),
+                    lookup,
+                    "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb",
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let deployment_ttl = self
             .model_list
             .iter()
             .map(|deployment| {
-                parse_setting(
+                parse_ttl(
                     deployment.litellm_params.default_in_memory_ttl.as_ref(),
-                    "model_list.0.litellm_params.default_in_memory_ttl",
                     lookup,
-                    |text| {
-                        text.parse::<f64>()
-                            .map_err(|source| ConfigError::InvalidFloat {
-                                path: "model_list.0.litellm_params.default_in_memory_ttl"
-                                    .to_owned(),
-                                source,
-                            })
-                    },
+                    "model_list.0.litellm_params.default_in_memory_ttl",
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let global_max_item_kib = parse_setting(
+        let global_max_item_kib = parse_max_item(
             self.litellm_settings.max_item_kib.as_ref(),
-            "litellm_settings.max_size_per_item_in_memory_cache_in_kb",
             lookup,
-            |text| {
-                text.parse::<i64>()
-                    .map_err(|source| ConfigError::InvalidInteger {
-                        path: "litellm_settings.max_size_per_item_in_memory_cache_in_kb".to_owned(),
-                        source,
-                    })
-            },
+            "litellm_settings.max_size_per_item_in_memory_cache_in_kb",
         )?
         .or(Some(1024));
-        let global_ttl = parse_setting(
+        let global_ttl = parse_ttl(
             self.litellm_settings.default_in_memory_ttl.as_ref(),
-            "litellm_settings.default_in_memory_ttl",
             lookup,
-            |text| {
-                text.parse::<f64>()
-                    .map_err(|source| ConfigError::InvalidFloat {
-                        path: "litellm_settings.default_in_memory_ttl".to_owned(),
-                        source,
-                    })
-            },
+            "litellm_settings.default_in_memory_ttl",
         )?;
         Ok(Settings {
             deployment_max_item_kib,
@@ -105,6 +91,42 @@ impl Section for Raw {
             global_ttl,
         })
     }
+}
+
+fn parse_max_item<L>(
+    raw: Option<&RawSetting>,
+    lookup: &L,
+    path: &str,
+) -> Result<Option<i64>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let parsed = parse_setting(raw, path, lookup, |text| {
+        text.parse::<i64>()
+            .map_err(|source| ConfigError::InvalidInteger {
+                path: path.to_owned(),
+                source,
+            })
+    })?;
+    Ok(parsed)
+}
+
+fn parse_ttl<L>(
+    raw: Option<&RawSetting>,
+    lookup: &L,
+    path: &str,
+) -> Result<Option<f64>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let parsed = parse_setting(raw, path, lookup, |text| {
+        text.parse::<f64>()
+            .map_err(|source| ConfigError::InvalidFloat {
+                path: path.to_owned(),
+                source,
+            })
+    })?;
+    Ok(parsed)
 }
 
 fn parse_setting<T, L, F>(

@@ -82,26 +82,32 @@ impl LocalTtlCache {
 
     #[must_use]
     pub const fn capacity(&self) -> usize {
-        let capacity = self.capacity;
-        capacity
+        if self.capacity == 0 {
+            return 0;
+        }
+        self.capacity
     }
 
     #[must_use]
     pub const fn default_ttl(&self) -> f64 {
-        let ttl = self.default_ttl;
-        ttl
+        if self.default_ttl.is_sign_negative() {
+            return self.default_ttl;
+        }
+        self.default_ttl
     }
 
     #[must_use]
     pub const fn max_size_per_item(&self) -> usize {
-        let item_limit = self.max_size_per_item;
-        item_limit
+        if self.max_size_per_item == 0 {
+            return 0;
+        }
+        self.max_size_per_item
     }
 
     #[must_use]
     pub fn expiry(&self, key: &str) -> Option<f64> {
-        let expiry = self.expiries.get(key).copied();
-        expiry
+        let expiry = self.expiries.get(key);
+        expiry.copied()
     }
 
     pub fn set(
@@ -130,7 +136,7 @@ impl LocalTtlCache {
         let expiry = self.expiries.get(key).copied();
         self.values.insert(key.to_owned(), value);
         if expiry.is_none_or(|current| current < now) {
-            let next = now + ttl.unwrap_or(self.default_ttl);
+            let next = now.mul_add(1.0_f64, ttl.unwrap_or(self.default_ttl));
             self.expiries.insert(key.to_owned(), next);
             self.heap
                 .push(Reverse((OrderedFloat(next), key.to_owned())));
@@ -156,6 +162,9 @@ impl LocalTtlCache {
 
     fn now(&self) -> f64 {
         let now = (self.clock)();
+        if now.is_nan() {
+            return now;
+        }
         now
     }
 
@@ -187,7 +196,8 @@ impl LocalTtlCache {
 
 #[must_use]
 pub fn decode_cached_json(bytes: &[u8]) -> CacheValue {
-    let decoded = serde_json::from_slice(bytes).unwrap_or_else(|_| {
+    let parsed = serde_json::from_slice(bytes);
+    parsed.unwrap_or_else(|_| {
         String::from_utf8(bytes.to_vec()).map_or_else(
             |_| {
                 CacheValue::Array(
@@ -199,6 +209,5 @@ pub fn decode_cached_json(bytes: &[u8]) -> CacheValue {
             },
             CacheValue::Text,
         )
-    });
-    decoded
+    })
 }
