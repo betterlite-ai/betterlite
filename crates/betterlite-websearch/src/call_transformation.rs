@@ -24,7 +24,14 @@ impl WebSearchTransformation {
         }
     }
 
-    pub fn transform_response(
+    pub fn transform_response(calls: &[Value], results: &[String], format: &str) -> (Value, Value) {
+        match format {
+            "openai" => transform_openai(calls, results),
+            _ => transform_anthropic(calls, results, None),
+        }
+    }
+
+    pub fn transform_response_thinking(
         calls: &[Value],
         results: &[String],
         format: &str,
@@ -70,7 +77,10 @@ impl WebSearchTransformation {
 
     pub fn format_search_response(response: &SearchResponse) -> String {
         if response.results.is_empty() {
-            return serde_json::to_string(response).unwrap_or_default();
+            return match serde_json::to_string(response) {
+                Ok(serialized) => serialized,
+                Err(_) => String::new(),
+            };
         }
         response
             .results
@@ -129,9 +139,14 @@ fn detect_responses(response: &Value) -> (bool, Vec<Value>) {
     };
     let found = items.iter().filter_map(|item| {
         if item.get("type").and_then(Value::as_str) != Some("function_call") || item.get("name").and_then(Value::as_str) != Some("litellm_web_search") { return None; }
-        let input = normalize_arguments(item.get("arguments"));
+        let arguments = item.get("arguments");
+        let input = normalize_arguments(arguments);
+        let arguments = match arguments {
+            Some(Value::String(text)) => text.clone(),
+            _ => input.to_string(),
+        };
         Some(json!({"id": item.get("call_id").cloned().unwrap_or(Value::Null), "call_id": item.get("call_id").cloned().unwrap_or(Value::Null),
-            "type": "function_call", "name": "litellm_web_search", "arguments": input.to_string(), "input": input}))
+            "type": "function_call", "name": "litellm_web_search", "arguments": arguments, "input": input}))
     }).collect::<Vec<_>>();
     (!found.is_empty(), found)
 }

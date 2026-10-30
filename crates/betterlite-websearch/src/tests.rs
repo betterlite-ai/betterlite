@@ -155,7 +155,7 @@ fn call_transformation_anthropic_detection_and_response() {
     assert!(found);
     assert_eq!(calls[0]["id"], "call-1");
     assert_eq!(calls[0]["input"]["query"], "rust");
-    let (assistant, user) = WebSearchTransformation::transform_response(
+    let (assistant, user) = WebSearchTransformation::transform_response_thinking(
         &calls,
         &[String::from(
             "Title: Rust\nURL: https://rust-lang.org\nSnippet: safe",
@@ -182,7 +182,6 @@ fn call_transformation_openai_dict_and_string_arguments() {
         &calls,
         &[String::from("one"), String::from("two")],
         "openai",
-        None,
     );
     assert_eq!(
         assistant["tool_calls"][0]["function"]["arguments"],
@@ -202,6 +201,13 @@ fn call_transformation_responses_and_no_tool() {
     assert!(found);
     assert_eq!(calls[0]["type"], "function_call");
     assert_eq!(calls[0]["input"]["query"], "rust");
+    let invalid = serde_json::json!({"output": [
+        {"type": "function_call", "call_id": "call-2", "name": "litellm_web_search", "arguments": "not-json"}
+    ]});
+    let (_, invalid_calls) =
+        WebSearchTransformation::transform_request(&invalid, false, "responses");
+    assert_eq!(invalid_calls[0]["arguments"], "not-json");
+    assert_eq!(invalid_calls[0]["input"], serde_json::json!({}));
     assert_eq!(
         WebSearchTransformation::transform_request(
             &serde_json::json!({"output": []}),
