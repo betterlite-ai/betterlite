@@ -1,11 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
-use super::{Action, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response};
+use super::{
+    Action, DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response,
+};
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use rstest::rstest;
 use secrecy::SecretString;
+use tokio::net::TcpListener;
 
 fn guardrail() -> DeepKeepGuardrail {
     #[expect(
@@ -35,6 +40,17 @@ fn inputs() -> Inputs {
         tool_calls: Some(vec![object(&[("id", text("call"))])]),
         structured_messages: Some(vec![object(&[("role", text("user"))])]),
         model: Some("model".to_owned()),
+    }
+}
+
+fn context() -> RequestContext {
+    RequestContext {
+        request_data: BTreeMap::new(),
+        input_type: InputType::Request,
+        litellm_call_id: None,
+        litellm_trace_id: None,
+        litellm_version: None,
+        dynamic_params: BTreeMap::new(),
     }
 }
 
@@ -134,6 +150,28 @@ fn deepkeep_guardrail_empty_replacements_are_preserved() {
 }
 
 #[test]
+fn deepkeep_guardrail_loads_from_config() {
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      optional_params:\n        unreachable_fallback: fail_open\n";
+    let config = betterlite_config::loader::ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    let settings = config
+        .sections
+        .deepkeep_firewall
+        .guardrails
+        .first()
+        .expect("entry")
+        .clone();
+    assert_eq!(settings.unreachable_fallback, UnreachableFallback::FailOpen);
+    assert_eq!(
+        settings.api_base,
+        "https://deepkeep.test/v3/openai/beta/litellm_basic_guardrail_api"
+    );
+}
+
+#[test]
 fn deepkeep_guardrail_blocked_action_has_default_reason() {
     let returned = Response {
         action: Some(Action::Blocked),
@@ -146,4 +184,35 @@ fn deepkeep_guardrail_blocked_action_has_default_reason() {
     };
     let error = DeepKeepGuardrail::build_return_inputs(&inputs(), returned).expect_err("blocked");
     assert!(error.to_string().contains("Content violates policy"));
+}
+
+#[rstest]
+#[case::timeout_fails_open(true, UnreachableFallback::FailOpen, true)]
+#[case::timeout_fails_closed(true, UnreachableFallback::FailClosed, false)]
+#[case::connection_failure_fails_open(false, UnreachableFallback::FailOpen, true)]
+#[case::connection_failure_fails_closed(false, UnreachableFallback::FailClosed, false)]
+#[tokio::test]
+async fn deepkeep_guardrail_apply_honors_fail_open_when_unreachable(
+    #[case] timeout: bool,
+    #[case] unreachable_fallback: UnreachableFallback,
+    #[case] expect_pass_through: bool,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    if !timeout {
+        // connection refused once nothing is listening on the port
+        drop(listener);
+    }
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
+    deepkeep.settings.unreachable_fallback = unreachable_fallback;
+    deepkeep.timeout = Duration::from_millis(100);
+    let result = deepkeep.apply(inputs(), context()).await;
+    if expect_pass_through {
+        assert_eq!(result.expect("fail-open passthrough"), inputs());
+    } else if timeout {
+        assert!(matches!(result, Err(DeepKeepError::Timeout { .. })));
+    } else {
+        assert!(matches!(result, Err(DeepKeepError::Request { .. })));
+    }
 }

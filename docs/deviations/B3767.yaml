@@ -6,3 +6,6 @@ deviations:
   - what: Extra headers supplied as a list are ignored with a warning instead of raising an error.
     why: This preserves LiteLLM's fail-open configuration behavior for unsupported list-form header settings.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L156-L162
+  - what: The Inputs betterlite's apply() returns always carries a model field; LiteLLM's _build_return_inputs never sets one.
+    why: betterlite reuses one Inputs type for both directions so internal callers keep the model name without a separate lookup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L282-L321

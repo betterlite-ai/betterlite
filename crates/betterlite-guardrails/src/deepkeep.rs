@@ -15,9 +15,13 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Inputs {
     pub texts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<GuardrailValue>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<GuardrailValue>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<GuardrailValue>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_messages: Option<Vec<GuardrailValue>>,
     pub model: Option<String>,
 }
@@ -49,9 +53,10 @@ pub struct Request {
     pub model: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InputType {
+    #[default]
     Request,
     Response,
 }
@@ -141,6 +146,17 @@ impl DeepKeepGuardrail {
         Ok(headers)
     }
 
+    const METADATA_KEYS: [&'static str; 8] = [
+        "user_api_key_hash",
+        "user_api_key_alias",
+        "user_api_key_user_id",
+        "user_api_key_user_email",
+        "user_api_key_team_id",
+        "user_api_key_team_alias",
+        "user_api_key_end_user_id",
+        "user_api_key_org_id",
+    ];
+
     #[must_use]
     pub fn extract_user_api_key_metadata(
         request_data: &BTreeMap<String, GuardrailValue>,
@@ -151,14 +167,14 @@ impl DeepKeepGuardrail {
                 merged.extend(values.clone());
             }
         }
-        let mut result = merged
-            .iter()
-            .filter(|(key, value)| {
-                key.starts_with("user_api_key_")
-                    && *key != "user_api_key_token"
-                    && !matches!(value, GuardrailValue::Null)
+        let mut result = Self::METADATA_KEYS
+            .into_iter()
+            .filter_map(|key| {
+                merged
+                    .get(key)
+                    .filter(|value| !matches!(value, GuardrailValue::Null))
+                    .map(|value| (key.to_owned(), value.clone()))
             })
-            .map(|(key, value)| (key.clone(), value.clone()))
             .collect::<BTreeMap<_, _>>();
         if !result.contains_key("user_api_key_hash")
             && let Some(value) = merged
@@ -228,7 +244,7 @@ impl DeepKeepGuardrail {
         context: RequestContext,
     ) -> Result<Inputs, DeepKeepError> {
         let request = self.build_request(inputs.clone(), context);
-        let response = self
+        let response = match self
             .client
             .post(&self.settings.api_base)
             .headers(self.request_headers()?)
@@ -236,13 +252,19 @@ impl DeepKeepGuardrail {
             .timeout(self.timeout)
             .send()
             .await
-            .map_err(|source| {
-                if source.is_timeout() {
+        {
+            Ok(response) => response,
+            Err(source) => {
+                if self.settings.unreachable_fallback == UnreachableFallback::FailOpen {
+                    return Ok(inputs);
+                }
+                return Err(if source.is_timeout() {
                     DeepKeepError::Timeout { source }
                 } else {
                     DeepKeepError::Request { source }
-                }
-            })?;
+                });
+            }
+        };
         let status = response.status();
         let body = response
             .text()

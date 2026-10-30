@@ -78,12 +78,15 @@ impl Section for Raw {
     {
         let mut guardrails = Vec::new();
         for (index, entry) in self.guardrails.into_iter().enumerate() {
-            if entry.litellm_params.guardrail == "deepkeep" {
-                guardrails.push(entry.resolve(index, lookup)?);
-            } else {
-                return Err(ConfigError::Unsupported {
-                    paths: vec![format!("guardrails.{index}.litellm_params.guardrail")],
-                });
+            match entry.litellm_params.guardrail.as_str() {
+                "deepkeep" => guardrails.push(entry.resolve(index, lookup)?),
+                // the lasso_classification section reads these entries
+                "lasso" => {}
+                _ => {
+                    return Err(ConfigError::Unsupported {
+                        paths: vec![format!("guardrails.{index}.litellm_params.guardrail")],
+                    });
+                }
             }
         }
         Ok(Settings { guardrails })

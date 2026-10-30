@@ -1,0 +1,8 @@
+kind: helper
+name: missing-firewall-id
+call:
+  b3767:
+    construct:
+      settings: {api_key: key, api_base: "https://deepkeep.test"}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

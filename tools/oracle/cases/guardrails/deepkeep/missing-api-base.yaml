@@ -1,0 +1,8 @@
+kind: helper
+name: missing-api-base
+call:
+  b3767:
+    construct:
+      settings: {api_key: key, deepkeep_firewall_id: fixed}
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
