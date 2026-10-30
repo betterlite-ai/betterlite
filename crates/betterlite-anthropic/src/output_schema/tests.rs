@@ -47,6 +47,8 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
             for conflict_source in [
                 r#"{"type":"array","enum":[]}"#,
                 r#"{"type":"object","enum":[{}]}"#,
+                r#"{"type":"integer","enum":[1.5]}"#,
+                r#"{"type":"number","enum":["text"]}"#,
             ] {
                 let conflict_schema: Json = serde_json::from_str(conflict_source).unwrap();
                 let conflict_result =
