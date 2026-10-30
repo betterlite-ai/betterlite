@@ -1,17 +1,15 @@
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use betterlite_config::sections::billing_metrics::Metering;
+use betterlite_http::otlp_client::{OtlpClient, OtlpClientError};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::{
     ExporterBuildError, MetricExporter, WithExportConfig as _, WithHttpConfig as _,
 };
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use reqwest::blocking::Client;
 use rustls::crypto::ring;
 use rustls::pki_types::pem::{self, PemObject as _};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -21,9 +19,6 @@ use thiserror::Error;
 mod tests;
 
 pub const SERVICE_NAME: &str = "litellm-proxy";
-// the OTLP exporter's default request timeout, which it does not apply to a client passed in
-const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BillingMetricsConfig {
     pub metering: Metering,
@@ -56,17 +51,10 @@ pub enum ExporterError {
         #[source]
         source: rustls::Error,
     },
-    #[error("could not start the thread that builds the HTTP client: {source}")]
-    Thread {
-        #[source]
-        source: io::Error,
-    },
-    #[error("the thread that builds the HTTP client panicked")]
-    ThreadPanicked,
     #[error("could not build the HTTP client: {source}")]
     Client {
         #[source]
-        source: reqwest::Error,
+        source: OtlpClientError,
     },
     #[error("could not build the OTLP exporter: {source}")]
     Exporter {
@@ -102,7 +90,8 @@ pub fn build_mtls_meter_provider(
         .filter(|millis| *millis > 0)
         .map(Duration::from_millis)
         .ok_or(ExporterError::Interval { interval_ms })?;
-    let client = http_client(tls_config(metering)?)?;
+    let client = OtlpClient::build(tls_config(metering)?)
+        .map_err(|source| ExporterError::Client { source })?;
     let exporter = MetricExporter::builder()
         .with_http()
         .with_endpoint(metering.endpoint.clone())
@@ -173,23 +162,4 @@ fn trust_roots(authority: Option<&Path>) -> Result<RootCertStore, ExporterError>
         return Err(ExporterError::NoTrustRoots);
     }
     Ok(roots)
-}
-
-fn http_client(tls: ClientConfig) -> Result<Client, ExporterError> {
-    // reqwest's blocking client panics when it is built on a thread that runs a Tokio runtime
-    thread::scope(|scope| {
-        let builder = thread::Builder::new().name("billing-metrics-client".to_owned());
-        let handle = builder
-            .spawn_scoped(scope, move || {
-                Client::builder()
-                    .tls_backend_preconfigured(tls)
-                    .timeout(EXPORT_TIMEOUT)
-                    .build()
-            })
-            .map_err(|source| ExporterError::Thread { source })?;
-        handle
-            .join()
-            .map_err(|_panic| ExporterError::ThreadPanicked)?
-            .map_err(|source| ExporterError::Client { source })
-    })
 }

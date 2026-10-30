@@ -862,10 +862,10 @@ name = "betterlite-billing"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-http",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "reqwest",
  "rstest",
  "rustls",
  "rustls-native-certs",
@@ -1091,11 +1091,15 @@ dependencies = [
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "bytes",
  "futures-util",
+ "opentelemetry-http",
  "percent-encoding",
  "reqwest",
  "rstest",
+ "rustls",
  "secrecy",
  "serde",
  "serde_json",
@@ -3734,7 +3738,6 @@ dependencies = [
  "bytes",
  "http 1.5.0",
  "opentelemetry",
- "reqwest",
 ]
 
 [[package]]
@@ -3750,7 +3753,6 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
- "reqwest",
  "thiserror",
 ]
 
@@ -4665,6 +4667,7 @@ checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
