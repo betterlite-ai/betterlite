@@ -69,7 +69,7 @@ async fn scans_every_column_without_writes() {
         counts,
         vec![
             ("model_table", 2, 1, 1, 0, 0),
-            ("credentials", 1, 1, 0, 0, 0),
+            ("credentials", 2, 1, 0, 0, 1),
             ("mcp_server", 5, 2, 0, 1, 2),
             ("mcp_user_credentials", 2, 1, 1, 0, 0),
             ("mcp_user_env_vars", 1, 1, 0, 0, 0),

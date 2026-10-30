@@ -99,27 +99,30 @@ pub fn decode_migration_json(bytes: &[u8]) -> Result<MigrationJson, ScanError> {
 
 #[must_use]
 pub fn classify_value(value: &MigrationJson, cipher: &DbCipher, key: &str) -> ValueClass {
-    let MigrationJson::String(text) = value else {
-        return ValueClass::NotAString;
-    };
-    if text.0.expose_secret().starts_with(V2_GCM_PREFIX) {
-        return ValueClass::Migrated;
-    }
-    if text.0.expose_secret().is_empty() {
-        return ValueClass::Plaintext;
-    }
-    let stored = cipher.decrypt_value(
-        StoredValue::<()>::Text(text.0.clone()),
-        key,
-        DecryptPolicy {
-            log: FailureLog::Debug,
-            value: FailureValue::Nothing,
-        },
-    );
-    if stored.is_some() {
-        ValueClass::Legacy
-    } else {
-        ValueClass::Plaintext
+    match value {
+        MigrationJson::String(text) if text.0.expose_secret().starts_with(V2_GCM_PREFIX) => {
+            ValueClass::Migrated
+        }
+        MigrationJson::String(text) if text.0.expose_secret().is_empty() => ValueClass::Plaintext,
+        MigrationJson::String(text) => {
+            let stored = cipher.decrypt_value(
+                StoredValue::<()>::Text(text.0.clone()),
+                key,
+                DecryptPolicy {
+                    log: FailureLog::Debug,
+                    value: FailureValue::Nothing,
+                },
+            );
+            match stored {
+                Some(_) => ValueClass::Legacy,
+                None => ValueClass::Plaintext,
+            }
+        }
+        MigrationJson::Null
+        | MigrationJson::Bool(_)
+        | MigrationJson::Number(_)
+        | MigrationJson::Array(_)
+        | MigrationJson::Object(_) => ValueClass::NotAString,
     }
 }
 
@@ -193,19 +196,19 @@ fn callback_vars_from_entry(value: &MigrationJson) -> Option<&BTreeMap<String, M
 
 #[must_use]
 pub fn classify_callback_value(value: &MigrationJson, cipher: &DbCipher) -> ValueClass {
-    let MigrationJson::String(text) = value else {
-        return ValueClass::NotAString;
+    let stripped = match value {
+        MigrationJson::String(text) => text
+            .0
+            .expose_secret()
+            .strip_prefix("litellm_enc::")
+            .map(|inner| MigrationJson::String(SecretText(SecretString::from(inner)))),
+        MigrationJson::Null
+        | MigrationJson::Bool(_)
+        | MigrationJson::Number(_)
+        | MigrationJson::Array(_)
+        | MigrationJson::Object(_) => None,
     };
-    let inner = text
-        .0
-        .expose_secret()
-        .strip_prefix("litellm_enc::")
-        .unwrap_or_else(|| text.0.expose_secret());
-    classify_value(
-        &MigrationJson::String(SecretText(SecretString::from(inner))),
-        cipher,
-        "callback",
-    )
+    classify_value(stripped.as_ref().unwrap_or(value), cipher, "callback")
 }
 
 #[must_use]

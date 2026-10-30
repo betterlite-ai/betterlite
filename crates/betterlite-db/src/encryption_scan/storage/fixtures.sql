@@ -1,7 +1,7 @@
 INSERT INTO "LiteLLM_ProxyModelTable" (model_id, model_name, litellm_params, created_by, updated_by)
 VALUES ('one', 'test', '{"nested":["v2:gcm:model",{"name":"plain"}],"number":1}', 'test', 'test');
 INSERT INTO "LiteLLM_CredentialsTable" (credential_id, credential_name, credential_values, created_by, updated_by)
-VALUES ('one', 'test', '{"key":"v2:gcm:credential"}', 'test', 'test');
+VALUES ('one', 'test', '{"key":"v2:gcm:credential","legacy":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg=="}', 'test', 'test');
 CREATE TABLE "LiteLLM_MCPServerTable" (credentials jsonb, env_vars jsonb, static_headers jsonb, env jsonb);
 INSERT INTO "LiteLLM_MCPServerTable" VALUES ('{"key":"v2:gcm:credentials"}', '[{"value":"v2:gcm:env_vars"}]', '{"a":"one","b":"two"}', '"{\"a\":\"three\"}"');
 INSERT INTO "LiteLLM_MCPServerTable" VALUES (NULL, NULL, '"v2:gcm:invalid"', '{}');
