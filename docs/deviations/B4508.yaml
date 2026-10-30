@@ -1,0 +1,8 @@
+task: B4508
+deviations:
+  - what: Investigation is async Rust instead of Python async/await, using tokio for concurrent candidate processing.
+    why: Betterlite is a Rust gateway; async code mirrors the surrounding crate architecture with typed futures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L373-L384
+  - what: Repeated request detection uses explicit tuple tracking instead of mutable state.
+    why: Rust requires explicit mutability; a bounded tuple tracks completed requests to detect cycles without relying on implicit state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L568-L574
