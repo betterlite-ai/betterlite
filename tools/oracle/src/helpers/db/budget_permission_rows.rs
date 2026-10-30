@@ -1,5 +1,5 @@
 use betterlite_db::budget_permission_rows::{
-    LiteLLMBudgetTable, LiteLLMBudgetTableFull, LiteLLMObjectPermissionTable,
+    JsonData, LiteLLMBudgetTable, LiteLLMBudgetTableFull, LiteLLMObjectPermissionTable,
     OrganizationMembership,
 };
 use rust_decimal::prelude::ToPrimitive as _;
@@ -10,18 +10,43 @@ pub(crate) struct Op;
 #[serde(tag = "operation")]
 pub(crate) enum Input {
     #[serde(rename = "budget")]
-    Budget { row: LiteLLMBudgetTable },
+    Budget { row: Validated<LiteLLMBudgetTable> },
     #[serde(rename = "full")]
-    Full { row: LiteLLMBudgetTableFull },
+    Full {
+        row: Validated<LiteLLMBudgetTableFull>,
+    },
     #[serde(rename = "permission")]
-    Permission { row: LiteLLMObjectPermissionTable },
+    Permission {
+        row: Validated<LiteLLMObjectPermissionTable>,
+    },
     #[serde(rename = "membership")]
-    Membership { row: OrganizationMembership },
+    Membership {
+        row: Validated<OrganizationMembership>,
+    },
     #[serde(rename = "effective")]
     Effective {
-        row: LiteLLMBudgetTable,
+        row: Validated<LiteLLMBudgetTable>,
         now: chrono::DateTime<chrono::Utc>,
     },
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Validated<T> {
+    Valid(T),
+    Invalid(JsonData),
+}
+
+impl<T> Validated<T> {
+    fn get(&self) -> Result<&T, Box<crate::helpers::HelperError>> {
+        match self {
+            Self::Valid(value) => Ok(value),
+            Self::Invalid(value) => Err(helper_error(
+                "ValidationError",
+                &format!("invalid row: {value:?}"),
+            )),
+        }
+    }
 }
 
 impl crate::helpers::Helper for Op {
@@ -29,16 +54,17 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Budget { row } => dump(row),
-            Input::Full { row } => dump(row),
-            Input::Permission { row } => dump(row),
-            Input::Membership { row } => dump(row),
+            Input::Budget { row } => dump(row.get()?),
+            Input::Full { row } => dump(row.get()?),
+            Input::Permission { row } => dump(row.get()?),
+            Input::Membership { row } => dump(row.get()?),
             Input::Effective { row, now } => {
-                let active = row
+                let budget = row.get()?;
+                let active = budget
                     .active_temp_budget_increase(*now)
                     .to_f64()
                     .ok_or_else(|| helper_error("InvalidOutput", "decimal conversion failed"))?;
-                let effective = match row
+                let effective = match budget
                     .effective_max_budget(*now)
                     .map_err(|error| helper_error("InvalidOutput", &error.to_string()))?
                 {
@@ -55,7 +81,10 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn dump<T: serde::Serialize>(value: &T) -> crate::helpers::HelperResult {
+fn dump<T>(value: &T) -> crate::helpers::HelperResult
+where
+    T: serde::Serialize,
+{
     let output = serde_json::to_value(value)
         .map_err(|error| helper_error("InvalidOutput", &error.to_string()))?;
     Ok(output)

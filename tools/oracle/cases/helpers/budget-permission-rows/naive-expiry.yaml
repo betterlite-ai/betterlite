@@ -6,6 +6,4 @@ call:
     row: {temp_budget_expiry: '2026-01-02T00:00:00'}
 env: {}
 compare:
-  ignore:
-    - pointer: /value/temp_budget_expiry
-      why: Rust normalizes naive timestamps to their UTC instant
+  ignore: []

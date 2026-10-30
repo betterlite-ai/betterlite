@@ -1,43 +1,26 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::str::{Utf8Error, from_utf8};
 
 const MAX_ROW_BYTES: usize = 0x0010_0000;
 const MAX_JSON_DEPTH: usize = 64;
 
-fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = String::deserialize(deserializer)?;
-    if let Ok(timestamp) = DateTime::parse_from_rfc3339(&value) {
-        return Ok(timestamp.with_timezone(&Utc));
-    }
-    NaiveDateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f")
-        .map(|timestamp| timestamp.and_utc())
-        .map_err(D::Error::custom)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Timestamp {
+    Aware(DateTime<FixedOffset>),
+    Naive(NaiveDateTime),
 }
-
-fn deserialize_optional_timestamp<'de, D>(
-    deserializer: D,
-) -> Result<Option<DateTime<Utc>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let timestamp = Option::<String>::deserialize(deserializer)?
-        .map(|value| {
-            if let Ok(timestamp) = DateTime::parse_from_rfc3339(&value) {
-                return Ok(timestamp.with_timezone(&Utc));
-            }
-            NaiveDateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f")
-                .map(|timestamp| timestamp.and_utc())
-                .map_err(D::Error::custom)
-        })
-        .transpose();
-    timestamp
+impl Timestamp {
+    #[must_use]
+    pub fn utc(self) -> DateTime<Utc> {
+        match self {
+            Self::Aware(value) => value.with_timezone(&Utc),
+            Self::Naive(value) => value.and_utc(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,8 +47,8 @@ pub struct LiteLLMBudgetTable {
     pub allowed_models: Option<Vec<String>>,
     #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub temp_budget_increase: Option<Decimal>,
-    #[serde(default, deserialize_with = "deserialize_optional_timestamp")]
-    pub temp_budget_expiry: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub temp_budget_expiry: Option<Timestamp>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -78,17 +61,16 @@ pub enum BudgetError {
 pub struct LiteLLMBudgetTableFull {
     #[serde(flatten)]
     pub budget: LiteLLMBudgetTable,
-    #[serde(default, deserialize_with = "deserialize_optional_timestamp")]
-    pub budget_reset_at: Option<DateTime<Utc>>,
-    #[serde(deserialize_with = "deserialize_timestamp")]
-    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub budget_reset_at: Option<Timestamp>,
+    pub created_at: Timestamp,
 }
 
 impl LiteLLMBudgetTable {
     #[must_use]
     pub fn active_temp_budget_increase(&self, now: DateTime<Utc>) -> Decimal {
         match (self.temp_budget_increase, self.temp_budget_expiry) {
-            (Some(amount), Some(expiry)) if expiry > now => amount,
+            (Some(amount), Some(expiry)) if expiry.utc() > now => amount,
             _ => Decimal::ZERO,
         }
     }
@@ -110,7 +92,6 @@ impl Default for PermissionList {
         Self(Some(Vec::new()))
     }
 }
-impl PermissionList {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiteLLMObjectPermissionTable {
@@ -156,7 +137,8 @@ pub enum JsonData {
 #[serde(transparent)]
 pub struct ProjectedUserEmail(JsonData);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "OrganizationMembershipInput")]
 pub struct OrganizationMembership {
     pub user_id: String,
     pub organization_id: String,
@@ -166,10 +148,8 @@ pub struct OrganizationMembership {
     pub spend: Decimal,
     #[serde(default)]
     pub budget_id: Option<String>,
-    #[serde(deserialize_with = "deserialize_timestamp")]
-    pub created_at: DateTime<Utc>,
-    #[serde(deserialize_with = "deserialize_timestamp")]
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
     #[serde(default)]
     pub user: Option<JsonData>,
     #[serde(default)]
@@ -187,10 +167,8 @@ struct OrganizationMembershipInput {
     spend: Decimal,
     #[serde(default)]
     budget_id: Option<String>,
-    #[serde(deserialize_with = "deserialize_timestamp")]
-    created_at: DateTime<Utc>,
-    #[serde(deserialize_with = "deserialize_timestamp")]
-    updated_at: DateTime<Utc>,
+    created_at: Timestamp,
+    updated_at: Timestamp,
     #[serde(default)]
     user: Option<JsonData>,
     #[serde(default)]
@@ -222,15 +200,6 @@ impl From<OrganizationMembershipInput> for OrganizationMembership {
         }
     }
 }
-impl<'de> Deserialize<'de> for OrganizationMembership {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        OrganizationMembershipInput::deserialize(deserializer).map(Self::from)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum BudgetPermissionDecodeError {
     #[error("stored row is {len} bytes, over the {MAX_ROW_BYTES} byte limit")]
@@ -265,28 +234,36 @@ pub fn decode_budget_permission_rows(
         return Err(BudgetPermissionDecodeError::TooLarge { len: bytes.len() });
     }
     let text = from_utf8(bytes).map_err(BudgetPermissionDecodeError::InvalidUtf8)?;
-    let value: JsonData = serde_json::from_str(text).map_err(BudgetPermissionDecodeError::Json)?;
-    if json_data_depth(&value) > MAX_JSON_DEPTH {
-        return Err(BudgetPermissionDecodeError::TooDeep);
-    }
+    check_depth(text)?;
     serde_json::from_str(text).map_err(BudgetPermissionDecodeError::Json)
 }
-fn json_data_depth(value: &JsonData) -> usize {
-    match value {
-        JsonData::Array(values) => values
-            .iter()
-            .map(json_data_depth)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1),
-        JsonData::Object(values) => values
-            .values()
-            .map(json_data_depth)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1),
-        JsonData::Null | JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) => 0,
+
+#[derive(Clone, Copy)]
+enum ScanState {
+    Structural,
+    Quoted,
+    Escaped,
+}
+
+fn check_depth(text: &str) -> Result<(), BudgetPermissionDecodeError> {
+    let mut state = ScanState::Structural;
+    let mut depth = 0_u8;
+    for byte in text.bytes() {
+        match (state, byte) {
+            (ScanState::Structural, b'{' | b'[') => {
+                depth = depth.saturating_add(1);
+                if usize::from(depth) > MAX_JSON_DEPTH {
+                    return Err(BudgetPermissionDecodeError::TooDeep);
+                }
+            }
+            (ScanState::Structural, b'}' | b']') => depth = depth.saturating_sub(1),
+            (ScanState::Structural, b'"') | (ScanState::Escaped, _) => state = ScanState::Quoted,
+            (ScanState::Quoted, b'\\') => state = ScanState::Escaped,
+            (ScanState::Quoted, b'"') => state = ScanState::Structural,
+            (ScanState::Structural | ScanState::Quoted, _) => {}
+        }
     }
+    Ok(())
 }
 
 #[path = "budget_permission_rows/tests.rs"]
