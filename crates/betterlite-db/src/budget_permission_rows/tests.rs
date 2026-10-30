@@ -272,6 +272,29 @@ fn native_budget_rows_byte_and_depth_limits() {
 }
 
 #[rstest]
+#[case::exact_limit("exact-limit.json", 0x0010_0000)]
+#[case::over_limit("over-limit.json", 0x0010_0001)]
+fn corpus_byte_limit_boundaries(#[case] name: &str, #[case] size: usize) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fuzz/corpus/budget_permission_rows")
+        .join(name);
+    let bytes = fs::read(path).unwrap();
+    assert_eq!(bytes.len(), size);
+    let result = decode_budget_permission_rows(&bytes);
+    if size == 0x0010_0000 {
+        assert_eq!(
+            result.unwrap(),
+            super::BudgetPermissionRow::Budget(budget("{}"))
+        );
+    } else {
+        assert!(matches!(
+            result,
+            Err(BudgetPermissionDecodeError::TooLarge { len }) if len == size
+        ));
+    }
+}
+
+#[rstest]
 fn replays_the_budget_permission_rows_corpus(
     #[files("fuzz/corpus/budget_permission_rows/*")] path: PathBuf,
 ) {
@@ -335,29 +358,27 @@ async fn postgres_permission_null_vs_empty() {
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
     client
-        .batch_execute("CREATE TEMP TABLE permission_rows (models TEXT[] DEFAULT '{}')")
-        .await
-        .unwrap();
-    let empty: Vec<String> = Vec::new();
-    client
-        .execute(
-            "INSERT INTO permission_rows VALUES (NULL), ($1), (DEFAULT)",
-            &[&empty],
-        )
+        .batch_execute(include_str!("permission_fixture.sql"))
         .await
         .unwrap();
     let rows = client
         .query(
-            "SELECT models FROM permission_rows ORDER BY models NULLS FIRST",
+            r#"SELECT row_to_json(permission)::TEXT FROM "LiteLLM_ObjectPermissionTable" permission ORDER BY object_permission_id"#,
             &[],
         )
         .await
         .unwrap();
-    let null_models: Option<Vec<String>> = rows.first().unwrap().get(0);
-    let empty_models: Option<Vec<String>> = rows.last().unwrap().get(0);
-    assert_eq!(null_models, None);
-    assert_eq!(empty_models, Some(Vec::new()));
-    assert_eq!(rows.len(), 3);
+    let decoded: Vec<LiteLLMObjectPermissionTable> = rows
+        .iter()
+        .map(|row| serde_json::from_str(row.get::<_, &str>(0)).unwrap())
+        .collect();
+    let [empty, null, omitted] = <[LiteLLMObjectPermissionTable; 3]>::try_from(decoded).unwrap();
+    assert_eq!(empty.object_permission_id, "empty");
+    assert_eq!(empty.models, PermissionList(Some(Vec::new())));
+    assert_eq!(null.object_permission_id, "null");
+    assert_eq!(null.models, PermissionList(None));
+    assert_eq!(omitted.object_permission_id, "omitted");
+    assert_eq!(omitted.models, PermissionList(Some(Vec::new())));
     drop(client);
     tasks.join_next().await.unwrap().unwrap().unwrap();
     fixture.close_async().await.unwrap();
