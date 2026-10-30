@@ -4,6 +4,7 @@ use super::{BASELINE_MIGRATION, MIGRATION_CATALOG};
 use std::str;
 
 const PINNED_BYTES: &[u8] = include_bytes!("fixtures/pinned_migration.sql");
+const PINNED_SHA256: &str = "0bf3d5cabe50d5d7249eb505cf2ec6fe2d8b49dc8b496dceb2179a357ed4725e";
 
 fn sql() -> &'static str {
     str::from_utf8(BASELINE_MIGRATION.bytes).unwrap()
@@ -18,6 +19,7 @@ fn contains(fragments: &[&str]) {
 #[test]
 fn baseline_sql_identity() {
     assert_eq!(BASELINE_MIGRATION.bytes, PINNED_BYTES);
+    assert_eq!(BASELINE_MIGRATION.sha256, PINNED_SHA256);
     assert_eq!(BASELINE_MIGRATION.directory, "20250326162113_baseline");
     assert_eq!(BASELINE_MIGRATION.bytes.len(), 15_827);
     assert_eq!(sql().matches("CREATE TABLE IF NOT EXISTS").count(), 17);
