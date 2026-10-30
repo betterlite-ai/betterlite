@@ -47,3 +47,17 @@ fn rejects_invalid_source() {
     let error = serde_json::from_str::<ExecutionRow>(&valid_json().replace("traces", "both"));
     error.unwrap_err();
 }
+
+#[test]
+fn accepts_quoted_counters_from_clickhouse() {
+    let decoded: ExecutionRow = serde_json::from_str(
+        r#"{"source": "traces", "trace_id": "t1", "team_id": "team-a", "name": "run",
+            "start_time": "2026-01-01T00:00:00Z", "span_count": "3", "root_seen": "1",
+            "eligible": "9", "selected": "2"}"#,
+    )
+    .expect("decodes");
+    assert_eq!(decoded.span_count, 3);
+    assert_eq!(decoded.root_seen, 1);
+    assert_eq!(decoded.eligible, 9);
+    assert_eq!(decoded.selected, 2);
+}

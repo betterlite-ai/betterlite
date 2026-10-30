@@ -15,7 +15,13 @@ fn rejects_unknown_fields() {
 }
 
 #[test]
-fn rejects_non_integer_count() {
-    let error = serde_json::from_str::<CountRow>(r#"{"count": "4"}"#);
+fn accepts_a_quoted_numeric_count() {
+    let decoded: CountRow = serde_json::from_str(r#"{"count": "4"}"#).expect("decodes");
+    assert_eq!(decoded, CountRow { count: 4 });
+}
+
+#[test]
+fn rejects_a_non_numeric_count() {
+    let error = serde_json::from_str::<CountRow>(r#"{"count": "one"}"#);
     error.unwrap_err();
 }

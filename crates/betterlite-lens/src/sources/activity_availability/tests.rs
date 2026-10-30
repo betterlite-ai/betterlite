@@ -38,3 +38,22 @@ fn rejects_non_boolean_traces() {
     let error = serde_json::from_str::<ActivityAvailability>(r#"{"traces": "yes"}"#);
     error.unwrap_err();
 }
+
+#[test]
+fn accepts_zero_one_flags_in_place_of_booleans() {
+    let decoded: ActivityAvailability =
+        serde_json::from_str(r#"{"traces": 0, "requests": 1}"#).expect("decodes");
+    assert_eq!(
+        decoded,
+        ActivityAvailability {
+            traces: false,
+            requests: true,
+        }
+    );
+}
+
+#[test]
+fn rejects_out_of_range_numeric_flags() {
+    let error = serde_json::from_str::<ActivityAvailability>(r#"{"traces": 2}"#);
+    error.unwrap_err();
+}

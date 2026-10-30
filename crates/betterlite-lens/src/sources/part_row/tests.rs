@@ -53,3 +53,12 @@ fn rejects_non_integer_truncated() {
     );
     error.unwrap_err();
 }
+
+#[test]
+fn accepts_a_quoted_truncated_flag() {
+    let decoded: PartRow = serde_json::from_str(
+        r#"{"span_id": "s1", "parent_span_id": "", "name": "root", "kind": "agent", "content": "hi", "truncated": "1"}"#,
+    )
+    .expect("decodes");
+    assert_eq!(decoded.truncated, 1);
+}
