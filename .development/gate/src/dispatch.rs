@@ -251,8 +251,9 @@ fn climb_rung(
             number: progress.number,
             earlier: progress.earlier.as_ref(),
         };
-        let Some(step) = attempt::attempt_once(&current, try_runner, try_rung, &progress.feedback)?
-        else {
+        let step = attempt::attempt_once(&current, try_runner, try_rung, &progress.feedback)?;
+        let removed = attempt::remove_extra_targets(places.worktree)?;
+        let Some(step) = step else {
             // the overflow vendor is marked now, so the next try waits for this rung's own vendor
             if overflow.is_some() {
                 continue;
@@ -263,7 +264,9 @@ fn climb_rung(
         progress.rung_used = progress.rung_used.saturating_add(1);
         progress.used = progress.used.saturating_add(1);
         progress.limited = false;
-        if let ControlFlow::Break(lines) = apply_step(agents, brief, progress, step)? {
+        let flow = apply_step(agents, brief, progress, step)?;
+        progress.feedback.extend(removed);
+        if let ControlFlow::Break(lines) = flow {
             return Ok(lines);
         }
     }
