@@ -1,0 +1,13 @@
+kind: helper
+name: error-class-rate-limit-category
+call:
+  error_class:
+    family: rate_limit
+    context:
+      message: slow down
+      model: gpt-4
+      provider: openai
+    category: litellm_batch_rate_limit
+    dimension: tokens
+env: {}
+compare: {ignore: []}

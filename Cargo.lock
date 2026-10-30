@@ -997,6 +997,13 @@ dependencies = [
 [[package]]
 name = "betterlite-error"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-foundry"
@@ -1197,6 +1204,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-guardrails",
  "betterlite-harness",
  "betterlite-http",
@@ -1229,6 +1237,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -1417,6 +1426,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-openai",
  "email_address",
@@ -1455,6 +1465,23 @@ dependencies = [
 [[package]]
 name = "betterlite-tokenizer"
 version = "0.1.0"
+
+[[package]]
+name = "betterlite-tracing"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-logging",
+ "chrono",
+ "indexmap 2.14.2",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "betterlite-vertex"

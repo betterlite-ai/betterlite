@@ -1,0 +1,17 @@
+[package]
+name = "betterlite-tracing-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+betterlite-tracing = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "cursors"
+path = "fuzz_targets/cursors.rs"
+test = false
+doc = false
