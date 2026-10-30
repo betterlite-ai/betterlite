@@ -1,0 +1,11 @@
+kind: helper
+name: error-facts-malformed-json
+call:
+  error_facts:
+    kind: body_code
+    text: '{not-json'
+env: {}
+compare:
+  ignore:
+    - pointer: /value
+      why: null parser result is represented differently by the helper harness

@@ -1,0 +1,14 @@
+kind: helper
+name: error-facts-synthesized-status
+call:
+  error_facts:
+    kind: status
+    status: 503
+    status_code_is_synthesized: true
+    provider: openai
+    text: unavailable
+env: {}
+compare:
+  ignore:
+    - pointer: /value
+      why: null status mapping is represented differently by the helper harness
