@@ -10,7 +10,9 @@ use secrecy::{ExposeSecret, SecretString};
 use super::{resolve_redis_kwargs, settings_uses_tls};
 use crate::redis_connection_settings::model::nodes::{ClusterNodeConfig, NodesInput};
 use crate::redis_connection_settings::model::scalars::PassthroughValue;
-use crate::redis_connection_settings::model::settings::{ClientKind, RedisOverrides};
+use crate::redis_connection_settings::model::settings::{
+    ClientKind, RedisConnectionSettings, RedisOverrides,
+};
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -174,6 +176,14 @@ fn redis_tls_uses_the_url_when_startup_nodes_are_empty() {
     };
     let settings =
         resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
+    assert!(settings_uses_tls(&settings));
+}
+
+#[test]
+fn redis_tls_does_not_treat_an_empty_startup_list_as_cluster_mode() {
+    let mut settings = RedisConnectionSettings::default();
+    settings.startup_nodes = Some(Vec::new());
+    settings.url = Some(SecretString::from("rediss://cache.internal:6379"));
     assert!(settings_uses_tls(&settings));
 }
 
