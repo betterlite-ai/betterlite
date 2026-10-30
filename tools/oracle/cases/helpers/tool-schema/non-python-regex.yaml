@@ -8,5 +8,8 @@ call:
       pattern: '\\p{Cc}'
       properties:
         safe: {type: string, pattern: '^[a-z]+$'}
+        lookahead: {type: string, pattern: 'a(?=b)'}
+        backreference: {type: string, pattern: '(a)\1'}
+        literal_braces: {type: string, pattern: 'a{word}'}
 env: {}
 compare: {ignore: []}

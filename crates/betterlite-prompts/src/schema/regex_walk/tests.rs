@@ -4,8 +4,7 @@ use std::{fs, path::PathBuf};
 
 use crate::arguments::json::{Json, Object};
 use crate::schema::{
-    drop_non_python_regex_patterns, flatten_and_drop, flatten_top_level,
-    tool_with_sanitized_parameters,
+    drop_non_python_regex_patterns, flatten_and_drop, tool_with_sanitized_parameters,
 };
 use rstest::rstest;
 
@@ -91,8 +90,20 @@ fn object(text: &str) -> Object {
     object(r##"{"definitions":{"a":{"type":"object"}},"anyOf":[{"$ref":"#/definitions/a"},{"$ref":"#/definitions/a"}]}"##),
     object(r#"{"definitions":{"a":{"type":"object"}},"type":"object","properties":{}}"#)
 )]
+#[case::python_lookahead(
+    object(r#"{"type":"string","pattern":"a(?=b)"}"#),
+    object(r#"{"type":"string","pattern":"a(?=b)"}"#)
+)]
+#[case::python_backreference(
+    object(r#"{"type":"string","pattern":"(a)\\1"}"#),
+    object(r#"{"type":"string","pattern":"(a)\\1"}"#)
+)]
+#[case::python_literal_braces(
+    object(r#"{"type":"string","pattern":"a{word}"}"#),
+    object(r#"{"type":"string","pattern":"a{word}"}"#)
+)]
 fn tool_schemas_tool_schema_tests_behavior(#[case] schema: Object, #[case] expected: Object) {
-    assert_eq!(flatten_top_level(&schema), expected);
+    assert_eq!(flatten_and_drop(&schema), expected);
 }
 
 #[test]
