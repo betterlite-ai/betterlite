@@ -129,6 +129,16 @@ fn weekday_rules_follow_litellm_normalization(
 }
 
 #[test]
+fn explicit_null_weekdays_matches_every_day() {
+    let off_peak = block(r#"{"windows":[{"hours_utc":"09:00-10:00","weekdays":null}]}"#);
+    assert!(is_off_peak(
+        &off_peak,
+        moment("2024-06-16T09:30:00Z"),
+        &database()
+    ));
+}
+
+#[test]
 fn flat_hours_wins_independently_of_an_empty_weekdays_window() {
     let off_peak = block(
         r#"{"hours_utc":"00:00-23:59","windows":[{"hours_utc":"00:00-23:59","weekdays":[]}]}"#,
@@ -169,6 +179,18 @@ fn invalid_weekday_timezone_falls_back_to_utc() {
         &off_peak,
         moment("2024-06-16T12:00:00Z"),
         &tzdb
+    ));
+}
+
+#[test]
+fn lowercase_weekday_timezone_falls_back_to_utc() {
+    let off_peak = block(
+        r#"{"windows":[{"hours_utc":"00:00-23:59","weekdays":[1]}],"weekday_timezone":"asia/shanghai"}"#,
+    );
+    assert!(!is_off_peak(
+        &off_peak,
+        moment("2024-06-16T23:00:00Z"),
+        &database()
     ));
 }
 

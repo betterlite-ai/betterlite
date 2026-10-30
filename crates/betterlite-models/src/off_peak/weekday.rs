@@ -56,6 +56,9 @@ fn iso_weekday(
     let Ok(zone) = database.get(name) else {
         return moment.weekday().number_from_monday();
     };
+    if zone.iana_name() != Some(name) {
+        return moment.weekday().number_from_monday();
+    }
     let Ok(nanosecond) = i32::try_from(moment.timestamp_subsec_nanos()) else {
         return moment.weekday().number_from_monday();
     };
