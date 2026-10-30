@@ -69,8 +69,7 @@ impl TryFrom<JsonData> for Member {
     type Error = TeamRowError;
     fn try_from(value: JsonData) -> Result<Self, Self::Error> {
         let base = MemberBase::try_from(value.clone())?;
-        let input: MemberInput = super::decoder::convert(&value)?;
-        Ok(Self {
+        super::decoder::convert::<MemberInput>(&value).map(|input| Self {
             base,
             role: input.role,
         })
