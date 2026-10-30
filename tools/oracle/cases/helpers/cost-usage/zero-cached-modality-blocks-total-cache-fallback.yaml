@@ -1,0 +1,17 @@
+kind: helper
+name: zero-cached-modality-blocks-total-cache-fallback
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 0
+        total_output_tokens: 0
+        input_tokens_by_modality:
+          - modality: text
+            tokens: 20
+        cached_tokens_by_modality:
+          - modality: audio
+            tokens: 0
+        total_cached_tokens: 5
+compare: {ignore: []}
+env: {}

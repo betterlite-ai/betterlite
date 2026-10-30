@@ -1,0 +1,13 @@
+kind: helper
+name: member_role_required_exact_literals
+call:
+  team_rows:
+    calls:
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":null}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"Admin"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"user"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"admin"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u","role":"owner"}}
+      - {"name":"member_role_required_exact_literals","operation":"member","row":{"user_id":"u"}}
+env: {}
+compare: {ignore: []}
