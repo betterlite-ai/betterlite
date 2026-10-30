@@ -48,10 +48,10 @@ pub fn mask_pii_in_messages(
                     .unwrap_or(0);
                 let end = usize::try_from(item.get("end").and_then(Value::as_u64).unwrap_or(0))
                     .unwrap_or(start);
-                if start <= end
-                    && end <= masked.len()
-                    && masked.is_char_boundary(start)
-                    && masked.is_char_boundary(end)
+                if let (Some(start), Some(end)) = (
+                    character_byte_index(&masked, start),
+                    character_byte_index(&masked, end),
+                ) && start <= end
                 {
                     masked.replace_range(start..end, &format!("[MASKED {label}]"));
                     *counts.entry(label).or_default() += 1;
@@ -62,6 +62,17 @@ pub fn mask_pii_in_messages(
             Value::Object(result)
         })
         .collect()
+}
+
+fn character_byte_index(text: &str, character_index: usize) -> Option<usize> {
+    let indexed = text.char_indices().nth(character_index);
+    if let Some((index, _)) = indexed {
+        Some(index)
+    } else if text.chars().count() == character_index {
+        Some(text.len())
+    } else {
+        None
+    }
 }
 
 #[must_use]

@@ -12,12 +12,12 @@ pub fn expand_for_classification(messages: &[Value]) -> Vec<Value> {
         let content = message.get("content");
         if role == "tool" {
             if let Some(call_id) = message.get("tool_call_id").and_then(Value::as_str) {
-                expanded.push(json!({"role":"developer","content":{"type":"tool_result","tool_use_id":call_id,"content":inspectable_content(content).unwrap_or_default()}}));
+                expanded.push(json!({"role":"developer","content":{"type":"tool_result","tool_use_id":call_id,"content":flatten_content(content)}}));
             }
             continue;
         }
-        if let Some(text) = inspectable_content(content) {
-            expanded.push(json!({"role":role,"content":text}));
+        if let Some(content) = classification_content(content) {
+            expanded.push(json!({"role":role,"content":content}));
         }
         if role == "assistant" {
             if let Some(calls) = message.get("tool_calls").and_then(Value::as_array) {
@@ -26,7 +26,17 @@ pub fn expand_for_classification(messages: &[Value]) -> Vec<Value> {
                         call.get("id").and_then(Value::as_str),
                         call.pointer("/function/name").and_then(Value::as_str),
                     ) {
-                        let input = call.pointer("/function/arguments").and_then(Value::as_str).and_then(|raw| serde_json::from_str(raw).ok()).unwrap_or_else(|| json!({"arguments": call.pointer("/function/arguments").and_then(Value::as_str).unwrap_or("")}));
+                        let input = call
+                            .pointer("/function/arguments")
+                            .and_then(Value::as_str)
+                            .and_then(|raw| {
+                                serde_json::from_str::<Value>(raw)
+                                    .ok()
+                                    .filter(Value::is_object)
+                            })
+                            .unwrap_or_else(|| {
+                                json!({"arguments": call.pointer("/function/arguments").and_then(Value::as_str).unwrap_or("")})
+                            });
                         expanded.push(json!({"role":"model","content":{"type":"tool_use","id":id,"name":name,"input":input}}));
                     }
                 }
@@ -36,18 +46,29 @@ pub fn expand_for_classification(messages: &[Value]) -> Vec<Value> {
     expanded
 }
 
-fn inspectable_content(content: Option<&Value>) -> Option<String> {
+fn flatten_content(content: Option<&Value>) -> Value {
     match content {
-        Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
+        Some(Value::String(text)) => Value::String(text.clone()),
         Some(Value::Array(parts)) => {
             let text = parts
                 .iter()
+                .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
                 .filter_map(|part| part.get("text").and_then(Value::as_str))
                 .collect::<Vec<_>>()
                 .join("\n");
-            (!text.is_empty()).then_some(text)
+            Value::String(text)
         }
-        _ => None,
+        Some(value) => value.clone(),
+        None => Value::String(String::new()),
+    }
+}
+
+fn classification_content(content: Option<&Value>) -> Option<Value> {
+    let flattened = flatten_content(content);
+    match &flattened {
+        Value::String(text) if text.is_empty() => None,
+        Value::Null => None,
+        _ => Some(flattened),
     }
 }
 
@@ -83,7 +104,7 @@ pub fn map_masked_messages_back(original: &[Value], masked: &[Value]) -> Vec<Val
         .iter()
         .filter(|message| {
             message.get("role").and_then(Value::as_str) != Some("tool")
-                && inspectable_content(message.get("content")).is_some()
+                && text_content_exists(message.get("content"))
         })
         .count();
     let mut cursor = 0;
@@ -117,7 +138,7 @@ fn map_one_message(
                 mapped.insert("content".to_owned(), content.clone());
             }
         }
-    } else if apply_text && inspectable_content(message.get("content")).is_some() {
+    } else if apply_text && text_content_exists(message.get("content")) {
         if let Some(text) = texts.get(*cursor) {
             mapped.insert("content".to_owned(), Value::String(text.clone()));
             *cursor += 1;
@@ -132,6 +153,14 @@ fn map_one_message(
         }
     }
     Value::Object(mapped)
+}
+
+fn text_content_exists(content: Option<&Value>) -> bool {
+    match content {
+        Some(Value::String(text)) => !text.is_empty(),
+        Some(Value::Array(_)) => true,
+        _ => false,
+    }
 }
 
 #[must_use]
@@ -166,19 +195,57 @@ pub fn update_tool_calls(
 }
 
 pub fn apply_model_response(response: &mut Value, masked: &[Value]) {
+    let mut tool_use = BTreeMap::new();
     let texts = masked
         .iter()
-        .filter_map(|message| message.get("content").and_then(Value::as_str))
+        .filter_map(|message| match message.get("content") {
+            Some(Value::String(text)) => Some(text.clone()),
+            Some(Value::Object(content))
+                if content.get("type").and_then(Value::as_str) == Some("tool_use") =>
+            {
+                content.get("id").and_then(Value::as_str).map(|id| {
+                    tool_use.insert(id.to_owned(), content.clone());
+                    String::new()
+                })
+            }
+            _ => None,
+        })
         .collect::<Vec<_>>();
     let mut cursor = 0;
     if let Some(choices) = response.get_mut("choices").and_then(Value::as_array_mut) {
+        let text_count = choices
+            .iter()
+            .filter(|choice| {
+                choice
+                    .pointer("/message/content")
+                    .and_then(Value::as_str)
+                    .is_some_and(|text| !text.is_empty())
+                    || choice
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+            })
+            .count();
+        let apply_text = text_count == texts.len();
         for choice in choices {
-            let Some(message) = choice.get_mut("message").and_then(Value::as_object_mut) else {
-                continue;
-            };
-            if message.get("content").and_then(Value::as_str).is_some() {
+            if let Some(message) = choice.get_mut("message").and_then(Value::as_object_mut) {
+                if apply_text && message.get("content").and_then(Value::as_str).is_some() {
+                    if let Some(text) = texts.get(cursor) {
+                        message.insert("content".to_owned(), Value::String(text.clone()));
+                        cursor += 1;
+                    }
+                }
+                if let Some(calls) = message.get("tool_calls").and_then(Value::as_array) {
+                    message.insert(
+                        "tool_calls".to_owned(),
+                        Value::Array(update_tool_calls(calls, &tool_use)),
+                    );
+                }
+            } else if apply_text && choice.get("text").and_then(Value::as_str).is_some() {
                 if let Some(text) = texts.get(cursor) {
-                    message.insert("content".to_owned(), Value::String((*text).to_owned()));
+                    if let Some(object) = choice.as_object_mut() {
+                        object.insert("text".to_owned(), Value::String(text.clone()));
+                    }
                     cursor += 1;
                 }
             }
