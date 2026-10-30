@@ -1,3 +1,4 @@
+use betterlite_secrets::error::SecretError;
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
@@ -6,8 +7,22 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvelopeIdentity {
     pub server_id: String,
-    pub subject_type: String,
+    pub subject_type: SubjectType,
     pub subject: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvelopeKind {
+    Access,
+    Refresh,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubjectType {
+    KeyHash,
+    UserId,
 }
 
 #[derive(Debug, Clone)]
@@ -50,14 +65,32 @@ pub struct OpenedRefreshEnvelope {
     pub refresh: RefreshCredential,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum EnvelopeMintError {
     #[error("envelope lifetime cannot be represented: {expires_in} seconds")]
     EnvelopeUnrepresentable { expires_in: i64 },
     #[error("envelope is {size_bytes} bytes, over the {max_bytes} byte limit")]
     EnvelopeTooLarge { size_bytes: usize, max_bytes: usize },
-    #[error("envelope encryption failed")]
-    EncryptionFailed,
+    #[error("signing key must be at least 32 bytes")]
+    SigningKeyTooShort,
+    #[error("encryption key must not be empty")]
+    EncryptionKeyEmpty,
+    #[error("envelope identity fields must not be empty")]
+    IdentityFieldEmpty,
+    #[error("token fields must not be empty")]
+    TokenEmpty,
+    #[error("expires_in must be positive")]
+    ExpiresInInvalid,
+    #[error("envelope sealing failed")]
+    Seal {
+        #[source]
+        source: SecretError,
+    },
+    #[error("envelope serialization failed")]
+    Serialize {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -74,15 +107,63 @@ pub enum EnvelopeOpenError {
     DecryptFailed,
 }
 
+pub(crate) struct MintValidation<'request> {
+    pub(crate) identity: &'request EnvelopeIdentity,
+    pub(crate) keys: &'request EnvelopeKeys,
+    pub(crate) expires_in: Option<i64>,
+    pub(crate) required_token: Option<&'request str>,
+    pub(crate) token_type: Option<&'request str>,
+    pub(crate) optional_token: Option<&'request str>,
+}
+
+pub(crate) fn validate_refresh_mint(
+    identity: &EnvelopeIdentity,
+    refresh: &RefreshCredential,
+    keys: &EnvelopeKeys,
+) -> Result<(), EnvelopeMintError> {
+    let validation = validate_mint(&MintValidation {
+        identity,
+        keys,
+        expires_in: refresh.expires_in,
+        required_token: Some(refresh.refresh_token.expose_secret()),
+        token_type: None,
+        optional_token: None,
+    });
+    validation?;
+    Ok(())
+}
+
+pub(crate) fn validate_mint(request: &MintValidation<'_>) -> Result<(), EnvelopeMintError> {
+    if request.keys.signing_key.expose_secret().len() < 32 {
+        return Err(EnvelopeMintError::SigningKeyTooShort);
+    }
+    if request.keys.encryption_key.expose_secret().is_empty() {
+        return Err(EnvelopeMintError::EncryptionKeyEmpty);
+    }
+    if request.identity.server_id.is_empty() || request.identity.subject.is_empty() {
+        return Err(EnvelopeMintError::IdentityFieldEmpty);
+    }
+    if request.required_token.is_some_and(str::is_empty)
+        || request.token_type.is_some_and(str::is_empty)
+        || request.optional_token.is_some_and(str::is_empty)
+    {
+        return Err(EnvelopeMintError::TokenEmpty);
+    }
+    if request.expires_in.is_some_and(|value| value <= 0) {
+        return Err(EnvelopeMintError::ExpiresInInvalid);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Claims {
     pub(crate) iss: String,
     pub(crate) iat: i64,
     pub(crate) exp: i64,
-    pub(crate) kind: String,
+    pub(crate) kind: EnvelopeKind,
     pub(crate) server_id: String,
-    pub(crate) subject_type: String,
+    pub(crate) subject_type: SubjectType,
     pub(crate) subject: String,
     pub(crate) grant: String,
 }
@@ -99,7 +180,7 @@ pub(crate) struct HeaderOwned {
     pub(crate) typ: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WireGrant {
     pub(crate) access_token: String,
@@ -110,6 +191,18 @@ pub(crate) struct WireGrant {
     pub(crate) scope: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) expires_in: Option<i64>,
+}
+
+impl WireGrant {
+    pub(crate) fn is_valid(&self) -> bool {
+        if self.access_token.is_empty() || self.token_type.is_empty() {
+            return false;
+        }
+        if self.refresh_token.as_ref().is_some_and(String::is_empty) {
+            return false;
+        }
+        self.expires_in.is_none_or(|value| value > 0)
+    }
 }
 
 impl From<UpstreamTokenGrant> for WireGrant {
@@ -138,7 +231,7 @@ impl From<WireGrant> for UpstreamTokenGrant {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WireRefresh {
     pub(crate) refresh_token: String,
@@ -146,6 +239,15 @@ pub(crate) struct WireRefresh {
     pub(crate) scope: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) expires_in: Option<i64>,
+}
+
+impl WireRefresh {
+    pub(crate) fn is_valid(&self) -> bool {
+        if self.refresh_token.is_empty() {
+            return false;
+        }
+        self.expires_in.is_none_or(|value| value > 0)
+    }
 }
 
 impl From<RefreshCredential> for WireRefresh {

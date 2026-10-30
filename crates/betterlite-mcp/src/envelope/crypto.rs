@@ -1,16 +1,17 @@
 use aws_lc_rs::hmac;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use betterlite_secrets::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
-use betterlite_secrets::secret_codec::{
-    Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, OsNonces, StoredCipher,
-    StoredValue,
+use base64::{
+    Engine as _,
+    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
 };
+use betterlite_secrets::error::SecretError;
+use betterlite_secrets::secret_codec::sealing;
+use betterlite_secrets::secret_codec::{Algorithm, NonceSource};
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
     ENVELOPE_ISSUER, MAX_ENVELOPE_BYTES,
-    models::{Claims, EnvelopeKeys, EnvelopeMintError, EnvelopeOpenError, Header, HeaderOwned},
+    models::{Claims, EnvelopeKeys, EnvelopeKind, EnvelopeOpenError, Header, HeaderOwned},
 };
 
 pub(crate) fn encode_jwt(claims: &Claims, key: &SecretString) -> Result<String, serde_json::Error> {
@@ -37,7 +38,7 @@ pub(crate) fn encode_jwt(claims: &Claims, key: &SecretString) -> Result<String, 
 pub(crate) fn open_claims(
     candidate: &str,
     prefix: &str,
-    expected_kind: &str,
+    expected_kind: EnvelopeKind,
     keys: &EnvelopeKeys,
     now: DateTime<Utc>,
 ) -> Result<Claims, EnvelopeOpenError> {
@@ -51,7 +52,6 @@ pub(crate) fn open_claims(
     let valid = claims.kind == expected_kind
         && claims.iss == ENVELOPE_ISSUER
         && !claims.server_id.is_empty()
-        && !claims.subject_type.is_empty()
         && !claims.subject.is_empty()
         && !claims.grant.is_empty();
     if !valid {
@@ -91,56 +91,25 @@ fn verify_jwt(compact: &str, key: &SecretString) -> Result<Claims, EnvelopeOpenE
     serde_json::from_slice(&payload).map_err(|_error| EnvelopeOpenError::MalformedPayload)
 }
 
-pub(crate) fn encrypt_grant(
+pub(crate) fn encrypt_grant<N>(
     plaintext: &str,
     key: &SecretString,
-) -> Result<String, EnvelopeMintError> {
-    let encrypted = cipher(key)
-        .encrypt_value(StoredValue::<()>::Text(SecretString::from(plaintext)), None)
-        .map_err(|_error| EnvelopeMintError::EncryptionFailed)?;
-    let StoredValue::Text(sealed) = encrypted else {
-        return Err(EnvelopeMintError::EncryptionFailed);
-    };
-    Ok(URL_SAFE_NO_PAD.encode(sealed.expose_secret()))
+    nonces: &N,
+) -> Result<String, SecretError>
+where
+    N: NonceSource,
+{
+    let sealed = sealing::seal_legacy(&SecretString::from(plaintext), key, nonces)?;
+    Ok(URL_SAFE.encode(sealed))
 }
 
 pub(crate) fn decrypt_text(
     encoded: &str,
     key: &SecretString,
-    field: &str,
-) -> Result<String, EnvelopeOpenError> {
-    let decoded = URL_SAFE_NO_PAD
+) -> Result<SecretString, EnvelopeOpenError> {
+    let decoded = URL_SAFE
         .decode(encoded)
         .map_err(|_error| EnvelopeOpenError::DecryptFailed)?;
-    let text = String::from_utf8(decoded).map_err(|_error| EnvelopeOpenError::DecryptFailed)?;
-    let opened = cipher(key).decrypt_value(
-        StoredValue::<()>::Text(SecretString::from(text)),
-        field,
-        DecryptPolicy {
-            log: FailureLog::Debug,
-            value: FailureValue::Nothing,
-        },
-    );
-    let Some(StoredValue::Text(plaintext)) = opened else {
-        return Err(EnvelopeOpenError::DecryptFailed);
-    };
-    Ok(plaintext.expose_secret().to_owned())
-}
-
-struct NoopDiagnostics;
-
-impl SecretDiagnostics for NoopDiagnostics {
-    fn record(&self, _level: Level, _event: &SecretEvent<'_>) {}
-}
-
-fn cipher(key: &SecretString) -> StoredCipher<OsNonces, NoopDiagnostics> {
-    let settings = CipherSettings {
-        signing_key: Some(key.clone()),
-        algorithm: Algorithm::XSalsa20Poly1305,
-    };
-    StoredCipher {
-        settings,
-        nonces: OsNonces,
-        diagnostics: NoopDiagnostics,
-    }
+    sealing::open(Algorithm::XSalsa20Poly1305, key, &decoded, b"")
+        .map_err(|_error| EnvelopeOpenError::DecryptFailed)
 }
