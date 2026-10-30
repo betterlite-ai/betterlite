@@ -195,10 +195,15 @@ fn arguments_in(container: &Fields) -> Option<Fields> {
     if let Some(arguments) = nested_arguments(container, "params") {
         return Some(arguments);
     }
-    payload_objects(container).into_iter().find_map(|payload| {
-        nested_arguments(&payload, "params")
-            .or_else(|| non_empty_object(&Json::field(&payload, "arguments")))
-    })
+    for payload in payload_objects(container) {
+        if let Some(arguments) = nested_arguments(&payload, "params") {
+            return Some(arguments);
+        }
+        if let Some(arguments) = non_empty_object(&Json::field(&payload, "arguments")) {
+            return Some(arguments);
+        }
+    }
+    None
 }
 
 fn payload_objects(container: &Fields) -> Vec<Fields> {

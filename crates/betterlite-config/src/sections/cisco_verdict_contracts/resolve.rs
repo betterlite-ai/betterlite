@@ -14,13 +14,13 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let (api_base, inspection_type, inspect_path) = resolve_endpoint(
+        let (api_base, inspection_type) = resolve_endpoint(
             parameters.api_base,
             parameters.inspection_type,
-            parameters.inspect_path,
             &prefix,
             lookup,
         )?;
+        let inspect_path = resolve_inspect_path(parameters.inspect_path, inspection_type);
         let (on_flagged_action, fallback_on_error, timeout) = resolve_actions(
             parameters.on_flagged_action,
             parameters.fallback_on_error,
@@ -78,10 +78,9 @@ where
 fn resolve_endpoint<L>(
     configured_base: Option<String>,
     configured_inspection: Option<String>,
-    configured_path: Option<String>,
     prefix: &str,
     lookup: &L,
-) -> Result<(String, InspectionType, String), ConfigError>
+) -> Result<(String, InspectionType), ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -109,11 +108,20 @@ where
     } else {
         InspectionType::Mcp
     };
-    let inspect_path = configured_path.unwrap_or_else(|| match inspection_type {
+    Ok((api_base, inspection_type))
+}
+
+fn resolve_inspect_path(
+    configured_path: Option<String>,
+    inspection_type: InspectionType,
+) -> String {
+    if let Some(path) = configured_path {
+        return path;
+    }
+    match inspection_type {
         InspectionType::Chat => "/api/v1/inspect/chat".to_owned(),
         InspectionType::Mcp => "/api/v1/inspect/mcp".to_owned(),
-    });
-    Ok((api_base, inspection_type, inspect_path))
+    }
 }
 
 fn resolve_actions<L>(
