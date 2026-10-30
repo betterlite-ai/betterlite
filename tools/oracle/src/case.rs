@@ -18,6 +18,8 @@ pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
     pub(crate) env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) native_feature_eligibility: bool,
     pub(crate) request: Box<Request>,
     pub(crate) upstream: Vec<UpstreamAnswer>,
     pub(crate) compare: Box<Compare>,
@@ -228,6 +230,15 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
         return Err(invalid("name, config, and request.path cannot be empty"));
     }
+    if case.env.contains_key("LITELLM_LICENSE") {
+        return Err(invalid("env cannot set LITELLM_LICENSE"));
+    }
+    if case.env.contains_key("LITELLM_WORKER_STARTUP_HOOKS") {
+        return Err(invalid("env cannot set LITELLM_WORKER_STARTUP_HOOKS"));
+    }
+    if config_sets_litellm_license(&case.config) {
+        return Err(invalid("general_settings cannot set litellm_license"));
+    }
     if let Some(database) = &case.database {
         database
             .seed
@@ -245,6 +256,19 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     // the request body decodes here once so a bad specification stops the run before any gateway starts
     request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &case.compare.ignore)
+}
+
+fn config_sets_litellm_license(config: &str) -> bool {
+    #[derive(Deserialize)]
+    struct Config {
+        #[serde(default)]
+        general_settings: Option<BTreeMap<String, Value>>,
+    }
+
+    serde_saphyr::from_str::<Config>(config)
+        .ok()
+        .and_then(|parsed| parsed.general_settings)
+        .is_some_and(|settings| settings.contains_key("litellm_license"))
 }
 
 fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {

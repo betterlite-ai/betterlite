@@ -1,0 +1,12 @@
+name: scim-service-provider-config
+native_feature_eligibility: true
+config: |
+  general_settings: {}
+env: {}
+request:
+  method: GET
+  path: /scim/v2/ServiceProviderConfig
+  headers: {Authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
