@@ -2,4 +2,4 @@ kind: helper
 name: text-format-no-tool
 call: {anthropic_output_schema: {function: output, schema: null}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /value, why: Python None is omitted from the optional helper envelope}]}
