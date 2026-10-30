@@ -46,12 +46,42 @@ fn azure_content_policy_cases(#[case] body: JsonValue, #[case] expected: Option<
             response: None,
         };
         assert_eq!(content_policy_error(&input).status, 400);
+    } else if expected.is_none() {
+        let input = ContentPolicyInput {
+            message: "caller".to_owned(),
+            model: "gpt".to_owned(),
+            extra_information: "debug".to_owned(),
+            body,
+            response: None,
+        };
+        let error = content_policy_error(&input);
+        assert_eq!(
+            error.provider_specific_fields["inner_error"],
+            value(r#"{"reason":"x"}"#)
+        );
+        assert_eq!(
+            error.provider_specific_fields["azure_error"],
+            value(r#"{"innererror":{"reason":"x"},"param":"drop"}"#)
+        );
     } else {
         assert_eq!(
             selected.get("message").cloned(),
             expected.map(|value| JsonValue::String(value.to_owned()))
         );
     }
+}
+
+#[test]
+fn azure_policy_empty_array_message_falls_back() {
+    let input = ContentPolicyInput {
+        message: "caller".to_owned(),
+        model: "gpt".to_owned(),
+        extra_information: "debug".to_owned(),
+        body: value(r#"{"message":[]}"#),
+        response: None,
+    };
+    let error = content_policy_error(&input);
+    assert!(error.message.ends_with("caller"));
 }
 
 #[test]
