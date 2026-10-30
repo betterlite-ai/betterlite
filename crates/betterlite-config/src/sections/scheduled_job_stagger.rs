@@ -58,13 +58,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        let fields = StaggerFields::default();
-        Self {
-            enabled: fields.enabled,
-            window_seconds: fields.window_seconds,
-            identity: fields.identity,
-            offsets: fields.offsets,
-        }
+        Self::from(StaggerFields::default())
     }
 }
 
