@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-error-passthrough
+call:
+  messages_errors:
+    action: transform
+    status: 401
+    raw_message: '{"type":"error","error":{"type":"vendor_error","message":"bad","code":"provider"}}'
+    request_id: req_new
+env: {}
+compare: {ignore: []}

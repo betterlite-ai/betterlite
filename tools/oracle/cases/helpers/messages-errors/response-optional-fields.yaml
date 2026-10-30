@@ -1,0 +1,8 @@
+kind: helper
+name: response-optional-fields
+call:
+  messages_errors:
+    action: wire_roundtrip
+    bytes: [123, 34, 116, 121, 112, 101, 34, 58, 34, 109, 101, 115, 115, 97, 103, 101, 34, 125]
+env: {}
+compare: {ignore: []}

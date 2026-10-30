@@ -1,0 +1,9 @@
+kind: helper
+name: provider-message-precedence
+call:
+  messages_errors:
+    action: transform
+    status: 500
+    raw_message: '{"detail":{"message":"inner"},"Message":"aws","message":"generic"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: status-bearing-error-frame
+call:
+  messages_errors: {action: frame, status: 429, raw_message: slow, call_id: call_a}
+env: {}
+compare: {ignore: []}
