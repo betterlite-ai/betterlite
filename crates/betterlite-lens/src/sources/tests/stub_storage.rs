@@ -30,6 +30,12 @@ impl StubStorage {
     }
 }
 
+fn record<T>(slot: &Mutex<Option<T>>, parameters: T) -> Result<(), StubError> {
+    slot.lock()
+        .map(|mut guard| *guard = Some(parameters))
+        .map_err(|_poison| StubError)
+}
+
 impl Storage for StubStorage {
     type Error = StubError;
 
@@ -51,44 +57,23 @@ impl Storage for StubStorage {
         &self,
         parameters: SampleParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        let recorded = self
-            .seen_sample
-            .lock()
-            .map(|mut seen| *seen = Some(parameters));
-        ready(
-            recorded
-                .map(|()| self.bytes.clone())
-                .map_err(|_poison| StubError),
-        )
+        let recorded = record(&self.seen_sample, parameters);
+        ready(recorded.map(|()| self.bytes.clone()))
     }
 
     fn lens_content(
         &self,
         parameters: ContentParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        let recorded = self
-            .seen_content
-            .lock()
-            .map(|mut seen| *seen = Some(parameters));
-        ready(
-            recorded
-                .map(|()| self.bytes.clone())
-                .map_err(|_poison| StubError),
-        )
+        let recorded = record(&self.seen_content, parameters);
+        ready(recorded.map(|()| self.bytes.clone()))
     }
 
     fn lens_evidence(
         &self,
         parameters: EvidenceParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        let recorded = self
-            .seen_evidence
-            .lock()
-            .map(|mut seen| *seen = Some(parameters));
-        ready(
-            recorded
-                .map(|()| self.bytes.clone())
-                .map_err(|_poison| StubError),
-        )
+        let recorded = record(&self.seen_evidence, parameters);
+        ready(recorded.map(|()| self.bytes.clone()))
     }
 }

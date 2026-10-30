@@ -1,6 +1,8 @@
+use serde::Serialize;
+
 use crate::models::settings::{MetadataFilter, Scope};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Parameters {
     pub all_teams: i64,
     pub team: String,
