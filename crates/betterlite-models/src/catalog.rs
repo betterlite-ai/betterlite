@@ -11,6 +11,12 @@ const MAX_CATALOG_DEPTH: usize = 64;
 const MAX_CATALOG_ENTRIES: usize = 10_000;
 const SAMPLE_SPEC: &str = "sample_spec";
 const FALLBACK_GENERALIZATIONS: &str = "fallback_generalizations";
+#[expect(
+    clippy::large_include_file,
+    reason = "The pinned bundled catalog must be embedded byte-for-byte"
+)]
+const BACKUP_ASSET: &[u8] =
+    include_bytes!("../fixtures/model_prices_and_context_window_backup.json");
 
 mod decoder;
 mod loader;
@@ -123,13 +129,7 @@ pub struct BundledCatalog<F = fn() -> Result<Vec<u8>, CatalogError>> {
 impl Default for BundledCatalog {
     fn default() -> Self {
         Self {
-            asset: || {
-                let mut bytes = Vec::new();
-                for part in BACKUP_PARTS {
-                    bytes.extend_from_slice(part);
-                }
-                Ok(bytes)
-            },
+            asset: || Ok(BACKUP_ASSET.to_vec()),
             cached: None,
         }
     }
@@ -147,12 +147,5 @@ impl<F: Fn() -> Result<Vec<u8>, CatalogError>> BundledCatalog<F> {
         Arc::clone(catalog)
     }
 }
-
-const BACKUP_PARTS: &[&[u8]] = &[
-    include_bytes!("../fixtures/model_prices_and_context_window_backup.part-aa"),
-    include_bytes!("../fixtures/model_prices_and_context_window_backup.part-ab"),
-    include_bytes!("../fixtures/model_prices_and_context_window_backup.part-ac"),
-    include_bytes!("../fixtures/model_prices_and_context_window_backup.part-ad"),
-];
 
 mod tests;
