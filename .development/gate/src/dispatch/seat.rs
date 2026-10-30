@@ -71,19 +71,20 @@ pub(crate) fn invoke(
         log: &log,
         prompt,
     };
-    run_on_seat(attempt.agents, runner, rung, &invocation)
+    run_on_seat(attempt.agents, runner, rung, seat, &invocation)
 }
 
 fn run_on_seat(
     agents: &Agents,
     runner: &Runner,
     rung: &Rung,
+    seat: Seat,
     invocation: &Invocation<'_>,
 ) -> Result<Run, GateError> {
     let account = vendor::find_vendor(agents, &runner.vendor)?;
-    let seat_lock = vendor::take_seat(invocation.git_common_dir, agents, account)?;
+    let seats = vendor::take_seat(invocation.git_common_dir, agents, account, seat)?;
     let answer = runner::run(runner, rung, invocation)?;
-    drop(seat_lock);
+    drop(seats);
     if let Some(text) = answer {
         return Ok(Run::Answer(text));
     }
