@@ -4,22 +4,20 @@ use std::collections::BTreeMap;
 
 use secrecy::ExposeSecret as _;
 
+use crate::loader::parse_view;
+use crate::sections::Section as _;
+
 #[test]
 fn cisco_config_loads_through_loader() {
-    let loader = crate::loader::ConfigLoader {
-        lookup: BTreeMap::new(),
-    };
-    let config = loader
-        .load(
-            "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: test-key\n",
-        )
+    // Parses only this section's own view, the way RawSections::parse does per section.
+    let (raw, _ignored) = parse_view::<super::Raw>(
+        "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: test-key\n",
+    )
+    .expect("Cisco section YAML must parse");
+    let settings = raw
+        .convert(&BTreeMap::new())
         .expect("Cisco configuration must load through the public loader");
-    let configured = config
-        .sections
-        .cisco_verdict_contracts
-        .guardrails
-        .first()
-        .expect("Cisco settings");
+    let configured = settings.guardrails.first().expect("Cisco settings");
     assert_eq!(configured.api_key.expose_secret(), "test-key");
     assert_eq!(configured.inspect_path, "/api/v1/inspect/chat");
 }
