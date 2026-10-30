@@ -289,3 +289,6 @@ impl From<Failure> for Box<HelperError> {
         })
     }
 }
+
+#[path = "blog_feed/tests.rs"]
+mod tests;
