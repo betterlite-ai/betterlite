@@ -1,31 +1,39 @@
 use url::Url;
 
-use super::{CliAuthContract, DISCOVERY_PATH, HTTP_TIMEOUT_SECONDS, Http, PkceFailure};
+use super::{
+    DISCOVERY_PATH, HTTP_TIMEOUT_SECONDS, Http,
+    models::{CliAuthContract, PkceFailure},
+};
 
-pub fn discover_cli_auth<H: Http>(
-    base_url: &str,
-    http: &H,
-) -> Result<CliAuthContract, PkceFailure> {
+pub fn discover_cli_auth<H>(base_url: &str, http: &H) -> Result<CliAuthContract, PkceFailure>
+where
+    H: Http,
+{
     let base = Url::parse(base_url)
-        .map_err(|error| PkceFailure::new(format!("invalid base URL: {error}")))?;
+        .map_err(|error| PkceFailure::new_owned(format!("invalid base URL: {error}")))?;
     let url = format!("{}{}", base.as_str().trim_end_matches('/'), DISCOVERY_PATH);
     let response = http.get(&url, HTTP_TIMEOUT_SECONDS)?;
     if response.status != 200 {
-        return Err(PkceFailure::new(format!(
+        return Err(PkceFailure::new_owned(format!(
             "discovery returned status {}",
             response.status
         )));
     }
     let contract: CliAuthContract = serde_json::from_slice(&response.body)
-        .map_err(|error| PkceFailure::new(format!("invalid discovery document: {error}")))?;
+        .map_err(|error| PkceFailure::new_owned(format!("invalid discovery document: {error}")))?;
+    validate_contract(&contract, base_url)?;
+    Ok(contract)
+}
+
+fn validate_contract(contract: &CliAuthContract, base_url: &str) -> Result<(), PkceFailure> {
     if contract.contract_version != 1 {
         return Err(PkceFailure::new("unsupported discovery contract version"));
     }
-    let supports_s256 = contract
+    if !contract
         .supported_methods
         .iter()
-        .any(|method| method == "S256");
-    if !supports_s256 {
+        .any(|method| method == "S256")
+    {
         return Err(PkceFailure::new("the proxy does not support PKCE S256"));
     }
     if canonical_url(&contract.issuer) != canonical_url(base_url) {
@@ -47,9 +55,10 @@ pub fn discover_cli_auth<H: Http>(
             ));
         }
     }
-    Ok(contract)
+    Ok(())
 }
 
+#[must_use]
 pub fn origin(value: &str) -> Option<String> {
     let parsed = Url::parse(value).ok()?;
     let scheme = parsed.scheme();

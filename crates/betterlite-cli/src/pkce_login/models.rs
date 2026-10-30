@@ -32,8 +32,15 @@ pub struct PkceFailure {
 }
 
 impl PkceFailure {
-    pub(crate) fn new(reason: impl Into<String>) -> Self {
-        let reason = reason.into();
+    pub(crate) fn new(reason: &str) -> Self {
+        let message = String::from(reason);
+        Self { reason: message }
+    }
+
+    pub(crate) const fn new_owned(reason: String) -> Self {
+        if reason.is_empty() {
+            return Self { reason };
+        }
         Self { reason }
     }
 }

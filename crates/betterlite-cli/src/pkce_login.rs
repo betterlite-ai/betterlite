@@ -1,18 +1,9 @@
-mod callback;
-mod discovery;
-mod models;
-mod oauth;
+pub mod callback;
+pub mod discovery;
+pub mod models;
+pub mod oauth;
 
-pub use callback::{CallbackError, LoopbackServer};
-pub use discovery::{discover_cli_auth, origin};
-pub use models::{
-    CallbackCode, CallbackDenied, CallbackOutcome, CliAuthContract, PkceCredential, PkceFailure,
-    RevocationUnavailable,
-};
-pub use oauth::{
-    RedeemCodeRequest, RefreshCredentialRequest, RevocationUnavailableOrFailure, authorize_url,
-    pkce_pair, redeem_code, refresh_credential, register_client, revoke_credential,
-};
+use models::PkceFailure;
 
 pub const CALLBACK_PATH: &str = "/callback";
 pub const DISCOVERY_PATH: &str = "/.well-known/litellm-cli-auth";
@@ -34,10 +25,10 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
+    #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
-        let headers = self.headers.iter();
+        let mut headers = self.headers.iter();
         headers
-            .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
     }

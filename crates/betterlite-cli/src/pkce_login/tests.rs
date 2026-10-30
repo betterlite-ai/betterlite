@@ -1,14 +1,20 @@
 #![cfg(test)]
 
-use std::io::{Read, Write};
+use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
-use std::sync::mpsc;
+use std::sync::mpsc::sync_channel;
 use std::thread;
+use std::time::Duration;
 
 use super::{
-    CallbackOutcome, CliAuthContract, Entropy, Http, HttpBody, HttpResponse, LoopbackServer,
-    PkceFailure, RedeemCodeRequest, discover_cli_auth, origin, pkce_pair, redeem_code,
-    register_client, revoke_credential,
+    Entropy, Http, HttpBody, HttpResponse,
+    callback::LoopbackServer,
+    discovery::{discover_cli_auth, origin},
+    models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
+    oauth::{
+        RedeemCodeRequest, RevocationUnavailableOrFailure, pkce_pair, redeem_code, register_client,
+        revoke_credential,
+    },
 };
 
 struct FixedEntropy;
@@ -61,7 +67,7 @@ fn redemption() -> RedeemCodeRequest {
 
 #[test]
 fn pkce_pair_has_64_byte_verifier_and_s256_challenge() {
-    let (verifier, challenge) = pkce_pair(&mut FixedEntropy()).expect("pair");
+    let (verifier, challenge) = pkce_pair(&mut FixedEntropy).expect("pair");
     assert_eq!(verifier.len(), 86);
     assert_eq!(challenge, "d-tPkxk37XPMxus_-J6yZXGjoN4TOADR8GPQl-whssA");
 }
@@ -88,34 +94,38 @@ fn discover_rejects_foreign_endpoint() {
         body: serde_json::to_vec(&value).expect("json"),
     };
     let result = discover_cli_auth("https://example.test", &ScriptedHttp { response });
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[test]
 fn callback_validation_waits_for_matching_state() {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = sync_channel(1);
     let mut server = LoopbackServer::bind("state").expect("bind");
     let address = server.local_addr();
-    thread::spawn(move || {
-        let mut stream = TcpStream::connect(address).expect("connect");
-        stream
-            .write_all(b"GET /callback?state=wrong&code=bad HTTP/1.1\r\nHost: localhost\r\n\r\n")
-            .expect("write");
-        let mut response = [0; 256];
-        let size = stream.read(&mut response).expect("read");
-        sender.send(size).expect("send");
-        let mut stream = TcpStream::connect(address).expect("connect");
-        stream
-            .write_all(b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n")
-            .expect("write");
+    let outcome = thread::scope(|scope| {
+        scope.spawn(move || {
+            let mut stream = TcpStream::connect(address).expect("connect");
+            stream
+                .write_all(
+                    b"GET /callback?state=wrong&code=bad HTTP/1.1\r\nHost: localhost\r\n\r\n",
+                )
+                .expect("write");
+            let mut response = [0; 256];
+            let size = stream.read(&mut response).expect("read");
+            sender.send(size).expect("send");
+            let mut next_stream = TcpStream::connect(address).expect("connect");
+            next_stream
+                .write_all(
+                    b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n",
+                )
+                .expect("write");
+        });
+        server.wait(Duration::from_secs(2)).expect("outcome")
     });
-    let outcome = server
-        .wait(std::time::Duration::from_secs(2))
-        .expect("outcome");
     assert!(receiver.recv().expect("response") > 0);
     assert_eq!(
         outcome,
-        CallbackOutcome::Code(super::CallbackCode {
+        CallbackOutcome::Code(CallbackCode {
             code: "good".to_owned()
         })
     );
@@ -165,7 +175,7 @@ fn revoke_503_is_unavailable() {
     };
     assert!(matches!(
         revoke_credential(&contract(), "client", "refresh", &ScriptedHttp { response }),
-        Err(super::RevocationUnavailableOrFailure::Unavailable(_))
+        Err(RevocationUnavailableOrFailure::Unavailable(_))
     ));
 }
 
@@ -176,7 +186,7 @@ fn expires_rejects_non_positive_lifetime() {
         headers: Vec::new(),
         body: br#"{"access_token":"access","expires_in":0,"refresh_token":"refresh"}"#.to_vec(),
     };
-    assert!(redeem_code(&contract(), &redemption(), &ScriptedHttp { response }, 100,).is_err());
+    redeem_code(&contract(), &redemption(), &ScriptedHttp { response }, 100).unwrap_err();
 }
 
 #[test]
@@ -199,5 +209,5 @@ fn http_timeout_is_passed_to_transport() {
         body: serde_json::to_vec(&contract()).expect("json"),
     };
     let result = discover_cli_auth("https://example.test", &ScriptedHttp { response });
-    assert!(result.is_ok());
+    result.unwrap();
 }
