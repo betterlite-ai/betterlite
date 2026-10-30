@@ -1,0 +1,5 @@
+kind: helper
+name: threshold-cost-extensions
+call: {model_metadata_projection: {key: fixture/model, model: fixture/model, provider: fixture, entry: {input_cost_per_token_above_999k_tokens: null, output_cost_per_token_above_512k_tokens: 1, input_cost_per_token_above_999_tokens_priority: 2, ordinary: ignored}}}
+env: {}
+compare: {ignore: []}

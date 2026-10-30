@@ -1,0 +1,5 @@
+kind: helper
+name: model-metadata-projection-threshold
+call: {model_metadata_projection: {key: fixture/model, model: fixture/model, provider: fixture, entry: {input_cost_per_token_above_999k_tokens: null}}}
+env: {}
+compare: {ignore: []}

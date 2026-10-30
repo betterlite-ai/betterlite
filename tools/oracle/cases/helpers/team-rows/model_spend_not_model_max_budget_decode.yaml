@@ -1,0 +1,9 @@
+kind: helper
+name: model_spend_not_model_max_budget_decode
+call:
+  team_rows:
+    calls:
+      - {"name":"model_spend_not_model_max_budget_decode","operation":"team","row":{"team_id":"t","model_spend":"{}"}}
+      - {"name":"model_spend_not_model_max_budget_decode","operation":"team","row":{"team_id":"t","model_max_budget":"{}"}}
+env: {}
+compare: {ignore: []}

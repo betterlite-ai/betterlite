@@ -1,0 +1,16 @@
+task: B178
+deviations:
+  - what: >-
+      fancy-regex accepts some constructs that Python 3.13 rejects, including an inline flag after the start,
+      \G, and stacked repeats such as a{1,2}{3}; these patterns are retained.
+    why: >-
+      The task pins fancy-regex 0.19.2 as the Rust approximation of Python regex syntax while retaining the
+      explicit \p, \P and \z rejections.
+    link: https://docs.python.org/3.13/library/re.html
+  - what: >-
+      Schema flattening preserves the original schema when its cumulative work exceeds 100,000 nodes
+      or its estimated cumulative output exceeds 1,000,000 bytes.
+    why: >-
+      The task requires explicit output and work limits in addition to LiteLLM's reference memoization
+      and depth limit, so expansion bombs cannot grow normalization work without a cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1241-L1285

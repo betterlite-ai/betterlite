@@ -1,14 +1,14 @@
 id: B1668
 milestone: M4 keys, spend and management
 title: Normalize transcription and Interactions usage for billing
-status: todo
+status: done
 depends_on: [B171, B204]
 file: tasks/B1668-cost-usage-projection.yaml
 covers:
   - "litellm/litellm_core_utils/llm_cost_calc/usage_object_transformation.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 350
