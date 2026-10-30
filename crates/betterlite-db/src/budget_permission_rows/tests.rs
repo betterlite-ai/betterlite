@@ -6,13 +6,25 @@ use super::{
 };
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, Utc};
+use clap::Parser;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::fs;
 use std::path::PathBuf;
 use tokio::task::JoinSet;
+
+#[derive(Parser)]
+struct Environment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    url: Option<String>,
+}
+
+fn postgres_test_url() -> Option<SecretString> {
+    let environment = Environment::parse_from(["postgres-tests"]);
+    environment.url.map(SecretString::from)
+}
 
 fn budget(value: &str) -> LiteLLMBudgetTable {
     serde_json::from_str(value).expect("valid budget")
@@ -303,7 +315,8 @@ fn replays_the_budget_permission_rows_corpus(
 
 #[tokio::test]
 async fn postgres_budget_decimal_roundtrip() {
-    let fixture = PostgresFixture::provision_schema(None)
+    let url = postgres_test_url();
+    let fixture = PostgresFixture::provision_schema(url.as_ref())
         .resolve()
         .await
         .unwrap();
@@ -320,9 +333,8 @@ async fn postgres_budget_decimal_roundtrip() {
         .await
         .unwrap();
     let row = budget(r#"{"max_budget":12.5}"#);
-    let value = row.max_budget.unwrap().to_f64().unwrap();
     client
-        .execute(r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by) VALUES ('b', $1, 'test', 'test')"#, &[&value])
+        .execute(r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by) VALUES ('b', $1, 'test', 'test')"#, &[&row.max_budget.as_ref().unwrap().to_f64().unwrap()])
         .await
         .unwrap();
     let read: f64 = client
@@ -347,7 +359,8 @@ async fn postgres_budget_decimal_roundtrip() {
 
 #[tokio::test]
 async fn postgres_permission_null_vs_empty() {
-    let fixture = PostgresFixture::provision_schema(None)
+    let url = postgres_test_url();
+    let fixture = PostgresFixture::provision_schema(url.as_ref())
         .resolve()
         .await
         .unwrap();
