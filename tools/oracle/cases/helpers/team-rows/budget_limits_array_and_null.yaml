@@ -1,0 +1,11 @@
+kind: helper
+name: budget_limits_array_and_null
+call:
+  team_rows:
+    calls:
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":"[{\"budget_duration\":\"x\",\"max_budget\":-1}]"}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":"null"}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":null}}
+      - {"name":"budget_limits_array_and_null","operation":"team","row":{"team_id":"t","budget_limits":"{}"}}
+env: {}
+compare: {ignore: []}

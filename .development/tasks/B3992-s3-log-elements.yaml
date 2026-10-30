@@ -48,7 +48,7 @@ checks:
   commands:
     - id: s3-params-tests
       why: Parameter coercion, caching and event construction depend on type safety and immutability.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::/)' -- --test-threads=1
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::/)'
     - id: s3-params-oracle
       why: Oracle cases verify parameter precedence and event structure match LiteLLM behavior.
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'

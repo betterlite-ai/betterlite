@@ -99,6 +99,17 @@ impl ChatDeployment {
             provider,
         })
     }
+
+    pub fn endpoint_for(&self, resource: &str) -> Result<Url, DeploymentError> {
+        let mut url = endpoint(&self.api_base, &self.model_group)?;
+        let path = format!(
+            "{}/{}",
+            url.path().trim_end_matches("/chat/completions"),
+            resource
+        );
+        url.set_path(&path);
+        Ok(url)
+    }
 }
 
 fn timeout(
