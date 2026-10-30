@@ -393,6 +393,7 @@ fn replays_the_cached_json_corpus() {
         let expected = match entry.file_name().to_str().unwrap() {
             "valid" => CacheValue::Boolean(false),
             "boundary" => CacheValue::Null,
+            "invalid-utf8" => CacheValue::Bytes(bytes.clone()),
             "malformed" | "truncated" => {
                 CacheValue::Text(String::from_utf8(bytes.clone()).unwrap())
             }
@@ -416,7 +417,12 @@ fn projects_stored_json(#[case] text: &str, #[case] expected: CacheValue) {
     cache
         .set("bytes", CacheValue::Bytes(text.as_bytes().to_vec()), None)
         .unwrap();
-    assert_eq!(cache.get("bytes").unwrap(), Some(expected));
+    let byte_expected = if text == "bad" {
+        CacheValue::Bytes(text.as_bytes().to_vec())
+    } else {
+        expected
+    };
+    assert_eq!(cache.get("bytes").unwrap(), Some(byte_expected));
 }
 
 #[test]

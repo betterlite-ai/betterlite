@@ -154,7 +154,14 @@ impl LocalTtlCache {
         }
         Ok(match self.values.get(key) {
             Some(CacheValue::Text(text)) => Some(decode_cached_json(text.as_bytes())),
-            Some(CacheValue::Bytes(bytes)) => Some(decode_cached_json(bytes)),
+            Some(CacheValue::Bytes(bytes)) => {
+                let decoded = decode_cached_json(bytes);
+                if matches!(&decoded, CacheValue::Text(text) if text.as_bytes() == bytes) {
+                    Some(CacheValue::Bytes(bytes.clone()))
+                } else {
+                    Some(decoded)
+                }
+            }
             value => value.cloned(),
         })
     }
@@ -218,17 +225,8 @@ pub fn decode_cached_json(bytes: &[u8]) -> CacheValue {
     }
     let parsed = serde_json::from_slice(bytes);
     parsed.unwrap_or_else(|_| {
-        String::from_utf8(bytes.to_vec()).map_or_else(
-            |_| {
-                CacheValue::Array(
-                    bytes
-                        .iter()
-                        .map(|byte| CacheValue::Integer(i64::from(*byte)))
-                        .collect(),
-                )
-            },
-            CacheValue::Text,
-        )
+        String::from_utf8(bytes.to_vec())
+            .map_or_else(|_| CacheValue::Bytes(bytes.to_vec()), CacheValue::Text)
     })
 }
 
