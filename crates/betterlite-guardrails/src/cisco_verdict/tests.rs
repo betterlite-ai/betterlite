@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::cisco_conversation::json::Json;
+use crate::cisco_verdict::Action;
 
 #[test]
 fn cisco_verdict_unwraps_nested_result() {
@@ -12,7 +13,10 @@ fn cisco_verdict_unwraps_nested_result() {
 fn cisco_verdict_ignores_empty_nested_match() {
     let value =
         super::unwrap_verdict_envelope(&Json::parse(r#"{"result":{},"data":{"action":"allow"}}"#));
-    assert_eq!(super::normalize_action(&value_action(&value)), "allow");
+    assert_eq!(
+        super::normalize_action(&value_action(&value)),
+        Action::Allow
+    );
 }
 
 fn value_action(value: &Json) -> String {
@@ -29,21 +33,33 @@ fn value_action(value: &Json) -> String {
 
 #[test]
 fn cisco_verdict_normalizes_actions() {
-    assert_eq!(super::normalize_action(" DENIED "), "block");
-    assert_eq!(super::normalize_action("sanitized"), "redact");
-    assert_eq!(super::normalize_action("SAFE"), "allow");
+    assert_eq!(super::normalize_action(" DENIED "), Action::Block);
+    assert_eq!(super::normalize_action("sanitized"), Action::Redact);
+    assert_eq!(super::normalize_action("SAFE"), Action::Allow);
 }
 
 #[test]
-fn cisco_verdict_extracts_rewrites_and_errors() {
+fn cisco_verdict_ignores_data_nested_sanitized_text() {
     let value = Json::parse(r#"{"data":{"sanitizedText":"clean","error":{"code":1}}}"#);
+    assert_eq!(super::extract_sanitized_text(&value), None);
+    assert!(super::extract_jsonrpc_error(&value).is_none());
+    let error = Json::parse(r#"{"result":{"error":{"code":2}}}"#);
+    assert!(super::extract_jsonrpc_error(&error).is_some());
+}
+
+#[test]
+fn cisco_verdict_extracts_sanitized_text_from_result() {
+    let value = Json::parse(r#"{"result":{"sanitizedText":"clean"}}"#);
     assert_eq!(
         super::extract_sanitized_text(&value).as_deref(),
         Some("clean")
     );
-    assert!(super::extract_jsonrpc_error(&value).is_none());
-    let error = Json::parse(r#"{"result":{"error":{"code":2}}}"#);
-    assert!(super::extract_jsonrpc_error(&error).is_some());
+}
+
+#[test]
+fn cisco_verdict_ignores_direct_arguments_outside_payload() {
+    let value = Json::parse(r#"{"arguments":{"q":"x"}}"#);
+    assert!(super::extract_mcp_args(&value).is_none());
 }
 
 #[test]

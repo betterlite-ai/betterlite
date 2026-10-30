@@ -62,7 +62,26 @@ pub fn unwrap_verdict_envelope(response: &Json) -> Json {
     response.clone()
 }
 
-pub fn normalize_action(raw_action: &str) -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Block,
+    Redact,
+    Allow,
+}
+
+impl Action {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+            Self::Redact => "redact",
+            Self::Allow => "allow",
+        }
+    }
+}
+
+#[must_use]
+pub fn normalize_action(raw_action: &str) -> Action {
     let normalized = raw_action.trim().to_ascii_lowercase();
     if [
         "deny",
@@ -76,19 +95,19 @@ pub fn normalize_action(raw_action: &str) -> String {
     ]
     .contains(&normalized.as_str())
     {
-        return "block".to_owned();
+        return Action::Block;
     }
     if ["redact", "redacted", "sanitize", "sanitized", "mask"].contains(&normalized.as_str()) {
-        return "redact".to_owned();
+        return Action::Redact;
     }
     if ["allow", "allowed", "safe", "ok"].contains(&normalized.as_str()) {
-        return "allow".to_owned();
+        return Action::Allow;
     }
     tracing::warn!(
         action = raw_action,
         "unrecognized Cisco AI Defense action; treating as block"
     );
-    "block".to_owned()
+    Action::Block
 }
 
 #[must_use]
@@ -111,10 +130,16 @@ pub fn extract_jsonrpc_error(response: &Json) -> Option<Json> {
 
 #[must_use]
 pub fn extract_sanitized_text(response: &Json) -> Option<String> {
-    let response_containers = containers(response);
-    response_containers
-        .into_iter()
-        .find_map(|container| text_in(&container))
+    let Json::Object(fields) = response else {
+        return None;
+    };
+    if let Some(text) = text_in(fields) {
+        return Some(text);
+    }
+    if let Json::Object(result) = Json::field(fields, "result") {
+        return text_in(&result);
+    }
+    None
 }
 
 #[must_use]
@@ -170,13 +195,10 @@ fn arguments_in(container: &Fields) -> Option<Fields> {
     if let Some(arguments) = nested_arguments(container, "params") {
         return Some(arguments);
     }
-    if let Some(arguments) = payload_objects(container).into_iter().find_map(|payload| {
+    payload_objects(container).into_iter().find_map(|payload| {
         nested_arguments(&payload, "params")
             .or_else(|| non_empty_object(&Json::field(&payload, "arguments")))
-    }) {
-        return Some(arguments);
-    }
-    non_empty_object(&Json::field(container, "arguments"))
+    })
 }
 
 fn payload_objects(container: &Fields) -> Vec<Fields> {
