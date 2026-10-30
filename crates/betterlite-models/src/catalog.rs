@@ -170,7 +170,7 @@ fn build_catalog(
     let mut entries = BTreeMap::new();
     let mut lookup = BTreeMap::new();
     let mut warnings = Vec::new();
-    let mut generalizations = CatalogGeneralizations::default();
+    let (mut generalizations, mut alias_claims) = (CatalogGeneralizations::default(), Vec::new());
     for (name, value) in raw {
         if name == SAMPLE_SPEC {
             continue;
@@ -180,7 +180,6 @@ fn build_catalog(
             continue;
         }
         let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
-        let aliases = aliases(&name, &fields_map, &mut warnings);
         let typed_value = without_aliases(&fields_map)?;
         let fields = parse_fields(&name, typed_value.as_ref(), strict, &mut warnings)?;
         let prices =
@@ -197,9 +196,10 @@ fn build_catalog(
             },
         );
         insert_lookup(&mut lookup, &name, &name, &mut warnings);
-        for alias in aliases {
-            insert_lookup(&mut lookup, &alias, &name, &mut warnings);
-        }
+        add_alias_claims(&name, &fields_map, &mut warnings, &mut alias_claims);
+    }
+    for (alias, canonical) in alias_claims {
+        insert_lookup(&mut lookup, &alias, &canonical, &mut warnings);
     }
     Ok(CatalogParts {
         entries,
@@ -207,6 +207,16 @@ fn build_catalog(
         generalizations,
         warnings,
     })
+}
+
+fn add_alias_claims(
+    name: &str,
+    fields: &BTreeMap<String, Box<RawValue>>,
+    warnings: &mut Vec<String>,
+    claims: &mut Vec<(String, String)>,
+) {
+    let aliases = aliases(name, fields, warnings);
+    claims.extend(aliases.into_iter().map(|alias| (alias, name.to_owned())));
 }
 
 fn install_generalizations(
