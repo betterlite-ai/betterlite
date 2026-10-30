@@ -13,7 +13,7 @@ pub enum Scalar {
     Number(serde_json::Number),
     Text(String),
     Array(Vec<IgnoredAny>),
-    Object(BTreeMap<String, IgnoredAny>),
+    Object(BTreeMap<String, Option<IgnoredAny>>),
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
