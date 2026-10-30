@@ -60,3 +60,38 @@ fn error_facts_behavior_tests_behavior_proxy_reconstructs_empty_response_headers
     let text = "a".repeat(16 * 1024 + 1);
     assert_eq!(bounded_text(&text).len(), 16 * 1024);
 }
+
+#[test]
+fn error_facts_behavior_tests_behavior_proxy_keeps_non_proxy_empty_headers() {
+    let facts = ProviderErrorFacts {
+        status_code: Some(502),
+        ..ProviderErrorFacts::empty()
+    };
+    assert_eq!(
+        litellm_proxy_response(&facts, "openai").map(|response| response.status_code),
+        Some(502)
+    );
+}
+
+#[test]
+fn error_facts_behavior_tests_behavior_body_boundaries_are_inclusive() {
+    let empty = ProviderErrorBody {
+        message: Some(String::new()),
+        error: None,
+        code: None,
+    };
+    let overhead = serde_json::to_vec(&empty).unwrap().len();
+    let body = ProviderErrorBody {
+        message: Some("a".repeat(MAX_BODY_BYTES - overhead)),
+        error: None,
+        code: None,
+    };
+    assert_eq!(serde_json::to_vec(&body).unwrap().len(), MAX_BODY_BYTES);
+    assert!(bounded_body(&body).is_some());
+    let oversized = ProviderErrorBody {
+        message: Some(format!("{}a", body.message.unwrap_or_default())),
+        error: None,
+        code: None,
+    };
+    assert!(bounded_body(&oversized).is_none());
+}

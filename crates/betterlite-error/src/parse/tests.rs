@@ -43,6 +43,64 @@ fn error_facts_behavior_tests_behavior_preserves_header_precedence() {
     );
 }
 
+#[test]
+fn error_facts_behavior_tests_behavior_empty_headers_fall_through() {
+    let facts = ProviderErrorFacts {
+        headers: Some(BTreeMap::new()),
+        response_headers: Some(BTreeMap::from([(String::from("a"), String::from("two"))])),
+        litellm_response_headers: Some(BTreeMap::from([(
+            String::from("a"),
+            String::from("three"),
+        )])),
+        ..ProviderErrorFacts::empty()
+    };
+    assert_eq!(
+        get_response_headers(&facts).and_then(|headers| headers.get("a").cloned()),
+        Some(String::from("two"))
+    );
+    let only_empty = ProviderErrorFacts {
+        headers: Some(BTreeMap::new()),
+        response_headers: Some(BTreeMap::new()),
+        litellm_response_headers: Some(BTreeMap::new()),
+        ..ProviderErrorFacts::empty()
+    };
+    assert_eq!(get_response_headers(&only_empty), None);
+}
+
+#[test]
+fn error_facts_behavior_tests_behavior_accepts_only_exception_body_kwargs() {
+    let candidates = BTreeMap::from([
+        (
+            String::from("response"),
+            ProviderErrorBody {
+                message: None,
+                error: None,
+                code: None,
+            },
+        ),
+        (
+            String::from("body"),
+            ProviderErrorBody {
+                message: None,
+                error: None,
+                code: None,
+            },
+        ),
+        (
+            String::from("message"),
+            ProviderErrorBody {
+                message: None,
+                error: None,
+                code: None,
+            },
+        ),
+    ]);
+    let accepted = accepted_init_kwargs(&candidates);
+    assert_eq!(accepted.len(), 2);
+    assert!(accepted.contains_key("response"));
+    assert!(accepted.contains_key("body"));
+}
+
 #[rstest]
 #[case::numeric("{\"error\":{\"code\":429}}", Some(429))]
 #[case::string("{\"error\":{\"code\":\"429\"}}", Some(429))]
@@ -89,6 +147,21 @@ fn error_facts_behavior_tests_behavior_parser_bounds_input() {
     body.extend(repeat_n(b' ', padding));
     assert_eq!(body.len(), 64 * 1024);
     drop(parse_provider_error(&body).unwrap());
+}
+
+#[test]
+fn error_facts_behavior_tests_behavior_extracts_all_facts() {
+    let facts = extract_facts(br#"{"message":"provider failed"}"#, Some(502));
+    assert_eq!(facts.status_code, Some(502));
+    assert!(!facts.status_code_is_synthesized);
+    assert_eq!(facts.message.as_deref(), Some("provider failed"));
+    assert_eq!(
+        facts.body.and_then(|body| body.message),
+        Some(String::from("provider failed"))
+    );
+    let synthesized = extract_facts(br#"{"message":"provider failed"}"#, None);
+    assert_eq!(synthesized.status_code, None);
+    assert!(synthesized.status_code_is_synthesized);
 }
 
 #[test]
