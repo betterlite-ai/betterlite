@@ -16,7 +16,17 @@ use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use super::{EmbeddingError, EmbeddingInput, EmbeddingRequest, EncodingFormat, servable};
+use super::{
+    EmbeddingError, EmbeddingInput, EmbeddingRequest, EmbeddingVector, EncodingFormat, servable,
+};
+
+#[test]
+fn parses_embedding_response_vectors() {
+    let floats: EmbeddingVector = serde_json::from_str("[0.1,0.2]").expect("float vector");
+    let base64: EmbeddingVector = serde_json::from_str("\"AQID\"").expect("base64 vector");
+    assert!(matches!(floats, EmbeddingVector::Floats(values) if values.len() == 2));
+    assert!(matches!(base64, EmbeddingVector::Base64(value) if value == "AQID"));
+}
 
 #[test]
 fn parses_embedding_string_input() {

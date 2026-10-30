@@ -1,5 +1,2 @@
 task: B006
-deviations:
-  - what: Embedding upstream failures use a generic invalid_request_error classification and shared chat failure headers rather than LiteLLM's detailed provider error-body classification.
-    why: The existing B004 classifier is private to ChatError and was not generalized within this task.
-    link: ""
+deviations: []

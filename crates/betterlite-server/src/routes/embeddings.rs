@@ -6,6 +6,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::provider_error::{ProviderFailure, classify};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
 use serde::Serialize;
 use std::str;
@@ -92,17 +93,7 @@ async fn embeddings(
 }
 
 fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeployment>) -> Response {
-    let (status, error_type) = match error {
-        EmbeddingError::Provider { response } => (response.status, "invalid_request_error"),
-        EmbeddingError::UnknownModel { .. } | EmbeddingError::Body { .. } => {
-            (400, "invalid_request_error")
-        }
-        EmbeddingError::MissingApiKey => (401, "authentication_error"),
-        EmbeddingError::UnsupportedProvider { .. } => (501, "internal_server_error"),
-        EmbeddingError::Http { .. }
-        | EmbeddingError::Decode { .. }
-        | EmbeddingError::Encode { .. } => (500, "internal_server_error"),
-    };
+    let failure = embedding_failure(error);
     let message = match error {
         EmbeddingError::Provider { response } => {
             provider_message(response.status, &response.body, error)
@@ -113,19 +104,50 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
         | EmbeddingError::Http { .. }
         | EmbeddingError::UnknownModel { .. }
         | EmbeddingError::UnsupportedProvider { .. }
-        | EmbeddingError::MissingApiKey => error.to_string(),
+        | EmbeddingError::MissingApiKey
+        | EmbeddingError::Endpoint { .. } => error.to_string(),
     };
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: error_type.to_owned(),
-            param: None,
-            code: status.to_string(),
+            error_type: failure.error_type,
+            param: failure.param,
+            code: failure.status.to_string(),
         },
     };
     let response_headers = failure_headers_for_embedding(error, call_id, deployment);
-    let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let status_code =
+        StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (status_code, response_headers, Json(body)).into_response()
+}
+
+fn embedding_failure(error: &EmbeddingError) -> ProviderFailure {
+    match error {
+        EmbeddingError::Provider { response } => classify(response.status, &response.body),
+        EmbeddingError::UnknownModel { .. } | EmbeddingError::Body { .. } => ProviderFailure {
+            status: 400,
+            error_type: String::from("invalid_request_error"),
+            param: None,
+        },
+        EmbeddingError::MissingApiKey => ProviderFailure {
+            status: 401,
+            error_type: String::from("authentication_error"),
+            param: None,
+        },
+        EmbeddingError::UnsupportedProvider { .. } => ProviderFailure {
+            status: 501,
+            error_type: String::from("internal_server_error"),
+            param: None,
+        },
+        EmbeddingError::Http { .. }
+        | EmbeddingError::Decode { .. }
+        | EmbeddingError::Encode { .. }
+        | EmbeddingError::Endpoint { .. } => ProviderFailure {
+            status: 500,
+            error_type: String::from("internal_server_error"),
+            param: None,
+        },
+    }
 }
 
 fn failure_headers_for_embedding(
@@ -143,7 +165,8 @@ fn failure_headers_for_embedding(
         | EmbeddingError::Http { .. }
         | EmbeddingError::UnknownModel { .. }
         | EmbeddingError::UnsupportedProvider { .. }
-        | EmbeddingError::MissingApiKey => {
+        | EmbeddingError::MissingApiKey
+        | EmbeddingError::Endpoint { .. } => {
             let chat_error = ChatError::UnknownModel {
                 model: String::new(),
             };

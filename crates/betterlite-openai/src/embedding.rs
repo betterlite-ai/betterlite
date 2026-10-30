@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::chat::deployment::{ChatDeployment, Provider};
+use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
 use crate::chat::execution::ChatExecutor;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -53,8 +53,15 @@ pub struct EmbeddingResponse {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EmbeddingRecord {
     pub object: String,
-    pub embedding: Value,
+    pub embedding: EmbeddingVector,
     pub index: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum EmbeddingVector {
+    Base64(String),
+    Floats(Vec<serde_json::Number>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -99,6 +106,11 @@ pub enum EmbeddingError {
     Decode {
         #[source]
         source: serde_json::Error,
+    },
+    #[error("the embeddings endpoint could not be built: {source}")]
+    Endpoint {
+        #[source]
+        source: DeploymentError,
     },
     #[error("the provider could not be reached: {source}")]
     Http {
@@ -186,9 +198,7 @@ fn post<'key>(
     object.insert(String::from("model"), Value::String(model.to_owned()));
     let url = deployment
         .endpoint_for("embeddings")
-        .map_err(|source| EmbeddingError::Encode {
-            source: serde_json::Error::io(io::Error::other(source.to_string())),
-        })?;
+        .map_err(|source| EmbeddingError::Endpoint { source })?;
     let body_bytes =
         serde_json::to_vec(&body).map_err(|source| EmbeddingError::Encode { source })?;
     Ok(JsonPost {

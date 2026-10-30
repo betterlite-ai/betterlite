@@ -40,10 +40,7 @@ impl ChatError {
             }
             Self::MissingApiKey => failure(401, Fields::Fallback, None),
             Self::Timeout { .. } => failure(408, Fields::Fallback, None),
-            Self::Provider { response } => classify(
-                response.status,
-                str::from_utf8(&response.body).unwrap_or_default(),
-            ),
+            Self::Provider { response } => classify(response.status, &response.body),
             Self::Http { .. } | Self::Encode { .. } | Self::Decode { .. } | Self::TooLarge => {
                 failure(500, Fields::Fallback, None)
             }
@@ -51,10 +48,12 @@ impl ChatError {
     }
 }
 
-fn classify(status: u16, body: &str) -> ProviderFailure {
+#[must_use]
+pub fn classify(status: u16, body: &[u8]) -> ProviderFailure {
+    let decoded_body = str::from_utf8(body).unwrap_or_default();
     let (code, fields, keeps_param) =
-        text_rule(status, body).unwrap_or_else(|| status_rule(status));
-    failure(code, fields, keeps_param.then_some(body))
+        text_rule(status, decoded_body).unwrap_or_else(|| status_rule(status));
+    failure(code, fields, keeps_param.then_some(decoded_body))
 }
 
 // LiteLLM checks the provider's error text before its status, in this order, so every 429 is a throttling_error

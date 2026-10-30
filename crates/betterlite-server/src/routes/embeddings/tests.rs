@@ -14,6 +14,18 @@ use tower::ServiceExt as _;
 use super::{EmbeddingError, embedding_routes, failure};
 use crate::server::chat_setup::chat_executor;
 
+#[derive(serde::Deserialize)]
+struct ErrorEnvelope {
+    error: ErrorFields,
+}
+
+#[derive(serde::Deserialize)]
+struct ErrorFields {
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+}
+
 #[test]
 fn embedding_failure_returns_bad_request() {
     let error = EmbeddingError::Body {
@@ -31,9 +43,9 @@ fn embedding_failure_returns_bad_request() {
 async fn embedding_provider_failure_preserves_message() {
     let error = EmbeddingError::Provider {
         response: Box::new(UpstreamResponse {
-            status: 400,
+            status: 429,
             headers: HeaderMap::new(),
-            body: br#"{"error":{"message":"upstream bad","type":"invalid_request_error"}}"#
+            body: br#"{"error":{"message":"upstream bad","type":"requests","param":"input"}}"#
                 .to_vec(),
         }),
     };
@@ -42,6 +54,9 @@ async fn embedding_provider_failure_preserves_message() {
         .await
         .expect("error body");
     assert!(body.windows(12).any(|window| window == b"upstream bad"));
+    let parsed: ErrorEnvelope = serde_json::from_slice(&body).expect("error JSON");
+    assert_eq!(parsed.error.error_type, "throttling_error");
+    assert_eq!(parsed.error.param.as_deref(), Some("input"));
 }
 
 #[tokio::test]

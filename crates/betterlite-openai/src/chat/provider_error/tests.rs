@@ -184,7 +184,7 @@ fn maps_provider_errors_like_litellm(
     #[case] param: Option<&str>,
 ) {
     assert_eq!(
-        classify(status, body),
+        classify(status, body.as_bytes()),
         expected(mapped_status, error_type, param)
     );
 }
