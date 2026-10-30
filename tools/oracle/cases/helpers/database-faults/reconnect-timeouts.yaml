@@ -1,0 +1,13 @@
+kind: helper
+name: database-faults-reconnect-timeouts
+call:
+  database_faults:
+    error:
+      error_type: connection
+      message: ""
+      code: null
+      meta_code: null
+      traceback_modules: []
+env: {}
+compare:
+  ignore: []

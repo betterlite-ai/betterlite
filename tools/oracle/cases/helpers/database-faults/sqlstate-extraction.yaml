@@ -1,0 +1,13 @@
+kind: helper
+name: database-faults-sqlstate
+call:
+  database_faults:
+    error:
+      error_type: data
+      message: 'PostgresError { code: "40001" }'
+      code: null
+      meta_code: null
+      traceback_modules: []
+env: {}
+compare:
+  ignore: []
