@@ -8,6 +8,8 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ClientConfig, RootCertStore};
 use thiserror::Error;
 
+mod tests;
+
 #[derive(Debug, Error)]
 pub enum TlsError {
     #[error("could not read PEM from {}: {source}", path.display())]
