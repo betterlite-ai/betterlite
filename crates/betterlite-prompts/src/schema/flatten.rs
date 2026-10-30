@@ -284,3 +284,5 @@ fn is_object_schema(schema: &Object) -> bool {
         |value| value.as_str() == Some("object"),
     )
 }
+
+mod tests;

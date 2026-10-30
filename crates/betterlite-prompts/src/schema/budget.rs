@@ -51,3 +51,5 @@ fn estimated_object_bytes(object: &Object) -> usize {
     }
     total
 }
+
+mod tests;
