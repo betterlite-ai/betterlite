@@ -32,7 +32,7 @@ pub enum TeamRowError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "row", rename_all = "snake_case")]
 pub enum TeamRow {
     MemberBase(MemberBase),

@@ -13,6 +13,7 @@ pub struct MemberBase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "JsonData")]
 pub struct Member {
     #[serde(flatten)]
     pub base: MemberBase,
@@ -60,4 +61,20 @@ impl TryFrom<JsonData> for MemberBase {
 struct Identity {
     user_id: Option<String>,
     user_email: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MemberInput {
+    role: MemberRole,
+}
+impl TryFrom<JsonData> for Member {
+    type Error = TeamRowError;
+    fn try_from(value: JsonData) -> Result<Self, Self::Error> {
+        let base = MemberBase::try_from(value.clone())?;
+        let input: MemberInput = super::decoder::convert(&value)?;
+        Ok(Self {
+            base,
+            role: input.role,
+        })
+    }
 }

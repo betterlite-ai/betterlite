@@ -5,5 +5,6 @@ call:
     calls:
       - {"name":"member_missing_and_null_identity_error","operation":"member_base","row":{}}
       - {"name":"member_missing_and_null_identity_error","operation":"member_base","row":{"user_id":null,"user_email":null}}
+      - {"name":"member_missing_and_null_identity_error","operation":"member","row":{}}
 env: {}
 compare: {ignore: []}

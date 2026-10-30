@@ -22,5 +22,6 @@ call:
       - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{"budget_duration":"x"}}
       - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{"max_budget":1}}
       - {"name":"budget_window_required_fields_and_no_duration_policy","operation":"budget_limit","row":{"budget_duration":"nonsense","max_budget":-1.5}}
+      - {"name":"member_missing_and_null_identity_error","operation":"member","row":{}}
 env: {}
 compare: {ignore: []}

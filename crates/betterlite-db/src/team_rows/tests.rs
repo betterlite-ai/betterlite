@@ -61,6 +61,10 @@ fn member_missing_and_null_identity_error(#[case] text: &str) {
         invalid::<MemberBase>(text),
         "Either user id or user email must be provided"
     );
+    assert_eq!(
+        invalid::<Member>(text),
+        "Either user id or user email must be provided"
+    );
     assert!(
         invalid::<Member>(&format!(r#"{{"role":"user","user_id":{text}}}"#)).contains("string")
     );
@@ -152,9 +156,31 @@ fn team_all_explicit_fields_and_nullability(#[case] field: &str) {
     assert_eq!(row.fields.allow_team_guardrail_config.0, None);
 }
 #[test]
+fn inherited_prepass_runs_before_archive_fields() {
+    let cached = invalid::<LiteLLMTeamTableCachedObj>(
+        r#"{"team_id":"t","metadata":"bad","last_refreshed_at":"bad"}"#,
+    );
+    let deleted = invalid::<LiteLLMDeletedTeamTable>(
+        r#"{"team_id":"t","metadata":"bad","deleted_at":"bad"}"#,
+    );
+    assert!(cached.contains("Field metadata should be a valid dictionary"));
+    assert!(deleted.contains("Field metadata should be a valid dictionary"));
+}
+#[test]
+fn cached_timestamp_is_not_a_monetary_amount() {
+    let cached: LiteLLMTeamTableCachedObj = parse(r#"{"team_id":"t","last_refreshed_at":1e100}"#);
+    assert_eq!(
+        cached.last_refreshed_at.map(f64::to_bits),
+        Some(1e100_f64.to_bits())
+    );
+}
+#[test]
 fn cached_timestamp_and_deleted_metadata() {
     let cached: LiteLLMTeamTableCachedObj = parse(r#"{"team_id":"t","last_refreshed_at":123.5}"#);
-    assert_eq!(cached.last_refreshed_at, Some(Decimal::new(1235, 1)));
+    assert_eq!(
+        serde_json::to_string(&cached.last_refreshed_at).unwrap(),
+        "123.5"
+    );
     assert_eq!(
         parse::<LiteLLMTeamTableCachedObj>(r#"{"team_id":"t"}"#).last_refreshed_at,
         None
@@ -162,9 +188,9 @@ fn cached_timestamp_and_deleted_metadata() {
     let deleted: LiteLLMDeletedTeamTable = parse(
         r#"{"team_id":"t","id":"d","deleted_at":"2026-01-01T00:00:00","deleted_by":"a","deleted_by_api_key":"key-id","litellm_changed_by":"c","policies":["p"]}"#,
     );
-    assert_eq!(deleted.deleted_by.as_deref(), Some("a"));
+    assert_eq!(deleted.audit.deleted_by.as_deref(), Some("a"));
     assert_eq!(deleted.team.fields.policies, Some(vec!["p".to_owned()]));
-    assert_eq!(deleted.id.as_deref(), Some("d"));
+    assert_eq!(deleted.audit.id.as_deref(), Some("d"));
 }
 #[rstest]
 #[case("null")]
