@@ -29,6 +29,7 @@ description: >-
   stubs. Each reads its entries from the guardrails list the way lasso_classification does.
 scope:
   paths:
+    - crates/betterlite-config/src/loader.rs
     - crates/betterlite-guardrails/src/generic_guardrail_api.rs
     - crates/betterlite-guardrails/src/generic_guardrail_api/**
     - crates/betterlite-guardrails/src/grayswan.rs
