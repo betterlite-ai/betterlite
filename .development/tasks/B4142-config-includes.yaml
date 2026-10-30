@@ -10,9 +10,10 @@ description: >-
   A file already loaded is skipped to break cycles.
   After all includes are resolved and merged, the final `include` key is dropped, leaving a clean config for the typed loader.
 
-  Build resolve_includes in crates/betterlite-config/src/includes.rs, which takes a config dict and its file path, and returns a dict with all includes resolved and merged.
-  Expose it through the loader's public API so callers can choose when to resolve includes (at load time or as a separate step).
-  For config loading, call resolve_includes before the typed loader to ensure the config is fully merged.
+  Build resolve_includes in crates/betterlite-config/src/sections/includes.rs, the includes section main already registers, which takes a config dict and its file path, and returns a dict with all includes resolved and merged.
+  In the same file add an impl ConfigLoader block with pub fn load_file: it reads the config file, resolves its includes and hands the merged config to the typed loader, returning its own error type that keeps ConfigError as a #[source].
+  Leave loader.rs, lib.rs and ConfigError unchanged: loader.rs is at the 300-line file limit and B3771 is changing it.
+  In crates/betterlite/src/main.rs only load_config changes, to call load_file; config_error_category and log_config_error stay as they are, since B3771 edits them.
 
   Use the real test fixtures from LiteLLM at the pinned commit in litellm/tests/unit/proxy/example_config_yaml/:
   - config_with_include.yaml: one include directive, expects included-model merged into model_list
@@ -32,6 +33,9 @@ scope:
   paths:
     - crates/betterlite-config/src/sections/includes.rs
     - crates/betterlite-config/src/sections/includes/**
+    - crates/betterlite-config/tests/fixtures/includes/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite/src/main.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L11-L42
@@ -50,7 +54,7 @@ references:
     why: The fixture directory containing the real include test fixtures
 
 dod:
-  - text: crates/betterlite-config/src/includes.rs exports resolve_includes and the types it needs.
+  - text: crates/betterlite-config/src/sections/includes.rs exports resolve_includes and the types it needs.
     proof: [config-includes-module]
   - text: The six fixture files from litellm/tests/unit/proxy/example_config_yaml/ are in crates/betterlite-config/tests/fixtures/includes/, byte for byte.
     proof: [fixtures-pinned]
@@ -70,7 +74,7 @@ dod:
     proof: [config-includes-tests]
   - text: An include directive that is not a list of strings fails with a clear error message.
     proof: [config-includes-tests]
-  - text: The loader calls resolve_includes before typed validation, so users can include files in their configs.
+  - text: ConfigLoader::load_file resolves includes before typed validation, and the binary loads its config through it, so users can include files in their configs.
     proof: [config-loader-integration]
 
 checks:
@@ -78,7 +82,7 @@ checks:
   commands:
     - id: config-includes-module
       why: includes.rs is missing or does not export resolve_includes
-      run: grep -q "pub.*fn resolve_includes" crates/betterlite-config/src/includes.rs
+      run: grep -q "pub.*fn resolve_includes" crates/betterlite-config/src/sections/includes.rs
     - id: fixtures-pinned
       why: fixture files are missing or differ from LiteLLM's files at the pinned commit
       run: |
@@ -92,10 +96,10 @@ checks:
         SUMS
     - id: config-includes-tests
       why: include resolution tests fail, do not exist, or snapshots were not accepted
-      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::includes::include_resolution::/)' --exact
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::includes::/)'
     - id: config-loader-integration
-      why: the loader does not call resolve_includes before typed validation
-      run: grep -q "resolve_includes" crates/betterlite-config/src/loader.rs
+      why: ConfigLoader has no load_file or the binary does not load its config through it
+      run: grep -q "pub fn load_file" crates/betterlite-config/src/sections/includes.rs && grep -q "load_file" crates/betterlite/src/main.rs
 
 oracle_cases: []
 
