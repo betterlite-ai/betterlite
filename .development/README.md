@@ -30,6 +30,7 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 - schema/ holds the JSON Schemas for every format above plus the report and review answers. `cargo gate schema` generates them from the gate's Rust types, and `cargo gate validate` fails when a file breaks its schema or a schema is out of date.
 - templates/ holds the files B000 copies to the root byte for byte: workspace manifest with the deny-everything lint table, clippy.toml, deny.toml, typos and ast-grep config, prek hooks, LICENSE and THIRD_PARTY_NOTICES.md.
 - gate/ is the gate's source. `cargo gate` runs it from the repository root through the alias in .cargo/config.toml.
+- site/index.html is the progress page at https://betterlite-ai.github.io/betterlite/. After every push to main, .github/workflows/pages.yml publishes it next to the backlog, the deviation logs and the merge history, and the page reads them in the browser.
 
 Every path in the inventory has to be accounted for: a backlog entry's covers globs claim it, or litellm.yaml excludes it with a reason. `cargo gate validate` fails while any path is unclaimed or any glob claims nothing, so nothing LiteLLM does outside its enterprise directory can fall out of the backlog. Moving to a newer LiteLLM release means updating litellm.yaml, regenerating the inventory and claiming the new paths.
 
