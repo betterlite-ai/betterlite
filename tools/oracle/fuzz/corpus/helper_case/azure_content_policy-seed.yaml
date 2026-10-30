@@ -1,0 +1,5 @@
+kind: helper
+name: azure-content-policy-seed
+call: {azure_content_policy: {message: caller, model: gpt, extra_information: debug, body: {error: {message: nested, innererror: chosen}}, response: null}}
+env: {}
+compare: {ignore: []}
