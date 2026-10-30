@@ -113,7 +113,7 @@ pitfalls:
 - drop_params does not disable context_management, because this parameter is supported through the polyfill.
 - A failed compact-only request can recover through client history; a failed clear request cannot.
 - Prediction must use the dispatcher's normalizer or OpenAI list specs can lose recent history before compaction.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

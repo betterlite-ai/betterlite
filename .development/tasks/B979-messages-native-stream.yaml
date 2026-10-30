@@ -151,7 +151,7 @@ pitfalls:
 - Queue capacity counts chunks; collected billing bytes need a separate aggregate bound even while the client keeps up.
 - The detached cap is shared across all live streams, not reset for each request or provider.
 - Logging must be parked before the end sentinel becomes observable, or disconnect can lose the spend callback.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

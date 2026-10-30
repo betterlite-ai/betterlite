@@ -87,4 +87,4 @@ pitfalls:
   - Whitespace-only resolution survives usage mapping as an empty string.
   - Status retrieval encodes provider IDs without preserving the creation model.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard

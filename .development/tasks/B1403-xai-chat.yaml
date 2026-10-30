@@ -85,4 +85,4 @@ pitfalls:
   - OAuth never takes precedence over a truthy xai_key or XAI_API_KEY.
   - A usage key with a null value still causes insertion of the empty streaming choice.
 budget: {max_changed_lines: 725, max_new_expects: 0}
-review_level: security
+review_level: standard

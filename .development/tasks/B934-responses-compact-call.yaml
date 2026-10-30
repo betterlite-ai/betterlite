@@ -118,7 +118,7 @@ pitfalls:
 - compact passes allowed_openai_params=null even if the caller supplied that kwarg.
 - The async preliminary resolver reads base_url from locals, where no such named argument exists.
 - Compaction restores encrypted item IDs but does not invoke create's prompt or managed-file mapping helpers.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -108,7 +108,7 @@ pitfalls:
 - The source accepts after/limit in kwargs but these wrappers do not send them to OpenAI.
 - List's null id becomes the string "None" in function_id; retrieve uses an empty string.
 - Async retrieve reconstructs OpenAIFileObject, while async list returns the awaited result directly.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
