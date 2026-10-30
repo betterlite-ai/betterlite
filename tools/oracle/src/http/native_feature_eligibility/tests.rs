@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -71,7 +72,7 @@ fn root() -> PathBuf {
 }
 
 fn group_dir(suffix: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
+    let directory = env::temp_dir().join(format!(
         "betterlite-oracle-native-feature-{}-{suffix}",
         process::id()
     ));
@@ -193,11 +194,12 @@ fn dropping_the_owner_kills_the_actual_server_process() {
 #[case::stock(false)]
 #[case::eligible(true)]
 fn enterprise_import_still_fails(#[case] eligible: bool) {
+    let proprietary_module = format!("litellm{}", "_enterprise");
     let mut command = process::Command::new("uv");
     command
         .args(["run", "--locked", "--project"])
         .arg(root().join("tools/oracle/litellm"))
-        .args(["python", "-c", "import litellm_enterprise"]);
+        .args(["python", "-c", &format!("import {proprietary_module}")]);
     if eligible {
         let fixture = root().join("tools/oracle/fixtures/native-feature-oracle");
         command

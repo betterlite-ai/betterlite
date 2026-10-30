@@ -40,7 +40,10 @@ pub(crate) fn run_cases(
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let group_key = format!("{}\n{:?}", http_case.config, http_case.env);
+                let group_key = format!(
+                    "{}\n{:?}\n{}",
+                    http_case.config, http_case.env, http_case.native_feature_eligibility
+                );
                 groups.entry(group_key).or_default().push(http_case);
             }
             LoadedCase::Helper(helper_case) => {
