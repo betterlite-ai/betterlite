@@ -1,5 +1,7 @@
+use std::io;
 use std::time::{Duration, Instant};
 
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, UpstreamResponse};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -9,7 +11,7 @@ use thiserror::Error;
 use crate::chat::deployment::{ChatDeployment, Provider};
 use crate::chat::execution::ChatExecutor;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum EmbeddingInput {
     Text(String),
@@ -18,7 +20,7 @@ pub enum EmbeddingInput {
     TokenLists(Vec<Vec<u32>>),
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EmbeddingRequest {
     pub model: Option<String>,
     pub input: EmbeddingInput,
@@ -36,7 +38,7 @@ pub enum EncodingFormat {
     Base64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EmbeddingResponse {
     pub object: String,
     pub data: Vec<EmbeddingRecord>,
@@ -44,7 +46,7 @@ pub struct EmbeddingResponse {
     pub usage: EmbeddingUsage,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EmbeddingRecord {
     pub object: String,
     pub embedding: Value,
@@ -77,7 +79,7 @@ pub enum EmbeddingError {
     #[error("the provider could not be reached: {source}")]
     Http {
         #[source]
-        source: betterlite_http::error::HttpError,
+        source: HttpError,
     },
     #[error("the provider answered with status {}", .response.status)]
     Provider { response: Box<UpstreamResponse> },
@@ -97,71 +99,82 @@ pub struct EmbeddingOutcome {
 
 impl EmbeddingRequest {
     pub fn parse(bytes: &[u8]) -> Result<Self, EmbeddingError> {
-        let request =
-            serde_json::from_slice(bytes).map_err(|source| EmbeddingError::Body { source });
-        request
+        match serde_json::from_slice(bytes) {
+            Ok(request) => Ok(request),
+            Err(source) => Err(EmbeddingError::Body { source }),
+        }
     }
 }
 
 impl EmbeddingResponse {
-    fn for_client(mut self, model: Option<&str>) -> Self {
-        if let Some(model) = model {
-            self.model = model.to_owned();
+    fn for_client(mut self, requested_model: Option<&str>) -> Self {
+        if let Some(model_name) = requested_model {
+            model_name.clone_into(&mut self.model);
         }
         self
     }
 }
 
-impl ChatExecutor {
-    pub async fn send_embedding(
-        &self,
-        deployment: &ChatDeployment,
-        request: &EmbeddingRequest,
-    ) -> Result<EmbeddingOutcome, EmbeddingError> {
-        let (model, api_key) = servable(deployment)?;
-        let mut body =
-            serde_json::to_value(request).map_err(|source| EmbeddingError::Body { source })?;
-        let Value::Object(ref mut object) = body else {
-            return Err(EmbeddingError::Encode {
-                source: serde_json::Error::io(std::io::Error::other(
-                    "embedding request did not serialize as an object",
-                )),
-            });
-        };
-        object.insert(String::from("model"), Value::String(model.to_owned()));
-        let post = JsonPost {
-            url: deployment.endpoint_for("embeddings").map_err(|_| {
-                EmbeddingError::UnsupportedProvider {
-                    model: model.to_owned(),
-                }
-            })?,
-            bearer: api_key,
-            headers: Vec::new(),
-            body: serde_json::to_vec(&body).map_err(|source| EmbeddingError::Encode { source })?,
-            timeout: deployment.timeout,
-            body_limit: 0x0200_0000,
-        };
-        let started = Instant::now();
-        let upstream = self
-            .client
-            .post_json(post)
-            .await
-            .map_err(|source| EmbeddingError::Http { source })?;
-        let upstream_time = started.elapsed();
-        if upstream.status >= 400 {
-            return Err(EmbeddingError::Provider {
-                response: Box::new(upstream),
-            });
-        }
-        let response = serde_json::from_slice::<EmbeddingResponse>(&upstream.body)
-            .map_err(|source| EmbeddingError::Decode { source })?
-            .for_client(request.model.as_deref());
-        Ok(EmbeddingOutcome {
-            response,
-            upstream,
-            upstream_time,
-        })
+pub async fn send(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<EmbeddingOutcome, EmbeddingError> {
+    let (model, api_key) = servable(deployment)?;
+    let post = post(deployment, request, model, api_key)?;
+    let started = Instant::now();
+    let upstream = executor
+        .client
+        .post_json(post)
+        .await
+        .map_err(|source| EmbeddingError::Http { source })?;
+    let upstream_time = started.elapsed();
+    if upstream.status >= 400 {
+        return Err(EmbeddingError::Provider {
+            response: Box::new(upstream),
+        });
     }
+    let response = serde_json::from_slice::<EmbeddingResponse>(&upstream.body)
+        .map_err(|source| EmbeddingError::Decode { source })?
+        .for_client(request.model.as_deref());
+    Ok(EmbeddingOutcome {
+        response,
+        upstream,
+        upstream_time,
+    })
+}
+
+fn post<'key>(
+    deployment: &'key ChatDeployment,
+    request: &EmbeddingRequest,
+    model: &str,
+    api_key: &'key SecretString,
+) -> Result<JsonPost<'key>, EmbeddingError> {
+    let mut body =
+        serde_json::to_value(request).map_err(|source| EmbeddingError::Body { source })?;
+    let Value::Object(ref mut object) = body else {
+        return Err(EmbeddingError::Encode {
+            source: serde_json::Error::io(io::Error::other(
+                "embedding request did not serialize as an object",
+            )),
+        });
+    };
+    object.insert(String::from("model"), Value::String(model.to_owned()));
+    let url = deployment
+        .endpoint_for("embeddings")
+        .map_err(|source| EmbeddingError::Encode {
+            source: serde_json::Error::io(io::Error::other(source.to_string())),
+        })?;
+    let body_bytes =
+        serde_json::to_vec(&body).map_err(|source| EmbeddingError::Encode { source })?;
+    Ok(JsonPost {
+        url,
+        bearer: api_key,
+        headers: Vec::new(),
+        body: body_bytes,
+        timeout: deployment.timeout,
+        body_limit: 0x0200_0000,
+    })
 }
 
 fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), EmbeddingError> {

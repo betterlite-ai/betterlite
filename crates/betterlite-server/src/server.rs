@@ -52,14 +52,7 @@ pub async fn run(
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
     let shutting_down = Arc::new(AtomicBool::new(false));
-    let executor = Arc::new(chat);
-    let application = router(
-        config.general_settings.master_key,
-        Arc::clone(&shutting_down),
-        &config.model_list,
-        chat_routes(Arc::clone(&executor)),
-        embedding_routes(executor),
-    );
+    let application = application(&config, chat, Arc::clone(&shutting_down));
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
     connections.spawn(shutdown_signal.wait(Arc::clone(&shutting_down)));
@@ -86,6 +79,17 @@ pub async fn run(
     }
     drain_connections(&mut connections).await;
     Ok(())
+}
+
+fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBool>) -> Router {
+    let executor = Arc::new(chat);
+    router(
+        config.general_settings.master_key.clone(),
+        shutting_down,
+        &config.model_list,
+        chat_routes(Arc::clone(&executor)),
+        embedding_routes(executor),
+    )
 }
 async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
     match timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await {

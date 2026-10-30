@@ -101,16 +101,14 @@ impl ChatDeployment {
     }
 
     pub fn endpoint_for(&self, resource: &str) -> Result<Url, DeploymentError> {
-        let endpoint = endpoint(&self.api_base, &self.model_group).map(|mut url| {
-            let path = format!(
-                "{}/{}",
-                url.path().trim_end_matches("/chat/completions"),
-                resource
-            );
-            url.set_path(&path);
-            url
-        });
-        endpoint
+        let mut url = endpoint(&self.api_base, &self.model_group)?;
+        let path = format!(
+            "{}/{}",
+            url.path().trim_end_matches("/chat/completions"),
+            resource
+        );
+        url.set_path(&path);
+        Ok(url)
     }
 }
 

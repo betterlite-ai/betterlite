@@ -5,8 +5,8 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::embedding::{EmbeddingError, EmbeddingRequest};
+use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Instant;
@@ -29,13 +29,12 @@ struct ErrorObject {
 }
 
 pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
-    let router = Router::new()
-        .route("/embeddings", post(embeddings))
-        .route("/v1/embeddings", post(embeddings))
-        .route("/engines/{model}/embeddings", post(embeddings))
-        .route("/openai/deployments/{model}/embeddings", post(embeddings))
-        .with_state(executor);
-    router
+    let mut router = Router::new();
+    router = router.route("/embeddings", post(embeddings));
+    router = router.route("/v1/embeddings", post(embeddings));
+    router = router.route("/engines/{model}/embeddings", post(embeddings));
+    router = router.route("/openai/deployments/{model}/embeddings", post(embeddings));
+    router.with_state(executor)
 }
 
 async fn embeddings(
@@ -57,11 +56,10 @@ async fn embeddings(
         .map(|Path(model)| model)
         .or_else(|| request.model.clone())
         .unwrap_or_else(|| String::from("None"));
-    let deployment = match executor.pick(&model) {
-        Ok(deployment) => deployment,
-        Err(_) => return failure(&EmbeddingError::UnknownModel { model }, &call_id, None),
+    let Ok(deployment) = executor.pick(&model) else {
+        return failure(&EmbeddingError::UnknownModel { model }, &call_id, None);
     };
-    match executor.send_embedding(deployment, &request).await {
+    match embedding::send(&executor, deployment, &request).await {
         Ok(outcome) => {
             let response_headers = success_headers(
                 &outcome.upstream.headers,
@@ -96,10 +94,10 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
             code: status.to_string(),
         },
     };
-    let chat_error = betterlite_openai::chat::execution::ChatError::UnknownModel {
+    let chat_error = ChatError::UnknownModel {
         model: String::new(),
     };
     let response_headers = failure_headers(&chat_error, call_id, deployment);
-    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status, response_headers, Json(body)).into_response()
+    let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    (status_code, response_headers, Json(body)).into_response()
 }

@@ -16,7 +16,7 @@ fn parses_embedding_arrays_and_tokens() {
     let strings = EmbeddingRequest::parse(br#"{"input":["a","b"]}"#).expect("string array request");
     assert_eq!(
         strings.input,
-        EmbeddingInput::Texts(vec!["a".into(), "b".into()])
+        EmbeddingInput::Texts(vec![String::from("a"), String::from("b")])
     );
     let tokens = EmbeddingRequest::parse(br#"{"input":[[1,2],[3]]}"#).expect("token array request");
     assert_eq!(
