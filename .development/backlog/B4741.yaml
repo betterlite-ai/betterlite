@@ -1,14 +1,14 @@
 id: B4741
 milestone: M9 agents and mcp
 title: MCP client credential headers and discovery fingerprints
-status: todo
+status: done
 depends_on: [B002, B4652]
 file: tasks/B4741-mcp-client-credentials.yaml
 covers:
   - "litellm/experimental_mcp_client/client.py"
 parent: B140
 split_from: B140
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 330
