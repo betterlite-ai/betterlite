@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
 use std::time::TryFromFloatSecsError;
 
-use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -11,7 +10,8 @@ use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
 };
 use crate::resolve::{
-    parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
+    parse_float, parse_integer, resolve_environment, resolve_number as number, resolve_secret,
+    resolve_string,
 };
 use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
@@ -137,7 +137,7 @@ where
         general_settings: convert_general(raw.general_settings, lookup)?,
         router_settings: convert_router(raw.router_settings, lookup)?,
         litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
-        environment_variables: convert_environment(raw.environment_variables, lookup)?,
+        environment_variables: resolve_environment(raw.environment_variables, lookup)?,
         sections,
     })
 }
@@ -287,21 +287,4 @@ where
                 })
         })?;
     Ok((modify_params, default_max_tokens))
-}
-
-fn convert_environment<L>(
-    values: BTreeMap<String, Option<String>>,
-    lookup: &L,
-) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = values
-        .into_iter()
-        .map(|(key, value)| {
-            let path = format!("environment_variables.{key}");
-            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
-        })
-        .collect::<Result<BTreeMap<_, _>, ConfigError>>()?;
-    Ok(resolved)
 }
