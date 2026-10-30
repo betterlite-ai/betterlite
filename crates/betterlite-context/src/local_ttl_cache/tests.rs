@@ -152,6 +152,19 @@ fn local_ttl_cache_cases(#[case] name: &str) {
             assert!(boundary.get("boundary").unwrap().is_none());
         }
         "value_size_policy" => {
+            let mut negative =
+                LocalTtlCache::with_clock(None, None, Some(-1), 1024, Arc::new(|| 0.0_f64))
+                    .unwrap();
+            negative
+                .set("empty", CacheValue::Bytes(vec![]), None)
+                .unwrap();
+            assert_eq!(negative.get("empty").unwrap(), None);
+            let mut loaded_negative =
+                LocalTtlCache::with_clock(None, None, None, -1, Arc::new(|| 0.0_f64)).unwrap();
+            loaded_negative
+                .set("empty", CacheValue::Bytes(vec![]), None)
+                .unwrap();
+            assert_eq!(loaded_negative.get("empty").unwrap(), None);
             let mut cache = timed_cache(1, 1, Arc::new(|| 0.0_f64));
             cache
                 .set("small", CacheValue::Text("ok".to_owned()), None)
@@ -439,8 +452,7 @@ fn rejects_invalid_clock_and_size_boundaries() {
         invalid.set("key", CacheValue::Null, None),
         Err(CacheError::InvalidClock)
     );
-    let mut bounded = cache(0.0_f64);
-    bounded.limits.max_size_per_item = 1;
+    let mut bounded = timed_cache(2, 1, Arc::new(|| 0.0_f64));
     bounded
         .set("exact", CacheValue::Text("x".repeat(1022)), None)
         .unwrap();

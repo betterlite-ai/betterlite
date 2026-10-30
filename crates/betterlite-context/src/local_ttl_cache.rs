@@ -58,6 +58,7 @@ pub struct CacheLimits {
 
 pub struct LocalTtlCache {
     limits: CacheLimits,
+    item_byte_limit: Option<usize>,
     values: BTreeMap<String, CacheValue>,
     expiries: BTreeMap<String, f64>,
     heap: BinaryHeap<Reverse<(OrderedFloat, String)>>,
@@ -92,16 +93,22 @@ impl LocalTtlCache {
         let resolved_capacity = capacity
             .map_or(Ok(DEFAULT_CAPACITY), usize::try_from)
             .map_err(|source| CacheError::NegativeCapacity { source })?;
+        let resolved_item_kib = max_size_per_item
+            .filter(|size| *size != 0)
+            .unwrap_or(loaded_item_kib);
+        let item_byte_limit = match usize::try_from(resolved_item_kib) {
+            Ok(kib) => Some(kib.saturating_mul(1024).min(MAX_VALUE_BYTES)),
+            Err(_) => None,
+        };
         let cache = Self {
             limits: CacheLimits {
                 capacity: resolved_capacity,
                 default_ttl: default_ttl
                     .filter(|ttl| *ttl != 0.0_f64)
                     .unwrap_or(DEFAULT_TTL),
-                max_size_per_item: max_size_per_item
-                    .filter(|size| *size != 0)
-                    .unwrap_or(loaded_item_kib),
+                max_size_per_item: resolved_item_kib,
             },
+            item_byte_limit,
             values: BTreeMap::new(),
             expiries: BTreeMap::new(),
             heap: BinaryHeap::new(),
@@ -196,6 +203,9 @@ impl LocalTtlCache {
     }
 
     fn fits(&self, value: &CacheValue) -> bool {
+        let Some(limit) = self.item_byte_limit else {
+            return false;
+        };
         let charge = match value {
             CacheValue::Credential(handle) => handle.size_charge(),
             CacheValue::Bytes(bytes) => bytes.len(),
@@ -210,10 +220,6 @@ impl LocalTtlCache {
                 Err(_) => return false,
             },
         };
-        let limit = usize::try_from(self.limits.max_size_per_item)
-            .unwrap_or(0)
-            .saturating_mul(1024)
-            .min(MAX_VALUE_BYTES);
         charge <= limit
     }
 }

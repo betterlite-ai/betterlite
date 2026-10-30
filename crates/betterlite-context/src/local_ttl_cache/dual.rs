@@ -1,4 +1,7 @@
-use super::{CacheError, CacheLimits, CacheValue, DEFAULT_CAPACITY, DEFAULT_TTL, LocalTtlCache};
+use super::{
+    CacheError, CacheLimits, CacheValue, DEFAULT_CAPACITY, DEFAULT_TTL, LocalTtlCache,
+    MAX_VALUE_BYTES,
+};
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_redact::secret::Redactor;
 use std::collections::{BTreeMap, BinaryHeap};
@@ -48,6 +51,7 @@ impl DualLocalCache {
                     default_ttl: DEFAULT_TTL,
                     max_size_per_item: 1024,
                 },
+                item_byte_limit: Some(MAX_VALUE_BYTES),
                 values: BTreeMap::new(),
                 expiries: BTreeMap::new(),
                 heap: BinaryHeap::new(),
