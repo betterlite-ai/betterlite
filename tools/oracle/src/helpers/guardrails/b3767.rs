@@ -41,6 +41,17 @@ pub(crate) enum Input {
     },
 }
 
+struct ApplyArgs<'input> {
+    settings: &'input Value,
+    inputs: Inputs,
+    request_data: &'input BTreeMap<String, GuardrailValue>,
+    dynamic_params: &'input BTreeMap<String, GuardrailValue>,
+    litellm_call_id: Option<&'input str>,
+    litellm_trace_id: Option<&'input str>,
+    input_type: InputType,
+    answer: Option<&'input UpstreamAnswer>,
+}
+
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -59,16 +70,16 @@ impl crate::helpers::Helper for Op {
                 litellm_trace_id,
                 input_type,
                 answer,
-            } => apply(
+            } => apply(ApplyArgs {
                 settings,
-                inputs.as_ref().clone(),
+                inputs: inputs.as_ref().clone(),
                 request_data,
                 dynamic_params,
-                litellm_call_id.as_deref(),
-                litellm_trace_id.as_deref(),
-                *input_type,
-                answer.as_ref(),
-            ),
+                litellm_call_id: litellm_call_id.as_deref(),
+                litellm_trace_id: litellm_trace_id.as_deref(),
+                input_type: *input_type,
+                answer: answer.as_ref(),
+            }),
         }
     }
 }
@@ -78,23 +89,20 @@ fn construct(settings: &Value) -> HelperResult {
     Ok(json!({"api_base": configured.api_base}))
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors apply_guardrail's parameters"
-)]
-fn apply(
-    settings: &Value,
-    inputs: Inputs,
-    request_data: &BTreeMap<String, GuardrailValue>,
-    dynamic_params: &BTreeMap<String, GuardrailValue>,
-    litellm_call_id: Option<&str>,
-    litellm_trace_id: Option<&str>,
-    input_type: InputType,
-    answer: Option<&UpstreamAnswer>,
-) -> HelperResult {
+fn apply(args: ApplyArgs<'_>) -> HelperResult {
     let io = |error: std::io::Error| failure("OSError", error.to_string());
     let mock_error = |error: crate::OracleError| failure("MockError", error.to_string());
     // with no answer the listener accepts the connection and never replies, so the call times out
+    let ApplyArgs {
+        settings,
+        inputs,
+        request_data,
+        dynamic_params,
+        litellm_call_id,
+        litellm_trace_id,
+        input_type,
+        answer,
+    } = args;
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     let start =
         |reply| MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start);
@@ -106,23 +114,47 @@ fn apply(
     let mut deepkeep = guardrail(settings)?;
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     deepkeep.timeout = Duration::from_millis(200);
-    let context = RequestContext {
-        request_data: request_data.clone(),
+    let context = context(
+        request_data,
+        dynamic_params,
+        litellm_call_id,
+        litellm_trace_id,
         input_type,
-        litellm_call_id: litellm_call_id.map(ToOwned::to_owned),
-        litellm_trace_id: litellm_trace_id.map(ToOwned::to_owned),
-        litellm_version: None,
-        dynamic_params: dynamic_params.clone(),
-    };
+    );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(io)?;
     let result = runtime.block_on(deepkeep.apply(inputs, context));
+    finish(mock, result)
+}
+
+fn context(
+    request_data: &BTreeMap<String, GuardrailValue>,
+    dynamic_params: &BTreeMap<String, GuardrailValue>,
+    litellm_call_id: Option<&str>,
+    litellm_trace_id: Option<&str>,
+    input_type: InputType,
+) -> RequestContext {
+    let request_data = request_data.clone();
+    let dynamic_params = dynamic_params.clone();
+    let litellm_call_id = litellm_call_id.map(ToOwned::to_owned);
+    let litellm_trace_id = litellm_trace_id.map(ToOwned::to_owned);
+    RequestContext {
+        request_data,
+        input_type,
+        litellm_call_id,
+        litellm_trace_id,
+        litellm_version: None,
+        dynamic_params,
+    }
+}
+
+fn finish(mock: Option<MockProvider>, result: Result<Inputs, DeepKeepError>) -> HelperResult {
     let calls = mock
         .map(MockProvider::finish)
         .transpose()
-        .map_err(mock_error)?;
+        .map_err(|error| failure("MockError", error.to_string()))?;
     let recorded = calls.unwrap_or_default().into_iter().next();
     let path = recorded.as_ref().map(|call| call.request.path.clone());
     let request = recorded.map(|call| call.request.body);
@@ -163,10 +195,6 @@ fn configure(
 
 fn guardrail(settings: &Value) -> Result<DeepKeepGuardrail, Box<HelperError>> {
     let configured = configure(settings, BTreeMap::new())?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the oracle needs a local client it can point at a mock provider"
-    )]
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
