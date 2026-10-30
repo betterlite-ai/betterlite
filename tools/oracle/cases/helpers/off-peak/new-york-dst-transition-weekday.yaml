@@ -1,0 +1,26 @@
+kind: helper
+name: new-york-dst-transition-weekday
+call:
+  off_peak:
+    off_peak_pricing:
+      weekday_timezone: "America/New_York"
+      windows:
+        - hours_utc: "00:00-10:00"
+          weekdays: [6]
+      input_cost_per_token: 0.0000002
+      output_cost_per_token: 0.0000004
+      cache_read_input_token_cost: 0.00000002
+      cache_creation_input_token_cost: 0.00000006
+    moment: "2024-03-10T04:30:00Z"
+    rates:
+      input_rate: 0.000001
+      output_rate: 0.000002
+      cache_read_rate: 0.0000001
+      cache_creation_rate: 0.0000003
+    base_costs:
+      prompt_rate: 0.000001
+      completion_rate: 0.000002
+      cache_creation_rate: 0.0000003
+      cache_read_rate: 0.0000001
+compare: {ignore: []}
+env: {}

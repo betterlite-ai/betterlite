@@ -84,6 +84,10 @@
           "format": "uint32",
           "minimum": 1
         },
+        "overflow": {
+          "description": "When every seat of a worker rung's vendor is taken, the try runs on the first later rung of another vendor that has a free seat. It still counts as a try on its own rung.",
+          "type": "boolean"
+        },
         "review_by_other_vendor": {
           "description": "The reviewer runs on a different vendor than the worker whose change it reads. When every such reviewer is at its usage limit, one on the worker's vendor runs.",
           "type": "boolean"
@@ -102,6 +106,7 @@
         "max_worker_attempts",
         "limit_retry_minutes",
         "max_parallel",
+        "overflow",
         "max_review_rounds",
         "max_blocked_reports",
         "max_hook_blocks",
@@ -244,6 +249,15 @@
         },
         "max_parallel": {
           "description": "Runs at once on this vendor. Without it the policy's max_parallel applies.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 1
+        },
+        "max_writers": {
+          "description": "Worker runs at once on this vendor, counted inside its max_parallel. Without it workers may take every seat.",
           "type": [
             "integer",
             "null"
