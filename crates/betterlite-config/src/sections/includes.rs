@@ -4,7 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 use crate::sections::Section;
 use crate::sections::settings::settings_rules::JsonValue as Value;
 use serde::de::Deserialize;
@@ -49,7 +49,28 @@ pub enum IncludeError {
     #[error("config include {path} must contain a mapping")]
     Root { path: PathBuf },
     #[error("'include' must be a list of file paths")]
-    Entries,
+    EntriesNotList,
+    #[error("'include' entry at index {index} must be a string path")]
+    EntryNotString { index: usize },
+}
+
+#[derive(Debug, Error)]
+pub enum LoadError {
+    #[error("could not resolve config includes: {source}")]
+    Includes {
+        #[source]
+        source: IncludeError,
+    },
+    #[error("could not serialize resolved config: {source}")]
+    Serialize {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("could not load resolved config: {source}")]
+    Config {
+        #[source]
+        source: ConfigError,
+    },
 }
 
 pub fn resolve_includes(config: ConfigMap, path: &Path) -> Result<ConfigMap, IncludeError> {
@@ -148,11 +169,11 @@ fn queue_includes(
         return Ok(());
     };
     let Some(entries) = value.as_array() else {
-        return Err(IncludeError::Entries);
+        return Err(IncludeError::EntriesNotList);
     };
-    for entry in entries {
+    for (index, entry) in entries.iter().enumerate() {
         let Some(entry_path) = entry.as_str() else {
-            return Err(IncludeError::Entries);
+            return Err(IncludeError::EntryNotString { index });
         };
         pending.push_back((entry_path.to_owned(), declared_in.to_path_buf()));
     }
@@ -178,4 +199,23 @@ fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
     base
 }
 
-mod include_resolution;
+impl<L> ConfigLoader<L>
+where
+    L: EnvironmentLookup,
+{
+    pub fn load_file<P>(&self, config_path: P) -> Result<crate::types::Config, LoadError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = config_path.as_ref();
+        let config = read_config(path).map_err(|source| LoadError::Includes { source })?;
+        let resolved =
+            resolve_includes(config, path).map_err(|source| LoadError::Includes { source })?;
+        let source =
+            serde_json::to_string(&resolved).map_err(|source| LoadError::Serialize { source })?;
+        self.load(&source)
+            .map_err(|source| LoadError::Config { source })
+    }
+}
+
+mod tests;

@@ -7,7 +7,6 @@ use rand::SeedableRng as _;
 use rand::rngs::{StdRng, SysRng};
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -88,20 +87,24 @@ fn process_environment() -> BTreeMap<String, String> {
     environment
 }
 fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option<Config> {
-    let source = match fs::read_to_string(location) {
-        Ok(source) => source,
-        Err(error) => {
-            tracing::error!(path = %location.display(), error = ?error, "failed to read configuration");
-            return None;
-        }
-    };
     let loader = ConfigLoader {
         lookup: environment,
     };
-    match loader.load(&source) {
+    match loader.load_file(location) {
         Ok(config) => Some(config),
         Err(error) => {
-            log_config_error(&error, location);
+            match error {
+                betterlite_config::sections::includes::LoadError::Config { source } => {
+                    log_config_error(&source, location);
+                }
+                error => {
+                    tracing::error!(
+                        path = %location.display(),
+                        error = ?error,
+                        "failed to read or resolve configuration"
+                    );
+                }
+            }
             None
         }
     }
