@@ -96,16 +96,16 @@ impl AnthropicExceptionMapping {
             return Ok(response);
         }
         if let Ok(fields) = serde_json::from_str::<Fields>(raw.get()) {
-            let message = extracted_message(fields, raw_message)?;
+            let message = extracted_message(&fields, raw_message)?;
             return Self::create_error_response(status, message, request_id);
         }
         Self::create_error_response(status, TextField::Known(raw_message.to_owned()), request_id)
     }
 }
 
-fn extracted_message(fields: Fields, raw: &str) -> Result<TextField, WireDecodeError> {
+fn extracted_message(fields: &Fields, raw: &str) -> Result<TextField, WireDecodeError> {
     // Python parses into a dict first, so duplicate provider keys have already resolved to their last value.
-    let json = serde_json::to_string(&fields)?;
+    let json = serde_json::to_string(fields)?;
     let provider: ProviderMessage = serde_json::from_str(&json)?;
     let chosen = match provider.detail {
         ObjectField::Known(mut detail) => detail.swap_remove("message"),
