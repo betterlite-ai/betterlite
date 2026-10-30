@@ -79,10 +79,9 @@ macro_rules! mint_envelope_fn {
         {
             models::validate_mint(&MintValidation {
                 identity: &identity,
-                expires_in: payload.expires_in(),
+                expires_in: payload.expires_in,
                 required_token: payload.required_token(),
                 token_type: payload.token_type(),
-                optional_token: payload.optional_token(),
             })?;
             let lifetime = payload.lifetime();
             let plaintext = payload.into_plaintext()?;

@@ -371,7 +371,6 @@ fn mint_rejects_empty_identity(#[case] server: &str, #[case] subject: &str) {
 #[rstest]
 #[case::empty_access("", "Bearer", Some("r"))]
 #[case::empty_type("a", "", Some("r"))]
-#[case::empty_refresh("a", "Bearer", Some(""))]
 fn mint_rejects_empty_tokens(
     #[case] access: &str,
     #[case] token_type: &str,
@@ -388,6 +387,30 @@ fn mint_rejects_empty_tokens(
         mint_envelope(identity(), invalid, &keys(), now(), &FixedNonce),
         Err(EnvelopeMintError::TokenEmpty)
     ));
+}
+
+#[test]
+fn empty_refresh_token_mints_and_opens() {
+    let current = now();
+    let signing_keys = keys();
+    let mut grant_with_empty_refresh = grant();
+    grant_with_empty_refresh.refresh_token = Some(SecretString::from(""));
+    let sealed = mint_envelope(
+        identity(),
+        grant_with_empty_refresh,
+        &signing_keys,
+        current,
+        &FixedNonce,
+    )
+    .expect("mint");
+    let opened = open_envelope(sealed.token.expose_secret(), &signing_keys, current).expect("open");
+    assert_eq!(
+        opened
+            .grant
+            .refresh_token
+            .map(|value| value.expose_secret().to_owned()),
+        Some(String::new())
+    );
 }
 
 #[rstest]

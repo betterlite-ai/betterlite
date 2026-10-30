@@ -21,9 +21,6 @@ impl WireGrant {
         if self.access_token.is_empty() || self.token_type.is_empty() {
             return false;
         }
-        if self.refresh_token.as_ref().is_some_and(String::is_empty) {
-            return false;
-        }
         self.expires_in.is_none_or(|value| value > 0)
     }
 }

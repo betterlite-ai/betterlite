@@ -110,17 +110,13 @@ pub(crate) struct MintValidation<'request> {
     pub(crate) expires_in: Option<i64>,
     pub(crate) required_token: &'request str,
     pub(crate) token_type: Option<&'request str>,
-    pub(crate) optional_token: Option<&'request str>,
 }
 
 pub(crate) fn validate_mint(request: &MintValidation<'_>) -> Result<(), EnvelopeMintError> {
     if request.identity.server_id.is_empty() || request.identity.subject.is_empty() {
         return Err(EnvelopeMintError::IdentityFieldEmpty);
     }
-    if request.required_token.is_empty()
-        || request.token_type.is_some_and(str::is_empty)
-        || request.optional_token.is_some_and(str::is_empty)
-    {
+    if request.required_token.is_empty() || request.token_type.is_some_and(str::is_empty) {
         return Err(EnvelopeMintError::TokenEmpty);
     }
     if request.expires_in.is_some_and(|value| value <= 0) {
@@ -155,29 +151,19 @@ pub(crate) struct HeaderOwned {
 }
 
 pub(crate) trait MintPayload: Sized {
-    fn expires_in(&self) -> Option<i64>;
     fn required_token(&self) -> &str;
     fn token_type(&self) -> Option<&str>;
-    fn optional_token(&self) -> Option<&str>;
     fn lifetime(&self) -> i64;
     fn into_plaintext(self) -> Result<String, EnvelopeMintError>;
 }
 
 impl MintPayload for UpstreamTokenGrant {
-    fn expires_in(&self) -> Option<i64> {
-        self.expires_in
-    }
-
     fn required_token(&self) -> &str {
         self.access_token.expose_secret()
     }
 
     fn token_type(&self) -> Option<&str> {
         Some(&self.token_type)
-    }
-
-    fn optional_token(&self) -> Option<&str> {
-        self.refresh_token.as_ref().map(SecretString::expose_secret)
     }
 
     fn lifetime(&self) -> i64 {
@@ -191,19 +177,11 @@ impl MintPayload for UpstreamTokenGrant {
 }
 
 impl MintPayload for RefreshCredential {
-    fn expires_in(&self) -> Option<i64> {
-        self.expires_in
-    }
-
     fn required_token(&self) -> &str {
         self.refresh_token.expose_secret()
     }
 
     fn token_type(&self) -> Option<&str> {
-        None
-    }
-
-    fn optional_token(&self) -> Option<&str> {
         None
     }
 
