@@ -84,3 +84,59 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
         }
     }
 }
+
+#[test]
+fn output_schema_filter_preserves_each_supported_branch() {
+    let source: Json = serde_json::from_str(
+        r#"{
+            "description":"schema",
+            "type":"string",
+            "contains":{"type":"object","minimum":1},
+            "properties":{"child":{"minItems":1,"type":"array"}},
+            "$defs":{"Definition":{"type":"boolean"}},
+            "items":{"type":"object","additionalProperties":true}
+        }"#,
+    )
+    .unwrap();
+    let filtered = serde_json::to_value(filter_anthropic_output_schema(source)).unwrap();
+    assert_eq!(filtered["type"], "string");
+    assert_eq!(
+        filtered["description"],
+        "schema Note: array must contain an item matching: {\"type\": \"object\", \"minimum\": 1}."
+    );
+    assert_eq!(
+        filtered["properties"]["child"]["description"],
+        "Note: minimum number of items: 1."
+    );
+    assert_eq!(filtered["$defs"]["Definition"]["type"], "boolean");
+    assert_eq!(filtered["items"]["type"], "object");
+    assert_eq!(filtered["items"]["additionalProperties"], false);
+    assert_eq!(
+        serde_json::to_value(filter_anthropic_output_schema(
+            serde_json::from_str(r#"{"type":"null","enum":[null]}"#).unwrap(),
+        ))
+        .unwrap()["type"],
+        "null"
+    );
+    assert_eq!(
+        serde_json::to_value(filter_anthropic_output_schema(
+            serde_json::from_str(r#"{"type":"boolean","enum":[true]}"#).unwrap(),
+        ))
+        .unwrap()["type"],
+        "boolean"
+    );
+    assert_eq!(
+        serde_json::to_value(filter_anthropic_output_schema(
+            serde_json::from_str(r#"{"type":"array","enum":[[]]}"#).unwrap(),
+        ))
+        .unwrap()["type"],
+        "array"
+    );
+    let note_schema: Json =
+        serde_json::from_str(r#"{"contains":{"type":"string","enum":["x"]}}"#).unwrap();
+    let note = serde_json::to_value(filter_anthropic_output_schema(note_schema)).unwrap();
+    assert_eq!(
+        note["description"],
+        "Note: array must contain an item matching: {\"type\": \"string\", \"enum\": [\"x\"]}."
+    );
+}
