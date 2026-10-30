@@ -1,0 +1,5 @@
+task: B1669
+deviations:
+  - what: Nonfinite or unrepresentable off-peak money returns a typed pricing error, and finite prices retain exact decimal digits.
+    why: Spend cannot carry float infinity or silently lose rate precision; invalid textual rates still use the source fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L537-L552

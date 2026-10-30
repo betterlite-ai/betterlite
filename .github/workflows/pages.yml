@@ -1,0 +1,66 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - .development/site/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: build the progress page
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # merges.txt reads every merge on main
+          persist-credentials: false
+
+      # the page parses the YAML itself, so the build only joins the files
+      - name: Join the task list, the deviation logs and the merge history
+        run: |
+          mkdir _site
+          cp .development/site/index.html .development/litellm-inventory.txt .development/litellm.yaml _site/
+          for file in .development/backlog/*.yaml; do printf -- '---\n'; cat "$file"; printf '\n'; done > _site/backlog.yaml
+          for file in docs/deviations/*.yaml; do printf -- '---\n'; cat "$file"; printf '\n'; done > _site/deviations.yaml
+          git log --first-parent --format='%ct %s' HEAD > _site/merges.txt
+          git log -1 --format='%H %ct' HEAD > _site/commit.txt
+          ls -l _site
+
+      - name: Upload the page
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+
+  deploy:
+    name: deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -42,7 +42,7 @@ pub(crate) struct Vendor {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub(crate) id: String,
     #[schemars(
-        description = "Text the vendor's CLI prints when the account is out of usage. A run that ends without an answer and prints one in its last lines marks the vendor, and every ladder skips it for limit_retry_minutes."
+        description = "Text the vendor's CLI prints when it can't run for a while: out of usage, logged out or offline. A run that ends without an answer and prints one in its last lines marks the vendor, and every ladder skips it for limit_retry_minutes."
     )]
     pub(crate) limit_markers: Vec<String>,
     #[schemars(
@@ -50,6 +50,11 @@ pub(crate) struct Vendor {
         description = "Runs at once on this vendor. Without it the policy's max_parallel applies."
     )]
     pub(crate) max_parallel: Option<u32>,
+    #[schemars(
+        range(min = 1),
+        description = "Worker runs at once on this vendor, counted inside its max_parallel. Without it workers may take every seat."
+    )]
+    pub(crate) max_writers: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -143,6 +148,10 @@ pub(crate) struct Policy {
         description = "Runs at once on each vendor that sets no max_parallel of its own. A run waits for a free seat."
     )]
     pub(crate) max_parallel: u32,
+    #[schemars(
+        description = "When every seat of a worker rung's vendor is taken, the try runs on the first later rung of another vendor that has a free seat. It still counts as a try on its own rung."
+    )]
+    pub(crate) overflow: bool,
     #[schemars(description = "Review rounds before a task goes back to the architect.")]
     pub(crate) max_review_rounds: u32,
     #[schemars(

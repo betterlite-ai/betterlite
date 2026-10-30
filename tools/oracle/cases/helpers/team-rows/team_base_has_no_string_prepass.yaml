@@ -1,0 +1,8 @@
+kind: helper
+name: team_base_has_no_string_prepass
+call:
+  team_rows:
+    calls:
+      - {"name":"team_base_has_no_string_prepass","operation":"team_base","row":{"metadata":"{}"}}
+env: {}
+compare: {ignore: []}

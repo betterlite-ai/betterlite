@@ -103,12 +103,12 @@ enum Command {
         paths: bool,
     },
     #[command(
-        about = "Show which task owns a LiteLLM path or a betterlite file, with the LiteLLM lines it ports and its deviations"
-    )]
-    #[command(
         about = "Show a backlog entry like a ticket: status, links, what it unblocks, components, coverage and its history from git"
     )]
     Show { task: String },
+    #[command(
+        about = "Show which task owns a LiteLLM path or a betterlite file, with the LiteLLM lines it ports and its deviations"
+    )]
     Trace {
         #[arg(help = "A path from the repository or LiteLLM root, optionally with :line")]
         target: String,

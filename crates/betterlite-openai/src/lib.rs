@@ -33,6 +33,7 @@ pub mod credentials;
 pub mod decisions;
 pub mod deepinfra;
 pub mod deepseek_chat;
+pub mod embedding;
 pub mod error;
 pub mod evals;
 pub mod files;
