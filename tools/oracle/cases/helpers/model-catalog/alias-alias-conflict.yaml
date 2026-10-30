@@ -9,4 +9,4 @@ call:
     lookup: [shared]
 env: {}
 compare:
-  ignore: [{pointer: /warnings, why: warning wording differs between Python and Rust}]
+  ignore: [{pointer: /value/warnings, why: warning wording differs between Python and Rust}]

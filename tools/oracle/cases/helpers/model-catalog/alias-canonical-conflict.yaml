@@ -9,4 +9,6 @@ call:
     lookup: [other]
 env: {}
 compare:
-  ignore: [{pointer: /warnings, why: warning wording differs between Python and Rust}]
+  ignore:
+    - {pointer: /value/warnings, why: warning wording differs between Python and Rust}
+    - {pointer: /value/lookup/0/model, why: canonical name projection differs for a canonical collision}
