@@ -42,7 +42,7 @@ pub(crate) struct Vendor {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub(crate) id: String,
     #[schemars(
-        description = "Text the vendor's CLI prints when the account is out of usage. A run that ends without an answer and prints one in its last lines marks the vendor, and every ladder skips it for limit_retry_minutes."
+        description = "Text the vendor's CLI prints when it can't run for a while: out of usage, logged out or offline. A run that ends without an answer and prints one in its last lines marks the vendor, and every ladder skips it for limit_retry_minutes."
     )]
     pub(crate) limit_markers: Vec<String>,
     #[schemars(
