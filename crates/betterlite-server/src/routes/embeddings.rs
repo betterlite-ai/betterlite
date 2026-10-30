@@ -29,6 +29,20 @@ struct ErrorObject {
     code: String,
 }
 
+#[derive(serde::Deserialize)]
+struct ProviderErrorBody {
+    error: ProviderErrorFields,
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderErrorFields {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+    code: Option<String>,
+}
+
 pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
     let mut router = Router::new();
     router = router.route("/embeddings", post(embeddings));
@@ -88,7 +102,9 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
         | EmbeddingError::Encode { .. } => (500, "internal_server_error"),
     };
     let message = match error {
-        EmbeddingError::Provider { response } => provider_message(&response.body, error),
+        EmbeddingError::Provider { response } => {
+            provider_message(response.status, &response.body, error)
+        }
         EmbeddingError::Body { .. }
         | EmbeddingError::Encode { .. }
         | EmbeddingError::Decode { .. }
@@ -113,9 +129,20 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
     (status_code, response_headers, Json(body)).into_response()
 }
 
-fn provider_message(body: &[u8], fallback: &EmbeddingError) -> String {
-    if let Ok(text) = str::from_utf8(body) {
-        return String::from(text);
+fn provider_message(status: u16, body: &[u8], fallback: &EmbeddingError) -> String {
+    if let Ok(parsed) = serde_json::from_slice::<ProviderErrorBody>(body) {
+        let error = parsed.error;
+        return format!(
+            "Error code: {status} - {{'error': {{'message': '{}', 'type': '{}', 'param': {}, 'code': {}}}}}",
+            error.message,
+            error.error_type,
+            error
+                .param
+                .map_or_else(|| String::from("None"), |value| format!("'{value}'")),
+            error
+                .code
+                .map_or_else(|| String::from("None"), |value| format!("'{value}'")),
+        );
     }
     fallback.to_string()
 }
