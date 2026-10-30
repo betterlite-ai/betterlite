@@ -80,10 +80,24 @@ fn drop_list_children(children: &mut [Json], depth: usize) {
 }
 
 fn is_python_regex(pattern: &str) -> bool {
-    if pattern.contains("\\p{") || pattern.contains("\\P{") || pattern.contains("\\z") {
+    if pattern.contains("\\\\p{") || pattern.contains("\\\\P{") || pattern.contains("\\\\z") {
+        return true;
+    }
+    if has_unescaped(pattern, "\\p{")
+        || has_unescaped(pattern, "\\P{")
+        || has_unescaped(pattern, "\\z")
+    {
         return false;
     }
     Regex::new(pattern).is_ok()
+}
+
+fn has_unescaped(pattern: &str, needle: &str) -> bool {
+    let unescaped = pattern.replace("\\\\", "");
+    if unescaped.contains(needle) {
+        return true;
+    }
+    false
 }
 
 fn is_schema_map_key(key: &str) -> bool {

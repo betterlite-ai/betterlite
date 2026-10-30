@@ -10,10 +10,19 @@ use serde_json::{Map, Value};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub(crate) enum Input {
-    FlattenTopLevel { schema: Object },
-    DropNonPythonRegexPatterns { schema: Object },
-    FlattenAndDrop { schema: Object },
-    ToolWithSanitizedParameters { tool: Object },
+    FlattenTopLevel {
+        schema: Object,
+    },
+    DropNonPythonRegexPatterns {
+        schema: Object,
+    },
+    #[serde(rename = "flatten_combinators_and_drop_non_python_regex_patterns")]
+    FlattenAndDrop {
+        schema: Object,
+    },
+    ToolWithSanitizedParameters {
+        tool: Object,
+    },
 }
 
 pub(crate) struct Op;

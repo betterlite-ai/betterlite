@@ -36,8 +36,8 @@ fn object(text: &str) -> Object {
     )
 )]
 #[case::local_ref_branch(
-    object(r###"{"$defs":{"entry":{"type":"object","properties":{"id":{"type":"string"}}}},"anyOf":[{"$ref":"#/$defs/entry"}]}"###),
-    object(r###"{"$defs":{"entry":{"type":"object","properties":{"id":{"type":"string"}}}},"type":"object","properties":{"id":{"type":"string"}}}"###)
+    object(r##"{"$defs":{"entry":{"type":"object","properties":{"id":{"type":"string"}}}},"anyOf":[{"$ref":"#/$defs/entry"}]}"##),
+    object(r#"{"$defs":{"entry":{"type":"object","properties":{"id":{"type":"string"}}}},"type":"object","properties":{"id":{"type":"string"}}}"#)
 )]
 #[case::invalid_combinator_shape(
     object(r#"{"type":"object","allOf":{"type":"object"},"properties":{}}"#),
@@ -56,6 +56,12 @@ fn nested_non_python_regex_is_removed_without_touching_data() {
         r#"{"type":"object","properties":{"x":{"type":"string","default":{"pattern":"\\p{Cc}"}}}}"#,
     );
     assert_eq!(drop_non_python_regex_patterns(&schema), expected);
+}
+
+#[test]
+fn escaped_regex_marker_is_preserved() {
+    let schema = object(r#"{"type":"object","pattern":"\\\\p{Cc}"}"#);
+    assert_eq!(drop_non_python_regex_patterns(&schema), schema);
 }
 
 #[rstest]

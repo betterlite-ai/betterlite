@@ -26,8 +26,7 @@ pub fn drop_non_python_regex_patterns(schema: &Object) -> Object {
 #[must_use]
 pub fn flatten_and_drop(schema: &Object) -> Object {
     let filtered = drop_non_python_regex_patterns(schema);
-    let result = flatten_top_level(&filtered);
-    result
+    flatten_top_level(&filtered)
 }
 
 pub fn tool_with_sanitized_parameters(tool: Object, sanitize: fn(&Object) -> Object) -> Object {
@@ -119,25 +118,27 @@ fn flatten_against_root(
 }
 
 fn is_flattenable_object(schema: &Object, branches: &[&Object]) -> bool {
-    let result = schema
+    let has_object_type = schema
         .get("type")
-        .is_some_and(|value| value.as_str() == Some("object"))
-        || (schema.get("type").is_none() && schema.contains_key("properties"))
-        || (schema.get("type").is_none()
-            && !branches.is_empty()
-            && branches.iter().all(|branch| is_object_schema(branch)));
-    result
+        .is_some_and(|value| value.as_str() == Some("object"));
+    let has_properties_without_type =
+        schema.get("type").is_none() && schema.contains_key("properties");
+    if has_object_type || has_properties_without_type {
+        return true;
+    }
+    schema.get("type").is_none()
+        && !branches.is_empty()
+        && branches.iter().all(|branch| is_object_schema(branch))
 }
 
 fn kept_fields(schema: &Object) -> Object {
-    let result = schema
-        .iter()
-        .filter(|(key, _)| {
-            !COMBINATORS.contains(&key.as_str()) && !REJECTED_TOP_LEVEL.contains(&key.as_str())
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    result
+    let mut fields = Object::new();
+    for (key, value) in schema {
+        if !COMBINATORS.contains(&key.as_str()) && !REJECTED_TOP_LEVEL.contains(&key.as_str()) {
+            fields.insert(key.clone(), value.clone());
+        }
+    }
+    fields
 }
 
 fn flatten_group(
@@ -150,7 +151,10 @@ fn flatten_group(
     let next_depth = depth.checked_add(1)?;
     branches
         .into_iter()
-        .map(|branch| mergeable_branch(root, branch, seen_refs, next_depth, expanded_refs))
+        .map(|json| {
+            let branch = json.as_object()?;
+            mergeable_object(root, branch, seen_refs, next_depth, expanded_refs)
+        })
         .collect()
 }
 
@@ -196,23 +200,11 @@ fn intersection_required(
     first: &BTreeSet<String>,
     groups: &[BTreeSet<String>],
 ) -> BTreeSet<String> {
-    let result = groups.iter().skip(1).fold(first.clone(), |current, names| {
-        current.intersection(names).cloned().collect()
-    });
-    result
-}
-
-fn mergeable_branch(
-    root: &Object,
-    branch: &Json,
-    seen_refs: &BTreeSet<String>,
-    depth: usize,
-    expanded_refs: &mut BTreeMap<String, Option<Object>>,
-) -> Option<Object> {
-    if depth > MAX_FLATTEN_DEPTH {
-        return None;
+    let mut required = first.clone();
+    for names in groups.iter().skip(1) {
+        required = required.intersection(names).cloned().collect();
     }
-    mergeable_object(root, branch.as_object()?, seen_refs, depth, expanded_refs)
+    required
 }
 
 fn mergeable_object(
@@ -222,6 +214,9 @@ fn mergeable_object(
     depth: usize,
     expanded_refs: &mut BTreeMap<String, Option<Object>>,
 ) -> Option<Object> {
+    if depth > MAX_FLATTEN_DEPTH {
+        return None;
+    }
     if let Some(Json::Text(reference)) = branch.get("$ref") {
         if let Some(expanded) = expanded_refs.get(reference) {
             return expanded.clone();
@@ -258,9 +253,10 @@ fn resolve_local_ref<'root>(root: &'root Object, reference: &str) -> Option<&'ro
 }
 
 fn is_object_schema(schema: &Object) -> bool {
-    let result = schema
+    let has_object_type = schema
         .get("type")
-        .is_some_and(|value| value.as_str() == Some("object"))
-        || (schema.get("type").is_none() && schema.contains_key("properties"));
-    result
+        .is_some_and(|value| value.as_str() == Some("object"));
+    let has_properties_without_type =
+        schema.get("type").is_none() && schema.contains_key("properties");
+    has_object_type || has_properties_without_type
 }
