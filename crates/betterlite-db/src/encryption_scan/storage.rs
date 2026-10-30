@@ -65,7 +65,10 @@ where
         .map(|column| format!("\"{column}\"::text"))
         .collect::<Vec<_>>()
         .join(", ");
-    let sql = format!("SELECT {columns} FROM \"{}\"", spec.table);
+    let mut sql = format!("SELECT {columns} FROM \"{}\"", spec.table);
+    if spec.table == "LiteLLM_Config" {
+        sql.push_str(" WHERE \"param_name\" = 'environment_variables'");
+    }
     client
         .query_raw(&sql, iter::empty::<&str>())
         .await
@@ -100,6 +103,12 @@ fn scan_row(
                 | MigrationJson::Array(_)
                 | MigrationJson::Object(_) => None,
             };
+            if spec.table == "LiteLLM_Config"
+                && matches!(value, MigrationJson::String(_))
+                && decoded.is_none()
+            {
+                continue;
+            }
             scan_json_value(report, decoded.as_ref().unwrap_or(&value), cipher)?;
         }
     }
@@ -112,54 +121,20 @@ fn scan_row(
     Ok(())
 }
 
-async fn scan_config_env_vars<C>(client: &C, cipher: &DbCipher) -> Result<LocationReport, ScanError>
-where
-    C: GenericClient + Sync,
-{
-    let mut report = LocationReport {
-        location: String::from("config_environment_variables"),
-        scanned: 0,
-        migrated: 0,
-        already_v2: 0,
-        plaintext: 0,
-        undecryptable: 0,
-        legacy: 0,
-    };
-    let Ok(Some(row)) = client
-        .query_opt(
-            "SELECT \"param_value\"::text FROM \"LiteLLM_Config\" WHERE \"param_name\" = $1",
-            &[&"environment_variables"],
-        )
-        .await
-    else {
-        return Ok(report);
-    };
-    if let Some(value) = row_value(&row, "param_value")? {
-        match value {
-            MigrationJson::String(text) => {
-                if let Ok(decoded) = decode_migration_json(text.0.expose_secret().as_bytes()) {
-                    scan_json_value(&mut report, &decoded, cipher)?;
-                }
-            }
-            other @ (MigrationJson::Null
-            | MigrationJson::Bool(_)
-            | MigrationJson::Number(_)
-            | MigrationJson::Array(_)
-            | MigrationJson::Object(_)) => scan_json_value(&mut report, &other, cipher)?,
-        }
-    }
-    Ok(report)
-}
-
 async fn scan_tables<C>(client: &C, cipher: &DbCipher) -> Result<MigrationReport, ScanError>
 where
     C: GenericClient + Sync,
 {
     let mut locations = Vec::new();
-    for spec in COVERED_TABLE_SPECS {
+    let config = CoveredTableSpec {
+        location: "config_environment_variables",
+        table: "LiteLLM_Config",
+        json_columns: &["param_value"],
+        scalar_columns: &[],
+    };
+    for spec in COVERED_TABLE_SPECS.iter().chain(iter::once(&config)) {
         locations.push(scan_one_table(client, spec, cipher).await?);
     }
-    locations.push(scan_config_env_vars(client, cipher).await?);
     Ok(MigrationReport { locations })
 }
 

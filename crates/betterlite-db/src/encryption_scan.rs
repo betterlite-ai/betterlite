@@ -1,6 +1,6 @@
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
-use betterlite_secrets::secret_codec::secret_map::decode_secret_map;
+use betterlite_secrets::secret_codec::secret_map::{SecretMap, decode_secret_map};
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, OsNonces, StoredCipher, StoredValue,
 };
@@ -214,11 +214,7 @@ pub fn classify_secret_map(
     cipher: &DbCipher,
     key: &str,
 ) -> Option<ValueClass> {
-    let encoded = match serde_json::to_string(value) {
-        Ok(text) => SecretString::from(text),
-        Err(_) => return Some(ValueClass::Undecryptable),
-    };
-    let decoded = match decode_secret_map(cipher, Some(encoded.expose_secret()), key) {
+    let decoded = match decode_map(value, cipher, key) {
         Ok(map) => map?,
         Err(_) => return Some(ValueClass::Undecryptable),
     };
@@ -242,6 +238,17 @@ pub fn classify_secret_map(
     } else {
         ValueClass::Legacy
     })
+}
+
+fn decode_map(
+    value: &MigrationJson,
+    cipher: &DbCipher,
+    key: &str,
+) -> Result<Option<SecretMap>, SecretError> {
+    let encoded = SecretString::from(
+        serde_json::to_string(value).map_err(|source| SecretError::MapEncode { source })?,
+    );
+    decode_secret_map(cipher, Some(encoded.expose_secret()), key)
 }
 
 pub mod storage;
