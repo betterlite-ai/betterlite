@@ -11,6 +11,7 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "toki
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
+betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
