@@ -20,6 +20,7 @@ A finding is a broken reviewed rule at a specific line of a changed file. For ea
 - When the code is right but you'd have written it differently, that's not a finding.
 - When a reviewed rule needs a judgment you can't make from the code and the task (a requirement the task doesn't state), leave it out rather than guess.
 - Check reuse-before-building against the worker's prior art: hand-written code for a solved problem with no recorded comparison is a finding.
+- Splitting a file, a function or a data file only to get under a lint or size limit is a finding under one-responsibility-per-file: a split follows a seam, not a number.
 - Before you call a behavior wrong, read the LiteLLM line it ports. Code that does what LiteLLM does is not a finding, unless it repeats a bug that rule owned-behavior-is-built says to fix: then report it with origin litellm. A fix of such a bug that docs/deviations/<ID>.yaml lists is accepted. Everything else betterlite introduced, including a change to what a working LiteLLM setup relies on, has origin ours.
 
 ## Final answer
