@@ -1,20 +1,19 @@
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoOpMetric;
 
-impl NoOpMetric {
+pub trait Metric: Sized {
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    fn labels(&self, labels: &[(&str, &str)]) -> Self;
+    fn inc(&self, value: u64);
+    fn set(&self, value: u64);
+    fn observe(&self, value: u64);
+}
+
+impl Metric for NoOpMetric {
+    fn labels(&self, _labels: &[(&str, &str)]) -> Self {
+        *self
     }
-
-    #[must_use]
-    pub const fn labels(&self) -> Self {
-        Self
-    }
-
-    pub const fn inc(&self) {}
-
-    pub const fn set(&self) {}
-
-    pub const fn observe(&self) {}
+    fn inc(&self, _value: u64) {}
+    fn set(&self, _value: u64) {}
+    fn observe(&self, _value: u64) {}
 }

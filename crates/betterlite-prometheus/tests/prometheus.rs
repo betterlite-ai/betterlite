@@ -1,8 +1,16 @@
-mod label_name_sanitization { use betterlite_prometheus::label_sanitization::sanitize_prometheus_label_name; #[test] fn replaces_invalid() { assert_eq!(sanitize_prometheus_label_name("9bad-name"), "_9bad_name"); } }
-mod label_value_sanitization { use betterlite_prometheus::label_sanitization::sanitize_prometheus_label_value; #[test] fn translates_and_escapes() { assert_eq!(sanitize_prometheus_label_value(Some("a\\b\"c\n")), Some("a\\\\b\\\"c ".to_owned())); } }
-mod label_names { use betterlite_prometheus::label_names_catalog::UserApiKeyLabelName; #[test] fn exposes_domains() { assert_eq!(UserApiKeyLabelName::ALL.len(), 33); } }
-mod metric_vocabulary { use betterlite_prometheus::metric_catalog::DEFINED_PROMETHEUS_METRICS; #[test] fn contains_metrics() { assert_eq!(DEFINED_PROMETHEUS_METRICS.len(), 83); } }
-mod label_values { use std::collections::BTreeMap; use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues}; #[test] fn ignores_unknowns() { let values = BTreeMap::from([(String::from("api_key_hash"), LabelDumpValue::String(String::from("hash")))]); assert_eq!(UserApiKeyLabelValues::from_map(&values).hashed_api_key.as_deref(), Some("hash")); } }
-mod caller_identity { use betterlite_prometheus::caller_identity_logic::resolve_caller_identity_labels; #[test] fn resolves_modes() { let labels = vec![String::from("api_key_alias")]; assert_eq!(resolve_caller_identity_labels("litellm_llm_api_latency_metric", &labels, Some("user_email")).unwrap(), ["user_email"]); } }
-mod validation_errors { use betterlite_prometheus::validation::{MetricValidationError, ValidationResults}; #[test] fn combines_messages() { let results = ValidationResults { metric_errors: vec![MetricValidationError { metric_name: String::from("bad"), valid_metrics: Vec::new() }], label_errors: Vec::new() }; assert!(results.has_errors()); } }
-mod input_sequence_length_bucket { use betterlite_prometheus::input_sequence_length::get_input_sequence_length_bucket; #[test] fn handles_boundaries() { assert_eq!(get_input_sequence_length_bucket(Some(999)), "0-1k"); } }
+#[path = "../src/tests/caller_identity.rs"]
+mod caller_identity;
+#[path = "../src/tests/input_sequence_length_bucket.rs"]
+mod input_sequence_length_bucket;
+#[path = "../src/tests/label_name_sanitization.rs"]
+mod label_name_sanitization;
+#[path = "../src/tests/label_names.rs"]
+mod label_names;
+#[path = "../src/tests/label_value_sanitization.rs"]
+mod label_value_sanitization;
+#[path = "../src/tests/label_values.rs"]
+mod label_values;
+#[path = "../src/tests/metric_vocabulary.rs"]
+mod metric_vocabulary;
+#[path = "../src/tests/validation_errors.rs"]
+mod validation_errors;

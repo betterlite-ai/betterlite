@@ -7,3 +7,9 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+rstest = "=0.27.0"

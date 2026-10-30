@@ -1,5 +1,5 @@
 #[must_use]
-pub fn sanitize_prometheus_label_name(label: &str) -> String {
+pub fn sanitize_label_name(label: &str) -> String {
     if label.is_empty() {
         return "_".to_owned();
     }
@@ -24,13 +24,14 @@ pub fn sanitize_prometheus_label_name(label: &str) -> String {
 }
 
 #[must_use]
-pub fn sanitize_prometheus_label_value(input: Option<&str>) -> Option<String> {
+pub fn sanitize_label_value(input: Option<&str>) -> Option<String> {
     let text = input?;
     let translated = text
         .chars()
-        .map(|character| match character {
-            '\n' | '\r' | '\u{2028}' | '\u{2029}' => ' ',
-            other => other,
+        .filter_map(|character| match character {
+            '\n' => Some(' '),
+            '\r' | '\u{2028}' | '\u{2029}' => None,
+            other => Some(other),
         })
         .collect::<String>();
     let mut escaped = String::with_capacity(translated.len());

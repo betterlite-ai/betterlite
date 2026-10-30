@@ -1,16 +1,12 @@
-#[path = "caller_identity_logic.rs"]
+pub mod buckets;
 pub mod caller_identity_logic;
 pub mod collector_factory;
 pub mod input_sequence_length;
-#[path = "label_names_catalog.rs"]
 pub mod label_names_catalog;
 pub mod label_sanitization;
-#[path = "label_value_record.rs"]
 pub mod label_value_record;
-#[path = "metric_catalog.rs"]
 pub mod metric_catalog;
 pub mod no_op_metric;
 pub mod scrape_endpoint;
 pub mod service_health;
-#[path = "validation.rs"]
 pub mod validation;

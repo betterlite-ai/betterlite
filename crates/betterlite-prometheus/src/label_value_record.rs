@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
+use std::fmt;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LabelDumpValue {
     Null,
+    Boolean(bool),
+    Integer(i64),
     String(String),
     Strings(Vec<String>),
     Metadata(BTreeMap<String, String>),
@@ -24,7 +27,7 @@ impl LabelDumpValue {
         }
     }
 }
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct UserApiKeyLabelValues {
     pub end_user: Option<String>,
     pub user: Option<String>,
@@ -74,7 +77,7 @@ impl UserApiKeyLabelValues {
     }
 
     #[must_use]
-    pub fn from_map(values: &BTreeMap<String, LabelDumpValue>) -> Self {
+    pub fn from_entries(values: &[(String, LabelDumpValue)]) -> Self {
         let mut result = Self::default();
         for (name, value) in values {
             let canonical = if name == "api_key_hash" {
@@ -90,23 +93,33 @@ impl UserApiKeyLabelValues {
                 result.set_metadata(value);
                 continue;
             }
-            if let (Some(target), LabelDumpValue::String(text)) =
-                (result.string_field_mut(canonical), value)
-            {
-                *target = Some(text.clone());
-            }
+            result.set_scalar(canonical, value);
         }
         result
+    }
+    fn set_scalar(&mut self, name: &str, value: &LabelDumpValue) {
+        let Some(target) = self.string_field_mut(name) else {
+            return;
+        };
+        match value {
+            LabelDumpValue::Null => *target = None,
+            LabelDumpValue::String(text) => *target = Some(text.clone()),
+            LabelDumpValue::Boolean(flag) if name == "stream" => {
+                *target = Some(if *flag { "True" } else { "False" }.to_owned());
+            }
+            LabelDumpValue::Integer(number) if name == "stream" => {
+                *target = Some(number.to_string());
+            }
+            LabelDumpValue::Boolean(_)
+            | LabelDumpValue::Integer(_)
+            | LabelDumpValue::Strings(_)
+            | LabelDumpValue::Metadata(_) => {}
+        }
     }
     #[must_use]
     pub fn model_dump(&self) -> BTreeMap<String, LabelDumpValue> {
         let mut dump = BTreeMap::new();
-        for (name, value) in self.string_fields() {
-            dump.insert(
-                name.to_owned(),
-                value.map_or(LabelDumpValue::Null, LabelDumpValue::String),
-            );
-        }
+        self.write_strings(&mut dump);
         dump.insert(
             "tags".to_owned(),
             LabelDumpValue::Strings(self.tags.clone()),
@@ -116,6 +129,46 @@ impl UserApiKeyLabelValues {
             LabelDumpValue::Metadata(self.custom_metadata_labels.clone()),
         );
         dump
+    }
+    fn write_strings(&self, dump: &mut BTreeMap<String, LabelDumpValue>) {
+        for (name, value) in [
+            ("end_user", self.end_user.clone()),
+            ("user", self.user.clone()),
+            ("user_email", self.user_email.clone()),
+            ("user_alias", self.user_alias.clone()),
+            ("hashed_api_key", self.hashed_api_key.clone()),
+            ("api_key_alias", self.api_key_alias.clone()),
+            ("team", self.team.clone()),
+            ("team_alias", self.team_alias.clone()),
+            ("model_group", self.model_group.clone()),
+            ("requested_model", self.requested_model.clone()),
+            ("model", self.model.clone()),
+            ("litellm_model_name", self.litellm_model_name.clone()),
+            ("model_id", self.model_id.clone()),
+            ("api_base", self.api_base.clone()),
+            ("api_provider", self.api_provider.clone()),
+            ("exception_status", self.exception_status.clone()),
+            ("exception_class", self.exception_class.clone()),
+            ("rate_limit_category", self.rate_limit_category.clone()),
+            ("rate_limit_type", self.rate_limit_type.clone()),
+            ("status_code", self.status_code.clone()),
+            ("fallback_model", self.fallback_model.clone()),
+            ("route", self.route.clone()),
+            ("client_ip", self.client_ip.clone()),
+            ("user_agent", self.user_agent.clone()),
+            ("stream", self.stream.clone()),
+            ("org_id", self.org_id.clone()),
+            ("org_alias", self.org_alias.clone()),
+            ("mcp_tool_name", self.mcp_tool_name.clone()),
+            ("mcp_server_name", self.mcp_server_name.clone()),
+            ("service_tier", self.service_tier.clone()),
+            ("input_sequence_length", self.input_sequence_length.clone()),
+        ] {
+            dump.insert(
+                name.to_owned(),
+                value.map_or(LabelDumpValue::Null, LabelDumpValue::String),
+            );
+        }
     }
     fn string_field_mut(&mut self, name: &str) -> Option<&mut Option<String>> {
         match name {
@@ -153,39 +206,10 @@ impl UserApiKeyLabelValues {
             _ => None,
         }
     }
-    fn string_fields(&self) -> Vec<(&'static str, Option<String>)> {
-        vec![
-            ("end_user", self.end_user.clone()),
-            ("user", self.user.clone()),
-            ("user_email", self.user_email.clone()),
-            ("user_alias", self.user_alias.clone()),
-            ("hashed_api_key", self.hashed_api_key.clone()),
-            ("api_key_alias", self.api_key_alias.clone()),
-            ("team", self.team.clone()),
-            ("team_alias", self.team_alias.clone()),
-            ("model_group", self.model_group.clone()),
-            ("requested_model", self.requested_model.clone()),
-            ("model", self.model.clone()),
-            ("litellm_model_name", self.litellm_model_name.clone()),
-            ("model_id", self.model_id.clone()),
-            ("api_base", self.api_base.clone()),
-            ("api_provider", self.api_provider.clone()),
-            ("exception_status", self.exception_status.clone()),
-            ("exception_class", self.exception_class.clone()),
-            ("rate_limit_category", self.rate_limit_category.clone()),
-            ("rate_limit_type", self.rate_limit_type.clone()),
-            ("status_code", self.status_code.clone()),
-            ("fallback_model", self.fallback_model.clone()),
-            ("route", self.route.clone()),
-            ("client_ip", self.client_ip.clone()),
-            ("user_agent", self.user_agent.clone()),
-            ("stream", self.stream.clone()),
-            ("org_id", self.org_id.clone()),
-            ("org_alias", self.org_alias.clone()),
-            ("mcp_tool_name", self.mcp_tool_name.clone()),
-            ("mcp_server_name", self.mcp_server_name.clone()),
-            ("service_tier", self.service_tier.clone()),
-            ("input_sequence_length", self.input_sequence_length.clone()),
-        ]
+}
+
+impl fmt::Debug for UserApiKeyLabelValues {
+    fn fmt(&self, _formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Ok(())
     }
 }

@@ -110,3 +110,12 @@ impl UserApiKeyLabelName {
         }
     }
 }
+
+pub const REQUESTED_MODEL: &str = UserApiKeyLabelName::RequestedModel.as_str();
+pub const EXCEPTION_STATUS: &str = UserApiKeyLabelName::ExceptionStatus.as_str();
+pub const EXCEPTION_CLASS: &str = UserApiKeyLabelName::ExceptionClass.as_str();
+pub const RATE_LIMIT_CATEGORY: &str = UserApiKeyLabelName::RateLimitCategory.as_str();
+pub const RATE_LIMIT_TYPE: &str = UserApiKeyLabelName::RateLimitType.as_str();
+pub const ZERO_COST_REASON_LABEL: &str = "reason";
+pub const STATUS_CODE: &str = UserApiKeyLabelName::StatusCode.as_str();
+pub const EXCEPTION_LABELS: [&str; 2] = [EXCEPTION_STATUS, EXCEPTION_CLASS];
