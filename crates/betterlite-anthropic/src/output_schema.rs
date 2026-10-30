@@ -175,7 +175,31 @@ fn format_value(value: &Json) -> String {
         Json::Bool(flag) => flag.to_string().to_ascii_uppercase(),
         Json::Number(number) => number.to_string(),
         Json::Text(text) => text.clone(),
-        Json::List(_) | Json::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+        Json::List(_) | Json::Object(_) => python_json(value),
+    }
+}
+
+fn python_json(value: &Json) -> String {
+    match value {
+        Json::List(items) => format!(
+            "[{}]",
+            items.iter().map(python_json).collect::<Vec<_>>().join(", ")
+        ),
+        Json::Object(object) => {
+            let encoded_fields = object
+                .iter()
+                .map(|(key, child)| {
+                    let encoded =
+                        serde_json::to_string(key).unwrap_or_else(|_| String::from("\"\""));
+                    format!("{encoded}: {}", python_json(child))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{encoded_fields}}}")
+        }
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
+            serde_json::to_string(value).unwrap_or_else(|_| String::from("null"))
+        }
     }
 }
 
@@ -207,13 +231,7 @@ fn matches_type(value: &Json, kind: &str) -> bool {
 
 #[must_use]
 pub fn map_output(value: Option<ResponseFormat>) -> Option<OutputFormat> {
-    let schema = match value? {
-        ResponseFormat::Text | ResponseFormat::JsonObject { schema: None } => return None,
-        ResponseFormat::JsonSchema { schema }
-        | ResponseFormat::JsonObject {
-            schema: Some(schema),
-        } => schema,
-    };
+    let schema = schema_from_response(value)?;
     Some(OutputFormat {
         type_name: "json_schema".to_owned(),
         schema: filter_anthropic_output_schema(expand_definitions(schema)),
@@ -239,14 +257,18 @@ fn expand_definitions(schema: Json) -> Json {
 
 #[must_use]
 pub fn map_tool(value: Option<ResponseFormat>) -> Option<Tool> {
-    let schema = match value? {
-        ResponseFormat::Text | ResponseFormat::JsonObject { schema: None } => return None,
+    let schema = schema_from_response(value)?;
+    Some(json_tool(Some(schema)))
+}
+
+fn schema_from_response(value: Option<ResponseFormat>) -> Option<Json> {
+    match value? {
+        ResponseFormat::Text | ResponseFormat::JsonObject { schema: None } => None,
         ResponseFormat::JsonSchema { schema }
         | ResponseFormat::JsonObject {
             schema: Some(schema),
-        } => schema,
-    };
-    Some(json_tool(Some(schema)))
+        } => Some(schema),
+    }
 }
 
 #[must_use]

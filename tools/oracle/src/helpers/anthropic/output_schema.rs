@@ -19,7 +19,7 @@ impl crate::helpers::Helper for Op {
             Input::Filter { schema } => serde_json::to_value(
                 betterlite_anthropic::output_schema::filter_anthropic_output_schema(schema.clone()),
             )
-            .map_err(error),
+            .map_err(|source| error(&source)),
             Input::Output {
                 schema: Some(schema),
             } => serde_json::to_value(betterlite_anthropic::output_schema::map_output(Some(
@@ -27,17 +27,17 @@ impl crate::helpers::Helper for Op {
                     schema: schema.clone(),
                 },
             )))
-            .map_err(error),
-            Input::Output { schema: None } => Ok(serde_json::from_str("null").unwrap()),
+            .map_err(|source| error(&source)),
+            Input::Output { schema: None } => Ok(serde_json::Value::Null),
             Input::Tool { schema } => serde_json::to_value(
                 betterlite_anthropic::output_schema::json_tool(schema.clone()),
             )
-            .map_err(error),
+            .map_err(|source| error(&source)),
         }
     }
 }
 
-fn error(error: serde_json::Error) -> Box<crate::helpers::HelperError> {
+fn error(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
     let helper_error = crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,
