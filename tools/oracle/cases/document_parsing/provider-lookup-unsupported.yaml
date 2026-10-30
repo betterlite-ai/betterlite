@@ -1,0 +1,8 @@
+kind: helper
+name: provider-lookup-unsupported
+call:
+  b3450:
+    mode: provider_lookup
+    provider: unknown-provider
+env: {}
+compare: {ignore: []}
