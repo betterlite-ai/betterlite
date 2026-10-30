@@ -48,15 +48,6 @@ impl ModalityName {
 
 type ModalityEntryFields = BTreeMap<Box<str>, Box<RawValue>>;
 
-fn modality_entry_field_name(fields: &ModalityEntryFields) -> Option<&'static str> {
-    let modality: ModalityName = fields
-        .get("modality")
-        .map_or_else(ModalityName::default, |raw| {
-            serde_json::from_str(raw.get()).unwrap_or_default()
-        });
-    modality.field_name()
-}
-
 // A non-mapping entry is a transformation error, never silently skipped.
 pub(crate) fn modality_token_sums(
     entries: &[&RawValue],
@@ -65,7 +56,12 @@ pub(crate) fn modality_token_sums(
     for entry in entries {
         let fields: ModalityEntryFields = serde_json::from_str(entry.get())
             .map_err(|_error| CostUsageError::ModalityEntryNotObject)?;
-        let Some(field) = modality_entry_field_name(&fields) else {
+        let modality: ModalityName = fields
+            .get("modality")
+            .map_or_else(ModalityName::default, |raw| {
+                serde_json::from_str(raw.get()).unwrap_or_default()
+            });
+        let Some(field) = modality.field_name() else {
             continue;
         };
         let tokens = match fields.get("tokens") {
