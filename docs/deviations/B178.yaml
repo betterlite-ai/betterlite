@@ -1,2 +1,9 @@
 task: B178
-deviations: []
+deviations:
+  - what: >-
+      fancy-regex accepts some constructs that Python 3.13 rejects, including an inline flag after the start,
+      \G, and stacked repeats such as a{1,2}{3}; these patterns are retained.
+    why: >-
+      The task pins fancy-regex 0.19.2 as the Rust approximation of Python regex syntax while retaining the
+      explicit \p, \P and \z rejections.
+    link: https://docs.python.org/3.13/library/re.html

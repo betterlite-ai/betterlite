@@ -1,4 +1,4 @@
-use regex::Regex;
+use fancy_regex::Regex;
 
 use crate::arguments::json::{Json, Object};
 
@@ -85,9 +85,6 @@ fn drop_list_children(children: &mut [Json], depth: usize) {
 }
 
 fn is_python_regex(pattern: &str) -> bool {
-    if pattern.contains("\\\\p{") || pattern.contains("\\\\P{") || pattern.contains("\\\\z") {
-        return true;
-    }
     if has_unescaped(pattern, "\\p{")
         || has_unescaped(pattern, "\\P{")
         || has_unescaped(pattern, "\\z")
@@ -98,9 +95,15 @@ fn is_python_regex(pattern: &str) -> bool {
 }
 
 fn has_unescaped(pattern: &str, needle: &str) -> bool {
-    let unescaped = pattern.replace("\\\\", "");
-    if unescaped.contains(needle) {
-        return true;
+    for (index, _) in pattern.match_indices(needle) {
+        let slash_count = pattern[..index]
+            .chars()
+            .rev()
+            .take_while(|character| *character == '\\')
+            .count();
+        if slash_count % 2 == 1 {
+            return true;
+        }
     }
     false
 }

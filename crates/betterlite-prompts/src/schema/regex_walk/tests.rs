@@ -181,6 +181,19 @@ fn tool_schemas_tool_schema_tests_sanitizes_only_parameters() {
     );
 }
 
+#[test]
+fn tool_schemas_tool_schema_tests_expansion_bomb_is_bounded() {
+    let branches = (0..40_000)
+        .map(|index| {
+            format!(r#"{{"type":"object","properties":{{"p{index}":{{"type":"string"}}}}}}"#)
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let input = format!(r#"{{"anyOf":[{branches}]}}"#);
+    let schema = object(&input);
+    assert_eq!(flatten_and_drop(&schema), schema);
+}
+
 #[rstest]
 fn replays_the_tool_schema_corpus(#[files("fuzz/corpus/tool_schema/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
