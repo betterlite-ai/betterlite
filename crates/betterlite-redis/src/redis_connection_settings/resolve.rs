@@ -164,7 +164,9 @@ where
     for suffix in ENV_PASSTHROUGH_KWARGS {
         let name = format!("REDIS_{suffix}");
         if let Some(value) = env.lookup(&name) {
-            passthrough.insert(suffix.to_lowercase(), PassthroughValue::Text(value));
+            passthrough
+                .entry(suffix.to_lowercase())
+                .or_insert(PassthroughValue::Text(value));
         }
     }
     passthrough

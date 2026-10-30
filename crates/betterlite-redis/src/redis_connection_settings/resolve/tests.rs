@@ -79,6 +79,27 @@ fn redis_coerce_reads_signature_kwargs_from_environment() {
 }
 
 #[test]
+fn redis_precedence_keeps_explicit_connection_options() {
+    let overrides: RedisOverrides = serde_json::from_str(
+        r#"{"host":"cache.internal","client_name":"configured","retry_on_timeout":"false"}"#,
+    )
+    .unwrap();
+    let environment = env(&[
+        ("REDIS_CLIENT_NAME", "environment"),
+        ("REDIS_RETRY_ON_TIMEOUT", "true"),
+    ]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment).unwrap();
+    assert_eq!(
+        settings.passthrough["client_name"],
+        PassthroughValue::Text("configured".to_owned())
+    );
+    assert_eq!(
+        settings.passthrough["retry_on_timeout"],
+        PassthroughValue::Bool(false)
+    );
+}
+
+#[test]
 fn redis_precedence_uses_environment_nodes_for_an_empty_override() {
     let overrides = RedisOverrides {
         host: Some("cache.internal".to_owned()),
