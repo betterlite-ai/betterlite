@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use super::ModelCatalog;
+use super::{CatalogError, MAX_CATALOG_ENTRIES, ModelCatalog};
 use rstest::rstest;
+use std::fmt::Write as _;
 use std::fs;
 
 #[rstest]
@@ -41,6 +42,35 @@ fn duplicate_catalog_keys_are_explicit_errors() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("duplicate"));
+}
+
+#[test]
+fn catalog_entry_limit_is_inclusive() {
+    let at_limit = catalog_with_entries(MAX_CATALOG_ENTRIES);
+    let over_limit = catalog_with_entries(MAX_CATALOG_ENTRIES + 1);
+
+    let at_limit_error = ModelCatalog::parse_remote(at_limit.as_bytes()).unwrap_err();
+    assert!(!matches!(
+        at_limit_error,
+        CatalogError::TooManyEntries { .. }
+    ));
+    let over_limit_error = ModelCatalog::parse_remote(over_limit.as_bytes()).unwrap_err();
+    assert!(matches!(
+        over_limit_error,
+        CatalogError::TooManyEntries { .. }
+    ));
+}
+
+fn catalog_with_entries(count: usize) -> String {
+    let mut catalog = String::from("{");
+    for index in 0..count {
+        if index > 0 {
+            catalog.push(',');
+        }
+        write!(catalog, "\"model-{index}\":null").unwrap();
+    }
+    catalog.push('}');
+    catalog
 }
 
 #[test]
