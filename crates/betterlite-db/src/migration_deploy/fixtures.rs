@@ -85,13 +85,10 @@ async fn context(pool: Pool) -> Database {
 
 impl Database {
     pub(super) async fn run(&self, scripts: &[(&str, &str)]) -> Result<(), DeployError> {
+        let client = self.pool.get().await.unwrap();
+        let deadline = Instant::now().checked_add(Duration::from_secs(10)).unwrap();
         let service = self.service(scripts);
-        service
-            .run(
-                self.pool.get().await.unwrap(),
-                Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
-            )
-            .await
+        service.run(client, deadline).await
     }
 
     pub(super) fn service(&self, scripts: &[(&str, &str)]) -> MigrationDeploy {
