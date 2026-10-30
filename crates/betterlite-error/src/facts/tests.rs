@@ -10,6 +10,8 @@ use super::*;
 #[case::phrase("rate limit reached", None, true)]
 #[case::number_with_429("429", Some(429), true)]
 #[case::number_with_other_status("429", Some(400), false)]
+#[case::service_tier("service tier capacity exceeded", Some(400), true)]
+#[case::hyphenated("rate-limit reached", Some(400), true)]
 #[case::ordinary("bad request", None, false)]
 fn error_facts_behavior_tests_behavior(
     #[case] message: &str,
@@ -49,4 +51,6 @@ fn error_facts_behavior_tests_behavior_proxy_reconstructs_empty_response_headers
         response.and_then(|value| value.headers.get("retry-after").cloned()),
         Some(String::from("1"))
     );
+    let text = "a".repeat(MAX_ERROR_TEXT_BYTES + 1);
+    assert_eq!(bounded_text(&text).len(), MAX_ERROR_TEXT_BYTES);
 }
