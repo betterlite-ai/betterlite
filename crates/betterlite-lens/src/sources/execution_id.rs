@@ -1,10 +1,11 @@
+use std::fmt::Write as _;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 
 // json.dumps escapes everything outside the 0x20-0x7e range as \uXXXX by default (ensure_ascii=True).
 fn python_json_string(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    out.push('"');
+    let mut out = String::from("\"");
     for character in value.chars() {
         match character {
             '\\' => out.push_str("\\\\"),
@@ -18,7 +19,7 @@ fn python_json_string(value: &str) -> String {
             other => {
                 let mut units = [0_u16; 2];
                 for unit in other.encode_utf16(&mut units) {
-                    out.push_str(&format!("\\u{unit:04x}"));
+                    let _ignored = write!(out, "\\u{unit:04x}");
                 }
             }
         }
