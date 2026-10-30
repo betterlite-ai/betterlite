@@ -1,16 +1,19 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
+use crate::chat::execution::ChatExecutor;
+use crate::openai_base_config::CatalogCapabilities;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::proxy::{ProxyPolicy, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 
 use super::{EmbeddingError, EmbeddingInput, EmbeddingRequest, EncodingFormat, servable};
 
@@ -87,7 +90,8 @@ fn accepts_embedding_openai_deployment_with_key() {
 async fn reports_embedding_provider_failures() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
-    let responder = tokio::spawn(async move {
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("connection");
         stream
             .write_all(
@@ -108,18 +112,25 @@ async fn reports_embedding_provider_failures() {
         &OpenAiDefaults::default(),
     )
     .expect("deployment");
-    let policy = Arc::new(ProxyPolicy::resolve(&Default::default(), &BTreeMap::new()));
-    let executor = crate::chat::execution::ChatExecutor {
+    let policy = Arc::new(ProxyPolicy::resolve(
+        &ProxyTrust::default(),
+        &BTreeMap::new(),
+    ));
+    let executor = ChatExecutor {
         client: ProxiedClient::outbound(&policy).expect("client"),
         deployments: vec![deployment.clone()],
-        catalog: crate::openai_base_config::CatalogCapabilities {
-            chat_models: Default::default(),
-            text_models: Default::default(),
+        catalog: CatalogCapabilities {
+            chat_models: BTreeSet::new(),
+            text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(1)),
     };
     let request = EmbeddingRequest::parse(br#"{"input":"hello"}"#).expect("request");
     let result = super::send(&executor, &deployment, &request).await;
     assert!(matches!(result, Err(EmbeddingError::Provider { .. })));
-    responder.await.expect("responder");
+    tasks
+        .join_next()
+        .await
+        .expect("responder")
+        .expect("responder");
 }
