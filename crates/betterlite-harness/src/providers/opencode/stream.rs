@@ -21,12 +21,22 @@ fn tool_input(part: &ToolPart) -> JsonObject {
 }
 
 fn tool_events(part: ToolPart) -> Vec<Event> {
-    let native = part
-        .tool
-        .as_ref()
-        .filter(|tool| !tool.is_null())
-        .map(super::wire::value_to_string)
-        .unwrap_or_default();
+    let native = native_tool(&part);
+    let call_id = tool_call_id(&part);
+    vec![
+        tool_call(&part, &native, &call_id),
+        tool_result(part, &native, call_id),
+    ]
+}
+
+fn native_tool(part: &ToolPart) -> String {
+    if let Some(tool) = part.tool.as_ref().filter(|tool| !tool.is_null()) {
+        return super::wire::value_to_string(tool);
+    }
+    String::new()
+}
+
+fn tool_call_id(part: &ToolPart) -> String {
     let call_id = part
         .call_id
         .as_ref()
@@ -37,15 +47,19 @@ fn tool_events(part: ToolPart) -> Vec<Event> {
                 .as_ref()
                 .filter(|id| id.as_str().is_some_and(|value| !value.is_empty()))
                 .map(super::wire::value_to_string)
-        })
-        .unwrap_or_default();
-    let call = Event::ToolCall {
-        id: call_id.clone(),
-        name: super::permissions::normalize_tool_name(&native),
-        native_name: native.clone(),
-        input: tool_input(&part),
+        });
+    call_id.unwrap_or_default()
+}
+
+fn tool_call(part: &ToolPart, native: &str, call_id: &str) -> Event {
+    let input = tool_input(part);
+    Event::ToolCall {
+        id: call_id.to_owned(),
+        name: super::permissions::normalize_tool_name(native),
+        native_name: native.to_owned(),
+        input,
         builtin: matches!(
-            native.as_str(),
+            native,
             "read"
                 | "write"
                 | "edit"
@@ -69,8 +83,7 @@ fn tool_events(part: ToolPart) -> Vec<Event> {
                 | "plan_enter"
                 | "plan_exit"
         ),
-    };
-    vec![call, tool_result(part, &native, call_id)]
+    }
 }
 
 fn tool_result(part: ToolPart, native: &str, call_id: String) -> Event {
