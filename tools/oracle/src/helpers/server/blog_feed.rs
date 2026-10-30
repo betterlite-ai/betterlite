@@ -179,7 +179,8 @@ fn parse_rss_to_posts(xml: &str, max_posts: usize) -> Result<Vec<BlogPost>, Fail
                     .push_str(&String::from_utf8_lossy(text.as_ref()));
             }
             Ok(Event::End(tag)) => {
-                let name = String::from_utf8_lossy(tag.name().as_ref());
+                let tag_name = tag.name();
+                let name = String::from_utf8_lossy(tag_name.as_ref()).into_owned();
                 if name == "item" {
                     if let (Some(title), Some(url)) = (fields.get("title"), fields.get("link")) {
                         if posts.len() < max_posts {
