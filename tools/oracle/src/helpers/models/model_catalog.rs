@@ -3,7 +3,7 @@ use betterlite_models::catalog::{
     BundledCatalog, CatalogError, ModelCatalog, ModelMetadataProjection, UnknownFields,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, value::RawValue};
+use serde_json::{Value, json, value::RawValue};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{io, sync::Arc};
 
@@ -40,26 +40,7 @@ impl crate::helpers::Helper for Op {
                 let catalog = loader.get();
                 Ok(json!({"count": catalog.entries.len(), "warnings": catalog.warnings}))
             }
-            Operation::BundledCatalogReadFailure => {
-                let reads = AtomicUsize::new(0);
-                let mut loader = BundledCatalog {
-                    cached: None,
-                    asset: || {
-                        reads.fetch_add(1, Ordering::SeqCst);
-                        Err(CatalogError::Asset(io::Error::from(
-                            io::ErrorKind::NotFound,
-                        )))
-                    },
-                };
-                let first = loader.get();
-                let entries = &first.lookup;
-                let count = first.entries.len();
-                let warnings = &first.warnings;
-                let cached = Arc::ptr_eq(&first, &loader.get());
-                Ok(
-                    json!({"catalog": entries, "count": count, "warnings": warnings, "cached": cached, "reads": reads.load(Ordering::SeqCst)}),
-                )
-            }
+            Operation::BundledCatalogReadFailure => Ok(bundled_failure()),
             Operation::CanonicalLookup
             | Operation::Aliases
             | Operation::AliasCanonicalConflict
@@ -67,6 +48,23 @@ impl crate::helpers::Helper for Op {
             | Operation::GeneralizationsExcluded => summarize_source(input),
         }
     }
+}
+
+fn bundled_failure() -> Value {
+    let reads = AtomicUsize::new(0);
+    let mut loader = BundledCatalog {
+        cached: None,
+        asset: || {
+            reads.fetch_add(1, Ordering::SeqCst);
+            Err(CatalogError::Asset(io::Error::from(
+                io::ErrorKind::NotFound,
+            )))
+        },
+    };
+    let first = loader.get();
+    let cached = Arc::ptr_eq(&first, &loader.get());
+    json!({"catalog": first.lookup, "count": first.entries.len(), "warnings": first.warnings,
+        "cached": cached, "reads": reads.load(Ordering::SeqCst)})
 }
 
 fn summarize_source(input: &Input) -> HelperResult {
