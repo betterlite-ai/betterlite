@@ -10,8 +10,8 @@ use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
-    ENVELOPE_ISSUER, MAX_ENVELOPE_BYTES,
-    models::{Claims, EnvelopeKeys, EnvelopeKind, EnvelopeOpenError, Header, HeaderOwned},
+    ENVELOPE_ISSUER, EnvelopeKeys, MAX_ENVELOPE_BYTES,
+    models::{Claims, EnvelopeKind, EnvelopeOpenError, Header, HeaderOwned},
 };
 
 pub(crate) fn encode_jwt(claims: &Claims, key: &SecretString) -> Result<String, serde_json::Error> {

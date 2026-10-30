@@ -10,7 +10,6 @@ use self::crypto::{decrypt_text, encode_jwt, encrypt_grant, open_claims};
 use self::models::{WireGrant, WireRefresh};
 
 pub type EnvelopeIdentity = models::EnvelopeIdentity;
-pub type EnvelopeKeys = models::EnvelopeKeys;
 use self::models::EnvelopeKind;
 pub type EnvelopeMintError = models::EnvelopeMintError;
 pub type EnvelopeOpenError = models::EnvelopeOpenError;
@@ -27,22 +26,43 @@ pub const MAX_ENVELOPE_TTL_SECONDS: i64 = 3_600;
 pub const MAX_REFRESH_TTL_SECONDS: i64 = 1_209_600;
 pub const MAX_ENVELOPE_BYTES: usize = 12_288;
 
-#[must_use]
-pub fn is_envelope(candidate: &str) -> bool {
-    let prefix = ENVELOPE_PREFIX;
-    if candidate.is_empty() {
-        return false;
-    }
-    candidate.starts_with(prefix)
+#[derive(Debug, Clone)]
+pub struct EnvelopeKeys {
+    signing_key: SecretString,
+    encryption_key: SecretString,
 }
 
-#[must_use]
-pub fn is_refresh_envelope(candidate: &str) -> bool {
-    let prefix = REFRESH_ENVELOPE_PREFIX;
-    if candidate.is_empty() {
-        return false;
+impl EnvelopeKeys {
+    pub fn new(
+        signing_key: SecretString,
+        encryption_key: SecretString,
+    ) -> Result<Self, EnvelopeMintError> {
+        if signing_key.expose_secret().len() < 32 {
+            return Err(EnvelopeMintError::SigningKeyTooShort);
+        }
+        if encryption_key.expose_secret().is_empty() {
+            return Err(EnvelopeMintError::EncryptionKeyEmpty);
+        }
+        Ok(Self {
+            signing_key,
+            encryption_key,
+        })
     }
-    candidate.starts_with(prefix)
+}
+
+pub trait EnvelopePrefix {
+    fn is_envelope(&self) -> bool;
+    fn is_refresh_envelope(&self) -> bool;
+}
+
+impl EnvelopePrefix for str {
+    fn is_envelope(&self) -> bool {
+        self.starts_with(ENVELOPE_PREFIX)
+    }
+
+    fn is_refresh_envelope(&self) -> bool {
+        self.starts_with(REFRESH_ENVELOPE_PREFIX)
+    }
 }
 
 pub fn mint_envelope<N>(
@@ -55,16 +75,10 @@ pub fn mint_envelope<N>(
 where
     N: NonceSource,
 {
-    let access_token = grant.access_token.expose_secret();
-    let token_type = grant.token_type.as_str();
-    if access_token.is_empty() || token_type.is_empty() {
-        return Err(EnvelopeMintError::TokenEmpty);
-    }
     models::validate_mint(&models::MintValidation {
         identity: &identity,
-        keys,
         expires_in: grant.expires_in,
-        required_token: Some(grant.access_token.expose_secret()),
+        required_token: grant.access_token.expose_secret(),
         token_type: Some(&grant.token_type),
         optional_token: grant
             .refresh_token
@@ -72,22 +86,18 @@ where
             .map(secrecy::ExposeSecret::expose_secret),
     })?;
     let lifetime = grant.expires_in.unwrap_or(MAX_ENVELOPE_TTL_SECONDS);
-    let access_prefix = ENVELOPE_PREFIX;
-    let access_kind = EnvelopeKind::Access;
-    let access_wire = WireGrant::from(grant);
-    let plaintext = serde_json::to_string(&access_wire)
+    let plaintext = serde_json::to_string(&WireGrant::from(grant))
         .map_err(|source| EnvelopeMintError::Serialize { source })?;
-    let request = MintRequest {
+    mint_sealed(MintRequest {
         identity,
         plaintext: &plaintext,
         keys,
         now,
         lifetime,
-        prefix: access_prefix,
-        kind: access_kind,
+        prefix: ENVELOPE_PREFIX,
+        kind: EnvelopeKind::Access,
         nonces,
-    };
-    mint_sealed(request)
+    })
 }
 
 pub fn mint_refresh_envelope<N>(
@@ -100,11 +110,16 @@ pub fn mint_refresh_envelope<N>(
 where
     N: NonceSource,
 {
-    models::validate_refresh_mint(&identity, &refresh, keys)?;
-    let refresh_cap = MAX_REFRESH_TTL_SECONDS;
-    let lifetime = refresh
-        .expires_in
-        .map_or(refresh_cap, |value| value.min(refresh_cap));
+    models::validate_mint(&models::MintValidation {
+        identity: &identity,
+        expires_in: refresh.expires_in,
+        required_token: refresh.refresh_token.expose_secret(),
+        token_type: None,
+        optional_token: None,
+    })?;
+    let lifetime = refresh.expires_in.map_or(MAX_REFRESH_TTL_SECONDS, |value| {
+        value.min(MAX_REFRESH_TTL_SECONDS)
+    });
     let plaintext = serde_json::to_string(&WireRefresh::from(refresh))
         .map_err(|source| EnvelopeMintError::Serialize { source })?;
     mint_sealed(MintRequest {
@@ -124,23 +139,13 @@ pub fn open_envelope(
     keys: &EnvelopeKeys,
     now: DateTime<Utc>,
 ) -> Result<OpenedEnvelope, EnvelopeOpenError> {
-    if candidate.len() > MAX_ENVELOPE_BYTES {
-        return Err(EnvelopeOpenError::MalformedPayload);
-    }
-    let access_prefix = ENVELOPE_PREFIX;
-    if !candidate.starts_with(access_prefix) {
-        return Err(EnvelopeOpenError::NotAnEnvelope);
-    }
-    let access_kind = EnvelopeKind::Access;
-    let access_now = now;
-    let request = OpenRequest {
+    let (identity, plaintext) = open_grant(&OpenRequest {
         candidate,
         keys,
-        now: access_now,
-        prefix: access_prefix,
-        kind: access_kind,
-    };
-    let (identity, plaintext) = open_grant(&request)?;
+        now,
+        prefix: ENVELOPE_PREFIX,
+        kind: EnvelopeKind::Access,
+    })?;
     let wire: WireGrant = serde_json::from_str(plaintext.expose_secret())
         .map_err(|_error| EnvelopeOpenError::MalformedPayload)?;
     if !wire.is_valid() {
@@ -157,16 +162,12 @@ pub fn open_refresh_envelope(
     keys: &EnvelopeKeys,
     now: DateTime<Utc>,
 ) -> Result<OpenedRefreshEnvelope, EnvelopeOpenError> {
-    if candidate.len() < REFRESH_ENVELOPE_PREFIX.len() {
-        return Err(EnvelopeOpenError::NotAnEnvelope);
-    }
-    let refresh_kind = EnvelopeKind::Refresh;
     let (identity, plaintext) = open_grant(&OpenRequest {
         candidate,
         keys,
         now,
         prefix: REFRESH_ENVELOPE_PREFIX,
-        kind: refresh_kind,
+        kind: EnvelopeKind::Refresh,
     })?;
     let wire = parse_refresh_grant(&plaintext)?;
     Ok(OpenedRefreshEnvelope {

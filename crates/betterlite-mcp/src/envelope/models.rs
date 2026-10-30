@@ -42,12 +42,6 @@ pub struct RefreshCredential {
 }
 
 #[derive(Debug, Clone)]
-pub struct EnvelopeKeys {
-    pub signing_key: SecretString,
-    pub encryption_key: SecretString,
-}
-
-#[derive(Debug, Clone)]
 pub struct SealedEnvelope {
     pub token: SecretString,
     pub expires_at: DateTime<Utc>,
@@ -109,41 +103,17 @@ pub enum EnvelopeOpenError {
 
 pub(crate) struct MintValidation<'request> {
     pub(crate) identity: &'request EnvelopeIdentity,
-    pub(crate) keys: &'request EnvelopeKeys,
     pub(crate) expires_in: Option<i64>,
-    pub(crate) required_token: Option<&'request str>,
+    pub(crate) required_token: &'request str,
     pub(crate) token_type: Option<&'request str>,
     pub(crate) optional_token: Option<&'request str>,
 }
 
-pub(crate) fn validate_refresh_mint(
-    identity: &EnvelopeIdentity,
-    refresh: &RefreshCredential,
-    keys: &EnvelopeKeys,
-) -> Result<(), EnvelopeMintError> {
-    let validation = validate_mint(&MintValidation {
-        identity,
-        keys,
-        expires_in: refresh.expires_in,
-        required_token: Some(refresh.refresh_token.expose_secret()),
-        token_type: None,
-        optional_token: None,
-    });
-    validation?;
-    Ok(())
-}
-
 pub(crate) fn validate_mint(request: &MintValidation<'_>) -> Result<(), EnvelopeMintError> {
-    if request.keys.signing_key.expose_secret().len() < 32 {
-        return Err(EnvelopeMintError::SigningKeyTooShort);
-    }
-    if request.keys.encryption_key.expose_secret().is_empty() {
-        return Err(EnvelopeMintError::EncryptionKeyEmpty);
-    }
     if request.identity.server_id.is_empty() || request.identity.subject.is_empty() {
         return Err(EnvelopeMintError::IdentityFieldEmpty);
     }
-    if request.required_token.is_some_and(str::is_empty)
+    if request.required_token.is_empty()
         || request.token_type.is_some_and(str::is_empty)
         || request.optional_token.is_some_and(str::is_empty)
     {
