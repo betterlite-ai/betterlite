@@ -51,39 +51,34 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let deployment_max_item_kib = self
-            .model_list
-            .iter()
-            .map(|deployment| {
-                parse_max_item(
-                    deployment.litellm_params.max_item_kib.as_ref(),
-                    lookup,
-                    "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb",
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let deployment_ttl = self
-            .model_list
-            .iter()
-            .map(|deployment| {
-                parse_ttl(
-                    deployment.litellm_params.default_in_memory_ttl.as_ref(),
-                    lookup,
-                    "model_list.0.litellm_params.default_in_memory_ttl",
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let global_max_item_kib = parse_max_item(
-            self.litellm_settings.max_item_kib.as_ref(),
+        let deployment_max_item_kib = deployment_settings(
+            &self.model_list,
             lookup,
-            "litellm_settings.max_size_per_item_in_memory_cache_in_kb",
-        )?
-        .or(Some(1024));
-        let global_ttl = parse_ttl(
-            self.litellm_settings.default_in_memory_ttl.as_ref(),
-            lookup,
-            "litellm_settings.default_in_memory_ttl",
+            "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb",
+            |settings| settings.max_item_kib.as_ref(),
+            |text| {
+                text.parse::<i64>()
+                    .map_err(|source| ConfigError::InvalidInteger {
+                        path: "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb"
+                            .to_owned(),
+                        source,
+                    })
+            },
         )?;
+        let deployment_ttl = deployment_settings(
+            &self.model_list,
+            lookup,
+            "model_list.0.litellm_params.default_in_memory_ttl",
+            |settings| settings.default_in_memory_ttl.as_ref(),
+            |text| {
+                text.parse::<f64>()
+                    .map_err(|source| ConfigError::InvalidFloat {
+                        path: "model_list.0.litellm_params.default_in_memory_ttl".to_owned(),
+                        source,
+                    })
+            },
+        )?;
+        let (global_max_item_kib, global_ttl) = global_settings(&self.litellm_settings, lookup)?;
         Ok(Settings {
             deployment_max_item_kib,
             global_max_item_kib,
@@ -93,40 +88,57 @@ impl Section for Raw {
     }
 }
 
-fn parse_max_item<L>(
-    raw: Option<&RawSetting>,
+fn global_settings<L>(
+    settings: &RawSettings,
     lookup: &L,
-    path: &str,
-) -> Result<Option<i64>, ConfigError>
+) -> Result<(Option<i64>, Option<f64>), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let parsed = parse_setting(raw, path, lookup, |text| {
-        text.parse::<i64>()
-            .map_err(|source| ConfigError::InvalidInteger {
-                path: path.to_owned(),
-                source,
-            })
-    })?;
-    Ok(parsed)
+    let max_item_kib = parse_setting(
+        settings.max_item_kib.as_ref(),
+        "litellm_settings.max_size_per_item_in_memory_cache_in_kb",
+        lookup,
+        |text| {
+            text.parse::<i64>()
+                .map_err(|source| ConfigError::InvalidInteger {
+                    path: "litellm_settings.max_size_per_item_in_memory_cache_in_kb".to_owned(),
+                    source,
+                })
+        },
+    )?
+    .or(Some(1024));
+    let ttl = parse_setting(
+        settings.default_in_memory_ttl.as_ref(),
+        "litellm_settings.default_in_memory_ttl",
+        lookup,
+        |text| {
+            text.parse::<f64>()
+                .map_err(|source| ConfigError::InvalidFloat {
+                    path: "litellm_settings.default_in_memory_ttl".to_owned(),
+                    source,
+                })
+        },
+    )?;
+    Ok((max_item_kib, ttl))
 }
 
-fn parse_ttl<L>(
-    raw: Option<&RawSetting>,
+fn deployment_settings<T, L, F, P>(
+    deployments: &[RawDeployment],
     lookup: &L,
     path: &str,
-) -> Result<Option<f64>, ConfigError>
+    field: F,
+    parse: P,
+) -> Result<Vec<Option<T>>, ConfigError>
 where
     L: EnvironmentLookup,
+    F: Fn(&RawSettings) -> Option<&RawSetting>,
+    P: Fn(String) -> Result<T, ConfigError> + Copy,
 {
-    let parsed = parse_setting(raw, path, lookup, |text| {
-        text.parse::<f64>()
-            .map_err(|source| ConfigError::InvalidFloat {
-                path: path.to_owned(),
-                source,
-            })
-    })?;
-    Ok(parsed)
+    let values = deployments
+        .iter()
+        .map(|deployment| parse_setting(field(&deployment.litellm_params), path, lookup, parse));
+    values.collect()
 }
 
 fn parse_setting<T, L, F>(
