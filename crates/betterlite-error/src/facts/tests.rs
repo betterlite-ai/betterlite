@@ -27,6 +27,10 @@ fn error_facts_behavior_tests_behavior(
 #[rstest]
 #[case::known("this model's maximum context length is 10", true)]
 #[case::validation("string_above_max_length", false)]
+#[case::validation_with_context_phrase(
+    "string_above_max_length this model's maximum context length is 10",
+    false
+)]
 #[case::ordinary("bad request", false)]
 fn error_facts_behavior_tests_behavior_context_window(
     #[case] message: &str,
@@ -51,6 +55,6 @@ fn error_facts_behavior_tests_behavior_proxy_reconstructs_empty_response_headers
         response.and_then(|value| value.headers.get("retry-after").cloned()),
         Some(String::from("1"))
     );
-    let text = "a".repeat(MAX_ERROR_TEXT_BYTES + 1);
-    assert_eq!(bounded_text(&text).len(), MAX_ERROR_TEXT_BYTES);
+    let text = "a".repeat(16 * 1024 + 1);
+    assert_eq!(bounded_text(&text).len(), 16 * 1024);
 }
