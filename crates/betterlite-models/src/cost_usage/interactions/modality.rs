@@ -139,5 +139,3 @@ fn number_is_truthy(number: &Number) -> bool {
         .chars()
         .any(|character| character.is_ascii_digit() && character != '0')
 }
-
-mod tests;

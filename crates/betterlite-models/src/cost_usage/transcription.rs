@@ -111,5 +111,3 @@ pub fn transform_transcription_usage(usage: &TranscriptionUsage) -> Option<CostU
         cache_read_tokens: None,
     })
 }
-
-mod tests;

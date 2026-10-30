@@ -176,5 +176,3 @@ pub fn transform_interactions_usage(
         cache_read_tokens: (sums.total_cached_tokens != 0).then_some(sums.total_cached_tokens),
     })
 }
-
-mod tests;

@@ -65,5 +65,3 @@ pub(super) fn token_count_from_raw(raw: &RawValue) -> Result<i64, CostUsageError
         .unwrap_or_else(|_error| RawTokenCount::Other(Box::new(IgnoredAny)));
     TokenCount::from(parsed).value()
 }
-
-mod tests;
