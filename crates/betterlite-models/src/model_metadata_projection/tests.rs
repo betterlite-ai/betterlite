@@ -27,7 +27,10 @@ fn model_metadata_projection_cases(#[case] source: &str) {
 
 #[test]
 fn defaults_prices_but_preserves_explicit_null_provider() {
-    let raw: &RawValue = serde_json::from_str(r#"{"litellm_provider":null}"#).unwrap();
+    let raw: &RawValue = serde_json::from_str(
+        r#"{"input_cost_per_token":null,"output_cost_per_token":null,"litellm_provider":null}"#,
+    )
+    .unwrap();
     let projected: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(project("model", "model", "openai", raw).unwrap().get()).unwrap();
     assert_eq!(projected["input_cost_per_token"].get(), "0");
