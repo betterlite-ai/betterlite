@@ -39,7 +39,10 @@ pub struct LiteLLMBudgetTable {
     pub rpm_limit: Option<i64>,
     #[serde(default)]
     pub tpd_limit: Option<i64>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<Option<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>>::deserialize"
+    )]
     pub model_max_budget: Option<BTreeMap<String, JsonData>>,
     #[serde(default)]
     pub budget_duration: Option<String>,
@@ -100,7 +103,10 @@ pub struct LiteLLMObjectPermissionTable {
     pub mcp_servers: PermissionList,
     #[serde(default)]
     pub mcp_access_groups: PermissionList,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<Option<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>>::deserialize"
+    )]
     pub mcp_tool_permissions: Option<BTreeMap<String, Vec<String>>>,
     #[serde(default)]
     pub vector_stores: PermissionList,
@@ -130,7 +136,12 @@ pub enum JsonData {
     Number(serde_json::Number),
     String(String),
     Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
+    Object(
+        #[serde(
+            deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>::deserialize"
+        )]
+        BTreeMap<String, Self>,
+    ),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,7 +194,11 @@ impl From<OrganizationMembershipInput> for OrganizationMembership {
             .user_email
             .map(|email| ProjectedUserEmail(JsonData::String(email)));
         let projected_email = projected.or_else(|| match input.user.as_ref() {
-            Some(JsonData::Object(user)) => user.get("user_email").cloned().map(ProjectedUserEmail),
+            Some(JsonData::Object(user)) => user
+                .get("user_email")
+                .filter(|email| !matches!(email, JsonData::Null))
+                .cloned()
+                .map(ProjectedUserEmail),
             _ => None,
         });
         Self {

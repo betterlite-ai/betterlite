@@ -233,6 +233,23 @@ fn membership_missing_email_none() {
     );
     assert_eq!(row.user_email, None);
 }
+
+#[test]
+fn membership_null_nested_email_is_none() {
+    let row = membership(
+        r#"{"user_id":"u", "organization_id":"o", "created_at":"2026-01-01T00:00:00Z", "updated_at":"2026-01-01T00:00:00Z", "user":{"user_email":null}}"#,
+    );
+    assert_eq!(row.user_email, None);
+}
+
+#[test]
+fn nested_duplicate_keys_are_rejected() {
+    let user = r#"{"kind":"membership","row":{"user_id":"u","organization_id":"o","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","user":{"user_email":"first","user_email":"second"}}}"#;
+    let permissions = r#"{"kind":"permission","row":{"object_permission_id":"p","mcp_tool_permissions":{"tool":["first"],"tool":["second"]}}}"#;
+    decode_budget_permission_rows(user.as_bytes()).unwrap_err();
+    decode_budget_permission_rows(permissions.as_bytes()).unwrap_err();
+}
+
 #[test]
 fn membership_nested_nonstring_email_not_revalidated() {
     let row = membership(

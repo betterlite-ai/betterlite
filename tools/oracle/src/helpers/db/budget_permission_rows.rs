@@ -54,10 +54,14 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Budget { row } => dump(row.get()?),
-            Input::Full { row } => dump(row.get()?),
-            Input::Permission { row } => dump(row.get()?),
-            Input::Membership { row } => dump(row.get()?),
+            Input::Budget { row } => serde_json::to_value(row.get()?)
+                .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
+            Input::Full { row } => serde_json::to_value(row.get()?)
+                .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
+            Input::Permission { row } => serde_json::to_value(row.get()?)
+                .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
+            Input::Membership { row } => serde_json::to_value(row.get()?)
+                .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
             Input::Effective { row, now } => {
                 let budget = row.get()?;
                 let active = budget
@@ -79,15 +83,6 @@ impl crate::helpers::Helper for Op {
             }
         }
     }
-}
-
-fn dump<T>(value: &T) -> crate::helpers::HelperResult
-where
-    T: serde::Serialize,
-{
-    let output = serde_json::to_value(value)
-        .map_err(|error| helper_error("InvalidOutput", &error.to_string()))?;
-    Ok(output)
 }
 
 fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
