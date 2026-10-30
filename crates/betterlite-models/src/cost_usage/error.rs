@@ -2,6 +2,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum CostUsageError {
+    #[error("an integer counter does not fit a signed 64-bit value")]
+    CounterOverflow,
+    #[error("a truthy Interactions modality list is not an array")]
+    ModalityListNotArray,
     #[error("an Interactions modality usage entry is not a mapping")]
     ModalityEntryNotObject,
     #[error("the {field} modality token sum overflowed")]

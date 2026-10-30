@@ -26,3 +26,10 @@ fn non_integer_shapes_count_as_zero() {
     assert_eq!(from_json("{}").0, 0);
     assert_eq!(from_json("[1, 2]").0, 0);
 }
+
+#[test]
+fn integer_beyond_i64_is_an_overflow_error() {
+    let error = serde_json::from_str::<TokenCount>("9223372036854775808").unwrap_err();
+    assert!(error.to_string().contains("signed 64-bit"));
+    serde_json::from_str::<TokenCount>("-9223372036854775809").unwrap_err();
+}
