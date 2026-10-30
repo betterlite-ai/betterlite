@@ -2,23 +2,26 @@ use std::io::{Error, ErrorKind, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::str::from_utf8;
 use std::thread::park_timeout;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use secrecy::SecretString;
+use thiserror::Error;
 use url::Url;
 
 use super::{
-    CALLBACK_PATH,
+    CALLBACK_PATH, Clock,
     models::{CallbackCode, CallbackDenied, CallbackOutcome, PkceFailure},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum CallbackError {
-    Bind(Error),
+    #[error("loopback bind failed: {0}")]
+    Bind(#[source] Error),
 }
 
 pub struct LoopbackServer {
     listener: TcpListener,
-    address: SocketAddr,
+    pub(super) address: SocketAddr,
     expected_state: String,
 }
 
@@ -37,28 +40,22 @@ impl LoopbackServer {
     }
 
     #[must_use]
-    pub const fn local_addr(&self) -> SocketAddr {
-        if self.address.port() == 0 {
-            return self.address;
-        }
-        self.address
-    }
-
-    #[must_use]
     pub fn redirect_uri(&self) -> String {
-        let port = self.local_addr().port();
+        let port = self.address.port();
         format!("http://127.0.0.1:{port}{CALLBACK_PATH}")
     }
 
-    pub fn wait(&mut self, timeout: Duration) -> Result<CallbackOutcome, PkceFailure> {
-        let deadline = Instant::now()
+    pub fn wait<C>(&mut self, timeout: Duration, clock: &C) -> Result<CallbackOutcome, PkceFailure>
+    where
+        C: Clock,
+    {
+        let deadline = clock
+            .now()
             .checked_add(timeout)
-            .ok_or_else(|| PkceFailure::new("callback timeout overflow"))?;
+            .ok_or(PkceFailure::CallbackTimeoutOverflow)?;
         loop {
-            if Instant::now() >= deadline {
-                return Err(PkceFailure::new(
-                    "timed out waiting for the browser sign-in to finish",
-                ));
+            if clock.now() >= deadline {
+                return Err(PkceFailure::CallbackTimeout);
             }
             if let Some(outcome) = self.accept_request()? {
                 return Ok(outcome);
@@ -72,88 +69,104 @@ impl LoopbackServer {
             Ok(accepted) => accepted,
             Err(error) if error.kind() == ErrorKind::WouldBlock => return Ok(None),
             Err(error) => {
-                return Err(PkceFailure::new_owned(format!(
-                    "loopback accept failed: {error}"
-                )));
+                return Err(PkceFailure::LoopbackAccept { source: error });
             }
         };
         let (mut stream, _) = accepted;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .map_err(|error| PkceFailure::new_owned(error.to_string()))?;
-        self.handle(&mut stream)
-    }
-
-    fn handle(&self, stream: &mut TcpStream) -> Result<Option<CallbackOutcome>, PkceFailure> {
-        let parsed = callback_url(stream)?;
-        if parsed.path() != CALLBACK_PATH {
-            respond(stream, 404, "Not found.")?;
+        if stream.set_nonblocking(false).is_err()
+            || stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .is_err()
+        {
             return Ok(None);
         }
-        let state = query_value(&parsed, "state");
+        Ok(self.handle(&mut stream))
+    }
+
+    fn handle(&self, stream: &mut TcpStream) -> Option<CallbackOutcome> {
+        let parsed = callback_url(stream)?;
+        if parsed.path() != CALLBACK_PATH {
+            drop(respond(stream, 404, "Not found."));
+            return None;
+        }
+        let state = parsed
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .map(|(_, value)| value.into_owned());
         if state.as_deref() != Some(self.expected_state.as_str()) {
-            respond(
+            drop(respond(
                 stream,
                 400,
                 "This response does not belong to the pending sign-in; still waiting.",
-            )?;
-            return Ok(None);
+            ));
+            return None;
         }
         settle_callback(stream, &parsed)
     }
 }
 
-fn callback_url(stream: &mut TcpStream) -> Result<Url, PkceFailure> {
+fn callback_url(stream: &mut TcpStream) -> Option<Url> {
     let mut bytes = [0_u8; 8192];
-    let size = stream
-        .read(&mut bytes)
-        .map_err(|error| PkceFailure::new_owned(format!("loopback read failed: {error}")))?;
-    let request_bytes = bytes
-        .get(..size)
-        .ok_or_else(|| PkceFailure::new("callback request exceeded the buffer"))?;
-    let request = from_utf8(request_bytes)
-        .map_err(|error| PkceFailure::new_owned(format!("invalid callback request: {error}")))?;
-    let path = request.split_whitespace().nth(1).unwrap_or_default();
-    let Ok(parsed) = Url::parse(&format!("http://localhost{path}")) else {
-        respond(stream, 400, "Invalid callback.")?;
-        return Err(PkceFailure::new("invalid callback URL"));
+    let Ok(size) = stream.read(&mut bytes) else {
+        return None;
     };
-    Ok(parsed)
+    let Some(request_bytes) = bytes.get(..size) else {
+        drop(respond(stream, 400, "Invalid callback."));
+        return None;
+    };
+    let Ok(request) = from_utf8(request_bytes) else {
+        drop(respond(stream, 400, "Invalid callback."));
+        return None;
+    };
+    let Some(path) = request.split_whitespace().nth(1) else {
+        drop(respond(stream, 400, "Invalid callback."));
+        return None;
+    };
+    let Ok(parsed) = Url::parse(&format!("http://localhost{path}")) else {
+        drop(respond(stream, 400, "Invalid callback."));
+        return None;
+    };
+    Some(parsed)
 }
 
-fn settle_callback(
-    stream: &mut TcpStream,
-    parsed: &Url,
-) -> Result<Option<CallbackOutcome>, PkceFailure> {
-    if let Some(error) = query_value(parsed, "error") {
-        let outcome = CallbackOutcome::Denied(CallbackDenied {
-            error,
-            description: query_value(parsed, "error_description"),
-        });
-        respond(
+fn settle_callback(stream: &mut TcpStream, parsed: &Url) -> Option<CallbackOutcome> {
+    let callback_error = parsed
+        .query_pairs()
+        .find(|(name, _)| name == "error")
+        .map(|(_, value)| value.into_owned());
+    if let Some(error) = callback_error {
+        let description = parsed
+            .query_pairs()
+            .find(|(name, _)| name == "error_description")
+            .map(|(_, value)| value.into_owned());
+        let outcome = CallbackOutcome::Denied(CallbackDenied { error, description });
+        drop(respond(
             stream,
             200,
             "Sign-in was not approved. You can close this window.",
-        )?;
-        return Ok(Some(outcome));
+        ));
+        return Some(outcome);
     }
-    let Some(code) = query_value(parsed, "code") else {
-        respond(
+    let Some(code) = parsed
+        .query_pairs()
+        .find(|(name, _)| name == "code")
+        .map(|(_, value)| value.into_owned())
+    else {
+        drop(respond(
             stream,
             400,
             "The sign-in response carried no authorization code; still waiting.",
-        )?;
-        return Ok(None);
+        ));
+        return None;
     };
-    respond(stream, 200, "Signed in. You can close this window.")?;
-    Ok(Some(CallbackOutcome::Code(CallbackCode { code })))
-}
-
-fn query_value(url: &Url, key: &str) -> Option<String> {
-    let mut pairs = url.query_pairs();
-    pairs
-        .find(|(name, _)| name == key)
-        .map(|(_, value)| value.into_owned())
+    drop(respond(
+        stream,
+        200,
+        "Signed in. You can close this window.",
+    ));
+    Some(CallbackOutcome::Code(CallbackCode {
+        code: SecretString::from(code),
+    }))
 }
 
 fn respond(stream: &mut TcpStream, status: u16, body: &str) -> Result<(), PkceFailure> {
@@ -163,5 +176,5 @@ fn respond(stream: &mut TcpStream, status: u16, body: &str) -> Result<(), PkceFa
     );
     stream
         .write_all(response.as_bytes())
-        .map_err(|error| PkceFailure::new_owned(format!("loopback write failed: {error}")))
+        .map_err(|source| PkceFailure::LoopbackWrite { source })
 }

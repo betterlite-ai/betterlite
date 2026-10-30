@@ -6,6 +6,7 @@ pub mod revoke;
 mod wire;
 
 use models::PkceFailure;
+use std::time::Instant;
 
 pub const CALLBACK_PATH: &str = "/callback";
 pub const DISCOVERY_PATH: &str = "/.well-known/litellm-cli-auth";
@@ -16,7 +17,7 @@ pub trait Entropy {
 }
 
 pub trait Clock {
-    fn now_seconds(&self) -> i64;
+    fn now(&self) -> Instant;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,16 +25,6 @@ pub struct HttpResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
-}
-
-impl HttpResponse {
-    #[must_use]
-    pub fn header(&self, name: &str) -> Option<&str> {
-        let mut headers = self.headers.iter();
-        headers
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
-    }
 }
 
 pub trait Http {

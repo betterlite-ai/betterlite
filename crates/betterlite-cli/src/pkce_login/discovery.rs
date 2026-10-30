@@ -9,39 +9,46 @@ pub fn discover_cli_auth<H>(base_url: &str, http: &H) -> Result<CliAuthContract,
 where
     H: Http,
 {
-    let base = Url::parse(base_url)
-        .map_err(|error| PkceFailure::new_owned(format!("invalid base URL: {error}")))?;
+    let base = Url::parse(base_url).map_err(|source| PkceFailure::InvalidBaseUrl { source })?;
     let url = format!("{}{}", base.as_str().trim_end_matches('/'), DISCOVERY_PATH);
     let response = http.get(&url, HTTP_TIMEOUT_SECONDS)?;
     if response.status != 200 {
-        return Err(PkceFailure::new_owned(format!(
-            "discovery returned status {}",
-            response.status
-        )));
+        return Err(PkceFailure::DiscoveryStatus {
+            status: response.status,
+        });
     }
     let contract: CliAuthContract = serde_json::from_slice(&response.body)
-        .map_err(|error| PkceFailure::new_owned(format!("invalid discovery document: {error}")))?;
+        .map_err(|source| PkceFailure::DiscoveryDocument { source })?;
     validate_contract(&contract, base_url)?;
     Ok(contract)
 }
 
 fn validate_contract(contract: &CliAuthContract, base_url: &str) -> Result<(), PkceFailure> {
     if contract.contract_version != 1 {
-        return Err(PkceFailure::new("unsupported discovery contract version"));
+        return Err(PkceFailure::Protocol(
+            "unsupported discovery contract version".to_owned(),
+        ));
     }
     if !contract
         .supported_methods
         .iter()
         .any(|method| method == "S256")
     {
-        return Err(PkceFailure::new("the proxy does not support PKCE S256"));
-    }
-    if canonical_url(&contract.issuer) != canonical_url(base_url) {
-        return Err(PkceFailure::new(
-            "discovery issuer does not match the base URL",
+        return Err(PkceFailure::Protocol(
+            "the proxy does not support PKCE S256".to_owned(),
         ));
     }
-    let expected_origin = origin(base_url);
+    if canonical_url(&contract.issuer) != canonical_url(base_url) {
+        return Err(PkceFailure::Protocol(
+            "discovery issuer does not match the base URL".to_owned(),
+        ));
+    }
+    let base_origin = origin(base_url);
+    let Some(expected_origin) = base_origin else {
+        return Err(PkceFailure::Protocol(
+            "discovery base URL has no HTTP origin".to_owned(),
+        ));
+    };
     for endpoint in [
         &contract.authorization_endpoint,
         &contract.token_endpoint,
@@ -49,9 +56,9 @@ fn validate_contract(contract: &CliAuthContract, base_url: &str) -> Result<(), P
         &contract.revocation_endpoint,
         &contract.resource,
     ] {
-        if origin(endpoint).as_deref() != expected_origin.as_deref() {
-            return Err(PkceFailure::new(
-                "discovery names an endpoint outside the proxy origin",
+        if origin(endpoint).as_deref() != Some(expected_origin.as_str()) {
+            return Err(PkceFailure::Protocol(
+                "discovery names an endpoint outside the proxy origin".to_owned(),
             ));
         }
     }

@@ -1,4 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use url::form_urlencoded::Serializer;
 
@@ -53,9 +54,8 @@ where
         response_types: ["code"],
         token_endpoint_auth_method: "none",
     };
-    let body = serde_json::to_vec(&registration).map_err(|error| {
-        PkceFailure::new_owned(format!("invalid registration request: {error}"))
-    })?;
+    let body = serde_json::to_vec(&registration)
+        .map_err(|source| PkceFailure::RegistrationRequest { source })?;
     let response = http.post(
         &contract.registration_endpoint,
         HttpBody::Json(body),
@@ -64,26 +64,26 @@ where
     )?;
     refuse_redirect("client registration", &response)?;
     if response.status != 200 && response.status != 201 {
-        return Err(PkceFailure::new_owned(format!(
+        return Err(PkceFailure::Protocol(format!(
             "client registration failed: {}",
             error_detail(&response)
         )));
     }
-    let client_id =
-        serde_json::from_slice::<RegisteredClient>(&response.body).map_err(|error| {
-            PkceFailure::new_owned(format!("invalid registration response: {error}"))
-        })?;
-    if client_id.client_id.is_empty() {
-        return Err(PkceFailure::new("registration returned an empty client_id"));
+    let registered = serde_json::from_slice::<RegisteredClient>(&response.body)
+        .map_err(|error| PkceFailure::RegistrationResponse { source: error })?;
+    if registered.client_id.is_empty() {
+        return Err(PkceFailure::Protocol(
+            "registration returned an empty client_id".to_owned(),
+        ));
     }
-    Ok(client_id.client_id)
+    Ok(registered.client_id)
 }
 
 pub struct RedeemCodeRequest {
     pub client_id: String,
     pub redirect_uri: String,
-    pub code: String,
-    pub verifier: String,
+    pub code: SecretString,
+    pub verifier: SecretString,
 }
 
 pub fn redeem_code<H>(
@@ -95,54 +95,13 @@ pub fn redeem_code<H>(
 where
     H: Http,
 {
-    validate_code_request(request)?;
-    let code_has_payload = !request.code.is_empty();
-    if !code_has_payload {
-        return Err(PkceFailure::new("authorization code is empty"));
-    }
-    let client_has_payload = !request.client_id.is_empty();
-    if !client_has_payload {
-        return Err(PkceFailure::new("client ID is empty"));
-    }
-    authorization_exchange(contract, request, http, now_seconds)
-}
-
-fn validate_code_request(request: &RedeemCodeRequest) -> Result<(), PkceFailure> {
-    if request.verifier.is_empty() {
-        return Err(PkceFailure::new("code verifier is empty"));
-    }
-    let redirect_uri = request.redirect_uri.trim_end_matches('/');
-    if redirect_uri.is_empty() {
-        return Err(PkceFailure::new("redirect URI is empty"));
-    }
-    if !redirect_uri.starts_with("http://127.0.0.1:") {
-        return Err(PkceFailure::new("redirect URI is not a loopback address"));
-    }
-    if request.code.chars().any(char::is_whitespace) {
-        return Err(PkceFailure::new("authorization code contains whitespace"));
-    }
-    if request.code.len() > 8_192 || request.verifier.len() > 256 {
-        return Err(PkceFailure::new("authorization code request is too large"));
-    }
-    if !redirect_uri.ends_with("/callback") {
-        return Err(PkceFailure::new(
-            "redirect URI does not use the callback path",
-        ));
-    }
-    let code_prefix = request.code.as_bytes().first().copied();
-    if code_prefix == Some(0) {
-        return Err(PkceFailure::new("authorization code starts with NUL"));
-    }
-    let verifier_is_ascii = request.verifier.is_ascii();
-    if !verifier_is_ascii {
-        return Err(PkceFailure::new("code verifier is not ASCII"));
-    }
-    Ok(())
+    let input = TokenInput::Code(request);
+    token_request(contract, &request.client_id, http, now_seconds, input)
 }
 
 pub struct RefreshCredentialRequest {
     pub client_id: String,
-    pub refresh_token: String,
+    pub refresh_token: SecretString,
 }
 
 pub fn refresh_credential<H>(
@@ -154,33 +113,6 @@ pub fn refresh_credential<H>(
 where
     H: Http,
 {
-    if request.refresh_token.is_empty() {
-        return Err(PkceFailure::new("refresh token is empty"));
-    }
-    let token_length = request.refresh_token.len();
-    if token_length > 0x4000 {
-        return Err(PkceFailure::new("refresh token is too large"));
-    }
-    if request.refresh_token.chars().any(char::is_whitespace) {
-        return Err(PkceFailure::new("refresh token contains whitespace"));
-    }
-    if request.client_id.is_empty() {
-        return Err(PkceFailure::new("client ID is empty"));
-    }
-    if request.client_id.len() > 1_024 {
-        return Err(PkceFailure::new("client ID is too large"));
-    }
-    if request.refresh_token.as_bytes().contains(&0) {
-        return Err(PkceFailure::new("refresh token contains a NUL byte"));
-    }
-    let refresh_has_separator = request.refresh_token.contains(':');
-    if refresh_has_separator && request.refresh_token.starts_with(':') {
-        return Err(PkceFailure::new("refresh token has an invalid separator"));
-    }
-    let client_is_ascii = request.client_id.is_ascii();
-    if !client_is_ascii {
-        return Err(PkceFailure::new("client ID is not ASCII"));
-    }
     let input = TokenInput::Refresh(request);
     token_request(contract, &request.client_id, http, now_seconds, input)
 }
@@ -210,12 +142,12 @@ where
     )?;
     refuse_redirect("token request", &response)?;
     if response.status != 200 {
-        return Err(PkceFailure::new_owned(error_detail(&response)));
+        return Err(PkceFailure::Protocol(error_detail(&response)));
     }
     let token = parse_token(&response)?;
     let expires_at = now_seconds
         .checked_add(token.expires_in)
-        .ok_or_else(|| PkceFailure::new("token expiry overflow"))?;
+        .ok_or_else(|| PkceFailure::Protocol("token expiry overflow".to_owned()))?;
     Ok(PkceCredential {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
@@ -229,19 +161,6 @@ where
     })
 }
 
-fn authorization_exchange<H>(
-    contract: &CliAuthContract,
-    request: &RedeemCodeRequest,
-    http: &H,
-    now_seconds: i64,
-) -> Result<PkceCredential, PkceFailure>
-where
-    H: Http,
-{
-    let input = TokenInput::Code(request);
-    token_request(contract, &request.client_id, http, now_seconds, input)
-}
-
 fn token_fields(contract: &CliAuthContract, input: TokenInput<'_>) -> Vec<(String, String)> {
     match input {
         TokenInput::Code(request) => vec![
@@ -249,15 +168,24 @@ fn token_fields(contract: &CliAuthContract, input: TokenInput<'_>) -> Vec<(Strin
                 String::from("grant_type"),
                 String::from("authorization_code"),
             ),
-            (String::from("code"), request.code.clone()),
+            (
+                String::from("code"),
+                request.code.expose_secret().to_owned(),
+            ),
             (String::from("redirect_uri"), request.redirect_uri.clone()),
             (String::from("client_id"), request.client_id.clone()),
-            (String::from("code_verifier"), request.verifier.clone()),
+            (
+                String::from("code_verifier"),
+                request.verifier.expose_secret().to_owned(),
+            ),
             (String::from("resource"), contract.resource.clone()),
         ],
         TokenInput::Refresh(request) => vec![
             (String::from("grant_type"), String::from("refresh_token")),
-            (String::from("refresh_token"), request.refresh_token.clone()),
+            (
+                String::from("refresh_token"),
+                request.refresh_token.expose_secret().to_owned(),
+            ),
             (String::from("client_id"), request.client_id.clone()),
             (String::from("resource"), contract.resource.clone()),
         ],

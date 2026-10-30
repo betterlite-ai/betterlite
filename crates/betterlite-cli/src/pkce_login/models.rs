@@ -1,4 +1,7 @@
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use std::io::Error as IoError;
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CliAuthContract {
@@ -13,10 +16,10 @@ pub struct CliAuthContract {
     pub supported_methods: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PkceCredential {
-    pub access_token: String,
-    pub refresh_token: String,
+    pub access_token: SecretString,
+    pub refresh_token: SecretString,
     pub expires_at: i64,
     pub client_id: String,
     pub token_endpoint: String,
@@ -26,23 +29,51 @@ pub struct PkceCredential {
     pub team_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PkceFailure {
-    pub reason: String,
-}
-
-impl PkceFailure {
-    pub(crate) fn new(reason: &str) -> Self {
-        let message = String::from(reason);
-        Self { reason: message }
-    }
-
-    pub(crate) const fn new_owned(reason: String) -> Self {
-        if reason.is_empty() {
-            return Self { reason };
-        }
-        Self { reason }
-    }
+#[derive(Debug, Error)]
+pub enum PkceFailure {
+    #[error("invalid base URL: {source}")]
+    InvalidBaseUrl {
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("discovery returned status {status}")]
+    DiscoveryStatus { status: u16 },
+    #[error("invalid discovery document: {source}")]
+    DiscoveryDocument {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("{0}")]
+    Protocol(String),
+    #[error("invalid registration request: {source}")]
+    RegistrationRequest {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("invalid registration response: {source}")]
+    RegistrationResponse {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("invalid token response: {source}")]
+    TokenResponse {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("callback timeout overflow")]
+    CallbackTimeoutOverflow,
+    #[error("timed out waiting for the browser sign-in to finish")]
+    CallbackTimeout,
+    #[error("loopback accept failed: {source}")]
+    LoopbackAccept {
+        #[source]
+        source: IoError,
+    },
+    #[error("loopback write failed: {source}")]
+    LoopbackWrite {
+        #[source]
+        source: IoError,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,9 +81,9 @@ pub struct RevocationUnavailable {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CallbackCode {
-    pub code: String,
+    pub code: SecretString,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +92,7 @@ pub struct CallbackDenied {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum CallbackOutcome {
     Code(CallbackCode),
     Denied(CallbackDenied),

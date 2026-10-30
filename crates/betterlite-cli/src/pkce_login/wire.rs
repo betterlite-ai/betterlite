@@ -1,3 +1,4 @@
+use secrecy::{ExposeSecret as _, SecretString};
 use std::str::from_utf8;
 
 use super::{HttpResponse, models::PkceFailure};
@@ -18,9 +19,9 @@ pub(super) struct ClientRegistration {
 
 #[derive(serde::Deserialize)]
 pub(super) struct TokenResponse {
-    pub(super) access_token: String,
+    pub(super) access_token: SecretString,
     pub(super) expires_in: i64,
-    pub(super) refresh_token: String,
+    pub(super) refresh_token: SecretString,
     pub(super) user_id: Option<String>,
     pub(super) team_id: Option<String>,
 }
@@ -43,16 +44,21 @@ struct ErrorBody {
 
 pub(super) fn parse_token(response: &HttpResponse) -> Result<TokenResponse, PkceFailure> {
     let token: TokenResponse = serde_json::from_slice(&response.body)
-        .map_err(|error| PkceFailure::new_owned(format!("invalid token response: {error}")))?;
-    if token.access_token.is_empty() || token.refresh_token.is_empty() || token.expires_in <= 0 {
-        return Err(PkceFailure::new("invalid token response fields"));
+        .map_err(|source| PkceFailure::TokenResponse { source })?;
+    if token.access_token.expose_secret().is_empty()
+        || token.refresh_token.expose_secret().is_empty()
+        || token.expires_in <= 0
+    {
+        return Err(PkceFailure::Protocol(
+            "invalid token response fields".to_owned(),
+        ));
     }
     Ok(token)
 }
 
 pub(super) fn refuse_redirect(name: &str, response: &HttpResponse) -> Result<(), PkceFailure> {
     if response.status == 307 || response.status == 308 {
-        return Err(PkceFailure::new_owned(format!(
+        return Err(PkceFailure::Protocol(format!(
             "{name} redirected; refusing to follow it"
         )));
     }
