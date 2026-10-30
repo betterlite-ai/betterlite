@@ -1,0 +1,11 @@
+kind: helper
+name: tool-schema-required-branch-merge
+call:
+  tool_schema:
+    mode: flatten_top_level
+    schema:
+      allOf:
+        - {type: object, properties: {a: {type: string}}, required: [a]}
+        - {type: object, properties: {b: {type: number}}, required: [b]}
+env: {}
+compare: {ignore: []}

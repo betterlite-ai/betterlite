@@ -1,0 +1,8 @@
+kind: helper
+name: valid_extra_fields_ignored
+call:
+  team_rows:
+    calls:
+      - {"name":"valid_extra_fields_ignored","operation":"team","row":{"team_id":"t","aliases":"1","config":"null","permissions":"[]","model_aliases":"true","unknown":"bad"}}
+env: {}
+compare: {ignore: []}
