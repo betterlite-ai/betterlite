@@ -7,7 +7,7 @@ use std::fs;
 #[rstest]
 #[case::pinned_backup("backup")]
 #[case::pinned_root("root")]
-fn b193_model_catalog_tests_behavior(#[case] case: &str) {
+fn model_catalog_tests_behavior(#[case] case: &str) {
     assert!(!case.is_empty());
     let catalog = ModelCatalog::bundled().unwrap();
     assert!(catalog.len() > 4_000);
