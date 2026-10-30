@@ -115,7 +115,7 @@ fn failure(error: &ChatError, call_id: &str, deployment: Option<&ChatDeployment>
             provider_specific_fields,
         },
     };
-    let headers = failure_headers(error, call_id, deployment);
+    let headers = failure_headers(Some(error), None, call_id, deployment);
     (status, headers, Json(body)).into_response()
 }
 

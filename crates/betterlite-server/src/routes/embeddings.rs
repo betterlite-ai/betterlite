@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
-use super::chat::headers::{failure_headers, failure_headers_with_upstream, success_headers};
+use super::chat::headers::{failure_headers, success_headers};
 
 #[derive(Serialize)]
 struct ErrorBody {
@@ -133,7 +133,7 @@ fn failure_headers_for_embedding(
 ) -> HeaderMap {
     match error {
         EmbeddingError::Provider { response } => {
-            failure_headers_with_upstream(Some(&response.headers), call_id, deployment)
+            failure_headers(None, Some(&response.headers), call_id, deployment)
         }
         EmbeddingError::Body { .. }
         | EmbeddingError::Encode { .. }
@@ -145,7 +145,7 @@ fn failure_headers_for_embedding(
             let chat_error = ChatError::UnknownModel {
                 model: String::new(),
             };
-            failure_headers(&chat_error, call_id, deployment)
+            failure_headers(Some(&chat_error), None, call_id, deployment)
         }
     }
 }

@@ -63,11 +63,12 @@ pub(super) fn stream_headers(
 }
 
 pub(crate) fn failure_headers(
-    error: &ChatError,
+    error: Option<&ChatError>,
+    upstream: Option<&HeaderMap>,
     call_id: &str,
     deployment: Option<&ChatDeployment>,
 ) -> HeaderMap {
-    let upstream = match error {
+    let provider_headers = error.and_then(|failure| match failure {
         ChatError::Provider { response } => Some(&response.headers),
         ChatError::UnknownModel { .. }
         | ChatError::Request { .. }
@@ -79,16 +80,9 @@ pub(crate) fn failure_headers(
         | ChatError::Decode { .. }
         | ChatError::TooLarge
         | ChatError::Http { .. } => None,
-    };
-    failure_headers_with_upstream(upstream, call_id, deployment)
-}
-
-pub(crate) fn failure_headers_with_upstream(
-    upstream: Option<&HeaderMap>,
-    call_id: &str,
-    deployment: Option<&ChatDeployment>,
-) -> HeaderMap {
-    let mut headers = upstream.map_or_else(HeaderMap::new, forwardable_failure_headers);
+    });
+    let source = upstream.or(provider_headers);
+    let mut headers = source.map_or_else(HeaderMap::new, forwardable_failure_headers);
     if let Ok(value) = HeaderValue::from_str(call_id) {
         headers.insert("x-litellm-call-id", value);
     }
