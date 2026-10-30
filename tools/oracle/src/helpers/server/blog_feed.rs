@@ -1,6 +1,7 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
 use chrono::DateTime;
 use quick_xml::Reader;
+use quick_xml::escape::unescape;
 use quick_xml::events::Event;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -163,7 +164,10 @@ fn parse_rss_to_posts(xml: &str, max_posts: usize) -> Result<Vec<BlogPost>, Fail
                 current = name;
             }
             Ok(Event::Text(text)) if in_item => {
-                let value = text.decode().map_err(|error| Failure::Parse {
+                let decoded = text.decode().map_err(|error| Failure::Parse {
+                    message: error.to_string(),
+                })?;
+                let value = unescape(decoded.as_ref()).map_err(|error| Failure::Parse {
                     message: error.to_string(),
                 })?;
                 fields.entry(current.clone()).or_default().push_str(&value);
