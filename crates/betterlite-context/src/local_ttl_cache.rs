@@ -98,7 +98,7 @@ impl LocalTtlCache {
             .unwrap_or(loaded_item_kib);
         let item_byte_limit = match usize::try_from(resolved_item_kib) {
             Ok(kib) => Some(kib.saturating_mul(1024).min(MAX_VALUE_BYTES)),
-            Err(_) if resolved_item_kib < 0 => None,
+            Err(_) if resolved_item_kib.is_negative() => None,
             Err(_) => Some(MAX_VALUE_BYTES),
         };
         let cache = Self {
