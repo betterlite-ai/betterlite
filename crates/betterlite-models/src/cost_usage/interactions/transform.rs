@@ -6,12 +6,12 @@ use super::cache::subtract_cached_from_input;
 use super::modality::{ModalityList, modality_token_sums};
 use super::record::{InteractionsUsage, field_value};
 use super::search::google_search_query_count;
-use crate::cost_usage::error::CostUsageError;
+use crate::cost_usage::error::{CostUsageError, ModalityField};
 use crate::cost_usage::{CompletionDetails, CostUsage, PromptDetails};
 
 struct ModalitySums {
-    input: BTreeMap<&'static str, i64>,
-    output: BTreeMap<&'static str, i64>,
+    input: BTreeMap<ModalityField, i64>,
+    output: BTreeMap<ModalityField, i64>,
     total_cached_tokens: i64,
 }
 
@@ -118,7 +118,7 @@ fn compute_token_totals(usage: &InteractionsUsage) -> Result<TokenTotals, CostUs
 }
 
 fn build_prompt_details(
-    input_sums: &BTreeMap<&'static str, i64>,
+    input_sums: &BTreeMap<ModalityField, i64>,
     total_cached_tokens: i64,
     web_search_requests: i64,
 ) -> Option<PromptDetails> {
@@ -126,26 +126,26 @@ fn build_prompt_details(
         return None;
     }
     Some(PromptDetails {
-        text_tokens: input_sums.get("text_tokens").copied(),
-        audio_tokens: input_sums.get("audio_tokens").copied(),
-        image_tokens: input_sums.get("image_tokens").copied(),
-        video_tokens: input_sums.get("video_tokens").copied(),
+        text_tokens: input_sums.get(&ModalityField::Text).copied(),
+        audio_tokens: input_sums.get(&ModalityField::Audio).copied(),
+        image_tokens: input_sums.get(&ModalityField::Image).copied(),
+        video_tokens: input_sums.get(&ModalityField::Video).copied(),
         web_search_requests: (web_search_requests != 0).then_some(web_search_requests),
     })
 }
 
 fn build_completion_details(
-    output_sums: &BTreeMap<&'static str, i64>,
+    output_sums: &BTreeMap<ModalityField, i64>,
     reasoning_tokens: i64,
 ) -> Option<CompletionDetails> {
     if output_sums.is_empty() && reasoning_tokens == 0 {
         return None;
     }
     Some(CompletionDetails {
-        text_tokens: output_sums.get("text_tokens").copied(),
-        audio_tokens: output_sums.get("audio_tokens").copied(),
-        image_tokens: output_sums.get("image_tokens").copied(),
-        video_tokens: output_sums.get("video_tokens").copied(),
+        text_tokens: output_sums.get(&ModalityField::Text).copied(),
+        audio_tokens: output_sums.get(&ModalityField::Audio).copied(),
+        image_tokens: output_sums.get(&ModalityField::Image).copied(),
+        video_tokens: output_sums.get(&ModalityField::Video).copied(),
         reasoning_tokens: (reasoning_tokens != 0).then_some(reasoning_tokens),
     })
 }

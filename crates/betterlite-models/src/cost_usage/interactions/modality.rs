@@ -5,15 +5,15 @@ use serde::de::IgnoredAny;
 use serde_json::Number;
 use serde_json::value::RawValue;
 
-use crate::cost_usage::error::CostUsageError;
+use crate::cost_usage::error::{CostUsageError, ModalityField};
 use crate::cost_usage::token_count::token_count_from_raw;
 
-fn modality_field_name(modality: &str) -> Option<&'static str> {
+fn modality_field_name(modality: &str) -> Option<ModalityField> {
     match modality {
-        "text" | "document" => Some("text_tokens"),
-        "audio" => Some("audio_tokens"),
-        "image" => Some("image_tokens"),
-        "video" => Some("video_tokens"),
+        "text" | "document" => Some(ModalityField::Text),
+        "audio" => Some(ModalityField::Audio),
+        "image" => Some(ModalityField::Image),
+        "video" => Some(ModalityField::Video),
         _ => None,
     }
 }
@@ -40,7 +40,7 @@ impl From<RawModalityName> for ModalityName {
 }
 
 impl ModalityName {
-    fn field_name(&self) -> Option<&'static str> {
+    fn field_name(&self) -> Option<ModalityField> {
         let name = self.0.as_deref()?;
         modality_field_name(&name.to_lowercase())
     }
@@ -51,8 +51,8 @@ type ModalityEntryFields = BTreeMap<Box<str>, Box<RawValue>>;
 // A non-mapping entry is a transformation error, never silently skipped.
 pub(crate) fn modality_token_sums(
     entries: &[&RawValue],
-) -> Result<BTreeMap<&'static str, i64>, CostUsageError> {
-    let mut sums: BTreeMap<&'static str, i64> = BTreeMap::new();
+) -> Result<BTreeMap<ModalityField, i64>, CostUsageError> {
+    let mut sums: BTreeMap<ModalityField, i64> = BTreeMap::new();
     for entry in entries {
         let fields: ModalityEntryFields = serde_json::from_str(entry.get())
             .map_err(|_error| CostUsageError::ModalityEntryNotObject)?;

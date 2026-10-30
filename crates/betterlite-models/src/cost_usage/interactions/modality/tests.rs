@@ -4,7 +4,7 @@ use rstest::rstest;
 use serde_json::value::RawValue;
 
 use super::{ModalityList, modality_token_sums};
-use crate::cost_usage::error::CostUsageError;
+use crate::cost_usage::error::{CostUsageError, ModalityField};
 
 fn raw(entries: &[&str]) -> Vec<Box<RawValue>> {
     entries
@@ -18,7 +18,7 @@ fn document_maps_to_text_tokens() {
     let entries = raw(&[r#"{"modality":"document","tokens":5}"#]);
     let refs: Vec<&RawValue> = entries.iter().map(Box::as_ref).collect();
     let sums = modality_token_sums(&refs).expect("mapping entries");
-    assert_eq!(sums.get("text_tokens"), Some(&5));
+    assert_eq!(sums.get(&ModalityField::Text), Some(&5));
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn bool_tokens_count_as_zero_or_one_and_strings_count_as_zero() {
     ]);
     let refs: Vec<&RawValue> = entries.iter().map(Box::as_ref).collect();
     let sums = modality_token_sums(&refs).expect("mapping entries");
-    assert_eq!(sums.get("audio_tokens"), Some(&1));
+    assert_eq!(sums.get(&ModalityField::Audio), Some(&1));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn sum_overflow_is_reported() {
     assert_eq!(
         error,
         CostUsageError::ModalitySumOverflow {
-            field: "text_tokens"
+            field: ModalityField::Text
         }
     );
 }
