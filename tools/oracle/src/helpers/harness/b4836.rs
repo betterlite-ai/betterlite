@@ -45,27 +45,21 @@ fn stream(input: &str) -> HelperResult {
 }
 
 fn requests(input: &str) -> HelperResult {
-    let requests = parse_request_document(input).map_err(|error| {
-        Box::new(HelperError {
-            class: "RequestParse".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
-    Ok(json!({"requests": requests}))
-}
-
-fn parse_request_document(input: &str) -> Result<Vec<Value>, serde_json::Error> {
-    match serde_json::Deserializer::from_str(input)
+    let requests = serde_json::Deserializer::from_str(input)
         .into_iter::<Value>()
+        .map(|request| request.map(|value| project_request(&value)))
         .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(values) => Ok(values.iter().map(project_request).collect()),
-        Err(error) => Err(error),
-    }
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "RequestParse".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
+    Ok(json!({"requests": requests}))
 }
 
 fn project_request(request: &Value) -> Value {

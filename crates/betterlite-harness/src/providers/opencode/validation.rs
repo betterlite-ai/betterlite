@@ -19,15 +19,11 @@ pub(super) fn validate_user_config(config: &JsonObject) -> Result<(), HarnessErr
         .filter(|key| MANAGED_CONFIG_KEYS.contains(&key.as_str()))
         .cloned()
         .collect();
-    if let Some(key) = managed.first() {
-        let reported_key = if managed.len() == 1 {
-            key.clone()
-        } else {
-            managed.join(", ")
-        };
-        return Err(HarnessError::ManagedConfigKey {
-            key: reported_key,
-            harness: Harness::OpenCode,
+    if !managed.is_empty() {
+        return Err(HarnessError::OpenCodeManagedKeys {
+            section: "config".to_owned(),
+            agent: None,
+            keys: managed,
         });
     }
     for section in ["agent", "mode"] {
@@ -62,9 +58,10 @@ fn validate_agent_section(config: &JsonObject, section: &str) -> Result<(), Harn
             .collect();
         if !keys.is_empty() {
             keys.sort();
-            return Err(HarnessError::ManagedConfigKey {
-                key: format!("{section}.{agent_name}: {}", keys.join(", ")),
-                harness: Harness::OpenCode,
+            return Err(HarnessError::OpenCodeManagedKeys {
+                section: section.to_owned(),
+                agent: Some(agent_name.clone()),
+                keys,
             });
         }
     }

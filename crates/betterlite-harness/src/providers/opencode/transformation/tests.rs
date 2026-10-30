@@ -17,7 +17,7 @@ fn opencode_validation_rejects_managed_keys() {
     let config: JsonObject = serde_json::from_str(r#"{"permission":{"edit":"allow"}}"#).unwrap();
     assert!(matches!(
         super::config::validate_user_config(&config),
-        Err(HarnessError::ManagedConfigKey { key, harness: Harness::OpenCode }) if key == "permission"
+        Err(HarnessError::OpenCodeManagedKeys { keys, .. }) if keys == ["permission".to_owned()]
     ));
 }
 
@@ -27,8 +27,8 @@ fn opencode_validation_rejects_agent_managed_keys() {
         serde_json::from_str(r#"{"agent":{"build":{"model":"other"}}}"#).unwrap();
     assert!(matches!(
         super::config::validate_user_config(&config),
-        Err(HarnessError::ManagedConfigKey { key, harness: Harness::OpenCode })
-            if key == "agent.build: model"
+        Err(HarnessError::OpenCodeManagedKeys { section, agent, keys })
+            if section == "agent" && agent.as_deref() == Some("build") && keys == ["model".to_owned()]
     ));
 }
 
@@ -133,7 +133,7 @@ fn opencode_config_rejects_managed_keys_before_merge() {
     let user_config: JsonObject = serde_json::from_str(r#"{"model":"other"}"#).unwrap();
     assert!(matches!(
         super::config::build_opencode_config(&base_config_inputs(&user_config, &[])),
-        Err(HarnessError::ManagedConfigKey { key, harness: Harness::OpenCode }) if key == "model"
+        Err(HarnessError::OpenCodeManagedKeys { keys, .. }) if keys == ["model".to_owned()]
     ));
 }
 

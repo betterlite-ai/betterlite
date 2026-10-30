@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde_json::json;
+use serde::Serialize;
 
 use crate::context::SessionContext;
 use crate::errors::HarnessError;
@@ -46,23 +46,73 @@ pub(super) struct ConfigInputs<'cfg> {
     pub(super) skills_path: Option<String>,
 }
 
-fn provider_block(base_url: &str, token_path: &str, model: &str) -> JsonObject {
-    let mut options = JsonObject::new();
-    options.insert("baseURL".to_owned(), json!(base_url));
-    options.insert("apiKey".to_owned(), json!(format!("{{file:{token_path}}}")));
-    let mut models = JsonObject::new();
-    models.insert(
-        model.to_owned(),
-        serde_json::to_value(JsonObject::new()).unwrap_or_default(),
-    );
-    let mut provider = JsonObject::new();
-    provider.insert("npm".to_owned(), json!(OPENCODE_PROVIDER_NPM));
-    provider.insert("name".to_owned(), json!("LiteLLM"));
-    provider.insert("options".to_owned(), json!(options));
-    provider.insert("models".to_owned(), json!(models));
-    let mut providers = JsonObject::new();
-    providers.insert(OPENCODE_PROVIDER_ID.to_owned(), json!(provider));
-    providers
+#[derive(Serialize)]
+struct ProviderBlock {
+    npm: &'static str,
+    name: &'static str,
+    options: ProviderOptions,
+    models: BTreeMap<String, ModelConfig>,
+}
+
+#[derive(Serialize)]
+struct ProviderOptions {
+    #[serde(rename = "baseURL")]
+    base_url: String,
+    #[serde(rename = "apiKey")]
+    api_key: String,
+}
+
+#[derive(Serialize)]
+struct ModelConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<()>,
+}
+
+#[derive(Serialize)]
+struct SkillsConfig {
+    paths: Vec<String>,
+    #[serde(flatten)]
+    extra: JsonObject,
+}
+
+#[derive(Serialize)]
+struct OpenCodeConfig {
+    provider: BTreeMap<String, ProviderBlock>,
+    enabled_providers: Vec<&'static str>,
+    model: String,
+    small_model: String,
+    permission: BTreeMap<String, String>,
+    autoupdate: bool,
+    share: &'static str,
+    instructions: Option<Vec<String>>,
+    skills: Option<SkillsConfig>,
+    #[serde(flatten)]
+    #[expect(
+        clippy::disallowed_types,
+        reason = "OpenCode options not managed by betterlite remain provider-defined JSON"
+    )]
+    extra: BTreeMap<String, serde_json::Value>,
+}
+
+fn provider_block(
+    base_url: &str,
+    token_path: &str,
+    model: &str,
+) -> BTreeMap<String, ProviderBlock> {
+    let mut models = BTreeMap::new();
+    models.insert(model.to_owned(), ModelConfig { options: None });
+    BTreeMap::from([(
+        OPENCODE_PROVIDER_ID.to_owned(),
+        ProviderBlock {
+            npm: OPENCODE_PROVIDER_NPM,
+            name: "LiteLLM",
+            options: ProviderOptions {
+                base_url: base_url.to_owned(),
+                api_key: format!("{{file:{token_path}}}"),
+            },
+            models,
+        },
+    )])
 }
 
 fn string_entries(
@@ -102,8 +152,8 @@ fn merged_instructions(
 fn merged_skills(
     user_config: &JsonObject,
     extra: Option<&str>,
-) -> Result<Option<JsonObject>, HarnessError> {
-    let mut skills: JsonObject = user_config
+) -> Result<Option<SkillsConfig>, HarnessError> {
+    let skills: JsonObject = user_config
         .get("skills")
         .and_then(|value| value.as_object())
         .map(|entries| entries.clone().into_iter().collect())
@@ -115,34 +165,34 @@ fn merged_skills(
     if paths.is_empty() {
         return Ok(None);
     }
-    skills.insert("paths".to_owned(), json!(paths));
-    Ok(Some(skills))
+    let skill_extra = skills
+        .into_iter()
+        .filter(|(key, _)| key != "paths")
+        .collect();
+    Ok(Some(SkillsConfig {
+        paths,
+        extra: skill_extra,
+    }))
 }
 
-fn insert_managed_fields(
-    config: &mut JsonObject,
+fn build_typed_config(
     inputs: &ConfigInputs<'_>,
     permission: &BTreeMap<String, String>,
-) {
+) -> OpenCodeConfig {
     let qualified_model = format!("{OPENCODE_PROVIDER_ID}/{}", inputs.model);
-    config.insert(
-        "provider".to_owned(),
-        json!(provider_block(
-            &inputs.base_url,
-            &inputs.token_path,
-            inputs.model
-        )),
-    );
-    config.insert(
-        "enabled_providers".to_owned(),
-        json!([OPENCODE_PROVIDER_ID]),
-    );
     let small_model = qualified_model.clone();
-    config.insert("model".to_owned(), json!(qualified_model));
-    config.insert("small_model".to_owned(), json!(small_model));
-    config.insert("permission".to_owned(), json!(permission));
-    config.insert("autoupdate".to_owned(), json!(false));
-    config.insert("share".to_owned(), json!("disabled"));
+    OpenCodeConfig {
+        provider: provider_block(&inputs.base_url, &inputs.token_path, inputs.model),
+        enabled_providers: vec![OPENCODE_PROVIDER_ID],
+        model: qualified_model,
+        small_model,
+        permission: permission.clone(),
+        autoupdate: false,
+        share: "disabled",
+        instructions: None,
+        skills: None,
+        extra: inputs.user_config.clone(),
+    }
 }
 
 pub(super) fn build_opencode_config(inputs: &ConfigInputs<'_>) -> Result<JsonObject, HarnessError> {
@@ -151,15 +201,21 @@ pub(super) fn build_opencode_config(inputs: &ConfigInputs<'_>) -> Result<JsonObj
         merged_instructions(inputs.user_config, inputs.instructions_path.as_deref())?;
     let skills = merged_skills(inputs.user_config, inputs.skills_path.as_deref())?;
     let permission = permission_rules(inputs.permissions, inputs.disable_tools);
-    let mut config = inputs.user_config.clone();
-    insert_managed_fields(&mut config, inputs, &permission);
-    if !instructions.is_empty() {
-        config.insert("instructions".to_owned(), json!(instructions));
-    }
-    if let Some(skills_value) = skills {
-        config.insert("skills".to_owned(), json!(skills_value));
-    }
-    Ok(config)
+    let mut config = build_typed_config(inputs, &permission);
+    config.instructions = (!instructions.is_empty()).then_some(instructions);
+    config.skills = skills;
+    config.extra.remove("instructions");
+    config.extra.remove("skills");
+    serde_json::to_value(config)
+        .map_err(|source| HarnessError::StateEncode { source })?
+        .as_object()
+        .cloned()
+        .map(|object| object.into_iter().collect())
+        .ok_or_else(|| HarnessError::OptionsMismatch {
+            given: "OpenCodeOptions.config",
+            harness: Harness::OpenCode,
+            expected: "a JSON object",
+        })
 }
 
 pub(super) fn build_instructions<S>(
