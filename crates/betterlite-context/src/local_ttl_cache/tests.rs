@@ -358,6 +358,7 @@ fn local_ttl_cache_secret_safe_failure() {
         .set("key", credential("fixture-secret"), None)
         .unwrap();
     assert!(!format!("{cache:?} {:?}", cache.get("key").unwrap()).contains("fixture-secret"));
+    assert!(format!("{cache:?}").contains("LocalTtlCache"));
     cache.heap.clear();
     let error = cache
         .set("replacement", credential("fixture-secret"), None)
