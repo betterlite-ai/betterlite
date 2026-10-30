@@ -11,6 +11,7 @@ pub mod credentials;
 pub mod encryption;
 pub mod generic_sso_callback;
 pub mod google_sso;
+pub mod includes;
 pub mod loader;
 pub mod microsoft_group_sync;
 pub mod microsoft_login;

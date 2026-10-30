@@ -1,10 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::num::{ParseFloatError, ParseIntError};
+use std::path::Path;
 
 use secrecy::SecretString;
-use serde::de::DeserializeOwned;
+use serde::de::{Deserialize, DeserializeOwned};
 use thiserror::Error;
 
+use crate::includes::{ConfigMap, IncludeError, resolve_includes};
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
@@ -36,6 +39,11 @@ pub enum ConfigError {
         #[source]
         source: serde_saphyr::Error,
     },
+    #[error("could not serialize resolved config: {source}")]
+    Json {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("unsupported config keys: {paths:?}")]
     Unsupported { paths: Vec<String> },
     #[error("environment variable {variable} for {path} is not set")]
@@ -54,6 +62,11 @@ pub enum ConfigError {
     },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
+    #[error("could not resolve config includes: {source}")]
+    Includes {
+        #[source]
+        source: Box<IncludeError>,
+    },
 }
 pub struct ConfigLoader<L> {
     pub lookup: L,
@@ -73,6 +86,47 @@ where
         }
         let sections = raw_sections.convert(&self.lookup)?;
         convert(raw, sections, &self.lookup)
+    }
+
+    pub fn load_from_path<P>(&self, config_path: P) -> Result<Config, ConfigError>
+    where
+        P: AsRef<Path>,
+    {
+        let path_ref = config_path.as_ref();
+        let yaml_source = fs::read_to_string(path_ref).map_err(|error| ConfigError::Includes {
+            source: Box::new(IncludeError::Read {
+                path: path_ref.to_path_buf(),
+                source: error,
+            }),
+        })?;
+        let value = serde_saphyr::with_deserializer_from_str(&yaml_source, |deserializer| {
+            Deserialize::deserialize(deserializer)
+        })
+        .map_err(|error| ConfigError::Includes {
+            source: Box::new(IncludeError::Yaml {
+                path: path_ref.to_path_buf(),
+                source: Box::new(error),
+            }),
+        })?;
+        let config = match value {
+            serde_json::Value::Object(config) => config.into_iter().collect(),
+            serde_json::Value::Null => ConfigMap::new(),
+            serde_json::Value::Array(_)
+            | serde_json::Value::Bool(_)
+            | serde_json::Value::Number(_)
+            | serde_json::Value::String(_) => {
+                return Err(ConfigError::Includes {
+                    source: Box::new(IncludeError::Root {
+                        path: path_ref.to_path_buf(),
+                    }),
+                });
+            }
+        };
+        let resolved = resolve_includes(config, path_ref)
+            .map_err(|error| ConfigError::Includes { source: error })?;
+        let resolved_source = serde_json::to_string(&resolved)
+            .map_err(|error| ConfigError::Json { source: error })?;
+        self.load(&resolved_source)
     }
 }
 
