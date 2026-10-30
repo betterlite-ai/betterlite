@@ -8,4 +8,6 @@ call:
     text: upstream failure
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

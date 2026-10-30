@@ -1,9 +1,9 @@
 #![cfg(test)]
-#![cfg(test)]
 
+use crate::facts::presence::Field;
 use rstest::rstest;
 
-use crate::facts::ProviderErrorBody;
+use crate::facts::{ProviderErrorBody, RequestFacts};
 
 use super::*;
 
@@ -22,15 +22,24 @@ use super::*;
 fn error_facts_behavior_tests_behavior(#[case] status: u16, #[case] expected: StatusFamily) {
     let error = ProviderErrorFacts {
         status_code: Some(status),
+        response: matches!(status, 502 | 503).then(|| ResponseFacts {
+            status_code: status,
+            headers: BTreeMap::new(),
+            request: None,
+        }),
         body: match status {
             502 | 503 => Some(ProviderErrorBody {
-                message: None,
-                error: None,
-                code: None,
+                message: Field::Missing,
+                error: Field::Missing,
+                code: Field::Missing,
             }),
             _ => None,
         },
-        ..ProviderErrorFacts::empty()
+        status_code_is_synthesized: false,
+        message: None,
+        headers: None,
+        litellm_response_headers: None,
+        request: None,
     };
     let mapping = map_exception_by_status(&error, "failed", "Provider");
     assert_eq!(mapping.as_ref().map(|value| value.family), Some(expected));
@@ -45,7 +54,12 @@ fn error_facts_behavior_tests_behavior_synthesized_status_is_ignored() {
     let error = ProviderErrorFacts {
         status_code: Some(500),
         status_code_is_synthesized: true,
-        ..ProviderErrorFacts::empty()
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
     };
     assert_eq!(map_exception_by_status(&error, "failed", "Provider"), None);
 }
@@ -54,7 +68,13 @@ fn error_facts_behavior_tests_behavior_synthesized_status_is_ignored() {
 fn error_facts_behavior_tests_behavior_status_below_http_errors_is_ignored() {
     let error = ProviderErrorFacts {
         status_code: Some(399),
-        ..ProviderErrorFacts::empty()
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
     };
     assert_eq!(map_exception_by_status(&error, "failed", "Provider"), None);
 }
@@ -63,7 +83,13 @@ fn error_facts_behavior_tests_behavior_status_below_http_errors_is_ignored() {
 fn error_facts_behavior_tests_behavior_status_class_maps_server_error() {
     let error = ProviderErrorFacts {
         status_code: Some(502),
-        ..ProviderErrorFacts::empty()
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
     };
     assert!(matches!(
         status_error_class(&error, "failed", "Provider", None, None),
@@ -75,4 +101,36 @@ fn error_facts_behavior_tests_behavior_status_class_maps_server_error() {
 fn error_facts_behavior_tests_behavior_stub_uses_requested_status() {
     let error = ProviderErrorFacts::default();
     assert_eq!(response_or_stub(&error, 403).status_code, 403);
+}
+
+#[rstest]
+#[case::rate_limit(429, 429)]
+#[case::unknown_server(599, 599)]
+#[case::unknown_client(422, 400)]
+fn error_facts_behavior_tests_behavior_wire_status(#[case] status: u16, #[case] expected: u16) {
+    let error = ProviderErrorFacts {
+        status_code: Some(status),
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
+    };
+    let mapped = status_error_class(&error, "failed", "Provider", None, None).unwrap();
+    assert_eq!(mapped.metadata().status_code, expected);
+}
+
+#[test]
+fn stub_has_the_pinned_request() {
+    let error = ProviderErrorFacts::default();
+    let stub = response_or_stub(&error, 403);
+    assert_eq!(
+        stub.request,
+        Some(RequestFacts {
+            method: "POST".to_owned(),
+            url: "https://docs.litellm.ai/docs".to_owned(),
+        })
+    );
 }

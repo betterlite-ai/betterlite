@@ -17,6 +17,11 @@ use super::*;
 #[case::service_tier("service tier capacity exceeded", Some(400), true)]
 #[case::hyphenated("rate-limit reached", Some(400), true)]
 #[case::ordinary("bad request", None, false)]
+#[case::repeated_separators("rate--limit", None, true)]
+#[case::no_separator("ratelimit", None, true)]
+#[case::tab_separator("rate\tlimit", None, true)]
+#[case::unicode_word_before("\u{e9}429", None, false)]
+#[case::unicode_word_after("429\u{e9}", None, false)]
 fn error_facts_behavior_tests_behavior(
     #[case] message: &str,
     #[case] status: Option<u16>,
@@ -55,8 +60,16 @@ fn error_facts_behavior_tests_behavior_proxy_reconstructs_empty_response_headers
             String::from("retry-after"),
             String::from("1"),
         )])),
-        response_headers: Some(BTreeMap::new()),
-        ..ProviderErrorFacts::empty()
+        response: Some(ResponseFacts {
+            status_code: 502,
+            request: None,
+            headers: BTreeMap::new(),
+        }),
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        litellm_response_headers: None,
+        request: None,
     };
     let response = litellm_proxy_response(&facts, "litellm_proxy");
     assert_eq!(
@@ -71,7 +84,17 @@ fn error_facts_behavior_tests_behavior_proxy_reconstructs_empty_response_headers
 fn error_facts_behavior_tests_behavior_proxy_keeps_non_proxy_empty_headers() {
     let facts = ProviderErrorFacts {
         status_code: Some(502),
-        ..ProviderErrorFacts::empty()
+        response: Some(ResponseFacts {
+            status_code: 502,
+            headers: BTreeMap::new(),
+            request: None,
+        }),
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: None,
+        litellm_response_headers: None,
+        request: None,
     };
     assert_eq!(
         litellm_proxy_response(&facts, "openai").map(|response| response.status_code),
@@ -82,22 +105,40 @@ fn error_facts_behavior_tests_behavior_proxy_keeps_non_proxy_empty_headers() {
 #[test]
 fn error_facts_behavior_tests_behavior_body_boundaries_are_inclusive() {
     let empty = ProviderErrorBody {
-        message: Some(String::new()),
-        error: None,
-        code: None,
+        message: Field::Value(String::new()),
+        error: Field::Missing,
+        code: Field::Missing,
     };
     let overhead = serde_json::to_vec(&empty).unwrap().len();
     let body = ProviderErrorBody {
-        message: Some("a".repeat(MAX_BODY_BYTES - overhead)),
-        error: None,
-        code: None,
+        message: Field::Value("a".repeat(MAX_BODY_BYTES - overhead)),
+        error: Field::Missing,
+        code: Field::Missing,
     };
     assert_eq!(serde_json::to_vec(&body).unwrap().len(), MAX_BODY_BYTES);
     assert!(bounded_body(&body).is_some());
     let oversized = ProviderErrorBody {
-        message: Some(format!("{}a", body.message.unwrap_or_default())),
-        error: None,
-        code: None,
+        message: Field::Value(format!(
+            "{}a",
+            body.message.as_ref().map_or("", String::as_str)
+        )),
+        error: Field::Missing,
+        code: Field::Missing,
     };
     assert!(bounded_body(&oversized).is_none());
+}
+
+#[test]
+fn proxy_without_response_is_absent() {
+    let error = ProviderErrorFacts {
+        status_code: Some(502),
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
+    };
+    assert_eq!(litellm_proxy_response(&error, "openai"), None);
 }

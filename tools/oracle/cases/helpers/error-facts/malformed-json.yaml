@@ -6,6 +6,4 @@ call:
     text: '{not-json'
 env: {}
 compare:
-  ignore:
-    - pointer: /value
-      why: null parser result is represented differently by the helper harness
+  ignore: []

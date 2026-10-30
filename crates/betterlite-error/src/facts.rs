@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use self::presence::Field;
+pub mod presence;
+
 pub const MAX_ERROR_TEXT_BYTES: usize = 16 * 1024;
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
 
@@ -13,48 +16,19 @@ pub struct ProviderErrorFacts {
     pub message: Option<String>,
     pub body: Option<ProviderErrorBody>,
     pub headers: Option<BTreeMap<String, String>>,
-    pub response_headers: Option<BTreeMap<String, String>>,
+    pub response: Option<ResponseFacts>,
     pub litellm_response_headers: Option<BTreeMap<String, String>>,
     pub request: Option<RequestFacts>,
 }
 
-impl ProviderErrorFacts {
-    #[must_use]
-    pub const fn empty() -> Self {
-        let facts = Self {
-            status_code: None,
-            status_code_is_synthesized: false,
-            message: None,
-            body: None,
-            headers: None,
-            response_headers: None,
-            litellm_response_headers: None,
-            request: None,
-        };
-        if facts.status_code.is_none() {
-            return facts;
-        }
-        Self {
-            status_code: None,
-            status_code_is_synthesized: false,
-            message: None,
-            body: None,
-            headers: None,
-            response_headers: None,
-            litellm_response_headers: None,
-            request: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderErrorBody {
-    #[serde(default)]
-    pub message: Option<String>,
-    #[serde(default)]
-    pub error: Option<Box<Self>>,
-    #[serde(default)]
-    pub code: Option<ErrorCode>,
+    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    pub message: Field<String>,
+    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    pub error: Field<Box<Self>>,
+    #[serde(default, skip_serializing_if = "Field::is_missing")]
+    pub code: Field<ErrorCode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,55 +51,32 @@ pub struct ResponseFacts {
     pub request: Option<RequestFacts>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProxyResponseFacts {
-    pub status_code: u16,
-    pub headers: BTreeMap<String, String>,
-    pub request: Option<RequestFacts>,
-}
-
 pub struct ExceptionCheckers;
 
 impl ExceptionCheckers {
     #[must_use]
     pub fn is_error_str_rate_limit(error: &str, status_code: Option<u16>) -> bool {
-        let standalone = error.char_indices().any(|(index, current_character)| {
-            if current_character != '4' {
-                return false;
-            }
-            let Some(candidate) = error.get(index..index.saturating_add(3)) else {
-                return false;
-            };
-            if candidate != "429" {
-                return false;
-            }
-            let before_is_word = index
-                .checked_sub(1)
-                .and_then(|position| error.get(position..index))
-                .is_some_and(|value| {
-                    value
-                        .chars()
-                        .any(|character| character.is_ascii_alphanumeric() || character == '_')
-                });
-            let after_index = index.saturating_add(3);
-            let after_is_word = error
-                .get(after_index..)
-                .and_then(|value| value.chars().next())
-                .is_some_and(|value| value.is_ascii_alphanumeric() || value == '_');
-            !before_is_word && !after_is_word
-        });
+        let standalone = error
+            .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+            .any(|word| word == "429");
         let status_allows_number = status_code.is_none_or(|status| status == 429);
-        let lower = error.to_ascii_lowercase();
+        let lower = error.to_lowercase();
+        let phrase = lower.split("rate").skip(1).any(|suffix| {
+            suffix
+                .trim_start_matches(|character: char| {
+                    character.is_whitespace()
+                        || matches!(character, '_' | '-' | '\u{1c}'..='\u{1f}')
+                })
+                .starts_with("limit")
+        });
         (standalone && status_allows_number)
-            || lower.contains("rate limit")
-            || lower.contains("rate-limit")
-            || lower.contains("rate_limit")
+            || phrase
             || lower.contains("service tier capacity exceeded")
     }
 
     #[must_use]
     pub fn context_window(error: &str) -> bool {
-        let lower = error.to_ascii_lowercase();
+        let lower = error.to_lowercase();
         if lower.contains("string_above_max_length")
             || (lower.contains("invalid 'user'") && lower.contains("string too long"))
         {
@@ -150,7 +101,7 @@ impl ExceptionCheckers {
 
     #[must_use]
     pub fn azure_policy(error: &str) -> bool {
-        let lower = error.to_ascii_lowercase();
+        let lower = error.to_lowercase();
         [
             "content_policy_violation",
             "responsibleaipolicyviolation",
@@ -169,25 +120,25 @@ impl ExceptionCheckers {
 pub fn litellm_proxy_response(
     error: &ProviderErrorFacts,
     custom_provider: &str,
-) -> Option<ProxyResponseFacts> {
-    let status_code = error.status_code?;
-    let response_headers = error.response_headers.clone().unwrap_or_default();
-    if custom_provider != "litellm_proxy" || !response_headers.is_empty() {
-        return Some(ProxyResponseFacts {
-            status_code,
-            headers: response_headers,
-            request: error.request.clone(),
-        });
+) -> Option<ResponseFacts> {
+    let response = error.response.as_ref()?;
+    if custom_provider != "litellm_proxy" || !response.headers.is_empty() {
+        return Some(response.clone());
     }
-    let headers = error
+    error
         .headers
-        .clone()
-        .filter(|headers| !headers.is_empty())?;
-    Some(ProxyResponseFacts {
-        status_code,
-        headers,
-        request: error.request.clone(),
-    })
+        .as_ref()
+        .filter(|headers| !headers.is_empty())
+        .map_or_else(
+            || Some(response.clone()),
+            |headers| {
+                Some(ResponseFacts {
+                    status_code: response.status_code,
+                    headers: headers.clone(),
+                    request: error.request.clone(),
+                })
+            },
+        )
 }
 
 #[must_use]

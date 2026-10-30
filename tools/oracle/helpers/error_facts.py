@@ -1,128 +1,77 @@
-import json
-from typing import TypeAlias, cast
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
+
+import openai
+from litellm.litellm_core_utils import exception_mapping_utils as mapping
 
 JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
-RATE_LIMIT_STATUS = 429
-BAD_REQUEST_STATUS = 400
-SERVER_ERROR_STATUS = 500
 
 
-def _string(argument: dict[str, JsonValue], key: str) -> str:
-    value = argument.get(key)
-    return value if isinstance(value, str) else ""
+class StatusArguments(TypedDict):
+    model: str
+    original_exception: object
+    custom_llm_provider: str
+    error_str: str
+    exception_provider: str
+    extra_information: str
 
 
-def _integer(argument: dict[str, JsonValue], key: str) -> int | None:
-    value = argument.get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+class StatusMapper(Protocol):
+    def __call__(self, **kwargs: Unpack[StatusArguments]) -> None: ...
 
 
-def _boolean(argument: dict[str, JsonValue], key: str) -> bool:
-    value = argument.get(key)
-    return value if isinstance(value, bool) else False
+class MappedError(Protocol):
+    status_code: int
+    message: str
 
 
-def _rate_limit(argument: dict[str, JsonValue]) -> bool:
-    text = _string(argument, "text")
-    status = _integer(argument, "status")
-    standalone = "429" in text.split()
-    return bool(
-        (standalone and (status is None or status == RATE_LIMIT_STATUS))
-        or "rate limit" in text.lower()
-        or "rate-limit" in text.lower()
-        or "rate_limit" in text.lower()
-        or "service tier capacity exceeded" in text.lower()
+def _status(argument: dict[str, JsonValue], text: str) -> JsonValue:
+    cause = SimpleNamespace(
+        status_code=argument.get("status"),
+        status_code_is_synthesized=argument.get("status_code_is_synthesized", False),
     )
-
-
-def _context_window(argument: dict[str, JsonValue]) -> bool:
-    text = _string(argument, "text").lower()
-    if "string_above_max_length" in text or (
-        "invalid 'user'" in text and "string too long" in text
-    ):
-        return False
-    return any(
-        phrase in text
-        for phrase in (
-            "exceed context limit",
-            "this model's maximum context length is",
-            "string too long. expected a string with maximum length",
-            "model's maximum context limit",
-            "is longer than the model's context length",
-            "input tokens exceed the configured limit",
-            "`inputs` tokens + `max_new_tokens` must be",
-            "exceeds the available context size",
-            "exceeds the maximum number of tokens allowed",
-            "current length is",
-            "maximum input length is",
-        )
-    )
-
-
-def _body_code(argument: dict[str, JsonValue]) -> int | None:
+    call = cast(StatusMapper, mapping._map_exception_by_status)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     try:
-        body = cast(dict[str, JsonValue], json.loads(_string(argument, "text")))
-        error_value = body.get("error")
-        if not isinstance(error_value, dict):
-            return None
-        code = error_value.get("code")
-        if isinstance(code, bool) or not isinstance(code, (int, str)):
-            return None
-        return int(code)
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
-def _message(argument: dict[str, JsonValue]) -> str | None:
-    body_value = argument.get("body")
-    body = cast(dict[str, JsonValue], body_value) if isinstance(body_value, dict) else None
-    if not isinstance(body, dict):
-        return None
-    message = body.get("message")
-    if message:
-        return message if isinstance(message, str) else None
-    nested_value = body.get("error")
-    nested = cast(dict[str, JsonValue], nested_value) if isinstance(nested_value, dict) else None
-    if nested is not None and isinstance(nested.get("message"), str):
-        message_value = nested.get("message")
-        return message_value if isinstance(message_value, str) else None
+        call(model="model", original_exception=cause, custom_llm_provider="openai",
+             error_str=text, exception_provider=str(argument.get("provider", "Provider")),
+             extra_information="")
+    except openai.APIError as error:
+        mapped = cast(MappedError, error)
+        families = {
+            "AuthenticationError": "authentication", "PermissionDeniedError": "permission_denied",
+            "NotFoundError": "not_found", "Timeout": "timeout", "RateLimitError": "rate_limit",
+            "InternalServerError": "internal_server", "BadGatewayError": "bad_gateway",
+            "ServiceUnavailableError": "service_unavailable", "BadRequestError": "bad_request",
+            "APIError": "api",
+        }
+        return {"family": families[type(error).__name__],
+                "status_code": mapped.status_code,
+                "message": mapped.message, "response_present": False}
     return None
-
-
-def _status(argument: dict[str, JsonValue]) -> dict[str, JsonValue] | None:
-    status = _integer(argument, "status")
-    if (
-        not isinstance(status, int)
-        or status < BAD_REQUEST_STATUS
-        or _boolean(argument, "status_code_is_synthesized")
-    ):
-        return None
-    family = {
-        401: "authentication", 403: "permission_denied", 404: "not_found",
-        408: "timeout", 429: "rate_limit", 500: "internal_server",
-        502: "bad_gateway", 503: "service_unavailable", 504: "timeout",
-    }.get(status, "bad_request" if status < SERVER_ERROR_STATUS else "api")
-    return {
-        "family": family,
-        "status_code": status,
-        "message": f"{_string(argument, 'provider') or 'Provider'} - {_string(argument, 'text')}",
-        "response_present": bool(
-            argument.get("body") is not None or argument.get("response_headers") is not None
-        ),
-    }
 
 
 def run(argument: JsonValue) -> JsonValue:
-    value = cast(dict[str, JsonValue], argument) if isinstance(argument, dict) else {}
-    kind = value.get("kind")
+    if not isinstance(argument, dict):
+        raise ValueError("error facts input must be an object")
+    kind = argument.get("kind")
+    text_value = argument.get("text", "")
+    if not isinstance(text_value, str):
+        raise ValueError("text must be a string")
+    result: JsonValue
     if kind == "rate_limit":
-        return _rate_limit(value)
-    if kind == "context_window":
-        return _context_window(value)
-    if kind == "body_code":
-        return _body_code(value)
-    if kind == "message":
-        return _message(value)
-    if kind == "status":
-        return _status(value)
-    return None
+        status = argument.get("status")
+        result = mapping.ExceptionCheckers.is_error_str_rate_limit(
+            text_value, status if isinstance(status, int) else None)
+    elif kind == "context_window":
+        result = mapping.ExceptionCheckers.is_error_str_context_window_exceeded(text_value)
+    elif kind == "body_code":
+        result = mapping._get_body_error_code(text_value)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    elif kind == "message":
+        extract = cast(Callable[[object], str | None], mapping.get_error_message)
+        result = extract(SimpleNamespace(body=argument.get("body")))
+    elif kind == "status":
+        result = _status(argument, text_value)
+    else:
+        raise ValueError("unknown error facts operation")
+    return {"result": result}

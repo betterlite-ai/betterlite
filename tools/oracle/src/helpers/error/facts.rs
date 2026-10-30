@@ -1,100 +1,85 @@
 use betterlite_error::facts::{ExceptionCheckers, ProviderErrorBody, ProviderErrorFacts};
 use betterlite_error::parse::{get_body_error_code, get_error_message};
 use betterlite_error::status::map_exception_by_status;
+use serde::Deserialize;
 
 pub(crate) struct Op;
 
-fn invalid_input(message: String) -> Box<crate::helpers::HelperError> {
-    let class = "InvalidInput".to_owned();
-    Box::new(crate::helpers::HelperError {
-        class,
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    RateLimit {
+        text: String,
+        status: Option<u16>,
+    },
+    ContextWindow {
+        text: String,
+    },
+    BodyCode {
+        text: String,
+    },
+    Message {
+        body: Option<ProviderErrorBody>,
+    },
+    Status {
+        status: Option<u16>,
+        #[serde(default)]
+        status_code_is_synthesized: bool,
+        text: String,
+        provider: Option<String>,
+    },
 }
 
-fn message(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let facts = body_facts(input)?;
-    Ok(serde_json::json!(get_error_message(&facts)))
-}
-
-fn body_facts(
-    input: &serde_json::Value,
-) -> Result<ProviderErrorFacts, Box<crate::helpers::HelperError>> {
-    let body_value = input
-        .get("body")
-        .cloned()
-        .ok_or_else(|| invalid_input("message body is missing".to_owned()))?;
-    let body: ProviderErrorBody =
-        serde_json::from_value(body_value).map_err(|error| invalid_input(error.to_string()))?;
-    Ok(ProviderErrorFacts {
-        body: Some(body),
-        ..ProviderErrorFacts::empty()
-    })
-}
-
-fn status(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let (facts, error_text, provider) = status_parts(input);
-    serde_json::to_value(map_exception_by_status(&facts, &error_text, &provider))
-        .map_err(|error| invalid_input(error.to_string()))
-}
-
-fn status_parts(input: &serde_json::Value) -> (ProviderErrorFacts, String, String) {
-    let status_code = input
-        .get("status")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|value| u16::try_from(value).ok());
+fn message(body: Option<&ProviderErrorBody>) -> Option<String> {
     let facts = ProviderErrorFacts {
-        status_code,
-        status_code_is_synthesized: input
-            .get("status_code_is_synthesized")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
-        ..ProviderErrorFacts::empty()
+        body: body.cloned(),
+        status_code: None,
+        status_code_is_synthesized: false,
+        message: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
     };
-    let error_text = input
-        .get("text")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("")
-        .to_owned();
-    let provider = input
-        .get("provider")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("Provider")
-        .to_owned();
-    (facts, error_text, provider)
+    get_error_message(&facts)
 }
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let kind = input
-            .get("kind")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        let text = input
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        let output = match kind {
-            "rate_limit" => serde_json::json!(ExceptionCheckers::is_error_str_rate_limit(
+        let output = match input {
+            Input::RateLimit { text, status } => {
+                serde_json::json!(ExceptionCheckers::is_error_str_rate_limit(text, *status))
+            }
+            Input::ContextWindow { text } => {
+                serde_json::json!(ExceptionCheckers::context_window(text))
+            }
+            Input::BodyCode { text } => serde_json::json!(get_body_error_code(text)),
+            Input::Message { body } => serde_json::json!(message(body.as_ref())),
+            Input::Status {
+                status,
+                status_code_is_synthesized,
                 text,
-                input
-                    .get("status")
-                    .and_then(serde_json::Value::as_u64)
-                    .and_then(|value| u16::try_from(value).ok()),
-            )),
-            "context_window" => serde_json::json!(ExceptionCheckers::context_window(text)),
-            "body_code" => get_body_error_code(text)
-                .map_or(serde_json::Value::Null, |code| serde_json::json!(code)),
-            "message" => return message(input),
-            "status" => return status(input),
-            _ => serde_json::Value::Null,
+                provider,
+            } => {
+                let facts = ProviderErrorFacts {
+                    status_code: *status,
+                    status_code_is_synthesized: *status_code_is_synthesized,
+                    body: None,
+                    message: None,
+                    headers: None,
+                    response: None,
+                    litellm_response_headers: None,
+                    request: None,
+                };
+                serde_json::json!(map_exception_by_status(
+                    &facts,
+                    text,
+                    provider.as_deref().unwrap_or("Provider")
+                ))
+            }
         };
-        Ok(output)
+        Ok(serde_json::json!({"result": output}))
     }
 }

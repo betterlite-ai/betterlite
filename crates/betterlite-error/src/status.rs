@@ -1,6 +1,9 @@
-use crate::error::details::{TimeoutDetails, TimeoutStatus};
+use std::collections::BTreeMap;
+
+use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
-use crate::facts::{ProviderErrorFacts, ResponseFacts};
+use crate::facts::{ProviderErrorFacts, RequestFacts, ResponseFacts};
+use crate::rate_limit::RateLimitCategory;
 
 mod tests;
 
@@ -29,17 +32,16 @@ pub struct StatusMapping {
 
 #[must_use]
 pub fn response_or_stub(error: &ProviderErrorFacts, status_code: u16) -> ResponseFacts {
-    if let Some(existing) = error.status_code.filter(|_| error.body.is_some()) {
-        return ResponseFacts {
-            status_code: existing,
-            headers: error.response_headers.clone().unwrap_or_default(),
-            request: error.request.clone(),
-        };
+    if let Some(response) = &error.response {
+        return response.clone();
     }
     ResponseFacts {
         status_code,
-        headers: error.response_headers.clone().unwrap_or_default(),
-        request: error.request.clone(),
+        headers: BTreeMap::new(),
+        request: Some(RequestFacts {
+            method: "POST".to_owned(),
+            url: "https://docs.litellm.ai/docs".to_owned(),
+        }),
     }
 }
 
@@ -69,7 +71,7 @@ pub fn map_exception_by_status(
         family,
         status_code,
         message: format!("{exception_provider} - {error_str}"),
-        response_present: error.body.is_some() || error.response_headers.is_some(),
+        response_present: error.response.is_some(),
     })
 }
 
@@ -101,11 +103,19 @@ pub fn status_error_class(
             context: *boxed,
             original_status: TimeoutStatus(mapping.status_code),
         })),
-        StatusFamily::RateLimit => ErrorClass::Unclassified(boxed),
+        StatusFamily::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+            context: *boxed,
+            category: RateLimitCategory::VendorRateLimit,
+            dimension: None,
+            headers: BTreeMap::new(),
+        })),
         StatusFamily::InternalServer => ErrorClass::InternalServer(boxed),
         StatusFamily::BadGateway => ErrorClass::BadGateway(boxed),
         StatusFamily::ServiceUnavailable => ErrorClass::ServiceUnavailable(boxed),
         StatusFamily::BadRequest => ErrorClass::BadRequest(boxed),
-        StatusFamily::Api => ErrorClass::ApiConnection(boxed),
+        StatusFamily::Api => ErrorClass::Api(Box::new(ApiDetails {
+            context: *boxed,
+            status: mapping.status_code,
+        })),
     })
 }
