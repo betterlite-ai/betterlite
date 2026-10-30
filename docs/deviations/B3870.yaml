@@ -1,0 +1,5 @@
+task: B3870
+deviations:
+  - what: UserAPIKeyLabelValues.model_dump returns a typed Rust BTreeMap rather than a dynamic Python dictionary.
+    why: Rust has no Pydantic model_dump; the typed representation preserves null, string, list, and metadata-map values while satisfying the crate's typed-wire rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1035-L1127
