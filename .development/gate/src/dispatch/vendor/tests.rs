@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use crate::dispatch::seat::Seat;
-use crate::dispatch::vendor::{limit_line, limited, mark, seat_free, take_seat};
+use crate::dispatch::vendor::{find_vendor, limit_line, limited, mark, seat_free, take_seat};
 use crate::spec::agents::{Agents, Vendor};
 use crate::yaml::read_yaml;
 
@@ -36,6 +36,25 @@ fn a_marker_at_the_end_of_the_log_is_a_limit() {
     .unwrap();
     let line = limit_line(&codex(), &[&stdout, &log]).unwrap().unwrap();
     assert!(line.starts_with("ERROR: You've hit your usage limit."));
+}
+
+#[test]
+fn a_claude_run_logged_out_or_offline_marks_its_vendor() {
+    let agents = agents();
+    let claude = find_vendor(&agents, "anthropic").unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let stdout = folder.path().join("attempt-1-worker.stdout");
+    for result in [
+        "Not logged in \u{b7} Please run /login",
+        "API Error: Can't reach the API server (EAI_AGAIN)",
+    ] {
+        let line = format!("{{\"is_error\":true,\"result\":\"{result}\",\"type\":\"result\"}}\n");
+        fs::write(&stdout, line).unwrap();
+        assert!(
+            limit_line(claude, &[&stdout]).unwrap().is_some(),
+            "{result}"
+        );
+    }
 }
 
 #[test]
