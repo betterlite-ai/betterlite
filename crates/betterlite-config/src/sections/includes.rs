@@ -200,25 +200,22 @@ fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
     base
 }
 
-impl<L> ConfigLoader<L>
+pub fn load_file<L, P>(loader: &ConfigLoader<L>, config_path: P) -> Result<Config, LoadError>
 where
     L: EnvironmentLookup,
+    P: AsRef<Path>,
 {
-    pub fn load_file<P>(&self, config_path: P) -> Result<Config, LoadError>
-    where
-        P: AsRef<Path>,
-    {
-        let path = config_path.as_ref();
-        let config = read_config(path).map_err(|source| LoadError::Includes { source })?;
-        let resolved =
-            resolve_includes(config, path).map_err(|source| LoadError::Includes { source })?;
-        let resolved_source =
-            serde_json::to_string(&resolved).map_err(|source| LoadError::Serialize { source })?;
-        self.load(&resolved_source)
-            .map_err(|config_error| LoadError::Config {
-                source: config_error,
-            })
-    }
+    let path = config_path.as_ref();
+    let config = read_config(path).map_err(|source| LoadError::Includes { source })?;
+    let resolved =
+        resolve_includes(config, path).map_err(|source| LoadError::Includes { source })?;
+    let resolved_source =
+        serde_json::to_string(&resolved).map_err(|source| LoadError::Serialize { source })?;
+    loader
+        .load(&resolved_source)
+        .map_err(|config_error| LoadError::Config {
+            source: config_error,
+        })
 }
 
 mod tests;

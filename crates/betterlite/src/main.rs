@@ -1,5 +1,5 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::includes::LoadError;
+use betterlite_config::sections::includes::{LoadError, load_file};
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -91,7 +91,7 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
     let loader = ConfigLoader {
         lookup: environment,
     };
-    match loader.load_file(location) {
+    match load_file(&loader, location) {
         Ok(config) => Some(config),
         Err(error) => {
             match error {

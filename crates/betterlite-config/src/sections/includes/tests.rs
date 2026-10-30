@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{ConfigMap, IncludeError, LoadError, read_config, resolve_includes};
+use super::{ConfigMap, IncludeError, LoadError, load_file, read_config, resolve_includes};
 use crate::loader::ConfigLoader;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -48,10 +48,35 @@ fn resolves_multiple_includes_in_order() {
 }
 
 #[test]
+fn resolves_includes_declared_by_included_files() {
+    let directory = tempdir().unwrap();
+    let root = directory.path().join("root.yaml");
+    let first = directory.path().join("first.yaml");
+    let second = directory.path().join("second.yaml");
+    fs::write(&root, "include: [first.yaml]\n").unwrap();
+    fs::write(
+        &first,
+        "include: [second.yaml]\nmodel_list:\n  - model_name: first\n    litellm_params:\n      model: first\n",
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        "model_list:\n  - model_name: second\n    litellm_params:\n      model: second\n",
+    )
+    .unwrap();
+
+    let config = load_file(&loader(), &root).unwrap();
+    let names: Vec<&str> = config
+        .model_list
+        .iter()
+        .map(|deployment| deployment.model_name.as_str())
+        .collect();
+    assert_eq!(names, ["first", "second"]);
+}
+
+#[test]
 fn missing_include_names_the_file() {
-    let error = loader()
-        .load_file(fixture("config_with_missing_include.yaml"))
-        .unwrap_err();
+    let error = load_file(&loader(), fixture("config_with_missing_include.yaml")).unwrap_err();
 
     let message = error.to_string();
     assert!(message.contains("non-existent-file.yaml"));
@@ -74,7 +99,7 @@ fn fallback_uses_file_next_to_root() {
         directory.path().join("fallback_models.yaml"),
     )
     .unwrap();
-    let config = loader().load_file(&root).unwrap();
+    let config = load_file(&loader(), &root).unwrap();
 
     assert_eq!(config.model_list[0].model_name, "fallback-model");
 }
@@ -101,7 +126,7 @@ fn declaring_relative_file_wins_conflict() {
         nested.join("conflict_models.yaml"),
     )
     .unwrap();
-    let config = loader().load_file(&root).unwrap();
+    let config = load_file(&loader(), &root).unwrap();
 
     assert_eq!(config.model_list[0].model_name, "declaring-model");
 }
@@ -114,20 +139,18 @@ fn cycles_skip_already_loaded_files() {
     fs::write(&root, "include: [child.yaml]\nmodel_list: []\n").unwrap();
     fs::write(&child, "include: [root.yaml]\nmodel_list: []\n").unwrap();
 
-    let config = loader().load_file(&root).unwrap();
+    let config = load_file(&loader(), &root).unwrap();
     assert!(config.model_list.is_empty());
 }
 
 #[test]
 fn malformed_include_values_are_rejected() {
-    let string_error = loader()
-        .load_file(fixture("config_include_malformed_string.yaml"))
-        .unwrap_err();
+    let string_error =
+        load_file(&loader(), fixture("config_include_malformed_string.yaml")).unwrap_err();
     assert!(string_error.to_string().contains("list of file paths"));
 
-    let list_error = loader()
-        .load_file(fixture("config_include_malformed_list.yaml"))
-        .unwrap_err();
+    let list_error =
+        load_file(&loader(), fixture("config_include_malformed_list.yaml")).unwrap_err();
     assert!(list_error.to_string().contains("index 1"));
 
     let directory = tempdir().unwrap();
@@ -150,7 +173,7 @@ fn load_file_reports_typed_loader_errors_as_a_source() {
     let root = directory.path().join("root.yaml");
     fs::write(&root, "unknown_config_key: true\n").unwrap();
 
-    let error = loader().load_file(root).unwrap_err();
+    let error = load_file(&loader(), root).unwrap_err();
     assert!(matches!(error, LoadError::Config { .. }));
     assert!(error.to_string().contains("unsupported config keys"));
 }
