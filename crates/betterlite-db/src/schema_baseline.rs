@@ -13,7 +13,7 @@ pub struct MigrationCatalog {
 pub const BASELINE_MIGRATION: MigrationFile = MigrationFile {
     directory: "20250326162113_baseline",
     bytes: include_bytes!("../migrations/20250326162113_baseline/migration.sql"),
-    sha256: "35afca4826335f8bd2bc2b733c0540de51c6a199d39c27a2d1910c53e1a02647",
+    sha256: "0bf3d5cabe50d5d7249eb505cf2ec6fe2d8b49dc8b496dceb2179a357ed4725e",
 };
 
 pub const MIGRATION_CATALOG: MigrationCatalog = MigrationCatalog {

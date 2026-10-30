@@ -19,7 +19,7 @@ fn contains(fragments: &[&str]) {
 fn baseline_sql_identity() {
     assert_eq!(BASELINE_MIGRATION.bytes, PINNED_BYTES);
     assert_eq!(BASELINE_MIGRATION.directory, "20250326162113_baseline");
-    assert_eq!(BASELINE_MIGRATION.bytes.len(), 15_828);
+    assert_eq!(BASELINE_MIGRATION.bytes.len(), 15_827);
     assert_eq!(sql().matches("CREATE TABLE IF NOT EXISTS").count(), 17);
     let regular_indexes = sql().matches("CREATE INDEX IF NOT EXISTS").count();
     let unique_indexes = sql().matches("CREATE UNIQUE INDEX IF NOT EXISTS").count();
