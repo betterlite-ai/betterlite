@@ -1,0 +1,13 @@
+kind: helper
+name: invalid-primary-uses-zero-not-fallback
+call:
+  pricing_tier:
+    tiers:
+      - range: [0, 100]
+        input_cost_per_token: abc
+        output_cost_per_token: 5
+    tokens: 50
+    cost_key: input_cost_per_token
+    fallback_cost_key: output_cost_per_token
+compare: {ignore: []}
+env: {}

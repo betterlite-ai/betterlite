@@ -16,7 +16,7 @@ const RATE_LIMIT_HEADERS: [&str; 6] = [
     "x-ratelimit-reset-tokens",
 ];
 
-pub(super) fn success_headers(
+pub(crate) fn success_headers(
     upstream: &HeaderMap,
     deployment: &ChatDeployment,
     call_id: &str,
@@ -62,12 +62,13 @@ pub(super) fn stream_headers(
     headers
 }
 
-pub(super) fn failure_headers(
-    error: &ChatError,
+pub(crate) fn failure_headers(
+    error: Option<&ChatError>,
+    upstream: Option<&HeaderMap>,
     call_id: &str,
     deployment: Option<&ChatDeployment>,
 ) -> HeaderMap {
-    let upstream = match error {
+    let provider_headers = error.and_then(|failure| match failure {
         ChatError::Provider { response } => Some(&response.headers),
         ChatError::UnknownModel { .. }
         | ChatError::Request { .. }
@@ -79,8 +80,9 @@ pub(super) fn failure_headers(
         | ChatError::Decode { .. }
         | ChatError::TooLarge
         | ChatError::Http { .. } => None,
-    };
-    let mut headers = upstream.map_or_else(HeaderMap::new, forwardable_failure_headers);
+    });
+    let source = upstream.or(provider_headers);
+    let mut headers = source.map_or_else(HeaderMap::new, forwardable_failure_headers);
     if let Ok(value) = HeaderValue::from_str(call_id) {
         headers.insert("x-litellm-call-id", value);
     }

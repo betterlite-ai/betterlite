@@ -1,7 +1,7 @@
 id: B2310
 milestone: M4 keys, spend and management
 title: Shared budget, object-permission and organization-membership rows
-status: todo
+status: done
 depends_on: [B171, B700, B856, B860, B2307]
 file: tasks/B2310-budget-permission-rows.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/models/organization_membership.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 320

@@ -1,0 +1,9 @@
+kind: helper
+name: permission_all_defaults_and_required_id
+call:
+  budget_permission_rows:
+    operation: permission
+    row: {object_permission_id: p}
+env: {}
+compare:
+  ignore: []

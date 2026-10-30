@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-field-projection
+call: {model_metadata_projection: {key: fixture/model, model: fixture/model, provider: fixture, entry: {input_cost_per_token: 0, output_cost_per_token: 0, supports_vision: false, supported_endpoints: [], provider_specific_entry: {}, mode: null, ordinary: ignored}}}
+env: {}
+compare: {ignore: []}

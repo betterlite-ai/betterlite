@@ -1,14 +1,14 @@
 id: B3870
 milestone: M7 observability
 title: Prometheus label values and metric vocabulary
-status: todo
+status: done
 depends_on: []
 file: tasks/B3870-prometheus-label-values.yaml
 covers:
   - "litellm/types/integrations/prometheus.py"
 parent: B111
 split_from: B111
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 329
