@@ -1211,6 +1211,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-rate-limit",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
@@ -1331,10 +1332,12 @@ dependencies = [
  "prometheus-client",
  "py_literal",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "url",
 ]
 
 [[package]]

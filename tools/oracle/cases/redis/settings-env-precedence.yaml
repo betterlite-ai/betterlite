@@ -1,0 +1,11 @@
+kind: helper
+name: settings-env-precedence
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment:
+      REDIS_URL: redis://from-environment.internal:6379
+    overrides:
+      host: configured.internal
+env: {}
+compare: {ignore: []}
