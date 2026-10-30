@@ -1,0 +1,11 @@
+task: B3450
+deviations:
+  - what: Chunk defaults (chunk_size=1000, chunk_overlap=200, max_recurse_depth=100) are hardcoded constants in betterlite. LiteLLM reads them from DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP and DEFAULT_MAX_RECURSE_DEPTH environment variables at module load time.
+    why: Environment variable reads in the gateway are restricted to the config crate boundary, so chunk defaults come from the config file or built-in constants, never from the process environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2033-L2034
+  - what: RecursiveCharacterTextSplitter::new rejects chunk_size<=0, chunk_overlap<0 and chunk_overlap>=chunk_size with a typed error before splitting. LiteLLM's _force_split can hang or fail to progress on the same inputs.
+    why: The native splitter prevents a customer request from hanging the gateway thread. Invalid configurations fail at request validation time with a typed error, not inside the pipeline as a fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134
+  - what: extract_text_from_pdf returns None on a missing library or extraction failure without logging. LiteLLM logs at debug level on ImportError or extraction failure before returning None.
+    why: The ingestion pipeline decides whether a missing PDF library is recoverable (OCR can fill in) or a pipeline failure. betterlite surfaces None and lets the caller's logging layer report it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68

@@ -241,12 +241,25 @@ fn chunk_by_chars(text: &str, chunk_size: usize) -> Vec<String> {
 
 #[must_use]
 pub fn extract_text_from_pdf(file_content: &[u8]) -> Option<String> {
-    let extracted = catch_unwind(AssertUnwindSafe(|| {
-        pdf_extract::extract_text_from_mem(file_content)
-    }));
-    match extracted {
-        Ok(Ok(text)) if !text.is_empty() => Some(text),
-        Ok(Ok(_) | Err(_)) | Err(_) => None,
+    match catch_unwind(AssertUnwindSafe(|| {
+        let document = lopdf::Document::load_mem(file_content).ok()?;
+        let page_numbers: Vec<u32> = document.get_pages().keys().copied().collect();
+        let mut text_parts: Vec<String> = Vec::new();
+        for page_number in page_numbers {
+            if let Ok(text) = document.extract_text(&[page_number])
+                && !text.is_empty()
+            {
+                text_parts.push(text);
+            }
+        }
+        if text_parts.is_empty() {
+            None
+        } else {
+            Some(text_parts.join("\n\n"))
+        }
+    })) {
+        Ok(text) => text,
+        Err(_) => None,
     }
 }
 
