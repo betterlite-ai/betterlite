@@ -1,0 +1,16 @@
+name: embeddings-upstream-400
+config: |
+  model_list:
+    - model_name: embed-model
+      litellm_params: {model: openai/text-embedding-3-small, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/embeddings
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: embed-model, input: hello}
+upstream:
+  - status: 400
+    headers: {content-type: application/json, x-request-id: embedding-error}
+    body: {error: {message: bad input, type: invalid_request_error, param: input, code: invalid}}
+compare: {headers: [content-type, llm_provider-x-request-id], upstream_headers: [authorization, content-type], ignore: []}

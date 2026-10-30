@@ -1,4 +1,4 @@
-mod headers;
+pub(crate) mod headers;
 mod streaming;
 
 use streaming::stream_chat;

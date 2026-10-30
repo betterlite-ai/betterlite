@@ -16,7 +16,7 @@ const RATE_LIMIT_HEADERS: [&str; 6] = [
     "x-ratelimit-reset-tokens",
 ];
 
-pub(super) fn success_headers(
+pub(crate) fn success_headers(
     upstream: &HeaderMap,
     deployment: &ChatDeployment,
     call_id: &str,
@@ -62,7 +62,7 @@ pub(super) fn stream_headers(
     headers
 }
 
-pub(super) fn failure_headers(
+pub(crate) fn failure_headers(
     error: &ChatError,
     call_id: &str,
     deployment: Option<&ChatDeployment>,

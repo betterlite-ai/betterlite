@@ -1,6 +1,7 @@
 pub mod chat_setup;
 
 use crate::routes::chat::chat_routes;
+use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::Router;
@@ -51,11 +52,13 @@ pub async fn run(
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
     let shutting_down = Arc::new(AtomicBool::new(false));
+    let executor = Arc::new(chat);
     let application = router(
         config.general_settings.master_key,
         Arc::clone(&shutting_down),
         &config.model_list,
-        chat_routes(Arc::new(chat)),
+        chat_routes(Arc::clone(&executor)),
+        embedding_routes(executor),
     );
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();

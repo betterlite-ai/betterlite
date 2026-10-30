@@ -1,0 +1,16 @@
+name: embeddings-engines-path
+config: |
+  model_list:
+    - model_name: embed-model
+      litellm_params: {model: openai/text-embedding-3-small, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /engines/embed-model/embeddings
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: wrong, input: hello}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, embedding: [0.1], index: 0}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+compare: {headers: [content-type], upstream_headers: [authorization, content-type], ignore: []}
