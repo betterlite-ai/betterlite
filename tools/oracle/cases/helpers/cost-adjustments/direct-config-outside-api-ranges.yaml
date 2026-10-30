@@ -1,0 +1,10 @@
+kind: helper
+name: direct-config-outside-api-ranges
+call:
+  cost_adjustments:
+    base_cost: "0.10"
+    provider: provider
+    discount_config: {provider: -0.5}
+    margin_config: {provider: -0.2}
+env: {}
+compare: {ignore: []}

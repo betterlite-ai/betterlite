@@ -256,6 +256,8 @@ where
         bedrock_metadata_fields: metadata_fields(raw.bedrock_metadata_fields),
         modify_params,
         default_max_tokens,
+        cost_discount_config: raw.cost_discount_config,
+        cost_margin_config: raw.cost_margin_config,
     })
 }
 

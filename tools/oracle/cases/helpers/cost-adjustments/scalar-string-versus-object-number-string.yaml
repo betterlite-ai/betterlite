@@ -1,0 +1,10 @@
+kind: helper
+name: scalar-string-versus-object-number-string
+call:
+  cost_adjustments:
+    base_cost: "0.10"
+    provider: provider
+    discount_config: {provider: "0.2"}
+    margin_config: {provider: {percentage: "0.1", fixed_amount: "0.001"}}
+env: {}
+compare: {ignore: []}

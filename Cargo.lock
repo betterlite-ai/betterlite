@@ -914,6 +914,7 @@ dependencies = [
  "netrc-rs",
  "percent-encoding",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde-inline-default",
@@ -959,6 +960,13 @@ dependencies = [
 [[package]]
 name = "betterlite-cost"
 version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-db"
@@ -1211,6 +1219,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-cost",
  "betterlite-db",
  "betterlite-error",
  "betterlite-guardrails",

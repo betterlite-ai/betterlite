@@ -1,0 +1,5 @@
+task: B1649
+deviations:
+  - what: Adjustment totals use exact Decimal arithmetic, so trailing digits may differ from LiteLLM's binary-float results; unrepresentable monetary values fail with a typed error.
+    why: The repository requires Decimal from initial parsing through every money operation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1135-L1218
