@@ -59,6 +59,22 @@ fn catalog_byte_limit_is_inclusive() {
     ));
 }
 
+#[test]
+fn metadata_projection_returns_model_details() {
+    let catalog =
+        ModelCatalog::parse_remote(br#"{"model":{"litellm_provider":"openai","mode":"chat"}}"#)
+            .unwrap();
+    let metadata = catalog.metadata("model").unwrap();
+    assert_eq!(metadata.model, "model");
+    assert_eq!(metadata.provider, "openai");
+}
+
+#[test]
+fn empty_catalog_reports_empty() {
+    let catalog = ModelCatalog::parse_remote(b"{}").unwrap();
+    assert!(catalog.is_empty());
+}
+
 fn catalog_with_padding(size: usize) -> Vec<u8> {
     let mut catalog = Vec::with_capacity(size);
     catalog.extend_from_slice(b"{}");
