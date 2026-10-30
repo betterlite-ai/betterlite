@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::iter::repeat_n;
 
-use crate::facts::{MAX_BODY_BYTES, ProviderErrorBody};
+use crate::facts::ProviderErrorBody;
 use rstest::rstest;
 
 use super::*;
