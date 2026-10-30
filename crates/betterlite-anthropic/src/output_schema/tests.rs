@@ -86,7 +86,7 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
 }
 
 #[test]
-fn output_schema_filter_preserves_each_supported_branch() {
+fn output_schema_filter_preserves_nested_branches() {
     let source: Json = serde_json::from_str(
         r#"{
             "description":"schema",
@@ -111,13 +111,13 @@ fn output_schema_filter_preserves_each_supported_branch() {
     assert_eq!(filtered["$defs"]["Definition"]["type"], "boolean");
     assert_eq!(filtered["items"]["type"], "object");
     assert_eq!(filtered["items"]["additionalProperties"], false);
-    assert_eq!(
-        serde_json::to_value(filter_anthropic_output_schema(
-            serde_json::from_str(r#"{"type":"null","enum":[null]}"#).unwrap(),
-        ))
-        .unwrap()["type"],
-        "null"
-    );
+}
+
+#[test]
+fn output_schema_filter_checks_container_enum_types() {
+    let null_schema: Json = serde_json::from_str(r#"{"type":"null","enum":[null]}"#).unwrap();
+    let null_result = serde_json::to_value(filter_anthropic_output_schema(null_schema)).unwrap();
+    assert_eq!(null_result["type"], "null");
     assert_eq!(
         serde_json::to_value(filter_anthropic_output_schema(
             serde_json::from_str(r#"{"type":"boolean","enum":[true]}"#).unwrap(),
@@ -140,6 +140,10 @@ fn output_schema_filter_preserves_each_supported_branch() {
     let array_result =
         serde_json::to_value(filter_anthropic_output_schema(array_conflict)).unwrap();
     assert!(array_result.get("type").is_none());
+}
+
+#[test]
+fn output_schema_filter_formats_nested_constraint_notes() {
     let note_schema: Json =
         serde_json::from_str(r#"{"contains":{"type":"string","enum":["x"]}}"#).unwrap();
     let note = serde_json::to_value(filter_anthropic_output_schema(note_schema)).unwrap();
