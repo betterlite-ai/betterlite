@@ -1,86 +1,80 @@
+use std::fmt;
+
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::definitions::expand::unpack_defs;
+use betterlite_prompts::definitions::error::DefinitionsError;
+use betterlite_prompts::definitions::estimate::estimate_json_bytes;
 
-const CONSTRAINTS: [(&str, &str); 25] = [
-    ("minItems", "minimum number of items: {}"),
-    ("maxItems", "maximum number of items: {}"),
-    ("uniqueItems", "all array items must be unique"),
-    ("contains", "array must contain an item matching: {}"),
-    ("minContains", "minimum number of matching items: {}"),
-    ("maxContains", "maximum number of matching items: {}"),
-    ("prefixItems", "leading items must match, in order: {}"),
-    ("minimum", "minimum value: {}"),
-    ("maximum", "maximum value: {}"),
-    ("exclusiveMinimum", "exclusive minimum value: {}"),
-    ("exclusiveMaximum", "exclusive maximum value: {}"),
-    ("multipleOf", "must be a multiple of {}"),
-    ("minLength", "minimum length: {}"),
-    ("maxLength", "maximum length: {}"),
-    ("minProperties", "minimum number of properties: {}"),
-    ("maxProperties", "maximum number of properties: {}"),
-    (
-        "patternProperties",
-        "properties whose names match each pattern must satisfy: {}",
-    ),
-    ("propertyNames", "property names must satisfy: {}"),
-    ("dependentRequired", "dependent required properties: {}"),
-    ("dependentSchemas", "dependent schemas: {}"),
-    (
-        "unevaluatedProperties",
-        "unevaluated properties must satisfy: {}",
-    ),
-    ("if", "conditional (if): {}"),
-    ("then", "conditional (then): {}"),
-    ("else", "conditional (else): {}"),
-    ("not", "must not match: {}"),
-];
+pub mod mapping;
+mod notes;
+mod tests;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct OutputFormat {
-    #[serde(rename = "type")]
-    pub type_name: String,
-    pub schema: Json,
+#[derive(Debug, thiserror::Error)]
+pub enum SchemaError {
+    #[error("schema exceeds the depth or byte limit")]
+    Limit,
+    #[error("response format is missing type")]
+    MissingType,
+    #[error("schema has an invalid {0}")]
+    Invalid(&'static str),
+    #[error("schema definition expansion failed")]
+    Definitions(#[from] DefinitionsError),
+    #[error("schema note could not be serialized")]
+    Encode(#[from] serde_json::Error),
+    #[error("schema note could not be formatted")]
+    Format(#[from] fmt::Error),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResponseFormat {
-    Text,
-    JsonSchema { schema: Json },
-    JsonObject { schema: Option<Json> },
+pub fn filter_anthropic_output_schema(input: Json) -> Result<Json, SchemaError> {
+    check_bounds(&input)?;
+    filter(input)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct Tool {
-    pub name: String,
-    pub input_schema: Json,
+fn check_bounds(input: &Json) -> Result<(), SchemaError> {
+    let mut pending = vec![(input, 0_u16)];
+    while let Some((node, depth)) = pending.pop() {
+        if depth > 128 {
+            return Err(SchemaError::Limit);
+        }
+        match node {
+            Json::Object(fields) => pending.extend(
+                fields
+                    .values()
+                    .map(|child| (child, depth.saturating_add(1))),
+            ),
+            Json::List(items) => {
+                pending.extend(items.iter().map(|child| (child, depth.saturating_add(1))));
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+        }
+    }
+    if estimate_json_bytes(input) > 10_000_000 {
+        return Err(SchemaError::Limit);
+    }
+    Ok(())
 }
 
-pub fn filter_anthropic_output_schema(input: Json) -> Json {
+fn filter(input: Json) -> Result<Json, SchemaError> {
     let Json::Object(schema) = input else {
-        return input;
+        return Ok(input);
     };
-    let note = constraint_note(&schema);
-    let drop_type = enum_type_conflict(&schema);
+    let note = notes::constraint_note(&schema)?;
+    let drop_type = enum_type_conflict(&schema)?;
     let mut result = Object::new();
     if let Some(note_text) = &note {
-        let description = schema
-            .get("description")
-            .and_then(Json::as_str)
-            .filter(|text| !text.is_empty());
-        result.insert(
-            "description".to_owned(),
-            Json::Text(
-                description.map_or_else(|| note_text.clone(), |text| format!("{text} {note_text}")),
-            ),
-        );
+        let description = match schema.get("description").filter(|value| value.is_truthy()) {
+            Some(Json::Text(text)) => format!("{text} {note_text}"),
+            Some(_) => return Err(SchemaError::Invalid("description")),
+            None => note_text.clone(),
+        };
+        result.insert("description".to_owned(), Json::Text(description));
     }
     for (key, value) in schema {
-        filter_field(&mut result, key, value, note.as_ref(), drop_type);
+        filter_field(&mut result, key, value, note.as_ref(), drop_type)?;
     }
     if result.get("type").and_then(Json::as_str) == Some("object") {
         result.insert("additionalProperties".to_owned(), Json::Bool(false));
     }
-    Json::Object(result)
+    Ok(Json::Object(result))
 }
 
 fn filter_field(
@@ -89,138 +83,73 @@ fn filter_field(
     value: Json,
     note: Option<&String>,
     drop_type: bool,
-) {
-    if CONSTRAINTS.iter().any(|(name, _)| *name == key)
+) -> Result<(), SchemaError> {
+    if notes::CONSTRAINTS.iter().any(|(name, _)| *name == key)
         || (key == "type" && drop_type)
         || (key == "description" && note.is_some())
     {
-        return;
+        return Ok(());
     }
-    match key.as_str() {
-        "properties" | "$defs" => {
-            result.insert(key, filter_properties(value));
-        }
-        "items" => {
-            result.insert(key, filter_node(value));
-        }
-        "anyOf" | "allOf" | "oneOf" => add_alternative(result, &key, value),
-        _ => {
-            result.insert(key, value);
-        }
-    }
-}
-
-fn filter_properties(value: Json) -> Json {
-    match value {
-        Json::Object(fields) => Json::Object(
+    let filtered = match (key.as_str(), value) {
+        ("properties" | "$defs", Json::Object(fields)) => Json::Object(
             fields
                 .into_iter()
-                .map(|(key, child)| (key, filter_anthropic_output_schema(child)))
-                .collect(),
+                .map(|(name, child)| Ok((name, filter(child)?)))
+                .collect::<Result<Object, SchemaError>>()?,
         ),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => value,
-    }
-}
-
-fn filter_node(value: Json) -> Json {
-    match value {
-        Json::Object(_) => filter_anthropic_output_schema(value),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => value,
-    }
-}
-
-fn add_alternative(result: &mut Object, key: &str, value: Json) {
-    let Json::List(items) = value else {
-        result.insert(key.to_owned(), value);
-        return;
+        ("items", child @ Json::Object(_)) => filter(child)?,
+        ("anyOf" | "allOf" | "oneOf", Json::List(items)) => {
+            return add_alternative(result, key, items);
+        }
+        (_, other) => other,
     };
-    let filtered = items
+    result.insert(key, filtered);
+    Ok(())
+}
+
+fn add_alternative(result: &mut Object, key: String, items: Vec<Json>) -> Result<(), SchemaError> {
+    let mut filtered = items
         .into_iter()
-        .map(filter_anthropic_output_schema)
-        .collect::<Vec<_>>();
-    if key == "oneOf" || key == "anyOf" {
-        let mut any = take_list(result, "anyOf");
-        any.extend(filtered);
-        result.insert("anyOf".to_owned(), Json::List(any));
+        .map(filter)
+        .collect::<Result<Vec<_>, _>>()?;
+    let target = if key == "oneOf" {
+        "anyOf".to_owned()
     } else {
-        result.insert(key.to_owned(), Json::List(filtered));
-    }
-}
-
-fn take_list(result: &mut Object, key: &str) -> Vec<Json> {
-    match result.shift_remove(key) {
-        Some(Json::List(items)) => items,
-        Some(value) => {
-            result.insert(key.to_owned(), value);
-            Vec::new()
-        }
-        None => Vec::new(),
-    }
-}
-
-fn constraint_note(schema: &Object) -> Option<String> {
-    let notes = CONSTRAINTS
-        .iter()
-        .filter_map(|(key, label)| {
-            let value = schema.get(*key)?;
-            (!matches!(value, Json::Bool(false))).then(|| label.replace("{}", &format_value(value)))
-        })
-        .collect::<Vec<_>>();
-    (!notes.is_empty()).then(|| format!("Note: {}.", notes.join(", ")))
-}
-
-fn format_value(value: &Json) -> String {
-    match value {
-        Json::Null => "None".to_owned(),
-        Json::Bool(flag) => flag.to_string().to_ascii_uppercase(),
-        Json::Number(number) => number.to_string(),
-        Json::Text(text) => text.clone(),
-        Json::List(_) | Json::Object(_) => python_json(value),
-    }
-}
-
-fn python_json(value: &Json) -> String {
-    match value {
-        Json::List(items) => format!(
-            "[{}]",
-            items.iter().map(python_json).collect::<Vec<_>>().join(", ")
-        ),
-        Json::Object(object) => {
-            let encoded_fields = object
-                .iter()
-                .map(|(key, child)| {
-                    let encoded =
-                        serde_json::to_string(key).unwrap_or_else(|_| String::from("\"\""));
-                    format!("{encoded}: {}", python_json(child))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{{{encoded_fields}}}")
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
-            serde_json::to_string(value).unwrap_or_else(|_| String::from("null"))
+        key
+    };
+    if target == "anyOf" {
+        match result.get_mut(&target) {
+            Some(Json::List(existing)) => {
+                existing.append(&mut filtered);
+                return Ok(());
+            }
+            Some(_) => return Err(SchemaError::Invalid("anyOf")),
+            None => {}
         }
     }
+    result.insert(target, Json::List(filtered));
+    Ok(())
 }
 
-fn enum_type_conflict(schema: &Object) -> bool {
+fn enum_type_conflict(schema: &Object) -> Result<bool, SchemaError> {
     let Some(Json::List(values)) = schema.get("enum") else {
-        return false;
+        return Ok(false);
     };
-    let Some(Json::Text(kind)) = schema.get("type") else {
-        return false;
-    };
-    if values.is_empty() {
-        return true;
+    match schema.get("type") {
+        Some(Json::List(_)) => Ok(true),
+        Some(Json::Object(_)) => Err(SchemaError::Invalid("type")),
+        Some(Json::Text(kind)) => Ok(values.iter().any(|value| !matches_type(value, kind))),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_)) | None => Ok(false),
     }
-    values.iter().any(|value| !matches_type(value, kind))
 }
 
 fn matches_type(value: &Json, kind: &str) -> bool {
     match kind {
         "null" => matches!(value, Json::Null),
         "boolean" => matches!(value, Json::Bool(_)),
-        "integer" => matches!(value, Json::Number(number) if number.is_i64() || number.is_u64()),
+        "integer" => {
+            matches!(value, Json::Number(number) if !number.to_string().contains(['.', 'e', 'E']))
+        }
         "number" => matches!(value, Json::Number(_)),
         "string" => matches!(value, Json::Text(_)),
         "array" => matches!(value, Json::List(_)),
@@ -228,72 +157,3 @@ fn matches_type(value: &Json, kind: &str) -> bool {
         _ => true,
     }
 }
-
-#[must_use]
-pub fn map_output(value: Option<ResponseFormat>) -> Option<OutputFormat> {
-    let schema = schema_from_response(value)?;
-    Some(OutputFormat {
-        type_name: "json_schema".to_owned(),
-        schema: filter_anthropic_output_schema(expand_definitions(schema)),
-    })
-}
-
-fn expand_definitions(schema: Json) -> Json {
-    let Json::Object(mut fields) = schema else {
-        return schema;
-    };
-    let defs = fields.shift_remove("$defs");
-    let legacy = fields.shift_remove("definitions");
-    let Some(Json::Object(definition_fields)) = defs.or(legacy) else {
-        return Json::Object(fields);
-    };
-    if definition_fields.is_empty() {
-        return Json::Object(fields);
-    }
-    unpack_defs(fields, &definition_fields, Some(10_000_000))
-        .ok()
-        .map_or_else(|| Json::Object(Object::new()), Json::Object)
-}
-
-#[must_use]
-pub fn map_tool(value: Option<ResponseFormat>) -> Option<Tool> {
-    let schema = schema_from_response(value)?;
-    Some(json_tool(Some(schema)))
-}
-
-fn schema_from_response(value: Option<ResponseFormat>) -> Option<Json> {
-    match value? {
-        ResponseFormat::Text | ResponseFormat::JsonObject { schema: None } => None,
-        ResponseFormat::JsonSchema { schema }
-        | ResponseFormat::JsonObject {
-            schema: Some(schema),
-        } => Some(schema),
-    }
-}
-
-#[must_use]
-pub fn json_tool(schema: Option<Json>) -> Tool {
-    let input_schema = schema.map_or_else(
-        || {
-            Json::Object(Object::from_iter([
-                (String::from("type"), Json::Text(String::from("object"))),
-                (String::from("additionalProperties"), Json::Bool(true)),
-                (String::from("properties"), Json::Object(Object::new())),
-            ]))
-        },
-        |provided| {
-            let mut base =
-                Object::from_iter([(String::from("type"), Json::Text(String::from("object")))]);
-            if let Json::Object(fields) = provided {
-                base.extend(fields);
-            }
-            Json::Object(base)
-        },
-    );
-    Tool {
-        name: "json_tool_call".to_owned(),
-        input_schema,
-    }
-}
-
-mod tests;

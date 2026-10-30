@@ -9,8 +9,6 @@ def run(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
     schema = input_value.get("schema")
     if function == "filter":
-        if not isinstance(schema, dict):
-            raise ValueError("schema must be an object")
         typed_schema = cast(dict[str, object], schema)
         return cast(Json, AnthropicConfig.filter_anthropic_output_schema(typed_schema))
     if function == "output":
@@ -27,6 +25,15 @@ def run(input_value: dict[str, Json]) -> Json:
         typed_schema = cast(dict[str, object] | None, schema)
         result = AnthropicConfig()._create_json_tool_call_for_response_format(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
             typed_schema
+        )
+        return cast(Json, result)
+    if function == "map_output":
+        value = cast(dict[str, object] | None, input_value.get("value"))
+        return cast(Json, AnthropicConfig().map_response_format_to_anthropic_output_format(value))  # pyright: ignore[reportUnknownMemberType]
+    if function == "map_tool":
+        value = cast(dict[str, object] | None, input_value.get("value"))
+        result = AnthropicConfig().map_response_format_to_anthropic_tool(  # pyright: ignore[reportUnknownMemberType]
+            value, {}, is_thinking_enabled=False
         )
         return cast(Json, result)
     raise ValueError(f"unknown function {function}")

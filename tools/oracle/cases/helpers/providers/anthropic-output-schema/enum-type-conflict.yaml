@@ -1,5 +1,5 @@
 kind: helper
 name: enum-type-conflict
-call: {anthropic_output_schema: {function: filter, schema: {type: string, enum: [1, two]}}}
+call: {anthropic_output_schema: {function: filter, schema: {properties: {empty: {type: string, enum: []}, union: {type: [string, 'null'], enum: [value, null]}, empty_union: {type: [], enum: []}, unknown: {type: unknown, enum: []}, bool_integer: {type: integer, enum: [true]}, float_integer: {type: integer, enum: [1.0]}, object: {type: object, enum: [1]}, number: {type: number, enum: [1.5]}, string: {type: string, enum: [1, two]}}}}}
 env: {}
 compare: {ignore: []}

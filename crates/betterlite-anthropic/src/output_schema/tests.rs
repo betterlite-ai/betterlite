@@ -1,158 +1,305 @@
 #![cfg(test)]
 
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
-use super::{ResponseFormat, filter_anthropic_output_schema, map_output};
+use super::mapping::{ResponseFormat, json_tool, map_output, map_tool};
+use super::{SchemaError, filter_anthropic_output_schema};
 
 #[rstest]
-#[case::constraint_description(
-    r#"{"description":"x","minItems":2,"uniqueItems":true,"type":"array"}"#,
-    "Note: minimum number of items: 2, all array items must be unique."
+#[case::constraint_description("filter", r#"{"description":"x","minItems":2,"uniqueItems":true,"type":"array"}"#, r#"{"description":"x Note: minimum number of items: 2, all array items must be unique.","type":"array"}"#)]
+#[case::false_constraint_ignored("filter", r#"{"uniqueItems":false,"minimum":0,"maximum":null,"minLength":"","contains":[],"not":{}}"#, r#"{"description":"Note: array must contain an item matching: [], minimum value: 0, maximum value: None, minimum length: , must not match: {}."}"#)]
+#[case::enum_type_conflict("filter", r#"{"type":"object","enum":[1]}"#, r#"{"enum":[1]}"#)]
+#[case::oneof_to_anyof(
+    "filter",
+    r#"{"oneOf":[{"type":"string"}],"anyOf":[{"type":"number"},{"type":"string"}]}"#,
+    r#"{"anyOf":[{"type":"string"},{"type":"number"},{"type":"string"}]}"#
 )]
-#[case::false_constraint_ignored(r#"{"type":"array","uniqueItems":false}"#, "")]
-#[case::enum_type_conflict(r#"{"type":"string","enum":[1]}"#, "enum")]
-#[case::oneof_to_anyof(r#"{"oneOf":[{"type":"string"}]}"#, "anyOf")]
 #[case::object_additional_properties(
+    "filter",
     r#"{"type":"object","additionalProperties":true}"#,
-    "additionalProperties"
+    r#"{"type":"object","additionalProperties":false}"#
 )]
-#[case::bounded_def_expansion(r##"{"$defs":{"Name":{"type":"string"}},"type":"object","properties":{"name":{"$ref":"#/$defs/Name"}}}"##, "properties")]
-#[case::json_tool_fallback(r#"{"type":"string"}"#, "tool")]
-#[case::text_format_no_tool("null", "none")]
-fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
-    let schema: Json = serde_json::from_str(source).unwrap();
-    if expected == "tool" {
-        let tool = super::map_tool(Some(ResponseFormat::JsonSchema { schema })).unwrap();
-        assert_eq!(tool.name, "json_tool_call");
-    } else if expected == "none" {
-        assert!(map_output(None).is_none());
-    } else {
-        let result = if expected == "properties" {
-            map_output(Some(ResponseFormat::JsonSchema { schema }))
-                .unwrap()
-                .schema
-        } else {
-            filter_anthropic_output_schema(schema)
-        };
-        let filtered = serde_json::to_value(result).unwrap();
-        if expected == "Note: minimum number of items: 2, all array items must be unique." {
-            assert_eq!(
-                filtered["description"],
-                "x Note: minimum number of items: 2, all array items must be unique."
-            );
-        }
-        if expected == "enum" {
-            assert!(filtered.get("type").is_none());
-            for conflict_source in [
-                r#"{"type":"array","enum":[]}"#,
-                r#"{"type":"object","enum":[1]}"#,
-                r#"{"type":"integer","enum":[1.5]}"#,
-                r#"{"type":"number","enum":["text"]}"#,
-            ] {
-                let conflict_schema: Json = serde_json::from_str(conflict_source).unwrap();
-                let conflict_result =
-                    serde_json::to_value(filter_anthropic_output_schema(conflict_schema)).unwrap();
-                assert!(conflict_result.get("type").is_none());
-            }
-            for matching_source in [
-                r#"{"type":"array","enum":[[]]}"#,
-                r#"{"type":"object","enum":[{}]}"#,
-            ] {
-                let matching_schema: Json = serde_json::from_str(matching_source).unwrap();
-                let matching_result =
-                    serde_json::to_value(filter_anthropic_output_schema(matching_schema)).unwrap();
-                assert!(matching_result.get("type").is_some());
-            }
-        }
-        if expected == "anyOf" {
-            assert!(filtered.get("anyOf").is_some());
-            let ordered_schema: Json = serde_json::from_str(
-                r#"{"oneOf":[{"type":"string"}],"anyOf":[{"type":"number"}]}"#,
+#[case::bounded_def_expansion("output", r##"{"response_schema":{"$defs":{"Name":{"type":"string","minLength":2}},"definitions":{"Name":{"type":"number"}},"properties":{"name":{"$ref":"#/$defs/Name"}}}}"##, r#"{"type":"json_schema","schema":{"properties":{"name":{"type":"string","description":"Note: minimum length: 2."}}}}"#)]
+#[case::json_tool_fallback(
+    "tool",
+    r#"{"type":"string","minLength":2,"$defs":{}}"#,
+    r#"{"name":"json_tool_call","input_schema":{"type":"string","minLength":2,"$defs":{}}}"#
+)]
+#[case::text_format_no_tool("map_tool", r#"{"type":"text","response_schema":{}}"#, "null")]
+fn output_schema_cases(#[case] action: &str, #[case] source: &str, #[case] expected: &str) {
+    assert_eq!(
+        evaluate(action, source),
+        serde_json::from_str::<Json>(expected).unwrap()
+    );
+}
+
+fn evaluate(action: &str, source: &str) -> Json {
+    let result = match action {
+        "filter" => serde_json::to_value(
+            filter_anthropic_output_schema(serde_json::from_str(source).unwrap()).unwrap(),
+        )
+        .unwrap(),
+        "output" => serde_json::to_value(
+            map_output(
+                serde_json::from_str::<Option<ResponseFormat>>(source)
+                    .unwrap()
+                    .as_ref(),
             )
-            .unwrap();
-            let ordered_result =
-                serde_json::to_value(filter_anthropic_output_schema(ordered_schema)).unwrap();
-            assert_eq!(ordered_result["anyOf"][0]["type"], "string");
-            assert_eq!(ordered_result["anyOf"][1]["type"], "number");
-        }
-        if expected == "additionalProperties" {
-            assert_eq!(filtered["additionalProperties"], false);
-        }
-        if expected == "properties" {
-            assert_eq!(filtered["properties"]["name"]["type"], "string");
-        }
-    }
+            .unwrap(),
+        )
+        .unwrap(),
+        "map_tool" => serde_json::to_value(
+            map_tool(
+                serde_json::from_str::<Option<ResponseFormat>>(source)
+                    .unwrap()
+                    .as_ref(),
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        "tool" => serde_json::to_value(
+            json_tool(
+                serde_json::from_str::<Option<Json>>(source)
+                    .unwrap()
+                    .as_ref(),
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        _ => panic!("unknown test action"),
+    };
+    serde_json::from_str(&serde_json::to_string(&result).unwrap()).unwrap()
+}
+
+#[rstest]
+#[case::empty_scalar(r#"{"type":"array","enum":[]}"#, true)]
+#[case::list_type(r#"{"type":["string"],"enum":["x"]}"#, false)]
+#[case::empty_list_type(r#"{"type":[],"enum":[]}"#, false)]
+#[case::unknown_empty(r#"{"type":"unknown","enum":[]}"#, true)]
+#[case::null_match(r#"{"type":"null","enum":[null]}"#, true)]
+#[case::null_conflict(r#"{"type":"null","enum":[1]}"#, false)]
+#[case::boolean_match(r#"{"type":"boolean","enum":[true]}"#, true)]
+#[case::boolean_conflict(r#"{"type":"boolean","enum":[1]}"#, false)]
+#[case::integer_boolean(r#"{"type":"integer","enum":[true]}"#, false)]
+#[case::integer_float(r#"{"type":"integer","enum":[1.5]}"#, false)]
+#[case::large_integer(r#"{"type":"integer","enum":[18446744073709551616]}"#, true)]
+#[case::integer_match(r#"{"type":"integer","enum":[1]}"#, true)]
+#[case::number_match(r#"{"type":"number","enum":[1.5]}"#, true)]
+#[case::number_boolean(r#"{"type":"number","enum":[true]}"#, false)]
+#[case::number_text(r#"{"type":"number","enum":["text"]}"#, false)]
+#[case::array_match(r#"{"type":"array","enum":[[]]}"#, true)]
+#[case::array_conflict(r#"{"type":"array","enum":[1]}"#, false)]
+#[case::object_match(r#"{"type":"object","enum":[{}]}"#, true)]
+#[case::object_conflict(r#"{"type":"object","enum":[1]}"#, false)]
+#[case::string_match(r#"{"type":"string","enum":["x"]}"#, true)]
+#[case::string_conflict(r#"{"type":"string","enum":[1]}"#, false)]
+#[case::nonlist_enum(r#"{"type":"string","enum":null}"#, true)]
+#[case::unknown_type(r#"{"type":"unknown","enum":[1]}"#, true)]
+#[case::no_type(r#"{"enum":[1]}"#, false)]
+#[case::null_type(r#"{"type":null,"enum":[1]}"#, true)]
+fn enum_type_regressions(#[case] source: &str, #[case] keeps_type: bool) {
+    let result = evaluate("filter", source);
+    assert_eq!(
+        result.as_object().unwrap().get("type").is_some(),
+        keeps_type
+    );
+    assert_eq!(
+        result.as_object().unwrap().get("enum"),
+        serde_json::from_str::<Json>(source)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .get("enum")
+    );
+}
+
+#[rstest]
+#[case::boolean(r#"{"minimum":true}"#, "Note: minimum value: True.")]
+#[case::unicode(
+    r#"{"contains":{"enum":["\u00e9","\ud83d\ude00"]}}"#,
+    r#"Note: array must contain an item matching: {"enum": ["\u00e9", "\ud83d\ude00"]}."#
+)]
+#[case::nested(
+    r#"{"contains":{"type":"string","enum":["x"]}}"#,
+    r#"Note: array must contain an item matching: {"type": "string", "enum": ["x"]}."#
+)]
+#[case::float(
+    r#"{"minimum":1e-8,"maximum":1e20}"#,
+    "Note: minimum value: 1e-08, maximum value: 1e+20."
+)]
+#[case::empty_description(r#"{"description":false,"minimum":1}"#, "Note: minimum value: 1.")]
+fn description_regressions(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(
+        evaluate("filter", source)
+            .as_object()
+            .unwrap()
+            .get("description"),
+        Some(&Json::Text(expected.to_owned()))
+    );
 }
 
 #[test]
 fn output_schema_filter_preserves_nested_branches() {
-    let source: Json = serde_json::from_str(
-        r#"{
-            "description":"schema",
-            "type":"string",
-            "contains":{"type":"object","minimum":1},
-            "properties":{"child":{"minItems":1,"type":"array"}},
-            "$defs":{"Definition":{"type":"boolean"}},
-            "items":{"type":"object","additionalProperties":true}
-        }"#,
-    )
-    .unwrap();
-    let filtered = serde_json::to_value(filter_anthropic_output_schema(source)).unwrap();
-    assert_eq!(filtered["type"], "string");
+    let source = r#"{"properties":{"child":{"minItems":1}},"$defs":{"D":{"type":"object"}},"items":{"minimum":1},"allOf":[{"minimum":2},false],"extra":{"minimum":3}}"#;
+    let expected = r#"{"properties":{"child":{"description":"Note: minimum number of items: 1."}},"$defs":{"D":{"type":"object","additionalProperties":false}},"items":{"description":"Note: minimum value: 1."},"allOf":[{"description":"Note: minimum value: 2."},false],"extra":{"minimum":3}}"#;
     assert_eq!(
-        filtered["description"],
-        "schema Note: array must contain an item matching: {\"type\": \"object\", \"minimum\": 1}."
+        evaluate("filter", source),
+        serde_json::from_str::<Json>(expected).unwrap()
     );
+}
+
+#[rstest]
+#[case::null("null")]
+#[case::array("[1,2]")]
+#[case::boolean("false")]
+#[case::wrong_shapes(r#"{"items":[{"minimum":1}],"properties":[],"$defs":false,"oneOf":{},"anyOf":false,"allOf":null}"#)]
+fn preserves_unrecognized_shapes(#[case] source: &str) {
     assert_eq!(
-        filtered["properties"]["child"]["description"],
-        "Note: minimum number of items: 1."
+        evaluate("filter", source),
+        serde_json::from_str::<Json>(source).unwrap()
     );
-    assert_eq!(filtered["$defs"]["Definition"]["type"], "boolean");
-    assert_eq!(filtered["items"]["type"], "object");
-    assert_eq!(filtered["items"]["additionalProperties"], false);
+}
+
+#[rstest]
+#[case::empty(r#"{"response_schema":{}}"#, r#"{"type":"json_schema","schema":{}}"#)]
+#[case::nested(
+    r#"{"json_schema":{"schema":{"type":"string"}}}"#,
+    r#"{"type":"json_schema","schema":{"type":"string"}}"#
+)]
+#[case::null_precedence(r#"{"response_schema":null,"json_schema":{"schema":{}}}"#, "null")]
+#[case::empty_defs(
+    r#"{"response_schema":{"$defs":{},"definitions":{"X":{"type":"string"}},"$ref":"X"}}"#,
+    r#"{"type":"json_schema","schema":{"$ref":"X"}}"#
+)]
+#[case::legacy(
+    r#"{"response_schema":{"definitions":{"X":{"type":"string"}},"$ref":"X"}}"#,
+    r#"{"type":"json_schema","schema":{"type":"string"}}"#
+)]
+#[case::text_output(
+    r#"{"type":"text","response_schema":{}}"#,
+    r#"{"type":"json_schema","schema":{}}"#
+)]
+#[case::absent("null", "null")]
+fn extracts_response_schema(#[case] source: &str, #[case] expected: &str) {
+    let value: Option<ResponseFormat> = serde_json::from_str(source).unwrap();
+    let original = value.clone();
+    assert_eq!(
+        serde_json::from_value::<Json>(
+            serde_json::to_value(map_output(value.as_ref()).unwrap()).unwrap()
+        )
+        .unwrap(),
+        serde_json::from_str::<Json>(expected).unwrap()
+    );
+    assert_eq!(value, original);
+}
+
+#[rstest]
+#[case::none("null")]
+#[case::text(r#"{"type":"text","response_schema":{}}"#)]
+#[case::missing_schema(r#"{"type":"json_object"}"#)]
+#[case::null_schema(r#"{"type":"json_schema","response_schema":null}"#)]
+fn returns_no_tool(#[case] source: &str) {
+    assert_eq!(evaluate("map_tool", source), Json::Null);
 }
 
 #[test]
-fn output_schema_filter_checks_container_enum_types() {
-    let null_schema: Json = serde_json::from_str(r#"{"type":"null","enum":[null]}"#).unwrap();
-    let null_result = serde_json::to_value(filter_anthropic_output_schema(null_schema)).unwrap();
-    assert_eq!(null_result["type"], "null");
-    let null_conflict: Json = serde_json::from_str(r#"{"type":"null","enum":[1]}"#).unwrap();
-    let null_conflict_result =
-        serde_json::to_value(filter_anthropic_output_schema(null_conflict)).unwrap();
-    assert!(null_conflict_result.get("type").is_none());
+fn tool_requires_type_and_preserves_schema() {
+    let missing: ResponseFormat = serde_json::from_str("{}").unwrap();
+    assert!(matches!(
+        map_tool(Some(&missing)),
+        Err(SchemaError::MissingType)
+    ));
     assert_eq!(
-        serde_json::to_value(filter_anthropic_output_schema(
-            serde_json::from_str(r#"{"type":"boolean","enum":[true]}"#).unwrap(),
-        ))
-        .unwrap()["type"],
-        "boolean"
+        evaluate("map_tool", r#"{"type":"other","response_schema":{}}"#),
+        evaluate("tool", "{}")
     );
     assert_eq!(
-        serde_json::to_value(filter_anthropic_output_schema(
-            serde_json::from_str(r#"{"type":"array","enum":[[]]}"#).unwrap(),
-        ))
-        .unwrap()["type"],
-        "array"
+        evaluate("tool", "null"),
+        serde_json::from_str::<Json>(r#"{"name":"json_tool_call","input_schema":{"type":"object","additionalProperties":true,"properties":{}}}"#).unwrap()
     );
-    let boolean_conflict: Json = serde_json::from_str(r#"{"type":"boolean","enum":[1]}"#).unwrap();
-    let boolean_result =
-        serde_json::to_value(filter_anthropic_output_schema(boolean_conflict)).unwrap();
-    assert!(boolean_result.get("type").is_none());
-    let array_conflict: Json = serde_json::from_str(r#"{"type":"array","enum":[1]}"#).unwrap();
-    let array_result =
-        serde_json::to_value(filter_anthropic_output_schema(array_conflict)).unwrap();
-    assert!(array_result.get("type").is_none());
 }
 
 #[test]
-fn output_schema_filter_formats_nested_constraint_notes() {
-    let note_schema: Json =
-        serde_json::from_str(r#"{"contains":{"type":"string","enum":["x"]}}"#).unwrap();
-    let note = serde_json::to_value(filter_anthropic_output_schema(note_schema)).unwrap();
+fn rejects_excessive_schema_depth() {
+    let schema = (0_u16..130).fold(Json::Null, |child, _| {
+        Json::Object(Object::from_iter([(String::from("items"), child)]))
+    });
+    assert!(matches!(
+        filter_anthropic_output_schema(schema),
+        Err(SchemaError::Limit)
+    ));
+}
+
+#[test]
+fn propagates_definition_expansion_budget() {
+    let format = ResponseFormat {
+        type_name: None,
+        json_schema: None,
+        response_schema: super::mapping::SchemaField::Value(
+            serde_json::from_str(&format!(r#"{{"$defs":{{"Big":{{"description":"{}"}}}},"properties":{{"one":{{"$ref":"Big"}},"two":{{"$ref":"Big"}}}}}}"#, "x".repeat(5_000_000)))
+            .unwrap(),
+        ),
+    };
+    assert!(matches!(
+        map_output(Some(&format)),
+        Err(SchemaError::Definitions(_))
+    ));
+}
+
+#[test]
+fn rejects_excessive_schema_bytes() {
+    assert!(matches!(
+        filter_anthropic_output_schema(Json::Text("x".repeat(10_000_001))),
+        Err(SchemaError::Limit)
+    ));
+}
+
+#[rstest]
+#[case::description(r#"{"description":true,"minimum":1}"#)]
+#[case::alternatives(r#"{"anyOf":false,"oneOf":[]}"#)]
+#[case::enum_type(r#"{"type":{},"enum":[]}"#)]
+fn rejects_invalid_schema_shapes(#[case] source: &str) {
+    assert!(matches!(
+        filter_anthropic_output_schema(serde_json::from_str(source).unwrap()),
+        Err(SchemaError::Invalid(_))
+    ));
+}
+
+#[test]
+fn projects_all_constraint_labels_in_declared_order() {
+    let input = r#"{"not":{},"else":null,"then":[],"if":{},"unevaluatedProperties":true,"dependentSchemas":{},"dependentRequired":{},"propertyNames":{},"patternProperties":{},"maxProperties":2,"minProperties":1,"maxLength":3,"minLength":1,"multipleOf":2,"exclusiveMaximum":9,"exclusiveMinimum":0,"maximum":10,"minimum":1,"prefixItems":[],"maxContains":2,"minContains":1,"contains":{},"uniqueItems":true,"maxItems":3,"minItems":1}"#;
+    let expected = "Note: minimum number of items: 1, maximum number of items: 3, all array items must be unique, array must contain an item matching: {}, minimum number of matching items: 1, maximum number of matching items: 2, leading items must match, in order: [], minimum value: 1, maximum value: 10, exclusive minimum value: 0, exclusive maximum value: 9, must be a multiple of 2, minimum length: 1, maximum length: 3, minimum number of properties: 1, maximum number of properties: 2, properties whose names match each pattern must satisfy: {}, property names must satisfy: {}, dependent required properties: {}, dependent schemas: {}, unevaluated properties must satisfy: True, conditional (if): {}, conditional (then): [], conditional (else): None, must not match: {}.";
     assert_eq!(
-        note["description"],
-        "Note: array must contain an item matching: {\"type\": \"string\", \"enum\": [\"x\"]}."
+        evaluate("filter", input),
+        Json::Object(Object::from_iter([(
+            String::from("description"),
+            Json::Text(expected.to_owned())
+        )]))
+    );
+}
+
+#[rstest]
+#[case::object_limit(128, "object", true)]
+#[case::array_limit(128, "array", true)]
+#[case::array_excess(129, "array", false)]
+fn enforces_depth_boundary(#[case] depth: usize, #[case] kind: &str, #[case] accepted: bool) {
+    let mut schema = Json::Null;
+    for _ in 0..depth {
+        schema = if kind == "array" {
+            Json::List(vec![schema])
+        } else {
+            Json::Object(Object::from_iter([(String::from("items"), schema)]))
+        };
+    }
+    assert_eq!(filter_anthropic_output_schema(schema).is_ok(), accepted);
+}
+
+#[test]
+fn accepts_schema_at_byte_limit() {
+    let schema = Json::Text("x".repeat(9_999_998));
+    assert_eq!(
+        filter_anthropic_output_schema(schema.clone()).unwrap(),
+        schema
     );
 }

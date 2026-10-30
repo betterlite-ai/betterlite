@@ -1,5 +1,5 @@
 kind: helper
 name: constraint-description
-call: {anthropic_output_schema: {function: filter, schema: {type: array, description: values, minItems: 2, uniqueItems: true, maximum: 10, contains: {type: string}}}}
+call: {anthropic_output_schema: {function: filter, schema: {description: values, not: {}, else: false, then: [], if: {const: true}, unevaluatedProperties: true, dependentSchemas: {}, dependentRequired: {}, propertyNames: {}, patternProperties: {}, maxProperties: 2, minProperties: 0, maxLength: 20, minLength: 1, multipleOf: 2, exclusiveMaximum: 1.0e20, exclusiveMinimum: 1.0e-8, maximum: 10, minimum: true, prefixItems: [], maxContains: 3, minContains: 1, contains: {enum: [é, 😀]}, uniqueItems: true, maxItems: 5, minItems: 2, unknown: {minimum: 1}}}}
 env: {}
 compare: {ignore: []}
