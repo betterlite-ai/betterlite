@@ -44,14 +44,14 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
         }
         if expected == "enum" {
             assert!(filtered.get("type").is_none());
-            for source in [
+            for conflict_source in [
                 r#"{"type":"array","enum":[]}"#,
                 r#"{"type":"object","enum":[{}]}"#,
             ] {
-                let schema: Json = serde_json::from_str(source).unwrap();
-                let filtered =
-                    serde_json::to_value(filter_anthropic_output_schema(schema)).unwrap();
-                assert!(filtered.get("type").is_none());
+                let conflict_schema: Json = serde_json::from_str(conflict_source).unwrap();
+                let conflict_result =
+                    serde_json::to_value(filter_anthropic_output_schema(conflict_schema)).unwrap();
+                assert!(conflict_result.get("type").is_none());
             }
         }
         if expected == "anyOf" {
