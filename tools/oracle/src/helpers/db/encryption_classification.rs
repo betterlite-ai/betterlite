@@ -1,7 +1,7 @@
 use betterlite_db::encryption_scan::report::{LocationReport, MigrationReport, ValueClass};
 use betterlite_db::encryption_scan::{
-    _iter_callback_var_dicts, DbCipher, MigrationJson, ScanError, classify_callback_value,
-    classify_secret_map, classify_value,
+    DbCipher, MigrationJson, ScanError, classify_callback_value, classify_secret_map,
+    classify_value, iter_callback_var_dicts,
 };
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
@@ -40,7 +40,7 @@ impl crate::helpers::Helper for Op {
         let aggregate = MigrationReport {
             locations: vec![report],
         };
-        let projection = aggregate.as_dict().map_err(helper_error)?;
+        let projection = aggregate.as_dict().map_err(|error| helper_error(&error))?;
         Ok(serde_json::json!({"counts": counts, "report": projection}))
     }
 }
@@ -72,7 +72,7 @@ fn classify_input(
     let metadata_values = input
         .metadata
         .iter()
-        .flat_map(_iter_callback_var_dicts)
+        .flat_map(iter_callback_var_dicts)
         .flat_map(|vars| vars.values());
     for value in input.callbacks.iter().chain(metadata_values) {
         count_value(&mut report, Some(classify_callback_value(value, cipher)))?;
@@ -86,11 +86,11 @@ fn count_value(
 ) -> Result<(), Box<crate::helpers::HelperError>> {
     match report.count(class) {
         Ok(()) => Ok(()),
-        Err(error) => Err(helper_error(error)),
+        Err(error) => Err(helper_error(&error)),
     }
 }
 
-fn helper_error(error: ScanError) -> Box<crate::helpers::HelperError> {
+fn helper_error(error: &ScanError) -> Box<crate::helpers::HelperError> {
     let message = error.to_string();
     Box::new(crate::helpers::HelperError {
         class: "OverflowError".to_owned(),

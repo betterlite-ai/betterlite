@@ -119,7 +119,7 @@ fn replays_the_migration_json_corpus() {
 #[test]
 fn callbacks_visit_both_metadata_shapes() {
     let metadata = decode_migration_json(br#"{"logging":[null,{"callback_vars":{"token":"litellm_enc::v2:gcm:bad"}}],"callback_settings":{"callback_vars":{"token":"plain"}}}"#).unwrap();
-    let vars = _iter_callback_var_dicts(&metadata);
+    let vars = iter_callback_var_dicts(&metadata);
     let classes: Vec<_> = vars
         .iter()
         .flat_map(|entry| entry.values())

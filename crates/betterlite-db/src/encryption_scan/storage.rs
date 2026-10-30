@@ -155,7 +155,7 @@ fn scan_json_value(
 
 mod tests;
 
-pub async fn _scan_covered_tables<C>(
+pub async fn scan_covered_tables<C>(
     client: &C,
     cipher: &DbCipher,
     deadline: Duration,

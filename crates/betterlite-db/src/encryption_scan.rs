@@ -99,30 +99,31 @@ pub fn decode_migration_json(bytes: &[u8]) -> Result<MigrationJson, ScanError> {
 
 #[must_use]
 pub fn classify_value(value: &MigrationJson, cipher: &DbCipher, key: &str) -> ValueClass {
-    match value {
-        MigrationJson::String(text) if text.0.expose_secret().starts_with(V2_GCM_PREFIX) => {
-            ValueClass::Migrated
-        }
-        MigrationJson::String(text) if text.0.expose_secret().is_empty() => ValueClass::Plaintext,
-        MigrationJson::String(text) => {
-            let stored = cipher.decrypt_value(
-                StoredValue::<()>::Text(text.0.clone()),
-                key,
-                DecryptPolicy {
-                    log: FailureLog::Debug,
-                    value: FailureValue::Nothing,
-                },
-            );
-            match stored {
-                Some(_) => ValueClass::Legacy,
-                None => ValueClass::Plaintext,
-            }
-        }
-        MigrationJson::Null
-        | MigrationJson::Bool(_)
-        | MigrationJson::Number(_)
-        | MigrationJson::Array(_)
-        | MigrationJson::Object(_) => ValueClass::NotAString,
+    if let MigrationJson::String(text) = value {
+        classify_secret(&text.0, cipher, key)
+    } else {
+        ValueClass::NotAString
+    }
+}
+
+fn classify_secret(text: &SecretString, cipher: &DbCipher, key: &str) -> ValueClass {
+    if text.expose_secret().starts_with(V2_GCM_PREFIX) {
+        return ValueClass::Migrated;
+    }
+    if text.expose_secret().is_empty() {
+        return ValueClass::Plaintext;
+    }
+    let stored = cipher.decrypt_value(
+        StoredValue::<()>::Text(text.clone()),
+        key,
+        DecryptPolicy {
+            log: FailureLog::Debug,
+            value: FailureValue::Nothing,
+        },
+    );
+    match stored {
+        Some(_) => ValueClass::Legacy,
+        None => ValueClass::Plaintext,
     }
 }
 
@@ -169,7 +170,7 @@ pub fn iter_encrypted_strings(value: &MigrationJson) -> impl Iterator<Item = &Se
 }
 
 #[must_use]
-pub fn _iter_callback_var_dicts(value: &MigrationJson) -> Vec<&BTreeMap<String, MigrationJson>> {
+pub fn iter_callback_var_dicts(value: &MigrationJson) -> Vec<&BTreeMap<String, MigrationJson>> {
     let mut found = Vec::new();
     if let MigrationJson::Object(root) = value {
         if let Some(MigrationJson::Array(entries)) = root.get("logging") {
@@ -196,19 +197,12 @@ fn callback_vars_from_entry(value: &MigrationJson) -> Option<&BTreeMap<String, M
 
 #[must_use]
 pub fn classify_callback_value(value: &MigrationJson, cipher: &DbCipher) -> ValueClass {
-    let stripped = match value {
-        MigrationJson::String(text) => text
-            .0
-            .expose_secret()
-            .strip_prefix("litellm_enc::")
-            .map(|inner| MigrationJson::String(SecretText(SecretString::from(inner)))),
-        MigrationJson::Null
-        | MigrationJson::Bool(_)
-        | MigrationJson::Number(_)
-        | MigrationJson::Array(_)
-        | MigrationJson::Object(_) => None,
+    let MigrationJson::String(text) = value else {
+        return ValueClass::NotAString;
     };
-    classify_value(stripped.as_ref().unwrap_or(value), cipher, "callback")
+    let raw = text.0.expose_secret();
+    let inner = SecretString::from(raw.strip_prefix("litellm_enc::").unwrap_or(raw));
+    classify_secret(&inner, cipher, "callback")
 }
 
 #[must_use]
