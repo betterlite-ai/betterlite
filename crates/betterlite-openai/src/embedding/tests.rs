@@ -101,6 +101,18 @@ async fn reports_embedding_provider_failures() {
             .await
             .expect("response");
     });
+    let (executor, deployment) = embedding_executor(&base);
+    let request = EmbeddingRequest::parse(br#"{"input":"hello"}"#).expect("request");
+    let result = super::send(&executor, &deployment, &request).await;
+    assert!(matches!(result, Err(EmbeddingError::Provider { .. })));
+    tasks
+        .join_next()
+        .await
+        .expect("responder")
+        .expect("responder");
+}
+
+fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -126,12 +138,5 @@ async fn reports_embedding_provider_failures() {
         },
         random: Mutex::new(StdRng::seed_from_u64(1)),
     };
-    let request = EmbeddingRequest::parse(br#"{"input":"hello"}"#).expect("request");
-    let result = super::send(&executor, &deployment, &request).await;
-    assert!(matches!(result, Err(EmbeddingError::Provider { .. })));
-    tasks
-        .join_next()
-        .await
-        .expect("responder")
-        .expect("responder");
+    (executor, deployment)
 }
