@@ -831,6 +831,13 @@ dependencies = [
 [[package]]
 name = "betterlite-azure"
 version = "0.1.0"
+dependencies = [
+ "betterlite-error",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "betterlite-bedrock"
@@ -969,6 +976,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -1145,6 +1153,7 @@ dependencies = [
  "chrono",
  "fancy-regex",
  "indexmap 2.14.2",
+ "jiff",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1199,6 +1208,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-azure",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
@@ -1219,6 +1229,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-rate-limit",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
@@ -1229,6 +1240,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "reqwest",
  "rstest",
  "rust_decimal",

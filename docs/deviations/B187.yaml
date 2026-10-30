@@ -1,0 +1,22 @@
+task: B187
+deviations:
+- what: >-
+    When a weaker, earlier-ranked branch (sk-, AKIA) wins LiteLLM's priority race at a guarded
+    delimiter but covers less of the credential than the guarded group itself, betterlite keeps
+    the guarded group's full span instead of LiteLLM's shorter one, so the trailing secret stays
+    redacted. For "postgres://sk-...:hunter2pass@host/db", LiteLLM's sk- match leaves ":hunter2pass"
+    exposed; betterlite redacts the whole "sk-...:hunter2pass" credential.
+  why: >-
+    A leaked secret is a bug no working setup can rely on, so the stronger redaction is kept rather
+    than reproduced.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/secret_redaction.py#L37-L57
+- what: >-
+    Same mechanism for the url_query_cred guard: for "GET /x?AKIA...token=leakedvalue HTTP/1.1",
+    LiteLLM's AKIA match leaves "token=leakedvalue" exposed; betterlite redacts the whole
+    "AKIA...token=leakedvalue" query credential.
+  why: >-
+    A leaked secret is a bug no working setup can rely on, so the stronger redaction is kept rather
+    than reproduced.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/secret_redaction.py#L37-L57

@@ -1,0 +1,25 @@
+kind: helper
+name: equal-endpoints-and-midnight-crossing
+call:
+  off_peak:
+    off_peak_pricing:
+      windows:
+        - hours_utc: "23:00-01:00"
+        - hours_utc: "12:00-12:00"
+      input_cost_per_token: 0.0000002
+      output_cost_per_token: 0.0000004
+      cache_read_input_token_cost: 0.00000002
+      cache_creation_input_token_cost: 0.00000006
+    moment: "2024-06-16T05:00:00Z"
+    rates:
+      input_rate: 0.000001
+      output_rate: 0.000002
+      cache_read_rate: 0.0000001
+      cache_creation_rate: 0.0000003
+    base_costs:
+      prompt_rate: 0.000001
+      completion_rate: 0.000002
+      cache_creation_rate: 0.0000003
+      cache_read_rate: 0.0000001
+compare: {ignore: []}
+env: {}

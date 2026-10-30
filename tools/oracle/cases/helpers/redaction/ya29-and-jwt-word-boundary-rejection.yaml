@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-ya29-and-jwt-word-boundary-rejection
+call:
+  redaction:
+    function: redact_string
+    text: "fooya29.abcdefghij1234567890 fooeyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBj"
+env: {}
+compare:
+  ignore: []
