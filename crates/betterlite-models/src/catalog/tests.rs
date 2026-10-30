@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{CatalogError, MAX_CATALOG_ENTRIES, ModelCatalog};
+use super::{CatalogError, MAX_CATALOG_BYTES, MAX_CATALOG_ENTRIES, ModelCatalog};
 use rstest::rstest;
 use std::fmt::Write as _;
 use std::fs;
@@ -42,6 +42,28 @@ fn duplicate_catalog_keys_are_explicit_errors() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("duplicate"));
+}
+
+#[test]
+fn catalog_byte_limit_is_inclusive() {
+    let at_limit = catalog_with_padding(MAX_CATALOG_BYTES);
+    let over_limit = catalog_with_padding(MAX_CATALOG_BYTES + 1);
+
+    assert!(!matches!(
+        ModelCatalog::parse_remote(&at_limit),
+        Err(CatalogError::TooLarge { .. })
+    ));
+    assert!(matches!(
+        ModelCatalog::parse_remote(&over_limit),
+        Err(CatalogError::TooLarge { .. })
+    ));
+}
+
+fn catalog_with_padding(size: usize) -> Vec<u8> {
+    let mut catalog = Vec::with_capacity(size);
+    catalog.extend_from_slice(b"{}");
+    catalog.resize(size, b' ');
+    catalog
 }
 
 #[test]
