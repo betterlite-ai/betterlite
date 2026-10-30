@@ -68,12 +68,6 @@ impl GenericGuardrailAPIError {
 }
 
 #[derive(Debug, Clone)]
-pub struct GenericGuardrailAPITransport {
-    pub client: reqwest::Client,
-    pub timeout: Duration,
-}
-
-#[derive(Debug, Clone)]
 pub struct GenericGuardrailAPI {
     pub api_key: Option<SecretString>,
     pub api_base: String,

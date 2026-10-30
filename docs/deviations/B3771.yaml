@@ -12,3 +12,6 @@ deviations:
   - what: The generic guardrail config trims a trailing slash from api_base before checking whether it already ends with /beta/litellm_basic_guardrail_api, instead of checking first and trimming only on the append branch.
     why: LiteLLM checks endswith before trimming, so an api_base already suffixed with a trailing slash fails the check and gets the path appended a second time; trimming first avoids that duplication for a configured value a guardrail server can rely on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L224-L228
+  - what: LiteLLM keeps float(guardrail_timeout) as configured and passes it to every request, so invalid values fail per request and fail_open decides; betterlite rejects an unrepresentable guardrail_timeout while loading config.
+    why: Duration cannot represent negative, NaN, or too-large seconds, so betterlite reports the invalid configuration at its boundary instead of replacing it with 30 seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L166

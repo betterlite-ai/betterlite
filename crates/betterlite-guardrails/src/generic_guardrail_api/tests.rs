@@ -11,10 +11,7 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use super::{
-    GenericGuardrailAPI, GenericGuardrailAPIError, GenericGuardrailAPITransport,
-    extract_user_api_key_metadata,
-};
+use super::{GenericGuardrailAPI, GenericGuardrailAPIError, extract_user_api_key_metadata};
 use crate::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
     GenericGuardrailAPISettings, GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
@@ -38,17 +35,13 @@ fn settings(
 }
 
 fn api(settings: GenericGuardrailAPISettings, api_base: &str) -> GenericGuardrailAPI {
-    let transport = GenericGuardrailAPITransport {
-        client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
-    };
     GenericGuardrailAPI {
         api_key: Some(SecretString::from("secret-token")),
         api_base: api_base.to_owned(),
         settings,
         provider_params: BTreeMap::new(),
-        client: transport.client,
-        timeout: transport.timeout,
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
     }
 }
 
@@ -333,17 +326,13 @@ fn generic_guardrail_headers_include_the_api_key_and_json_content_type() {
 
 #[test]
 fn generic_guardrail_headers_omit_the_api_key_when_none_is_configured() {
-    let transport = GenericGuardrailAPITransport {
-        client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
-    };
     let instance = GenericGuardrailAPI {
         api_key: None,
         api_base: "http://example".to_owned(),
         settings: GenericGuardrailAPISettings::from_optional(None),
         provider_params: BTreeMap::new(),
-        client: transport.client,
-        timeout: transport.timeout,
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
     };
     let headers = instance.prepare_headers().expect("headers");
     assert!(!headers.contains_key("x-api-key"));

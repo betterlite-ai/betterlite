@@ -3,8 +3,7 @@ use std::net::TcpListener;
 use std::time::Duration;
 
 use betterlite_guardrails::generic_guardrail_api::{
-    GenericGuardrailAPI, GenericGuardrailAPIError, GenericGuardrailAPITransport,
-    extract_user_api_key_metadata,
+    GenericGuardrailAPI, GenericGuardrailAPIError, extract_user_api_key_metadata,
 };
 use betterlite_guardrails::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
@@ -62,30 +61,19 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
         base = format!("http://{}", silent.local_addr().map_err(guardrail_error)?);
         None
     };
-    let guardrail = call_guardrail(&base, settings);
+    let guardrail = GenericGuardrailAPI {
+        api_key: None,
+        api_base: base,
+        settings,
+        provider_params: BTreeMap::new(),
+        client: reqwest::Client::default(),
+        timeout: Duration::from_millis(200),
+    };
     let result = runtime.block_on(guardrail.apply_guardrail(request_payload(request)?));
     if let Some(provider) = mock {
         provider.finish().map_err(guardrail_error)?;
     }
     result_payload(result)
-}
-
-fn call_guardrail(
-    base: &str,
-    settings: betterlite_guardrails::generic_guardrail_contracts::GenericGuardrailAPISettings,
-) -> GenericGuardrailAPI {
-    let transport = GenericGuardrailAPITransport {
-        client: reqwest::Client::default(),
-        timeout: Duration::from_millis(200),
-    };
-    GenericGuardrailAPI {
-        api_key: None,
-        api_base: base.to_owned(),
-        settings,
-        provider_params: BTreeMap::new(),
-        client: transport.client,
-        timeout: transport.timeout,
-    }
 }
 
 fn result_payload(

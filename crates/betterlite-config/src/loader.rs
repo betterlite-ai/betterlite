@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
+use std::time::TryFromFloatSecsError;
 
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
@@ -51,6 +52,12 @@ pub enum ConfigError {
         path: String,
         #[source]
         source: ParseIntError,
+    },
+    #[error("invalid duration at {path}: {source}")]
+    InvalidDuration {
+        path: String,
+        #[source]
+        source: TryFromFloatSecsError,
     },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },

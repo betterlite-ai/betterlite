@@ -146,25 +146,26 @@ impl Entry {
             categories: parameters.categories,
             policy_id: parameters.policy_id,
             fail_open: parameters.fail_open.unwrap_or(true),
-            guardrail_timeout: resolve_guardrail_timeout(parameters.guardrail_timeout),
+            guardrail_timeout: resolve_guardrail_timeout(
+                parameters.guardrail_timeout,
+                &format!("{prefix}.guardrail_timeout"),
+            )?,
             streaming_end_of_stream_only: parameters.streaming_end_of_stream_only.unwrap_or(false),
             streaming_sampling_rate: parameters.streaming_sampling_rate.unwrap_or(5),
         })
     }
 }
 
-fn resolve_guardrail_timeout(guardrail_timeout: Option<f64>) -> Duration {
+fn resolve_guardrail_timeout(
+    guardrail_timeout: Option<f64>,
+    path: &str,
+) -> Result<Duration, ConfigError> {
     let Some(secs) = guardrail_timeout else {
-        return DEFAULT_GUARDRAIL_TIMEOUT;
+        return Ok(DEFAULT_GUARDRAIL_TIMEOUT);
     };
-    Duration::try_from_secs_f64(secs).unwrap_or_else(|source| {
-        tracing::warn!(
-            secs,
-            error = %source,
-            default = ?DEFAULT_GUARDRAIL_TIMEOUT,
-            "Gray Swan Guardrail: guardrail_timeout cannot be represented as a duration, defaulting"
-        );
-        DEFAULT_GUARDRAIL_TIMEOUT
+    Duration::try_from_secs_f64(secs).map_err(|source| ConfigError::InvalidDuration {
+        path: path.to_owned(),
+        source,
     })
 }
 
