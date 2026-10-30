@@ -28,6 +28,16 @@ struct ErrorObject {
     code: String,
 }
 
+#[derive(serde::Deserialize)]
+struct ProviderErrorBody {
+    error: ProviderError,
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderError {
+    message: Option<String>,
+}
+
 pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
     let mut router = Router::new();
     router = router.route("/embeddings", post(embeddings));
@@ -86,9 +96,19 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
         | EmbeddingError::Decode { .. }
         | EmbeddingError::Encode { .. } => (500, "internal_server_error"),
     };
+    let message = match error {
+        EmbeddingError::Provider { response } => provider_message(&response.body, error),
+        EmbeddingError::Body { .. }
+        | EmbeddingError::Encode { .. }
+        | EmbeddingError::Decode { .. }
+        | EmbeddingError::Http { .. }
+        | EmbeddingError::UnknownModel { .. }
+        | EmbeddingError::UnsupportedProvider { .. }
+        | EmbeddingError::MissingApiKey => error.to_string(),
+    };
     let body = ErrorBody {
         error: ErrorObject {
-            message: error.to_string(),
+            message,
             error_type: error_type.to_owned(),
             param: None,
             code: status.to_string(),
@@ -100,4 +120,11 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
     let response_headers = failure_headers(&chat_error, call_id, deployment);
     let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (status_code, response_headers, Json(body)).into_response()
+}
+
+fn provider_message(body: &[u8], fallback: &EmbeddingError) -> String {
+    let parsed = serde_json::from_slice::<ProviderErrorBody>(body).ok();
+    parsed
+        .and_then(|value| value.error.message)
+        .unwrap_or_else(|| fallback.to_string())
 }

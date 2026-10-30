@@ -56,6 +56,8 @@ pub struct EmbeddingRecord {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct EmbeddingUsage {
     pub prompt_tokens: u32,
+    #[serde(default)]
+    pub completion_tokens: u32,
     pub total_tokens: u32,
 }
 
