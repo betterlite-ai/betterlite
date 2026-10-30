@@ -5,6 +5,7 @@ use rust_decimal::Decimal;
 use super::SampleWindow;
 use crate::models::execution::ExecutionSource;
 use crate::models::settings::{LensSettings, Scope, Source};
+use crate::sources::parse_execution::parse_execution;
 use crate::sources::source_reader::SourceReader;
 use crate::sources::stub_storage::StubStorage;
 
@@ -87,7 +88,27 @@ async fn constructs_execution_records_from_rows() {
     assert_eq!(execution.source, ExecutionSource::Traces);
     assert_eq!(execution.trace_id, "t1");
     assert!(execution.root_seen);
-    assert!(!execution.id.is_empty());
+    let (source, ..) = parse_execution(&execution.id).expect("decodes");
+    assert_eq!(source, "traces");
+}
+
+#[tokio::test]
+async fn encodes_a_requests_source_into_the_execution_id() {
+    let reader = SourceReader {
+        storage: StubStorage::with_bytes(
+            br#"[{"source": "requests", "trace_id": "t1", "team_id": "team-a", "name": "run",
+                "start_time": "2026-01-01T00:00:00Z", "span_count": 2, "root_seen": 1,
+                "eligible": 1, "selected": 1}]"#
+                .to_vec(),
+        ),
+    };
+    let sample = reader
+        .sample(&Scope::default(), &settings(), window())
+        .await
+        .expect("ok");
+    let execution = sample.executions.first().expect("one execution");
+    let (source, ..) = parse_execution(&execution.id).expect("decodes");
+    assert_eq!(source, "requests");
 }
 
 #[tokio::test]
