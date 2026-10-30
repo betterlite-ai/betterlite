@@ -1,0 +1,5 @@
+kind: helper
+name: model-catalog-packaged-map
+call: {model_catalog: {operation: packaged_map}}
+env: {}
+compare: {ignore: []}

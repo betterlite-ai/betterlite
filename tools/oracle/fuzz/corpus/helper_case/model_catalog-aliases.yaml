@@ -1,0 +1,5 @@
+kind: helper
+name: model-catalog-aliases
+call: {model_catalog: {operation: aliases, source: {model: {litellm_provider: openai, aliases: [m]}}, lookup: [m]}}
+env: {}
+compare: {ignore: []}

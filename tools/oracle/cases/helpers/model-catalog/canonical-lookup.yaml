@@ -1,0 +1,10 @@
+kind: helper
+name: canonical-lookup
+call:
+  model_catalog:
+    operation: canonical_lookup
+    source:
+      gpt-test: {litellm_provider: openai, mode: chat}
+    lookup: [gpt-test]
+env: {}
+compare: {ignore: []}
