@@ -88,31 +88,37 @@ pub fn apply_off_peak_pricing(
     })
 }
 
+impl From<BaseCosts> for TokenRates {
+    fn from(base_costs: BaseCosts) -> Self {
+        Self {
+            input_rate: base_costs.prompt_rate,
+            output_rate: base_costs.completion_rate,
+            cache_read_rate: base_costs.cache_read_rate,
+            cache_creation_rate: base_costs.cache_creation_rate,
+            reasoning_rate: None,
+        }
+    }
+}
+
 pub fn apply_off_peak_to_base_costs(
     off_peak_pricing: Option<&OffPeakBlock>,
     moment: DateTime<Utc>,
     base_costs: BaseCosts,
     database: &TimeZoneDatabase,
 ) -> Result<ResolvedBaseCosts, OffPeakRateError> {
+    let above_1hr_rate = base_costs.cache_creation_above_1hr_rate;
     let rates = apply_off_peak_pricing(
         off_peak_pricing,
         moment,
-        TokenRates {
-            input_rate: base_costs.prompt_rate,
-            output_rate: base_costs.completion_rate,
-            cache_read_rate: base_costs.cache_read_rate,
-            cache_creation_rate: base_costs.cache_creation_rate,
-            reasoning_rate: None,
-        },
+        TokenRates::from(base_costs),
         database,
     )?;
+    let cache_creation_above_1hr_rate = above_1hr_rate.unwrap_or(rates.cache_creation_rate);
     Ok(ResolvedBaseCosts {
         prompt_rate: rates.input_rate,
         completion_rate: rates.output_rate,
         cache_creation_rate: rates.cache_creation_rate,
-        cache_creation_above_1hr_rate: base_costs
-            .cache_creation_above_1hr_rate
-            .unwrap_or(rates.cache_creation_rate),
+        cache_creation_above_1hr_rate,
         cache_read_rate: rates.cache_read_rate,
     })
 }
