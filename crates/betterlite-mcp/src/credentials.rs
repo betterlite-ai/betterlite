@@ -1,6 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum McpAuthType {
@@ -14,13 +16,13 @@ pub enum McpAuthType {
     Oauth2TokenExchange,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum AuthValue {
-    Text(String),
-    Headers(BTreeMap<String, String>),
+    Text(SecretString),
+    Headers(BTreeMap<String, SecretString>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Request {
     pub method: String,
     pub url: String,
@@ -50,11 +52,12 @@ pub struct McpClient {
     pub server_url: String,
     pub auth_type: McpAuthType,
     pub auth_header_name: Option<String>,
-    pub timeout_seconds: f64,
+    pub timeout: Duration,
     pub extra_headers: BTreeMap<String, String>,
     pub resolved_auth: Option<Box<dyn ResolvedAuth>>,
     pub aws_auth: Option<Box<dyn ResolvedAuth>>,
     pub auth_value: Option<AuthValue>,
+    pub credential_slot: Option<String>,
 }
 
 impl McpClient {
@@ -68,19 +71,24 @@ impl McpClient {
         auth_type: McpAuthType,
         auth_value: Option<AuthValue>,
         auth_header_name: Option<String>,
-        extra_headers: Option<BTreeMap<String, String>>,
-        timeout_seconds: Option<f64>,
+        extra_headers: BTreeMap<String, String>,
+        timeout: Duration,
         resolved_auth: Option<Box<dyn ResolvedAuth>>,
         aws_auth: Option<Box<dyn ResolvedAuth>>,
     ) -> Self {
+        let credential_slot = auth_header_name.clone().or_else(|| {
+            let auth = resolved_auth.as_ref()?;
+            auth.header_name().map(str::to_owned)
+        });
         let mut client = Self {
             server_url,
             auth_type,
             auth_header_name,
-            timeout_seconds: timeout_seconds.unwrap_or(60.0_f64),
-            extra_headers: extra_headers.unwrap_or_default(),
+            timeout,
+            extra_headers,
             resolved_auth,
             aws_auth,
+            credential_slot,
             auth_value: None,
         };
         if let Some(value) = auth_value {
@@ -91,9 +99,13 @@ impl McpClient {
 
     pub fn update_auth_value(&mut self, auth_value: AuthValue) {
         let resolved = match auth_value {
-            AuthValue::Headers(headers) => Some(AuthValue::Headers(headers)),
+            AuthValue::Headers(headers) if !headers.is_empty() => Some(AuthValue::Headers(headers)),
+            AuthValue::Headers(_) => None,
+            AuthValue::Text(value) if value.expose_secret().is_empty() => None,
             AuthValue::Text(value) if self.auth_type == McpAuthType::Basic => {
-                Some(AuthValue::Text(to_basic_credentials(&value)))
+                Some(AuthValue::Text(SecretString::from(to_basic_credentials(
+                    value.expose_secret(),
+                ))))
             }
             AuthValue::Text(value) => Some(AuthValue::Text(value)),
         };
@@ -102,15 +114,8 @@ impl McpClient {
 
     #[must_use]
     pub fn header_slot(&self, default: &str) -> String {
-        if let Some(name) = self.auth_header_name.as_ref() {
-            return name.clone();
-        }
-        if let Some(auth) = self.resolved_auth.as_ref()
-            && let Some(name) = auth.header_name()
-        {
-            return name.to_owned();
-        }
-        default.to_owned()
+        let fallback = default.to_owned();
+        self.credential_slot.clone().unwrap_or(fallback)
     }
 
     #[must_use]
@@ -118,15 +123,23 @@ impl McpClient {
         let mut headers = BTreeMap::new();
         if let Some(auth_value) = self.auth_value.as_ref() {
             match auth_value {
-                AuthValue::Headers(values) => headers.extend(values.clone()),
+                AuthValue::Headers(values) => headers.extend(
+                    values
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned())),
+                ),
                 AuthValue::Text(text) => self.insert_text_auth_header(&mut headers, text),
             }
         }
-        let extra_headers = self.auth_header_name.as_ref().map_or_else(
+        let extra_headers = self.credential_slot.as_ref().map_or_else(
             || self.extra_headers.clone(),
             |slot| {
-                if contains_header(&headers, slot) {
-                    without_header(&self.extra_headers, slot)
+                if headers.keys().any(|name| name.eq_ignore_ascii_case(slot)) {
+                    self.extra_headers
+                        .iter()
+                        .filter(|(name, _)| !name.eq_ignore_ascii_case(slot))
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect()
                 } else {
                     self.extra_headers.clone()
                 }
@@ -136,8 +149,13 @@ impl McpClient {
         strip_header_whitespace(headers)
     }
 
-    fn insert_text_auth_header(&self, headers: &mut BTreeMap<String, String>, value: &str) {
-        let Some((slot, header_value)) = self.text_auth_header(value) else {
+    fn insert_text_auth_header(
+        &self,
+        headers: &mut BTreeMap<String, String>,
+        secret: &SecretString,
+    ) {
+        let exposed = secret.expose_secret();
+        let Some((slot, header_value)) = self.text_auth_header(exposed) else {
             return;
         };
         headers.insert(slot, header_value);
@@ -193,13 +211,14 @@ pub fn to_basic_auth(auth_value: &str) -> String {
 
 #[must_use]
 pub fn strip_auth_scheme(auth_value: &str, scheme: &str) -> String {
-    let mut parts = auth_value.split_whitespace();
-    let Some(first) = parts.next() else {
+    let trimmed = auth_value.trim_start();
+    let Some((first, raw_remainder)) = trimmed.split_once(char::is_whitespace) else {
         return auth_value.to_owned();
     };
-    let Some(remainder) = parts.next() else {
+    let remainder = raw_remainder.trim_start();
+    if remainder.is_empty() {
         return auth_value.to_owned();
-    };
+    }
     if first.eq_ignore_ascii_case(scheme) {
         remainder.to_owned()
     } else {
@@ -225,21 +244,6 @@ pub fn strip_header_whitespace(headers: BTreeMap<String, String>) -> BTreeMap<St
     let pairs = headers.into_iter();
     pairs
         .map(|(key, value)| (key.trim().to_owned(), value.trim().to_owned()))
-        .collect()
-}
-
-fn contains_header(headers: &BTreeMap<String, String>, sought: &str) -> bool {
-    if headers.keys().any(|name| name.eq_ignore_ascii_case(sought)) {
-        return true;
-    }
-    false
-}
-
-fn without_header(headers: &BTreeMap<String, String>, removed: &str) -> BTreeMap<String, String> {
-    let pairs = headers.iter();
-    pairs
-        .filter(|(name, _)| !name.eq_ignore_ascii_case(removed))
-        .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
 }
 
