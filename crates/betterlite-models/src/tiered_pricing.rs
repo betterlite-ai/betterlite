@@ -7,11 +7,12 @@ use serde::de::IgnoredAny;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Scalar {
+    Null,
     Bool(bool),
     Number(serde_json::Number),
     Text(String),
     Array(Vec<IgnoredAny>),
-    Object(IgnoredAny),
+    Object(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -57,6 +58,7 @@ pub enum TieredPricingError {
 pub fn coerce_cost_per_token(value: Option<&Scalar>) -> Result<Decimal, TieredPricingError> {
     match value {
         None => Ok(Decimal::ZERO),
+        Some(Scalar::Null) => Ok(Decimal::ZERO),
         Some(Scalar::Bool(flag)) => Ok(Decimal::from(u8::from(*flag))),
         Some(Scalar::Number(number)) => Ok(parse_decimal_lexeme(&number.to_string())?),
         Some(Scalar::Text(text)) => {
@@ -150,6 +152,12 @@ fn range_sort_key(tier: &Tier) -> Result<Decimal, TieredPricingError> {
 }
 
 fn range_endpoint(value: &Scalar) -> Result<Decimal, TieredPricingError> {
+    if matches!(
+        value,
+        Scalar::Null | Scalar::Object(serde_json::Value::Null)
+    ) {
+        return Err(TieredPricingError::MalformedRange);
+    }
     if let Scalar::Bool(flag) = value {
         return Ok(Decimal::from(u8::from(*flag)));
     }
@@ -184,6 +192,7 @@ pub fn select_tier_for_input(
         return Ok(None);
     };
     let input = Decimal::from(input_tokens);
+    let mut first_match = None;
     for (lower, tier) in &valid {
         if *lower < input {
             let TierRange::Values(range) = &tier.range else {
@@ -194,11 +203,11 @@ pub fn select_tier_for_input(
             };
             let upper = range_endpoint(upper_scalar)?;
             if input <= upper {
-                return Ok(Some(*tier));
+                first_match = first_match.or(Some(*tier));
             }
         }
     }
-    Ok(Some(*last))
+    Ok(first_match.or(Some(*last)))
 }
 
 mod tests;

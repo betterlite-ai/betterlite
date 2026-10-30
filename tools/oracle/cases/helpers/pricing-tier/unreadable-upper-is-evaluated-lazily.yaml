@@ -1,14 +1,19 @@
 kind: helper
-name: unreadable-upper-is-evaluated-lazily
+name: unreadable-upper-is-evaluated-after-earlier-match
 call:
   pricing_tier:
     tiers:
       - range: [0, 100]
         input_cost_per_token: 1
-      - range: [200, null]
+      - range: [10, null]
         input_cost_per_token: 2
     tokens: 50
     cost_key: input_cost_per_token
     fallback_cost_key: null
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /error/class
+      why: betterlite raises a typed TieredPricingError where LiteLLM raises a native TypeError
+    - pointer: /error/message
+      why: betterlite writes its own message
 env: {}

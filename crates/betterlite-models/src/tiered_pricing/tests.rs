@@ -185,10 +185,17 @@ fn select_tier_for_input_errors_on_a_null_range_endpoint() {
 }
 
 #[test]
-fn select_tier_for_input_defers_an_unreadable_upper_endpoint_until_matching() {
+fn select_tier_for_input_evaluates_every_matching_candidate() {
+    let tiers = vec![tier("[0,100]", "1"), tier("[10,null]", "2")];
+    assert!(matches!(
+        select_tier_for_input(&tiers, 50),
+        Err(TieredPricingError::MalformedRange)
+    ));
+}
+
+#[test]
+fn select_tier_for_input_falls_back_without_reading_a_later_upper_endpoint() {
     let tiers = vec![tier("[0,100]", "1"), tier("[200,null]", "2")];
-    let first = select_tier_for_input(&tiers, 50).expect("selection succeeds");
-    assert!(selected_is(first, &tiers[0]));
     let fallback = select_tier_for_input(&tiers, 150).expect("selection succeeds");
     assert!(selected_is(fallback, &tiers[1]));
 }

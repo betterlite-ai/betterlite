@@ -92,9 +92,13 @@ fn range_json(tier: &Tier) -> Option<serde_json::Value> {
 
 fn scalar_range_json(value: &Scalar) -> Option<serde_json::Value> {
     match value {
+        Scalar::Null => Some(serde_json::Value::Null),
         Scalar::Bool(flag) => Some(serde_json::json!(flag)),
         Scalar::Number(number) => Some(serde_json::json!(number)),
-        Scalar::Text(_) | Scalar::Array(_) | Scalar::Object(_) => None,
+        Scalar::Text(text) => Some(serde_json::json!(text)),
+        Scalar::Array(_) => None,
+        Scalar::Object(object) if object.is_null() => Some(serde_json::Value::Null),
+        Scalar::Object(_) => None,
     }
 }
 
