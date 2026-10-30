@@ -132,13 +132,10 @@ pub(crate) fn error_message(error: &ErrorEvent) -> String {
 }
 
 pub(crate) fn value_to_string(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Null => Value::Null.to_string(),
-        Value::Bool(boolean) => boolean.to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::Array(_) | Value::Object(_) => value.to_string(),
+    if let Some(text) = value.as_str() {
+        return text.to_owned();
     }
+    value.to_string()
 }
 
 pub(crate) fn is_truthy(value: &Value) -> bool {

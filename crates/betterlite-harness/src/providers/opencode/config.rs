@@ -87,11 +87,7 @@ struct OpenCodeConfig {
     instructions: Option<Vec<String>>,
     skills: Option<SkillsConfig>,
     #[serde(flatten)]
-    #[expect(
-        clippy::disallowed_types,
-        reason = "OpenCode options not managed by betterlite remain provider-defined JSON"
-    )]
-    extra: BTreeMap<String, serde_json::Value>,
+    extra: JsonObject,
 }
 
 fn provider_block(

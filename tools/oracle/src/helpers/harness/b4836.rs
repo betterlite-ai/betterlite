@@ -76,25 +76,31 @@ fn project_request(request: &Value) -> Value {
     })
 }
 
+fn invalid_input() -> HelperError {
+    let message = "b4836 input must contain exactly one stream or requests string";
+    HelperError {
+        class: "InvalidInput".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: message.to_owned(),
+    }
+}
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let result = match (&input.stream, &input.requests) {
-            (Some(stream_input), None) => stream(stream_input),
-            (None, Some(request_input)) => requests(request_input),
-            _ => {
-                return Err(Box::new(HelperError {
-                    class: "InvalidInput".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: "b4836 input must contain exactly one stream or requests string"
-                        .to_owned(),
-                }));
-            }
-        }?;
+        let result = select_input(input)?;
         Ok(json!({"result": result}))
+    }
+}
+
+fn select_input(input: &Input) -> HelperResult {
+    match (&input.stream, &input.requests) {
+        (Some(stream_input), None) => stream(stream_input),
+        (None, Some(request_input)) => requests(request_input),
+        _ => return Err(Box::new(invalid_input())),
     }
 }
