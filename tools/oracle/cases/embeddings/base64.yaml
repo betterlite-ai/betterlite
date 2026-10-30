@@ -1,0 +1,16 @@
+name: embeddings-base64
+config: |
+  model_list:
+    - model_name: embed-model
+      litellm_params: {model: openai/text-embedding-3-small, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/embeddings
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: embed-model, input: hello, encoding_format: base64}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, embedding: AQID, index: 0}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}
