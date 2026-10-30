@@ -108,6 +108,18 @@ fn azure_policy_provider_non_string_message_is_rendered() {
     r#"{"message":{"enabled":false,"text":"value"}}"#,
     "{'enabled': False, 'text': 'value'}"
 )]
+#[case::object_insertion_order(
+    r#"{"message":{"text":"v","enabled":false}}"#,
+    "{'text': 'v', 'enabled': False}"
+)]
+#[case::nested_insertion_order(
+    r#"{"error":{"message":{"text":{"z":true,"a":null},"enabled":false}}}"#,
+    "{'text': {'z': True, 'a': None}, 'enabled': False}"
+)]
+#[case::array_object_insertion_order(
+    r#"{"message":[{"text":"v","enabled":false}]}"#,
+    "[{'text': 'v', 'enabled': False}]"
+)]
 fn azure_policy_provider_message_uses_python_repr(#[case] body: &str, #[case] rendered: &str) {
     let input = ContentPolicyInput {
         message: "caller".to_owned(),

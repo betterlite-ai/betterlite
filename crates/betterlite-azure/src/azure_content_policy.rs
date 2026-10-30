@@ -1,5 +1,5 @@
+use indexmap::IndexMap;
 use serde::Deserialize;
-use std::collections::BTreeMap;
 
 use betterlite_error::error::{ErrorClass, ErrorContext};
 
@@ -12,10 +12,10 @@ pub enum JsonValue {
     Number(f64),
     String(String),
     Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
+    Object(IndexMap<String, Self>),
 }
 
-type JsonMap = BTreeMap<String, JsonValue>;
+type JsonMap = IndexMap<String, JsonValue>;
 
 impl JsonValue {
     const fn as_object(&self) -> Option<&JsonMap> {

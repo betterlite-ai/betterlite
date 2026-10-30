@@ -833,6 +833,7 @@ name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
  "betterlite-error",
+ "indexmap 2.14.2",
  "rstest",
  "serde",
  "serde_json",
