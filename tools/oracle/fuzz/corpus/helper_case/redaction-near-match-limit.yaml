@@ -1,0 +1,10 @@
+kind: helper
+name: redaction-near-match-limit
+call:
+  redaction:
+    function: redact_structured_value
+    key: password
+    value: hi
+env: {}
+compare:
+  ignore: []

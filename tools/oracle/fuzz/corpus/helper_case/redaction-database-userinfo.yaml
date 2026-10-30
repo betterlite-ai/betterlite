@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-database-userinfo
+call:
+  redaction:
+    function: redact_string
+    text: "connecting to postgres://dbuser:dbpass123@db.internal:5432/app now"
+env: {}
+compare:
+  ignore: []
