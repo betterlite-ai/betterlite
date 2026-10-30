@@ -265,6 +265,10 @@ fn wire_records(#[case] raw: &str, #[case] error: bool) {
 }
 
 #[rstest]
+#[case::overflow(
+    r#"{"type":"error","error":{"type":null,"message":1e999},"extra":-1e999}"#,
+    r#"{"type": "error", "error": {"type": null, "message": Infinity}, "extra": -Infinity}"#
+)]
 #[case::numbers(
     r#"{"type":"error","error":{"type":null,"message":1e-5},"extra":[-0,1.0e0,1e16]}"#,
     r#"{"type": "error", "error": {"type": null, "message": 1e-05}, "extra": [0, 1.0, 1e+16]}"#

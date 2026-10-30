@@ -1,15 +1,16 @@
+use betterlite_logging::python_json::dumps;
+use betterlite_models::decisions::Json;
 use serde_json::value::to_raw_value;
 
 use super::decode::{WireDecodeError, WireDecodeLimits};
 use super::wire::{ErrorField, ErrorRecord, TextField};
 use super::{AnthropicErrorSseFrame, AnthropicExceptionMapping};
 
-mod json;
-
 impl AnthropicErrorSseFrame {
     pub fn new(status_code: u16, error_response: ErrorRecord) -> Result<Self, WireDecodeError> {
         let raw = to_raw_value(&error_response)?;
-        let body = format!("event: error\ndata: {}\n\n", json::format(&raw)?);
+        let document: Json = serde_json::from_str(raw.get())?;
+        let body = format!("event: error\ndata: {}\n\n", dumps(&document));
         Ok(Self {
             status_code,
             error_response,
