@@ -19,6 +19,7 @@ secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
+tracing.workspace = true
 unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.26"
 

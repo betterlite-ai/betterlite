@@ -37,7 +37,8 @@ pub enum ErrorType {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[error("{message}")]
 pub struct DbError {
     pub error_type: ErrorType,
     #[serde(default)]
@@ -48,28 +49,9 @@ pub struct DbError {
     pub meta_code: Option<String>,
     #[serde(default)]
     pub traceback_modules: Vec<String>,
-}
-
-impl DbError {
-    #[must_use]
-    pub const fn new(error_type: ErrorType) -> Self {
-        if matches!(error_type, ErrorType::Other) {
-            return Self {
-                error_type,
-                message: String::new(),
-                code: None,
-                meta_code: None,
-                traceback_modules: Vec::new(),
-            };
-        }
-        Self {
-            error_type,
-            message: String::new(),
-            code: None,
-            meta_code: None,
-            traceback_modules: Vec::new(),
-        }
-    }
+    #[source]
+    #[serde(skip)]
+    pub cause: Option<Box<Self>>,
 }
 
 impl ErrorType {
@@ -97,12 +79,12 @@ impl ErrorType {
 const fn is_transport_type(error_type: ErrorType) -> bool {
     match error_type {
         ErrorType::Connection
-        | ErrorType::Deadline
-        | ErrorType::EngineConnection
         | ErrorType::NoDbConnection
         | ErrorType::ClientNotConnected
         | ErrorType::HttpClientClosed => true,
-        ErrorType::Data
+        ErrorType::Deadline
+        | ErrorType::EngineConnection
+        | ErrorType::Data
         | ErrorType::UniqueViolation
         | ErrorType::ForeignKeyViolation
         | ErrorType::MissingRequiredValue
@@ -121,32 +103,29 @@ fn contains_any(message: &str, phrases: &[&str]) -> bool {
 
 #[must_use]
 pub const fn is_database_connection_error(error: &DbError) -> bool {
-    if matches!(
-        error.error_type,
+    match error.error_type {
         ErrorType::Connection
-            | ErrorType::Deadline
-            | ErrorType::EngineConnection
-            | ErrorType::NoDbConnection
-    ) {
-        return true;
+        | ErrorType::Deadline
+        | ErrorType::EngineConnection
+        | ErrorType::NoDbConnection => true,
+        _ => false,
     }
-    false
 }
 
 #[must_use]
 pub fn is_prisma_data_error(error: &DbError) -> bool {
-    if error.error_type == ErrorType::Data {
-        return true;
+    match error.error_type {
+        ErrorType::Data => true,
+        _ => false,
     }
-    false
 }
 
 #[must_use]
-pub fn is_database_infrastructure(error: &DbError) -> bool {
+pub const fn is_database_infrastructure(error: &DbError) -> bool {
     if error.error_type.is_data_type() {
         return false;
     }
-    is_database_connection_error(error) || error.error_type == ErrorType::Prisma
+    !matches!(error.error_type, ErrorType::Deadline | ErrorType::Other)
 }
 
 #[must_use]
@@ -154,15 +133,21 @@ pub fn is_database_transport_error(error: &DbError) -> bool {
     if is_transport_type(error.error_type) {
         return true;
     }
-    error.error_type == ErrorType::Prisma && contains_any(&error.message, &TRANSPORT_WORDS)
+    matches!(
+        error.error_type,
+        ErrorType::Prisma | ErrorType::EngineConnection
+    ) && contains_any(&error.message, &TRANSPORT_WORDS)
 }
 
 #[must_use]
-pub fn is_prisma_error(error: &DbError) -> bool {
-    if error.error_type.is_data_type() {
-        return true;
+pub const fn is_prisma_error(error: &DbError) -> bool {
+    match error.error_type {
+        ErrorType::Prisma
+        | ErrorType::EngineConnection
+        | ErrorType::ClientNotConnected
+        | ErrorType::HttpClientClosed => true,
+        _ => error.error_type.is_data_type(),
     }
-    error.error_type == ErrorType::Prisma
 }
 
 #[must_use]
@@ -186,7 +171,7 @@ pub fn is_deadlock_error(error: &DbError) -> bool {
 
 #[must_use]
 pub fn postgres_sqlstate(error: &DbError) -> Option<String> {
-    if !is_prisma_data_error(error) {
+    if !error.error_type.is_data_type() {
         return None;
     }
     if let Some(code) = &error.meta_code {
@@ -229,6 +214,10 @@ pub fn is_permanent_database_fault(error: &DbError) -> bool {
 }
 
 pub trait DbReconnect {
+    fn reconnect_timeout_seconds(&self) -> Option<f64>;
+
+    fn reconnect_lock_timeout_seconds(&self) -> Option<f64>;
+
     fn attempt_db_reconnect<'client>(
         &'client mut self,
         reason: &'client str,
@@ -242,6 +231,21 @@ pub struct RetryPolicy<'reason> {
     pub retry_safe_error_types: Option<&'reason [ErrorType]>,
     pub timeout_seconds: Option<f64>,
     pub lock_timeout_seconds: Option<f64>,
+}
+
+fn retry_timeouts<Client>(client: &Client, policy: &RetryPolicy<'_>) -> (f64, f64)
+where
+    Client: DbReconnect,
+{
+    let timeout_seconds = policy
+        .timeout_seconds
+        .or_else(|| client.reconnect_timeout_seconds())
+        .unwrap_or(2.0_f64);
+    let lock_timeout_seconds = policy
+        .lock_timeout_seconds
+        .or_else(|| client.reconnect_lock_timeout_seconds())
+        .unwrap_or(0.1_f64);
+    (timeout_seconds, lock_timeout_seconds)
 }
 
 pub async fn call_with_db_reconnect_retry<T, Read, ReadFuture, Client>(
@@ -267,23 +271,29 @@ where
     {
         return Err(error);
     }
+    let (timeout_seconds, lock_timeout_seconds) = retry_timeouts(client, &policy);
+    tracing::warn!(
+        reason = policy.reason,
+        error = %error,
+        "DB transport error on read; attempting reconnect-and-retry"
+    );
     match client
-        .attempt_db_reconnect(
-            policy.reason,
-            policy.timeout_seconds.unwrap_or(2.0_f64),
-            policy.lock_timeout_seconds.unwrap_or(0.1_f64),
-        )
+        .attempt_db_reconnect(policy.reason, timeout_seconds, lock_timeout_seconds)
         .await
     {
         Ok(true) => read().await,
         Ok(false) => Err(error),
-        Err(reconnect_error) => Err(DbError {
-            message: format!(
-                "{}; reconnect failed: {}",
-                error.message, reconnect_error.message
-            ),
-            ..error
-        }),
+        Err(reconnect_error) => {
+            tracing::warn!(
+                reason = policy.reason,
+                reconnect_error = %reconnect_error,
+                "DB reconnect attempt raised; preserving original transport error"
+            );
+            Err(DbError {
+                cause: Some(Box::new(reconnect_error)),
+                ..error
+            })
+        }
     }
 }
 
