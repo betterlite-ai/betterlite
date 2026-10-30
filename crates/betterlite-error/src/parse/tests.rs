@@ -13,6 +13,7 @@ use super::*;
 #[case::body_message(Some(ProviderErrorBody { message: Some("direct".to_owned()), error: None, code: None }), Some("direct"))]
 #[case::nested_message(Some(ProviderErrorBody { message: None, error: Some(Box::new(ProviderErrorBody { message: Some("nested".to_owned()), error: None, code: None })), code: None }), Some("nested"))]
 #[case::missing_message(Some(ProviderErrorBody { message: None, error: None, code: None }), None)]
+#[case::empty_message_uses_nested(Some(ProviderErrorBody { message: Some(String::new()), error: Some(Box::new(ProviderErrorBody { message: Some("nested".to_owned()), error: None, code: None })), code: None }), Some("nested"))]
 #[case::null_body(None, None)]
 fn error_facts_behavior_tests_behavior(
     #[case] body: Option<ProviderErrorBody>,
@@ -52,6 +53,24 @@ fn error_facts_behavior_tests_behavior_body_code(
     #[case] expected: Option<i64>,
 ) {
     assert_eq!(get_body_error_code(body), expected);
+}
+
+#[rstest]
+#[case::valid(
+    "prefix litellm.ContextWindowExceededError suffix",
+    Some("ContextWindowExceededError")
+)]
+#[case::missing_name("litellm.Error", None)]
+#[case::missing_error_suffix("litellm.ContextWindowExceeded", None)]
+#[case::not_litellm("provider error", None)]
+fn error_facts_behavior_tests_behavior_exception_name(
+    #[case] text: &str,
+    #[case] expected: Option<&str>,
+) {
+    assert_eq!(
+        extract_exception(None, text, "model", "provider", None).map(|facts| facts.name),
+        expected.map(str::to_owned)
+    );
 }
 
 #[test]

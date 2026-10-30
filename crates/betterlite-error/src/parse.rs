@@ -38,14 +38,18 @@ pub fn extract_exception(
     body: Option<ProviderErrorBody>,
 ) -> Option<LitellmExceptionFacts> {
     let marker = "litellm.";
-    let (_, suffix) = error_text.split_once(marker)?;
-    let (name_prefix, _) = suffix.split_once("Error")?;
-    let exception_name = format!("{name_prefix}Error");
-    if exception_name.is_empty() {
+    let marker_start = error_text.find(marker)?;
+    let suffix = error_text.get(marker_start.checked_add(marker.len())?..)?;
+    let name_end = suffix
+        .char_indices()
+        .find(|(_, character)| !(character.is_ascii_alphanumeric() || *character == '_'))
+        .map_or(suffix.len(), |(index, _)| index);
+    let exception_name = suffix.get(..name_end)?;
+    if !exception_name.ends_with("Error") || exception_name == "Error" {
         return None;
     }
     Some(LitellmExceptionFacts {
-        name: exception_name,
+        name: exception_name.to_owned(),
         message: bounded_text(error_text),
         model: bounded_text(model),
         provider: bounded_text(provider),
@@ -58,7 +62,11 @@ pub fn extract_exception(
 pub fn get_error_message(error: &ProviderErrorFacts) -> Option<String> {
     let body = error.body.as_ref()?;
     let object = body;
-    if let Some(message) = object.message.as_deref() {
+    if let Some(message) = object
+        .message
+        .as_deref()
+        .filter(|message| !message.is_empty())
+    {
         return Some(bounded_text(message));
     }
     object

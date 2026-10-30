@@ -89,9 +89,31 @@ pub struct ExceptionCheckers;
 impl ExceptionCheckers {
     #[must_use]
     pub fn is_error_str_rate_limit(error: &str, status_code: Option<u16>) -> bool {
-        let standalone = error
-            .split(|character: char| !character.is_ascii_digit())
-            .any(|part| part == "429");
+        let standalone = error.char_indices().any(|(index, current_character)| {
+            if current_character != '4' {
+                return false;
+            }
+            let Some(candidate) = error.get(index..index.saturating_add(3)) else {
+                return false;
+            };
+            if candidate != "429" {
+                return false;
+            }
+            let before_is_word = index
+                .checked_sub(1)
+                .and_then(|position| error.get(position..index))
+                .is_some_and(|value| {
+                    value
+                        .chars()
+                        .any(|character| character.is_ascii_alphanumeric() || character == '_')
+                });
+            let after_index = index.saturating_add(3);
+            let after_is_word = error
+                .get(after_index..)
+                .and_then(|value| value.chars().next())
+                .is_some_and(|value| value.is_ascii_alphanumeric() || value == '_');
+            !before_is_word && !after_is_word
+        });
         let status_allows_number = status_code.is_none_or(|status| status == 429);
         let lower = error.to_ascii_lowercase();
         (standalone && status_allows_number)

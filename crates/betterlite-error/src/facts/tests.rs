@@ -10,6 +10,8 @@ use super::*;
 #[case::phrase("rate limit reached", None, true)]
 #[case::number_with_429("429", Some(429), true)]
 #[case::number_with_other_status("429", Some(400), false)]
+#[case::number_inside_word("429abc", None, false)]
+#[case::number_inside_long_number("1429", None, false)]
 #[case::service_tier("service tier capacity exceeded", Some(400), true)]
 #[case::hyphenated("rate-limit reached", Some(400), true)]
 #[case::ordinary("bad request", None, false)]
