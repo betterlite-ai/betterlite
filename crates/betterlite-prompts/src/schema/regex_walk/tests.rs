@@ -1,8 +1,13 @@
 #![cfg(test)]
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    iter::{once, repeat_with},
+    path::PathBuf,
+};
 
 use crate::arguments::json::{Json, Object};
+use crate::schema::budget::FlattenBudget;
 use crate::schema::drop_non_python_regex_patterns;
 use crate::schema::flatten::{flatten_and_drop, tool_with_sanitized_parameters};
 use rstest::rstest;
@@ -182,7 +187,7 @@ fn tool_schemas_tool_schema_tests_sanitizes_only_parameters() {
 
 #[test]
 fn tool_schemas_tool_schema_tests_expansion_bomb_is_bounded() {
-    let branches = (0_usize..40_000_usize)
+    let branches = (0_usize..120_000_usize)
         .map(|index| {
             format!(r#"{{"type":"object","properties":{{"p{index}":{{"type":"string"}}}}}}"#)
         })
@@ -191,6 +196,66 @@ fn tool_schemas_tool_schema_tests_expansion_bomb_is_bounded() {
     let input = format!(r#"{{"anyOf":[{branches}]}}"#);
     let schema = object(&input);
     assert_eq!(flatten_and_drop(&schema), schema);
+}
+
+#[test]
+fn tool_schemas_tool_schema_tests_work_budget_is_bounded_without_output_growth() {
+    let branches = repeat_with(|| "{}".to_owned())
+        .take(120_000_usize)
+        .collect::<Vec<_>>()
+        .join(",");
+    let input = format!(r#"{{"anyOf":[{branches}]}}"#);
+    let schema = object(&input);
+    assert_eq!(flatten_and_drop(&schema), schema);
+}
+
+#[test]
+fn tool_schemas_tool_schema_tests_work_budget_rejects_the_next_unit() {
+    let mut budget = FlattenBudget::default();
+    let accepted = repeat_with(|| budget.charge_work().is_some())
+        .take(100_001_usize)
+        .collect::<Vec<_>>();
+    assert!(
+        accepted
+            .iter()
+            .take(100_000)
+            .all(|is_accepted| *is_accepted)
+    );
+    assert_eq!(accepted.last().copied(), Some(false));
+}
+
+#[test]
+fn tool_schemas_tool_schema_tests_accepts_exact_depth_limit() {
+    let definitions = (0_usize..30_usize)
+        .rev()
+        .map(|index| {
+            let next = index + 1;
+            format!(r##""d{index}":{{"$ref":"#/$defs/d{next}"}},"##)
+        })
+        .chain(once(
+            r#""d30":{"type":"object","properties":{"ok":{"type":"boolean"}}}"#.to_owned(),
+        ))
+        .collect::<String>();
+    let input = format!(r##"{{"$defs":{{{definitions}}},"anyOf":[{{"$ref":"#/$defs/d0"}}]}}"##);
+    let flattened = flatten_and_drop(&object(&input));
+    assert_eq!(flattened.get("type").and_then(Json::as_str), Some("object"));
+}
+
+#[test]
+fn tool_schemas_tool_schema_tests_rejects_past_depth_limit() {
+    let definitions = (0_usize..31_usize)
+        .rev()
+        .map(|index| {
+            let next = index + 1;
+            format!(r##""d{index}":{{"$ref":"#/$defs/d{next}"}},"##)
+        })
+        .chain(once(
+            r#""d31":{"type":"object","properties":{"ok":{"type":"boolean"}}}"#.to_owned(),
+        ))
+        .collect::<String>();
+    let input = format!(r##"{{"$defs":{{{definitions}}},"anyOf":[{{"$ref":"#/$defs/d0"}}]}}"##);
+    let flattened = flatten_and_drop(&object(&input));
+    assert!(flattened.get("type").is_none());
 }
 
 #[rstest]
