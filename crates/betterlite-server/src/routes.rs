@@ -1,4 +1,5 @@
 pub(crate) mod chat;
+pub(crate) mod embeddings;
 
 use crate::auth::authenticate;
 use crate::error_body::json_error;
@@ -24,6 +25,7 @@ pub(crate) fn router(
     shutting_down: Arc<AtomicBool>,
     model_list: &[ModelDeployment],
     chat: Router,
+    embeddings: Router,
 ) -> Router {
     let timeout_layers = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
@@ -57,6 +59,7 @@ pub(crate) fn router(
         .layer(middleware::from_fn_with_state(master_key, authenticate))
         .layer(timeout_layers)
         .merge(guarded_chat)
+        .merge(embeddings)
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {

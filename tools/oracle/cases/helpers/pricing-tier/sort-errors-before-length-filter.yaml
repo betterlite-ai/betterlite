@@ -1,0 +1,18 @@
+kind: helper
+name: sort-errors-before-length-filter
+call:
+  pricing_tier:
+    tiers:
+      - range: []
+      - range: [0, 300]
+        input_cost_per_token: 1
+    tokens: 30
+    cost_key: input_cost_per_token
+    fallback_cost_key: null
+env: {}
+compare:
+  ignore:
+    - pointer: /error/class
+      why: betterlite raises a typed TieredPricingError where LiteLLM's unguarded index lookup raises a native IndexError
+    - pointer: /error/message
+      why: betterlite writes its own message

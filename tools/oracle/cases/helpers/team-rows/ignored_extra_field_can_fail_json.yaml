@@ -1,0 +1,11 @@
+kind: helper
+name: ignored_extra_field_can_fail_json
+call:
+  team_rows:
+    calls:
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","aliases":"bad"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","config":"bad"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","permissions":"bad"}}
+      - {"name":"ignored_extra_field_can_fail_json","operation":"team","row":{"team_id":"t","model_aliases":"bad"}}
+env: {}
+compare: {ignore: []}

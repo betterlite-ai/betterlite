@@ -1,0 +1,5 @@
+task: B236
+deviations:
+  - what: Rust identifiers use concise names for context_window, azure_policy, and extract_exception rather than copying LiteLLM's long helper names.
+    why: The repository's no-long-names hook rejects identifiers over 30 characters; behavior and precedence remain equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L39-L272

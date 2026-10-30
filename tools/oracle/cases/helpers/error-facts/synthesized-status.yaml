@@ -1,0 +1,12 @@
+kind: helper
+name: error-facts-synthesized-status
+call:
+  error_facts:
+    kind: status
+    status: 503
+    status_code_is_synthesized: true
+    provider: openai
+    text: unavailable
+env: {}
+compare:
+  ignore: []
