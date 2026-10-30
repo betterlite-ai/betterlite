@@ -147,11 +147,16 @@ fn parse_rss_to_posts(xml: &str, max_posts: usize) -> Result<Vec<BlogPost>, Fail
     let mut fields: BTreeMap<String, String> = BTreeMap::new();
     let mut current = String::new();
     let mut in_item = false;
+    let mut in_channel = false;
+    let mut channel_seen = false;
     loop {
         match reader.read_event() {
             Ok(Event::Start(tag)) => {
                 let name = String::from_utf8_lossy(tag.name().as_ref()).into_owned();
-                if name == "item" {
+                if name == "channel" {
+                    in_channel = true;
+                    channel_seen = true;
+                } else if name == "item" && in_channel {
                     in_item = true;
                     fields.clear();
                 }
@@ -191,8 +196,13 @@ fn parse_rss_to_posts(xml: &str, max_posts: usize) -> Result<Vec<BlogPost>, Fail
                     if posts.len() >= max_posts {
                         break;
                     }
+                } else if name == "channel" {
+                    in_channel = false;
                 }
                 current.clear();
+            }
+            Ok(Event::Empty(tag)) if tag.name().as_ref() == b"channel" => {
+                channel_seen = true;
             }
             Ok(Event::Eof) => break,
             Ok(_) => {}
@@ -203,7 +213,13 @@ fn parse_rss_to_posts(xml: &str, max_posts: usize) -> Result<Vec<BlogPost>, Fail
             }
         }
     }
-    Ok(posts)
+    if channel_seen {
+        Ok(posts)
+    } else {
+        Err(Failure::Parse {
+            message: "RSS feed missing <channel> element".to_owned(),
+        })
+    }
 }
 
 fn parse_date(value: &str) -> String {
