@@ -45,6 +45,9 @@ impl crate::helpers::Helper for Op {
 }
 
 fn interactions_result(raw: &Value) -> crate::helpers::HelperResult {
+    if !raw.is_object() {
+        return Ok(json!({"recognized": false, "usage": null}));
+    }
     let usage: InteractionsUsage = serde_json::from_value(raw.clone()).map_err(|error| {
         Box::new(HelperError {
             class: "InteractionsDecodeError".to_owned(),

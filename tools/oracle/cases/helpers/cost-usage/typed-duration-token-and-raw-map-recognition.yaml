@@ -13,6 +13,11 @@ call:
           audio_tokens: 7
           text_tokens: 3
     interactions:
+      - null
+      - true
+      - 4
+      - total_input_tokens
+      - []
       - type: tokens
         input_tokens: 10
         output_tokens: 3

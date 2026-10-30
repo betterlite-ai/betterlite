@@ -3,6 +3,21 @@
 use super::{Input, Op};
 use crate::helpers::Helper as _;
 
+#[rstest::rstest]
+#[case::null("null")]
+#[case::boolean("true")]
+#[case::integer("4")]
+#[case::string(r#""total_input_tokens""#)]
+#[case::array("[]")]
+fn non_mapping_usage_is_not_recognized(#[case] source: &str) {
+    let raw = serde_json::from_str(source).unwrap();
+    let output = super::interactions_result(&raw).unwrap();
+    assert_eq!(
+        output,
+        serde_json::json!({"recognized": false, "usage": null})
+    );
+}
+
 #[test]
 fn transcription_duration_projects_to_null() {
     let input: Input = serde_json::from_str(
