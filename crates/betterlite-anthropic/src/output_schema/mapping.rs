@@ -6,16 +6,16 @@ use super::{SchemaError, check_bounds, filter_anthropic_output_schema};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ResponseFormat {
-    #[serde(rename = "type")]
-    pub type_name: Option<String>,
+    #[serde(default, rename = "type")]
+    pub type_name: Field,
     #[serde(default)]
-    pub response_schema: SchemaField,
+    pub response_schema: Field,
     pub json_schema: Option<Schema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[serde(untagged)]
-pub enum SchemaField {
+pub enum Field {
     Value(Json),
     #[default]
     Missing,
@@ -52,8 +52,8 @@ pub fn map_output(value: Option<&ResponseFormat>) -> Result<Option<OutputFormat>
 fn schema_from_response(value: Option<&ResponseFormat>) -> Option<&Json> {
     let format = value?;
     let schema = match &format.response_schema {
-        SchemaField::Value(schema) => Some(schema),
-        SchemaField::Missing => format.json_schema.as_ref().map(|nested| &nested.schema),
+        Field::Value(schema) => Some(schema),
+        Field::Missing => format.json_schema.as_ref().map(|nested| &nested.schema),
     };
     schema.filter(|candidate| !matches!(candidate, Json::Null))
 }
@@ -77,9 +77,10 @@ fn expand_definitions(schema: Json) -> Result<Json, SchemaError> {
 
 pub fn map_tool(value: Option<&ResponseFormat>) -> Result<Option<Tool>, SchemaError> {
     let Some(format) = value else { return Ok(None) };
-    let kind = format.type_name.as_ref().ok_or(SchemaError::MissingType)?;
-    if kind == "text" {
-        return Ok(None);
+    match &format.type_name {
+        Field::Missing => return Err(SchemaError::MissingType),
+        Field::Value(Json::Text(kind)) if kind == "text" => return Ok(None),
+        Field::Value(_) => {}
     }
     schema_from_response(value)
         .map(|schema| json_tool(Some(schema)))

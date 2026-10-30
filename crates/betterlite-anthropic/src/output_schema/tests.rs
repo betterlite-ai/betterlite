@@ -246,3 +246,12 @@ fn projects_all_constraint_labels_in_declared_order() {
 
 #[path = "limits/tests.rs"]
 mod limits;
+
+#[rstest]
+#[case::null("null")]
+#[case::list("[]")]
+#[case::object("{}")]
+fn accepts_present_nontext_types(#[case] kind: &str) {
+    let source = format!(r#"{{"type":{kind},"response_schema":{{}}}}"#);
+    assert_eq!(evaluate("map_tool", &source), evaluate("tool", "{}"));
+}

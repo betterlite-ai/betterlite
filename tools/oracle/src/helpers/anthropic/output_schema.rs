@@ -33,10 +33,10 @@ impl crate::helpers::Helper for Op {
                 .and_then(|result| serde_json::to_value(result).map_err(SchemaError::Encode)),
             Input::Output { schema } => {
                 let format = mapping::ResponseFormat {
-                    type_name: Some(String::from("json_schema")),
+                    type_name: mapping::Field::Value(Json::Text(String::from("json_schema"))),
                     response_schema: schema
                         .clone()
-                        .map_or(mapping::SchemaField::Missing, mapping::SchemaField::Value),
+                        .map_or(mapping::Field::Missing, mapping::Field::Value),
                     json_schema: None,
                 };
                 mapping::map_output(Some(&format))

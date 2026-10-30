@@ -3,7 +3,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
-use crate::output_schema::mapping::{ResponseFormat, SchemaField, map_output};
+use crate::output_schema::mapping::{Field, ResponseFormat, map_output};
 use crate::output_schema::{SchemaError, filter_anthropic_output_schema};
 
 #[test]
@@ -20,9 +20,9 @@ fn rejects_excessive_schema_depth() {
 #[test]
 fn propagates_definition_expansion_budget() {
     let format = ResponseFormat {
-        type_name: None,
+        type_name: Field::Missing,
         json_schema: None,
-        response_schema: SchemaField::Value(
+        response_schema: Field::Value(
             serde_json::from_str(&format!(r#"{{"$defs":{{"Big":{{"description":"{}"}}}},"properties":{{"one":{{"$ref":"Big"}},"two":{{"$ref":"Big"}}}}}}"#, "x".repeat(5_000_000)))
             .unwrap(),
         ),
