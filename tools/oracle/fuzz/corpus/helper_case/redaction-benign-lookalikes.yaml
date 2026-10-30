@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-benign-lookalikes
+call:
+  redaction:
+    function: redact_string
+    text: "the user's token=abc value here is just an example and key=verylongvalueexceedingminlen appears mid sentence without a delimiter before it"
+env: {}
+compare:
+  ignore: []

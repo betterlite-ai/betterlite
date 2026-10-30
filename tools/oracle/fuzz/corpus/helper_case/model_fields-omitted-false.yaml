@@ -1,0 +1,7 @@
+kind: helper
+name: omitted-false
+call:
+  model_fields:
+    source: '{"litellm_provider":"openai","supports_vision":false,"supports_function_calling":true}'
+compare: {ignore: []}
+env: {}

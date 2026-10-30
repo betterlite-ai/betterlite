@@ -6,14 +6,23 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use super::HelperOutput;
+use super::{HelperCall, HelperOutput};
 use crate::OracleError;
 
 pub(super) fn run_python(
     root: &Path,
-    input: &serde_json::Value,
+    call: &HelperCall,
     case_env: &BTreeMap<String, String>,
 ) -> Result<HelperOutput, OracleError> {
+    let stdout_output = python_stdout(root, call, case_env)?;
+    serde_json::from_slice(&stdout_output).map_err(OracleError::HelperJson)
+}
+
+pub(super) fn python_stdout(
+    root: &Path,
+    call: &HelperCall,
+    case_env: &BTreeMap<String, String>,
+) -> Result<Vec<u8>, OracleError> {
     let mut command = Command::new("setpriv");
     command
         .args(["--pdeathsig", "KILL", "--"])
@@ -21,9 +30,9 @@ pub(super) fn run_python(
         .arg(root.join("tools/oracle/helpers/dispatch.py"))
         .env_clear();
     configure_environment(&mut command, case_env);
-    let bytes = serde_json::to_vec(input).map_err(OracleError::Json)?;
-    let stdout_output = run_bounded(&mut command, bytes, Duration::from_secs(60))?;
-    serde_json::from_slice(&stdout_output).map_err(OracleError::HelperJson)
+    let request = serde_json::json!({"operation": call.operation, "input": call.input});
+    let bytes = serde_json::to_vec(&request).map_err(OracleError::Json)?;
+    run_bounded(&mut command, bytes, Duration::from_secs(60))
 }
 
 pub(super) fn run_bounded(

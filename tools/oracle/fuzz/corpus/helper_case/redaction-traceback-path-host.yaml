@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-traceback-path-host
+call:
+  redaction:
+    function: redact_internal_details
+    text: "request failed for 10.0.0.5 and host db1.internal\nTraceback (most recent call last):\n  File \"/home/user/app.py\", line 10\n    raise ValueError('boom')"
+env: {}
+compare:
+  ignore: []

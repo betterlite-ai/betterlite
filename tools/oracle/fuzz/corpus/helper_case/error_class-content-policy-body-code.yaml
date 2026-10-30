@@ -1,0 +1,12 @@
+kind: helper
+name: error-class-content-policy-body-code
+call:
+  error_class:
+    family: content_policy_violation
+    message: flagged by the content safety system
+    model: gpt-4
+    provider: openai
+    body_type: invalid_request_error
+    body_code: vector_store_search_failed
+env: {}
+compare: {ignore: []}

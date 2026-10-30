@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-dotted-i-in-akia
+call:
+  redaction:
+    function: redact_string
+    text: "AKİA0123456789ABCDEF"
+env: {}
+compare:
+  ignore: []

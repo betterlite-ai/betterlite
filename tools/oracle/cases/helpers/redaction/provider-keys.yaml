@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-provider-keys
+call:
+  redaction:
+    function: redact_string
+    text: "sk-ABCDEFGHIJKLMNOPQRST AKIAABCDEFGHIJKLMNOP ya29.A0ARrdaM-exampletoken1 x-ak-ABCDEFGHIJKLMNOPQRST AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ1234567 dap\x690123456789abcdef0123456789abcdef"
+env: {}
+compare:
+  ignore: []
