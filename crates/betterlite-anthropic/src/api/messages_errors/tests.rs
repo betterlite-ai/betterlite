@@ -292,3 +292,26 @@ fn wire_limits_reject_before_parse() {
         Err(WireDecodeError::TooLarge)
     ));
 }
+
+#[rstest]
+#[case::container(r#"{"type":"message","extra":[]}"#, 3)]
+#[case::strings(r#"{"type":"message","extra":["one","two","three"]}"#, 6)]
+#[case::scalars(r#"{"type":"message","extra":[true,false,null,17]}"#, 7)]
+fn item_limits_count_values(#[case] raw: &str, #[case] items: usize) {
+    let mut limits = WireDecodeLimits {
+        max_json_bytes: 4096,
+        max_event_bytes: 4096,
+        max_items: items,
+    };
+    decode_messages_errors(raw.as_bytes(), limits).unwrap();
+    AnthropicExceptionMapping::transform_to_anthropic_error(500, raw, None, limits).unwrap();
+    limits.max_items = items.checked_sub(1).unwrap();
+    assert!(matches!(
+        decode_messages_errors(raw.as_bytes(), limits),
+        Err(WireDecodeError::TooManyItems)
+    ));
+    assert!(matches!(
+        AnthropicExceptionMapping::transform_to_anthropic_error(500, raw, None, limits),
+        Err(WireDecodeError::TooManyItems)
+    ));
+}
