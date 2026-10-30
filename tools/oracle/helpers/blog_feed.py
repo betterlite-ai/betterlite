@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import os
-from email.utils import parsedate_to_datetime
 from typing import TypedDict, cast
+from xml.etree.ElementTree import ParseError
 
-from defusedxml import ElementTree
 from litellm.litellm_core_utils.get_blog_posts import GetBlogPosts
 
 BLOG_POSTS_TTL_SECONDS = 3600
@@ -28,33 +27,7 @@ def fetch(response: Response, url: str, timeout: int) -> str:
 
 
 def parse(xml: str, max_posts: int) -> list[dict[str, str]]:
-    root = ElementTree.fromstring(xml)
-    channel = root.find("channel")
-    if channel is None:
-        raise ValueError("RSS feed missing <channel> element")
-    posts: list[dict[str, str]] = []
-    for item in channel.findall("item"):
-        if len(posts) >= max_posts:
-            break
-        title = item.find("title")
-        link = item.find("link")
-        description = item.find("description")
-        pub_date = item.find("pubDate")
-        if title is None or link is None:
-            continue
-        date = ""
-        if pub_date is not None and pub_date.text:
-            try:
-                date = parsedate_to_datetime(pub_date.text).strftime("%Y-%m-%d")
-            except (TypeError, ValueError, OverflowError):
-                date = pub_date.text
-        posts.append({
-            "title": title.text or "",
-            "description": description.text if description is not None and description.text else "",
-            "date": date,
-            "url": link.text or "",
-        })
-    return posts
+    return GetBlogPosts.parse_rss_to_posts(xml, max_posts)
 
 
 def get_posts(data: dict[str, object]) -> list[dict[str, str]]:
@@ -67,7 +40,7 @@ def get_posts(data: dict[str, object]) -> list[dict[str, str]]:
         return cast(list[dict[str, str]], cached)
     try:
         posts = parse(fetch(cast(Response, data["response"]), str(data["url"]), 5), 1)
-    except (ElementTree.ParseError, RuntimeError, ValueError):
+    except (ParseError, RuntimeError, ValueError):
         return GetBlogPosts.load_local_blog_posts()
     if not posts:
         return GetBlogPosts.load_local_blog_posts()
