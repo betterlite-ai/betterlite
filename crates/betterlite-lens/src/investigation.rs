@@ -59,5 +59,21 @@ pub async fn investigation_decision(
     })
 }
 
-#[path = "investigation/tests.rs"]
-mod tests;
+#[path = "investigation/tests/decision_navigation.rs"]
+mod decision_navigation;
+#[path = "investigation/tests/decision_schema.rs"]
+mod decision_schema;
+#[path = "investigation/tests/evidence_validation.rs"]
+mod evidence_validation;
+#[path = "investigation/tests/fixtures.rs"]
+mod fixtures;
+#[path = "investigation/tests/investigate.rs"]
+mod investigate;
+#[path = "investigation/tests/investigate_candidates.rs"]
+mod investigate_candidates;
+#[path = "investigation/tests/investigate_stored.rs"]
+mod investigate_stored;
+#[path = "investigation/tests/prompt_size_exit.rs"]
+mod prompt_size_exit;
+#[path = "investigation/tests/repeated_request.rs"]
+mod repeated_request;
