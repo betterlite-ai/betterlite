@@ -28,7 +28,7 @@ pub(crate) enum Input {
     },
     Apply {
         settings: Value,
-        inputs: Inputs,
+        inputs: Box<Inputs>,
         #[serde(default)]
         request_data: BTreeMap<String, GuardrailValue>,
         #[serde(default)]
@@ -61,7 +61,7 @@ impl crate::helpers::Helper for Op {
                 answer,
             } => apply(
                 settings,
-                inputs.clone(),
+                inputs.as_ref().clone(),
                 request_data,
                 dynamic_params,
                 litellm_call_id.as_deref(),

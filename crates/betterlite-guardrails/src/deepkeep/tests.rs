@@ -6,6 +6,7 @@ use std::time::Duration;
 use super::{
     Action, DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response,
 };
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
@@ -152,7 +153,7 @@ fn deepkeep_guardrail_empty_replacements_are_preserved() {
 #[test]
 fn deepkeep_guardrail_loads_from_config() {
     let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      optional_params:\n        unreachable_fallback: fail_open\n";
-    let config = betterlite_config::loader::ConfigLoader {
+    let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(source)

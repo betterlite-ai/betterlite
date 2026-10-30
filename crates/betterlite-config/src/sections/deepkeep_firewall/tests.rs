@@ -7,7 +7,7 @@ use secrecy::ExposeSecret as _;
 
 #[test]
 fn deepkeep_config_normalizes_and_loads_required_values() {
-    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test///\n      deepkeep_firewall_id: configured\n      optional_params:\n        unreachable_fallback: fail_open\n      extra_headers:\n        X-Test: yes\n";
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test///\n      deepkeep_firewall_id: configured\n      optional_params:\n        unreachable_fallback: fail_open\n      extra_headers:\n        X-Test: 'yes'\n";
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
