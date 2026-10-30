@@ -3,7 +3,7 @@ milestone: M7 observability
 title: Prometheus service health metrics
 status: todo
 depends_on: [B3870, B3874, B012]
-file: null
+file: tasks/B3885-prometheus-service-health.yaml
 covers:
   - "litellm/integrations/prometheus_services.py"
 parent: B111

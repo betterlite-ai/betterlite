@@ -1,0 +1,10 @@
+kind: helper
+name: token-auth-flag-invalid
+call:
+  database_url_policy:
+    function: token_auth_flag_enabled
+    value: "maybe"
+    env_var: "IAM_TOKEN_DB_AUTH"
+env: {}
+compare:
+  ignore: []

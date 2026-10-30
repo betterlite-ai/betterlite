@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-query-lookbehind
+call:
+  redaction:
+    function: redact_string
+    text: "https://api.example.com/v1?token=AAAAAAAAAA&harmless=value&api_key=BBBBBBBBBB"
+env: {}
+compare:
+  ignore: []

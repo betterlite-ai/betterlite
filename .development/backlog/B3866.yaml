@@ -1,14 +1,14 @@
 id: B3866
 milestone: M7 observability
 title: Trace storage projections and spend association
-status: todo
+status: done
 depends_on: [B3865]
-file: null
+file: tasks/B3866-trace-store.yaml
 covers:
   - "litellm/tracing/store.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 313

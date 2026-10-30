@@ -6,9 +6,11 @@ mod runner;
 mod sandbox;
 mod seat;
 mod tests;
+mod vendor;
 mod worktree;
 
 use std::env;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use crate::development::Development;
@@ -26,7 +28,7 @@ use prompt::Brief;
 pub(crate) enum Step {
     Ready(Vec<String>),
     Retry(Vec<String>),
-    Reviewed(EarlierReview),
+    Reviewed(EarlierReview, Vec<String>),
     Climb(Vec<String>),
 }
 
@@ -38,10 +40,13 @@ pub(crate) struct EarlierReview {
 struct Progress {
     feedback: Vec<String>,
     number: u32,
+    used: u32,
+    limited: bool,
     review_rounds: u32,
     blocked_reports: u32,
     last_blocked: u32,
     earlier: Option<EarlierReview>,
+    litellm: Vec<String>,
 }
 
 pub(crate) struct Places<'run> {
@@ -163,6 +168,41 @@ fn note_blocked(
     Ok(())
 }
 
+fn apply_step(
+    agents: &Agents,
+    brief: &Brief<'_>,
+    progress: &mut Progress,
+    step: Step,
+) -> Result<ControlFlow<Option<Vec<String>>>, GateError> {
+    match step {
+        Step::Ready(mut lines) => {
+            lines.append(&mut progress.litellm);
+            return Ok(ControlFlow::Break(Some(lines)));
+        }
+        Step::Retry(next) => progress.feedback = next,
+        Step::Reviewed(review, mut litellm)
+            if progress.review_rounds < agents.policy.max_review_rounds =>
+        {
+            progress.litellm.append(&mut litellm);
+            progress.review_rounds = progress.review_rounds.saturating_add(1);
+            progress.feedback.clone_from(&review.findings);
+            progress.earlier = Some(review);
+        }
+        Step::Reviewed(review, _) => {
+            let reason = format!("review rounds ran out: {}", review.findings.join("; "));
+            return Err(GateError::Dispatch {
+                task: brief.task.id.clone(),
+                reason,
+            });
+        }
+        Step::Climb(next) => {
+            note_blocked(agents, brief, progress, next)?;
+            return Ok(ControlFlow::Break(None));
+        }
+    }
+    Ok(ControlFlow::Continue(()))
+}
+
 fn climb_rung(
     agents: &Agents,
     brief: &Brief<'_>,
@@ -171,7 +211,12 @@ fn climb_rung(
     progress: &mut Progress,
 ) -> Result<Option<Vec<String>>, GateError> {
     let runner = find_runner(agents, &rung.runner)?;
-    for _ in 0..rung.attempts {
+    let mut used: u32 = 0;
+    while used < rung.attempts && progress.used < agents.policy.max_worker_attempts {
+        if vendor::limited(places.git_common_dir, agents, &runner.vendor)? {
+            progress.limited = true;
+            return Ok(None);
+        }
         progress.number = progress.number.saturating_add(1);
         let current = Attempt {
             agents,
@@ -180,25 +225,15 @@ fn climb_rung(
             number: progress.number,
             earlier: progress.earlier.as_ref(),
         };
-        match attempt::attempt_once(&current, runner, rung, &progress.feedback)? {
-            Step::Ready(lines) => return Ok(Some(lines)),
-            Step::Retry(next) => progress.feedback = next,
-            Step::Reviewed(review) if progress.review_rounds < agents.policy.max_review_rounds => {
-                progress.review_rounds = progress.review_rounds.saturating_add(1);
-                progress.feedback.clone_from(&review.findings);
-                progress.earlier = Some(review);
-            }
-            Step::Reviewed(review) => {
-                let reason = format!("review rounds ran out: {}", review.findings.join("; "));
-                return Err(GateError::Dispatch {
-                    task: brief.task.id.clone(),
-                    reason,
-                });
-            }
-            Step::Climb(next) => {
-                note_blocked(agents, brief, progress, next)?;
-                return Ok(None);
-            }
+        let Some(step) = attempt::attempt_once(&current, runner, rung, &progress.feedback)? else {
+            progress.limited = true;
+            return Ok(None);
+        };
+        used = used.saturating_add(1);
+        progress.used = progress.used.saturating_add(1);
+        progress.limited = false;
+        if let ControlFlow::Break(lines) = apply_step(agents, brief, progress, step)? {
+            return Ok(lines);
         }
     }
     Ok(None)
@@ -213,20 +248,25 @@ fn run_ladder(
     let mut progress = Progress {
         feedback: notes,
         number: 0,
+        used: 0,
+        limited: false,
         review_rounds: 0,
         blocked_reports: 0,
         last_blocked: 0,
         earlier: None,
+        litellm: Vec::new(),
     };
     for rung in &agents.roles.worker.ladder {
         if let Some(lines) = climb_rung(agents, brief, places, rung, &mut progress)? {
             return Ok(lines);
         }
     }
-    let reason = format!(
-        "the worker ladder ran out of attempts; last feedback: {}",
-        progress.feedback.join("; ")
-    );
+    let ending = if progress.limited {
+        "every runner left on the worker ladder is at its usage limit"
+    } else {
+        "the worker ladder ran out of attempts"
+    };
+    let reason = format!("{ending}; last feedback: {}", progress.feedback.join("; "));
     Err(GateError::Dispatch {
         task: brief.task.id.clone(),
         reason,

@@ -1,0 +1,11 @@
+kind: helper
+name: kill-switch-url-one-slash
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: "http:/example.com"}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own validation message

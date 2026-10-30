@@ -1,4 +1,9 @@
 worktrees: ../betterlite-worktrees
+vendors:
+  - id: openai
+    limit_markers: ["You've hit your usage limit"]
+  - id: anthropic
+    limit_markers: ["You've hit your"]
 runners:
   - id: codex-worker
     vendor: openai
@@ -13,12 +18,12 @@ runners:
   - id: claude-worker
     vendor: anthropic
     program: claude
-    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence]
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
     output: claude-json
   - id: claude-reviewer
     vendor: anthropic
     program: claude
-    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence]
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
     output: claude-json
 roles:
   worker:
@@ -35,9 +40,9 @@ roles:
         attempts: 2
         timeout_minutes: 120
       - runner: claude-worker
-        model: opus
+        model: sonnet
         effort: high
-        attempts: 1
+        attempts: 3
         timeout_minutes: 120
   reviewer:
     instructions: roles/reviewer.md
@@ -73,8 +78,16 @@ roles:
         effort: xhigh
         attempts: 1
         timeout_minutes: 60
+      - runner: claude-worker
+        model: sonnet
+        effort: high
+        attempts: 1
+        timeout_minutes: 60
 policy:
   review_by_other_vendor: true
+  max_worker_attempts: 6
+  limit_retry_minutes: 30
+  max_parallel: 8
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6

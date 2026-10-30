@@ -1,0 +1,171 @@
+id: B4324
+title: Decode Redis values and supply cache and breaker primitives
+description: >-
+  Build shared cache namespacing, value and count decoding, version parsing, increment-with-floor
+  Lua helpers and the breaker metric sink used below their callers. Preserve JSON-then-literal
+  decoding fallback, count validation, idempotent namespace prefixes, Valkey numeric version
+  handling, and INCRBYFLOAT with TTL in one round trip without enforcing atomicity.
+
+  Decode Redis responses via _decoded_counts, validating bytes/str/None to typed ints and
+  returning an optional tuple. Call-stack projection through _get_call_stack_info reads frame names
+  to skip internal circuit-breaker guards and report actual callers for diagnostics; skip frames
+  whose co_name is in {<lambda>, wrapper, _run_under_circuit_breaker, _run_under_circuit_breaker_sync}
+  and whose __name__ matches redis_cache's module.
+
+  Namespace prefix each key via check_and_fix_namespace, idempotently prepending the configured
+  namespace and colon separator when absent. Parse redis_version from strings "7.0.0" or "v6",
+  floats 7.0 (ElastiCache/Valkey), integers 7, or malformed "latest"/"Unknown" to integer major
+  version, defaulting to DEFAULT_REDIS_MAJOR_VERSION from config on parse failure.
+
+  INCRBYFLOAT with TTL: _incrbyfloat_with_ttl sends both in one pipelined round trip when TTL
+  is set, otherwise incrbyfloat alone. On refresh_ttl=True, pipe EXPIRE after incrbyfloat.
+  On refresh_ttl=False, pipe TTL instead, then if TTL returned -1 (key was expiring), send
+  separate EXPIRE. Cache decoding via _get_cache_logic first tries json.loads, then
+  ast.literal_eval on decode/parse failure, returning None on both failures.
+
+  Pipeline increment helper _pipeline_increment_helper chains increment operations with optional
+  per-operation TTL expire commands, executes the pipeline, filters and returns only float
+  values (incrbyfloat results), and logs diagnostics.
+
+  Supply _BreakerMetrics as a module-level singleton that lazily registers Prometheus metrics
+  when prometheus_client is available. Register metrics with names litellm_redis_circuit_breaker_state
+  (Gauge), transitions (Counter) and failures (Counter), each with label dimensions (state, state,
+  failure_class). Record state changes (decrement old, increment new), transitions to a given state,
+  and failures by class when breaker events occur. No-op gracefully when prometheus_client is unavailable.
+
+  Also own the _AsyncRedisCommands protocol that types this cache's async redis operations with
+  eight method signatures: ping, delete, ttl, expire, rpush, lpop, pipeline (transaction kwarg),
+  eval. Declare the floor-increment Lua script constant _INCREMENT_WITH_FLOOR_LUA that atomically
+  increments, floors to zero, and sets TTL; declare TypeAdapter constants _LUA_COUNT and
+  _OPTIONAL_COUNTS for validating Lua and batch count responses.
+
+  Load DEFAULT_REDIS_MAJOR_VERSION from config through B002. B393 calls _breaker_metrics.record_*
+  methods; register the singleton on inject only, no reverse call to B393. Pipeline execution is
+  the Redis driver's API; print_verbose is diagnostic plumbing. This task owns no route, no config
+  reload, and does not call other B4320–B4331 leaves.
+scope:
+  paths:
+    - crates/betterlite-redis/src/cache_primitives.rs
+    - crates/betterlite-redis/src/cache_primitives/**
+    - crates/betterlite-redis/src/breaker_metrics.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/sections/redis_cache_primitives.rs
+    - crates/betterlite-config/src/sections/redis_cache_primitives/**
+    - crates/betterlite-redis/src/breaker_metrics/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L71-L92
+    why: Own _AsyncRedisCommands protocol; all eight method signatures (ping, delete, ttl, expire, rpush, lpop, pipeline, eval) with parameter and return types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L95-L107
+    why: Own _BREAKER_GUARD_FRAME_NAMES, _INCREMENT_WITH_FLOOR_LUA, _LUA_COUNT, _OPTIONAL_COUNTS constants and their types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L110-L113
+    why: Own _decoded_counts validation logic; bytes/str/None to int conversion; tuple validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L116-L155
+    why: Own _get_call_stack_info frame inspection and guard-name filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L388-L431
+    why: Own _BreakerMetrics singleton, lazy metric registration, state/transition/failure recording with named gauge and counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L790-L799
+    why: Own check_and_fix_namespace; idempotent prefix and separator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L801-L828
+    why: Own _parse_redis_major_version; version string parsing, float/int handling, malformed fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1400-L1416
+    why: Own _incrbyfloat_with_ttl; pipeline composition, conditional TTL/EXPIRE, one round trip promise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1528-L1538
+    why: Own _get_cache_logic; JSON-then-literal decode fallback; None handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1931-L1951
+    why: Own _pipeline_increment_helper; operation chaining, TTL per operation, float filtering, results.
+dod:
+  - text: >-
+      Cache key namespacing idempotently prefixes every key with namespace and colon,
+      preserving None inputs and leaving already-prefixed keys unchanged.
+    proof: [namespace-primitives-tests]
+  - text: >-
+      Redis response decoding validates bytes/str/None to int | None tuples via
+      _decoded_counts, and _get_cache_logic tries JSON first then Python literal
+      evaluation with proper None/exception handling.
+    proof: [decode-primitives-tests]
+  - text: >-
+      Redis version parsing extracts major version from strings (with/without dots,
+      whitespace, -rc suffixes), floats (7.0 from Valkey), integers, and defaults
+      to config DEFAULT_REDIS_MAJOR_VERSION on parse failure or Unknown.
+    proof: [version-parsing-tests]
+  - text: >-
+      Call-stack projection skips circuit-breaker guard frames while preserving
+      the actual caller and grandparent names for diagnostics, handling missing
+      frames and frame errors gracefully.
+    proof: [stack-projection-tests]
+  - text: >-
+      Prometheus breaker metrics register once per instance with correct gauge/counter
+      types and label dimensions; record state changes, transitions and failures,
+      and no-op when prometheus_client is unavailable.
+    proof: [breaker-metrics-tests]
+  - text: >-
+      INCRBYFLOAT with TTL sends both commands in one round trip when TTL is set,
+      with separate EXPIRE only when a non-refreshing key has expired, and incrbyfloat
+      alone when TTL is None.
+    proof: [float-ttl-primitives-tests]
+  - text: >-
+      Pipeline increment helper chains increment operations with optional per-operation
+      TTL values, executes the pipeline, filters float values only, and returns
+      results in operation order.
+    proof: [pipeline-increment-primitives-tests]
+  - text: >-
+      _AsyncRedisCommands protocol types all eight async operations (ping, delete,
+      ttl, expire, rpush, lpop, pipeline, eval) with accurate signatures for both
+      Redis and RedisCluster unions.
+    proof: [async-commands-protocol-tests]
+checks:
+  optional: []
+  commands:
+    - id: namespace-primitives-tests
+      why: Namespace prefixing or idempotency is broken or missing.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::namespace::/)'
+    - id: decode-primitives-tests
+      why: JSON/literal decoding or count validation is missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::decode::/)'
+    - id: version-parsing-tests
+      why: Redis version parsing does not handle all formats or defaults.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::version::/)'
+    - id: stack-projection-tests
+      why: Call-stack info is missing guard filtering or does not handle frame errors.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::stack::/)'
+    - id: breaker-metrics-tests
+      why: Prometheus metrics are not registered, not recorded, or crash when client is unavailable.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^breaker_metrics::/)'
+    - id: float-ttl-primitives-tests
+      why: INCRBYFLOAT with TTL does not execute in one round trip or TTL handling is wrong.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::float_ttl::/)'
+    - id: pipeline-increment-primitives-tests
+      why: Pipeline increment helper is missing, does not chain operations, or filters wrong results.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::pipeline_increment::/)'
+    - id: async-commands-protocol-tests
+      why: _AsyncRedisCommands protocol is missing methods or has incorrect signatures.
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^cache_primitives::protocol::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - >-
+    B4323 constructs Redis and Sentinel clients; B4325 binds Cluster-specific operations
+    and pubsub; B4327, B4328, B4329, B4331 invoke these primitives via the _AsyncRedisCommands
+    interface, and B393 calls _breaker_metrics to record circuit-breaker events.
+pitfalls:
+  - >-
+    The _get_call_stack_info guard-name vocabulary is static; adding a new guard function
+    requires updating _BREAKER_GUARD_FRAME_NAMES, not discovering guards dynamically.
+  - >-
+    Namespace prefixing with None returns None, so callers must handle the None case
+    before calling check_and_fix_namespace if they expect a string.
+  - >-
+    INCRBYFLOAT with refresh_ttl=False only sends EXPIRE if TTL read returns -1 (key was
+    expiring); a key that is already expired silently updates the value without resetting TTL.
+  - >-
+    _get_cache_logic tries JSON then literal eval, so a cached value that is valid
+    literal eval but invalid JSON (e.g., a Python 3 string) will be decoded by the fallback,
+    not rejected as malformed.
+  - >-
+    Prometheus registry import is optional; if prometheus_client is absent, _BreakerMetrics
+    metrics remain None and no-op all recording calls.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

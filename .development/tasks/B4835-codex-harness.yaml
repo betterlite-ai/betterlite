@@ -65,6 +65,8 @@ description: >-
   no event is missed and every ToolCall precedes its ToolResult.
 scope:
   paths:
+    - crates/betterlite-harness/src/errors.rs
+    - crates/betterlite-harness/src/payloads/python_json.rs
     - crates/betterlite-harness/src/providers/codex.rs
     - crates/betterlite-harness/src/providers/codex/**
     - tools/oracle/cases/codex/**
@@ -75,6 +77,7 @@ scope:
     - tools/oracle/src/helpers/harness/b4835.rs
     - tools/oracle/src/helpers/harness/b4835/**
     - crates/betterlite-harness/src/transformation/**
+    - crates/betterlite-harness/src/sandbox/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py
@@ -199,5 +202,5 @@ pitfalls:
   - "Web search tool calls have no result field; output is always empty."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 2

@@ -1,0 +1,91 @@
+id: B3488
+title: Execute native GenAI HTTP requests
+description: >-
+  Build the sync and async HTTP handlers for native Google GenAI generation calls, handling request construction, extra headers and body overlay, client selection with matching mode support, and response transformation. Construct authenticated native requests with provider-supplied headers and API base, overlay caller-supplied extra headers and extra_body after provider preparation, make POST requests with optional streaming, and select between response transformation (non-streaming) or the native streaming iterator (streaming). Return stream response metadata through hidden_params before the first event to the client, and preserve matching-mode client selection (sync client for sync calls, async client for async calls). When upstream fails, use the shared error handler to normalize the status, type, param and code. Logging.pre_call happens after header/body construction and before the request goes to the provider.
+
+  The shared error handler is B2402's `BaseLLMHTTPHandler._handle_error`, used without reimplementation. The streaming iterators from B3487 take the response object and construct chunks incrementally; this handler supplies their hidden_params dictionary before the iterator is returned, with model_id from model_info or the request model parameter (never from a logging method), api_base, cache_key, response_cost and additional_headers from process_response_headers. The handlers are methods on the BaseLLMHTTPHandler singleton; callers pass both provider config and the request/context data. Preserve the sync handler's direct response object return for non-streaming calls, and the async handler's return type annotation as a union of the async streaming iterator or response class. Call B173's public HTTP client API without touching betterlite-http's internal files directly.
+
+scope:
+  paths:
+  - crates/betterlite-core/src/api/genai_http.rs
+  - crates/betterlite-core/src/api/genai_http/**
+  - tools/oracle/cases/google/genai-http-*.yaml
+  - tools/oracle/helpers/b3488.py
+  - tools/oracle/helpers/b3488/**
+  - tools/oracle/src/helpers/core_ops/b3488.rs
+  - tools/oracle/src/helpers/core_ops/b3488/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L293-312
+    why: _google_genai_streaming_hidden_params constructs metadata for streaming responses with model_id, api_base, and processed response headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11577-11707
+    why: generate_content_handler sync HTTP request execution with client selection, auth, request transformation, header/body overlay, logging, POST transport and response handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11709-11822
+    why: async_generate_content_handler async HTTP request execution with identical structure to sync handler.
+
+dod:
+- text: The sync and async handlers construct and send authenticated native generate_content requests with correct header and body overlay order.
+  proof: [oracle]
+- text: Streaming responses are returned as iterators from B3487 with pre-stream hidden_params before the first SSE event reaches the client.
+  proof: [behavior-tests, stream-tests]
+- text: Non-streaming responses are transformed through the provider's transform_generate_content_response contract.
+  proof: [oracle]
+- text: The hidden_params metadata includes model_id from model_info or the request model name, api_base, empty cache_key/response_cost, and headers processed through B206.
+  proof: [behavior-tests]
+- text: HTTP errors are caught and passed through B2402's _handle_error for consistent error transformation.
+  proof: [oracle]
+- text: Pre-call logging is invoked with the complete request dict, api_base and headers before transport.
+  proof: [behavior-tests]
+- text: Matching-mode client selection retains sync/async pooling through B173's public API without directly touching betterlite-http's internal files.
+  proof: [behavior-tests]
+
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the GenAI HTTP tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_http(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: stream-tests
+    why: streaming metadata tests fail or do not exist
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/stream.*metadata|metadata.*stream/)'
+
+oracle_cases:
+- tools/oracle/cases/google/genai-http-sync-unary.yaml
+- tools/oracle/cases/google/genai-http-sync-stream.yaml
+- tools/oracle/cases/google/genai-http-async-unary.yaml
+- tools/oracle/cases/google/genai-http-async-stream.yaml
+- tools/oracle/cases/google/genai-http-extra-headers-overlay.yaml
+- tools/oracle/cases/google/genai-http-extra-body-overlay.yaml
+- tools/oracle/cases/google/genai-http-hidden-params-model-info.yaml
+- tools/oracle/cases/google/genai-http-hidden-params-fallback.yaml
+- tools/oracle/cases/google/genai-http-error-handling.yaml
+
+deviations:
+  - what: >-
+      betterlite-core/src/api/genai_http.rs constructs hidden_params metadata with model_id sourced from model_info.get("id") if present, otherwise from the request model parameter, never from a logging.get_router_model_id() method. If model_info lacks an "id" field and the model parameter is absent or empty, model_id defaults to an empty string.
+    why: The logging object's get_router_model_id method is a proxy-level routing artifact not available at HTTP request time in a native implementation. Betterlite constructs model_id from locally available request data instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L303-305
+
+out_of_scope:
+- B3480 owns the native operation contract and provider-specific auth/transform methods.
+- B3487 owns both GoogleGenAIGenerateContentStreamingIterator and AsyncGoogleGenAIGenerateContentStreamingIterator constructors; this task passes the response and metadata to their constructors.
+- B173 provides HTTP client pool selection and methods; this task calls its public API without modifying betterlite-http internals.
+- B206 provides process_response_headers; this task applies it to the native response headers for hidden_params.
+- B249 provides Logging.pre_call; this task invokes it during HTTP handler execution.
+- B2402 provides BaseLLMHTTPHandler._handle_error; this task delegates all HTTP exceptions to it.
+- B1368 owns GoogleGenAI provider-specific implementations of auth, URL, and request/response transforms.
+- Retries and fallbacks for HTTP errors.
+
+pitfalls:
+- The sync client is retrieved with _get_httpx_client only when the caller does not supply one; the async variant uses get_async_httpx_client with the provider enum. Both preserve SSL verification settings from litellm_params.
+- extra_headers and extra_body overlay must occur after provider config produces headers and data, so caller values take precedence over defaults.
+- The streaming iterator must be constructed immediately after the POST request succeeds, before the response object is held; the iterator takes ownership of the open response stream.
+- hidden_params.model_id is derived from model_info["id"] or the model request parameter, not from a logging method; this deviates from LiteLLM's optional get_router_model_id fallback and must be recorded as a deviation.
+- Pre-call logging takes an empty string for api_key; the full request dict is passed under complete_input_dict, not unpacked as individual parameters.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

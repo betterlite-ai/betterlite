@@ -1,0 +1,13 @@
+kind: helper
+name: repository-record-mapping-and-pair-sequence
+call:
+  repository_record:
+    cases:
+        mapping_unchanged:
+          operation: projection
+          records: [{mapping: {id: 3}}]
+        sequence_last_duplicate_wins:
+          operation: projection
+          records: [{pairs: [[id, 1], [id, 2], [other, 3]]}]
+env: {}
+compare: {ignore: []}

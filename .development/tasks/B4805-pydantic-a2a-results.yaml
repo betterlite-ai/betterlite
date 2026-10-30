@@ -1,0 +1,109 @@
+id: B4805
+title: Pydantic AI task projection and simulated streams
+description: >-
+  Build completed-task text selection, direct Message projection and simulated stream events.
+  Pydantic AI returns completed tasks with history and artifacts; betterlite must extract agent text
+  and synthesize fake streaming events since Pydantic AI does not support streaming.
+
+  Implement PydanticAITransformation module with three static methods for task response transformation.
+  _transform_to_a2a_response converts a Pydantic AI task response to standard A2A non-streaming format:
+  jsonrpc "2.0", request_id, result with kind "message", role "agent", extracted text parts and
+  generated messageId. _extract_response_text searches the completed task for agent text, preferring
+  artifacts first, then the last agent message in reversed history, then the message field, joining
+  multi-part text with newline. fake_streaming_from_response creates A2A streaming events from the
+  response: task event with status "submitted" and full history, status update "working", artifact
+  update chunks (50-character chunks with 10 ms delays between), and final status "completed" with
+  final flag true. Empty text produces no artifact event, unlike Watsonx.
+
+  The four schema adapters at transformation.py:21-24 are shared between result projection and
+  polling callers; they belong below both response paths so they are not duplicated. B4806 accounts
+  for all remaining shared file code and entry points.
+
+  All transformation methods are synchronous and never call external services.
+  Use uuid::Uuid for ID generation and serde for JSON serialization.
+  A test deserializes fixture task responses to verify shape transformation.
+  Oracle cases drive transformation against LiteLLM on every input pattern.
+
+scope:
+  paths:
+    - crates/betterlite-a2a/src/pydantic_ai_transformation.rs
+    - crates/betterlite-a2a/src/pydantic_ai_transformation/**
+    - tools/oracle/helpers/b4805.py
+    - tools/oracle/helpers/b4805/**
+    - tools/oracle/src/helpers/a2a/b4805.rs
+    - tools/oracle/src/helpers/a2a/b4805/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L306-L351
+    why: _transform_to_a2a_response converts Pydantic task with history/artifacts to A2A SendMessageResponse
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L353-L406
+    why: _extract_response_text selects agent text from artifacts (preferred), history (last agent message), or message field
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L408-L554
+    why: fake_streaming_from_response emits task, status and artifact events with chunked text and configurable delays
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L21-L24
+    why: Four schema adapters (_SupportsModelDump, _SupportsPydanticDict, _STR_KEY_DICT_ADAPTER, _LIST_ADAPTER) shared with B4806
+
+dod:
+  - text: _transform_to_a2a_response converts task response to A2A format with jsonrpc "2.0", request_id and message result.
+    proof: [pydantic-response-tests]
+  - text: _extract_response_text tries artifacts first, then reversed history for last agent message, then message field.
+    proof: [pydantic-response-tests]
+  - text: _extract_response_text joins multi-part text with newline and generates fresh messageId per call.
+    proof: [pydantic-response-tests]
+  - text: fake_streaming_from_response emits task event with status "submitted" and full history including input message.
+    proof: [pydantic-response-tests]
+  - text: fake_streaming_from_response emits status event with state "working".
+    proof: [pydantic-response-tests]
+  - text: fake_streaming_from_response emits artifact update chunks of 50 characters with 10 ms delays between chunks.
+    proof: [pydantic-response-tests]
+  - text: fake_streaming_from_response emits final status event with state "completed" and final flag true.
+    proof: [pydantic-response-tests]
+  - text: fake_streaming_from_response counts Python characters for chunk boundaries, not UTF-8 bytes.
+    proof: [pydantic-response-tests]
+  - text: Empty response text produces no artifact event; task, working and completed events are emitted always.
+    proof: [pydantic-response-tests]
+  - text: Every oracle case for transformation matches LiteLLM on response shape, event structure and ID generation.
+    proof: [pydantic-response-oracle-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: pydantic-response-tests
+      why: the Pydantic AI response transformation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^pydantic_ai_transformation::(transform|extract|fake)/)'
+    - id: pydantic-response-oracle-cases
+      why: the oracle cases fail or do not exist
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/a2a/pydantic*.yaml)" && cargo nextest run --locked --no-tests=fail --package betterlite-oracle -E 'test(pydantic_ai_transformation)'
+
+oracle_cases:
+  - tools/oracle/cases/a2a/pydantic-artifact-extraction.yaml
+  - tools/oracle/cases/a2a/pydantic-history-fallback.yaml
+  - tools/oracle/cases/a2a/pydantic-message-fallback.yaml
+  - tools/oracle/cases/a2a/pydantic-multipart-join.yaml
+  - tools/oracle/cases/a2a/pydantic-transform-response.yaml
+  - tools/oracle/cases/a2a/pydantic-fake-streaming.yaml
+  - tools/oracle/cases/a2a/pydantic-empty-text.yaml
+
+deviations: []
+
+out_of_scope:
+  - Pydantic AI submission and polling; those belong to B4806.
+  - Request parameter cleanup and message.kind setup; those belong to B4806.
+  - Non-streaming and streaming handler implementations; those belong to B4806.
+  - HTTP client and transport; those belong to B173.
+
+pitfalls:
+  - Pydantic AI response artifacts may not be dictionaries; skip non-dict artifacts and handle missing parts.
+  - Text extraction reverses history to find the last agent message, preserving chronological order.
+  - fake_streaming_from_response generates fresh task/context/artifact IDs per call, never reusing from response.
+  - Chunk boundaries count Python characters (len(string)), not UTF-8 bytes; "é" is 1 character, not 2 bytes.
+  - Empty text produces no artifact event; task, working and completed events are always emitted.
+  - History may contain user messages before the first user message; extract the first user message correctly.
+  - The four schema adapters handle both Pydantic v1 dict() and v2 model_dump() methods on Pydantic objects.
+  - Text parts are extracted with empty fallback (""); do not emit parts if all text is absent.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,13 @@
+kind: helper
+name: error-class-budget-dimension
+call:
+  error_class:
+    family: budget_exceeded
+    current_cost: 42.5
+    max_budget: 40.0
+    provider: openai
+    entity_type: team
+    entity_id: team-42
+    status_code: 422
+env: {}
+compare: {ignore: []}

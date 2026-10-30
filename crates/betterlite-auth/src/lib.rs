@@ -99,6 +99,7 @@ pub mod spend_reseed;
 pub mod spend_writes;
 pub mod sso_claims;
 pub mod sso_mappings;
+pub mod sso_resolution;
 pub mod sso_types;
 pub mod team_budget_admission;
 pub mod tiering;

@@ -1,0 +1,23 @@
+task: B4351
+deviations:
+  - what: "betterlite loads Azure Blob settings from config.yaml under litellm_settings.cache_params instead of environment variables alone."
+    why: "LiteLLM accepts both; betterlite centralizes configuration through config.yaml for consistency."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L22-41
+  - what: "betterlite requires both azure_account_url and azure_blob_container at construction time; missing values fail the builder."
+    why: "LiteLLM accepts them as optional, but these are the only parameters the AzureBlobCache constructor takes. Requiring them upfront prevents silent failures."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L22-41
+  - what: "Credentials come through a caller-supplied azure_core::credentials::TokenCredential instead of DefaultAzureCredential."
+    why: "The Rust Azure SDK has no DefaultAzureCredential equivalent; the credential chain belongs to the caller that wires this module into a server, which this task does not build."
+    link: https://github.com/Azure/azure-sdk-for-rust/blob/main/sdk/identity/azure_identity/src/lib.rs
+  - what: "A single container client serves both the synchronous and asynchronous paths, instead of LiteLLM's separate sync and async SDK client objects."
+    why: "The Rust SDK's BlobContainerClient is already async; synchronous callers block on it through a Handle, so a second client would duplicate state without a behavioral purpose."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L22-36
+  - what: "disconnect is a no-op instead of closing a synchronous client and then awaiting an asynchronous client's close."
+    why: "The Rust Azure SDK's clients expose no close method; connections are released on drop."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L105-107
+  - what: "get_cache and async_get_cache return None for every read failure (authentication, transport, decode, missing blob), not only for a missing blob."
+    why: "The task text specifies this broader fallthrough; LiteLLM's own get_cache only catches ResourceNotFoundError and lets other exceptions raise. The oracle has no case for this path, so the task text is the authority here."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L62-92
+  - what: "A JSON serialization failure before upload is logged and swallowed instead of propagating to the caller."
+    why: "set_cache and async_set_cache return nothing; letting a serialization failure panic would violate the no-panics-in-production rule, and CachedEntry is a typed struct serde_json can practically always encode. This mirrors the existing S3Cache backend's same choice."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/azure_blob_cache.py#L43-61

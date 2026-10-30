@@ -1,0 +1,200 @@
+id: B4728
+title: MCP REST tool execution and logging completion
+description: >-
+  Build POST `/mcp-rest/tools/call` REST endpoint for MCP tool execution with logging completion,
+  metadata stamping, failure handling and virtual tool dispatch. The endpoint preserves pre-call
+  and guardrail ordering, post-call logging success/failure distinction, and upstream authentication
+  challenges.
+
+  `stamp_mcp_tool_metadata` captures tool and server identity in logging metadata from the manager
+  by server_id (UUID/name lookup).
+
+  `fire_tool_call_logging` fires post-call logging for successful execution results,
+  catching guardrail rejections and cancellations to re-raise while suppressing other logging
+  failures with a warning and returning the result to send to the client.
+
+  `fire_tool_call_failure_logging` fires post-call failure logging and suppresses logging
+  failures with a warning; the failure is re-raised to the endpoint's exception handler.
+
+  `relay_upstream_auth` converts MCPUpstreamAuthError (client-forwarded passthrough
+  or OAuth delegate 401 from an upstream server) into an HTTPException carrying the original
+  WWW-Authenticate header, so MCP clients can re-run upstream OAuth instead of receiving a generic
+  500.
+
+  `_handle_virtual_mcp_tool` gates agent_search/skill_search/mcp_tool_search/mcp_tool_call against
+  mcp_tool_search_enabled on the key, enforces pre-call processing with spend logging and guardrail
+  checks, and distinguishes virtual-call guardrail failures (which propagate) from logging failures
+  (which are caught and suppressed).
+
+  The main `call_tool_rest_api` endpoint accepts server_id, tool name, tool arguments and optional
+  MCP server/auth headers. It stamps metadata, resolves allowed servers with IP filtering and per-
+  user OAuth headers, executes the tool, fires post-call logging, and distinguishes exception
+  types: missing user env vars (412), blocked PII (400), guardrails (400), upstream auth (401 with
+  relay), local denials (403/400/412 at error level), and unexpected errors (500).
+
+  Execution calls the manager's execute_mcp_tool directly with pre-call processing result,
+  skip_guardrails=true in call_mcp_tool data (so the guardrails run inside execute_mcp_tool
+  instead), allowed_mcp_servers result, per-user OAuth headers and caller headers. The result is
+  converted through complete_call_tool_result(executed, WireCompat.LEGACY) before logging.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/mcp_rest_tool_execution.rs
+    - crates/betterlite-server/src/api/mcp_rest_tool_execution/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-rest-tool-execution/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-rest-tool-execution-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L74-L86
+    why: Complete ownership of _stamp_mcp_tool_metadata; server ID to name mapping and metadata attachment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L254-L289
+    why: Complete ownership of _safe_fire_mcp_tool_call_logging; guardrail/cancellation re-raise and logging failure suppression.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L291-L303
+    why: Complete ownership of _safe_fire_mcp_tool_call_failure_logging; suppressed logging failures during exception handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L305-L312
+    why: Complete ownership of _relay_upstream_auth_http_exception; upstream 401 conversion with WWW-Authenticate relay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L314-L424
+    why: Complete ownership of _handle_virtual_mcp_tool; permission gating, pre-call pipeline, virtual tool dispatch and guardrail/logging failure handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1366
+    why: Complete ownership of call_tool_rest_api endpoint; required parameter validation, metadata stamping, allowed-server resolution with IP filtering, execution and result conversion, and exception handling for every observable status/error/code.
+
+dod:
+  - text: >-
+      _stamp_mcp_tool_metadata resolves server by UUID or name through the manager and
+      captures tool name and server name in logging metadata.
+    proof: [tool-execution-tests]
+  - text: >-
+      fire_tool_call_logging fires post-call logging, re-raises GuardrailRaisedException/
+      BlockedPiiEntityError/ModifyResponseException/HTTPException/CancelledError, suppresses other
+      failures with warning, and returns the result.
+    proof: [tool-execution-tests]
+  - text: >-
+      fire_tool_call_failure_logging fires post-call failure logging and suppresses
+      logging errors with warning; no failures propagate.
+    proof: [tool-execution-tests]
+  - text: >-
+      relay_upstream_auth converts MCPUpstreamAuthError into HTTPException with
+      status 401, original Challenge header, and base_url/path context.
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: >-
+      _handle_virtual_mcp_tool checks mcp_tool_search_enabled, runs pre-call pipeline with spend
+      logging, dispatches to virtual tool handler (agent_search/skill_search/mcp_tool_search/mcp_tool_call),
+      re-raises guardrail rejections, suppresses logging failures, and converts upstream auth errors.
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: >-
+      call_tool_rest_api validates server_id and tool name as required, stamps metadata, resolves
+      allowed servers with IP filtering, prefetches per-user OAuth headers, and executes the tool.
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: >-
+      Execution calls manager's execute_mcp_tool with skip_guardrails=true, pre-call result, allowed
+      servers, per-user/caller OAuth headers, and converts result through complete_call_tool_result(WireCompat.LEGACY).
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: >-
+      Post-call logging fires with start/end times, user auth and request data; guardrail rejections
+      and cancellations propagate as exceptions while logging failures are suppressed.
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: >-
+      Failure exceptions (missing env vars, blocked PII, guardrails, upstream auth, local denials,
+      unexpected errors) return HTTP 412/400/400/401/403,400,412/500 with detail.error/message
+      and endpoint-specific fields.
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: >-
+      Every observable config key default, header, status code, error type/message, and param
+      is in a named case with literal input and expected outcome.
+    proof: [tool-execution-tests, tool-execution-oracle]
+  - text: Every mutant in tool execution logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: tool-execution-tests
+      why: >-
+        Metadata stamping, logging success/failure handling, virtual tool dispatch, server
+        resolution, IP filtering, allowed-server access, OAuth header prefetch, execution
+        delegation, result conversion, exception handling or HTTP status/error shapes
+        are missing or fail on edge cases.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^api::mcp_rest_tool_execution::/)'
+    - id: tool-execution-oracle
+      why: >-
+        Tool execution responses, HTTP statuses, error shapes, metadata logging,
+        upstream auth relay or virtual tool behavior deviate from LiteLLM behavior.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-rest-tool-execution
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      Upstream authentication challenges (client-forwarded OAuth2 401) are relayed as HTTP 401
+      with original WWW-Authenticate header so MCP clients can re-run upstream OAuth instead of
+      receiving a generic error.
+    why: MCP clients expect standards-compliant OAuth2 flows; relaying the upstream challenge preserves that contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L305-L351
+
+out_of_scope:
+  - >-
+    Manager execute_mcp_tool, complete_call_tool_result wire conversion and tool calling
+    semantics (Q2 manager leaves).
+  - >-
+    Manager _get_tools_from_server, ID/name lookup, allowed-server resolution and IP filtering
+    (Q2 manager).
+  - >-
+    fire_mcp_tool_call_logging, fire_mcp_tool_call_failure_logging and their logging
+    destinations (Q2 manager).
+  - >-
+    Virtual tool handlers: coerce_top_k, handle_agent_search, handle_skill_search,
+    handle_mcp_tool_search, handle_mcp_tool_call (Q4 catalog/OpenAPI).
+  - >-
+    MCPRequestHandler header extraction methods (part of B4726).
+  - >-
+    common_processing_pre_call_logic, MCPRequestContext.resolve_guardrail_context, pre-call/
+    guardrail ordering (Q7 shared pre-call service).
+  - >-
+    acting_user_auth, reject_disallowed_mcp_client, build_effective_auth_contexts,
+    _apply_toolset_scope (Q6 shared proxy/auth).
+  - >-
+    get_request_base_url for redirect binding (Q4 catalog/OpenAPI).
+  - >-
+    Authentication and authorization enforcement (Q6 shared proxy/auth).
+  - >-
+    MCPUpstreamAuthError, GuardrailRaisedException, BlockedPiiEntityError,
+    ModifyResponseException exception types and their semantics.
+
+pitfalls:
+  - >-
+    Logging failures must not turn into HTTP error responses; catch, warn and return the result.
+    Only guardrail rejections and cancellations propagate as exceptions.
+  - >-
+    The skip_guardrails=true flag in pre-call data signals that guardrails run inside
+    execute_mcp_tool; do not double-guard in the endpoint.
+  - >-
+    Virtual-call guardrail rejections propagate unhandled to the catch-all upstream auth relay,
+    the same as the direct call path.
+  - >-
+    Upstream 401 from either direct or virtual execution must relay with WWW-Authenticate so MCP
+    clients can re-run OAuth; info-level logging (expected reauth signal, not operator error).
+  - >-
+    Locally generated denials (permission, IP filtering, BYOK constraints) must log at error level
+    for visibility into restriction probing.
+  - >-
+    Per-user OAuth header prefetch checks if the target server exists and uses OAuth2; skip on
+    missing/non-OAuth servers.
+  - >-
+    The metadata stamp must resolve server name after pre-call processing, in case the
+    processing/caching layer has stale information.
+  - >-
+    The client-forwarded token auth types (true_passthrough, oauth_delegate) determine whether
+    to pass caller OAuth2 headers instead of/in addition to per-user headers.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -7,13 +7,18 @@ use serde_json::{Value, json};
 
 use super::{Input, run};
 use crate::case::parse_helper_case;
+use crate::helpers::HelperCall;
+use crate::helpers::answers::Answers;
 
 fn decode(value: Value) -> Result<Input, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
-fn python_request(input: &Input) -> Value {
-    json!({"operation": "management_oracle", "input": input})
+fn python_call(input: &Input) -> HelperCall {
+    HelperCall {
+        operation: "management_oracle".to_owned(),
+        input: json!(input),
+    }
 }
 
 fn path_encoding_call(function: &str) -> Value {
@@ -37,9 +42,10 @@ fn namespace_native_dispatch() {
 fn namespace_python_dispatch() {
     let input = decode(path_encoding_call("segments")).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let output =
-        crate::helpers::python::run_python(&root, &python_request(&input), &BTreeMap::new())
-            .unwrap();
+    let answers = Answers::from_env(&root).unwrap();
+    let output = answers
+        .answer(&root, &python_call(&input), &BTreeMap::new())
+        .unwrap();
     assert_eq!(output.value, Some(json!("a/b")));
 }
 

@@ -24,12 +24,19 @@ description: >-
   or PASSTHROUGH (replace on post-call, raise exception on pre-call). Threshold and reasoning_mode read from
   environment variables (GRAYSWAN_VIOLATION_THRESHOLD default 0.5, GRAYSWAN_REASONING_MODE) or config.
   Failures follow fail_open policy: log and return inputs if true, raise GraySwanGuardrailAPIError if false.
+
+  Configuration goes in the generic_guardrail_api and grayswan sections of betterlite-config, registered as
+  stubs. Each reads its entries from the guardrails list the way lasso_classification does.
 scope:
   paths:
     - crates/betterlite-guardrails/src/generic_guardrail_api.rs
     - crates/betterlite-guardrails/src/generic_guardrail_api/**
     - crates/betterlite-guardrails/src/grayswan.rs
     - crates/betterlite-guardrails/src/grayswan/**
+    - crates/betterlite-config/src/sections/generic_guardrail_api.rs
+    - crates/betterlite-config/src/sections/generic_guardrail_api/**
+    - crates/betterlite-config/src/sections/grayswan.rs
+    - crates/betterlite-config/src/sections/grayswan/**
     - tools/oracle/helpers/b3771.py
     - tools/oracle/helpers/b3771/**
     - tools/oracle/src/helpers/guardrails/b3771.rs
@@ -130,7 +137,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan.*error/)'
     - id: config
       why: Generic guardrail or Gray Swan configuration does not load from environment or files
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^(generic_guardrail|grayswan).*config/)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::(generic_guardrail_api|grayswan)::/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/generic_guardrail_api/call-with-texts.yaml
   - tools/oracle/cases/guardrails/generic_guardrail_api/call-with-images.yaml
@@ -191,5 +198,5 @@ pitfalls:
   - Both api_key parameters must never appear in logs or Debug output; mark as SecretString.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0

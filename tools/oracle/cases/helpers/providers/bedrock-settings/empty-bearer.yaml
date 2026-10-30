@@ -1,0 +1,11 @@
+kind: helper
+name: empty-bearer
+call:
+  bedrock_settings:
+    settings:
+      deployments:
+        - {aws_access_key_id: key, aws_secret_access_key: secret}
+        - {}
+      environment: {AWS_BEARER_TOKEN_BEDROCK: ""}
+env: {AWS_BEARER_TOKEN_BEDROCK: ""}
+compare: {ignore: []}

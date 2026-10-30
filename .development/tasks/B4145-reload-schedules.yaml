@@ -1,0 +1,171 @@
+id: B4145
+title: Persist reload schedules and track per-pod revisions
+description: >-
+  Implement reload schedule management in betterlite-db to read, write and track periodic
+  reloads of the model cost map in the LiteLLM_Config table. Build ReloadSchedule to hold
+  interval_hours (None or positive int), reload_revision (monotonic per-pod counter), and
+  last_run_at (UTC timestamp or None). Parse LiteLLM_Config rows where param_value is JSON
+  either as a string or already-decoded dict depending on the driver.
+
+  Provide parse_reload_schedule to convert a row into ReloadSchedule with timezone-naive
+  datetimes coerced to UTC. next_run_at calculates the next scheduled run from interval and
+  last_run. reload_schedule_status formats the schedule as a TypedDict for API responses with
+  ISO strings and boolean scheduled flag.
+
+  pod_reload_is_due checks whether this pod should reload: when its applied_revision differs
+  from the database revision (manual reload request), when the interval has never run
+  anywhere (last_run_at is None), or when hours_since_data_loaded >= interval_hours.
+  Pods start at revision 0 at boot and reload once per interval from their own load time,
+  not from the last published run.
+
+  Implement read_reload_schedule as async find_unique on param_name. write_reload_interval
+  upserts with param_value JSON containing interval_hours, and clear_reload_interval updates
+  the JSON to null interval without deleting the row (so revision is never reused).
+  record_reload_run updates last_run_at only if the row still exists. record_manual_reload
+  upserts with atomic increment to bump reload_revision and returns the published revision
+  so the serving pod adopts it immediately. All writes call evict_config_param to invalidate
+  the cache.
+
+  Validation errors during interval parsing return None (no schedule). RELOAD_CONFIG_PARAM_NAME
+  is the single param_name this module writes: "model_cost_map_reload_config". Uses B725 ConfigRepository
+  table accessors and B192's safe_dumps for JSON serialization. Add helpers for interval/revision/
+  last_run decisions as inline functions with behavior-driven tests, no oracle HTTP cases.
+
+scope:
+  paths:
+    - crates/betterlite-db/src/reload_schedule.rs
+    - crates/betterlite-db/src/reload_schedule/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L1-L50
+    why: Module docstring describing field ownership, revision tracking and pod semantics
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L69-L134
+    why: ReloadSchedule dataclass, ReloadScheduleStatus TypedDict, helper functions parse_reload_schedule, next_run_at, reload_schedule_status
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L137-L171
+    why: pod_reload_is_due decision logic with revision, interval and timing checks
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L173-L231
+    why: Async database operations read_reload_schedule, write_reload_interval, clear_reload_interval, record_reload_run, record_manual_reload
+
+dod:
+  - text: ReloadSchedule holds interval_hours (Option<u32>), reload_revision (u32), and last_run_at (Option<DateTime<Utc>>).
+    proof: [schedule-struct]
+  - text: parse_reload_schedule converts a LiteLLM_Config row param_value (JSON string or dict) into ReloadSchedule, applying UTC timezone to naive datetimes and defaulting reload_revision to 0.
+    proof: [parse-schedule]
+  - text: next_run_at returns None when interval or last_run is None, otherwise returns last_run + interval hours.
+    proof: [next-run-calculation]
+  - text: reload_schedule_status returns TypedDict with scheduled flag, interval_hours, and ISO-formatted last_run and next_run strings.
+    proof: [status-formatting]
+  - text: pod_reload_is_due returns true when pod_applied_revision differs from schedule.reload_revision, when last_run_at is None, or when hours_since_data_loaded >= interval_hours.
+    proof: [pod-reload-decision]
+  - text: read_reload_schedule queries LiteLLM_Config by param_name and returns parsed ReloadSchedule or None if row absent.
+    proof: [read-from-db]
+  - text: "write_reload_interval upserts with param_value containing {\"interval_hours\": value} and calls evict_config_param."
+    proof: [write-interval]
+  - text: "clear_reload_interval updates param_value to {\"interval_hours\": null} without deleting the row and calls evict_config_param."
+    proof: [clear-interval]
+  - text: record_reload_run updates last_run_at if the row exists and calls evict_config_param; absent row leaves no error.
+    proof: [record-run]
+  - text: record_manual_reload upserts with atomic reload_revision increment, returns the published revision, and calls evict_config_param.
+    proof: [manual-reload-atomic]
+  - text: RELOAD_CONFIG_PARAM_NAME constant is "model_cost_map_reload_config" and used by all database operations.
+    proof: [param-name-constant]
+  - text: Interval parsing returns None on ValidationError; timezone-naive datetimes default to UTC; all other failures propagate.
+    proof: [error-handling]
+
+checks:
+  optional: []
+  commands:
+    - id: schedule-struct
+      why: ReloadSchedule struct is missing or missing a field
+      run: grep -q "struct ReloadSchedule" crates/betterlite-db/src/reload_schedule.rs && grep -q "interval_hours\|reload_revision\|last_run_at" crates/betterlite-db/src/reload_schedule.rs
+    - id: parse-schedule
+      why: parse_reload_schedule function is missing or does not handle string/dict param_value
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::parse_schedule/)'
+    - id: next-run-calculation
+      why: next_run_at function is missing or does not calculate correctly
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::next_run_at/)'
+    - id: status-formatting
+      why: reload_schedule_status function is missing or does not format ISO times
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::status_formatting/)'
+    - id: pod-reload-decision
+      why: pod_reload_is_due function is missing or decision logic is incomplete
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::pod_reload_decision/)'
+    - id: read-from-db
+      why: read_reload_schedule async function is missing or does not query correctly
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::read_from_db/)'
+    - id: write-interval
+      why: write_reload_interval async function is missing or does not upsert correctly
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::write_interval/)'
+    - id: clear-interval
+      why: clear_reload_interval async function is missing or does not null the interval
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::clear_interval/)'
+    - id: record-run
+      why: record_reload_run async function is missing or does not update last_run_at
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::record_run/)'
+    - id: manual-reload-atomic
+      why: record_manual_reload async function is missing or does not return the published revision
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::manual_reload_atomic/)'
+    - id: param-name-constant
+      why: RELOAD_CONFIG_PARAM_NAME constant is missing or incorrect
+      run: grep -q 'RELOAD_CONFIG_PARAM_NAME.*"model_cost_map_reload_config"' crates/betterlite-db/src/reload_schedule.rs
+    - id: error-handling
+      why: Validation errors or timezone handling tests are missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::(validation_errors|timezone_handling)/)'
+    - id: behavior-tests
+      why: The named behavior tests are absent or the pinned behaviors fail
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::/)' - test(/replays_the_/)
+
+pitfalls:
+  - "parse_reload_schedule accepts param_value as either a JSON string or an already-decoded dict, mirroring how different database drivers return the Json? column type."
+  - "timezone-naive datetimes get UTC applied without validation that they were already in UTC; the comment warns callers to validate before passing."
+  - "clear_reload_interval nulls the interval inside the JSON value via safe_dumps, not by nulling the param_value column itself, which Prisma rejects for a Json? field."
+  - "record_reload_run calls update_many with no where clause guards; if the row is deleted concurrently, the update affects zero rows and does not error."
+  - "record_manual_reload returns the published revision immediately from the upserted row; a concurrent request sees a higher revision."
+  - "RELOAD_CONFIG_PARAM_NAME is the singleton param_name this module uses; param_name is not a user-supplied input."
+  - "The interval firing logic uses strict < comparison, so a reload fires as soon as the interval boundary is crossed, even by fractional seconds."
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      parse_reload_schedule accepts param_value as JSON string or dict depending on the database driver's
+      Json column handling; absent or unparseable values return None for interval_hours rather than raising.
+    why: >-
+      LiteLLM's ConfigRepository.get_param does the same: it accepts both encoded and decoded JSON and returns None on ValidationError.
+      Different database drivers (asyncpg, psycopg) return Json columns differently, so accepting both prevents driver-specific breakage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
+  - what: >-
+      Timezone-naive datetimes are coerced to UTC without validation; callers must pass pre-validated UTC naive or aware datetimes.
+    why: >-
+      LiteLLM's _as_utc helper does the same: it assumes a naive datetime is UTC and blindly attaches the timezone.
+      This matches PostgreSQL's timestamp semantics where naive values are interpreted as client timezone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L105-L108
+  - what: >-
+      clear_reload_interval nulls the interval inside the JSON param_value rather than setting the param_value column to null,
+      preserving the row so reload_revision is never reused.
+    why: >-
+      LiteLLM must keep the row alive because reload_revision is a monotonic counter; deleting and recreating it risks reusing
+      a revision number that other pods already applied, causing manual reloads to be silently skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L193-L203
+  - what: >-
+      record_reload_run does not upsert the row if absent, leaving no trace of a reload that ran before the row was created.
+      The row may be deleted mid-poll and the update will silently affect zero rows.
+    why: >-
+      LiteLLM uses update_many without checking affected rows; a manually deleted row is not resurrected by a background
+      reload job, preserving the admin's intent to stop the schedule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L206-L213
+
+out_of_scope:
+  - "B725 ConfigRepository.table and its Prisma wrapper are called but not implemented here."
+  - "B192 safe_dumps function is called but not implemented here."
+  - "The reload job that calls record_reload_run and pod_reload_is_due periodically is owned by another task."
+  - "The admin endpoints that call write_reload_interval and record_manual_reload are owned by another task."
+  - "evict_config_param (litellm/proxy/utils.py:4300-L4301) cache invalidation is owned by B124 or a task split from it; see architect question 3 in B120."
+  - "The model cost map reload schedule itself is read as part of general config loading; this module manages persistence only."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

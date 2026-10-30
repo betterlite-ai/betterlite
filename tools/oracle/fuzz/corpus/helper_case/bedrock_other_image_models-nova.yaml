@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-other-image-models-nova
+call:
+  bedrock_other_image_models:
+    nova_canvas_task_body:
+      text: a cat on a mat
+      optional_params: {taskType: TEXT_IMAGE, numberOfImages: 2}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,50 @@
+use crate::price_fields::price_struct;
+use serde::{Deserialize, Serialize};
+
+price_struct! {
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+    #[serde(default)]
+    pub struct InputPricing {
+        input_audio_second: "input_cost_per_audio_per_second",
+        input_audio_second_over_128k: "input_cost_per_audio_per_second_above_128k_tokens",
+        input_audio_token: "input_cost_per_audio_token",
+        input_audio_token_batch: "input_cost_per_audio_token_batches",
+        input_audio_token_priority: "input_cost_per_audio_token_priority",
+        input_character: "input_cost_per_character",
+        input_character_over_128k: "input_cost_per_character_above_128k_tokens",
+        input_image: "input_cost_per_image",
+        input_image_over_128k: "input_cost_per_image_above_128k_tokens",
+        input_image_token: "input_cost_per_image_token",
+        input_image_token_batch: "input_cost_per_image_token_batches",
+        input_pixel: "input_cost_per_pixel",
+        input_query: "input_cost_per_query",
+        input_request: "input_cost_per_request",
+        input_second: "input_cost_per_second",
+        input_token: "input_cost_per_token",
+        input_token_over_128k: "input_cost_per_token_above_128k_tokens",
+        input_token_over_200k: "input_cost_per_token_above_200k_tokens",
+        input_token_over_200k_batch: "input_cost_per_token_above_200k_tokens_batches",
+        input_token_over_200k_priority: "input_cost_per_token_above_200k_tokens_priority",
+        input_token_over_256k: "input_cost_per_token_above_256k_tokens",
+        input_token_over_272k: "input_cost_per_token_above_272k_tokens",
+        input_token_over_272k_batch: "input_cost_per_token_above_272k_tokens_batches",
+        input_token_over_272k_flex: "input_cost_per_token_above_272k_tokens_flex",
+        input_token_over_272k_priority: "input_cost_per_token_above_272k_tokens_priority",
+        input_over_272k_ultra: "input_cost_per_token_above_272k_tokens_ultrafast",
+        input_token_over_32k: "input_cost_per_token_above_32k_tokens",
+        input_token_over_512k: "input_cost_per_token_above_512k_tokens",
+        input_token_balanced: "input_cost_per_token_balanced",
+        input_token_batch: "input_cost_per_token_batches",
+        input_token_cache_hit: "input_cost_per_token_cache_hit",
+        input_token_flex: "input_cost_per_token_flex",
+        input_token_priority: "input_cost_per_token_priority",
+        input_token_ultrafast: "input_cost_per_token_ultrafast",
+        input_video_second: "input_cost_per_video_per_second",
+        input_video_second_over_128k: "input_cost_per_video_per_second_above_128k_tokens",
+        input_video_second_over_15s: "input_cost_per_video_per_second_above_15s_interval",
+        input_video_second_over_8s: "input_cost_per_video_per_second_above_8s_interval",
+        input_video_token: "input_cost_per_video_token",
+        input_video_token_batch: "input_cost_per_video_token_batches",
+        input_dbu_token: "input_dbu_cost_per_token",
+    }
+}

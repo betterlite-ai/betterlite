@@ -8,10 +8,12 @@ publish.workspace = true
 [dependencies]
 axum.workspace = true
 betterlite-config = { path = "../betterlite-config" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-openai = { path = "../betterlite-openai" }
 email_address = "0.2.9"
 form_urlencoded = "1.2.2"
+futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex.workspace = true

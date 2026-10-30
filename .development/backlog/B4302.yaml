@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Reconstruct cached responses and stream replay
 status: todo
 depends_on: [B004, B005, B189, B4290]
-file: null
+file: tasks/B4302-cache-response-replay.yaml
 covers:
   - "litellm/caching/caching_handler.py"
   - "litellm/caching/caching.py"

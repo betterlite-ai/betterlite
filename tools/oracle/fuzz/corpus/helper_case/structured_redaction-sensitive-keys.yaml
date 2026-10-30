@@ -1,0 +1,5 @@
+kind: helper
+name: structured-sensitive-keys
+call: {structured_redaction: {function: mask_sensitive_structure, data: {api_key: sk-seed-secret}}}
+env: {}
+compare: {ignore: []}

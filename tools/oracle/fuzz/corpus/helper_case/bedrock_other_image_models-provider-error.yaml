@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-image-models-provider-error
+call:
+  bedrock_other_image_models:
+    image_provider_error:
+      family: stability3
+      response_body:
+        images: []
+        finish_reasons: [ERROR]
+      optional_params: {}
+      text: a cat on a mat
+env: {}
+compare:
+  ignore: []

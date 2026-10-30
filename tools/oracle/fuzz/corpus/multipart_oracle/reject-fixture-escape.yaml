@@ -1,0 +1,1 @@
+{method: POST, path: /upload, headers: {}, body_kind: bytes, body: {fixture: ../outside.bin, content_type: application/octet-stream}}

@@ -1,0 +1,200 @@
+id: B3797
+title: Straiker delivery and intervention decisions
+description: >-
+  Build webhook delivery, retry/fallback behavior and v1/v3 intervention application in
+  betterlite-guardrails. Implement bounded webhook delivery with exponential backoff, retry logic
+  for transient failures, and fail-open/fail-closed fallback on unreachability. Parse v1 and v3
+  webhook responses, record verbose logging to hidden params, and apply block or intervention
+  decisions to request and response phases. Preserve in-memory TTL cache for v3 replay blocking
+  to prevent re-scoring conversations that Straiker has already blocked; distinguish replacement
+  content from block errors. Build config model resolution and event hook registration with
+  validation: api_key must be non-empty (ValueError on empty), unreachable_fallback must be
+  'fail_open' or 'fail_closed' (ValueError otherwise), api_version must be None, 'v1' or 'v3'
+  (ValueError on invalid), format_hint must be 'anthropic.messages' or 'openai.chat' or None
+  (ValueError on invalid). Detect v3 API key by sk_agt_ prefix and route to /api/v3/detect;
+  log warning if v3 key configured with api_version='v1'. Clamp numeric fields: max_retries to
+  0+ int, initial_backoff to 0.0+ float, max_backoff to max(initial_backoff, configured value),
+  timeout to float (default 5.0). Implement HTTP POST with timeout and retry limits, JSON
+  serialization with payload-size validation, and error classification for retryable (408, 429,
+  5xx, network) vs permanent failures. Handle both v1 structured webhook envelope delivery and
+  v3 provider-request-passthrough mode with different response parsing. Preserve fail-on-error
+  boolean (default true) that allows errors to pass through without blocking.
+
+  Reuse B3795 for context/identity/usage/failure helpers and webhook types; B3796 for v3 payload
+  and response building; B173 for pooled HTTP `post`; and B2226 for `InMemoryCache` with TTL.
+  The helper operation straiker_webhook_delivery is already registered; add behavior oracle cases
+  for every verdict decision, retry path, v3 replay blocking scenario, and configuration validation.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/straiker/delivery.rs
+    - crates/betterlite-guardrails/src/straiker/delivery/**
+    - tools/oracle/cases/guardrails/straiker/delivery/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L874-L883
+    why: "StraikerGuardrail.get_config_model and get_supported_event_hooks entry points."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L885-L958
+    why: "StraikerGuardrail.__init__ with api_key/unreachable_fallback/api_version/format_hint validation, v3-key detection with verbose_proxy_logger.warning, and field defaults/clamping (timeout 5.0, max_retries 0+, initial_backoff 0.0+, max_backoff min(initial, max), unreachable_fallback 'fail_closed', fail_on_error true, max_payload_bytes 524288, verbose false)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L872-L873
+    why: StraikerGuardrail class declaration and inheritance from CustomGuardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L960-L972
+    why: Webhook URL construction and header building with reserved header filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L974-L1047
+    why: Envelope building for both v1 and v3 phases, content projection and metadata assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1049-L1089
+    why: Webhook POST delivery with payload serialization, size validation, retry loop and backoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1091-L1106
+    why: HTTP attempt with status/network error classification and timeout handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1108-L1129
+    why: Response parsing for v1 structured envelopes and v3 nested decision mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1131-L1145
+    why: Recording verdict action and turn_id to response hidden params when verbose is enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1147-L1174
+    why: Error handling and fail-open/fail-closed fallback selection based on unreachability and config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1176-L1197
+    why: Block exception raising for both request and response phases with guardrail name and message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1199-L1208
+    why: Intervention inputs projection applying replacement texts from verdict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1210-L1271
+    why: V3 delivery with session/principal scope tracking, in-memory cache TTL replay blocking and decision enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1273-L1284
+    why: Replay block lookup and verbose logging when conversation matches cached prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1286-L1363
+    why: Apply guardrail main entry point dispatching v3 or v1 workflows and handling both request/response outcomes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/straiker.py
+    why: Webhook request, response, config model and decision types for v1 and v3.
+dod:
+  - text: "Config validation: api_key empty raises ValueError; unreachable_fallback not in ('fail_open', 'fail_closed') raises ValueError; api_version not in (None, 'v1', 'v3') raises ValueError; format_hint not in (None, 'anthropic.messages', 'openai.chat') raises ValueError."
+    proof: [api-key-validation-cases, fallback-validation-cases, api-version-validation-cases, format-hint-validation-cases]
+  - text: "V3 key prefix detection: api_key starting with sk_agt_ enables v3 routing; sk_agt_ key with api_version='v1' logs warning and routes to v3; legacy v1 configs without v3 key prefix use api_version as-is."
+    proof: [v3-key-detection-cases]
+  - text: "Field defaults and clamping: timeout defaults to 5.0 float; max_retries clamped to max(0, int value); initial_backoff clamped to max(0.0, float value); max_backoff clamped to max(initial_backoff, float value); unreachable_fallback defaults to 'fail_closed'; fail_on_error defaults to true; max_payload_bytes defaults to 524288; verbose defaults to false."
+    proof: [field-defaults-cases, field-clamping-cases]
+  - text: Webhook URL construction selects v3 detect path for v3 API version or v1 webhook path for v1, with api_base manipulation.
+    proof: [webhook-url-cases]
+  - text: Headers include Authorization Bearer token, Content-Type application/json, and optional X-Straiker-Webhook-Format header for v1; custom headers are added without overwriting reserved headers.
+    proof: [header-composition-cases]
+  - text: Payload serialization validates max_payload_bytes, handles JSON encoding errors gracefully, and retries on transient failures with exponential backoff.
+    proof: [payload-delivery-cases]
+  - text: HTTP timeouts, max_retries, initial_backoff and max_backoff configuration values are honored for every delivery attempt.
+    proof: [retry-configuration-cases]
+  - text: Status errors classify retryable (408/429/5xx) vs permanent failures; network and timeout errors are retryable; JSON decode errors are permanent.
+    proof: [error-classification-cases]
+  - text: V1 response parsing validates schema structure and delegates to StraikerWebhookResponse pydantic parsing; v3 response parsing calls _v3_response helper.
+    proof: [response-parsing-cases]
+  - text: Block verdicts raise GuardrailRaisedException for request phase or ModifyResponseException for response phase with guardrail_name and message.
+    proof: [block-exception-cases]
+  - text: GUARDRAIL_INTERVENED verdict applies intervention when texts are present and request is not streamed; streamed responses block instead of intervening.
+    proof: [intervention-decision-cases]
+  - text: Verbose mode records action and turn_id to response._hidden_params['straiker'] for every successful webhook response.
+    proof: [verbose-logging-cases]
+  - text: Fail-open fallback is applied when unreachable AND unreachable_fallback is fail_open, or when fail_on_error is False; all other errors block by default.
+    proof: [fallback-behavior-cases]
+  - text: V3 in-memory cache stores block messages by scope (principal and session) and conversation prefix; replay blocking returns the cached message without contacting Straiker.
+    proof: [v3-replay-blocking-cases]
+  - text: V3 session resolution uses envelope session_id, request data session, or derives a hash from principal and conversation preamble.
+    proof: [v3-session-resolution-cases]
+  - text: Blocked turns are cached only when input_type is request, prefixes are present and parsed.blocked_by is truthy; only these blocks survive replay.
+    proof: [v3-replay-cache-cases]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: api-key-validation-cases
+      why: api_key validation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::api_key_validation/)'
+    - id: fallback-validation-cases
+      why: unreachable_fallback validation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::fallback_validation/)'
+    - id: api-version-validation-cases
+      why: api_version validation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::api_version_validation/)'
+    - id: format-hint-validation-cases
+      why: format_hint validation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::format_hint_validation/)'
+    - id: v3-key-detection-cases
+      why: V3 key prefix detection and warning logging tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::v3_key_detection/)'
+    - id: field-defaults-cases
+      why: Field default value assignment tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::field_defaults/)'
+    - id: field-clamping-cases
+      why: Field clamping and numeric conversion tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::field_clamping/)'
+    - id: webhook-url-cases
+      why: Webhook URL construction or v1/v3 path selection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::webhook_url/)'
+    - id: header-composition-cases
+      why: Header building or reserved header filtering tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::header_composition/)'
+    - id: payload-delivery-cases
+      why: Payload serialization, size validation or retry delivery tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::payload_delivery/)'
+    - id: retry-configuration-cases
+      why: Timeout, retry count, or backoff calculation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::retry_configuration/)'
+    - id: error-classification-cases
+      why: Error type classification (retryable vs permanent) tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::error_classification/)'
+    - id: response-parsing-cases
+      why: V1 structured response or v3 nested verdict parsing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::response_parsing/)'
+    - id: block-exception-cases
+      why: Block exception raising for request and response phases tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::block_exception/)'
+    - id: intervention-decision-cases
+      why: Intervention text application and streamed-response blocking tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::intervention_decision/)'
+    - id: verbose-logging-cases
+      why: Hidden params recording of action and turn_id tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::verbose_logging/)'
+    - id: fallback-behavior-cases
+      why: Fail-open/fail-closed fallback selection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::fallback_behavior/)'
+    - id: v3-replay-blocking-cases
+      why: V3 in-memory TTL cache replay blocking tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::v3_replay_blocking/)'
+    - id: v3-session-resolution-cases
+      why: V3 session ID resolution from envelope or derived hash tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::v3_session_resolution/)'
+    - id: v3-replay-cache-cases
+      why: V3 blocked turn cache storage and TTL tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::delivery::v3_replay_cache/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Payload size validation occurs before HTTP transmission; oversized payloads are rejected with an error message instead of being truncated or split across requests.
+    why: LiteLLM rejects payloads exceeding max_payload_bytes; betterlite follows this behavior to fail fast and avoid partial delivery of corrupted envelopes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1057-L1061
+  - what: Verbose logging is applied after successful response parsing; if parsing fails, the error message is logged but the request/response payloads are not logged to hidden params.
+    why: LiteLLM only records a successful verdict action to hidden params; betterlite follows this pattern to avoid leaking partial Straiker responses into observability systems on errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1131-L1145
+  - what: Streamed response intervention blocks instead of applying text replacements, even when texts are present in the verdict.
+    why: LiteLLM cannot safely apply masked content to a stream already in flight; betterlite preserves this restriction to avoid partial block behavior where early chunks are modified but later chunks are not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1354-L1361
+
+out_of_scope:
+  - "Guardrail initialization and configuration loading are owned by B104 (CustomGuardrail framework)."
+  - "Webhook context and identity extraction are owned by B3795 (Straiker records)."
+  - "V3 payload and response building are owned by B3796 (Straiker v3 envelopes)."
+  - "HTTP request pooling, client creation and transport are owned by B173 (HTTP client)."
+  - "In-memory TTL cache implementation is owned by B2226 (context cache)."
+  - "Session ID retrieval from request data (get_session_id_from_request_data) is owned by B3664 (guardrail records)."
+  - "Request-to-GuardrailRaisedException or ModifyResponseException conversion is owned by U1 (framework exception handling)."
+
+pitfalls:
+  - "Payload serialization must use _json_default for non-standard types like datetime; missing this handler will cause JSON encode errors and permanent failure."
+  - "Retryable error classification must check status codes (408, 429, 5xx), RequestError/TimeoutError types and Timeout; misclassifying a permanent error as retryable will exhaust retries on unrecoverable failures."
+  - "V3 session scoping uses principal (user or key) and session together as a cache key; a request with neither principal nor session (guest calls) will have an empty scope and never match replay blocks."
+  - "Replay blocking only applies to request phase (input_type == request); response-phase blocks are never cached, so the same response text will be sent again on retry."
+  - "Blocked-by controls are only cached when parsed.blocked_by is truthy; a block without controls (from a kill switch or state) will not be cached and will re-contact Straiker on replay."
+  - "TTL cache semantics depend on B2226's implementation; verify that get_cache and set_cache use the same TTL window (V3_BLOCKED_TURN_TTL_SECONDS) and that cache keys are scoped to avoid cross-principal collisions."
+  - "Fail-on-error boolean short-circuits fail-open logic; even when unreachable_fallback is fail_open, fail_on_error False will allow the request through, so the precedence is (fail_on_error || (unreachable && fallback_open))."
+  - "API version selection from key prefix (sk_agt_ → v3) may log a warning if a v3 key is configured with api_version v1; this warning must be output through verbose_proxy_logger so operators are aware of the routing change."
+  - "X-Straiker-Webhook-Format header is only sent for v1 API; v3 requests must not include it even if it appears in custom_headers, so reserved header filtering must exclude it from custom headers."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

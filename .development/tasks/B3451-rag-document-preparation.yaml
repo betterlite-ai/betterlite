@@ -1,0 +1,198 @@
+id: B3451
+title: RAG ingestion state and document preparation
+description: >-
+  Build reusable ingestion state, credential overlay and source/OCR/chunk preparation
+  in `betterlite-core::rag`, with an injected OCR operation. Keep upload-source precedence,
+  remove caller endpoint overrides absent from a stored credential, and distinguish upload
+  failure from the later pipeline's failed-result envelope.
+
+  BaseRAGIngestion constructor stores ingest_options (OCR config, chunking strategy,
+  embedding config, vector store config, ingest name) and generates an ingest_id prefixed
+  with "ingest_". Load stored credentials from litellm_credential_name in vector_store
+  config, with stored values winning and removing absent api_base, aws_sts_endpoint,
+  aws_web_identity_token from caller-supplied values.
+
+  upload method returns (filename, file_content, content_type, existing_file_id) by
+  precedence: file_data tuple, file_url fetched through the RAG HTTP client, or existing
+  file_id. File URL is the configured source when no file_data is present; an absent
+  configured source raises ValueError. Fetched URL responses provide headers for content-type
+  and generate default filename from the last path segment.
+
+  ocr method performs OCR on file content when ocr_config is present and file_content is
+  not None. Reads ocr model from config (default mistral/mistral-ocr-latest), detects
+  content-type (image vs document), encodes file_content as base64 data URL, calls router
+  aocr if available (with vector_store_config as router), else litellm.aocr, and extracts
+  text from response pages. Returns extracted text or None.
+
+  chunk method splits text into chunks using RecursiveCharacterTextSplitter from B3450,
+  reading chunk_size (default 1000), chunk_overlap (default 200), and separators from
+  chunking_strategy. Text comes from OCR output if present, else UTF-8 decode of
+  file_content with PDF fallback (via B3450's extract_text_from_pdf), else empty list.
+  Rejects chunk_size<=0, chunk_overlap<0, or chunk_overlap>=chunk_size with a typed
+  configuration error.
+
+  abstract store method declares the typed storage-operation contract as abstract;
+  provider subclasses implement it with their backend. It takes file_content, filename,
+  content_type, chunks, embeddings and optional existing_file_id; returns (vector_store_id,
+  file_id). This task builds only the interface; no backend implementation.
+
+  Import and declare all records and enums from litellm/rag/ingestion/base_ingestion.py,
+  including supports_existing_file_id=False. This is the file's default owner; B3460
+  owns ingest and the HTTP route. The unused custom_llm_provider property and overridden
+  base embedding implementation are excluded.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/ingestion.rs
+    - crates/betterlite-core/src/rag/ingestion/**
+    - tools/oracle/helpers/b3451.py
+    - tools/oracle/helpers/b3451/**
+    - tools/oracle/src/helpers/core_ops/b3451.rs
+    - tools/oracle/src/helpers/core_ops/b3451/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L47-L67
+    why: BaseRAGIngestion.__init__ stores options, generates ingest_id, extracts configs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L69-L94
+    why: _load_credentials_from_config merges stored credential values, removes absent fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L101-L134
+    why: upload precedence (file_data, file_url, file_id), HTTP fetch via async_safe_get.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L136-L182
+    why: ocr encodes base64 data URL, calls router/litellm aocr, extracts markdown pages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L184-L242
+    why: chunk reads splitter config, applies text extraction fallback, calls split_text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L269-L294
+    why: abstract store contract; typed storage operation, provider-implemented.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/credential_accessor.py#L1
+    why: CredentialAccessor.get_credential_values from B1601 credential registry.
+
+dod:
+  - text: >-
+      BaseRAGIngestion.__init__ stores ingest_options, generates ingest_id with "ingest_"
+      prefix, extracts ocr/chunking_strategy/embedding/vector_store configs, and calls
+      _load_credentials_from_config.
+    proof: [init-lifecycle]
+  - text: >-
+      _load_credentials_from_config reads litellm_credential_name from vector_store_config,
+      fetches stored values via B1601's CredentialAccessor, merges them into
+      vector_store_config, and removes api_base/aws_sts_endpoint/aws_web_identity_token if
+      absent from stored values.
+    proof: [credential-load]
+  - text: >-
+      upload precedence: file_data tuple returns immediately, file_url fetches via RAG client
+      and parses headers, file_id returns as existing_file_id, else raises ValueError.
+    proof: [upload-precedence]
+  - text: >-
+      upload fetches file_url through get_async_httpx_client(RAG provider) and async_safe_get,
+      extracting content-type from response headers and generating filename from URL path.
+    proof: [upload-fetch]
+  - text: >-
+      ocr reads model from ocr_config (default mistral/mistral-ocr-latest), detects image vs
+      document content-type, encodes file_content as base64 data URL, calls router.aocr or
+      litellm.aocr, and extracts markdown text from pages.
+    proof: [ocr-dispatch]
+  - text: >-
+      chunk reads chunk_size (default 1000), chunk_overlap (default 200), separators from
+      chunking_strategy, extracts text from OCR result or UTF-8 file decode or PDF extraction,
+      splits via RecursiveCharacterTextSplitter, and returns chunks.
+    proof: [chunk-splitting]
+  - text: >-
+      chunk validates chunk_size > 0, chunk_overlap >= 0, and chunk_overlap < chunk_size,
+      raising a typed configuration error on violation.
+    proof: [chunk-validation]
+  - text: >-
+      store is an abstract async method returning (vector_store_id, file_id) tuple;
+      provider subclasses implement it.
+    proof: [store-contract]
+  - text: >-
+      ocr returns None when ocr_config is absent or file_content is empty, and chunk returns
+      empty list on UTF-8 decode failure, PDF extraction failure, or when no text source is
+      available. Other exceptions from ocr and chunk propagate to the caller (caught by the
+      ingestion pipeline in B3460).
+    proof: [ocr-dispatch, chunk-splitting]
+
+checks:
+  optional: []
+  commands:
+    - id: init-lifecycle
+      why: BaseRAGIngestion.__init__ does not initialize fields or generate ingest_id
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::.*init/)'
+    - id: credential-load
+      why: credential loading does not merge or remove fields correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::.*credential/)'
+    - id: upload-precedence
+      why: upload does not respect file_data/url/id precedence or raises on missing source
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::upload.*precedence/)'
+    - id: upload-fetch
+      why: upload does not fetch URL correctly or parse headers
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::upload.*fetch/)'
+    - id: ocr-dispatch
+      why: OCR does not encode data URL, select model, or dispatch correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::ocr/)'
+    - id: chunk-splitting
+      why: chunk does not extract text or split correctly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::chunk/)'
+    - id: chunk-validation
+      why: chunk does not validate configuration or raises correct error type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::chunk_config/)'
+    - id: store-contract
+      why: store abstract method is missing or not a typed contract
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::.*store/)'
+
+oracle_cases:
+  - tools/oracle/cases/ingestion_state/init-options.yaml
+  - tools/oracle/cases/ingestion_state/credential-merge.yaml
+  - tools/oracle/cases/ingestion_state/upload-filedata.yaml
+  - tools/oracle/cases/ingestion_state/upload-url-fetch.yaml
+  - tools/oracle/cases/ingestion_state/upload-file-id.yaml
+  - tools/oracle/cases/ingestion_state/upload-missing-source.yaml
+  - tools/oracle/cases/ingestion_state/ocr-mistral-model.yaml
+  - tools/oracle/cases/ingestion_state/ocr-image-detection.yaml
+  - tools/oracle/cases/ingestion_state/ocr-disabled.yaml
+  - tools/oracle/cases/ingestion_state/chunk-utf8-text.yaml
+  - tools/oracle/cases/ingestion_state/chunk-pdf-fallback.yaml
+  - tools/oracle/cases/ingestion_state/chunk-binary-empty.yaml
+  - tools/oracle/cases/ingestion_state/chunk-config-defaults.yaml
+  - tools/oracle/cases/ingestion_state/chunk-config-custom.yaml
+  - tools/oracle/cases/ingestion_state/chunk-config-invalid.yaml
+
+deviations:
+  - what: >-
+      File URL downloads are rejected at the HTTP boundary with a 400 error before reaching
+      BaseRAGIngestion.upload. The proposal in the outline records that B009 explicitly withholds
+      downloads under bounded-inputs, and betterlite enforces this as a pre-dispatch check in the
+      ingestion route handler rather than in the base class.
+    why: >-
+      The configured source precedence (inline file_data wins, URL downloads are the fallback)
+      is preserved in the type layer: callers can still configure a URL source and pass it to
+      the pipeline. Native code validates at the HTTP boundary that URLs from request bodies are
+      forbidden, matching the repository's existing security posture for download sources.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L122-L129
+  - what: >-
+      Chunk configuration validation (rejecting chunk_size<=0, chunk_overlap<0, or
+      chunk_overlap>=chunk_size) is typed and returns before splitting. LiteLLM can hang or fail
+      on nonprogressing values with the depth fallback; betterlite fails fast with a named error.
+    why: >-
+      Invalid configuration is a build error, not a runtime surprise. When reached inside an
+      ingestion pipeline, this error returns status=failed with the error message preserved,
+      matching the pipeline's existing failed-result semantics for OCR/chunk/embed/store errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L227-L242
+
+out_of_scope:
+  - BaseRAGIngestion.custom_llm_provider property (not called in ingestion instances; provider dispatch reads vector_store_config directly; owned by B3460).
+  - BaseRAGIngestion.embed method lines 244-267 (all five registered providers override it; no caller reaches this base implementation; owned by B3460).
+  - BaseRAGIngestion.ingest orchestration lines 296-371 (the full pipeline entry point is built there; owned by B3460).
+
+pitfalls:
+  - Stored credentials are loaded once at __init__; removal of absent fields (api_base, aws_sts_endpoint, aws_web_identity_token) only happens when CredentialAccessor returns values (empty dict does not trigger removal).
+  - "OCR requires both ocr_config presence and file_content; either being None means OCR returns None (distinguish config presence from success)."
+  - chunk rejects nonprogressing sizes before calling the splitter (zero or negative chunk_size is a config error, not a hang-on-split).
+  - Fetched file_url responses use response.headers.get with default application/octet-stream (the pin literal when content-type absent).
+  - "OCR base64 encoding includes content-type and semicolon exactly as data:mime/type;base64,encoded with no spaces."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

@@ -1,0 +1,9 @@
+kind: helper
+name: kill-switch-config-auth
+call:
+  carried_policy_records:
+    function: kill_config
+    value: {url: 'https://example.com', auth: {type: bearer, token: carried-secret}}
+env: {}
+compare:
+  ignore: []

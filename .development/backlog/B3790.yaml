@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Pillar protection payloads and response evidence
 status: todo
 depends_on: [B002, B173, B174, B206]
-file: null
+file: tasks/B3790-pillar-protection.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/pillar.py"

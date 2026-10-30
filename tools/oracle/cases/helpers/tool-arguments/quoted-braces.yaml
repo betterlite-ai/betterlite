@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "quoted-braces", "call": {"tool_arguments": {"mode": "parse_tool_call_arguments", "arguments": "{\"a\":\"{\",\"b\":1"}}, "env": {}, "compare": {"ignore": []}}

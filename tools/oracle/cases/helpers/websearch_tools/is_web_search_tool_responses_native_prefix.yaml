@@ -1,0 +1,5 @@
+kind: helper
+name: is-web-search-tool-responses-native-prefix
+call: {websearch_tool_records: {function: is_web_search_tool_responses, tool: {type: web_search_preview_2025_03_11}}}
+env: {}
+compare: {ignore: []}

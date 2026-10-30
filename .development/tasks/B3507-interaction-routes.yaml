@@ -1,0 +1,124 @@
+id: B3507
+title: Serve interaction create retrieve delete and cancel routes
+description: >-
+  Register HTTP routes for interaction create, retrieve, delete, and cancel operations in betterlite-server.
+  Serve POST /v1beta/interactions, POST /interactions, GET /v1beta/interactions/{interaction_id}, GET /interactions/{interaction_id},
+  DELETE /v1beta/interactions/{interaction_id}, DELETE /interactions/{interaction_id},
+  POST /v1beta/interactions/{interaction_id}/cancel, and POST /interactions/{interaction_id}/cancel.
+  Each route receives requests from LiteLLM API clients using the Google Interactions API.
+  Parse the JSON body (using B1100's request decoder for create; no body for get/delete/cancel),
+  authenticate via B052's virtual key auth, extract the interaction_id from the path where needed,
+  set custom_llm_provider to "gemini" as default when not provided, and dispatch to B3499's create,
+  B3495's get, B3500's delete, and B3500's cancel handlers via B014's base_process_llm_request.
+  Return the same error status, type, param and code LiteLLM returns on provider errors (rule
+  errors-match-litellm), with betterlite's own message. On exceptions during dispatch, extract
+  the error and reraise it through the exception handler so the error response middleware (from B003)
+  returns the correct HTTP response. Clients that read x-litellm-* response headers must see the
+  ones LiteLLM sends: call id, model id, model group, model api base, and others the oracle cases
+  show.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/interaction_routes.rs
+    - crates/betterlite-server/src/api/interaction_routes/**
+    - tools/oracle/cases/interactions/**
+    - tools/oracle/fuzz/corpus/http_case/interaction-*
+    - tools/oracle/helpers/b3507.py
+    - tools/oracle/helpers/b3507/**
+    - tools/oracle/src/helpers/server/b3507.rs
+    - tools/oracle/src/helpers/server/b3507/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L220-L303
+    why: create_interaction route and handler with POST /v1beta/interactions and POST /interactions paths, body parsing, custom_llm_provider default, and delegation to base_process_llm_request with route_type acreate_interaction
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L306-L371
+    why: get_interaction route and handler with GET /v1beta/interactions/{interaction_id} and GET /interactions/{interaction_id} paths, interaction_id path parameter, custom_llm_provider default, and delegation to base_process_llm_request with route_type aget_interaction
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L374-L439
+    why: delete_interaction route and handler with DELETE /v1beta/interactions/{interaction_id} and DELETE /interactions/{interaction_id} paths, interaction_id path parameter, custom_llm_provider default, and delegation to base_process_llm_request with route_type adelete_interaction
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L442-L507
+    why: cancel_interaction route and handler with POST /v1beta/interactions/{interaction_id}/cancel and POST /interactions/{interaction_id}/cancel paths, interaction_id path parameter, custom_llm_provider default, and delegation to base_process_llm_request with route_type acancel_interaction
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L1-15
+    why: Router initialization, dependencies import and user_api_key_auth usage pattern
+dod:
+  - text: "POST /v1beta/interactions and POST /interactions both serve the same handler and dispatch via acreate_interaction."
+    proof: [interaction-routes-http]
+  - text: "GET /v1beta/interactions/{interaction_id} and GET /interactions/{interaction_id} both serve the same handler and dispatch via aget_interaction."
+    proof: [interaction-routes-http]
+  - text: "DELETE /v1beta/interactions/{interaction_id} and DELETE /interactions/{interaction_id} both serve the same handler and dispatch via adelete_interaction."
+    proof: [interaction-routes-http]
+  - text: "POST /v1beta/interactions/{interaction_id}/cancel and POST /interactions/{interaction_id}/cancel both serve the same handler and dispatch via acancel_interaction."
+    proof: [interaction-routes-http]
+  - text: "The create route reads the request body and passes it to base_process_llm_request."
+    proof: [interaction-routes-http]
+  - text: "The get, delete and cancel routes do not read a body; they extract interaction_id from the path and set it in the data dict."
+    proof: [interaction-routes-http]
+  - text: "All routes set custom_llm_provider to 'gemini' as default when not already present in the request data."
+    proof: [interaction-routes-http]
+  - text: "All routes return ORJSONResponse and include user_api_key_auth as a dependency."
+    proof: [interaction-routes-http]
+  - text: "Every listed create, get, delete and cancel case matches LiteLLM on the client response and request sent upstream."
+    proof: [interaction-routes-http]
+  - text: "Every x-litellm-* header LiteLLM sends on the listed cases is present with the same value unless the case lists it in headers_present."
+    proof: [interaction-routes-http]
+  - text: "On provider error, the client receives the same status, type, param and code as LiteLLM with betterlite's own message."
+    proof: [interaction-routes-http]
+checks:
+  optional: []
+  commands:
+    - id: interaction-routes-http
+      why: HTTP routes, auth, interaction_id extraction, custom_llm_provider default, or response format are missing or incorrect
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/interaction-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/interactions/create-basic.yaml
+  - tools/oracle/cases/interactions/create-with-body-data.yaml
+  - tools/oracle/cases/interactions/get-basic.yaml
+  - tools/oracle/cases/interactions/get-with-path-param.yaml
+  - tools/oracle/cases/interactions/delete-basic.yaml
+  - tools/oracle/cases/interactions/delete-with-path-param.yaml
+  - tools/oracle/cases/interactions/cancel-basic.yaml
+  - tools/oracle/cases/interactions/cancel-with-path-param.yaml
+deviations:
+  - what: All routes default custom_llm_provider to "gemini" when not provided in the request data, applying a fixed default before dispatching to base_process_llm_request.
+    why: The create, get, delete and cancel handlers in LiteLLM all set this default at lines 275, 343, 411, and 479 respectively; betterlite preserves this behavior for consistency with LiteLLM's provider selection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L273-L276
+  - what: Interaction ID is extracted from the path and placed in the data dict for get, delete and cancel operations; these operations do not read a request body.
+    why: LiteLLM's routes (lines 343, 411, 479) build a minimal data dict with only interaction_id and custom_llm_provider, delegating all parameter handling to the call pipeline tasks (B3495, B3500).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L343
+  - what: Create operations read the full request body (parsed via B1100's _read_request_body) and pass all data to base_process_llm_request; the route does not extract specific fields.
+    why: LiteLLM's create handler (lines 271-272) reads the body and passes it through with only the custom_llm_provider default applied; parameter extraction is owned by B3499's create call handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L271-L276
+out_of_scope:
+  - Interaction creation logic and request parameter handling; B3499 owns the acreate_interaction call entry point.
+  - Interaction retrieval logic and request parameter handling; B3495 owns the aget_interaction call entry point.
+  - Interaction deletion and cancellation logic and request parameter handling; B3500 owns both adelete_interaction and acancel_interaction call entry points.
+  - Streaming response assembly and logging; B252 and B2227 handle buffered chunk assembly and completion callbacks.
+  - Request/response transformation and provider dispatch; B014 owns base_process_llm_request and exception handling.
+  - Cost tracking headers (x-litellm-response-cost) and key-limit headers; they need spend tracking (B069) and virtual keys (B052).
+pitfalls:
+  - >-
+    The two routes (/v1beta/ and /) for each operation (create, get, delete, cancel) must
+    share the same async handler function, not duplicate it, to avoid maintenance divergence.
+  - >-
+    The custom_llm_provider default must be set in the data dict *before* calling base_process_llm_request,
+    so the downstream handler sees the default when no custom_llm_provider is provided.
+  - >-
+    The interaction_id from the path must be extracted and placed in the data dict with the key
+    ""interaction_id"", matching the case the call handlers expect.
+  - >-
+    The create route reads the full request body via _read_request_body and passes all data through;
+    do not extract and transform fields here. The call handler owns parameter extraction.
+  - >-
+    The get, delete and cancel routes do not read a request body. They build a minimal data dict
+    with only interaction_id and custom_llm_provider, then delegate to base_process_llm_request.
+  - >-
+    When the upstream fails before sending the first byte, return the provider's error status
+    and type, not a gateway error, so clients see the real failure.
+  - >-
+    The exception handler expects exceptions raised from the dispatcher, not errors in status
+    codes; re-raise provider errors from the exception handler rather than returning them directly.
+  - >-
+    ORJSONResponse must be used for all responses to match LiteLLM's JSON serialization behavior
+    and header handling.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

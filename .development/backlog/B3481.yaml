@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Interaction records and billing eligibility
 status: todo
 depends_on: [B1370]
-file: null
+file: tasks/B3481-interaction-records.yaml
 covers:
   - "litellm/types/interactions/**"
   - "litellm/interactions/background_cost_polling.py"

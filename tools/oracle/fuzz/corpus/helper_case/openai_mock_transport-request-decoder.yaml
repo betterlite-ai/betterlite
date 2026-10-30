@@ -1,0 +1,12 @@
+kind: helper
+name: openai-mock-transport-seed-request-decoder
+call:
+  openai_mock_transport:
+    case: mock_request_decoder
+    probes:
+      - content: '{"model": "gpt-4"}'
+      - content: "not json"
+      - content: "[1,2,3]"
+env: {}
+compare:
+  ignore: []

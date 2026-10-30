@@ -1,14 +1,14 @@
 id: B728
 milestone: M4 keys, spend and management
 title: Daily spend search and export queries
-status: todo
+status: done
 depends_on: [B171, B727, B856, B2312]
 file: tasks/B728-daily-activity-export.yaml
 covers:
   - "litellm/repositories/daily_activity_sql.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 272

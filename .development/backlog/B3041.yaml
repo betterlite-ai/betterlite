@@ -2,8 +2,8 @@ id: B3041
 milestone: M4 keys, spend and management
 title: Request token estimates and implicit output caps
 status: todo
-depends_on: [B196, B909, B3031]
-file: null
+depends_on: [B196, B909, B3031, B218, B3484]
+file: tasks/B3041-rate-limit-token-estimates.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
 parent: B072

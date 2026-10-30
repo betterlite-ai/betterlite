@@ -15,13 +15,16 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 
 - Before writing anything that looks like a solved problem, do what rule reuse-before-building says: search, compare the options against every requirement in the task, pick one, and write the comparison into your report.
 - Write the test first and watch it fail for the right reason, then make it pass.
+- Every test or case a DoD item names must exist under that name and check what the name says. A proof filter often covers a whole module, so a missing name still passes the gate. Before you answer, find each name in `cargo nextest list -p <crate>` output and each oracle case in tools/oracle/cases.
 - Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call. Never edit anything under .development/, your own task file included: the dispatcher sends back any run that does. The architect may change your task file on your branch (a raised budget, a fixed check, a wider scope); keep those commits and never put the file back.
 - Every Cargo.toml is always in scope, so add the dependencies you need where they belong. Keep each dependency table in name order; the hooks check it.
+- Fuzz targets and corpora (`**/fuzz/fuzz_targets/**`, `**/fuzz/corpus/**`) are always in scope too, so add the seed files your checks ask for.
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - Scratch files, extra build dirs such as a second CARGO_TARGET_DIR, and copies go under $TMPDIR or the worktree's target/. Never write to a fixed /tmp path: /tmp is memory, and the dispatcher points $TMPDIR at disk.
 - CI runs the tests as root in a container, so a test can't make a read, a write or a command fail through file permissions (chmod 000 still lets root in). Fail it another way: a fake program on a PATH the test controls, an injected runner, or a missing path.
 - While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. Mutants and coverage run only once every other check passes, so a red gate shows SKIP for them. The first line of the gate output names the folder holding each check's full log.
 - Oracle helpers are registered up front, so a helper task never edits the registry. Every task with oracle cases owns one operation named after its id in lower case (B123 is b123), and a case that calls it says `kind: helper` in any folder. It replaces the stub `Op` in its own module (tools/oracle/src/helpers/<group>/<module>.rs, the path in its scope) with an `impl Helper` that sets `type Input` and writes `fn run`, and it writes `run` in tools/oracle/helpers/<operation>.py. helpers/mod.rs, the group files, dispatch.py and other tasks' modules stay as they are. A test picks its own cases by operation name.
+- A helper reads only its call input and the case env: no files, no wall clock, no network. The oracle caches LiteLLM's answer under a hash of that input, the case env, the helper's .py file, dispatch.py and the LiteLLM pin, so anything else a helper reads goes stale in the cache. Put a fixture's text in the case itself.
 - Your Rust modules already exist as empty files, declared in their parents by the skeleton. Fill them; never edit a crate's lib.rs, unless your scope lists the whole crate (crates/<crate>/**): then declare your own modules there. Code in other crates reaches yours by its module path, such as betterlite_auth::auth_cache::Session, so add no re-exports. A module that can fail defines its own thiserror enum in its own files.
 - A config section starts as crate::sections::stub_section!(). Replace it with a Raw struct holding every key your section reads (serde names as in LiteLLM's YAML, paths from the file's root), a Settings type and the Section impl that converts Raw into Settings, then read config.sections.<name> where the settings are used. A key your section reads stops being unsupported: delete its file under crates/betterlite-config/tests/fixtures/unsupported/<snapshot>/ for each fixture that has it, and add a file for any nested key that stays unknown. Those files are always in scope.
 
@@ -31,7 +34,7 @@ LiteLLM's behavior is the spec; its code isn't. Read it at the pinned commit the
 
 The references mark the LiteLLM code the task owns, and rule owned-behavior-is-built applies: behavior there that the task text skips is still yours. Build it with a named case and say so in notes. When it won't fit the budget, answer blocked with the list.
 
-The oracle in tools/oracle (from B001) runs LiteLLM next to betterlite on the same request. When the task text and the oracle disagree, believe the oracle and say so in a note. When you think LiteLLM itself is wrong, don't copy the bug and don't quietly fix it: report it as a deviation and let the architect decide.
+The oracle in tools/oracle (from B001) runs LiteLLM next to betterlite on the same request. When the task text and the oracle disagree, believe the oracle and say so in a note. When LiteLLM itself is wrong, rule owned-behavior-is-built draws the line: copy what a working LiteLLM setup can rely on, and fix a bug none can rely on without asking. List each fix as a deviation with a link to the LiteLLM line, and prove it with a Rust test, since an oracle case on that input can't match. When you can't tell which side a bug is on, copy LiteLLM and say so in a note.
 
 Everything in LiteLLM's enterprise directory and in the litellm_enterprise package is proprietary. Don't open those files, port them or link them. LiteLLM's litellm-rust folder is MIT and fine to read.
 
@@ -43,12 +46,12 @@ The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .ba
 
 ## Final answer
 
-Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Every field is required; use an empty string or list when there is nothing to say.
+Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry and deviation from earlier attempts that still holds.
 
 - task is the task id.
 - status is done or blocked.
 - summary says what changed, in two to four plain sentences.
 - blocker is empty when done.
-- prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every crate you added to a Cargo.toml must be a chosen option here, or the gate fails.
+- prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every option needs its own https link and why, also one you write by hand: link the LiteLLM code it ports or the std or crate docs it builds on, or the gate rejects the report. Every crate the branch adds to a Cargo.toml must be a chosen option here, named exactly as the crate (serde_repr, not serde_repr::Serialize_repr), or the gate fails.
 - deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher checks that the file and the report list the same number of deviations with the same links.
 - notes holds facts the architect needs and nothing else.

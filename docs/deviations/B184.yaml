@@ -1,0 +1,8 @@
+task: B184
+deviations:
+- what: Cookie and CORS response headers are dropped both raw and llm_provider-prefixed.
+  why: >-
+    Prevent provider cookie and cross-origin policy leakage; LiteLLM filters unsafe names after prefixing and can
+    retain prefixed copies. Other provider headers and rate-limit headers remain.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3674-L3698

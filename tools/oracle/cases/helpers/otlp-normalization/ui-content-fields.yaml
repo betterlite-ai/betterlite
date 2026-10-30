@@ -1,0 +1,10 @@
+kind: helper
+name: otlp-ui-content-fields
+call:
+  otlp_normalization:
+    ui_content:
+      value:
+        - '{"b": {"y": 1, "x": [1.5e20, -0, "é", 0.00001]}, "a": 2, "c": "s", "d": null, "role": 1}'
+env: {}
+compare:
+  ignore: []

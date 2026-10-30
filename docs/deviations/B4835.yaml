@@ -1,0 +1,49 @@
+task: B4835
+deviations:
+  - what: "CodexOptions.config keys are passed to `codex -c` as TOML, not as environment variables."
+    why: "Codex uses its own config format and does not read LiteLLM environment variables. Each config
+         value is translated to TOML syntax to pass on the command line."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L150-L171
+  - what: "Bearer token is passed only in LITELLM_HARNESS_TOKEN env var, never in argv or config."
+    why: "Command-line arguments are visible in process listings. The token is a secret and must stay out
+         of argv."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L233
+  - what: "CODEX_HOME is set to the private session directory, isolating the user's Codex config and auth."
+    why: "Codex loads ~/.codex by default. This deployment should use a clean session directory to avoid
+         mixing with the user's own Codex configuration."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L218-L234
+  - what: "CodexOptions.env entries named LITELLM_HARNESS_TOKEN or CODEX_HOME are rejected with an error
+         instead of being silently overwritten."
+    why: "LiteLLM merges options.env under its own managed token and home entries, so a caller-supplied
+         value with the same name disappears without notice. The no-silent-drops rule in this repository
+         forbids an earlier entry being overwritten without saying so."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L233
+  - what: "An mcp_tool_call result object comes out of ToolResult.output with its keys sorted
+         (such as {\"n\": 1, \"ok\": true}), not in the order the JSONL line wrote them."
+    why: "transform_stream_line receives each line as a JsonObject, a BTreeMap defined in
+         crate::types outside this task's scope, so key order is already gone by the time the
+         result object reaches json.dumps. LiteLLM's json.dumps(result) writes a dict in
+         insertion order, so a caller relying on that order sees a different string."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L117
+  - what: "_provider_overrides reads SessionSettings.gateway (api_base, api_key) instead of
+         ctx.sandbox.host_url(ctx.endpoint.port) and ctx.endpoint.token. A Codex session whose
+         model does not use the litellm_proxy/ prefix has no gateway target and fails setup
+         instead of running against its own per-session endpoint, and the token placed in
+         LITELLM_HARNESS_TOKEN is the caller's real gateway key, not a scoped session token."
+    why: "SessionContext has no endpoint field yet: B4841 builds ModelEndpoint but context.rs,
+         which carries SessionContext, is out of this task's scope and out of B4841's. This
+         is a stand-in until the session endpoint is wired into SessionContext; B4841 (or the
+         task that plugs ModelEndpoint into SessionContext after it) owns rewiring
+         _provider_overrides to ctx.sandbox.host_url and ctx.endpoint.token."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L219-L233
+  - what: "A JSONL line whose type is known but whose fields don't fit the typed event shape
+         (such as {\"type\":\"error\",\"message\":{\"code\":1}} or a numeric agent_message.text)
+         is recorded into state.error naming the event type, instead of being coerced through
+         Python truthiness and str() like LiteLLM does."
+    why: "LiteLLM reads every field through getattr/str() and never rejects a line outright, so
+         it always emits the event (an error line still sets state.error, a numeric text still
+         becomes a Text event). The typed StreamEvent/Item enums in this crate reject a field
+         whose JSON shape doesn't match, and no-silent-drops forbids losing that line without a
+         trace, so it lands in state.error instead of being dropped. No Codex fixture exercises
+         this path; it only differs from LiteLLM on event shapes outside the fixtures."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L313-L329

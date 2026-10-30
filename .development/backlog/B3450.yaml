@@ -3,7 +3,7 @@ milestone: M5 api families
 title: RAG records, provider selection and document chunking
 status: todo
 depends_on: [B002]
-file: null
+file: tasks/B3450-rag-records-and-chunking.yaml
 covers:
   - "litellm/types/rag.py"
   - "litellm/rag/text_splitters/**"

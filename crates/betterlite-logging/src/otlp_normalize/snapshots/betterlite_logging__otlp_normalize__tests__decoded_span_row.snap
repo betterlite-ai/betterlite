@@ -1,0 +1,38 @@
+---
+source: crates/betterlite-logging/src/otlp_normalize/tests.rs
+assertion_line: 148
+expression: row
+---
+SpanRow {
+    timestamp: 1000,
+    trace_id: "0af7651916cd43dd8448eb211c80319c",
+    span_id: "b7ad6b7169203331",
+    parent_span_id: "00f067aa0ba902b7",
+    trace_state: "vendor=1",
+    span_name: "chat gpt-4o",
+    span_kind: "SPAN_KIND_CLIENT",
+    service_name: "agent",
+    resource_attributes: {
+        "service.name": "agent",
+        "host": "a1",
+    },
+    scope_name: "openinference",
+    scope_version: "1.2",
+    span_attributes: {
+        "llm.provider": "openai",
+        "big": "65558 vvvvvvvvvvvvvvvv…[truncated 1 bytes]",
+    },
+    duration: 3500,
+    status_code: "STATUS_CODE_ERROR",
+    status_message: "bad input",
+    team_id: "",
+    api_key_hash: "",
+    observation_type: Llm,
+    agent_name: "planner",
+    model: "gpt-4o",
+    litellm_request_id: "chatcmpl-1",
+    input_tokens: 12,
+    output_tokens: 3,
+    input: "[{\"role\": \"user\", \"content\": \"hi\"}]",
+    output: "65558 oooooooooooooooo…[truncated 2 bytes]",
+}

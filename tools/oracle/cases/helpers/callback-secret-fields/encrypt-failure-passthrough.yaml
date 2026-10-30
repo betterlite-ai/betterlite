@@ -1,0 +1,33 @@
+kind: helper
+name: callback-secret-fields-encrypt-failure-passthrough
+call:
+  callback_secret_fields:
+    salt_key: null
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: []
+    steps:
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: sk-secret
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: ""
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              api_key: 7
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              region: us-east-1
+env: {}
+compare:
+  ignore: []

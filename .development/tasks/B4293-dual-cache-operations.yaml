@@ -1,0 +1,228 @@
+id: B4293
+title: Compose memory and Redis cache reads and mutations
+description: >-
+  Build the dual-tier cache orchestration composing local memory and remote Redis backends
+  into a unified interface for single-key operations. Implement LimitedSizeOrderedDict
+  for ordered, bounded tracking of Redis batch access times with atomic lock-protected updates.
+  Construct DualCache with optional Redis and required memory tiers, applying configured TTLs
+  to both layers on writes and backfilling memory from Redis reads with the memory tier's TTL.
+
+  On memory misses, single-key Redis reads apply throttling to avoid overloading a slow backend,
+  reusing access times across concurrent calls with thread-safe atomic reservations. Local-only
+  fallback when Redis is absent or writes are deferred works for all operations. Async increment
+  catches Redis errors and returns the memory result rather than propagating, while sync increment
+  propagates errors. Mutation ordering preserves local writes ahead of remote completion;
+  request-batched writes defer Redis operations to pipelines and unbatched calls execute directly.
+  Delegate batch operations to B4294 through declared reads and shared batch infrastructure.
+
+  Crate: betterlite-cache.
+
+  Configuration and environment: TTL defaults from litellm.default_in_memory_ttl,
+  litellm.default_redis_ttl, litellm.default_redis_batch_cache_expiry, and
+  DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE constant (currently 1000). No new config keys
+  or environment variables at this level; B4299 composes backend construction.
+
+scope:
+  paths:
+    - crates/betterlite-cache/src/dual_cache.rs
+    - crates/betterlite-cache/src/dual_cache/**
+    - crates/betterlite-cache/src/lib.rs
+    - tools/oracle/cases/dual_cache/**
+    - tools/oracle/helpers/b4293.py
+    - tools/oracle/helpers/b4293/**
+    - tools/oracle/src/helpers/cache/b4293.rs
+    - tools/oracle/src/helpers/cache/b4293/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L40-L50
+    why: LimitedSizeOrderedDict __init__ and __setitem__ for ordered, bounded access-time tracking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L87-L108
+    why: DualCache.__init__ with default TTL and batch-expiry initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L109-L117
+    why: update_cache_ttl and update_in_memory_max_size runtime configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L119-L137
+    why: attach_redis_cache lazy wiring preserving prior state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L138-L149
+    why: _backfill_kwargs applies memory TTL to Redis-sourced entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150-L163
+    why: set_cache write ordering and exception swallowing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164-L184
+    why: increment_cache dual-tier operation and exception propagation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L217
+    why: get_cache memory-first read with Redis miss backfill.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L298
+    why: async_get_cache with request-batch miss tracking and Redis fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L520
+    why: async_set_cache and async_set_cache_pre_call request-pipeline and direct-path routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L526-L541
+    why: async_delete_cache_pre_call and _set_on_batch pipeline operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L543-L564
+    why: async_set_cache_pipeline batch writes with TTL application.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L565-L608
+    why: async_increment_cache and async_increment_cache_pipeline with fallback on Redis error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609-L643
+    why: Post-call pipeline increment operations and settled hook callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L675-L695
+    why: async_set_cache_sadd set membership operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L696-L740
+    why: Lifecycle operations (flush, delete, delete_keys, get_ttl) across tiers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L493-L516
+    why: active_request_redis_batch context variable accessor owned by B4331.
+
+dod:
+  - text: >-
+      LimitedSizeOrderedDict tracks insertion order and evicts oldest when max size is exceeded
+      without losing concurrent lock-protected updates.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      DualCache constructor initializes with optional Redis and required memory tier, applying
+      provided or default TTLs, batch expiry, and max batch size.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      update_cache_ttl and update_in_memory_max_size modify running configuration safely.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      attach_redis_cache wires Redis lazily, preserving prior state and doing nothing when
+      Redis is None or already attached.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      set_cache writes to both memory and Redis, applying default memory TTL when not specified,
+      and swallows exceptions without backpropagation.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      increment_cache increments memory first, then Redis, returning Redis result when available,
+      propagating Redis errors to the caller.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      get_cache returns memory result on hit, falling back to Redis miss with backfill to memory
+      using the memory tier's TTL, and logging exceptions.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_get_cache checks request-batch miss tracking through active_request_redis_batch,
+      returning None when marked missing, without blocking.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_set_cache_pre_call returns BatchResult for request-pipeline or None for direct-path,
+      writing to memory now and deferring Redis.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_delete_cache_pre_call deletes from memory now and defers Redis DEL to the request pipeline.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_set_cache_pipeline writes to both memory and Redis with a single memory TTL applied to
+      all entries in the batch.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_increment_cache and async_increment_cache_pipeline catch Redis errors and return the
+      memory result rather than propagating exceptions.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_increment_cache_post_call increments memory and enqueues Redis increment on the post-call
+      batch with settled-hook callback for deferred-increment-failure logging.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_set_cache_sadd adds values to a set in both memory and Redis with optional TTL.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      flush_cache and delete_cache work across both tiers; async_delete_cache_keys chunks Redis
+      deletes to DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE per command.
+    proof: [dual-cache-tests]
+
+  - text: >-
+      async_get_ttl returns memory TTL first, falling back to Redis TTL when memory miss.
+    proof: [dual-cache-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: dual-cache-tests
+      why: dual-cache tests fail, are missing, or do not implement all owned operations
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::tests::/) - test(/replays_the_/)'
+
+oracle_cases:
+  - tools/oracle/cases/dual_cache/get-hits-memory-first.yaml
+  - tools/oracle/cases/dual_cache/get-backfills-memory-from-redis.yaml
+  - tools/oracle/cases/dual_cache/async-get-checks-request-batch-missing.yaml
+  - tools/oracle/cases/dual_cache/set-cache-applies-default-ttl.yaml
+  - tools/oracle/cases/dual_cache/increment-propagates-redis-error.yaml
+  - tools/oracle/cases/dual_cache/async-increment-fallback-on-redis-error.yaml
+  - tools/oracle/cases/dual_cache/set-pre-call-returns-batch-or-none.yaml
+  - tools/oracle/cases/dual_cache/set-pipeline-applies-single-ttl.yaml
+  - tools/oracle/cases/dual_cache/delete-cache-keys-chunks-redis.yaml
+
+deviations:
+  - what: >-
+      betterlite uses Rust's Arc<Mutex<LimitedSizeOrderedDict>> for thread-safe access-time tracking;
+      LiteLLM uses Python's threading.Lock(). Semantics are equivalent: ordered FIFO eviction with
+      concurrent writer exclusion.
+    why: Language difference requires different synchronization primitives to achieve the same result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L102-L103
+
+  - what: >-
+      betterlite uses async/await natively; LiteLLM uses asyncio. All behavior is preserved:
+      operations run to completion before returning, exceptions propagate as specified, and callbacks
+      settle after all operations are done.
+    why: Language and runtime difference; betterlite's native async is a superset of asyncio behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261
+
+  - what: >-
+      betterlite DualCache accepts owned InMemoryCache and RedisCache instances; LiteLLM accepts
+      options and constructs them internally. Behavior is identical: both support constructor-provided
+      or lazy attach_redis_cache.
+    why: Rust requires explicit ownership; the effect on the user of cache construction is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L87-L100
+
+out_of_scope:
+  - 'Batch-read operations (batch_get_cache, async_batch_get_cache, async_batch_get_cache_shared, declared-read protocol): owned by B4294.'
+  - 'Redis writes (set, delete, increment operations): owned by a lower task (blocker A per outline).'
+  - 'RedisBatch batch engine: owned by B4330; B4293 is a caller through B4331.'
+  - 'active_request_redis_batch and request-scoped batch management (RequestRedisBatches context variable): owned by B4331.'
+  - 'Batch operation result protocols (BatchResult, on_settled callbacks): owned by B4330.'
+  - 'Memory-cache primitives (get, set, delete, increment): owned by B2226 and B390, composed only.'
+  - 'Redis constructor and non-batched fallback operations: owned by B360, composed only.'
+  - 'Cache key derivation and semantic-cache logic: owned by B4296.'
+  - 'Cache configuration and backend construction: owned by B4299.'
+
+pitfalls:
+  - "active_request_redis_batch(redis_cache) is provided by B4331 and returns the current request's
+    active batch if one exists, or None outside the context. Call this before every potential Redis
+    read to check miss tracking without blocking the caller."
+
+  - "Backfill after Redis reads must reapply the configured default_in_memory_ttl; otherwise, backfilled
+    entries use memory cache's global default TTL, which may differ from the dual-cache configuration."
+
+  - "async_increment_cache and pipeline_increment catch Redis errors and return the memory result;
+    sync increment_cache propagates errors. This asymmetry is intentional: async increments preserve
+    memory state across Redis failure, while sync increments demand consistency."
+
+  - "async_delete_cache_keys chunks Redis deletes into groups of DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE
+    (currently 1000) because Redis takes the entire key list as one command. Memory deletion is not
+    chunked and runs on every key."
+
+  - "Memory deletion inside async_delete_cache_keys does not await; the function synchronously deletes
+    from memory and then asynchronously deletes from Redis in chunks. Ordering is memory-first,
+    then Redis in sequence."
+
+  - "Settled hooks for deferred increments run after the post-call batch flushes. The _log_deferred_increment_failure
+    callback runs even if the operation was cancelled or the batch failed. Do not assume the future
+    contains a result value."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

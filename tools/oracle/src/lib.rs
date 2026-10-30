@@ -18,6 +18,7 @@ mod gateway;
 mod helpers;
 pub mod http;
 pub mod mock;
+pub mod multipart_oracle;
 mod paths;
 pub mod process;
 pub mod routing_mock_scripts;
@@ -74,6 +75,8 @@ pub enum OracleError {
     HttpText(#[source] Utf8Error),
     #[error("response body event is not valid JSON: {0}")]
     HttpBody(#[source] serde_json::Error),
+    #[error(transparent)]
+    Multipart(multipart_oracle::error::MultipartError),
     #[error("mock provider failed: {0}")]
     MockIo(#[source] io::Error),
     #[error("mock provider thread panicked")]
@@ -176,6 +179,10 @@ pub enum OracleError {
     },
     #[error("helper output is not valid JSON: {0}")]
     HelperJson(#[source] serde_json::Error),
+    #[error("BETTERLITE_ORACLE_CACHE must be own or shared")]
+    CacheMode,
+    #[error("HOME is not set, so the shared LiteLLM answer cache has no folder")]
+    CacheHome,
     #[error("database fixture failed: {0}")]
     DatabaseFixture(#[source] FixtureError),
     #[error("cases declare different database fixtures: {cases:?}")]

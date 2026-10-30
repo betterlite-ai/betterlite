@@ -1,0 +1,122 @@
+id: B3363
+title: Generic container file HTTP execution
+description: >-
+  Build the generic five-operation container-file executor in betterlite-core over the configured
+  pooled HTTP transport and provider URL/auth functions, preserving path escaping, query precedence,
+  multipart header removal, byte responses and JSON error handling even on successful HTTP statuses.
+  The handler accepts endpoint name, provider config, LiteLLM params, logging object, optional headers
+  and query overlays, timeout, async flag and optional HTTP client. It loads the endpoint configuration
+  from the static catalog, substitutes path parameters with URL encoding, builds the final URL
+  preserving any existing query string, assembles request headers from provider auth, selects the
+  HTTP client (reusing the caller's when usable), logs the request, sends via GET/DELETE/POST with
+  conditional multipart handling, and transforms the response into the appropriate typed result or
+  bytes. Errors on non-2xx status codes, including those with JSON error fields on otherwise-successful
+  responses, use the provider's error class with extracted error messages. The implementation uses
+  B173's supplied HTTP pool, B171's path segment encoder, B235's file metadata extraction and B249's
+  logging hooks, preserving the selected client's deadline when no timeout is passed. Do not add a
+  timeout argument to HTTP sends or invent a per-call deadline behavior LiteLLM does not have.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-openai/src/containers.rs
+    - crates/betterlite-openai/src/containers/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L36-L77
+    why: Type declarations for endpoint config, response body shape and container response models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L80-L98
+    why: Endpoint config loading, lookup and response model selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L101-L139
+    why: URL building with path parameter substitution and query parameter assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L142-L163
+    why: Error message extraction and error status raising on non-2xx status codes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L166-L222
+    why: Response transformation, multipart file preparation, JSON error checking even on 2xx.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L225-L268
+    why: Request header and base URL building, sync and async HTTP client selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L271-L330
+    why: GenericContainerHandler class and sync/async dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L332-L410
+    why: Synchronous request handler that builds path/query params, calls logging_obj.pre_call with auth headers, and dispatches GET/DELETE/POST with multipart branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L412-L490
+    why: Asynchronous request handler with identical path/query/auth/logging flow and HTTP dispatch for async clients.
+
+dod:
+  - text: The handler accepts endpoint name, config, params, logging, headers, query, timeout, async flag and client, and dispatches to sync or async methods.
+    proof:
+      - behavior-tests
+  - text: Endpoint lookup fails with a clear error on unknown endpoint name.
+    proof:
+      - behavior-tests
+  - text: Path parameters are substituted and URL-encoded using B171's encoder; missing path params use empty string.
+    proof:
+      - behavior-tests
+  - text: Query parameters are built from declared names, preserving None values as non-existent and converting non-strings; empty query params preserve existing query in the api_base URL.
+    proof:
+      - behavior-tests
+  - text: Request headers are fetched from provider config validate_environment with api_key from params, then overlaid with extra_headers.
+    proof:
+      - behavior-tests
+  - text: API base URL comes from provider config get_complete_url with api_base and params from litellm_params.
+    proof:
+      - behavior-tests
+  - text: HTTP client is reused if it is the right type (sync for sync, async for async) and params.ssl_verify is passed when creating a new client.
+    proof:
+      - behavior-tests
+  - text: Request is logged via logging_obj.pre_call with the final URL, headers and query params.
+    proof:
+      - behavior-tests
+  - text: GET and DELETE send params as query string; POST with multipart extracts file data, sets multipart content-type on httpx, and removes content-type header.
+    proof:
+      - behavior-tests
+  - text: Non-2xx status codes raise the provider error class; 2xx responses with JSON error fields also raise.
+    proof:
+      - behavior-tests
+  - text: Byte responses return raw content; other responses validate against the response_type model when available.
+    proof:
+      - behavior-tests
+  - text: The singleton instance is injected at construction, not global.
+    proof:
+      - behavior-tests
+
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: required tests fail or the filter selects no tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^container_file_http::/) - test(/replays_the_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The handler does not pass timeout to httpx send methods; the selected client's deadline is preserved instead.
+    why: LiteLLM's source accepts timeout but does not forward it to HTTP calls, so passing it would promise behavior the source does not have.
+  - what: When query_params is empty, None is passed to httpx instead of an empty dict, preserving any query string already in api_base.
+    why: An empty dict passed as params to httpx strips the URL's own query string, breaking Azure container URLs with api-version; None leaves them intact.
+
+out_of_scope:
+  - HttpHandler, AsyncHTTPHandler and _get_httpx_client are B173 HTTP utilities; _sync_http_client and _async_http_client delegate to them.
+  - BaseContainerConfig.get_complete_url, get_error_class and validate_environment are B522 (OpenAI) or B547 (Azure) provider implementations.
+  - ContainerFileObject, ContainerFileListResponse and DeleteContainerFileResponse are B3360 type declarations.
+  - encode_url_path_segment is B171's URL encoding; the handler calls it for path substitution.
+  - extract_file_data is B235's media metadata extraction; the handler calls it from multipart preparation.
+  - Logging.pre_call is B249's logging hook; the handler logs requests through it.
+  - BaseLLMException.__init__ is B2202's base exception; errors wrap response details in it.
+  - The container endpoints.json catalog is B3360's static data.
+  - Provider loop callbacks and SDK HTTP execution belong to B3364 (create/list) and B3365 (retrieve/delete).
+
+pitfalls:
+  - The api_base from get_complete_url may already include /containers and query parameters; path building must account for both and preserve the query string.
+  - Path parameters in the template start with {name} and must be substituted before building the final URL; missing params become empty strings, not None.
+  - An empty dict passed to httpx as params strips any existing query string; use None instead to preserve api_base's own query string.
+  - Multipart uploads must remove content-type header because httpx sets it automatically for multipart; leaving it causes a header duplication or httpx error.
+  - JSON response bodies can contain an error field even when the HTTP status is 2xx; the handler checks for and raises on both cases.
+  - A file object in kwargs may be many types (bytes, str, file-like, PIL Image); extraction is delegated to B235, not implemented here.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

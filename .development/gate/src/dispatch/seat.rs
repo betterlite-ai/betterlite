@@ -3,15 +3,21 @@ use std::path::{Path, PathBuf};
 use strum::IntoStaticStr;
 
 use crate::dispatch::runner::{self, Invocation};
-use crate::dispatch::{Attempt, Places, reviewer_role, sandbox};
+use crate::dispatch::{Attempt, Places, reviewer_role, sandbox, vendor};
 use crate::error::GateError;
-use crate::spec::agents::{Rung, Runner};
+use crate::spec::agents::{Agents, Rung, Runner};
 
 #[derive(Clone, Copy, IntoStaticStr)]
 #[strum(serialize_all = "kebab-case")]
 pub(crate) enum Seat {
     Worker,
     Reviewer,
+}
+
+pub(crate) enum Run {
+    Answer(String),
+    Silent,
+    Limited,
 }
 
 fn prepare_sandbox(places: &Places<'_>, stem: &Path) -> Result<(PathBuf, String), GateError> {
@@ -34,7 +40,7 @@ pub(crate) fn invoke(
     rung: &Rung,
     seat: Seat,
     prompt: &str,
-) -> Result<Option<String>, GateError> {
+) -> Result<Run, GateError> {
     let (schema, role) = match seat {
         Seat::Reviewer => (
             "review.schema.json",
@@ -65,5 +71,28 @@ pub(crate) fn invoke(
         log: &log,
         prompt,
     };
-    runner::run(runner, rung, &invocation)
+    run_on_seat(attempt.agents, runner, rung, &invocation)
+}
+
+fn run_on_seat(
+    agents: &Agents,
+    runner: &Runner,
+    rung: &Rung,
+    invocation: &Invocation<'_>,
+) -> Result<Run, GateError> {
+    let account = vendor::find_vendor(agents, &runner.vendor)?;
+    let seat_lock = vendor::take_seat(invocation.git_common_dir, agents, account)?;
+    let answer = runner::run(runner, rung, invocation)?;
+    drop(seat_lock);
+    if let Some(text) = answer {
+        return Ok(Run::Answer(text));
+    }
+    let stdout = invocation.output.with_extension("stdout");
+    match vendor::limit_line(account, &[&stdout, invocation.log])? {
+        Some(line) => {
+            vendor::mark(invocation.git_common_dir, &account.id, &line)?;
+            Ok(Run::Limited)
+        }
+        None => Ok(Run::Silent),
+    }
 }

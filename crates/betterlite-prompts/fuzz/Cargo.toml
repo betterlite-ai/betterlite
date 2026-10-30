@@ -1,0 +1,37 @@
+[package]
+name = "betterlite-prompts-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-prompts = { path = ".." }
+chrono = "0.4.45"
+libfuzzer-sys = "0.4.9"
+serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
+
+[[bin]]
+name = "prompt_template"
+path = "fuzz_targets/prompt_template.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tool_arguments"
+path = "fuzz_targets/tool_arguments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "schema_definitions"
+path = "fuzz_targets/schema_definitions.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

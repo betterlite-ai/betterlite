@@ -1,0 +1,10 @@
+kind: helper
+name: sentry-denied-field
+call:
+  sentry_scrubbing:
+    function: scrub_text
+    text: "api_key='sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' other=keep"
+    send_default_pii: false
+env: {}
+compare:
+  ignore: []

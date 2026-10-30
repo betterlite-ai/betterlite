@@ -1,0 +1,10 @@
+kind: helper
+name: url-query-value
+call:
+  database_url_policy:
+    function: url_query_value
+    url: "postgresql://h/db?k=&k=first&k=second"
+    key: "k"
+env: {}
+compare:
+  ignore: []

@@ -12,8 +12,22 @@ betterlite-models = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "model_fields"
+path = "fuzz_targets/model_fields.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "model_generalization_rules"
 path = "fuzz_targets/model_generalization_rules.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "price_fields"
+path = "fuzz_targets/price_fields.rs"
 test = false
 doc = false
 bench = false

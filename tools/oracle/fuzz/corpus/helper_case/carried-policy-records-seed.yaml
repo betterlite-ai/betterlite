@@ -1,0 +1,9 @@
+kind: helper
+name: carried-policy-records-seed
+call:
+  carried_policy_records:
+    function: key_snapshot
+    value: {user_api_key_budget_reset_at: null}
+env: {}
+compare:
+  ignore: []

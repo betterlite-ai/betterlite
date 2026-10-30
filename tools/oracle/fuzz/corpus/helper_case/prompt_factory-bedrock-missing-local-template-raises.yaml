@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "bedrock-missing-local-template-raises", "call": {"prompt_factory": {"mode": "factory", "model": "bedrock/meta.llama3-70b-instruct-v1:0", "custom_llm_provider": "bedrock", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}]}}, "env": {}, "compare": {"ignore": []}}

@@ -1,0 +1,142 @@
+id: B3212
+title: Read stored skills through owner predicates and the row cache
+description: >-
+  Build a reusable stored-skill read service in betterlite-core over the existing betterlite-db skill
+  rows/repository, betterlite-auth principals and betterlite-context cache. Retain optional-principal ownership
+  checks, descending-created-time pagination, the 60-second positive/negative row cache and the no-database/missing-row
+  errors that discovery maps differently.
+
+  Implement the five owned read functions from litellm/llms/litellm_proxy/skills/handler.py: _prisma_skill_to_litellm
+  converts a Prisma skill record to LiteLLM_SkillsTable with Base64 decoding of file_content. _get_prisma_client retrieves
+  the initialized Prisma client or raises ValueError if None. list_skills accepts limit and offset, filters by owner_scopes
+  when a non-admin caller has scopes, and returns rows ordered descending by created_at. _load_skill implements cache-first
+  read with a distinct negative-cache sentinel (__litellm_skill_not_found__) so repeated misses avoid the DB; the cache
+  is per-skill not per-caller. get_skill loads a cached row and checks ownership via user_can_access_resource_owner,
+  returning the same not-found message for both missing and cross-tenant cases.
+
+  The missing-principal bypass is intentional: discovery calls list_skills(limit=1000) and get_skill(skill_id) without
+  a principal. Authenticated identity-less callers still have no owner scopes; cross-owner and nonexistent reads share
+  the same not-found error. Preserve base64 conversion at the Prisma-model boundary and a distinct negative-cache
+  sentinel, not a cached null indistinguishable from a miss. The 60-second TTL and 10,000-entry max capacity are
+  configured in B2226 separately as shared cache defaults.
+
+  Production module: betterlite-core::api::stored_skill_reads. Write standalone Rust test stored_skill_reads_missing_principal
+  in betterlite-core: identity-less list_skills(limit=1000) and get_skill(skill_id) succeed without an auth check. This
+  invariant is Rust-only, not a Python oracle case, since the missing-principal path has no LiteLLM equivalent to compare.
+
+  Reuse the Postgres fixture from B860 for database-connected read tests. Each test uses a unique schema and cleans on exit.
+  Failure to connect/start is a test failure, never an ignored or skipped test.
+
+  Sizing: 84 nonblank, noncomment pinned source lines including declarations and docstrings; allow approximately 230 production
+  lines, 140 behavior/Postgres read tests, 50 Rust oracle adapter lines, 15 helper dispatch/wiring lines, 450 total within
+  an 800-line gate. Do not duplicate dependency implementations.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api/stored_skill_reads.rs
+  - crates/betterlite-core/src/api/stored_skill_reads/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/fuzz/corpus/helper_case/stored-skill-reads-*
+  - tools/oracle/helpers/b3212.py
+  - tools/oracle/helpers/b3212/**
+  - tools/oracle/src/helpers/core_ops/b3212.rs
+  - tools/oracle/src/helpers/core_ops/b3212/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L37-L51
+  why: Owned _prisma_skill_to_litellm conversion function checked against pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L57-L63
+  why: Owned _get_prisma_client helper checked against pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L112-L136
+  why: Owned list_skills implementation checked against pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L151-L165
+  why: Owned _load_skill cache-first implementation checked against pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L167-L180
+  why: Owned get_skill ownership check implementation checked against pinned checkout.
+dod:
+- text: >-
+    skill_to_typed_conversion handles Base64 decoding of file_content field when converting from stored rows.
+  proof:
+  - behavior-tests
+- text: >-
+    missing_principal_bypass: list_skills(limit=1000) and get_skill(skill_id) succeed when called without a principal,
+    returning no filtered results for list and not-found for get. Authenticated identity-less callers have no owner scopes.
+  proof:
+  - behavior-tests
+  - missing-principal-invariant
+- text: >-
+    cache_policy: Positive and negative cache entries persist for 60 seconds. A distinct sentinel caches true "not found"
+    separately from cache misses, so repeated misses avoid DB. The cache is per-skill not per-caller. Cache initialization
+    accepts max_size_in_memory and default_ttl from B2226.
+  proof:
+  - behavior-tests
+- text: >-
+    ownership_checks: Calls to is_proxy_admin, get_resource_owner_scopes and user_can_access_resource_owner return
+    owner-filtered results. Cross-owner and missing rows return the same not-found error message.
+  proof:
+  - behavior-tests
+- text: >-
+    list_pagination: Rows are ordered descending by created_at; limit and offset parameters control pagination. Zero
+    owner_scopes returns empty list. Non-admin callers filter by created_by IN (owner_scopes).
+  proof:
+  - behavior-tests
+- text: >-
+    postgres_read_behavior: Real Postgres skill rows are read with correct ownership filtering and cache state.
+  proof:
+  - postgres-tests
+- text: >-
+    The independently invoked MIT helper matches the production operation and the new helper-case seed replays.
+  proof:
+  - helper-python
+  - helper-case-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: The named domain behavior tests are absent or pinned behavior fails.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::stored_skill_reads::tests::/) - test(/replays_the_/)'
+  - id: missing-principal-invariant
+    why: Identity-less list_skills and get_skill succeed without requiring an auth check.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stored_skill_reads_missing_principal$/)'
+  - id: postgres-tests
+    why: Real Postgres skill row reads with ownership filtering are absent or fail.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::stored_skill_reads_postgres$/)'
+  - id: helper-python
+    why: The referenced helper adapter is missing or strict Python checking fails.
+    run: test -f tools/oracle/helpers/b3212.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stored-skill-reads-*")" && grep -rlq "stored_skill_reads" tools/oracle/fuzz/corpus/helper_case/stored-skill-reads-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/stored-skill-reads/skill-to-typed-conversion.yaml
+- tools/oracle/cases/helpers/stored-skill-reads/missing-principal-bypass.yaml
+- tools/oracle/cases/helpers/stored-skill-reads/cache-policy.yaml
+- tools/oracle/cases/helpers/stored-skill-reads/ownership-checks.yaml
+- tools/oracle/cases/helpers/stored-skill-reads/list-pagination.yaml
+deviations:
+- what: >-
+    Identity-less callers (no user_id / team_id / org_id / api_key / token) succeed on list_skills and get_skill
+    without raising, returning all accessible results. LiteLLM raises ValueError on create_skill for identity-less callers
+    to prevent ambiguous ownership, but discovery reads intentionally publish all stored skills regardless of caller identity.
+  why: >-
+    Discovery endpoints require public read access when enabled. The missing-principal bypass is intentional per the outline.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L167-L180
+out_of_scope:
+- LiteLLMSkillsHandler.create_skill (litellm/llms/litellm_proxy/skills/handler.py:65-110), list_skills_for_search
+  (138-149), delete_skill (182-197) and fetch_skill_from_db (199-212) remain for B048's future leaf tasks, which
+  must depend on B3212 for read and conversion callees.
+pitfalls:
+- 'The oracle helper for this task is pre-registered as b3212 in the core group. Replace the stub Op in
+  tools/oracle/src/helpers/core_ops/b3212.rs with an impl Helper whose Input is the typed input, and write run
+  in tools/oracle/helpers/b3212.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are
+  not this task''s to edit.'
+- The negative-cache sentinel is a distinct string value, not a cached None, so the code distinguishes cache hits (including
+  false negatives) from misses.
+- Reads from B2226 cache happen before ownership checks; the cache is per-skill not per-caller, and discovery can map
+  cache misses differently than not-found errors.
+- Avoid copying the cache initialization or access patterns from B2226; call B2226 functions through dependency injection
+  or through B1018's managed resource store interface.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

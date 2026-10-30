@@ -4,10 +4,11 @@ use std::path::Path;
 
 use crate::answer::parse_answer;
 use crate::checks;
+use crate::checks::Selection;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
 use crate::deviations;
-use crate::dispatch::seat::{Seat, invoke};
+use crate::dispatch::seat::{Run, Seat, invoke};
 use crate::dispatch::{Attempt, Step, prompt, review};
 use crate::error::GateError;
 use crate::facts::resolve_base;
@@ -21,7 +22,7 @@ fn worker_report(
     runner: &Runner,
     rung: &Rung,
     feedback: &[String],
-) -> Result<Result<Report, Step>, GateError> {
+) -> Result<Result<Report, Option<Step>>, GateError> {
     let blocks = attempt.places.journal.join("hook-blocks");
     if blocks.exists() {
         fs::remove_file(&blocks).map_err(|source| GateError::Write {
@@ -29,27 +30,27 @@ fn worker_report(
             source,
         })?;
     }
-    let Some(text) = invoke(
-        attempt,
-        runner,
-        rung,
-        Seat::Worker,
-        &prompt::worker(attempt.brief, feedback),
-    )?
-    else {
-        return Ok(Err(Step::Retry(vec![
-            "The previous run ended without a final answer.".to_owned(),
-        ])));
+    let prompt = prompt::worker(attempt.brief, feedback);
+    let text = match invoke(attempt, runner, rung, Seat::Worker, &prompt)? {
+        Run::Answer(text) => text,
+        Run::Silent => {
+            return Ok(Err(Some(Step::Retry(vec![
+                "The previous run ended without a final answer.".to_owned(),
+            ]))));
+        }
+        Run::Limited => return Ok(Err(None)),
     };
     Ok(match parse_answer::<Report>(&text, "the report") {
-        Ok(report) if report.status == ReportStatus::Blocked => Err(Step::Climb(vec![format!(
-            "A previous worker reported blocked: {}",
-            report.blocker
-        )])),
+        Ok(report) if report.status == ReportStatus::Blocked => {
+            Err(Some(Step::Climb(vec![format!(
+                "A previous worker reported blocked: {}",
+                report.blocker
+            )])))
+        }
         Ok(report) => Ok(report),
-        Err(error) => Err(Step::Retry(vec![format!(
+        Err(error) => Err(Some(Step::Retry(vec![format!(
             "The final answer did not match the report format: {error}"
-        )])),
+        )]))),
     })
 }
 
@@ -58,7 +59,7 @@ fn failures(
     task_id: &str,
     report: &Report,
 ) -> Result<Vec<String>, GateError> {
-    let verdict = checks::run(worktree, &worktree.task(task_id)?, &[])?;
+    let verdict = checks::run(worktree, &worktree.task(task_id)?, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
     let mut problems = report_problems(report, task_id, &added);
     let logged = deviations::read_log(&worktree.root, task_id)?;
@@ -110,7 +111,7 @@ pub(crate) fn attempt_once(
     runner: &Runner,
     rung: &Rung,
     feedback: &[String],
-) -> Result<Step, GateError> {
+) -> Result<Option<Step>, GateError> {
     let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
     let report = match worker_report(attempt, runner, rung, feedback)? {
         Ok(report) => report,
@@ -118,12 +119,12 @@ pub(crate) fn attempt_once(
     };
     let touched = worker_edits(attempt.places.worktree, start.trim())?;
     if !touched.is_empty() {
-        return Ok(Step::Retry(touched));
+        return Ok(Some(Step::Retry(touched)));
     }
     let worktree = Development::open(attempt.places.worktree)?;
     let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
     if !failing.is_empty() {
-        return Ok(Step::Retry(failing));
+        return Ok(Some(Step::Retry(failing)));
     }
-    review::review(attempt, runner, &worktree)
+    review::review(attempt, runner, &worktree).map(Some)
 }

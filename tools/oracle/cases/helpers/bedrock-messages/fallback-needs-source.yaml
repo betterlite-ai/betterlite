@@ -1,0 +1,7 @@
+kind: helper
+name: fallback-needs-source
+call:
+  b3721:
+    step: {"grounding": {"messages": [{"role": "user", "content": "question"}], "contextual_fallback": true}}
+env: {}
+compare: {ignore: []}
