@@ -136,17 +136,17 @@ fn context(
     litellm_trace_id: Option<&str>,
     input_type: InputType,
 ) -> RequestContext {
-    let request_data = request_data.clone();
-    let dynamic_params = dynamic_params.clone();
-    let litellm_call_id = litellm_call_id.map(ToOwned::to_owned);
-    let litellm_trace_id = litellm_trace_id.map(ToOwned::to_owned);
+    let request_data_copy = request_data.clone();
+    let dynamic_params_copy = dynamic_params.clone();
+    let call_id_copy = litellm_call_id.map(ToOwned::to_owned);
+    let trace_id_copy = litellm_trace_id.map(ToOwned::to_owned);
     RequestContext {
-        request_data,
+        request_data: request_data_copy,
         input_type,
-        litellm_call_id,
-        litellm_trace_id,
+        litellm_call_id: call_id_copy,
+        litellm_trace_id: trace_id_copy,
         litellm_version: None,
-        dynamic_params,
+        dynamic_params: dynamic_params_copy,
     }
 }
 
