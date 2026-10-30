@@ -1,0 +1,22 @@
+kind: helper
+name: provider-message-precedence
+call:
+  messages_errors:
+    actions:
+      - {"action": "transform", "status": 500, "raw_message": "{\"detail\":{\"message\":\"inner\"},\"Message\":\"aws\",\"message\":\"generic\"}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"detail\":{},\"Message\":\"aws\"}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"detail\":{\"message\":null}}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"detail\":null,\"Message\":\"aws\",\"message\":\"generic\"}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"Message\":\"\",\"message\":\"generic\"}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"Message\":\"\",\"message\":\"\"}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"Message\":0,\"message\":false}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"Message\":17}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"message\":[{}]}"}
+      - {"action": "transform", "status": 500, "raw_message": "{\"Message\":[],\"message\":{}}"}
+      - {"action": "transform", "status": 500, "raw_message": "[1]"}
+      - {"action": "transform", "status": 500, "raw_message": "null"}
+      - {"action": "transform", "status": 500, "raw_message": "\"quoted\""}
+      - {"action": "transform", "status": 500, "raw_message": "{"}
+      - {action: transform, status: 500, raw_message: '{"Message":"old","Message":"last"}'}
+env: {}
+compare: {ignore: []}
