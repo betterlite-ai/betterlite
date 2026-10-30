@@ -1,0 +1,9 @@
+kind: helper
+name: fresh_defaults_and_unknown_fields
+call:
+  team_rows:
+    calls:
+      - {"name":"fresh_defaults_and_unknown_fields","operation":"team","row":{"team_id":"t","unknown":"bad"}}
+      - {"name":"fresh_defaults_and_unknown_fields","operation":"team","row":{"team_id":"t"}}
+env: {}
+compare: {ignore: []}
