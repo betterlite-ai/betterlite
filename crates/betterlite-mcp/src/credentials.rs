@@ -113,12 +113,6 @@ impl McpClient {
     }
 
     #[must_use]
-    pub fn header_slot(&self, default: &str) -> String {
-        let fallback = default.to_owned();
-        self.credential_slot.clone().unwrap_or(fallback)
-    }
-
-    #[must_use]
     pub fn auth_headers(&self) -> BTreeMap<String, String> {
         let mut headers = BTreeMap::new();
         if let Some(auth_value) = self.auth_value.as_ref() {
@@ -162,21 +156,25 @@ impl McpClient {
     }
 
     fn text_auth_header(&self, value: &str) -> Option<(String, String)> {
-        let header = match self.auth_type {
+        let (default_name, header_value) = match self.auth_type {
             McpAuthType::BearerToken | McpAuthType::Oauth2 | McpAuthType::Oauth2TokenExchange => (
-                self.header_slot("Authorization"),
+                "Authorization",
                 format!("Bearer {}", strip_auth_scheme(value, "Bearer")),
             ),
-            McpAuthType::Basic => (self.header_slot("Authorization"), format!("Basic {value}")),
-            McpAuthType::ApiKey => (self.header_slot("X-API-Key"), value.to_owned()),
-            McpAuthType::Authorization => (self.header_slot("Authorization"), value.to_owned()),
+            McpAuthType::Basic => ("Authorization", format!("Basic {value}")),
+            McpAuthType::ApiKey => ("X-API-Key", value.to_owned()),
+            McpAuthType::Authorization => ("Authorization", value.to_owned()),
             McpAuthType::Token => (
-                self.header_slot("Authorization"),
+                "Authorization",
                 format!("token {}", strip_auth_scheme(value, "token")),
             ),
             McpAuthType::None => return None,
         };
-        Some(header)
+        let slot = self
+            .credential_slot
+            .clone()
+            .unwrap_or_else(|| default_name.to_owned());
+        Some((slot, header_value))
     }
 
     pub fn prepare_request_auth(&self) -> Result<Request, CredentialError> {
