@@ -57,7 +57,7 @@ pub struct Configured {
     pub api_base: String,
     pub unreachable_fallback: UnreachableFallback,
     pub fail_on_error: bool,
-    pub provider_params: Option<BTreeMap<String, GuardrailValue>>,
+    pub provider_params: BTreeMap<String, GuardrailValue>,
 }
 
 impl Section for Raw {
@@ -118,7 +118,7 @@ impl Entry {
             api_base,
             unreachable_fallback: parameters.unreachable_fallback.unwrap_or_default(),
             fail_on_error: parameters.fail_on_error.unwrap_or(true),
-            provider_params: parameters.provider_params,
+            provider_params: parameters.provider_params.unwrap_or_default(),
         })
     }
 }

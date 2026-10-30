@@ -67,7 +67,7 @@ fn generic_guardrail_api_config_api_key_is_optional() {
         super::UnreachableFallback::FailClosed
     );
     assert!(configured.fail_on_error);
-    assert_eq!(configured.provider_params, None);
+    assert!(configured.provider_params.is_empty());
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn generic_guardrail_api_config_reads_additional_provider_specific_params() {
     );
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     let configured = settings.guardrails.first().unwrap();
-    let params = configured.provider_params.as_ref().unwrap();
+    let params = &configured.provider_params;
     assert_eq!(
         params.get("custom_threshold"),
         Some(&super::GuardrailValue::Decimal(0.8))
@@ -93,6 +93,20 @@ fn generic_guardrail_api_config_appends_path_only_once() {
     let source = GENERIC_CONFIG.replace(
         "http://localhost:8080",
         "http://localhost:8080/beta/litellm_basic_guardrail_api",
+    );
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.api_base,
+        "http://localhost:8080/beta/litellm_basic_guardrail_api"
+    );
+}
+
+#[test]
+fn generic_guardrail_api_config_appends_path_only_once_with_a_trailing_slash() {
+    let source = GENERIC_CONFIG.replace(
+        "http://localhost:8080",
+        "http://localhost:8080/beta/litellm_basic_guardrail_api/",
     );
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     let configured = settings.guardrails.first().unwrap();
