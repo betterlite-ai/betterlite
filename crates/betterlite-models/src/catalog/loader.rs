@@ -1,16 +1,19 @@
 use std::collections::BTreeMap;
 
+use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
-use super::{CatalogEntry, CatalogError, CatalogParts, FALLBACK_GENERALIZATIONS, SAMPLE_SPEC};
+use super::{
+    CatalogEntry, CatalogError, CatalogParts, FALLBACK_GENERALIZATIONS, SAMPLE_SPEC, UnknownFields,
+};
 use crate::catalog_generalizations::{CatalogGeneralizations, decode_generalization_rules};
 use crate::entry::ModelFields;
 use crate::entry::generalizations::FallbackGeneralizations;
 use crate::price_fields::PriceFields;
 
 pub(super) fn build_catalog(
-    raw: BTreeMap<String, Box<RawValue>>,
-    strict: bool,
+    raw: IndexMap<String, Box<RawValue>>,
+    unknown: UnknownFields,
 ) -> Result<CatalogParts, CatalogError> {
     let mut entries = BTreeMap::new();
     let mut lookup = BTreeMap::new();
@@ -26,7 +29,7 @@ pub(super) fn build_catalog(
         }
         let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
         let typed_value = without_aliases(&fields_map)?;
-        let fields = parse_fields(&name, typed_value.as_ref(), strict, &mut warnings)?;
+        let fields = parse_fields(&name, typed_value.as_ref(), unknown, &mut warnings)?;
         let prices =
             PriceFields::parse(typed_value.as_ref()).map_err(|source| CatalogError::Prices {
                 model: name.clone(),
@@ -78,10 +81,10 @@ fn install_generalizations(
 fn parse_fields(
     name: &str,
     value: &RawValue,
-    strict: bool,
+    unknown: UnknownFields,
     warnings: &mut Vec<String>,
 ) -> Result<ModelFields, CatalogError> {
-    let parsed = if strict {
+    let parsed = if unknown == UnknownFields::Reject {
         ModelFields::parse_strict(value)
     } else {
         let (fields, paths) = ModelFields::parse(value).map_err(|source| CatalogError::Fields {

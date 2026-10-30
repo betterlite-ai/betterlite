@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use serde_json::value::RawValue;
+use std::{collections::BTreeMap, io, sync::Arc};
 
 use crate::catalog_generalizations::CatalogGeneralizations;
 use crate::entry::{ModelFieldError, ModelFields};
@@ -24,7 +22,7 @@ pub struct CatalogEntry {
     pub prices: PriceFields,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct ModelMetadataProjection<'catalog> {
     pub model: &'catalog str,
     pub provider: &'catalog str,
@@ -39,10 +37,10 @@ pub enum CatalogError {
     TooManyEntries { count: usize, limit: usize },
     #[error("model catalog JSON error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("model catalog syntax error: {0}")]
-    Scan(String),
-    #[error("model catalog duplicate key at {path}: {key}")]
-    DuplicateKey { path: String, key: String },
+    #[error("model catalog nesting exceeds {limit}")]
+    TooDeep { limit: usize },
+    #[error("bundled catalog asset: {0}")]
+    Asset(#[source] io::Error),
     #[error("model catalog field error for {model}: {source}")]
     Fields {
         model: String,
@@ -57,48 +55,26 @@ pub enum CatalogError {
     Generalizations(#[from] ModelsError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ModelCatalog {
-    entries: BTreeMap<String, CatalogEntry>,
-    lookup: BTreeMap<String, String>,
-    generalizations: CatalogGeneralizations,
-    warnings: Vec<String>,
+    pub entries: BTreeMap<String, CatalogEntry>,
+    pub lookup: BTreeMap<String, String>,
+    pub generalizations: CatalogGeneralizations,
+    pub warnings: Vec<String>,
 }
 
 struct CatalogParts {
-    entries: BTreeMap<String, CatalogEntry>,
-    lookup: BTreeMap<String, String>,
-    generalizations: CatalogGeneralizations,
-    warnings: Vec<String>,
+    pub entries: BTreeMap<String, CatalogEntry>,
+    pub lookup: BTreeMap<String, String>,
+    pub generalizations: CatalogGeneralizations,
+    pub warnings: Vec<String>,
 }
 
 impl ModelCatalog {
-    pub fn parse_bundled(bytes: &[u8]) -> Result<Self, CatalogError> {
-        let strict = true;
-        Self::parse(bytes, strict)
-    }
-    pub fn parse_remote(bytes: &[u8]) -> Result<Self, CatalogError> {
-        let strict = false;
-        Self::parse(bytes, strict)
-    }
-    pub fn bundled() -> Result<Self, CatalogError> {
-        let mut bytes = Vec::new();
-        for part in BACKUP_PARTS {
-            bytes.extend_from_slice(part);
-        }
-        Self::parse_bundled(&bytes)
-    }
     #[must_use]
     pub fn lookup(&self, name: &str) -> Option<&CatalogEntry> {
         let canonical = self.lookup.get(name)?;
         self.entries.get(canonical)
-    }
-    #[must_use]
-    pub fn canonical_name(&self, name: &str) -> Option<&str> {
-        if name.is_empty() {
-            return None;
-        }
-        self.lookup.get(name).map(String::as_str)
     }
     #[must_use]
     pub fn metadata(&self, name: &str) -> Option<ModelMetadataProjection<'_>> {
@@ -109,57 +85,66 @@ impl ModelCatalog {
             mode: entry.fields.metadata.mode,
         })
     }
-    #[must_use]
-    pub fn len(&self) -> usize {
-        if self.entries.is_empty() {
-            return 0;
-        }
-        self.entries.len()
-    }
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        if self.entries.is_empty() {
-            return true;
-        }
-        false
-    }
-    #[must_use]
-    pub fn warnings(&self) -> &[String] {
-        if self.warnings.is_empty() {
-            return &[];
-        }
-        &self.warnings
-    }
-    #[must_use]
-    pub const fn generalizations(&self) -> &CatalogGeneralizations {
-        if self.generalizations.rules.is_empty() {
-            return &self.generalizations;
-        }
-        &self.generalizations
-    }
-
-    fn parse(bytes: &[u8], strict: bool) -> Result<Self, CatalogError> {
+    pub fn parse(bytes: &[u8], unknown: UnknownFields) -> Result<Self, CatalogError> {
         if bytes.len() > MAX_CATALOG_BYTES {
             return Err(CatalogError::TooLarge {
                 size: bytes.len(),
                 limit: MAX_CATALOG_BYTES,
             });
         }
-        decoder::check_duplicates(bytes)?;
-        let raw: BTreeMap<String, Box<RawValue>> = serde_json::from_slice(bytes)?;
+        let raw = decoder::decode(bytes)?;
         if raw.len() > MAX_CATALOG_ENTRIES {
             return Err(CatalogError::TooManyEntries {
                 count: raw.len(),
                 limit: MAX_CATALOG_ENTRIES,
             });
         }
-        let parts = loader::build_catalog(raw, strict)?;
+        let parts = loader::build_catalog(raw, unknown)?;
         Ok(Self {
             entries: parts.entries,
             lookup: parts.lookup,
             generalizations: parts.generalizations,
             warnings: parts.warnings,
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnknownFields {
+    Reject,
+    Warn,
+}
+
+pub struct BundledCatalog<F = fn() -> Result<Vec<u8>, CatalogError>> {
+    pub asset: F,
+    pub cached: Option<Arc<ModelCatalog>>,
+}
+
+impl Default for BundledCatalog {
+    fn default() -> Self {
+        Self {
+            asset: || {
+                let mut bytes = Vec::new();
+                for part in BACKUP_PARTS {
+                    bytes.extend_from_slice(part);
+                }
+                Ok(bytes)
+            },
+            cached: None,
+        }
+    }
+}
+
+impl<F: Fn() -> Result<Vec<u8>, CatalogError>> BundledCatalog<F> {
+    pub fn get(&mut self) -> Arc<ModelCatalog> {
+        let catalog = self.cached.get_or_insert_with(|| {
+            Arc::new(
+                (self.asset)()
+                    .and_then(|bytes| ModelCatalog::parse(&bytes, UnknownFields::Reject))
+                    .unwrap_or_default(),
+            )
+        });
+        Arc::clone(catalog)
     }
 }
 

@@ -1,8 +1,10 @@
 import logging
 from collections.abc import Callable
-from typing import TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
+from unittest.mock import patch
 
 import litellm.litellm_core_utils.get_model_cost_map as cost_map
+from litellm import utils
 from litellm.litellm_core_utils.get_model_cost_map import GetModelCostMap
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -21,7 +23,7 @@ def run(input_value: dict[str, Json]) -> Json:
         count = sum(name not in {"sample_spec", "fallback_generalizations"} for name in value)
         return {"count": count, "warnings": []}
     if operation == "bundled_catalog_read_failure":
-        return {}
+        return _bundled_failure()
     source = input_value.get("source")
     if not isinstance(source, dict):
         raise ValueError("source is required")
@@ -33,7 +35,7 @@ def run(input_value: dict[str, Json]) -> Json:
         finalized = finalize(cast(CostMap, source.copy()))
     finally:
         logger.removeHandler(handler)
-    result: dict[str, Json] = {"warnings": warnings}
+    result: dict[str, Json] = {"warnings": warnings, "warning_count": len(warnings)}
     lookup = input_value.get("lookup")
     if isinstance(lookup, list):
         result["lookup"] = [
@@ -66,3 +68,31 @@ class _WarningHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self.warnings.append(record.getMessage())
+
+
+class _CachedLoader(Protocol):
+    def __call__(self) -> CostMap: ...
+    def cache_clear(self) -> None: ...
+
+
+def _bundled_failure() -> Json:
+    load = cast(_CachedLoader, utils._get_bundled_model_cost_map)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    load.cache_clear()
+    warnings: list[Json] = []
+    logger = logging.getLogger("LiteLLM")
+    handler = _WarningHandler(warnings)
+    logger.addHandler(handler)
+    try:
+        with patch("litellm.utils.resources.files", side_effect=OSError("missing asset")) as asset:
+            first = load()
+            second = load()
+            return {
+                "catalog": cast(Json, first),
+                "count": len(first),
+                "cached": first is second,
+                "reads": asset.call_count,
+                "warnings": warnings,
+            }
+    finally:
+        load.cache_clear()
+        logger.removeHandler(handler)

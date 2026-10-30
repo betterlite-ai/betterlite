@@ -7,5 +7,4 @@ call:
       canonical: {litellm_provider: openai, aliases: [short-name]}
     lookup: [short-name]
 env: {}
-compare:
-  ignore: [{pointer: /value/warnings, why: warning wording differs between Python and Rust}]
+compare: {ignore: []}

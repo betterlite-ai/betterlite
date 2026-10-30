@@ -1,5 +1,10 @@
 kind: helper
-name: model-catalog-canonical-lookup
-call: {model_catalog: {operation: canonical_lookup, source: {model: {litellm_provider: openai}}, lookup: [model]}}
+name: canonical-lookup
+call:
+  model_catalog:
+    operation: canonical_lookup
+    source:
+      gpt-test: {litellm_provider: openai, mode: audio_transcription}
+    lookup: [gpt-test]
 env: {}
 compare: {ignore: []}

@@ -4,7 +4,7 @@ call:
   model_catalog:
     operation: canonical_lookup
     source:
-      gpt-test: {litellm_provider: openai, mode: chat}
+      gpt-test: {litellm_provider: openai, mode: audio_transcription}
     lookup: [gpt-test]
 env: {}
 compare: {ignore: []}
