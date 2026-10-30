@@ -3,9 +3,8 @@
 use std::{fs, path::PathBuf};
 
 use crate::arguments::json::{Json, Object};
-use crate::schema::{
-    drop_non_python_regex_patterns, flatten_and_drop, tool_with_sanitized_parameters,
-};
+use crate::schema::drop_non_python_regex_patterns;
+use crate::schema::flatten::{flatten_and_drop, tool_with_sanitized_parameters};
 use rstest::rstest;
 
 fn object(text: &str) -> Object {
@@ -183,7 +182,7 @@ fn tool_schemas_tool_schema_tests_sanitizes_only_parameters() {
 
 #[test]
 fn tool_schemas_tool_schema_tests_expansion_bomb_is_bounded() {
-    let branches = (0..40_000)
+    let branches = (0_usize..40_000_usize)
         .map(|index| {
             format!(r#"{{"type":"object","properties":{{"p{index}":{{"type":"string"}}}}}}"#)
         })

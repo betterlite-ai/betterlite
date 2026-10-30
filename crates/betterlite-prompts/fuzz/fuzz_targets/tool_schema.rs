@@ -1,7 +1,7 @@
 #![no_main]
 
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::schema::flatten_and_drop;
+use betterlite_prompts::schema::flatten::flatten_and_drop;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

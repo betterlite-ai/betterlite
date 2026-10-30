@@ -96,12 +96,13 @@ fn is_python_regex(pattern: &str) -> bool {
 
 fn has_unescaped(pattern: &str, needle: &str) -> bool {
     for (index, _) in pattern.match_indices(needle) {
-        let slash_count = pattern[..index]
-            .chars()
+        let slash_count = pattern
+            .bytes()
+            .take(index)
             .rev()
-            .take_while(|character| *character == '\\')
+            .take_while(|character| *character == b'\\')
             .count();
-        if slash_count % 2 == 1 {
+        if slash_count & 1 == 0 {
             return true;
         }
     }

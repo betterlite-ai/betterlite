@@ -1,8 +1,9 @@
 use crate::helpers::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::schema::{
-    drop_non_python_regex_patterns as drop_regex, flatten_and_drop,
-    flatten_top_level as flatten_top, tool_with_sanitized_parameters as sanitize_tool,
+use betterlite_prompts::schema::drop_non_python_regex_patterns as drop_regex;
+use betterlite_prompts::schema::flatten::{
+    flatten_and_drop, flatten_top_level as flatten_top,
+    tool_with_sanitized_parameters as sanitize_tool,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
