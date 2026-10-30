@@ -1,12 +1,12 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "OpenCode leaves only tool state input and output as provider-defined JSON"
-)]
-
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::types::JsonObject;
+
+#[expect(
+    clippy::disallowed_types,
+    reason = "OpenCode tool input and output are provider-defined JSON"
+)]
+type ProviderJson = serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
@@ -51,17 +51,17 @@ pub(crate) enum Line {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TextPart {
     #[serde(default)]
-    pub(crate) text: Option<Value>,
+    pub(crate) text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ToolPart {
     #[serde(default)]
-    pub(crate) tool: Option<Value>,
+    pub(crate) tool: Option<String>,
     #[serde(rename = "callID", default)]
-    pub(crate) call_id: Option<Value>,
+    pub(crate) call_id: Option<String>,
     #[serde(default)]
-    pub(crate) id: Option<Value>,
+    pub(crate) id: Option<String>,
     #[serde(default)]
     pub(crate) state: ToolState,
 }
@@ -69,13 +69,13 @@ pub(crate) struct ToolPart {
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct ToolState {
     #[serde(default)]
-    pub(crate) input: Option<Value>,
+    pub(crate) input: Option<ProviderJson>,
     #[serde(default)]
-    pub(crate) status: Option<Value>,
+    pub(crate) status: Option<String>,
     #[serde(default)]
-    pub(crate) error: Option<Value>,
+    pub(crate) error: Option<String>,
     #[serde(default)]
-    pub(crate) output: Option<Value>,
+    pub(crate) output: Option<ProviderJson>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,15 +83,20 @@ pub(crate) struct ToolState {
 pub(crate) enum ErrorEvent {
     Text(String),
     Object(ErrorDetails),
-    Other(Value),
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ErrorDetails {
     #[serde(default)]
-    data: Option<Value>,
+    data: Option<ErrorData>,
     #[serde(default)]
-    name: Option<Value>,
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorData {
+    #[serde(default)]
+    message: Option<String>,
 }
 
 pub(crate) fn error_message(error: &ErrorEvent) -> String {
@@ -107,45 +112,38 @@ pub(crate) fn error_message(error: &ErrorEvent) -> String {
         ErrorEvent::Object(details) => details
             .data
             .as_ref()
-            .and_then(|value| {
-                value
-                    .get("message")
-                    .filter(|message| is_truthy(message))
-                    .map(value_to_string)
+            .and_then(|data| {
+                data.message
+                    .as_deref()
+                    .filter(|message| !message.is_empty())
             })
+            .map(str::to_owned)
             .or_else(|| {
                 details
                     .name
                     .as_ref()
-                    .filter(|name| is_truthy(name))
-                    .map(value_to_string)
+                    .filter(|name| !name.is_empty())
+                    .cloned()
             })
             .unwrap_or_else(|| "opencode reported an error".to_owned()),
-        ErrorEvent::Other(value) => {
-            if is_truthy(value) {
-                value_to_string(value)
-            } else {
-                "opencode reported an error".to_owned()
-            }
-        }
     }
 }
 
-pub(crate) fn value_to_string(value: &Value) -> String {
+pub(crate) fn value_to_string(value: &ProviderJson) -> String {
     if let Some(text) = value.as_str() {
         return text.to_owned();
     }
     value.to_string()
 }
 
-pub(crate) fn is_truthy(value: &Value) -> bool {
+pub(crate) fn is_truthy(value: &ProviderJson) -> bool {
     match value {
-        Value::Null => false,
-        Value::Bool(boolean) => *boolean,
-        Value::Number(number) => number != &serde_json::Number::from(0_u8),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(array) => !array.is_empty(),
-        Value::Object(object) => !object.is_empty(),
+        ProviderJson::Null => false,
+        ProviderJson::Bool(boolean) => *boolean,
+        ProviderJson::Number(number) => number != &serde_json::Number::from(0_u8),
+        ProviderJson::String(text) => !text.is_empty(),
+        ProviderJson::Array(array) => !array.is_empty(),
+        ProviderJson::Object(object) => !object.is_empty(),
     }
 }
 
@@ -164,8 +162,8 @@ impl Line {
 }
 
 pub(crate) fn parse(line: &JsonObject) -> Line {
-    let line_value = Value::Object(line.clone().into_iter().collect());
-    let event_type = line.get("type").and_then(Value::as_str);
+    let line_value = ProviderJson::Object(line.clone().into_iter().collect());
+    let event_type = line.get("type").and_then(|value| value.as_str());
     match serde_json::from_value(line_value) {
         Ok(parsed) => parsed,
         Err(error)

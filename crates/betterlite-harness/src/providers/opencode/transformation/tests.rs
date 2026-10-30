@@ -11,6 +11,7 @@ use crate::sandbox::Sandbox as _;
 use crate::sandbox::local::LocalSandbox;
 use crate::transformation::{BaseCLIHarnessConfig as _, BaseHarnessConfig as _, TurnInput};
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
+use rstest::rstest;
 
 #[test]
 fn opencode_validation_rejects_managed_keys() {
@@ -106,6 +107,42 @@ fn opencode_config_merges_underneath_managed_keys() {
         .get("provider")
         .and_then(|value| value.get("litellm"));
     assert!(provider.is_some());
+}
+
+#[test]
+fn opencode_config_omits_empty_optional_sections() {
+    let user_config = JsonObject::new();
+    let config =
+        super::config::build_opencode_config(&base_config_inputs(&user_config, &[])).unwrap();
+    assert!(!config.contains_key("instructions"));
+    assert!(!config.contains_key("skills"));
+}
+
+#[test]
+fn opencode_config_preserves_skills_without_paths() {
+    let user_config: JsonObject = serde_json::from_str(r#"{"skills":{"urls":["x"]}}"#).unwrap();
+    let config =
+        super::config::build_opencode_config(&base_config_inputs(&user_config, &[])).unwrap();
+    assert_eq!(config["skills"]["urls"], serde_json::json!(["x"]));
+    assert!(!config["skills"].as_object().unwrap().contains_key("paths"));
+}
+
+#[rstest]
+#[case::instructions(
+    r#"{"instructions":"AGENTS.md"}"#,
+    "OpenCodeOptions.config[instructions]"
+)]
+#[case::skill_paths(
+    r#"{"skills":{"paths":"skills"}}"#,
+    "OpenCodeOptions.config[skills.paths]"
+)]
+#[case::skills(r#"{"skills":"skills"}"#, "OpenCodeOptions.config[skills]")]
+fn opencode_config_rejects_non_list_or_mapping(#[case] raw: &str, #[case] expected: &str) {
+    let user_config: JsonObject = serde_json::from_str(raw).unwrap();
+    assert!(matches!(
+        super::config::build_opencode_config(&base_config_inputs(&user_config, &[])),
+        Err(HarnessError::OptionsMismatch { given, .. }) if given == expected
+    ));
 }
 
 #[test]
@@ -450,6 +487,19 @@ fn opencode_parsing_accumulates_error_messages() {
         state.error.as_deref(),
         Some("first problem\nsecond problem")
     );
+}
+
+#[test]
+fn opencode_parsing_appends_malformed_event_errors() {
+    let mut state = OpenCodeStreamState::default();
+    let error: JsonObject =
+        serde_json::from_str(r#"{"type":"error","error":"first problem"}"#).unwrap();
+    super::stream::transform_line(&error, &mut state);
+    let malformed: JsonObject =
+        serde_json::from_str(r#"{"type":"text","sessionID":7,"part":{"text":"ignored"}}"#).unwrap();
+    super::stream::transform_line(&malformed, &mut state);
+    let message = state.error.as_deref().unwrap();
+    assert!(message.starts_with("first problem\nopencode line could not be parsed:"));
 }
 
 #[test]

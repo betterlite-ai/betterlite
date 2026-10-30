@@ -18,3 +18,6 @@ deviations:
   - what: "Non-string OpenCode tool output is serialized with sorted JSON object keys because betterlite's JsonObject is a BTreeMap."
     why: "LiteLLM uses plain json.dumps, while the typed Rust event boundary receives ordered JsonObject values; B4835 records the same wire-order limitation."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L168-L190
+  - what: "Malformed known OpenCode JSONL events fail the turn and append their parse error to earlier event errors."
+    why: "The typed Rust wire model rejects malformed known event fields, while LiteLLM leniently reads these events through _as_dict and str()."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L382-L407

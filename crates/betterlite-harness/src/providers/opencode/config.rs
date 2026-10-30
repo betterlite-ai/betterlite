@@ -84,7 +84,9 @@ struct OpenCodeConfig {
     permission: BTreeMap<String, String>,
     autoupdate: bool,
     share: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     instructions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     skills: Option<SkillsConfig>,
     #[serde(flatten)]
     extra: JsonObject,
@@ -116,8 +118,15 @@ fn string_entries(
     key: &str,
     given: &'static str,
 ) -> Result<Vec<String>, HarnessError> {
-    let Some(items) = config.get(key).and_then(|value| value.as_array()) else {
+    let Some(value) = config.get(key) else {
         return Ok(Vec::new());
+    };
+    let Some(items) = value.as_array() else {
+        return Err(HarnessError::OptionsMismatch {
+            given,
+            harness: Harness::OpenCode,
+            expected: "a list containing only strings",
+        });
     };
     items
         .iter()
@@ -149,11 +158,19 @@ fn merged_skills(
     user_config: &JsonObject,
     extra: Option<&str>,
 ) -> Result<Option<SkillsConfig>, HarnessError> {
-    let skills: JsonObject = user_config
-        .get("skills")
-        .and_then(|value| value.as_object())
-        .map(|entries| entries.clone().into_iter().collect())
-        .unwrap_or_default();
+    let skills: JsonObject = match user_config.get("skills") {
+        None => JsonObject::new(),
+        Some(value) => value
+            .as_object()
+            .cloned()
+            .map(IntoIterator::into_iter)
+            .map(Iterator::collect)
+            .ok_or(HarnessError::OptionsMismatch {
+                given: "OpenCodeOptions.config[skills]",
+                harness: Harness::OpenCode,
+                expected: "a mapping",
+            })?,
+    };
     let mut paths = string_entries(&skills, "paths", "OpenCodeOptions.config[skills.paths]")?;
     if let Some(path) = extra {
         paths.push(path.to_owned());
@@ -200,8 +217,12 @@ pub(super) fn build_opencode_config(inputs: &ConfigInputs<'_>) -> Result<JsonObj
     let mut config = build_typed_config(inputs, &permission);
     config.instructions = (!instructions.is_empty()).then_some(instructions);
     config.skills = skills;
-    config.extra.remove("instructions");
-    config.extra.remove("skills");
+    if config.instructions.is_some() {
+        config.extra.remove("instructions");
+    }
+    if config.skills.is_some() {
+        config.extra.remove("skills");
+    }
     serde_json::to_value(config)
         .map_err(|source| HarnessError::StateEncode { source })?
         .as_object()

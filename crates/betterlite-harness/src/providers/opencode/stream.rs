@@ -48,21 +48,16 @@ fn tool_input(part: &ToolPart) -> JsonObject {
 fn tool_events(part: ToolPart) -> Vec<Event> {
     let native = part
         .tool
-        .as_ref()
-        .filter(|tool| !tool.is_null())
-        .map(super::wire::value_to_string)
-        .unwrap_or_default();
+        .as_deref()
+        .filter(|tool| !tool.is_empty())
+        .unwrap_or_default()
+        .to_owned();
     let call_id = part
         .call_id
         .as_ref()
-        .filter(|id| id.as_str().is_some_and(|value| !value.is_empty()))
-        .map(super::wire::value_to_string)
-        .or_else(|| {
-            part.id
-                .as_ref()
-                .filter(|id| id.as_str().is_some_and(|value| !value.is_empty()))
-                .map(super::wire::value_to_string)
-        })
+        .filter(|id| !id.is_empty())
+        .cloned()
+        .or_else(|| part.id.as_ref().filter(|id| !id.is_empty()).cloned())
         .unwrap_or_default();
     let call = Event::ToolCall {
         id: call_id.clone(),
@@ -79,7 +74,7 @@ fn tool_result(part: ToolPart, native: &str, call_id: String) -> Event {
         .state
         .status
         .as_ref()
-        .is_some_and(|status| status.as_str() == Some("error"))
+        .is_some_and(|status| status == "error")
     {
         (failed_tool_output(part.state), true)
     } else {
@@ -101,12 +96,8 @@ fn tool_output(state: super::wire::ToolState) -> String {
 }
 
 fn failed_tool_output(state: super::wire::ToolState) -> String {
-    if let Some(error) = state
-        .error
-        .as_ref()
-        .filter(|error| super::wire::is_truthy(error))
-    {
-        return super::wire::value_to_string(error);
+    if let Some(error) = state.error.as_ref().filter(|error| !error.is_empty()) {
+        return error.clone();
     }
     if let Some(value) = state.output
         && super::wire::is_truthy(&value)
@@ -132,12 +123,7 @@ fn transform_parsed_line(wire: Line, state: &mut OpenCodeStreamState) -> Vec<Eve
         }
         Line::Text { part, .. } => text_event(part, state),
         Line::Reasoning { part, .. } => {
-            let Some(delta) = part
-                .text
-                .filter(|text| !text.is_null())
-                .map(|text| super::wire::value_to_string(&text))
-                .filter(|text| !text.is_empty())
-            else {
+            let Some(delta) = part.text.filter(|text| !text.is_empty()) else {
                 return Vec::new();
             };
             vec![Event::Reasoning { delta }]
@@ -156,19 +142,18 @@ fn transform_parsed_line(wire: Line, state: &mut OpenCodeStreamState) -> Vec<Eve
         }
         Line::Other => Vec::new(),
         Line::Malformed { line, .. } => {
-            state.error = Some(format!("opencode line could not be parsed: {line}"));
+            let message = format!("opencode line could not be parsed: {line}");
+            state.error = Some(match state.error.take() {
+                Some(existing) => format!("{existing}\n{message}"),
+                None => message,
+            });
             Vec::new()
         }
     }
 }
 
 fn text_event(part: super::wire::TextPart, state: &mut OpenCodeStreamState) -> Vec<Event> {
-    let Some(text) = part
-        .text
-        .filter(|text| !text.is_null())
-        .map(|text| super::wire::value_to_string(&text))
-        .filter(|text| !text.is_empty())
-    else {
+    let Some(text) = part.text.filter(|text| !text.is_empty()) else {
         return Vec::new();
     };
     state.step_texts.push(text.clone());
