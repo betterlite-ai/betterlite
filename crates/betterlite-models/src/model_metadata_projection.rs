@@ -19,7 +19,7 @@ pub enum ProjectionError {
 
 pub fn project(
     key: &str,
-    _model: &str,
+    model: &str,
     provider: &str,
     entry: &RawValue,
 ) -> Result<Box<RawValue>, ProjectionError> {
@@ -36,7 +36,7 @@ pub fn project(
     drop(parsed_fields);
     PriceFields::parse(&pricing_raw).map_err(|error| ProjectionError::Prices(error.to_string()))?;
     let fixed: BTreeSet<&str> = FIXED_FIELDS.split_whitespace().collect();
-    let mut result = fixed_fields(key, provider, &source)?;
+    let mut result = fixed_fields(key, model, provider, &source)?;
     for (name, value) in source {
         if !fixed.contains(name.as_str()) && is_threshold_cost_key(&name) {
             result.insert(name, value);
@@ -47,6 +47,7 @@ pub fn project(
 
 fn fixed_fields(
     key: &str,
+    model: &str,
     provider: &str,
     source: &BTreeMap<String, Box<RawValue>>,
 ) -> Result<BTreeMap<String, Box<RawValue>>, ProjectionError> {
@@ -54,11 +55,15 @@ fn fixed_fields(
     for name in FIXED_FIELDS.split_whitespace() {
         let value = match name {
             "key" => to_raw_value(key)?,
-            "input_cost_per_token" | "output_cost_per_token" => source
-                .get(name)
-                .filter(|value| value.get() != "null")
-                .cloned()
-                .unwrap_or(to_raw_value(&0_u8)?),
+            "input_cost_per_token" | "output_cost_per_token" => {
+                let value = source.get(name).filter(|value| value.get() != "null");
+                if value.is_none() {
+                    tracing::debug!(
+                        "model={model}, custom_llm_provider={provider} has no {name} in model_cost_map. Defaulting to 0."
+                    );
+                }
+                value.cloned().unwrap_or(to_raw_value(&0_u8)?)
+            }
             "litellm_provider" => source
                 .get(name)
                 .cloned()
