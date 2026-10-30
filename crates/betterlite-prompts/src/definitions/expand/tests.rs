@@ -122,11 +122,27 @@ fn run(schema: Object, defs: &Object, max_inlined_bytes: Option<usize>) -> Outco
     Outcome::Object(object(r##"{"$defs": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##)),
     None
 )]
+#[case::a_non_object_root_definitions_value_is_ignored(
+    object(r##"{"definitions": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##),
+    object("{}"),
+    None,
+    Outcome::Object(object(
+        r##"{"definitions": "not an object", "a": {"$ref": "#/$defs/Foo"}}"##
+    )),
+    None
+)]
 #[case::a_non_object_defs_value_on_a_resolved_ref_target_is_ignored(
     object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
     object(r#"{"Foo": {"$defs": "not an object", "type": "string"}}"#),
     None,
     Outcome::Object(object(r#"{"a": {"$defs": "not an object", "type": "string"}}"#)),
+    None
+)]
+#[case::a_non_object_definitions_value_on_a_resolved_ref_target_is_ignored(
+    object(r##"{"a": {"$ref": "#/$defs/Foo"}}"##),
+    object(r#"{"Foo": {"definitions": "not an object", "type": "string"}}"#),
+    None,
+    Outcome::Object(object(r#"{"a": {"definitions": "not an object", "type": "string"}}"#)),
     None
 )]
 #[case::a_non_object_definitions_value_on_a_plain_dict_is_ignored(
