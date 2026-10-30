@@ -1,0 +1,8 @@
+task: B3697
+deviations:
+  - what: "The base ambiguous-token classifier remains a conservative OTHER_MEANING result with confidence 0.5."
+    why: "This is the pinned LiteLLM default and airline-specific classification is supplied by the subclass."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L108-L112"
+  - what: "Competitor matches classified below the 0.65 ambiguity threshold are discarded after evidence is recorded."
+    why: "This preserves LiteLLM's safe default for low-confidence ambiguous matches."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/base.py#L197-L206"
