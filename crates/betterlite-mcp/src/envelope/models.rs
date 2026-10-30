@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub(crate) use self::wire::{WireGrant, WireRefresh};
+pub(crate) use self::wire::{Claims, Header, HeaderOwned, WireGrant, WireRefresh};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvelopeIdentity {
@@ -123,31 +123,6 @@ pub(crate) fn validate_mint(request: &MintValidation<'_>) -> Result<(), Envelope
         return Err(EnvelopeMintError::ExpiresInInvalid);
     }
     Ok(())
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Claims {
-    pub(crate) iss: String,
-    pub(crate) iat: i64,
-    pub(crate) exp: i64,
-    pub(crate) kind: EnvelopeKind,
-    pub(crate) server_id: String,
-    pub(crate) subject_type: SubjectType,
-    pub(crate) subject: String,
-    pub(crate) grant: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct Header<'header> {
-    pub(crate) alg: &'header str,
-    pub(crate) typ: &'header str,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct HeaderOwned {
-    pub(crate) alg: String,
-    pub(crate) typ: String,
 }
 
 pub(crate) trait MintPayload: Sized {

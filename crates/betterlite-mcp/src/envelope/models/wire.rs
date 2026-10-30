@@ -1,7 +1,32 @@
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
-use super::{RefreshCredential, UpstreamTokenGrant};
+use super::{EnvelopeKind, RefreshCredential, SubjectType, UpstreamTokenGrant};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Claims {
+    pub(crate) iss: String,
+    pub(crate) iat: i64,
+    pub(crate) exp: i64,
+    pub(crate) kind: EnvelopeKind,
+    pub(crate) server_id: String,
+    pub(crate) subject_type: SubjectType,
+    pub(crate) subject: String,
+    pub(crate) grant: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Header<'header> {
+    pub(crate) alg: &'header str,
+    pub(crate) typ: &'header str,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct HeaderOwned {
+    pub(crate) alg: String,
+    pub(crate) typ: String,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
