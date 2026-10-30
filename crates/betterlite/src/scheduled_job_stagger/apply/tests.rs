@@ -244,3 +244,28 @@ fn apply_modifies_every_job_an_override_gives_a_nonzero_offset_to() {
     assert_eq!(offsets.get("job-a"), Some(&5));
     assert_eq!(scheduler.modified, vec!["job-a".to_owned()]);
 }
+
+#[test]
+fn apply_does_not_modify_a_job_when_its_offset_is_zero() {
+    let mut offset_overrides = BTreeMap::new();
+    offset_overrides.insert("job-a".to_owned(), 0_i64);
+    let settings = Settings {
+        enabled: true,
+        window_seconds: 300,
+        identity: None,
+        offsets: offset_overrides,
+    };
+    let mut scheduler = FakeScheduler {
+        running: false,
+        jobs: vec![interval_job("job-a")],
+        modified: vec![],
+    };
+    let offsets = apply_scheduled_job_stagger(
+        &mut scheduler,
+        &settings,
+        Some("identity"),
+        &BTreeMap::new(),
+    );
+    assert_eq!(offsets.get("job-a"), Some(&0));
+    assert!(scheduler.modified.is_empty());
+}

@@ -27,6 +27,14 @@ fn same_inputs_are_deterministic() {
 }
 
 #[test]
+fn uses_the_first_eight_digest_bytes_as_big_endian() {
+    assert_eq!(
+        offset_seconds("job", "identity", 1_000_000_007),
+        581_065_450
+    );
+}
+
+#[test]
 fn different_identity_usually_changes_the_offset() {
     let first = offset_seconds("job-a", "replica-1", 300);
     let second = offset_seconds("job-a", "replica-2", 300);
