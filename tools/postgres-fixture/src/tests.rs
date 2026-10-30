@@ -203,6 +203,8 @@ async fn isolated_schemas() {
         fixture_scalar::<i64>(&second, "SELECT count(*) FROM rows").await,
         0
     );
+    let first_schema = fixture_scalar::<String>(&first, "SELECT current_schema()").await;
+    let second_schema = fixture_scalar::<String>(&second, "SELECT current_schema()").await;
     drop(writer);
     drop(reader);
     first_driver.join_next().await.unwrap().unwrap();
@@ -210,8 +212,9 @@ async fn isolated_schemas() {
     first.close_async().await.unwrap();
     second.close_async().await.unwrap();
     let (admin, _driver) = connect_client(&admin_url).await;
-    let statement = "SELECT 1 FROM pg_namespace WHERE nspname LIKE 'betterlite_fixture_%'";
-    let schemas = admin.query(statement, &[]).await.unwrap();
+    let statement = "SELECT 1 FROM pg_namespace WHERE nspname = ANY($1)";
+    let names = vec![first_schema, second_schema];
+    let schemas = admin.query(statement, &[&names]).await.unwrap();
     assert!(schemas.is_empty());
 }
 #[tokio::test]
