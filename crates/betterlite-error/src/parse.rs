@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::facts::{
-    ErrorCode, MAX_BODY_BYTES, ProviderErrorBody, ProviderErrorFacts, bounded_body, bounded_text,
+    MAX_BODY_BYTES, ProviderErrorBody, ProviderErrorFacts, bounded_body, bounded_text,
 };
+use serde::de::IgnoredAny;
 
 mod constructors;
 mod tests;
@@ -107,9 +108,42 @@ struct CodeBody {
     error: Option<CodeFields>,
 }
 
+// serde_json::Number's own Deserialize reads the private map token arbitrary_precision uses for floats, which raw f64/i64 untagged variants cannot
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum CodeValue {
+    Bool(bool),
+    Number(serde_json::Number),
+    Text(String),
+    Unsupported(IgnoredAny),
+}
+
 #[derive(serde::Deserialize)]
 struct CodeFields {
-    code: Option<ErrorCode>,
+    code: Option<CodeValue>,
+}
+
+const MAX_SAFE_CODE: f64 = 9_223_372_036_854_776_000.0;
+const MIN_SAFE_CODE: f64 = -9_223_372_036_854_776_000.0;
+
+fn truncate_float_code(value: f64) -> Option<i64> {
+    let truncated = value.trunc();
+    if !(MIN_SAFE_CODE..=MAX_SAFE_CODE).contains(&truncated) {
+        return None;
+    }
+    format!("{truncated:.0}").parse().ok()
+}
+
+fn python_int(value: CodeValue) -> Option<i64> {
+    match value {
+        CodeValue::Bool(true) => Some(1),
+        CodeValue::Bool(false) => Some(0),
+        CodeValue::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_f64().and_then(truncate_float_code)),
+        CodeValue::Text(text) => text.trim().parse().ok(),
+        CodeValue::Unsupported(_) => None,
+    }
 }
 
 #[must_use]
@@ -118,11 +152,8 @@ pub fn get_body_error_code(error_text: &str) -> Option<i64> {
         return None;
     }
     let body = serde_json::from_str::<CodeBody>(error_text).ok()?;
-    let code = body.error.as_ref()?.code.as_ref()?;
-    match code {
-        ErrorCode::Number(number) => Some(*number),
-        ErrorCode::Text(text) => text.trim().parse::<i64>().ok(),
-    }
+    let code = body.error?.code?;
+    python_int(code)
 }
 
 #[must_use]
