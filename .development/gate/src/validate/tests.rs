@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
 use crate::spec::task::Task;
+use crate::validate::command_args::argument_problems;
 use crate::validate::needs::needed_paths;
 use crate::validate::task::{banned_tooling, outside_scope_roots};
 use crate::validate::validate;
@@ -64,6 +65,44 @@ fn check_commands_run_python_only_as_the_pinned_litellm() {
         ("cat > /tmp/a.json", vec!["/tmp"]),
     ] {
         assert_eq!(banned_tooling(bad), expected, "{bad}");
+    }
+}
+
+#[test]
+fn check_commands_pass_nextest_and_grep_arguments_they_accept() {
+    for good in [
+        "cargo nextest run --locked -p a --no-tests=fail -E 'test(/^x::/) | test(y)' -- --exact x::y",
+        "INSTA_UPDATE=no cargo nextest run -p a -- --include-ignored --nocapture name",
+        "cargo nextest run -p a && cargo run -p b -- --test-threads=1",
+        "cargo nextest run -p a\ncargo run -p b -- --flag",
+        "grep -qF -- '--include-team-keys' a.py && grep -qe '-x' a.py",
+        "grep -q --include='*.rs' -e '--config' src && jq -e '.a | .b' f",
+        "! grep -rqE 'x|-y' src",
+    ] {
+        assert!(argument_problems(good).is_empty(), "{good}");
+    }
+    for (bad, expected) in [
+        (
+            "cargo nextest run -p a -E 'test(/^x::/)' -- --test-threads=1",
+            vec![
+                "passes --test-threads=1 after --; cargo nextest run takes only test name filters and --exact, --skip, --ignored, --include-ignored, --nocapture there",
+            ],
+        ),
+        (
+            "X=1 cargo nextest run -p a --exact --skip=y",
+            vec![
+                "puts --exact before --; cargo nextest run takes it only after --",
+                "puts --skip=y before --; cargo nextest run takes it only after --",
+            ],
+        ),
+        (
+            "grep -qF '@x' a.py && grep -qF \"--include-team-keys\" a.py",
+            vec![
+                "gives grep the pattern --include-team-keys before --, so grep reads it as an option; put -- before the pattern",
+            ],
+        ),
+    ] {
+        assert_eq!(argument_problems(bad), expected, "{bad}");
     }
 }
 

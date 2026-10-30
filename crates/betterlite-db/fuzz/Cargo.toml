@@ -26,8 +26,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "identity_rows"
-path = "fuzz_targets/identity_rows.rs"
+name = "team_rows"
+path = "fuzz_targets/team_rows.rs"
 test = false
 doc = false
 bench = false
