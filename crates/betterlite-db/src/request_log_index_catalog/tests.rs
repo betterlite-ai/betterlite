@@ -133,29 +133,30 @@ async fn postgres_equivalent_default_btree() {
 
 #[tokio::test]
 async fn postgres_inspection_never_mutates() {
-    let (fixture, client, _) = database().await;
-    create_partition_schema(&client).await;
-    let before = index_oid(&client).await;
+    let (fixture, client, schema) = database().await;
+    let quoted_schema = format!("q {schema}");
+    create_partition_schema(&client, &quoted_schema).await;
+    let before = index_oid(&client, &quoted_schema).await;
     assert!(
-        table_kind(&client, "quoted schema", "parent")
+        table_kind(&client, &quoted_schema, "parent")
             .await
             .unwrap()
             .unwrap()
             .partitioned
     );
     assert_eq!(
-        index_state(&client, "quoted schema", "parent_idx")
+        index_state(&client, &quoted_schema, "parent_idx")
             .await
             .unwrap()
             .unwrap()
             .table,
         "parent"
     );
-    let children = children_without_the_index(&client, "quoted schema", "parent", "parent_idx")
+    let children = children_without_the_index(&client, &quoted_schema, "parent", "parent_idx")
         .await
         .unwrap();
     assert!(children.is_empty());
-    let after = index_oid(&client).await;
+    let after = index_oid(&client, &quoted_schema).await;
     assert_eq!(before, after);
     finish(fixture).await;
 }
@@ -196,20 +197,21 @@ async fn finish(fixture: PostgresFixture) {
     fixture.close_async().await.unwrap();
 }
 
-async fn create_partition_schema(client: &Client) {
+async fn create_partition_schema(client: &Client, schema: &str) {
+    let quoted_schema = schema.replace('"', "\"\"");
     client
-        .batch_execute(
-            "CREATE SCHEMA \"quoted schema\"; CREATE TABLE \"quoted schema\".parent (id INT, api_key TEXT) PARTITION BY RANGE (id); CREATE TABLE child_a PARTITION OF \"quoted schema\".parent FOR VALUES FROM (0) TO (10); CREATE TABLE \"quoted schema\".child_b PARTITION OF \"quoted schema\".parent FOR VALUES FROM (10) TO (20); CREATE INDEX parent_idx ON \"quoted schema\".parent (api_key);",
-        )
+        .batch_execute(&format!(
+            "CREATE SCHEMA \"{quoted_schema}\"; CREATE TABLE \"{quoted_schema}\".parent (id INT, api_key TEXT) PARTITION BY RANGE (id); CREATE TABLE child_a PARTITION OF \"{quoted_schema}\".parent FOR VALUES FROM (0) TO (10); CREATE TABLE \"{quoted_schema}\".child_b PARTITION OF \"{quoted_schema}\".parent FOR VALUES FROM (10) TO (20); CREATE INDEX parent_idx ON \"{quoted_schema}\".parent (api_key);"
+        ))
         .await
         .unwrap();
 }
 
-async fn index_oid(client: &Client) -> u32 {
+async fn index_oid(client: &Client, schema: &str) -> u32 {
     client
         .query_one(
-            "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'quoted schema' AND c.relname = 'parent_idx'",
-            &[],
+            "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = 'parent_idx'",
+            &[&schema],
         )
         .await
         .unwrap()
