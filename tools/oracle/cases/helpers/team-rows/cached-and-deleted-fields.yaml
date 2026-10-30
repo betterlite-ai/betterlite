@@ -1,0 +1,6 @@
+kind: helper
+name: cached_timestamp_and_deleted_metadata
+call:
+  team_rows: {operation: team, row: {team_id: team-a, spend: 0}}
+env: {}
+compare: {ignore: []}

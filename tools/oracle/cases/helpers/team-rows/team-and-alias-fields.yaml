@@ -1,0 +1,6 @@
+kind: helper
+name: team_base_all_defaults
+call:
+  team_rows: {operation: team, row: {team_id: team-a}}
+env: {}
+compare: {ignore: []}

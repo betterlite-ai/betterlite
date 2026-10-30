@@ -1,0 +1,6 @@
+kind: helper
+name: member_empty_identity_and_both_allowed
+call:
+  team_rows: {operation: member, row: {user_id: '', user_email: '', role: admin}}
+env: {}
+compare: {ignore: []}

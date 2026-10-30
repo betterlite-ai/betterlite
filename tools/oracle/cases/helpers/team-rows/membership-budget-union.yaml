@@ -1,0 +1,6 @@
+kind: helper
+name: membership_required_ids_and_nullable_counters
+call:
+  team_rows: {operation: membership, row: {user_id: user-a, team_id: team-a}}
+env: {}
+compare: {ignore: []}

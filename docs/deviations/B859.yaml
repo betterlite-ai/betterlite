@@ -1,0 +1,8 @@
+task: B859
+deviations:
+  - what: Stored team JSON or nested decoded JSON above 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound recursive external data as required by the task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L107-L133
+  - what: Team, budget-window and membership amounts outside Decimal's finite range fail decoding.
+    why: Checked monetary conversion is required by the repository money-is-decimal contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L45-L50

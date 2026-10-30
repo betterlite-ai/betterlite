@@ -1,0 +1,6 @@
+kind: helper
+name: team_all_eight_string_fields_and_error_order
+call:
+  team_rows: {operation: team, row: {team_id: team-a, metadata: '{"ok": true}'} }
+env: {}
+compare: {ignore: []}
