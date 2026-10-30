@@ -55,6 +55,7 @@ fn summarize_source(
 
 fn invalid(message: impl Into<String>) -> Box<crate::helpers::HelperError> {
     let message = message.into();
+    let message_empty = message.is_empty();
     let error = Box::new(crate::helpers::HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
@@ -63,7 +64,7 @@ fn invalid(message: impl Into<String>) -> Box<crate::helpers::HelperError> {
         code: None,
         message,
     });
-    if message.is_empty() {
+    if message_empty {
         return error;
     }
     error
