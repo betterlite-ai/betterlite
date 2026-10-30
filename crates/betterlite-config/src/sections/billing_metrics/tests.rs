@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
@@ -73,7 +73,10 @@ fn billing_metrics_config_reads_every_variable() {
     assert_eq!(configured.client_cert.as_deref(), Some("/cert"));
     assert_eq!(configured.ca_cert.as_deref(), Some("/ca"));
     assert_eq!(configured.export_interval_ms, 1234);
-    assert_eq!(configured.temp_root, PathBuf::from("/scratch"));
+    assert_eq!(
+        configured.temp_root_candidates[0],
+        PathBuf::from("/scratch")
+    );
     assert!(
         configured
             .client_key
@@ -93,7 +96,10 @@ fn billing_metrics_config_treats_empty_values_as_unset() {
     let configured = settings(&names.map(|name| (name, "")));
     assert_eq!((configured.endpoint, configured.client_cert), (None, None));
     assert!(configured.client_key.is_none() && configured.ca_cert.is_none());
-    assert_eq!(configured.temp_root, Settings::default().temp_root);
+    assert_eq!(
+        configured.temp_root_candidates,
+        Settings::default().temp_root_candidates
+    );
     assert_eq!(Settings::default().export_interval_ms, 60_000);
 }
 
@@ -106,6 +112,12 @@ fn billing_metrics_config_treats_empty_values_as_unset() {
 #[case::text(Some("soon"), 60_000, true)]
 #[case::fraction(Some("1.5"), 60_000, true)]
 #[case::empty(Some(""), 60_000, true)]
+#[case::underscored(Some("5_000"), 5000, false)]
+#[case::negative_underscored(Some("-1_234"), -1234, false)]
+#[case::unicode_digits(Some("\u{0665}\u{0660}\u{0660}\u{0660}"), 5000, false)]
+#[case::leading_underscore(Some("_1000"), 60_000, true)]
+#[case::trailing_underscore(Some("1000_"), 60_000, true)]
+#[case::doubled_underscore(Some("1__000"), 60_000, true)]
 fn billing_metrics_config_parses_the_export_interval(
     #[case] raw: Option<&str>,
     #[case] expected: i64,
@@ -126,12 +138,19 @@ fn billing_metrics_config_parses_the_export_interval(
 }
 
 #[rstest]
-#[case::tmpdir(&[("TMP", "/c"), ("TEMP", "/b"), ("TMPDIR", "/a")], "/a")]
-#[case::temp(&[("TMP", "/c"), ("TEMP", "/b")], "/b")]
-#[case::tmp(&[("TMP", "/c")], "/c")]
-#[case::fallback(&[], "/tmp")]
-fn billing_metrics_config_picks_the_temp_root(#[case] pairs: &[(&str, &str)], #[case] root: &str) {
-    assert_eq!(settings(pairs).temp_root, PathBuf::from(root));
+#[case::tmpdir(&[("TMP", "/c"), ("TEMP", "/b"), ("TMPDIR", "/a")], &["/a", "/b", "/c"])]
+#[case::temp(&[("TMP", "/c"), ("TEMP", "/b")], &["/b", "/c"])]
+#[case::tmp(&[("TMP", "/c")], &["/c"])]
+#[case::fallback(&[], &[])]
+fn billing_metrics_config_picks_the_temp_root(
+    #[case] pairs: &[(&str, &str)],
+    #[case] expected_prefix: &[&str],
+) {
+    let candidates = settings(pairs).temp_root_candidates;
+    let prefix: Vec<PathBuf> = expected_prefix.iter().map(PathBuf::from).collect();
+    assert_eq!(&candidates[..prefix.len()], prefix.as_slice());
+    assert_eq!(candidates[prefix.len()], PathBuf::from("/tmp"));
+    assert!(candidates.contains(&PathBuf::from("/var/tmp")));
 }
 
 #[rstest]
@@ -226,15 +245,18 @@ fn billing_metrics_config_names_every_unreadable_path() {
 
 #[test]
 fn billing_metrics_config_reports_write_failures() {
+    // every candidate is exhausted, which TMPDIR alone cannot force once /tmp exists
     let directory = tempfile::tempdir().unwrap();
     let blocker = directory.path().join("not-a-directory");
     fs::write(&blocker, "plain file").unwrap();
-    let configured = settings(&[
-        (ENDPOINT_ENV, "https://collector"),
-        (CLIENT_CERT_ENV, CERT_PEM),
-        (CLIENT_KEY_ENV, KEY_PEM),
-        ("TMPDIR", blocker.to_str().unwrap()),
-    ]);
+    let configured = Settings {
+        endpoint: Some("https://collector".to_owned()),
+        client_cert: Some(CERT_PEM.to_owned()),
+        client_key: Some(SecretString::from(KEY_PEM)),
+        ca_cert: None,
+        export_interval_ms: 60_000,
+        temp_root_candidates: vec![blocker.clone(), blocker],
+    };
     let (metering, output) = logged(|| configured.resolve());
     assert_eq!(metering, None);
     assert!(
@@ -246,6 +268,25 @@ fn billing_metrics_config_reports_write_failures() {
     assert!(
         !output.contains("MIIBsecretkey") && !format!("{configured:?}").contains("MIIBsecretkey")
     );
+}
+
+#[test]
+fn billing_metrics_config_falls_back_when_tmpdir_is_unusable() {
+    let directory = tempfile::tempdir().unwrap();
+    let blocker = directory.path().join("not-a-directory");
+    fs::write(&blocker, "plain file").unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let configured = settings(&[
+        (ENDPOINT_ENV, "https://collector"),
+        (CLIENT_CERT_ENV, CERT_PEM),
+        (CLIENT_KEY_ENV, KEY_PEM),
+        ("TMPDIR", blocker.to_str().unwrap()),
+        ("TEMP", scratch.path().to_str().unwrap()),
+    ]);
+    let (metering, output) = logged(|| configured.resolve());
+    assert!(!output.contains("WARN"), "{output}");
+    let written = metering.unwrap().client_key.parent().unwrap().to_path_buf();
+    assert_eq!(written.parent().unwrap(), scratch.path());
 }
 
 #[rstest]

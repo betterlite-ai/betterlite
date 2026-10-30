@@ -46,7 +46,7 @@ fn settings(endpoint: &str, temp_root: &Path) -> Settings {
         client_key: Some(SecretString::from(fixture("client.key").to_str().unwrap())),
         ca_cert: Some(fixture("ca.crt").to_str().unwrap().to_owned()),
         export_interval_ms: 60_000,
-        temp_root: temp_root.to_path_buf(),
+        temp_root_candidates: vec![temp_root.to_path_buf()],
     }
 }
 
