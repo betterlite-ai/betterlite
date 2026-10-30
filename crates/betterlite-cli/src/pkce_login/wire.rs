@@ -1,5 +1,4 @@
 use secrecy::{ExposeSecret as _, SecretString};
-use std::str::from_utf8;
 
 use super::{HttpResponse, models::PkceFailure};
 
@@ -27,11 +26,11 @@ pub(super) struct TokenResponse {
 }
 
 pub(super) fn error_detail(response: &HttpResponse) -> String {
-    let fallback = from_utf8(&response.body).unwrap_or("");
+    let fallback = String::from_utf8_lossy(&response.body);
     let detail = serde_json::from_slice::<ErrorBody>(&response.body)
         .ok()
         .and_then(|body| body.error_description.or(body.error).or(body.detail))
-        .unwrap_or_else(|| String::from(fallback));
+        .unwrap_or_else(|| fallback.into_owned());
     detail.chars().take(200).collect()
 }
 

@@ -73,6 +73,11 @@ pub fn origin(value: &str) -> Option<String> {
         return None;
     }
     let host = parsed.host_str()?;
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
     let port = parsed.port_or_known_default()?;
     Some(format!("{scheme}://{host}:{port}"))
 }

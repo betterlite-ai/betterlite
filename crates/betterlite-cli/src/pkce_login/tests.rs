@@ -151,6 +151,10 @@ fn origin_normalizes_default_ports() {
         origin("https://example.test:443/path"),
         Some("https://example.test:443".to_owned())
     );
+    assert_eq!(
+        origin("https://[::1]/path"),
+        Some("https://[::1]:443".to_owned())
+    );
 }
 
 #[test]
@@ -420,6 +424,23 @@ fn error_detail_is_bounded() {
     )
     .expect_err("failure");
     assert_eq!(error.to_string(), "denied");
+}
+
+#[test]
+fn error_detail_preserves_invalid_utf8_fallback() {
+    let response = HttpResponse {
+        status: 400,
+        headers: Vec::new(),
+        body: vec![0xff; 201],
+    };
+    let error = redeem_code(
+        &contract(),
+        &redemption(),
+        &ScriptedHttp::new(response),
+        100,
+    )
+    .expect_err("failure");
+    assert_eq!(error.to_string().chars().count(), 200);
 }
 
 #[test]
