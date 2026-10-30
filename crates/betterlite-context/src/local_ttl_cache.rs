@@ -96,12 +96,7 @@ impl LocalTtlCache {
         let resolved_item_kib = max_size_per_item
             .filter(|size| *size != 0)
             .unwrap_or(loaded_item_kib);
-        let item_byte_limit = match usize::try_from(resolved_item_kib) {
-            Ok(kib) => Some(kib.saturating_mul(1024).min(MAX_VALUE_BYTES)),
-            Err(_) if resolved_item_kib.is_negative() => None,
-            Err(_) => Some(MAX_VALUE_BYTES),
-        };
-        let cache = Self {
+        let mut cache = Self {
             limits: CacheLimits {
                 capacity: resolved_capacity,
                 default_ttl: default_ttl
@@ -109,12 +104,16 @@ impl LocalTtlCache {
                     .unwrap_or(DEFAULT_TTL),
                 max_size_per_item: resolved_item_kib,
             },
-            item_byte_limit,
+            item_byte_limit: None,
             values: BTreeMap::new(),
             expiries: BTreeMap::new(),
             heap: BinaryHeap::new(),
             clock,
         };
+        cache.item_byte_limit = Some(match usize::try_from(resolved_item_kib) {
+            Ok(kib) => kib.saturating_mul(1024).min(MAX_VALUE_BYTES),
+            Err(_) => return Ok(cache),
+        });
         Ok(cache)
     }
 
