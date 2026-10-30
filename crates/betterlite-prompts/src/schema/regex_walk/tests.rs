@@ -59,6 +59,13 @@ fn nested_non_python_regex_is_removed_without_touching_data() {
 }
 
 #[test]
+fn tool_schemas_tool_schema_tests_regex_walks_object_items() {
+    let schema = object(r#"{"type":"array","items":{"type":"string","pattern":"\\p{Cc}"}}"#);
+    let expected = object(r#"{"type":"array","items":{"type":"string"}}"#);
+    assert_eq!(drop_non_python_regex_patterns(&schema), expected);
+}
+
+#[test]
 fn escaped_regex_marker_is_preserved() {
     let schema = object(r#"{"type":"object","pattern":"\\\\p{Cc}"}"#);
     assert_eq!(drop_non_python_regex_patterns(&schema), schema);

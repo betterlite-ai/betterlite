@@ -39,6 +39,11 @@ fn process_schema_child(value: &mut Json, key: &str, depth: usize) {
                 drop_map_children(children, depth);
             }
         }
+        "items" => match value {
+            Json::List(children) => drop_list_children(children, depth),
+            Json::Object(child_schema) => drop_regexes(child_schema, depth),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+        },
         list_key if is_schema_list_key(list_key) => {
             if let Json::List(children) = value {
                 drop_list_children(children, depth);
@@ -109,7 +114,7 @@ fn is_schema_map_key(key: &str) -> bool {
 }
 
 fn is_schema_list_key(key: &str) -> bool {
-    let result = matches!(key, "allOf" | "anyOf" | "items" | "oneOf" | "prefixItems");
+    let result = matches!(key, "allOf" | "anyOf" | "oneOf" | "prefixItems");
     result
 }
 
