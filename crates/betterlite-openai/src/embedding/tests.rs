@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::PathBuf;
 
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::chat::execution::ChatExecutor;
@@ -188,8 +190,8 @@ fn embedding_response_model_mapping(#[case] requested: Option<&str>, #[case] exp
 }
 
 #[rstest::rstest]
-fn replays_the_embedding_corpus(#[files("fuzz/corpus/embedding/*")] path: std::path::PathBuf) {
-    let bytes = std::fs::read(path).expect("corpus file");
+fn replays_the_embedding_corpus(#[files("fuzz/corpus/embedding/*")] path: PathBuf) {
+    let bytes = fs::read(path).expect("corpus file");
     let _request = EmbeddingRequest::parse(&bytes);
     let _response = serde_json::from_slice::<super::EmbeddingResponse>(&bytes);
 }
