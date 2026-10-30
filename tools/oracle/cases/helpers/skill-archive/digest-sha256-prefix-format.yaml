@@ -1,3 +1,4 @@
+# the digest must start with the literal "sha256:" prefix
 kind: helper
 name: digest-sha256-prefix-format
 call:
