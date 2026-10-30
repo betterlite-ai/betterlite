@@ -2,7 +2,9 @@
 
 use crate::models::execution::{Execution, ExecutionSource};
 use crate::models::settings::Scope;
+use crate::sources::part_row::PartRow;
 use crate::sources::source_reader::SourceReader;
+use crate::sources::source_reader_content::CONTENT_PAGE_SIZE;
 use crate::sources::stub_storage::StubStorage;
 
 fn execution() -> Execution {
@@ -60,6 +62,47 @@ async fn constructs_trace_parts_from_rows() {
     assert_eq!(part.execution_id, "exec-1");
     assert_eq!(part.span_id, "s1");
     assert!(!part.truncated);
+}
+
+fn rows(count: usize) -> Vec<u8> {
+    let rows: Vec<PartRow> = (0..count)
+        .map(|index| PartRow {
+            span_id: format!("s{index}"),
+            parent_span_id: String::new(),
+            name: "root".to_owned(),
+            kind: "agent".to_owned(),
+            content: "hi".to_owned(),
+            truncated: 0,
+        })
+        .collect();
+    serde_json::to_vec(&rows).expect("encodes")
+}
+
+#[tokio::test]
+async fn a_full_page_returns_the_last_span_id_as_the_next_cursor() {
+    let reader = SourceReader {
+        storage: StubStorage::with_bytes(rows(CONTENT_PAGE_SIZE)),
+    };
+    let content = reader
+        .content(&Scope::default(), &execution(), "", 0)
+        .await
+        .expect("ok");
+    assert_eq!(
+        content.next_cursor,
+        Some(format!("s{}", CONTENT_PAGE_SIZE - 1))
+    );
+}
+
+#[tokio::test]
+async fn a_partial_page_has_no_next_cursor() {
+    let reader = SourceReader {
+        storage: StubStorage::with_bytes(rows(CONTENT_PAGE_SIZE - 1)),
+    };
+    let content = reader
+        .content(&Scope::default(), &execution(), "", 0)
+        .await
+        .expect("ok");
+    assert_eq!(content.next_cursor, None);
 }
 
 #[tokio::test]
