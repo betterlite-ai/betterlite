@@ -32,6 +32,13 @@ fn classification_trusts_prefix_and_plaintext(#[case] text: &str, #[case] expect
 }
 
 #[rstest]
+#[case::marked("v2:gcm:payload", true)]
+#[case::unmarked("legacy", false)]
+fn is_migrated_checks_only_the_storage_prefix(#[case] text: &str, #[case] expected: bool) {
+    assert_eq!(is_migrated(text), expected);
+}
+
+#[rstest]
 #[case::empty_object("{}", None)]
 #[case::empty_text_map(r#""{}""#, None)]
 #[case::null("null", None)]

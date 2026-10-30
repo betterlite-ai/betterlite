@@ -106,8 +106,17 @@ pub fn classify_value(value: &MigrationJson, cipher: &DbCipher, key: &str) -> Va
     }
 }
 
+#[must_use]
+pub fn is_migrated(value: &str) -> bool {
+    if value.strip_prefix(V2_GCM_PREFIX).is_some() {
+        true
+    } else {
+        false
+    }
+}
+
 fn classify_secret(text: &SecretString, cipher: &DbCipher, key: &str) -> ValueClass {
-    if text.expose_secret().starts_with(V2_GCM_PREFIX) {
+    if is_migrated(text.expose_secret()) {
         return ValueClass::Migrated;
     }
     if text.expose_secret().is_empty() {
@@ -222,7 +231,7 @@ pub fn classify_secret_map(
         MigrationJson::String(text) => {
             let unquoted = serde_json::from_str::<SecretString>(text.0.expose_secret()).ok();
             let ciphertext = unquoted.as_ref().unwrap_or(&text.0);
-            ciphertext.expose_secret().starts_with(V2_GCM_PREFIX)
+            is_migrated(ciphertext.expose_secret())
         }
         MigrationJson::Null
         | MigrationJson::Bool(_)
