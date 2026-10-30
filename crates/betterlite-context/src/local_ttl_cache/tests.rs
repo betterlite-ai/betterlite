@@ -116,6 +116,11 @@ fn local_ttl_cache_cases(#[case] name: &str) {
                 .set("key", CacheValue::Integer(2), Some(100.0_f64))
                 .unwrap();
             assert_eq!(equality.expiry("key"), Some(110.0_f64));
+            equality.expiries.insert("key".to_owned(), 10.0_f64);
+            equality
+                .set("key", CacheValue::Integer(3), Some(100.0_f64))
+                .unwrap();
+            assert_eq!(equality.expiry("key"), Some(10.0_f64));
             cache.delete("key");
             assert!(cache.get("key").is_none());
             let clock = Arc::new(Mutex::new(0.0_f64));
