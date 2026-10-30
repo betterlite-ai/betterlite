@@ -7,7 +7,6 @@ use axum::Router;
 use axum::routing::post;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderName};
-use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -21,6 +20,8 @@ use crate::generic_guardrail_contracts::{
     GenericGuardrailAPISettings, GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
     GuardrailOptions, GuardrailResponseAction, UnreachableFallback,
 };
+
+const DEFAULT_PATH: &str = "/beta/litellm_basic_guardrail_api";
 
 fn settings(
     fail_on_error: bool,
@@ -37,16 +38,18 @@ fn settings(
 }
 
 fn api(settings: GenericGuardrailAPISettings, api_base: &str) -> GenericGuardrailAPI {
-    GenericGuardrailAPI::with_client(
-        Some(SecretString::from("secret-token")),
-        api_base,
+    let transport = GenericGuardrailAPITransport {
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    };
+    GenericGuardrailAPI {
+        api_key: Some(SecretString::from("secret-token")),
+        api_base: api_base.to_owned(),
         settings,
-        None,
-        GenericGuardrailAPITransport {
-            client: reqwest::Client::default(),
-            timeout: super::DEFAULT_TIMEOUT,
-        },
-    )
+        provider_params: BTreeMap::new(),
+        client: transport.client,
+        timeout: transport.timeout,
+    }
 }
 
 fn base_request() -> GenericGuardrailAPIRequest {
@@ -155,10 +158,10 @@ fn generic_guardrail_merge_provider_params_adds_the_configured_base_values() {
         GenericGuardrailAPISettings::from_optional(None),
         "http://example",
     );
-    instance.provider_params = Some(BTreeMap::from([(
+    instance.provider_params = BTreeMap::from([(
         "custom_threshold".to_owned(),
         GuardrailExtraValue::Decimal(0.8),
-    )]));
+    )]);
     let merged = instance.merge_provider_params(base_request());
     assert_eq!(
         merged.provider_params,
@@ -175,10 +178,10 @@ fn generic_guardrail_merge_provider_params_lets_the_request_override_the_base_va
         GenericGuardrailAPISettings::from_optional(None),
         "http://example",
     );
-    instance.provider_params = Some(BTreeMap::from([(
+    instance.provider_params = BTreeMap::from([(
         "custom_threshold".to_owned(),
         GuardrailExtraValue::Decimal(0.8),
-    )]));
+    )]);
     let request = GenericGuardrailAPIRequest {
         provider_params: Some(BTreeMap::from([(
             "custom_threshold".to_owned(),
@@ -193,6 +196,23 @@ fn generic_guardrail_merge_provider_params_lets_the_request_override_the_base_va
             "custom_threshold".to_owned(),
             GuardrailExtraValue::Decimal(0.3)
         )]))
+    );
+}
+
+#[test]
+fn generic_guardrail_merge_provider_params_sends_an_empty_object_when_nothing_is_configured() {
+    let instance = api(
+        GenericGuardrailAPISettings::from_optional(None),
+        "http://example",
+    );
+    let merged = instance.merge_provider_params(base_request());
+    assert_eq!(merged.provider_params, Some(BTreeMap::new()));
+    let serialized = serde_json::to_value(&merged).expect("serialize");
+    assert!(
+        serialized["additional_provider_specific_params"]
+            .as_object()
+            .expect("object")
+            .is_empty()
     );
 }
 
@@ -313,43 +333,32 @@ fn generic_guardrail_headers_include_the_api_key_and_json_content_type() {
 
 #[test]
 fn generic_guardrail_headers_omit_the_api_key_when_none_is_configured() {
-    let instance = GenericGuardrailAPI::with_client(
-        None,
-        "http://example",
-        GenericGuardrailAPISettings::from_optional(None),
-        None,
-        GenericGuardrailAPITransport {
-            client: reqwest::Client::default(),
-            timeout: super::DEFAULT_TIMEOUT,
-        },
-    );
+    let transport = GenericGuardrailAPITransport {
+        client: reqwest::Client::default(),
+        timeout: super::DEFAULT_TIMEOUT,
+    };
+    let instance = GenericGuardrailAPI {
+        api_key: None,
+        api_base: "http://example".to_owned(),
+        settings: GenericGuardrailAPISettings::from_optional(None),
+        provider_params: BTreeMap::new(),
+        client: transport.client,
+        timeout: transport.timeout,
+    };
     let headers = instance.prepare_headers().expect("headers");
     assert!(!headers.contains_key("x-api-key"));
 }
 
-#[rstest]
-#[case::bare_host(
-    "https://example.com",
-    "https://example.com/beta/litellm_basic_guardrail_api"
-)]
-#[case::trailing_slash(
-    "https://example.com/",
-    "https://example.com/beta/litellm_basic_guardrail_api"
-)]
-#[case::already_suffixed(
-    "https://example.com/beta/litellm_basic_guardrail_api",
-    "https://example.com/beta/litellm_basic_guardrail_api"
-)]
-#[case::already_suffixed_trailing_slash(
-    "https://example.com/beta/litellm_basic_guardrail_api/",
-    "https://example.com/beta/litellm_basic_guardrail_api"
-)]
-fn generic_guardrail_normalize_api_base_appends_the_default_path_once(
-    #[case] input: &str,
-    #[case] expected: &str,
-) {
-    let instance = api(GenericGuardrailAPISettings::from_optional(None), input);
-    assert_eq!(instance.api_base, expected);
+#[test]
+fn generic_guardrail_stores_the_api_base_verbatim() {
+    let instance = api(
+        GenericGuardrailAPISettings::from_optional(None),
+        "https://example.com/beta/litellm_basic_guardrail_api",
+    );
+    assert_eq!(
+        instance.api_base,
+        "https://example.com/beta/litellm_basic_guardrail_api"
+    );
 }
 
 #[test]
@@ -445,10 +454,10 @@ async fn call_api_mock(
     body: String,
 ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
+    let base = format!("http://{}{}", listener.local_addr().unwrap(), DEFAULT_PATH);
     let instance = api(GenericGuardrailAPISettings::from_optional(None), &base);
     let answer = move || async move { (status, body) };
-    let router = Router::new().route(super::DEFAULT_PATH, post(answer));
+    let router = Router::new().route(DEFAULT_PATH, post(answer));
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     instance.call_api(&base_request()).await

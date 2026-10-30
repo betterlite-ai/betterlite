@@ -78,7 +78,14 @@ fn call_guardrail(
         client: reqwest::Client::default(),
         timeout: Duration::from_millis(200),
     };
-    GenericGuardrailAPI::with_client(None, base, settings, None, transport)
+    GenericGuardrailAPI {
+        api_key: None,
+        api_base: base.to_owned(),
+        settings,
+        provider_params: BTreeMap::new(),
+        client: transport.client,
+        timeout: transport.timeout,
+    }
 }
 
 fn result_payload(

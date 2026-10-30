@@ -16,7 +16,6 @@ mod response;
 use response::{enforce_response, passthrough_response};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-const DEFAULT_PATH: &str = "/beta/litellm_basic_guardrail_api";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Error)]
@@ -79,31 +78,12 @@ pub struct GenericGuardrailAPI {
     pub api_key: Option<SecretString>,
     pub api_base: String,
     pub settings: GenericGuardrailAPISettings,
-    pub provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
+    pub provider_params: BTreeMap<String, GuardrailExtraValue>,
     pub client: reqwest::Client,
     pub timeout: Duration,
 }
 
 impl GenericGuardrailAPI {
-    #[must_use]
-    pub fn with_client(
-        api_key: Option<SecretString>,
-        api_base: &str,
-        settings: GenericGuardrailAPISettings,
-        provider_params: Option<BTreeMap<String, GuardrailExtraValue>>,
-        transport: GenericGuardrailAPITransport,
-    ) -> Self {
-        let resolved_base = normalize_api_base(api_base);
-        Self {
-            api_key,
-            api_base: resolved_base,
-            settings,
-            provider_params,
-            client: transport.client,
-            timeout: transport.timeout,
-        }
-    }
-
     pub fn prepare_headers(&self) -> Result<HeaderMap, GenericGuardrailAPIError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -128,10 +108,7 @@ impl GenericGuardrailAPI {
         &self,
         request: GenericGuardrailAPIRequest,
     ) -> GenericGuardrailAPIRequest {
-        let Some(base_params) = &self.provider_params else {
-            return request;
-        };
-        let mut merged = base_params.clone();
+        let mut merged = self.provider_params.clone();
         if let Some(dynamic_params) = &request.provider_params {
             merged.extend(dynamic_params.clone());
         }
@@ -214,15 +191,6 @@ pub fn extract_user_api_key_metadata(
         result.user_api_key_hash = Some(token);
     }
     result
-}
-
-fn normalize_api_base(api_base: &str) -> String {
-    let trimmed = api_base.trim_end_matches('/');
-    if trimmed.ends_with(DEFAULT_PATH) {
-        trimmed.to_owned()
-    } else {
-        format!("{trimmed}{DEFAULT_PATH}")
-    }
 }
 
 fn request_error(source: reqwest::Error) -> GenericGuardrailAPIError {
