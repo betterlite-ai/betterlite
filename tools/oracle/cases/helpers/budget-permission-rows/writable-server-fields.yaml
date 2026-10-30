@@ -1,0 +1,9 @@
+kind: helper
+name: writable_budget_ignores_server_fields
+call:
+  budget_permission_rows:
+    operation: budget
+    row: {budget_id: b, created_at: '2026-01-01T00:00:00Z', budget_reset_at: '2026-01-02T00:00:00Z'}
+env: {}
+compare:
+  ignore: []

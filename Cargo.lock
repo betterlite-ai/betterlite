@@ -802,6 +802,9 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
+ "betterlite-logging",
+ "betterlite-models",
  "hex",
  "indexmap 2.14.2",
  "rstest",
@@ -831,6 +834,13 @@ dependencies = [
 [[package]]
 name = "betterlite-azure"
 version = "0.1.0"
+dependencies = [
+ "betterlite-error",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "betterlite-bedrock"
@@ -1132,11 +1142,13 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "chrono",
+ "hex",
  "pem",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
 ]
 
@@ -1147,6 +1159,7 @@ dependencies = [
  "chrono",
  "fancy-regex",
  "indexmap 2.14.2",
+ "jiff",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1201,6 +1214,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-azure",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
@@ -1221,6 +1235,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-rate-limit",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",
@@ -1231,6 +1246,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "jiff",
  "reqwest",
  "rstest",
  "rust_decimal",
@@ -1289,6 +1305,10 @@ dependencies = [
 [[package]]
 name = "betterlite-prometheus"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-prompts"

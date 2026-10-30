@@ -19,8 +19,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "mcp_stored_contract"
-path = "fuzz_targets/mcp_stored_contract.rs"
+name = "budget_permission_rows"
+path = "fuzz_targets/budget_permission_rows.rs"
 test = false
 doc = false
 bench = false
