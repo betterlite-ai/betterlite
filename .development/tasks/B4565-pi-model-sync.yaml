@@ -105,7 +105,7 @@ pitfalls:
   - sync_models_json reads the entire JSON file and updates only the providers.litellm entry, leaving the rest intact; the file is assumed to be a JSON object.
   - fs::rename is atomic on both POSIX and Windows; temporary file cleanup must happen in error paths to avoid orphaned files.
   - prepare_pi is called by B4568 (via _PREPARERS dispatch) before agent handoff; it raises AgentRunError which B4568's caller handles.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

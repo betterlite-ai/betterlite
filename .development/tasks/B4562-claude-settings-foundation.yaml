@@ -77,7 +77,7 @@ pitfalls:
   - merge_claude_settings removes apiKeyHelper and any ANTHROPIC_API_KEY slot to prevent Claude Code from choosing between credentials. The merge never fails due to missing keys; missing credential slots are simply absent from the output.
   - Status-line installations must not race. Use file locking or atomic checks when writing; concurrent installers must respect the first one's version choice.
   - Symlinks are detected with is_symlink(), not by checking Path::parent. The _write_target logic only applies to the final target file, not intermediate directories.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2

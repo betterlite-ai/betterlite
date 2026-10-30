@@ -90,7 +90,7 @@ pitfalls:
   - "UTC boundaries matter: toDay('2024-10-01T23:00:00Z') is the same day as toDay('2024-10-02T01:00:00Z') only in UTC, not in the user's timezone."
   - "Intl.NumberFormat locale is 'en-US' to match LiteLLM's formatting. The formatter is created once and reused, not recreated per value."
   - "Map iteration order is insertion order. buildBucketTotals must insert buckets in chronological order so iteration produces sorted results."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

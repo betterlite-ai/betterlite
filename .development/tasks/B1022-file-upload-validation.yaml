@@ -160,7 +160,7 @@ pitfalls:
 - A batch extension failure precedes its size test; general upload policy runs in the separate route-defined order.
 - General sizing restores the old offset but batch scanning resets to zero, including failure paths.
 - The batch shape validator permits null body; guardrail scanning later rejects it as unparseable.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

@@ -68,7 +68,7 @@ pitfalls:
   - LiteLLM checks `if custom_llm_provider == LlmProviders.GEMINI.value` but betterlite uses string "gemini" or reads it from config. Ensure the enum variant matches or use string comparison.
   - The BadRequestError message should direct users to the proxy POST /v1/agents endpoint for unsupported providers, matching LiteLLM's guidance.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

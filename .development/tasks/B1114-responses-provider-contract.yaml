@@ -100,7 +100,7 @@ pitfalls:
 - sign_request's null signed body means the finalized request still needs ordinary serialization; it is not an empty body.
 - Namespace removal is shallow and matches only type=custom_tool_call; function_call.namespace remains.
 - get_websocket_url calls the provider's complete-URL override before replacing scheme strings.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

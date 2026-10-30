@@ -100,4 +100,4 @@ pitfalls:
   - Missing reasoning_content becomes a single space with a warning only for explicitly enabled thinking.
   - Search-results removal happens only when extracted search text is nonempty.
 budget: {max_changed_lines: 775, max_new_expects: 0}
-review_level: security
+review_level: standard

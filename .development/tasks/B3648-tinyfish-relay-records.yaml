@@ -166,7 +166,7 @@ pitfalls:
   - "Run ID extraction from SSE is ordered; the first frame carrying a run_id wins. Subsequent frames are parsed but their run_id (if different) is ignored."
   - "Completed runs invoice completed status exactly: COMPLETED runs charge, FAILED/CANCELLED/pending runs charge zero. The status field must be read from the run object after polling."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

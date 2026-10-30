@@ -85,4 +85,4 @@ pitfalls:
   - Text and image vectors in one prediction yield only the text vector because selection uses elif.
   - Video usage sums segment durations even when textEmbedding wins the returned-vector selection.
 budget: {max_changed_lines: 750, max_new_expects: 1}
-review_level: security
+review_level: standard

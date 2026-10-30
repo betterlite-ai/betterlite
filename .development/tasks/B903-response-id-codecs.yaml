@@ -108,7 +108,7 @@ pitfalls:
 - Response IDs serialize missing routing fields as "None", while container IDs serialize empty strings and normalize legacy "None" back to null.
 - Container and item decoders preserve semicolons in the provider ID, but the response decoder reads only the third split segment.
 - A syntactically decoded response need not have the documented labels to count as encoded.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

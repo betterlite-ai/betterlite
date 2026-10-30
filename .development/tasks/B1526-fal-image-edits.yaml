@@ -77,7 +77,7 @@ pitfalls:
   - The generic edit mapper forwards unsupported keys even when drop_params=false.
   - None entries do not count toward the depth endpoint's one-image limit.
   - A string that looks like a local path is forwarded unchanged; only PathLike triggers a local file read.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

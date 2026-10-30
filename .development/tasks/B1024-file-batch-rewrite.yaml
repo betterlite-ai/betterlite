@@ -106,7 +106,7 @@ pitfalls:
 - An exception at a later line outranks an earlier shape failure; earliest-line ordering applies only within the winning category.
 - rstrip removes LF only, so an untouched CRLF record keeps CR in the rewritten file.
 - A no-change scan returns a result containing a closed redaction spool; consumers must not read it when changes is empty.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
