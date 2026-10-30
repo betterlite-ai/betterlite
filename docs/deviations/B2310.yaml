@@ -1,8 +1,8 @@
 task: B2310
 deviations:
-  - what: Stored row decoding rejects inputs over 1048576 bytes or JSON nesting deeper than 64.
-    why: Bound external stored-row decoding before materialization.
+  - what: Stored budget, permission and membership JSON beyond 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound the new external-byte decoder.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L16-L59
-  - what: Budget and spend monetary values reject nonfinite or out-of-range values through checked Decimal decoding.
-    why: The repository money rule requires a checked Decimal boundary.
+  - what: Nonfinite or Decimal-out-of-range budget and spend values fail decoding instead of remaining Python floats.
+    why: Checked Decimal conversion prevents silent clamping or unlimited-budget fallback.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L24-L52

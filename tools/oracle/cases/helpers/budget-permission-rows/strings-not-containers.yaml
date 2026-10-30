@@ -1,0 +1,9 @@
+kind: helper
+name: strings_are_not_decoded_as_containers
+call:
+  budget_permission_rows:
+    operation: budget
+    row: {model_max_budget: {}}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,11 @@
+kind: helper
+name: membership_spend_null_invalid
+call:
+  budget_permission_rows:
+    operation: membership
+    row: {user_id: u, organization_id: o, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', spend: 0}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations

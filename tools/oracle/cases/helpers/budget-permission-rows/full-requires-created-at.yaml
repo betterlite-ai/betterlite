@@ -1,0 +1,9 @@
+kind: helper
+name: full_requires_created_at
+call:
+  budget_permission_rows:
+    operation: full
+    row: {budget_id: full, created_at: '2026-01-01T00:00:00Z'}
+env: {}
+compare:
+  ignore: []
