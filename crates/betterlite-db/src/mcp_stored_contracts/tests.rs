@@ -325,10 +325,16 @@ fn mcp_stored_byte_boundary(#[case] length: usize) {
 }
 
 #[rstest]
-#[case::at_limit(MAX_STORED_DEPTH, true)]
-#[case::over_limit(MAX_STORED_DEPTH + 1, false)]
-fn mcp_stored_depth_boundary(#[case] depth: usize, #[case] accepted: bool) {
-    let text = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
+#[case::array_at_limit(MAX_STORED_DEPTH, ("[", "]"), true)]
+#[case::array_over_limit(MAX_STORED_DEPTH + 1, ("[", "]"), false)]
+#[case::object_at_limit(MAX_STORED_DEPTH, (r#"{"key":"#, "}"), true)]
+#[case::object_over_limit(MAX_STORED_DEPTH + 1, (r#"{"key":"#, "}"), false)]
+fn mcp_stored_depth_boundary(
+    #[case] depth: usize,
+    #[case] wrapping: (&str, &str),
+    #[case] accepted: bool,
+) {
+    let text = format!("{}0{}", wrapping.0.repeat(depth), wrapping.1.repeat(depth));
     let result = decode_mcp_stored_contract(text.as_bytes());
     if accepted {
         assert!(result.is_ok());
@@ -417,19 +423,6 @@ fn secret_wrapper_redacts(#[case] field: &str) {
     assert_eq!(serde_json::to_string(&credentials).unwrap(), input);
     let secret: super::secret::StoredSecret = serde_json::from_str(r#""never-print""#).unwrap();
     assert!(!format!("{secret:?}").contains("never-print"));
-}
-
-#[rstest]
-#[case::at_limit(MAX_STORED_DEPTH, true)]
-#[case::over_limit(MAX_STORED_DEPTH + 1, false)]
-fn mcp_stored_object_depth(#[case] depth: usize, #[case] accepted: bool) {
-    let text = format!("{}0{}", r#"{"key":"#.repeat(depth), "}".repeat(depth));
-    let result = decode_mcp_stored_contract(text.as_bytes());
-    if accepted {
-        assert!(result.is_ok());
-    } else {
-        assert!(matches!(result, Err(decode::McpStoredDecodeError::TooDeep)));
-    }
 }
 
 #[test]
