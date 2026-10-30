@@ -15,6 +15,8 @@ use uuid::Uuid;
 
 use super::chat::headers::{failure_headers, success_headers};
 
+mod tests;
+
 #[derive(Serialize)]
 struct ErrorBody {
     error: ErrorObject,
