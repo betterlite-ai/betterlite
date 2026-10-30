@@ -4,53 +4,66 @@ use betterlite_db::identity_rows::{
     user::{LiteLLMUserTable, ScimPlaceholder},
 };
 
+use super::budget_permission_rows::Validated;
+
 pub(crate) struct Op;
 
 #[derive(serde::Deserialize)]
-pub(crate) struct Input {
-    operation: String,
-    row: serde_json::Value,
+#[serde(tag = "operation")]
+pub(crate) enum Input {
+    #[serde(rename = "key")]
+    Key {
+        row: Validated<LiteLLMVerificationToken>,
+    },
+    #[serde(rename = "deleted_key")]
+    DeletedKey {
+        row: Validated<DeletedVerificationToken>,
+    },
+    #[serde(rename = "user")]
+    User { row: Validated<LiteLLMUserTable> },
+    #[serde(rename = "placeholder")]
+    Placeholder { row: Validated<ScimPlaceholder> },
+    #[serde(rename = "end_user")]
+    EndUser { row: Validated<LiteLLMEndUserTable> },
 }
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input.operation.as_str() {
-            "key" => serde_json::to_value(decode::<LiteLLMVerificationToken>(&input.row)?)
+        match input {
+            Input::Key { row } => serde_json::to_value(validated(row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
-            "deleted_key" => serde_json::to_value(decode::<DeletedVerificationToken>(&input.row)?)
+            Input::DeletedKey { row } => serde_json::to_value(validated(row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
-            "user" => {
-                let user = decode::<LiteLLMUserTable>(&input.row)?;
+            Input::User { row } => {
+                let user = validated(row)?;
                 let mut value = serde_json::to_value(user)
                     .map_err(|error| helper_error("InvalidOutput", &error.to_string()))?;
                 if let serde_json::Value::Object(fields) = &mut value {
                     fields.insert(
                         "password_present".to_owned(),
-                        serde_json::Value::Bool(input.row.get("password").is_some()),
+                        serde_json::Value::Bool(user.password.is_some()),
                     );
                 }
                 Ok(value)
             }
-            "placeholder" => serde_json::to_value(decode::<ScimPlaceholder>(&input.row)?)
+            Input::Placeholder { row } => serde_json::to_value(validated(row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
-            "end_user" => serde_json::to_value(decode::<LiteLLMEndUserTable>(&input.row)?)
+            Input::EndUser { row } => serde_json::to_value(validated(row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
-            _ => Err(helper_error(
-                "InvalidInput",
-                "unsupported identity row operation",
-            )),
         }
     }
 }
 
-fn decode<T>(value: &serde_json::Value) -> Result<T, Box<crate::helpers::HelperError>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let decoded = serde_json::from_value(value.clone());
-    decoded.map_err(|error| helper_error("ValidationError", &error.to_string()))
+fn validated<T>(row: &Validated<T>) -> Result<&T, Box<crate::helpers::HelperError>> {
+    match row {
+        Validated::Valid(value) => Ok(value),
+        Validated::Invalid(value) => Err(helper_error(
+            "ValidationError",
+            &format!("invalid row: {value:?}"),
+        )),
+    }
 }
 
 fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {

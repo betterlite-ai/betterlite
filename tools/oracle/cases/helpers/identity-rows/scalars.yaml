@@ -6,8 +6,4 @@ call:
     row: {spend: '1.5', max_parallel_requests: '2'}
 env: {}
 compare:
-  ignore:
-    - pointer: /value/spend
-      why: Decimal and float serializers use different zero representations
-    - pointer: /value/total_spend
-      why: Decimal and float serializers use different zero representations
+  ignore: []

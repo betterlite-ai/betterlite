@@ -1,14 +1,15 @@
 use super::{
-    Payload, empty_payload_option, empty_vec, empty_vec_or_null, integer_option, null_decimal,
-    zero_decimal,
+    OptionalPayload, Payload, PydanticBool, empty_vec_or_null, integer_option, null_decimal,
+    serialize_as_float,
 };
 use crate::budget_permission_rows::{
     JsonData, LiteLLMObjectPermissionTable, OrganizationMembership, Timestamp,
 };
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteLLMUserTable {
     pub user_id: String,
     #[serde(default)]
@@ -22,22 +23,26 @@ pub struct LiteLLMUserTable {
     #[serde(default)]
     pub object_permission_id: Option<String>,
     #[serde(default, skip_serializing)]
-    pub password: Option<String>,
+    pub password: Option<SecretString>,
     #[serde(default)]
-    pub password_reset_required: Option<bool>,
+    pub password_reset_required: Option<PydanticBool>,
     #[serde(default)]
     pub last_breach_check_at: Option<Timestamp>,
-    #[serde(default = "empty_vec", deserialize_with = "empty_vec_or_null")]
+    #[serde(default, deserialize_with = "empty_vec_or_null")]
     pub teams: Vec<String>,
     #[serde(default)]
     pub user_role: Option<String>,
-    #[serde(default)]
+    #[serde(default, with = "rust_decimal::serde::float_option")]
     pub max_budget: Option<Decimal>,
-    #[serde(default = "zero_decimal", deserialize_with = "null_decimal")]
+    #[serde(
+        default,
+        serialize_with = "serialize_as_float",
+        deserialize_with = "null_decimal"
+    )]
     pub spend: Decimal,
     #[serde(default)]
     pub user_email: Option<String>,
-    #[serde(default = "empty_vec", deserialize_with = "empty_vec_or_null")]
+    #[serde(default, deserialize_with = "empty_vec_or_null")]
     pub models: Vec<JsonData>,
     #[serde(default)]
     pub metadata: Option<Payload>,
@@ -55,10 +60,10 @@ pub struct LiteLLMUserTable {
     pub allowed_cache_controls: Vec<String>,
     #[serde(default)]
     pub policies: Vec<String>,
-    #[serde(default = "empty_payload_option")]
-    pub model_spend: Option<Payload>,
-    #[serde(default = "empty_payload_option")]
-    pub model_max_budget: Option<Payload>,
+    #[serde(default)]
+    pub model_spend: OptionalPayload,
+    #[serde(default)]
+    pub model_max_budget: OptionalPayload,
     #[serde(default)]
     pub created_at: Option<Timestamp>,
     #[serde(default)]

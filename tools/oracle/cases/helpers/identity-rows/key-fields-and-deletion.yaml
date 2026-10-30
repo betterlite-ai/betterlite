@@ -6,8 +6,4 @@ call:
     row: {token: '*', models: ['all-proxy-models'], budget_fallbacks: {gpt-4: [gpt-4o]}, rotation_count: 0, auto_rotate: false}
 env: {}
 compare:
-  ignore:
-    - pointer: /value/spend
-      why: Decimal and float serializers use different zero representations
-    - pointer: /value/total_spend
-      why: Decimal and float serializers use different zero representations
+  ignore: []

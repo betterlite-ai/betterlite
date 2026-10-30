@@ -1,25 +1,46 @@
+use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use super::{
-    Expiry, Payload, empty_option_vec, false_option, integer_option, zero_decimal, zero_i64,
+    AutoRotateFlag, DefaultFilledList, ExposedSecret, Payload, PydanticBool, ZeroRotationCount,
+    integer_option, serialize_as_float,
 };
 use crate::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable, Timestamp};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Expiry {
+    Text(String),
+    DateTime(DateTime<FixedOffset>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteLLMVerificationToken {
-    #[serde(default)]
-    pub token: Option<String>,
+    #[serde(
+        default,
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
+    pub token: Option<SecretString>,
     #[serde(default)]
     pub key_name: Option<String>,
     #[serde(default)]
     pub key_alias: Option<String>,
-    #[serde(default = "zero_decimal")]
+    #[serde(
+        default,
+        serialize_with = "serialize_as_float",
+        deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize"
+    )]
     pub spend: Decimal,
-    #[serde(default = "zero_decimal")]
+    #[serde(
+        default,
+        serialize_with = "serialize_as_float",
+        deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize"
+    )]
     pub total_spend: Decimal,
-    #[serde(default)]
+    #[serde(default, with = "rust_decimal::serde::float_option")]
     pub max_budget: Option<Decimal>,
     #[serde(default)]
     pub expires: Option<Expiry>,
@@ -51,10 +72,10 @@ pub struct LiteLLMVerificationToken {
     pub budget_duration: Option<String>,
     #[serde(default)]
     pub budget_reset_at: Option<Timestamp>,
-    #[serde(default = "empty_option_vec")]
-    pub allowed_cache_controls: Option<Vec<JsonData>>,
-    #[serde(default = "empty_option_vec")]
-    pub allowed_routes: Option<Vec<JsonData>>,
+    #[serde(default)]
+    pub allowed_cache_controls: DefaultFilledList<JsonData>,
+    #[serde(default)]
+    pub allowed_routes: DefaultFilledList<JsonData>,
     #[serde(default)]
     pub key_type: Option<String>,
     #[serde(default)]
@@ -63,12 +84,15 @@ pub struct LiteLLMVerificationToken {
     pub model_spend: Payload,
     #[serde(default)]
     pub model_max_budget: Payload,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::Same>>::deserialize"
+    )]
     pub budget_fallbacks: BTreeMap<String, Vec<String>>,
     #[serde(default)]
-    pub soft_budget_cooldown: bool,
+    pub soft_budget_cooldown: PydanticBool,
     #[serde(default)]
-    pub blocked: Option<bool>,
+    pub blocked: Option<PydanticBool>,
     #[serde(default)]
     pub litellm_budget_table: Option<Payload>,
     #[serde(default)]
@@ -93,10 +117,10 @@ pub struct LiteLLMVerificationToken {
     pub object_permission: Option<LiteLLMObjectPermissionTable>,
     #[serde(default)]
     pub access_group_ids: Option<Vec<String>>,
-    #[serde(default = "zero_i64", deserialize_with = "integer_option")]
-    pub rotation_count: Option<i64>,
-    #[serde(default = "false_option")]
-    pub auto_rotate: Option<bool>,
+    #[serde(default)]
+    pub rotation_count: ZeroRotationCount,
+    #[serde(default)]
+    pub auto_rotate: AutoRotateFlag,
     #[serde(default)]
     pub rotation_interval: Option<String>,
     #[serde(default)]
@@ -109,7 +133,7 @@ pub struct LiteLLMVerificationToken {
     pub budget_limits: Option<Vec<Payload>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeletedVerificationToken {
     #[serde(flatten)]
     pub token: LiteLLMVerificationToken,
@@ -121,8 +145,11 @@ pub struct DeletedVerificationToken {
     pub deleted_at: Option<Timestamp>,
     #[serde(default)]
     pub deleted_by: Option<String>,
-    #[serde(default)]
-    pub deleted_by_api_key: Option<String>,
+    #[serde(
+        default,
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
+    pub deleted_by_api_key: Option<SecretString>,
     #[serde(default)]
     pub litellm_changed_by: Option<String>,
 }

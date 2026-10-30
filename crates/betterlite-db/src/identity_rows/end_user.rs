@@ -1,16 +1,19 @@
-use super::{null_decimal, zero_decimal};
+use super::{PydanticBool, null_decimal, serialize_as_float};
 use crate::budget_permission_rows::{LiteLLMBudgetTable, LiteLLMObjectPermissionTable};
-use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiteLLMEndUserTable {
     pub user_id: String,
-    pub blocked: bool,
+    pub blocked: PydanticBool,
     #[serde(default)]
     pub alias: Option<String>,
-    #[serde(default = "zero_decimal", deserialize_with = "null_decimal")]
+    #[serde(
+        default,
+        serialize_with = "serialize_as_float",
+        deserialize_with = "null_decimal"
+    )]
     pub spend: Decimal,
     #[serde(default)]
     pub allowed_model_region: Option<Region>,
@@ -31,11 +34,4 @@ pub struct LiteLLMEndUserTable {
 pub enum Region {
     Eu,
     Us,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Expiry {
-    Text(String),
-    DateTime(DateTime<FixedOffset>),
 }

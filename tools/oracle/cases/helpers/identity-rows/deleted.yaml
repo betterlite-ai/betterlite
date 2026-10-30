@@ -6,8 +6,4 @@ call:
     row: {token: tok, org_id: old, organization_id: new, id: id, deleted_at: '2026-01-01T00:00:00Z', deleted_by: user, deleted_by_api_key: api, litellm_changed_by: actor}
 env: {}
 compare:
-  ignore:
-    - pointer: /value/spend
-      why: Decimal and float serializers use different zero representations
-    - pointer: /value/total_spend
-      why: Decimal and float serializers use different zero representations
+  ignore: []

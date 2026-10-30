@@ -6,8 +6,4 @@ call:
     row: {litellm_budget_table: {budget_id: b}, object_permission: {object_permission_id: p}}
 env: {}
 compare:
-  ignore:
-    - pointer: /value/spend
-      why: Decimal and float serializers use different zero representations
-    - pointer: /value/total_spend
-      why: Decimal and float serializers use different zero representations
+  ignore: []
