@@ -1,11 +1,5 @@
 task: B4112
 deviations:
-  - what: betterlite exposes Rust Value-based tuples rather than Python dict/list tuples.
-    why: Rust requires explicit wire values while preserving the same serialized shape.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L35-L75
-  - what: Thinking blocks are explicitly prepended to Anthropic assistant content.
-    why: The Anthropic API requires thinking blocks before tool_use blocks.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L330-L348
-  - what: Empty SearchResponse formatting falls back to serialized JSON.
-    why: This preserves LiteLLM's fallback string behavior for missing structured results.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L530-L551
+  - what: Missing search results return a typed MissingResults error instead of raising IndexError or inserting empty tool messages.
+    why: No successful LiteLLM call can rely on the unhandled indexing failure; returning an error prevents silent result loss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L354-L367
