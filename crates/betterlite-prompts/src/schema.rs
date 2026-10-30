@@ -134,7 +134,8 @@ fn is_flattenable_object(schema: &Object, branches: &[&Object]) -> bool {
 fn kept_fields(schema: &Object) -> Object {
     let mut fields = Object::new();
     for (key, value) in schema {
-        if !COMBINATORS.contains(&key.as_str()) && !REJECTED_TOP_LEVEL.contains(&key.as_str()) {
+        let flattened = COMBINATORS.contains(&key.as_str()) && matches!(value, Json::List(_));
+        if !flattened && !REJECTED_TOP_LEVEL.contains(&key.as_str()) {
             fields.insert(key.clone(), value.clone());
         }
     }

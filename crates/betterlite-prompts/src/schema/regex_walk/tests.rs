@@ -43,6 +43,54 @@ fn object(text: &str) -> Object {
     object(r#"{"type":"object","allOf":{"type":"object"},"properties":{}}"#),
     object(r#"{"type":"object","allOf":{"type":"object"},"properties":{}}"#)
 )]
+#[case::preserve_invalid_combinator_alongside_valid(
+    object(r#"{"type":"object","allOf":{},"anyOf":[]}"#),
+    object(r#"{"type":"object","allOf":{},"properties":{}}"#)
+)]
+#[case::required_intersection(
+    object(r#"{"required":["root",7],"anyOf":[{"type":"object","required":["a","b"]},{"type":"object","required":["b","c"]}]}"#),
+    object(r#"{"type":"object","properties":{},"required":["b","root"]}"#)
+)]
+#[case::property_precedence(
+    object(r#"{"properties":{"a":1},"allOf":[{"properties":{"a":2,"b":3}},{"properties":{"a":4,"b":5}}]}"#),
+    object(r#"{"type":"object","properties":{"a":1,"b":3}}"#)
+)]
+#[case::rejected_top_level_keys(
+    object(r#"{"type":"object","enum":[],"const":{},"not":{},"title":"kept"}"#),
+    object(r#"{"type":"object","properties":{},"title":"kept"}"#)
+)]
+#[case::scalar_passthrough(
+    object(r#"{"type":"string","enum":["a"]}"#),
+    object(r#"{"type":"string","enum":["a"]}"#)
+)]
+#[case::boolean_branch(
+    object(r#"{"type":"object","anyOf":[false]}"#),
+    object(r#"{"type":"object","anyOf":[false]}"#)
+)]
+#[case::empty_branch(
+    object(r#"{"type":"object","anyOf":[{}]}"#),
+    object(r#"{"type":"object","properties":{}}"#)
+)]
+#[case::non_string_ref(
+    object(r#"{"type":"object","anyOf":[{"$ref":false}]}"#),
+    object(r#"{"type":"object","properties":{}}"#)
+)]
+#[case::cycle(
+    object(r##"{"$defs":{"a":{"$ref":"#/$defs/a"}},"anyOf":[{"$ref":"#/$defs/a"}]}"##),
+    object(r##"{"$defs":{"a":{"$ref":"#/$defs/a"}},"anyOf":[{"$ref":"#/$defs/a"}]}"##)
+)]
+#[case::external_reference(
+    object(r#"{"type":"object","allOf":[{"$ref":"https://example.test/schema"}]}"#),
+    object(r#"{"type":"object","allOf":[{"$ref":"https://example.test/schema"}]}"#)
+)]
+#[case::invalid_selector(
+    object(r##"{"type":"object","allOf":[{"$ref":"#/$defs/missing"}]}"##),
+    object(r##"{"type":"object","allOf":[{"$ref":"#/$defs/missing"}]}"##)
+)]
+#[case::legacy_definitions(
+    object(r##"{"definitions":{"a":{"type":"object"}},"anyOf":[{"$ref":"#/definitions/a"},{"$ref":"#/definitions/a"}]}"##),
+    object(r#"{"definitions":{"a":{"type":"object"}},"type":"object","properties":{}}"#)
+)]
 fn tool_schemas_tool_schema_tests_behavior(#[case] schema: Object, #[case] expected: Object) {
     assert_eq!(flatten_top_level(&schema), expected);
 }
