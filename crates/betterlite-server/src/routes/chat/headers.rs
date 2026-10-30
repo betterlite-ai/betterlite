@@ -80,28 +80,19 @@ pub(crate) fn failure_headers(
         | ChatError::TooLarge
         | ChatError::Http { .. } => None,
     };
+    failure_headers_with_upstream(upstream, call_id, deployment)
+}
+
+pub(crate) fn failure_headers_with_upstream(
+    upstream: Option<&HeaderMap>,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+) -> HeaderMap {
     let mut headers = upstream.map_or_else(HeaderMap::new, forwardable_failure_headers);
     if let Ok(value) = HeaderValue::from_str(call_id) {
         headers.insert("x-litellm-call-id", value);
     }
     // LiteLLM reports the timeout only once the router has picked a deployment
-    if let Some(picked) = deployment
-        && let Ok(value) = HeaderValue::try_from(python_float(picked.timeout_seconds))
-    {
-        headers.insert("x-litellm-timeout", value);
-    }
-    headers
-}
-
-pub(crate) fn failure_headers_for_upstream(
-    upstream: &HeaderMap,
-    call_id: &str,
-    deployment: Option<&ChatDeployment>,
-) -> HeaderMap {
-    let mut headers = forwardable_failure_headers(upstream);
-    if let Ok(value) = HeaderValue::from_str(call_id) {
-        headers.insert("x-litellm-call-id", value);
-    }
     if let Some(picked) = deployment
         && let Ok(value) = HeaderValue::try_from(python_float(picked.timeout_seconds))
     {
