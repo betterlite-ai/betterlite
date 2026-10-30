@@ -1,13 +1,102 @@
-kind: helper
-name: database-faults-classification-matrix
-call:
-  database_faults:
-    error:
-      error_type: prisma
-      message: "connection refused by database"
-      code: null
-      meta_code: null
-      traceback_modules: []
-env: {}
-compare:
-  ignore: []
+{
+  "kind": "helper",
+  "name": "database-faults-classification-matrix",
+  "call": {
+    "database_faults": {
+      "errors": [
+        {
+          "error_type": "connect",
+          "message": ""
+        },
+        {
+          "error_type": "connect_timeout",
+          "message": ""
+        },
+        {
+          "error_type": "read",
+          "message": ""
+        },
+        {
+          "error_type": "read_timeout",
+          "message": ""
+        },
+        {
+          "error_type": "deadline",
+          "message": ""
+        },
+        {
+          "error_type": "engine_connection",
+          "message": ""
+        },
+        {
+          "error_type": "no_db_connection",
+          "message": ""
+        },
+        {
+          "error_type": "data",
+          "message": ""
+        },
+        {
+          "error_type": "unique_violation",
+          "message": ""
+        },
+        {
+          "error_type": "foreign_key_violation",
+          "message": ""
+        },
+        {
+          "error_type": "missing_required_value",
+          "message": ""
+        },
+        {
+          "error_type": "raw_query",
+          "message": ""
+        },
+        {
+          "error_type": "table_not_found",
+          "message": ""
+        },
+        {
+          "error_type": "record_not_found",
+          "message": ""
+        },
+        {
+          "error_type": "prisma",
+          "message": ""
+        },
+        {
+          "error_type": "client_not_connected",
+          "message": ""
+        },
+        {
+          "error_type": "http_client_closed",
+          "message": ""
+        },
+        {
+          "error_type": "other",
+          "message": ""
+        },
+        {
+          "error_type": "data",
+          "message": "CONNECTION REFUSED"
+        },
+        {
+          "error_type": "unique_violation",
+          "message": "CONNECTION REFUSED"
+        },
+        {
+          "error_type": "engine_connection",
+          "message": "CONNECTION REFUSED"
+        },
+        {
+          "error_type": "other",
+          "message": "CONNECTION REFUSED"
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

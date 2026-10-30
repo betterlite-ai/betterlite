@@ -1,6 +1,23 @@
-use super::{DbError, ErrorType, is_database_transport_error};
+use super::{DbError, ErrorType, is_transport_error};
+use serde::{Deserialize, de::IgnoredAny};
 use std::future::Future;
 use std::pin::Pin;
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum Timeout {
+    Number(f64),
+    Invalid(IgnoredAny),
+}
+impl Timeout {
+    #[must_use]
+    pub const fn coerce(&self, fallback: f64) -> f64 {
+        match self {
+            Self::Number(value) => *value,
+            Self::Invalid(_) => fallback,
+        }
+    }
+}
 
 pub trait DbReconnect {
     fn reconnect_timeout_seconds(&self) -> Option<f64>;
@@ -38,7 +55,7 @@ where
 }
 
 pub async fn call_with_db_reconnect_retry<T, Read, ReadFuture, Client>(
-    client: &mut Client,
+    client: Option<&mut Client>,
     mut read: Read,
     policy: RetryPolicy<'_>,
 ) -> Result<T, DbError>
@@ -48,25 +65,27 @@ where
     Client: DbReconnect + Send,
     T: Send,
 {
-    let first = read().await;
-    let error = match first {
+    let error = match read().await {
         Ok(value) => return Ok(value),
         Err(error) => error,
     };
-    if !is_database_transport_error(&error)
+    if !is_transport_error(&error)
         || policy
             .retry_safe_error_types
             .is_some_and(|allowed| !allowed.contains(&error.error_type))
     {
         return Err(error);
     }
-    let (timeout_seconds, lock_timeout_seconds) = retry_timeouts(client, &policy);
+    let Some(available_client) = client else {
+        return Err(error);
+    };
+    let (timeout_seconds, lock_timeout_seconds) = retry_timeouts(available_client, &policy);
     tracing::warn!(
         reason = policy.reason,
         error = %error,
         "DB transport error on read; attempting reconnect-and-retry"
     );
-    match client
+    match available_client
         .attempt_db_reconnect(policy.reason, timeout_seconds, lock_timeout_seconds)
         .await
     {

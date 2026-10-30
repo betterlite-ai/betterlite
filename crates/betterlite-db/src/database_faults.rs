@@ -18,7 +18,10 @@ const TRANSPORT_WORDS: [&str; 12] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorType {
-    Connection,
+    Connect,
+    ConnectTimeout,
+    Read,
+    ReadTimeout,
     Deadline,
     EngineConnection,
     NoDbConnection,
@@ -62,7 +65,10 @@ impl ErrorType {
             | Self::RawQuery
             | Self::TableNotFound
             | Self::RecordNotFound => true,
-            Self::Connection
+            Self::Connect
+            | Self::ConnectTimeout
+            | Self::Read
+            | Self::ReadTimeout
             | Self::Deadline
             | Self::EngineConnection
             | Self::NoDbConnection
@@ -74,26 +80,6 @@ impl ErrorType {
     }
 }
 
-const fn is_transport_type(error_type: ErrorType) -> bool {
-    match error_type {
-        ErrorType::Connection
-        | ErrorType::NoDbConnection
-        | ErrorType::ClientNotConnected
-        | ErrorType::HttpClientClosed => true,
-        ErrorType::Deadline
-        | ErrorType::EngineConnection
-        | ErrorType::Data
-        | ErrorType::UniqueViolation
-        | ErrorType::ForeignKeyViolation
-        | ErrorType::MissingRequiredValue
-        | ErrorType::RawQuery
-        | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound
-        | ErrorType::Prisma
-        | ErrorType::Other => false,
-    }
-}
-
 fn contains_any(message: &str, phrases: &[&str]) -> bool {
     let lower = message.to_ascii_lowercase();
     phrases.iter().any(|phrase| lower.contains(phrase))
@@ -101,20 +87,26 @@ fn contains_any(message: &str, phrases: &[&str]) -> bool {
 
 #[must_use]
 pub const fn is_database_connection_error(error: &DbError) -> bool {
-    let error_type = error.error_type;
-    matches!(
-        error_type,
-        ErrorType::Connection
-            | ErrorType::Deadline
-            | ErrorType::EngineConnection
-            | ErrorType::NoDbConnection
-    )
-}
-
-#[must_use]
-pub const fn is_prisma_data_error(error: &DbError) -> bool {
-    let error_type = error.error_type;
-    matches!(error_type, ErrorType::Data)
+    match error.error_type {
+        ErrorType::Connect
+        | ErrorType::ConnectTimeout
+        | ErrorType::Read
+        | ErrorType::ReadTimeout
+        | ErrorType::Deadline
+        | ErrorType::EngineConnection
+        | ErrorType::NoDbConnection => true,
+        ErrorType::Data
+        | ErrorType::UniqueViolation
+        | ErrorType::ForeignKeyViolation
+        | ErrorType::MissingRequiredValue
+        | ErrorType::RawQuery
+        | ErrorType::TableNotFound
+        | ErrorType::RecordNotFound
+        | ErrorType::Prisma
+        | ErrorType::ClientNotConnected
+        | ErrorType::HttpClientClosed
+        | ErrorType::Other => false,
+    }
 }
 
 #[must_use]
@@ -126,35 +118,28 @@ pub const fn is_database_infrastructure(error: &DbError) -> bool {
 }
 
 #[must_use]
-pub fn is_database_transport_error(error: &DbError) -> bool {
-    if is_transport_type(error.error_type) {
-        return true;
+pub fn is_transport_error(error: &DbError) -> bool {
+    if is_prisma_error(error) {
+        return matches!(
+            error.error_type,
+            ErrorType::ClientNotConnected | ErrorType::HttpClientClosed
+        ) || contains_any(&error.message, &TRANSPORT_WORDS);
     }
-    matches!(
-        error.error_type,
-        ErrorType::Prisma | ErrorType::EngineConnection
-    ) && contains_any(&error.message, &TRANSPORT_WORDS)
+    is_database_connection_error(error) && error.error_type != ErrorType::Deadline
 }
 
 #[must_use]
 pub const fn is_prisma_error(error: &DbError) -> bool {
-    match error.error_type {
-        ErrorType::Prisma
-        | ErrorType::EngineConnection
-        | ErrorType::ClientNotConnected
-        | ErrorType::HttpClientClosed
-        | ErrorType::Data
-        | ErrorType::UniqueViolation
-        | ErrorType::ForeignKeyViolation
-        | ErrorType::MissingRequiredValue
-        | ErrorType::RawQuery
-        | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound => true,
-        ErrorType::Connection
-        | ErrorType::Deadline
-        | ErrorType::NoDbConnection
-        | ErrorType::Other => false,
+    if error.error_type.is_data_type() {
+        return true;
     }
+    matches!(
+        error.error_type,
+        ErrorType::Prisma
+            | ErrorType::EngineConnection
+            | ErrorType::ClientNotConnected
+            | ErrorType::HttpClientClosed
+    )
 }
 
 #[must_use]
@@ -185,12 +170,18 @@ pub fn postgres_sqlstate(error: &DbError) -> Option<String> {
         return Some(code.clone());
     }
     let marker = "PostgresError { code: \"";
-    let start = error.message.find(marker)?.checked_add(marker.len())?;
-    let value = error.message.get(start..start.checked_add(5)?)?;
-    value
-        .chars()
-        .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit())
-        .then(|| value.to_owned())
+    error.message.match_indices(marker).find_map(|(offset, _)| {
+        let start = offset.checked_add(marker.len())?;
+        let end = start.checked_add(5)?;
+        if error.message.get(end..end.checked_add(1)?)? != "\"" {
+            return None;
+        }
+        let value = error.message.get(start..end)?;
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+            .then(|| value.to_owned())
+    })
 }
 
 #[must_use]
@@ -217,7 +208,7 @@ pub fn is_permanent_database_fault(error: &DbError) -> bool {
     if !is_database_infrastructure(error) {
         return false;
     }
-    !is_database_connection_error(error) && !is_database_transport_error(error)
+    !is_database_connection_error(error) && !is_transport_error(error)
 }
 
 pub mod fixtures;

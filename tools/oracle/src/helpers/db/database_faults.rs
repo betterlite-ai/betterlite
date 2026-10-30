@@ -1,12 +1,18 @@
-use betterlite_db::database_faults::{self, DbError};
+use betterlite_db::database_faults::{self, DbError, ErrorType};
 use serde::{Deserialize, Serialize};
 
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
-pub(crate) struct Input {
-    error: DbError,
+#[serde(untagged)]
+pub(crate) enum Input {
+    Classification { error: DbError },
+    Matrix { errors: Vec<DbError> },
+    Retry { scenarios: Vec<retry::Script> },
 }
+
+mod capture;
+mod retry;
 
 #[derive(Serialize)]
 struct Output {
@@ -52,22 +58,19 @@ struct EngineDiagnostics {
     engine_internal: bool,
 }
 
-impl crate::helpers::Helper for Op {
-    type Input = Input;
-
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let error = &input.error;
-        let output = Output {
+impl From<&DbError> for Output {
+    fn from(error: &DbError) -> Self {
+        Self {
             availability: Availability {
                 connection: database_faults::is_database_connection_error(error),
                 infrastructure: database_faults::is_database_infrastructure(error),
             },
             data: DataClasses {
-                data: database_faults::is_prisma_data_error(error),
+                data: error.error_type == ErrorType::Data,
                 prisma: database_faults::is_prisma_error(error),
             },
             transport: TransportClasses {
-                transport: database_faults::is_database_transport_error(error),
+                transport: database_faults::is_transport_error(error),
                 deadlock: database_faults::is_deadlock_error(error),
             },
             sqlstate: database_faults::postgres_sqlstate(error),
@@ -78,8 +81,28 @@ impl crate::helpers::Helper for Op {
             engine: EngineDiagnostics {
                 engine_internal: database_faults::is_prisma_engine_internal(error),
             },
+        }
+    }
+}
+
+impl crate::helpers::Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let output = match input {
+            Input::Classification { error } => serde_json::to_value(Output::from(error)),
+            Input::Matrix { errors } => {
+                serde_json::to_value(errors.iter().map(Output::from).collect::<Vec<_>>())
+            }
+            Input::Retry { scenarios } => {
+                let reports = scenarios
+                    .iter()
+                    .map(retry::run)
+                    .collect::<Result<Vec<_>, _>>()?;
+                serde_json::to_value(reports)
+            }
         };
-        serde_json::to_value(output).map_err(|source| {
+        output.map_err(|source| {
             Box::new(crate::helpers::HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,

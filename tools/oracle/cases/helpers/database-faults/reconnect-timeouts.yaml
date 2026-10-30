@@ -1,13 +1,159 @@
-kind: helper
-name: database-faults-reconnect-timeouts
-call:
-  database_faults:
-    error:
-      error_type: connection
-      message: ""
-      code: null
-      meta_code: null
-      traceback_modules: []
-env: {}
-compare:
-  ignore: []
+{
+  "kind": "helper",
+  "name": "database-faults-reconnect-timeouts",
+  "call": {
+    "database_faults": {
+      "scenarios": [
+        {
+          "name": "timeout_argument_attribute_defaults",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 1
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "timeout_argument_attribute_defaults",
+          "timeout_seconds": 7,
+          "lock_timeout_seconds": 0.4,
+          "client_timeout_seconds": 3,
+          "client_lock_timeout_seconds": 0.2
+        },
+        {
+          "name": "timeout_attributes",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 2
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "timeout_attributes",
+          "client_timeout_seconds": 3,
+          "client_lock_timeout_seconds": 0.2
+        },
+        {
+          "name": "timeout_defaults",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 3
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "timeout_defaults"
+        },
+        {
+          "name": "timeout_independent",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 4
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "timeout_independent",
+          "timeout_seconds": 7,
+          "client_timeout_seconds": 3,
+          "client_lock_timeout_seconds": 0.2
+        },
+        {
+          "name": "timeout_bool_string_fallback",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 5
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "timeout_bool_string_fallback",
+          "timeout_seconds": true,
+          "lock_timeout_seconds": "9",
+          "client_timeout_seconds": 3,
+          "client_lock_timeout_seconds": 0.2
+        },
+        {
+          "name": "timeout_invalid_attributes",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 6
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "timeout_invalid_attributes",
+          "client_timeout_seconds": false,
+          "client_lock_timeout_seconds": {
+            "mock": true
+          }
+        },
+        {
+          "name": "numeric_timeout_passthrough",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 7
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "numeric_timeout_passthrough",
+          "timeout_seconds": -1,
+          "lock_timeout_seconds": 0
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
