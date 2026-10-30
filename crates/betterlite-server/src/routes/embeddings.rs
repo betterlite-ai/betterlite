@@ -8,6 +8,7 @@ use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
 use serde::Serialize;
+use std::str;
 use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
@@ -26,16 +27,6 @@ struct ErrorObject {
     error_type: String,
     param: Option<String>,
     code: String,
-}
-
-#[derive(serde::Deserialize)]
-struct ProviderErrorBody {
-    error: ProviderError,
-}
-
-#[derive(serde::Deserialize)]
-struct ProviderError {
-    message: Option<String>,
 }
 
 pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
@@ -123,8 +114,8 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
 }
 
 fn provider_message(body: &[u8], fallback: &EmbeddingError) -> String {
-    let parsed = serde_json::from_slice::<ProviderErrorBody>(body).ok();
-    parsed
-        .and_then(|value| value.error.message)
-        .unwrap_or_else(|| fallback.to_string())
+    if let Ok(text) = str::from_utf8(body) {
+        return String::from(text);
+    }
+    fallback.to_string()
 }
