@@ -26,11 +26,7 @@ def parse_token_rates(value: dict[str, Json]) -> TokenRates:
 
 
 def _decimal_str(value: float) -> str:
-    """Render a float as the plain decimal string betterlite's Decimal rates serialize to.
-
-    No arithmetic touches these rates between parsing and this call, so repr's shortest
-    round-trip text still carries the exact digits of the original JSON literal.
-    """
+    # No arithmetic runs before this, so repr still carries the JSON literal's digits.
     return format(Decimal(repr(value)).normalize(), "f")
 
 
