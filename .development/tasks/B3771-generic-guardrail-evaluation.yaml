@@ -30,6 +30,8 @@ description: >-
 scope:
   paths:
     - crates/betterlite-config/src/loader.rs
+    - crates/betterlite/src/main.rs
+    - tools/oracle/src/helpers/guardrails/b3778.rs
     - crates/betterlite-guardrails/src/generic_guardrail_api.rs
     - crates/betterlite-guardrails/src/generic_guardrail_api/**
     - crates/betterlite-guardrails/src/grayswan.rs
