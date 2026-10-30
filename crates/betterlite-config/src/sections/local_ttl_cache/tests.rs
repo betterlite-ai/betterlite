@@ -28,7 +28,7 @@ fn local_ttl_cache_config_cases(#[case] key: &str) {
     if key.starts_with("max_") {
         assert_eq!(global.global_max_item_kib, Some(7));
     } else {
-        assert_eq!(global.global_ttl, Some(7.0));
+        assert_eq!(global.global_ttl, Some(7.0_f64));
     }
     let deployment = load(
         &format!("model_list:\n- model_name: a\n  litellm_params:\n    {key}: 9\n"),
@@ -38,7 +38,7 @@ fn local_ttl_cache_config_cases(#[case] key: &str) {
     if key.starts_with("max_") {
         assert_eq!(deployment.deployment_max_item_kib, vec![Some(9)]);
     } else {
-        assert_eq!(deployment.deployment_ttl, vec![Some(9.0)]);
+        assert_eq!(deployment.deployment_ttl, vec![Some(9.0_f64)]);
     }
     let environment = load(
         &format!("litellm_settings:\n  {key}: os.environ/CACHE_VALUE\n"),
@@ -48,7 +48,7 @@ fn local_ttl_cache_config_cases(#[case] key: &str) {
     if key.starts_with("max_") {
         assert_eq!(environment.global_max_item_kib, Some(11));
     } else {
-        assert_eq!(environment.global_ttl, Some(11.0));
+        assert_eq!(environment.global_ttl, Some(11.0_f64));
     }
 }
 

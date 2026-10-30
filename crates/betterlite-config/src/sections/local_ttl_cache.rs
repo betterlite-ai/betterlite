@@ -51,115 +51,97 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let deployment_max = self
-            .model_list
-            .iter()
-            .map(|deployment| {
-                parse_optional_integer(
-                    &deployment.litellm_params.max_item_kib,
-                    "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb",
-                    lookup,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let deployment_max_item_kib = self.model_list.iter().map(|deployment| {
+            parse_setting(deployment.litellm_params.max_item_kib.as_ref(), "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb", lookup, |text| text.parse::<i64>().map_err(|source| ConfigError::InvalidInteger { path: "model_list.0.litellm_params.max_size_per_item_in_memory_cache_in_kb".to_owned(), source }))
+        }).collect::<Result<Vec<_>, _>>()?;
         let deployment_ttl = self
             .model_list
             .iter()
             .map(|deployment| {
-                parse_optional_float(
-                    &deployment.litellm_params.default_in_memory_ttl,
+                parse_setting(
+                    deployment.litellm_params.default_in_memory_ttl.as_ref(),
                     "model_list.0.litellm_params.default_in_memory_ttl",
                     lookup,
+                    |text| {
+                        text.parse::<f64>()
+                            .map_err(|source| ConfigError::InvalidFloat {
+                                path: "model_list.0.litellm_params.default_in_memory_ttl"
+                                    .to_owned(),
+                                source,
+                            })
+                    },
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let global_max_item_kib = parse_setting(
+            self.litellm_settings.max_item_kib.as_ref(),
+            "litellm_settings.max_size_per_item_in_memory_cache_in_kb",
+            lookup,
+            |text| {
+                text.parse::<i64>()
+                    .map_err(|source| ConfigError::InvalidInteger {
+                        path: "litellm_settings.max_size_per_item_in_memory_cache_in_kb".to_owned(),
+                        source,
+                    })
+            },
+        )?
+        .or(Some(1024));
+        let global_ttl = parse_setting(
+            self.litellm_settings.default_in_memory_ttl.as_ref(),
+            "litellm_settings.default_in_memory_ttl",
+            lookup,
+            |text| {
+                text.parse::<f64>()
+                    .map_err(|source| ConfigError::InvalidFloat {
+                        path: "litellm_settings.default_in_memory_ttl".to_owned(),
+                        source,
+                    })
+            },
+        )?;
         Ok(Settings {
-            deployment_max_item_kib: deployment_max,
-            global_max_item_kib: parse_optional_integer(
-                &self.litellm_settings.max_item_kib,
-                "litellm_settings.max_size_per_item_in_memory_cache_in_kb",
-                lookup,
-            )?
-            .or(Some(1024)),
+            deployment_max_item_kib,
+            global_max_item_kib,
             deployment_ttl,
-            global_ttl: parse_optional_float(
-                &self.litellm_settings.default_in_memory_ttl,
-                "litellm_settings.default_in_memory_ttl",
-                lookup,
-            )?,
+            global_ttl,
         })
     }
 }
 
-fn parse_optional_integer<L>(
-    value: &Option<RawSetting>,
+fn parse_setting<T, L, F>(
+    raw: Option<&RawSetting>,
     path: &str,
     lookup: &L,
-) -> Result<Option<i64>, ConfigError>
+    parse: F,
+) -> Result<Option<T>, ConfigError>
 where
     L: EnvironmentLookup,
+    F: FnOnce(String) -> Result<T, ConfigError>,
 {
-    let parsed = value
-        .as_ref()
-        .map(|value| parse_integer(value, path, lookup))
-        .transpose();
-    parsed
+    let text = setting_text(raw, path, lookup)?;
+    text.map(parse).transpose()
 }
 
-fn parse_optional_float<L>(
-    value: &Option<RawSetting>,
+fn setting_text<L>(
+    raw: Option<&RawSetting>,
     path: &str,
     lookup: &L,
-) -> Result<Option<f64>, ConfigError>
+) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let parsed = value
-        .as_ref()
-        .map(|value| parse_float(value, path, lookup))
-        .transpose();
-    parsed
-}
-
-fn text<L>(value: &RawSetting, path: &str, lookup: &L) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match value {
-        RawSetting::Integer(value) => Ok(value.to_string()),
-        RawSetting::Float(value) => Ok(value.to_string()),
-        RawSetting::Text(value) => resolve_string(value.clone(), path, lookup),
-        RawSetting::Boolean(value) => Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: *value,
-        }),
-    }
-}
-
-fn parse_integer<L>(value: &RawSetting, path: &str, lookup: &L) -> Result<i64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let text = text(value, path, lookup)?;
-    let parsed = text
-        .parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        });
-    parsed
-}
-
-fn parse_float<L>(value: &RawSetting, path: &str, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let text = text(value, path, lookup)?;
-    let parsed = text
-        .parse::<f64>()
-        .map_err(|source| ConfigError::InvalidFloat {
-            path: path.to_owned(),
-            source,
-        });
-    parsed
+    let Some(raw_setting) = raw else {
+        return Ok(None);
+    };
+    let text = match raw_setting {
+        RawSetting::Integer(integer) => integer.to_string(),
+        RawSetting::Float(float) => float.to_string(),
+        RawSetting::Text(text) => resolve_string(text.clone(), path, lookup)?,
+        RawSetting::Boolean(boolean) => {
+            return Err(ConfigError::InvalidScalar {
+                path: path.to_owned(),
+                value: *boolean,
+            });
+        }
+    };
+    Ok(Some(text))
 }

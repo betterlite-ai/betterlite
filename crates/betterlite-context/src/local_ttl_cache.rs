@@ -1,11 +1,11 @@
 #[path = "local_ttl_cache/tests.rs"]
 mod tests;
 
-use std::cmp::Reverse;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap};
 use std::sync::Arc;
 
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const DEFAULT_CAPACITY: usize = 200;
@@ -18,15 +18,27 @@ const MAX_VALUE_BYTES: usize = 1024 * 1024;
 pub enum CacheError {
     #[error("cache capacity cannot be negative")]
     NegativeCapacity,
-    #[error("cache value could not be serialized")]
-    ValueSerialization,
+    #[error("cache value could not be serialized: {0}")]
+    ValueSerialization(String),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum CacheValue {
+    Null,
+    Boolean(bool),
+    Integer(i64),
+    Float(f64),
+    Text(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
 }
 
 pub struct LocalTtlCache {
     capacity: usize,
     default_ttl: f64,
     max_size_per_item: usize,
-    values: BTreeMap<String, Value>,
+    values: BTreeMap<String, CacheValue>,
     expiries: BTreeMap<String, f64>,
     heap: BinaryHeap<Reverse<(OrderedFloat, String)>>,
     clock: Arc<dyn Fn() -> f64 + Send + Sync>,
@@ -38,14 +50,14 @@ struct OrderedFloat(f64);
 impl Eq for OrderedFloat {}
 
 impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.0.total_cmp(&other.0)
     }
 }
 
 impl PartialOrd for OrderedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -69,19 +81,19 @@ impl LocalTtlCache {
     }
 
     #[must_use]
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         let capacity = self.capacity;
         capacity
     }
 
     #[must_use]
-    pub fn default_ttl(&self) -> f64 {
+    pub const fn default_ttl(&self) -> f64 {
         let ttl = self.default_ttl;
         ttl
     }
 
     #[must_use]
-    pub fn max_size_per_item(&self) -> usize {
+    pub const fn max_size_per_item(&self) -> usize {
         let item_limit = self.max_size_per_item;
         item_limit
     }
@@ -92,7 +104,12 @@ impl LocalTtlCache {
         expiry
     }
 
-    pub fn set(&mut self, key: &str, value: Value, ttl: Option<f64>) -> Result<(), CacheError> {
+    pub fn set(
+        &mut self,
+        key: &str,
+        value: CacheValue,
+        ttl: Option<f64>,
+    ) -> Result<(), CacheError> {
         self.prune(self.now());
         if self.capacity == 0 || key.len() > MAX_KEY_BYTES {
             return Ok(());
@@ -122,7 +139,7 @@ impl LocalTtlCache {
     }
 
     #[must_use]
-    pub fn get(&mut self, key: &str) -> Option<Value> {
+    pub fn get(&mut self, key: &str) -> Option<CacheValue> {
         let now = self.now();
         if self.expiries.get(key).is_some_and(|expiry| now > *expiry) {
             self.values.remove(key);
@@ -157,8 +174,9 @@ impl LocalTtlCache {
         }
     }
 
-    fn fits(&self, value: &Value) -> Result<bool, CacheError> {
-        let bytes = serde_json::to_vec(value).map_err(|_| CacheError::ValueSerialization)?;
+    fn fits(&self, value: &CacheValue) -> Result<bool, CacheError> {
+        let bytes = serde_json::to_vec(value)
+            .map_err(|error| CacheError::ValueSerialization(error.to_string()))?;
         let limit = self
             .max_size_per_item
             .checked_mul(1024)
@@ -168,11 +186,19 @@ impl LocalTtlCache {
 }
 
 #[must_use]
-pub fn decode_cached_json(bytes: &[u8]) -> Value {
+pub fn decode_cached_json(bytes: &[u8]) -> CacheValue {
     let decoded = serde_json::from_slice(bytes).unwrap_or_else(|_| {
-        String::from_utf8(bytes.to_vec())
-            .map(Value::String)
-            .unwrap_or_else(|_| Value::Array(bytes.iter().copied().map(Value::from).collect()))
+        String::from_utf8(bytes.to_vec()).map_or_else(
+            |_| {
+                CacheValue::Array(
+                    bytes
+                        .iter()
+                        .map(|byte| CacheValue::Integer(i64::from(*byte)))
+                        .collect(),
+                )
+            },
+            CacheValue::Text,
+        )
     });
     decoded
 }
