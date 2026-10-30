@@ -1,12 +1,12 @@
+use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
-use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Filter { schema: Value },
-    Output { schema: Option<Value> },
-    Tool { schema: Option<Value> },
+    Filter { schema: Json },
+    Output { schema: Option<Json> },
+    Tool { schema: Option<Json> },
 }
 
 pub(crate) struct Op;
@@ -28,9 +28,9 @@ impl crate::helpers::Helper for Op {
                 },
             )))
             .map_err(error),
-            Input::Output { schema: None } => Ok(Value::Null),
+            Input::Output { schema: None } => Ok(serde_json::from_str("null").unwrap()),
             Input::Tool { schema } => serde_json::to_value(
-                betterlite_anthropic::output_schema::create_json_tool_call(schema.clone()),
+                betterlite_anthropic::output_schema::json_tool(schema.clone()),
             )
             .map_err(error),
         }

@@ -1,20 +1,5 @@
-#![expect(
-    clippy::absolute_paths,
-    clippy::derive_partial_eq_without_eq,
-    clippy::disallowed_methods,
-    clippy::disallowed_types,
-    clippy::match_same_arms,
-    clippy::must_use_candidate,
-    clippy::or_fun_call,
-    clippy::question_mark,
-    clippy::shadow_reuse,
-    clippy::shadow_unrelated,
-    clippy::wildcard_enum_match_arm,
-    reason = "the provider boundary transforms an opaque serialized JSON Schema and mirrors LiteLLM's dynamic schema keys"
-)]
-
-use serde::Deserialize as _;
-use serde_json::{Map, Value};
+use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::definitions::expand::unpack_defs;
 
 const CONSTRAINTS: [(&str, &str); 25] = [
     ("minItems", "minimum number of items: {}"),
@@ -50,271 +35,237 @@ const CONSTRAINTS: [(&str, &str); 25] = [
     ("not", "must not match: {}"),
 ];
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OutputFormat {
     #[serde(rename = "type")]
     pub type_name: String,
-    pub schema: Value,
+    pub schema: Json,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponseFormat {
     Text,
-    JsonSchema { schema: Value },
-    JsonObject { schema: Option<Value> },
+    JsonSchema { schema: Json },
+    JsonObject { schema: Option<Json> },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Tool {
     pub name: String,
-    pub input_schema: Value,
+    pub input_schema: Json,
 }
 
-pub fn filter_anthropic_output_schema(schema: Value) -> Value {
-    let Value::Object(schema) = schema else {
-        return schema;
+pub fn filter_anthropic_output_schema(input: Json) -> Json {
+    let Json::Object(schema) = input else {
+        return input;
     };
-    let drops_type = enum_type_conflict(&schema);
     let note = constraint_note(&schema);
-    let existing_description = schema
-        .get("description")
-        .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned);
-    let mut result = Map::new();
+    let drop_type = enum_type_conflict(&schema);
+    let mut result = Object::new();
+    if let Some(note_text) = &note {
+        let description = schema
+            .get("description")
+            .and_then(Json::as_str)
+            .filter(|text| !text.is_empty());
+        result.insert(
+            "description".to_owned(),
+            Json::Text(
+                description.map_or_else(|| note_text.clone(), |text| format!("{text} {note_text}")),
+            ),
+        );
+    }
     for (key, value) in schema {
-        if CONSTRAINTS.iter().any(|(name, _)| *name == key) || (key == "type" && drops_type) {
-            continue;
+        filter_field(&mut result, key, value, note.as_ref(), drop_type);
+    }
+    if result.get("type").and_then(Json::as_str) == Some("object") {
+        result.insert("additionalProperties".to_owned(), Json::Bool(false));
+    }
+    Json::Object(result)
+}
+
+fn filter_field(
+    result: &mut Object,
+    key: String,
+    value: Json,
+    note: Option<&String>,
+    drop_type: bool,
+) {
+    if CONSTRAINTS.iter().any(|(name, _)| *name == key)
+        || (key == "type" && drop_type)
+        || (key == "description" && note.is_some())
+    {
+        return;
+    }
+    match key.as_str() {
+        "properties" | "$defs" => {
+            result.insert(key, filter_properties(value));
         }
-        if key == "description" && note.is_some() {
-            continue;
+        "items" => {
+            result.insert(key, filter_node(value));
         }
-        let value = match key.as_str() {
-            "properties" | "$defs" => filter_named(value, true),
-            "items" => filter_named(value, false),
-            "anyOf" | "allOf" | "oneOf" => filter_list(value, &key, &mut result),
-            _ => value,
-        };
-        if !(key == "oneOf" && value.is_null()) {
+        "anyOf" | "allOf" | "oneOf" => add_alternative(result, &key, value),
+        _ => {
             result.insert(key, value);
         }
     }
-    if let Some(note) = note {
-        result.remove("description");
-        let description = existing_description;
-        result.insert(
-            "description".to_owned(),
-            Value::String(description.map_or(note.clone(), |value| format!("{value} {note}"))),
-        );
-    }
-    if result.get("type").and_then(Value::as_str) == Some("object") {
-        result.insert("additionalProperties".to_owned(), Value::Bool(false));
-    }
-    Value::Object(result)
 }
 
-fn filter_named(value: Value, fields: bool) -> Value {
+fn filter_properties(value: Json) -> Json {
     match value {
-        Value::Object(values) if fields => Value::Object(
-            values
+        Json::Object(fields) => Json::Object(
+            fields
                 .into_iter()
-                .map(|(key, value)| (key, filter_anthropic_output_schema(value)))
+                .map(|(key, child)| (key, filter_anthropic_output_schema(child)))
                 .collect(),
         ),
-        Value::Object(value) => filter_anthropic_output_schema(Value::Object(value)),
-        _ => value,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => value,
     }
 }
 
-fn filter_list(value: Value, key: &str, result: &mut Map<String, Value>) -> Value {
-    let Value::Array(values) = value else {
-        return value;
+fn filter_node(value: Json) -> Json {
+    match value {
+        Json::Object(_) => filter_anthropic_output_schema(value),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => value,
+    }
+}
+
+fn add_alternative(result: &mut Object, key: &str, value: Json) {
+    let Json::List(items) = value else {
+        result.insert(key.to_owned(), value);
+        return;
     };
-    let filtered = values
+    let filtered = items
         .into_iter()
         .map(filter_anthropic_output_schema)
         .collect::<Vec<_>>();
     if key == "oneOf" {
-        let mut any = result
-            .remove("anyOf")
-            .and_then(|value| value.as_array().cloned())
-            .unwrap_or_default();
+        let mut any = take_list(result, "anyOf");
         any.extend(filtered);
-        result.insert("anyOf".to_owned(), Value::Array(any));
-        Value::Null
-    } else if key == "anyOf" {
-        let mut any = result
-            .remove("anyOf")
-            .and_then(|value| value.as_array().cloned())
-            .unwrap_or_default();
-        any.extend(filtered);
-        Value::Array(any)
+        result.insert("anyOf".to_owned(), Json::List(any));
     } else {
-        Value::Array(filtered)
+        result.insert(key.to_owned(), Json::List(filtered));
     }
 }
 
-fn constraint_note(schema: &Map<String, Value>) -> Option<String> {
+fn take_list(result: &mut Object, key: &str) -> Vec<Json> {
+    match result.shift_remove(key) {
+        Some(Json::List(items)) => items,
+        Some(value) => {
+            result.insert(key.to_owned(), value);
+            Vec::new()
+        }
+        None => Vec::new(),
+    }
+}
+
+fn constraint_note(schema: &Object) -> Option<String> {
     let notes = CONSTRAINTS
         .iter()
         .filter_map(|(key, label)| {
             let value = schema.get(*key)?;
-            if value == &Value::Bool(false) {
-                return None;
-            }
-            let rendered = if value.is_object() || value.is_array() {
-                python_json(value)
-            } else {
-                format_value(value)
-            };
-            Some(label.replace("{}", &rendered))
+            (!matches!(value, Json::Bool(false))).then(|| label.replace("{}", &format_value(value)))
         })
         .collect::<Vec<_>>();
     (!notes.is_empty()).then(|| format!("Note: {}.", notes.join(", ")))
 }
 
-fn format_value(value: &Value) -> String {
+fn format_value(value: &Json) -> String {
     match value {
-        Value::Null => "None".to_owned(),
-        Value::Bool(value) => {
-            if *value {
-                "True".to_owned()
-            } else {
-                "False".to_owned()
-            }
-        }
-        Value::Number(value) => value.to_string(),
-        Value::String(value) => value.clone(),
-        Value::Array(_) | Value::Object(_) => value.to_string(),
+        Json::Null => "None".to_owned(),
+        Json::Bool(flag) => flag.to_string().to_ascii_uppercase(),
+        Json::Number(number) => number.to_string(),
+        Json::Text(text) => text.clone(),
+        Json::List(_) | Json::Object(_) => serde_json::to_string(value).unwrap_or_default(),
     }
 }
 
-fn python_json(value: &Value) -> String {
-    match value {
-        Value::Array(values) => format!(
-            "[{}]",
-            values
-                .iter()
-                .map(python_json)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Object(values) => format!(
-            "{{{}}}",
-            values
-                .iter()
-                .map(|(key, value)| format!(
-                    "{}: {}",
-                    serde_json::to_string(key).unwrap_or_default(),
-                    python_json(value)
-                ))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        _ => serde_json::to_string(value).unwrap_or_default(),
-    }
-}
-
-fn enum_type_conflict(schema: &Map<String, Value>) -> bool {
-    let Some(Value::Array(values)) = schema.get("enum") else {
+fn enum_type_conflict(schema: &Object) -> bool {
+    let Some(Json::List(values)) = schema.get("enum") else {
         return false;
     };
-    let Some(Value::String(kind)) = schema.get("type") else {
+    let Some(Json::Text(kind)) = schema.get("type") else {
         return false;
     };
-    if kind == "array" || kind == "object" {
+    if values.is_empty() || kind == "array" || kind == "object" {
         return true;
     }
     values.iter().any(|value| !matches_type(value, kind))
 }
 
-fn matches_type(value: &Value, kind: &str) -> bool {
+fn matches_type(value: &Json, kind: &str) -> bool {
     match kind {
-        "null" => value.is_null(),
-        "boolean" => value.is_boolean(),
-        "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
-        "number" => value.is_number() && !value.is_boolean(),
-        "string" => value.is_string(),
-        "array" => value.is_array(),
-        "object" => value.is_object(),
+        "null" => matches!(value, Json::Null),
+        "boolean" => matches!(value, Json::Bool(_)),
+        "integer" => matches!(value, Json::Number(number) if number.is_i64() || number.is_u64()),
+        "number" => matches!(value, Json::Number(_)),
+        "string" => matches!(value, Json::Text(_)),
+        "array" => matches!(value, Json::List(_)),
+        "object" => matches!(value, Json::Object(_)),
         _ => true,
     }
 }
 
+#[must_use]
 pub fn map_output(value: Option<ResponseFormat>) -> Option<OutputFormat> {
-    let Some(value) = value else {
-        return None;
-    };
-    match value {
-        ResponseFormat::Text => None,
+    let schema = match value? {
+        ResponseFormat::Text | ResponseFormat::JsonObject { schema: None } => return None,
         ResponseFormat::JsonSchema { schema }
         | ResponseFormat::JsonObject {
             schema: Some(schema),
-        } => Some(OutputFormat {
-            type_name: "json_schema".to_owned(),
-            schema: filter_anthropic_output_schema(expand_definitions(schema)),
-        }),
-        ResponseFormat::JsonObject { schema: None } => None,
-    }
+        } => schema,
+    };
+    Some(OutputFormat {
+        type_name: "json_schema".to_owned(),
+        schema: filter_anthropic_output_schema(expand_definitions(schema)),
+    })
 }
 
-fn expand_definitions(schema: Value) -> Value {
-    let Value::Object(mut schema) = schema else {
+fn expand_definitions(schema: Json) -> Json {
+    let Json::Object(mut fields) = schema else {
         return schema;
     };
-    let definitions = schema
-        .remove("$defs")
-        .or_else(|| schema.remove("definitions"));
-    let Some(Value::Object(definitions)) = definitions else {
-        return Value::Object(schema);
+    let defs = fields.shift_remove("$defs");
+    let legacy = fields.shift_remove("definitions");
+    let Some(Json::Object(definition_fields)) = defs.or(legacy) else {
+        return Json::Object(fields);
     };
-    if definitions.is_empty() {
-        return Value::Object(schema);
+    if definition_fields.is_empty() {
+        return Json::Object(fields);
     }
-    let schema =
-        betterlite_prompts::arguments::json::Object::deserialize(Value::Object(schema)).ok();
-    let defs =
-        betterlite_prompts::arguments::json::Object::deserialize(Value::Object(definitions)).ok();
-    match (schema, defs) {
-        (Some(schema), Some(defs)) => {
-            betterlite_prompts::definitions::expand::unpack_defs(schema, &defs, Some(10_000_000))
-                .ok()
-                .and_then(|value| serde_json::to_value(value).ok())
-                .unwrap_or(Value::Object(Map::new()))
-        }
-        _ => Value::Object(Map::new()),
-    }
+    unpack_defs(fields, &definition_fields, Some(10_000_000))
+        .ok()
+        .map_or_else(|| Json::Object(Object::new()), Json::Object)
 }
 
+#[must_use]
 pub fn map_tool(value: Option<ResponseFormat>) -> Option<Tool> {
-    let Some(value) = value else {
-        return None;
-    };
-    let schema = match value {
-        ResponseFormat::Text => return None,
+    let schema = match value? {
+        ResponseFormat::Text | ResponseFormat::JsonObject { schema: None } => return None,
         ResponseFormat::JsonSchema { schema }
         | ResponseFormat::JsonObject {
             schema: Some(schema),
-        } => Some(schema),
-        ResponseFormat::JsonObject { schema: None } => None,
+        } => schema,
     };
-    Some(json_tool(schema))
+    Some(json_tool(Some(schema)))
 }
 
-pub fn create_json_tool_call(schema: Option<Value>) -> Tool {
-    let tool = json_tool(schema);
-    tool
-}
-
-fn json_tool(schema: Option<Value>) -> Tool {
+#[must_use]
+pub fn json_tool(schema: Option<Json>) -> Tool {
     let input_schema = schema.map_or_else(
-        || serde_json::json!({"type":"object", "additionalProperties":true, "properties":{}}),
-        |schema| {
-            let mut base = serde_json::json!({"type":"object"});
-            if let (Value::Object(base), Value::Object(schema)) = (&mut base, schema) {
-                base.extend(schema);
+        || {
+            Json::Object(Object::from_iter([
+                (String::from("type"), Json::Text(String::from("object"))),
+                (String::from("additionalProperties"), Json::Bool(true)),
+                (String::from("properties"), Json::Object(Object::new())),
+            ]))
+        },
+        |provided| {
+            let mut base =
+                Object::from_iter([(String::from("type"), Json::Text(String::from("object")))]);
+            if let Json::Object(fields) = provided {
+                base.extend(fields);
             }
-            base
+            Json::Object(base)
         },
     );
     Tool {
