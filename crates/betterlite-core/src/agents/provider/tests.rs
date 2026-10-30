@@ -410,7 +410,7 @@ fn provider_can_override_error_mapping() {
 }
 
 #[test]
-fn native_contract_exposes_all_operations() {
+fn native_contract_exposes_requests() {
     let provider = TestProvider;
     let params = BTreeMap::new();
     let headers = BTreeMap::from([(String::from("authorization"), String::from("key"))]);
@@ -422,83 +422,40 @@ fn native_contract_exposes_all_operations() {
         provider.validate_environment(&headers, &params).unwrap(),
         headers
     );
-    assert!(
-        provider
-            .transform_create_request("a", &params)
-            .unwrap()
-            .url
-            .is_none()
-    );
-    assert!(
-        provider
-            .transform_list_request(None, &params)
-            .unwrap()
-            .body
-            .is_none()
-    );
-    assert!(
-        provider
-            .transform_get_request("a", None, &params)
-            .unwrap()
-            .query_params
-            .is_empty()
-    );
-    assert!(
-        provider
-            .transform_delete_request("a", None, &params)
-            .unwrap()
-            .headers
-            .is_empty()
-    );
-    assert!(
-        provider
-            .transform_versions_request("a", None, &params)
-            .unwrap()
-            .url
-            .is_none()
-    );
+    let create = provider.transform_create_request("a", &params).unwrap();
+    let list = provider.transform_list_request(None, &params).unwrap();
+    let get = provider.transform_get_request("a", None, &params).unwrap();
+    let delete = provider
+        .transform_delete_request("a", None, &params)
+        .unwrap();
+    let versions = provider
+        .transform_versions_request("a", None, &params)
+        .unwrap();
+    assert!(create.url.is_none());
+    assert!(list.body.is_none());
+    assert!(get.query_params.is_empty());
+    assert!(delete.headers.is_empty());
+    assert!(versions.url.is_none());
+}
+
+#[test]
+fn native_contract_exposes_responses() {
+    let provider = TestProvider;
     let raw = AgentHttpResponse {
         status_code: 200,
         body: json!({"id":"a","name":"a"}),
         headers: BTreeMap::new(),
     };
-    assert_eq!(
-        provider
-            .transform_create_response(&raw, "a")
-            .unwrap()
-            .id
-            .as_deref(),
-        Some("a")
-    );
-    assert_eq!(
-        provider
-            .transform_get_response(&raw, "a")
-            .unwrap()
-            .name
-            .as_deref(),
-        Some("a")
-    );
-    assert_eq!(
-        provider
-            .transform_delete_response(&raw, "deleted")
-            .unwrap()
-            .name,
-        "deleted"
-    );
-    assert!(
-        provider
-            .transform_list_response(&raw)
-            .unwrap()
-            .agents
-            .is_empty()
-    );
-    assert!(
-        provider
-            .transform_versions_response(&raw, "a")
-            .unwrap()
-            .agent_versions
-            .is_empty()
-    );
+    let create = provider.transform_create_response(&raw, "a").unwrap();
+    let get = provider.transform_get_response(&raw, "a").unwrap();
+    let delete = provider.transform_delete_response(&raw, "deleted").unwrap();
+    let list = provider.transform_list_response(&raw).unwrap();
+    let versions = provider.transform_versions_response(&raw, "a").unwrap();
+    assert_eq!(create.id.as_deref(), Some("a"));
+    assert_eq!(get.name.as_deref(), Some("a"));
+    assert_eq!(delete.name, "deleted");
+    assert!(list.agents.is_empty());
+    assert!(versions.agent_versions.is_empty());
 }
 
 #[test]

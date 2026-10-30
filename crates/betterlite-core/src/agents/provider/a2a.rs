@@ -93,7 +93,13 @@ pub fn normalize_a2a_jsonrpc_response(
                     AgentJson::Number(number) if !number.to_string().contains(['.', 'e', 'E']) => {
                         id.clone()
                     }
-                    other => AgentJson::String(super::request_id::python_string(other)),
+                    other @ (AgentJson::Null
+                    | AgentJson::Bool(_)
+                    | AgentJson::Number(_)
+                    | AgentJson::Array(_)
+                    | AgentJson::Object(_)) => {
+                        AgentJson::String(super::request_id::python_string(other)?)
+                    }
                 };
                 normalized.insert(String::from("id"), encoded);
             }

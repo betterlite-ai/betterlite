@@ -5,6 +5,7 @@ use super::AgentResponse;
 use super::json::AgentJson;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AgentCreateResponse {
@@ -114,22 +115,27 @@ pub enum AgentProviderError {
     },
     #[error("invalid agent provider response: {source}")]
     Decode { source: serde_json::Error },
+    #[error("cannot format A2A request id: {source}")]
+    Format { source: fmt::Error },
     #[error("invalid agent provider response: {message}")]
     InvalidResponse { message: String },
 }
 
 impl AgentProviderError {
-    pub fn status_code(&self) -> u16 {
+    #[must_use]
+    pub const fn status_code(&self) -> u16 {
         match self {
             Self::Http { status_code, .. } => *status_code,
-            Self::Decode { .. } | Self::InvalidResponse { .. } => 500,
+            Self::Decode { .. } | Self::Format { .. } | Self::InvalidResponse { .. } => 500,
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::Http { message, .. } | Self::InvalidResponse { message } => message.clone(),
             Self::Decode { source } => source.to_string(),
+            Self::Format { source } => source.to_string(),
         }
     }
 }

@@ -1,32 +1,34 @@
+use super::AgentProviderError;
 use crate::agents::json::AgentJson;
+use std::fmt::Write;
 
-pub(super) fn python_string(value: &AgentJson) -> String {
+pub(super) fn python_string(value: &AgentJson) -> Result<String, AgentProviderError> {
     match value {
-        AgentJson::Null => String::from("None"),
-        AgentJson::Bool(true) => String::from("True"),
-        AgentJson::Bool(false) => String::from("False"),
-        AgentJson::Number(number) => number.to_string(),
+        AgentJson::Null => Ok(String::from("None")),
+        AgentJson::Bool(true) => Ok(String::from("True")),
+        AgentJson::Bool(false) => Ok(String::from("False")),
+        AgentJson::Number(number) => Ok(number.to_string()),
         AgentJson::String(text) => quoted(text),
         AgentJson::Array(values) => {
             let items = values
                 .iter()
                 .map(python_string)
-                .collect::<Vec<_>>()
+                .collect::<Result<Vec<_>, _>>()?
                 .join(", ");
-            format!("[{items}]")
+            Ok(format!("[{items}]"))
         }
         AgentJson::Object(values) => {
             let items = values
                 .iter()
-                .map(|(key, item)| format!("{}: {}", quoted(key), python_string(item)))
-                .collect::<Vec<_>>()
+                .map(|(key, item)| Ok(format!("{}: {}", quoted(key)?, python_string(item)?)))
+                .collect::<Result<Vec<_>, _>>()?
                 .join(", ");
-            format!("{{{items}}}")
+            Ok(format!("{{{items}}}"))
         }
     }
 }
 
-fn quoted(text: &str) -> String {
+fn quoted(text: &str) -> Result<String, AgentProviderError> {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
     } else {
@@ -40,7 +42,8 @@ fn quoted(text: &str) -> String {
             '\r' => result.push_str("\\r"),
             '\t' => result.push_str("\\t"),
             control if control.is_control() => {
-                result.push_str(&format!("\\x{:02x}", u32::from(control)))
+                Write::write_fmt(&mut result, format_args!("\\x{:02x}", u32::from(control)))
+                    .map_err(|source| AgentProviderError::Format { source })?;
             }
             delimiter if delimiter == quote => {
                 result.push('\\');
@@ -50,5 +53,5 @@ fn quoted(text: &str) -> String {
         }
     }
     result.push(quote);
-    result
+    Ok(result)
 }
