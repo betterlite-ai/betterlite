@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>betterlite progress</title>
+<meta name="description" content="How far betterlite, the Rust port of LiteLLM, has come: tasks merged, Python files ported, the request path and every deviation.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23f7f5f0'/%3E%3Crect x='2' y='9' width='3' height='5' fill='%232f6b4f'/%3E%3Crect x='6.5' y='5' width='3' height='9' fill='%232f6b4f'/%3E%3Crect x='11' y='2' width='3' height='12' fill='%231c1b19'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --paper: #f7f5f0;
+  --ink: #1c1b19;
+  --muted: #6c6a63;
+  --rule: #dcd8cf;
+  --faint: #ebe8e1;
+  --done: #2f6b4f;
+  --open: #d7d3c9;
+  --sans: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #161614;
+    --ink: #e9e6df;
+    --muted: #9b988f;
+    --rule: #34322d;
+    --faint: #22211e;
+    --done: #7cc49a;
+    --open: #3d3b36;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: 5rem; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1rem/1.55 var(--sans); }
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 0.2em; }
+a:hover { text-decoration-color: currentColor; }
+.wrap { max-width: 72rem; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 40rem) { .wrap { padding: 0 2rem; } }
+
+.masthead { position: sticky; top: 0; z-index: 1; background: var(--paper); border-bottom: 1px solid var(--ink); }
+.masthead .wrap { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1.5rem; padding-top: 0.875rem; }
+.brand { font: 500 0.9375rem var(--mono); text-decoration: none; padding-bottom: 0.75rem; }
+.brand span { color: var(--muted); }
+nav { display: flex; gap: 1.25rem; overflow-x: auto; }
+nav a { color: var(--muted); text-decoration: none; font-size: 0.875rem; white-space: nowrap; padding-bottom: 0.625rem; border-bottom: 2px solid transparent; }
+nav a:hover { color: var(--ink); }
+nav a[aria-current="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+.lede { padding: 3rem 0 2.5rem; }
+h1 { font-size: clamp(1.75rem, 1.2rem + 2.2vw, 2.75rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 1rem; }
+.lede p { max-width: 42rem; color: var(--muted); margin: 0; }
+.status { margin: 1.5rem 0 0; font: 0.875rem var(--mono); color: var(--muted); }
+.status.error { color: var(--ink); border-left: 2px solid var(--ink); padding-left: 0.75rem; }
+
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1.5rem 2rem; margin: 2.5rem 0 0; }
+.figures.small { margin: 0 0 2rem; }
+.figure { border-top: 1px solid var(--ink); padding-top: 0.75rem; }
+.figure .value { font-size: 2.25rem; font-weight: 500; line-height: 1.15; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.figures.small .value { font-size: 1.75rem; }
+.figure .value small { font-size: 0.9375rem; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.figure .label { font-size: 0.875rem; color: var(--muted); margin-top: 0.25rem; }
+
+.section-head { border-top: 1px solid var(--ink); margin-top: 3.5rem; padding-top: 1rem; }
+.section-head h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.block { display: grid; grid-template-columns: 14rem 1fr; gap: 1rem 2.5rem; border-top: 1px solid var(--rule); padding: 2rem 0 2.5rem; }
+.section-head + .block { border-top: 0; }
+.block > header h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
+.block > header p { font-size: 0.875rem; color: var(--muted); margin: 0 0 0.75rem; }
+.block > div { min-width: 0; }
+@media (max-width: 52rem) { .block { grid-template-columns: 1fr; } }
+h4 { font-size: 0.9375rem; font-weight: 600; margin: 2rem 0 0.75rem; }
+h4:first-child { margin-top: 0; }
+
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; font-size: 0.8125rem; color: var(--muted); border-bottom: 1px solid var(--rule); padding: 0 0.75rem 0.5rem 0; white-space: nowrap; }
+td { border-bottom: 1px solid var(--faint); padding: 0.5rem 0.75rem 0.5rem 0; vertical-align: top; }
+th:last-child, td:last-child { padding-right: 0; }
+tfoot td { border-bottom: 0; border-top: 1px solid var(--rule); font-weight: 500; }
+.num { text-align: right; white-space: nowrap; }
+.id { font: 0.875rem var(--mono); white-space: nowrap; }
+.muted { color: var(--muted); }
+.date { white-space: nowrap; }
+.empty { color: var(--muted); font-size: 0.9375rem; margin: 0; }
+details { margin-top: 1rem; }
+summary { cursor: pointer; color: var(--muted); font-size: 0.875rem; }
+summary:hover { color: var(--ink); }
+details[open] summary { margin-bottom: 0.75rem; }
+
+.bar { display: flex; align-items: center; gap: 0.75rem; min-width: 8rem; }
+.bar .track { flex: 1; height: 0.5rem; background: var(--open); }
+.bar .fill { height: 100%; background: var(--done); }
+.bar .pct { min-width: 3.5em; text-align: right; font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.figures.small + .bar { margin-bottom: 2rem; }
+@media (max-width: 40rem) { .bar { min-width: 4.5rem; gap: 0.5rem; } .bar .pct { min-width: 3em; } }
+
+.chart { overflow-x: auto; }
+.chart svg { display: block; }
+.chart text { font: 11px var(--mono); fill: var(--muted); }
+.chart .end { fill: var(--ink); }
+.chart .grid { stroke: var(--faint); }
+.chart .base { stroke: var(--rule); }
+.chart .done { stroke: var(--done); stroke-width: 2; fill: none; }
+.chart .area { fill: var(--done); opacity: 0.12; }
+.chart .bars rect { fill: var(--done); }
+.chart .bars rect:hover { fill: var(--ink); }
+
+.filter { display: block; margin-top: 1rem; font-size: 0.8125rem; color: var(--muted); }
+.filter input { display: block; width: 100%; margin-top: 0.375rem; padding: 0.5rem 0.625rem; font: 0.9375rem var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 0; }
+.filter input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+#deviation-list { border-top: 1px solid var(--rule); }
+.deviation-task { margin: 0; border-bottom: 1px solid var(--faint); }
+.deviation-task summary { padding: 0.5rem 0; color: var(--ink); font-size: 0.9375rem; }
+.deviation-task[open] summary { margin-bottom: 0; }
+.deviation-task summary .count { float: right; margin-left: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.deviation-task ul { list-style: none; margin: 0; padding: 0.25rem 0 1.25rem 1.125rem; display: grid; gap: 0.875rem; }
+.deviation-task p { margin: 0; }
+.deviation-task .why { color: var(--muted); font-size: 0.9375rem; margin-top: 0.125rem; }
+.deviation-task .source { font: 0.8125rem var(--mono); margin-top: 0.25rem; }
+
+footer { border-top: 1px solid var(--ink); margin-top: 3.5rem; padding: 1rem 0 3rem; font-size: 0.8125rem; color: var(--muted); }
+footer p { margin: 0 0 0.25rem; }
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="#overview">betterlite <span>progress</span></a>
+    <nav aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#history">History</a>
+      <a href="#request-path">Request path</a>
+      <a href="#deviations">Deviations</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="overview">
+    <div class="lede">
+      <h1>Porting LiteLLM to Rust</h1>
+      <p>betterlite rewrites <a id="litellm-link" href="https://github.com/BerriAI/litellm">LiteLLM</a> in Rust under the MIT license. Coding agents build it one task at a time, and a task merges once its gate passes. This page reads the task list on main and is rebuilt after every merge.</p>
+      <p class="status" id="status" role="status">Loading the task list</p>
+      <div class="figures" id="figures"></div>
+    </div>
+
+    <div class="block">
+      <header>
+        <h3>Milestones</h3>
+        <p>Tasks merged in each milestone. A milestone groups related work, not a build order: many tasks depend on work in later milestones.</p>
+      </header>
+      <div class="table-scroll" id="milestones"></div>
+    </div>
+
+    <div class="block">
+      <header>
+        <h3>Areas of LiteLLM</h3>
+        <p>LiteLLM's Python files by folder. A file counts as ported in the share its merged tasks make up of all tasks that cover it.</p>
+      </header>
+      <div class="table-scroll" id="areas"></div>
+    </div>
+  </section>
+
+  <section id="history">
+    <div class="section-head"><h2>History</h2></div>
+    <div class="block">
+      <header>
+        <h3>Tasks merged</h3>
+        <p>Total merged into main at the end of each day.</p>
+        <p id="unmatched" hidden></p>
+      </header>
+      <div class="chart" id="burnup"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Merges per day</h3>
+        <p>Hover a bar for the day and its count.</p>
+      </header>
+      <div class="chart" id="daily"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Open pull requests</h3>
+        <p>Read live from GitHub when the page loads.</p>
+      </header>
+      <div class="table-scroll" id="open-prs"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Latest merges</h3>
+        <p>Newest first.</p>
+      </header>
+      <div class="table-scroll" id="merges"></div>
+    </div>
+  </section>
+
+  <section id="request-path">
+    <div class="section-head"><h2>Request path</h2></div>
+    <div id="paths"></div>
+  </section>
+
+  <section id="deviations">
+    <div class="section-head"><h2>Deviations</h2></div>
+    <div class="block">
+      <header>
+        <h3>Where betterlite differs on purpose</h3>
+        <p>Each task logs every place it does not copy LiteLLM, with the reason and the LiteLLM code it departs from.</p>
+        <p id="deviation-count"></p>
+        <label class="filter">Filter
+          <input id="deviation-filter" type="search" placeholder="Task, word or LiteLLM file" autocomplete="off" spellcheck="false">
+        </label>
+      </header>
+      <div id="deviation-list"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p id="built"></p>
+    <p>Data: the task list in <a href="https://github.com/betterlite-ai/betterlite/tree/main/.development/backlog">.development/backlog</a> and the logs in <a href="https://github.com/betterlite-ai/betterlite/tree/main/docs/deviations">docs/deviations</a>. Source of this page: <a href="https://github.com/betterlite-ai/betterlite/blob/main/.development/site/index.html">.development/site/index.html</a>.</p>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.1/js-yaml.min.js" integrity="sha512-Ccva9tZjPfyRDMMosATBaEnAKvX+eBbDfHMnr+0LhTa+NMqKRxUAoDGPotb8biwzQ6xnf4IYuDaPiXw10DYaNA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+"use strict";
+
+const REPO = "betterlite-ai/betterlite";
+const GITHUB = `https://github.com/${REPO}`;
+const DAY = 86400000;
+const CHART_MARGIN = { top: 12, right: 84, bottom: 26, left: 40 };
+
+// First match wins, so the narrower folders come before litellm/proxy/.
+const AREAS = [
+  { name: "Providers", prefixes: ["litellm/llms/"] },
+  { name: "Guardrails", prefixes: ["litellm/proxy/guardrails/", "litellm/guardrails"] },
+  { name: "Proxy server, keys and spend", prefixes: ["litellm/proxy/"] },
+  { name: "Router", prefixes: ["litellm/router"] },
+  { name: "Observability", prefixes: ["litellm/integrations/"] },
+  { name: "Core", prefixes: ["litellm/litellm_core_utils/", "litellm/main.py", "litellm/utils.py", "litellm/cost_calculator", "litellm/exceptions", "litellm/types/"] },
+  { name: "Everything else", prefixes: [""] },
+];
+
+const PATHS = [
+  {
+    name: "Router and Anthropic",
+    about: "A chat request goes through the router, picks a deployment, retries within its deadline and gets its answer from Anthropic.",
+    targets: ["B016", "B017", "B027"],
+  },
+  {
+    name: "Keys, spend and logging",
+    about: "The same request behind virtual keys, with its cost written to spend tracking and the call logged.",
+    targets: ["B016", "B017", "B027", "B014", "B052", "B068", "B070", "B012"],
+  },
+];
+
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+const number = new Intl.NumberFormat("en-US");
+const shortDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const longDate = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
+}
+
+function percent(part, whole) {
+  const share = whole === 0 ? 0 : (100 * part) / whole;
+  return `${share.toFixed(1)}%`;
+}
+
+function idNumber(id) {
+  return Number(id.slice(1));
+}
+
+function taskLink(entry) {
+  const href = entry.pr ? `${GITHUB}/pull/${entry.pr}` : `${GITHUB}/blob/main/.development/backlog/${entry.id}.yaml`;
+  return `<a class="id" href="${esc(href)}">${esc(entry.id)}</a>`;
+}
+
+function progressBar(part, whole) {
+  const share = whole === 0 ? 0 : (100 * part) / whole;
+  return `<div class="bar" role="img" aria-label="${percent(part, whole)} done"><div class="track"><div class="fill" style="width:${share.toFixed(2)}%"></div></div><span class="pct">${percent(part, whole)}</span></div>`;
+}
+
+function figure(value, small, label) {
+  return `<div class="figure"><div class="value">${value} <small>${small}</small></div><div class="label">${label}</div></div>`;
+}
+
+function dayKey(time) {
+  const date = new Date(time);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Globs follow globset with literal_separator: * and ? stay inside one path segment, ** crosses them.
+function globToRegExp(glob) {
+  let source = "";
+  let braces = 0;
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*" && glob[i + 2] === "/") {
+      source += "(?:.*/)?";
+      i += 2;
+    } else if (c === "*" && glob[i + 1] === "*") {
+      source += ".*";
+      i += 1;
+    } else if (c === "*") {
+      source += "[^/]*";
+    } else if (c === "?") {
+      source += "[^/]";
+    } else if (c === "[" && glob.indexOf("]", i + 2) !== -1) {
+      const end = glob.indexOf("]", i + 2);
+      const body = glob.slice(i + 1, end).replace(/\\/g, "\\\\");
+      source += body.startsWith("!") ? `[^${body.slice(1)}]` : `[${body}]`;
+      i = end;
+    } else if (c === "{") {
+      source += "(?:";
+      braces += 1;
+    } else if (c === "}" && braces > 0) {
+      source += ")";
+      braces -= 1;
+    } else if (c === "," && braces > 0) {
+      source += "|";
+    } else {
+      source += c.replace(/[.+^$()|\\[\]{}]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+async function fetchText(path) {
+  const response = await fetch(path, { cache: "no-cache" });
+  if (!response.ok) {
+    throw new Error(`${path} answered HTTP ${response.status}`);
+  }
+  return response.text();
+}
+
+function niceStep(max, ticks) {
+  for (const step of [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000]) {
+    if (max / step <= ticks) {
+      return step;
+    }
+  }
+  return Math.ceil(max / ticks);
+}
+
+// The frame of a day-by-day chart: axes, gridlines and labels, plus what yOf needs to place a value.
+function chartFrame(width, height, top, days) {
+  const step = niceStep(top, 4);
+  const frame = {
+    plotTop: CHART_MARGIN.top,
+    plotHeight: height - CHART_MARGIN.top - CHART_MARGIN.bottom,
+    yMax: Math.max(step, Math.ceil(top / step) * step),
+    slot: (width - CHART_MARGIN.left - CHART_MARGIN.right) / days.length,
+    svg: "",
+  };
+  for (let tick = 0; tick <= frame.yMax; tick += step) {
+    const y = yOf(frame, tick);
+    frame.svg += `<line class="${tick === 0 ? "base" : "grid"}" x1="${CHART_MARGIN.left}" x2="${width - CHART_MARGIN.right}" y1="${y}" y2="${y}"/>`;
+    frame.svg += `<text x="${CHART_MARGIN.left - 8}" y="${y + 4}" text-anchor="end">${number.format(tick)}</text>`;
+  }
+  const every = Math.max(1, Math.ceil(64 / frame.slot));
+  for (let i = 0; i < days.length; i += every) {
+    frame.svg += `<text x="${xOf(frame, i)}" y="${height - 6}" text-anchor="middle">${esc(shortDate.format(days[i].date))}</text>`;
+  }
+  return frame;
+}
+
+function yOf(frame, value) {
+  return frame.plotTop + frame.plotHeight - (frame.plotHeight * value) / frame.yMax;
+}
+
+function xOf(frame, index) {
+  return CHART_MARGIN.left + frame.slot * (index + 0.5);
+}
+
+function drawBurnup(container, days) {
+  const width = Math.max(320, container.clientWidth);
+  const height = 240;
+  const total = days.at(-1).total;
+  const frame = chartFrame(width, height, total, days);
+  const points = days.map((day, i) => `${xOf(frame, i).toFixed(1)},${yOf(frame, day.total).toFixed(1)}`).join(" ");
+  const lastX = xOf(frame, days.length - 1);
+  const area = `M${xOf(frame, 0)},${yOf(frame, 0)} L${points.replaceAll(" ", " L")} L${lastX},${yOf(frame, 0)} Z`;
+  container.innerHTML = `<svg width="${width}" height="${height}" role="img" aria-label="${number.format(total)} tasks merged by ${esc(shortDate.format(days.at(-1).date))}">${frame.svg}<path class="area" d="${area}"/><polyline class="done" points="${points}"/><text class="end" x="${lastX + 8}" y="${yOf(frame, total) + 4}">${number.format(total)} merged</text></svg>`;
+}
+
+function drawDaily(container, days) {
+  const width = Math.max(320, container.clientWidth);
+  const height = 200;
+  const top = Math.max(...days.map((day) => day.count));
+  const frame = chartFrame(width, height, top, days);
+  const barWidth = Math.max(1, frame.slot * 0.7);
+  let bars = "";
+  days.forEach((day, i) => {
+    const y = yOf(frame, day.count);
+    bars += `<rect x="${(xOf(frame, i) - barWidth / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${(yOf(frame, 0) - y).toFixed(1)}"><title>${esc(shortDate.format(day.date))}: ${day.count} merged</title></rect>`;
+  });
+  container.innerHTML = `<svg width="${width}" height="${height}" role="img" aria-label="Tasks merged per day, at most ${top} on one day">${frame.svg}<g class="bars">${bars}</g></svg>`;
+}
+
+function drawCharts(days) {
+  drawBurnup(document.getElementById("burnup"), days);
+  drawDaily(document.getElementById("daily"), days);
+}
+
+function depthOf(id, byId, depths, next) {
+  if (depths.has(id)) {
+    return depths.get(id);
+  }
+  depths.set(id, 0);
+  const entry = byId.get(id);
+  let best = 0;
+  for (const dep of entry.depends_on ?? []) {
+    if (!byId.has(dep)) {
+      continue;
+    }
+    const depth = depthOf(dep, byId, depths, next);
+    if (depth > best) {
+      best = depth;
+      next.set(id, dep);
+    }
+  }
+  const depth = best + (entry.status === "done" ? 0 : 1);
+  depths.set(id, depth);
+  return depth;
+}
+
+// Every task the path's targets need, through depends_on, and the longest run of open tasks among them.
+function analyzePath(path, byId, depths, next) {
+  const members = new Set();
+  const stack = [...path.targets];
+  while (stack.length > 0) {
+    const id = stack.pop();
+    if (members.has(id) || !byId.has(id)) {
+      continue;
+    }
+    members.add(id);
+    stack.push(...(byId.get(id).depends_on ?? []));
+  }
+  const entries = [...members].map((id) => byId.get(id));
+  const open = entries.filter((entry) => entry.status !== "done");
+  const ready = open
+    .filter((entry) => (entry.depends_on ?? []).every((dep) => !byId.has(dep) || byId.get(dep).status === "done"))
+    .sort((a, b) => idNumber(a.id) - idNumber(b.id));
+
+  let head = path.targets[0];
+  for (const id of path.targets) {
+    if (depthOf(id, byId, depths, next) > depthOf(head, byId, depths, next)) {
+      head = id;
+    }
+  }
+  const chain = [];
+  for (let id = head; id !== undefined; id = next.get(id)) {
+    if (byId.get(id).status !== "done") {
+      chain.push(byId.get(id));
+    }
+  }
+  chain.reverse();
+  return { path, total: entries.length, open, ready, chain, withoutFile: open.filter((entry) => !entry.file).length };
+}
+
+function renderPath(facts, byId) {
+  const { path, total, open, ready, chain, withoutFile } = facts;
+  const done = total - open.length;
+  const targets = path.targets.map((id) => `${taskLink(byId.get(id))} <span class="muted">${esc(byId.get(id).title)}</span>`).join("<br>");
+  const readyRows = ready.map((entry) => `<tr><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td><td class="muted">${esc(entry.milestone)}</td></tr>`).join("");
+  const chainRows = chain.map((entry, i) => `<tr><td class="num muted">${i + 1}</td><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td><td class="muted">${esc(entry.milestone)}</td></tr>`).join("");
+  const readyTable = ready.length === 0
+    ? `<p class="empty">Nothing on this path can start yet.</p>`
+    : `<div class="table-scroll"><table><thead><tr><th>Task</th><th>Title</th><th>Milestone</th></tr></thead><tbody>${readyRows}</tbody></table></div>`;
+  const chainTable = chain.length === 0
+    ? `<p class="empty">Every task on this path is merged.</p>`
+    : `<div class="table-scroll"><table><thead><tr><th class="num">Step</th><th>Task</th><th>Title</th><th>Milestone</th></tr></thead><tbody>${chainRows}</tbody></table></div>`;
+
+  return `<div class="block">
+    <header>
+      <h3>${esc(path.name)}</h3>
+      <p>${esc(path.about)}</p>
+      <p>Done when these merge:<br>${targets}</p>
+    </header>
+    <div>
+      <div class="figures small">
+        ${figure(number.format(done), `of ${number.format(total)}`, "Tasks merged, dependencies included")}
+        ${figure(number.format(chain.length), "tasks", "Longest chain still open")}
+        ${figure(number.format(ready.length), `of ${number.format(open.length)} open`, "Every dependency merged")}
+        ${figure(number.format(withoutFile), "tasks", "Still need a task file")}
+      </div>
+      ${progressBar(done, total)}
+      <h4>Every dependency merged, so they can be built now (some already are)</h4>
+      ${readyTable}
+      <h4>Longest open chain, first step first</h4>
+      ${chainTable}
+    </div>
+  </div>`;
+}
+
+function renderDeviations(logs, byId) {
+  const list = document.getElementById("deviation-list");
+  const sorted = logs.filter((log) => log && log.task && (log.deviations ?? []).length > 0).sort((a, b) => idNumber(a.task) - idNumber(b.task));
+  const count = sorted.reduce((sum, log) => sum + log.deviations.length, 0);
+  document.getElementById("deviation-count").textContent = `${number.format(count)} deviations from ${number.format(sorted.length)} tasks.`;
+  if (sorted.length === 0) {
+    list.innerHTML = `<p class="empty">No task has logged a deviation yet.</p>`;
+    return;
+  }
+  list.innerHTML = sorted.map((log) => {
+    const entry = byId.get(log.task) ?? { id: log.task, title: "", pr: null };
+    const items = log.deviations.map((deviation) => {
+      const source = /^https:\/\//.test(deviation.link ?? "") ? `<p class="source"><a href="${esc(deviation.link)}">LiteLLM source</a></p>` : "";
+      return `<li><p>${esc(deviation.what)}</p><p class="why">${esc(deviation.why)}</p>${source}</li>`;
+    }).join("");
+    return `<details class="deviation-task"><summary><span class="count">${number.format(log.deviations.length)}</span>${taskLink(entry)} ${esc(entry.title)}</summary><ul>${items}</ul></details>`;
+  }).join("") + `<p class="empty" id="deviation-none" hidden>No deviation matches the filter.</p>`;
+
+  // The link is searched too, so a LiteLLM file path finds every deviation from that file.
+  const rows = [...list.querySelectorAll("details")].map((task, i) => ({
+    task,
+    head: `${sorted[i].task} ${byId.get(sorted[i].task)?.title ?? ""}`.toLowerCase(),
+    items: [...task.querySelectorAll("li")].map((item, j) => {
+      const deviation = sorted[i].deviations[j];
+      return { item, text: `${deviation.what} ${deviation.why} ${deviation.link ?? ""}`.toLowerCase() };
+    }),
+  }));
+  document.getElementById("deviation-filter").addEventListener("input", (event) => {
+    const query = event.target.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row of rows) {
+      const whole = row.head.includes(query);
+      let matches = 0;
+      for (const { item, text } of row.items) {
+        item.hidden = !whole && !text.includes(query);
+        matches += item.hidden ? 0 : 1;
+      }
+      row.task.hidden = matches === 0;
+      row.task.open = query !== "" && matches > 0;
+      shown += matches > 0 ? 1 : 0;
+    }
+    document.getElementById("deviation-none").hidden = shown > 0;
+  });
+}
+
+async function renderOpenPullRequests(byId) {
+  const container = document.getElementById("open-prs");
+  container.innerHTML = `<p class="empty">Asking GitHub</p>`;
+  try {
+    const response = await fetch(`https://api.github.com/repos/${REPO}/pulls?state=open&per_page=100`, { headers: { Accept: "application/vnd.github+json" } });
+    if (!response.ok) {
+      throw new Error(`GitHub answered HTTP ${response.status}`);
+    }
+    const pulls = await response.json();
+    if (pulls.length === 0) {
+      container.innerHTML = `<p class="empty">No pull request is open right now.</p>`;
+      return;
+    }
+    const rows = pulls.map((pull) => {
+      const task = /^task\/(B\d+)/.exec(pull.head.ref);
+      const entry = task ? byId.get(task[1]) : undefined;
+      const hours = Math.max(0, (Date.now() - Date.parse(pull.created_at)) / 3600000);
+      const age = hours < 1 ? "under an hour" : hours < 48 ? `${Math.floor(hours)} h` : `${Math.floor(hours / 24)} days`;
+      return `<tr><td class="id"><a href="${esc(pull.html_url)}">#${pull.number}</a></td><td>${esc(pull.title)}${entry ? ` <span class="muted">${esc(entry.milestone)}</span>` : ""}</td><td class="num muted">${age}</td></tr>`;
+    }).join("");
+    container.innerHTML = `<table><thead><tr><th>PR</th><th>Title</th><th class="num">Open for</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (error) {
+    container.innerHTML = `<p class="empty">GitHub's API didn't answer (${esc(error.message)}). It allows 60 requests an hour per address without a login.</p>`;
+  }
+}
+
+function watchSections() {
+  const links = new Map([...document.querySelectorAll("nav a")].map((link) => [link.hash.slice(1), link]));
+  const observer = new IntersectionObserver((records) => {
+    for (const record of records) {
+      if (record.isIntersecting) {
+        links.forEach((link, id) => link.setAttribute("aria-current", String(id === record.target.id)));
+      }
+    }
+  }, { rootMargin: "-45% 0px -50% 0px" });
+  links.forEach((_, id) => observer.observe(document.getElementById(id)));
+}
+
+// A file counts as ported in the merged share of its covering tasks, counting only leaf tasks when it has any.
+function coverage(entries, config, inventoryText) {
+  const parents = new Set(entries.map((entry) => entry.parent).filter(Boolean));
+  const excluded = (config.excluded ?? []).map((rule) => globToRegExp(rule.glob));
+  const files = inventoryText.split("\n").filter((line) => line.endsWith(".py") && !excluded.some((rule) => rule.test(line)));
+  const literal = new Map();
+  const wild = [];
+  for (const entry of entries) {
+    if (entry.status === "done" && entry.resolution !== "merged") {
+      continue;
+    }
+    for (const pattern of entry.covers ?? []) {
+      const special = pattern.search(/[*?[{]/);
+      if (special === -1) {
+        literal.set(pattern, [...(literal.get(pattern) ?? []), entry]);
+      } else {
+        wild.push({ prefix: pattern.slice(0, special), rule: globToRegExp(pattern), entry });
+      }
+    }
+  }
+  const areas = AREAS.map((area) => ({ ...area, files: 0, full: 0, ported: 0 }));
+  for (const file of files) {
+    const owners = new Set(literal.get(file) ?? []);
+    for (const glob of wild) {
+      if (file.startsWith(glob.prefix) && glob.rule.test(file)) {
+        owners.add(glob.entry);
+      }
+    }
+    const leaves = [...owners].filter((entry) => !parents.has(entry.id));
+    const counted = leaves.length > 0 ? leaves : [...owners];
+    const share = counted.length === 0 ? 0 : counted.filter((entry) => entry.status === "done").length / counted.length;
+    const area = areas.find((candidate) => candidate.prefixes.some((prefix) => file.startsWith(prefix)));
+    area.files += 1;
+    area.full += share === 1 ? 1 : 0;
+    area.ported += share;
+  }
+  return areas;
+}
+
+// merges.txt is git log --first-parent on main, one "<unix time> <subject>" per line; a task's subject ends in (#<pr>).
+function mergeTimes(entries, mergesText) {
+  const byPull = new Map(entries.filter((entry) => entry.pr).map((entry) => [Number(entry.pr), entry]));
+  const merges = [];
+  for (const line of mergesText.split("\n")) {
+    const match = /^(\d+) .*\(#(\d+)\)$/.exec(line);
+    if (match && byPull.has(Number(match[2]))) {
+      merges.push({ time: Number(match[1]) * 1000, entry: byPull.get(Number(match[2])) });
+    }
+  }
+  return merges.sort((a, b) => b.time - a.time);
+}
+
+function mergeDays(merges) {
+  const perDay = new Map();
+  for (const merge of merges) {
+    perDay.set(dayKey(merge.time), (perDay.get(dayKey(merge.time)) ?? 0) + 1);
+  }
+  const days = [];
+  if (merges.length === 0) {
+    return days;
+  }
+  const cursor = new Date(merges.at(-1).time);
+  cursor.setHours(0, 0, 0, 0);
+  let total = 0;
+  while (cursor.getTime() <= Date.now()) {
+    const count = perDay.get(dayKey(cursor.getTime())) ?? 0;
+    total += count;
+    days.push({ date: new Date(cursor), count, total });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+// Grouped by code, named by the most common spelling, since a few entries spell a milestone differently.
+function renderMilestones(entries, done) {
+  const milestones = new Map();
+  for (const entry of entries) {
+    const code = entry.milestone.split(" ")[0];
+    const group = milestones.get(code) ?? { code, names: new Map(), done: 0, total: 0 };
+    group.names.set(entry.milestone, (group.names.get(entry.milestone) ?? 0) + 1);
+    group.total += 1;
+    group.done += entry.status === "done" ? 1 : 0;
+    milestones.set(code, group);
+  }
+  const rows = [...milestones.values()]
+    .sort((a, b) => Number(a.code.slice(1)) - Number(b.code.slice(1)))
+    .map((group) => {
+      const name = [...group.names.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      return `<tr><td>${esc(name)}</td><td class="num">${number.format(group.done)}</td><td class="num">${number.format(group.total)}</td><td>${progressBar(group.done, group.total)}</td></tr>`;
+    }).join("");
+  document.getElementById("milestones").innerHTML = `<table><thead><tr><th>Milestone</th><th class="num">Done</th><th class="num">Tasks</th><th>Progress</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>All</td><td class="num">${number.format(done)}</td><td class="num">${number.format(entries.length)}</td><td>${progressBar(done, entries.length)}</td></tr></tfoot></table>`;
+}
+
+function renderAreas(areas, files, full, ported) {
+  const rows = areas.map((area) => `<tr><td>${esc(area.name)}</td><td class="num">${number.format(area.files)}</td><td class="num">${number.format(area.full)}</td><td>${progressBar(area.ported, area.files)}</td></tr>`).join("");
+  document.getElementById("areas").innerHTML = `<table><thead><tr><th>Area</th><th class="num">Files</th><th class="num">Fully ported</th><th>Ported share</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>All</td><td class="num">${number.format(files)}</td><td class="num">${number.format(full)}</td><td>${progressBar(ported, files)}</td></tr></tfoot></table>`;
+}
+
+function mergeRow(merge) {
+  return `<tr><td class="muted date">${esc(shortDate.format(merge.time))}</td><td>${taskLink(merge.entry)}</td><td>${esc(merge.entry.title)}</td><td class="muted">${esc(merge.entry.milestone)}</td></tr>`;
+}
+
+function renderMerges(merges) {
+  const container = document.getElementById("merges");
+  if (merges.length === 0) {
+    container.innerHTML = `<p class="empty">No task has merged yet.</p>`;
+    return;
+  }
+  const head = `<thead><tr><th>Date</th><th>Task</th><th>Title</th><th>Milestone</th></tr></thead>`;
+  const older = merges.slice(20);
+  container.innerHTML = `<table>${head}<tbody>${merges.slice(0, 20).map(mergeRow).join("")}</tbody></table>`;
+  if (older.length > 0) {
+    container.innerHTML += `<details><summary>Show ${number.format(older.length)} older merges</summary><table>${head}<tbody>${older.map(mergeRow).join("")}</tbody></table></details>`;
+  }
+}
+
+async function main() {
+  const [backlogText, deviationsText, inventoryText, configText, mergesText, commitText] = await Promise.all(
+    ["backlog.yaml", "deviations.yaml", "litellm-inventory.txt", "litellm.yaml", "merges.txt", "commit.txt"].map(fetchText),
+  );
+  const entries = jsyaml.loadAll(backlogText).filter((entry) => entry && entry.id);
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const config = jsyaml.load(configText);
+  const litellm = document.getElementById("litellm-link");
+  litellm.href = `${config.repository}/tree/${config.commit}`;
+  litellm.textContent = `LiteLLM ${config.version}`;
+
+  const areas = coverage(entries, config, inventoryText);
+  const files = areas.reduce((sum, area) => sum + area.files, 0);
+  const full = areas.reduce((sum, area) => sum + area.full, 0);
+  const ported = areas.reduce((sum, area) => sum + area.ported, 0);
+  const merges = mergeTimes(entries, mergesText);
+  const lastWeek = merges.filter((merge) => merge.time >= Date.now() - 7 * DAY).length;
+  const done = entries.filter((entry) => entry.status === "done").length;
+  const depths = new Map();
+  const next = new Map();
+  const paths = PATHS.map((path) => analyzePath(path, byId, depths, next));
+
+  document.getElementById("figures").innerHTML = [
+    figure(number.format(done), `of ${number.format(entries.length)}`, "Tasks done"),
+    figure(percent(ported, files), `of ${number.format(files)} files`, "LiteLLM's Python ported"),
+    figure(number.format(lastWeek), `${(lastWeek / 7).toFixed(1)} a day`, "Merged in the last 7 days"),
+    figure(number.format(paths[0].chain.length), "tasks", `Longest open chain: ${PATHS[0].name}`),
+  ].join("");
+  renderMilestones(entries, done);
+  renderAreas(areas, files, full, ported);
+
+  const found = new Set(merges.map((merge) => merge.entry.id));
+  const unmatched = entries.filter((entry) => entry.resolution === "merged" && !found.has(entry.id)).map((entry) => entry.id);
+  if (unmatched.length > 0) {
+    const note = document.getElementById("unmatched");
+    note.textContent = `Not shown: ${unmatched.join(", ")}. Their commits on main don't name a pull request, so their merge day is unknown.`;
+    note.hidden = false;
+  }
+  const days = mergeDays(merges);
+  if (days.length === 0) {
+    document.getElementById("burnup").innerHTML = `<p class="empty">No task has merged yet.</p>`;
+  } else {
+    drawCharts(days);
+    let resizeTimer = 0;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(drawCharts, 150, days);
+    });
+  }
+  renderMerges(merges);
+  document.getElementById("paths").innerHTML = paths.map((facts) => renderPath(facts, byId)).join("");
+  renderDeviations(jsyaml.loadAll(deviationsText), byId);
+
+  const [sha, committed] = commitText.trim().split(" ");
+  document.getElementById("built").innerHTML = `Built from <a class="id" href="${GITHUB}/commit/${esc(sha)}">${esc(sha.slice(0, 8))}</a>, committed ${esc(longDate.format(Number(committed) * 1000))}.`;
+  document.getElementById("status").hidden = true;
+
+  renderOpenPullRequests(byId);
+}
+
+watchSections();
+main().catch((error) => {
+  const status = document.getElementById("status");
+  status.classList.add("error");
+  status.textContent = `The page couldn't load its data: ${error.message}`;
+});
+</script>
+</body>
+</html>

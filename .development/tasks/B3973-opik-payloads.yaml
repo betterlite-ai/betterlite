@@ -29,6 +29,7 @@ description: >-
 scope:
   paths:
     - tools/oracle/cases/opik/**
+    - crates/betterlite-logging/src/opik.rs
     - crates/betterlite-logging/src/opik/**
     - tools/oracle/helpers/b3973.py
     - tools/oracle/helpers/b3973/**
