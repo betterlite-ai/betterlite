@@ -1,12 +1,13 @@
 #![cfg(test)]
 
 use chrono::{DateTime, NaiveTime, Utc};
+use jiff::tz::TimeZoneDatabase;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::block::is_off_peak;
 use super::rate::parse_rate;
-use super::schema::{HoursField, OffPeakBlock, RateField};
+use super::schema::{HoursField, OffPeakBlock, OffPeakBlockEntry, RateField};
 use super::window::{WindowError, is_within_off_peak_window, matches_any_window, window_strings};
 use super::*;
 
@@ -24,6 +25,10 @@ fn hours_field(json: &str) -> HoursField {
 
 fn block(json: &str) -> OffPeakBlock {
     serde_json::from_str(json).unwrap()
+}
+
+fn database() -> TimeZoneDatabase {
+    TimeZoneDatabase::from_env()
 }
 
 fn standard_rates() -> TokenRates {
@@ -117,7 +122,10 @@ fn weekday_rules_follow_litellm_normalization(
     #[case] expected: bool,
 ) {
     let off_peak = block(off_peak_json);
-    assert_eq!(is_off_peak(&off_peak, moment(moment_text)), expected);
+    assert_eq!(
+        is_off_peak(&off_peak, moment(moment_text), &database()),
+        expected
+    );
 }
 
 #[test]
@@ -125,7 +133,11 @@ fn flat_hours_wins_independently_of_an_empty_weekdays_window() {
     let off_peak = block(
         r#"{"hours_utc":"00:00-23:59","windows":[{"hours_utc":"00:00-23:59","weekdays":[]}]}"#,
     );
-    assert!(is_off_peak(&off_peak, moment("2024-06-16T12:00:00Z")));
+    assert!(is_off_peak(
+        &off_peak,
+        moment("2024-06-16T12:00:00Z"),
+        &database()
+    ));
 }
 
 #[test]
@@ -134,7 +146,11 @@ fn weekday_timezone_shanghai_moves_a_utc_sunday_into_a_local_monday() {
         r#"{"windows":[{"hours_utc":"00:00-23:59","weekdays":[1],"weekday_timezone":null}],"weekday_timezone":"Asia/Shanghai"}"#,
     );
     // 2024-06-16 23:00 UTC is Sunday in UTC but already Monday 2024-06-17 07:00 in Shanghai (UTC+8).
-    assert!(is_off_peak(&off_peak, moment("2024-06-16T23:00:00Z")));
+    assert!(is_off_peak(
+        &off_peak,
+        moment("2024-06-16T23:00:00Z"),
+        &database()
+    ));
 }
 
 #[test]
@@ -142,18 +158,60 @@ fn invalid_weekday_timezone_falls_back_to_utc() {
     let off_peak = block(
         r#"{"windows":[{"hours_utc":"00:00-23:59","weekdays":[1]}],"weekday_timezone":"Not/AZone"}"#,
     );
+    let tzdb = database();
     // Monday on the UTC calendar, which the fallback must use since the zone is invalid.
-    assert!(is_off_peak(&off_peak, moment("2024-06-17T12:00:00Z")));
-    assert!(!is_off_peak(&off_peak, moment("2024-06-16T12:00:00Z")));
+    assert!(is_off_peak(
+        &off_peak,
+        moment("2024-06-17T12:00:00Z"),
+        &tzdb
+    ));
+    assert!(!is_off_peak(
+        &off_peak,
+        moment("2024-06-16T12:00:00Z"),
+        &tzdb
+    ));
 }
 
 #[test]
-fn weekday_timezone_respects_a_dst_transition() {
+fn weekday_timezone_respects_a_dst_transition_before_spring_forward() {
     let off_peak = block(
-        r#"{"windows":[{"hours_utc":"08:00-09:00","weekdays":[2]}],"weekday_timezone":"America/New_York"}"#,
+        r#"{"windows":[{"hours_utc":"00:00-23:59","weekdays":[6]}],"weekday_timezone":"America/New_York"}"#,
     );
-    // 2024-03-12 08:30 UTC is 04:30 EDT (DST already in effect), still Tuesday locally.
-    assert!(is_off_peak(&off_peak, moment("2024-03-12T08:30:00Z")));
+    // 2024-03-10 04:30 UTC is Saturday 23:30 EST; UTC or a wrongly-fixed EDT offset would both say Sunday.
+    assert!(is_off_peak(
+        &off_peak,
+        moment("2024-03-10T04:30:00Z"),
+        &database()
+    ));
+}
+
+#[test]
+fn weekday_timezone_respects_a_dst_transition_after_spring_forward() {
+    let off_peak = block(
+        r#"{"windows":[{"hours_utc":"00:00-23:59","weekdays":[1]}],"weekday_timezone":"America/New_York"}"#,
+    );
+    // 2024-03-11 04:30 UTC is Monday 00:30 EDT; a wrongly-fixed EST offset would still say Sunday.
+    assert!(is_off_peak(
+        &off_peak,
+        moment("2024-03-11T04:30:00Z"),
+        &database()
+    ));
+}
+
+#[test]
+fn array_shaped_window_rule_is_ignored_not_misread_as_a_flat_window() {
+    let off_peak = block(r#"{"windows":[["00:00-00:00"]]}"#);
+    assert!(!is_off_peak(
+        &off_peak,
+        moment("2024-06-16T12:00:00Z"),
+        &database()
+    ));
+}
+
+#[test]
+fn array_shaped_off_peak_pricing_is_no_block_at_all() {
+    let entry: OffPeakBlockEntry = serde_json::from_str(r#"["00:00-00:00"]"#).unwrap();
+    assert!(entry.as_block().is_none());
 }
 
 #[rstest]
@@ -198,7 +256,7 @@ fn off_peak_rate_falls_back_to_the_standard_rate_when_absent() {
 fn apply_off_peak_pricing_passes_through_when_the_block_is_absent() {
     let rates = standard_rates();
     assert_eq!(
-        apply_off_peak_pricing(None, moment("2024-06-16T12:00:00Z"), rates).unwrap(),
+        apply_off_peak_pricing(None, moment("2024-06-16T12:00:00Z"), rates, &database()).unwrap(),
         rates
     );
 }
@@ -207,8 +265,13 @@ fn apply_off_peak_pricing_passes_through_when_the_block_is_absent() {
 fn apply_off_peak_pricing_passes_through_outside_the_window() {
     let off_peak = block(r#"{"hours_utc":"09:00-10:00"}"#);
     let rates = standard_rates();
-    let result =
-        apply_off_peak_pricing(Some(&off_peak), moment("2024-06-16T12:00:00Z"), rates).unwrap();
+    let result = apply_off_peak_pricing(
+        Some(&off_peak),
+        moment("2024-06-16T12:00:00Z"),
+        rates,
+        &database(),
+    )
+    .unwrap();
     assert_eq!(result, rates);
 }
 
@@ -219,8 +282,13 @@ fn apply_off_peak_pricing_replaces_rates_independently_and_keeps_missing_reasoni
            "cache_read_input_token_cost":true,"cache_creation_input_token_cost":"bad"}"#,
     );
     let rates = standard_rates();
-    let result =
-        apply_off_peak_pricing(Some(&off_peak), moment("2024-06-16T09:30:00Z"), rates).unwrap();
+    let result = apply_off_peak_pricing(
+        Some(&off_peak),
+        moment("2024-06-16T09:30:00Z"),
+        rates,
+        &database(),
+    )
+    .unwrap();
     assert_eq!(result.input_rate, dec("0.001"));
     assert_eq!(result.output_rate, dec("0.002"));
     assert_eq!(result.cache_read_rate, rates.cache_read_rate);
@@ -239,9 +307,13 @@ fn apply_off_peak_to_base_costs_preserves_an_explicit_one_hour_rate_of_zero() {
         cache_creation_above_1hr_rate: Some(Decimal::ZERO),
         cache_read_rate: dec("0.01"),
     };
-    let resolved =
-        apply_off_peak_to_base_costs(Some(&off_peak), moment("2024-06-16T09:30:00Z"), base_costs)
-            .unwrap();
+    let resolved = apply_off_peak_to_base_costs(
+        Some(&off_peak),
+        moment("2024-06-16T09:30:00Z"),
+        base_costs,
+        &database(),
+    )
+    .unwrap();
     assert_eq!(resolved.cache_creation_rate, dec("0.09"));
     assert_eq!(resolved.cache_creation_above_1hr_rate, Decimal::ZERO);
 }
@@ -256,8 +328,12 @@ fn apply_off_peak_to_base_costs_falls_back_to_the_replaced_cache_creation_rate_w
         cache_creation_above_1hr_rate: None,
         cache_read_rate: dec("0.01"),
     };
-    let resolved =
-        apply_off_peak_to_base_costs(Some(&off_peak), moment("2024-06-16T09:30:00Z"), base_costs)
-            .unwrap();
+    let resolved = apply_off_peak_to_base_costs(
+        Some(&off_peak),
+        moment("2024-06-16T09:30:00Z"),
+        base_costs,
+        &database(),
+    )
+    .unwrap();
     assert_eq!(resolved.cache_creation_above_1hr_rate, dec("0.09"));
 }
