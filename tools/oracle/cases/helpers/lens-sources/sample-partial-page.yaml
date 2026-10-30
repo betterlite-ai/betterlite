@@ -1,0 +1,43 @@
+kind: helper
+name: sample-partial-page
+call:
+  b4502:
+    sample:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      settings:
+        name: Support replies
+        model: gpt-4o-mini
+      window: {start: 0, end: 100, page_size: 100}
+      rows:
+        - selection_key: key-1
+          source: traces
+          trace_id: trace-1
+          team_id: team-1
+          name: run
+          start_time: "2026-01-01T00:00:00Z"
+          span_count: 1
+          root_seen: 1
+          eligible: 3
+          selected: 2
+        - selection_key: key-2
+          source: traces
+          trace_id: trace-2
+          team_id: team-1
+          name: run
+          start_time: "2026-01-01T00:00:00Z"
+          span_count: 1
+          root_seen: 1
+          eligible: 3
+          selected: 2
+        - selection_key: key-3
+          source: traces
+          trace_id: trace-3
+          team_id: team-1
+          name: run
+          start_time: "2026-01-01T00:00:00Z"
+          span_count: 1
+          root_seen: 1
+          eligible: 3
+          selected: 2
+env: {}
+compare: {ignore: []}

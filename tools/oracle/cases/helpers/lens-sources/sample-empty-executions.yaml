@@ -1,0 +1,13 @@
+kind: helper
+name: sample-empty-executions
+call:
+  b4502:
+    sample:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      settings:
+        name: Support replies
+        model: gpt-4o-mini
+      window: {start: 0, end: 100, page_size: 100}
+      rows: []
+env: {}
+compare: {ignore: []}

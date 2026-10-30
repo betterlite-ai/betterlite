@@ -1,0 +1,11 @@
+kind: helper
+name: execution-id-3-element-legacy
+call:
+  b4502:
+    execution_id:
+      source: traces
+      team_id: team-1
+      trace_id: trace-1
+      trace_ref: ""
+env: {}
+compare: {ignore: []}
