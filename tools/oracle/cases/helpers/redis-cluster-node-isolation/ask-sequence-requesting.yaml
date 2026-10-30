@@ -1,0 +1,17 @@
+kind: helper
+name: redis-cluster-node-ask-sequence
+call:
+  redis_cluster_node_isolation:
+    version: 5.3.1
+    has_update_active_connections_for_reconnect: false
+    node: node-a
+    ttl: 4
+    reinitialize_steps: 0
+    initialize: false
+    read_from_replicas: false
+    outcomes:
+      - {kind: ask, node: node-b}
+      - {kind: success, node: ""}
+env: {}
+compare:
+  ignore: []
