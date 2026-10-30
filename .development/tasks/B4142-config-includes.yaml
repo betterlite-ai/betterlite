@@ -92,7 +92,7 @@ checks:
         SUMS
     - id: config-includes-tests
       why: include resolution tests fail, do not exist, or snapshots were not accepted
-      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::includes::include_resolution::/)' --exact
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::includes::/)'
     - id: config-loader-integration
       why: the loader does not call resolve_includes before typed validation
       run: grep -q "resolve_includes" crates/betterlite-config/src/loader.rs
