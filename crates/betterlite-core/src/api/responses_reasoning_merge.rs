@@ -44,10 +44,9 @@ fn pending(message: &Value) -> bool {
     role && content && tools && reasoning
 }
 fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Value {
-    let mut result = Map::from([
-        ("role".to_owned(), Value::String("assistant".to_owned())),
-        ("content".to_owned(), Value::Null),
-    ]);
+    let mut result = Map::new();
+    result.insert("role".to_owned(), Value::String("assistant".to_owned()));
+    result.insert("content".to_owned(), Value::Null);
     let joined = texts
         .iter()
         .filter_map(|value| *value)
@@ -66,8 +65,11 @@ fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Value
     Value::Object(result)
 }
 fn apply_pending(message: &mut Value, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) {
-    let mut all_texts = texts.iter().filter_map(|value| *value).collect::<Vec<_>>();
-    if let Some(value) = text(message) {
+    let mut all_texts = texts
+        .iter()
+        .filter_map(|value| value.map(str::to_owned))
+        .collect::<Vec<_>>();
+    if let Some(value) = text(message).map(str::to_owned) {
         all_texts.push(value);
     }
     if !all_texts.is_empty() {
