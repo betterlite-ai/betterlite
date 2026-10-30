@@ -1,6 +1,6 @@
 task: B2226
 deviations:
-  - what: Typed native cache values use bounded canonical serialized size with 1024-byte keys and a 1 MiB value ceiling instead of Python object-layout __sizeof__; the decoder rejects input above 1 MiB as null.
+  - what: Typed native cache values use bounded canonical serialized size (opaque handles use typed field sizes) with 1024-byte keys and a 1 MiB value ceiling instead of Python object-layout __sizeof__; the decoder rejects input above 1 MiB as null.
     why: The shared native cache follows the task's existing B390 bounded-value policy and keeps credential-bearing debug paths safe.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56-L91
   - what: Cache events redact all values and error details through B187, and credential handles never enter JSON projection.

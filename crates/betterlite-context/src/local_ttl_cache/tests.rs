@@ -134,6 +134,10 @@ fn local_ttl_cache_cases(#[case] name: &str) {
                 .unwrap();
             assert_eq!(equality.expiries.get("key").copied(), Some(10.0_f64));
             cache.delete("key");
+            cache
+                .set("negative", CacheValue::Integer(1), Some(-1.0_f64))
+                .unwrap();
+            assert!(cache.get("negative").unwrap().is_none());
             assert!(cache.get("key").unwrap().is_none());
             let clock = Arc::new(Mutex::new(0.0_f64));
             let boundary_source = Arc::clone(&clock);
@@ -148,7 +152,7 @@ fn local_ttl_cache_cases(#[case] name: &str) {
             assert!(boundary.get("boundary").unwrap().is_none());
         }
         "value_size_policy" => {
-            let mut cache = timed_cache(2, 1, Arc::new(|| 0.0_f64));
+            let mut cache = timed_cache(1, 1, Arc::new(|| 0.0_f64));
             cache
                 .set("small", CacheValue::Text("ok".to_owned()), None)
                 .unwrap();
@@ -157,6 +161,7 @@ fn local_ttl_cache_cases(#[case] name: &str) {
                 .set("large", CacheValue::Text("x".repeat(2000)), None)
                 .unwrap();
             assert!(cache.get("large").unwrap().is_none());
+            assert!(cache.get("small").unwrap().is_none());
             let mut ceiling = timed_cache(2, 2048, Arc::new(|| 0.0_f64));
             ceiling
                 .set("ceiling", CacheValue::Text("x".repeat(2050)), None)

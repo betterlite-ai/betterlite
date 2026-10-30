@@ -33,7 +33,18 @@ impl crate::helpers::Helper for Op {
             Input::CacheDefaults => defaults(),
             Input::ExpiryAndOverwrite => expiry(),
             Input::NonrefreshingTtl => nonrefreshing(),
-            Input::ValueSizePolicy => size_policy(),
+            Input::ValueSizePolicy => {
+                let mut cache = LocalTtlCache::with_clock(
+                    Some(2),
+                    Some(600.0_f64),
+                    Some(1),
+                    1024,
+                    Arc::new(|| 0.0_f64),
+                )?;
+                cache.set("small", CacheValue::Text("ok".to_owned()), None)?;
+                cache.set("large", CacheValue::Text("x".repeat(2000)), None)?;
+                Ok(json!({"small": cache.get("small")?, "large": cache.get("large")?}))
+            }
             Input::CachedJsonProjection { value } => projection(value),
             Input::DualLocalDefaultsErrors => dual::run(),
         }
@@ -81,19 +92,6 @@ fn nonrefreshing() -> crate::helpers::HelperResult {
     cache.set("deleted", CacheValue::Integer(3), None)?;
     cache.delete("deleted");
     Ok(json!({"boundary": boundary, "expired": expired, "deleted": cache.get("deleted")?}))
-}
-
-fn size_policy() -> crate::helpers::HelperResult {
-    let mut cache = LocalTtlCache::with_clock(
-        Some(2),
-        Some(600.0_f64),
-        Some(1),
-        1024,
-        Arc::new(|| 0.0_f64),
-    )?;
-    cache.set("small", CacheValue::Text("ok".to_owned()), None)?;
-    cache.set("large", CacheValue::Text("x".repeat(2000)), None)?;
-    Ok(json!({"small": cache.get("small")?, "large": cache.get("large")?}))
 }
 
 fn projection(value: &str) -> crate::helpers::HelperResult {
