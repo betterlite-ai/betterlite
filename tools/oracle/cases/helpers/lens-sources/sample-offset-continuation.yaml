@@ -6,6 +6,7 @@ call:
       scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
       settings:
         name: Support replies
+        context: Replies should answer the customer's question directly.
         model: gpt-4o-mini
       window: {start: 0, end: 100, offset: 50, page_size: 100}
       rows:

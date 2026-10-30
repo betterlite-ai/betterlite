@@ -26,6 +26,14 @@ fn encodes_empty_trace_ref() {
 }
 
 #[test]
+fn escapes_non_ascii_as_unicode_escapes() {
+    let id = execution_id("traces", "team-a", "trace-1", "ref>>>\u{e9}");
+    let decoded = URL_SAFE.decode(&id).expect("valid base64");
+    let expected = "[\"traces\", \"team-a\", \"trace-1\", \"ref>>>\\u00e9\"]";
+    assert_eq!(decoded, expected.as_bytes().to_vec());
+}
+
+#[test]
 fn output_contains_only_urlsafe_characters() {
     let id = execution_id("traces", "team/a+b", "trace_1", "ref=1");
     assert!(id.chars().all(|value| value.is_ascii_alphanumeric()
