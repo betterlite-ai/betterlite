@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-url-query-cred-no-category-digit
+call:
+  redaction:
+    function: redact_string
+    text: "?½token=abcdefghijklmnop"
+env: {}
+compare:
+  ignore: []

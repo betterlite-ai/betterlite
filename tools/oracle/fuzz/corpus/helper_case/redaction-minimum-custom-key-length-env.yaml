@@ -1,0 +1,11 @@
+kind: helper
+name: redaction-minimum-custom-key-length-env
+call:
+  redaction:
+    function: redact_string
+    text: "sk-abcdefghijklmno"
+    minimum_custom_key_length: 20
+env:
+  MINIMUM_CUSTOM_KEY_LENGTH: "20"
+compare:
+  ignore: []

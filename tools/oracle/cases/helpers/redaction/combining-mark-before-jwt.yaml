@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-combining-mark-before-jwt
+call:
+  redaction:
+    function: redact_string
+    text: "́eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBj"
+env: {}
+compare:
+  ignore: []

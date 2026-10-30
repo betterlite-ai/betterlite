@@ -1,0 +1,1 @@
+{"type": "object", "$defs": {"Foo": {"type": "object", "properties": {"child": {"$ref": "#/$defs/Foo"}}}}, "properties": {"a": {"$ref": "#/$defs/Foo"}}}

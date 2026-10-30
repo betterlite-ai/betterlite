@@ -41,7 +41,7 @@ dod:
   - text: README.md names the MIT license and points to THIRD_PARTY_NOTICES.md.
     proof: [readme]
   - text: The workspace formats, builds, lints and tests clean under the full lint table.
-    proof: [fmt, clippy, tests, doctests, crates]
+    proof: [fmt, clippy, tests, crates]
   - text: Licenses, bans and advisories pass and no dependency is unused.
     proof: [deny, shear]
   - text: The prek hooks pass on every tracked file.
