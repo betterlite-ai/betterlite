@@ -14,6 +14,8 @@ use std::fs;
 use std::path::PathBuf;
 use tokio::task::JoinSet;
 
+type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -63,6 +65,26 @@ fn replays_the_identity_rows_corpus(#[files("fuzz/corpus/identity_rows/*")] path
 
 #[tokio::test]
 async fn postgres_identity_rows_preserve_storage_types() {
+    let (fixture, client, mut tasks) = setup_identity_database().await;
+    let key_json = row_json(&client, "LiteLLM_VerificationToken").await;
+    let user_json = row_json(&client, "LiteLLM_UserTable").await;
+    let end_user_json = row_json(&client, "LiteLLM_EndUserTable").await;
+    let key: LiteLLMVerificationToken = serde_json::from_str(&key_json).unwrap();
+    let user: LiteLLMUserTable = serde_json::from_str(&user_json).unwrap();
+    let end_user: LiteLLMEndUserTable = serde_json::from_str(&end_user_json).unwrap();
+    assert_eq!(key.spend, Decimal::ZERO);
+    assert_eq!(
+        key.model_spend.get("m"),
+        Some(&JsonData::Number(serde_json::Number::from(2_i32)))
+    );
+    assert_eq!(user.spend, Decimal::ZERO);
+    assert_eq!(end_user.spend, Decimal::ZERO);
+    drop(client);
+    tasks.join_next().await.unwrap().unwrap().unwrap();
+    fixture.close_async().await.unwrap();
+}
+
+async fn setup_identity_database() -> (PostgresFixture, tokio_postgres::Client, ConnectionTasks) {
     let url = postgres_test_url();
     let fixture = PostgresFixture::provision_schema(url.as_ref())
         .resolve()
@@ -91,41 +113,10 @@ async fn postgres_identity_rows_preserve_storage_types() {
         )
         .await
         .unwrap();
-    let key_json: String = client
-        .query_one(
-            r#"SELECT row_to_json(row)::TEXT FROM "LiteLLM_VerificationToken" row"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .get(0);
-    let user_json: String = client
-        .query_one(
-            r#"SELECT row_to_json(row)::TEXT FROM "LiteLLM_UserTable" row"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .get(0);
-    let end_user_json: String = client
-        .query_one(
-            r#"SELECT row_to_json(row)::TEXT FROM "LiteLLM_EndUserTable" row"#,
-            &[],
-        )
-        .await
-        .unwrap()
-        .get(0);
-    let key: LiteLLMVerificationToken = serde_json::from_str(&key_json).unwrap();
-    let user: LiteLLMUserTable = serde_json::from_str(&user_json).unwrap();
-    let end_user: LiteLLMEndUserTable = serde_json::from_str(&end_user_json).unwrap();
-    assert_eq!(key.spend, Decimal::ZERO);
-    assert_eq!(
-        key.model_spend.get("m"),
-        Some(&JsonData::Number(serde_json::Number::from(2)))
-    );
-    assert_eq!(user.spend, Decimal::ZERO);
-    assert_eq!(end_user.spend, Decimal::ZERO);
-    drop(client);
-    tasks.join_next().await.unwrap().unwrap().unwrap();
-    fixture.close_async().await.unwrap();
+    (fixture, client, tasks)
+}
+
+async fn row_json(client: &tokio_postgres::Client, table: &str) -> String {
+    let query = format!("SELECT row_to_json(row)::TEXT FROM \"{table}\" row");
+    client.query_one(&query, &[]).await.unwrap().get(0)
 }
