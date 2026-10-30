@@ -26,6 +26,7 @@ use crate::yaml::read_yaml;
 
 use progress::Progress;
 use prompt::Brief;
+use seat::Seat;
 use serde::{Deserialize, Serialize};
 
 pub(crate) enum Step {
@@ -196,6 +197,36 @@ fn apply_step(
     Ok(ControlFlow::Continue(()))
 }
 
+fn overflow_rung<'agents>(
+    agents: &'agents Agents,
+    places: &Places<'_>,
+    current: usize,
+    runner: &Runner,
+) -> Result<Option<(&'agents Runner, &'agents Rung)>, GateError> {
+    let git = places.git_common_dir;
+    let own = vendor::find_vendor(agents, &runner.vendor)?;
+    if !agents.policy.overflow || vendor::seat_free(git, agents, own, Seat::Worker)? {
+        return Ok(None);
+    }
+    for rung in agents
+        .roles
+        .worker
+        .ladder
+        .iter()
+        .skip(current.saturating_add(1))
+    {
+        let other = find_runner(agents, &rung.runner)?;
+        if other.vendor == runner.vendor || vendor::limited(git, agents, &other.vendor)? {
+            continue;
+        }
+        let account = vendor::find_vendor(agents, &other.vendor)?;
+        if vendor::seat_free(git, agents, account, Seat::Worker)? {
+            return Ok(Some((other, rung)));
+        }
+    }
+    Ok(None)
+}
+
 fn climb_rung(
     agents: &Agents,
     brief: &Brief<'_>,
@@ -209,6 +240,8 @@ fn climb_rung(
             progress.limited = true;
             return Ok(None);
         }
+        let overflow = overflow_rung(agents, places, progress.rung, runner)?;
+        let (try_runner, try_rung) = overflow.unwrap_or((runner, rung));
         progress.save(places.journal)?;
         progress.number = progress.number.saturating_add(1);
         let current = Attempt {
@@ -218,7 +251,12 @@ fn climb_rung(
             number: progress.number,
             earlier: progress.earlier.as_ref(),
         };
-        let Some(step) = attempt::attempt_once(&current, runner, rung, &progress.feedback)? else {
+        let Some(step) = attempt::attempt_once(&current, try_runner, try_rung, &progress.feedback)?
+        else {
+            // the overflow vendor is marked now, so the next try waits for this rung's own vendor
+            if overflow.is_some() {
+                continue;
+            }
             progress.limited = true;
             return Ok(None);
         };
