@@ -23,7 +23,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L95-L113
   - what: When every temporary-directory candidate is unusable, the logged error names only the last candidate tried and its OS error, instead of a single message listing every rejected path.
     why: mkdtemp falls back through tempfile.gettempdir's whole candidate list before raising; betterlite now does the same fallback, but each attempt keeps its own specific io::Error rather than joining every path into one message.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L156-L261
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L168-L186
   - what: An export interval that overflows a 64-bit signed integer is treated as invalid input and falls back to the 60000 ms default with a warning, instead of Python's arbitrary-precision int.
     why: export_interval_ms is stored as i64; a value wider than that cannot be represented regardless, so it takes the same fallback path as any other value int() would accept but this field cannot hold.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L136-L146
