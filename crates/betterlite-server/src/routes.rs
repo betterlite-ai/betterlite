@@ -1,7 +1,7 @@
 pub(crate) mod chat;
 
 use crate::auth::authenticate;
-use crate::error_body::request_timeout_error;
+use crate::error_body::json_error;
 use crate::model_list::model_routes;
 use axum::Json;
 use axum::Router;
@@ -27,7 +27,12 @@ pub(crate) fn router(
 ) -> Router {
     let timeout_layers = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
-            request_timeout_error()
+            json_error(
+                StatusCode::REQUEST_TIMEOUT,
+                "request timed out",
+                "invalid_request_error",
+                "408",
+            )
         }))
         .layer(TimeoutLayer::new(Duration::from_secs(30)));
     // the deployment timeout bounds a chat call, and LiteLLM's default is 6000 seconds

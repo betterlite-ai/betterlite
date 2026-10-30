@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 
-use betterlite_secrets::callback::{
-    decrypt_callback_vars, encrypt_callback_vars, is_sensitive_callback_key,
+use betterlite_secrets::callback_vars::{
+    Transform, is_sensitive_callback_key, transform_callback_vars,
 };
 use betterlite_secrets::secret_codec::StoredCipher;
 use serde_json::Value;
@@ -48,11 +48,12 @@ fn call_callback(
     step: &CallbackStep,
 ) -> Value {
     match step {
-        // The pinned encrypt_callback_vars/decrypt_callback_vars never forward an extra set.
         CallbackStep::Encrypt { metadata } => {
-            encrypt_callback_vars(metadata, cipher, &BTreeSet::new())
+            transform_callback_vars(metadata, &Transform::Encrypt(cipher))
         }
-        CallbackStep::Decrypt { metadata } => decrypt_callback_vars(metadata, cipher),
+        CallbackStep::Decrypt { metadata } => {
+            transform_callback_vars(metadata, &Transform::Decrypt(cipher))
+        }
         CallbackStep::Sensitive { key } => Value::Bool(is_sensitive_callback_key(key, extra)),
     }
 }

@@ -2,6 +2,8 @@
 
 use super::{Input, Op};
 use crate::helpers::Helper as _;
+use crate::helpers::HelperCall;
+use crate::helpers::answers::Answers;
 use rstest::rstest;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -56,8 +58,12 @@ fn rejects_invalid_typed_input(#[case] source: &str) {
 )]
 fn python_rejects_lossy_prices(#[case] input: serde_json::Value, #[case] message: &str) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let request = json!({"operation": "price_fields", "input": input});
-    let output = crate::helpers::python::run_python(&root, &request, &BTreeMap::new()).unwrap();
+    let call = HelperCall {
+        operation: "price_fields".to_owned(),
+        input,
+    };
+    let answers = Answers::from_env(&root).unwrap();
+    let output = answers.answer(&root, &call, &BTreeMap::new()).unwrap();
     let error = output.error.unwrap();
     assert_eq!(error.class, "PriceFieldError");
     assert!(error.message.contains(message));

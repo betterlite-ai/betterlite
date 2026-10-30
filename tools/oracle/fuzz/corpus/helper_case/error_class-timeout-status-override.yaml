@@ -1,0 +1,14 @@
+kind: helper
+name: error-class-timeout-status-override
+call:
+  error_class:
+    family: timeout
+    context:
+      message: timed out waiting on the upstream response
+      model: gpt-4
+      provider: openai
+      max_retries: 3
+      num_retries: 2
+    original_status: 529
+env: {}
+compare: {ignore: []}
