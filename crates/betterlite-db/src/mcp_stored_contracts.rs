@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::de::Error as _;
+use secret::StoredSecret;
 use serde::{Deserialize, Serialize};
+use serde_with::rust::double_option;
 pub const MAX_STORED_BYTES: usize = 0x0010_0000;
 pub const MAX_STORED_DEPTH: usize = 64;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum JsonValue {
     Null,
@@ -16,6 +16,13 @@ pub enum JsonValue {
     String(String),
     Array(Vec<Self>),
     Object(BTreeMap<String, Self>),
+}
+
+impl Debug for JsonValue {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        // Stored input can contain credentials before it reaches the typed credential record.
+        formatter.write_str("[REDACTED]")
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -45,42 +52,31 @@ pub enum MCPAuth {
 
 pub type MCPTransportType = MCPTransport;
 pub type MCPAuthType = Option<MCPAuth>;
-pub type MCPLegacyVersion = String;
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum MCPLegacyVersion {
+    #[serde(rename = "2024-11-05")]
+    Nov2024,
+    #[serde(rename = "2025-03-26")]
+    Mar2025,
+    #[serde(rename = "2025-06-18")]
+    Jun2025,
+    #[serde(rename = "2025-11-25")]
+    Nov2025,
+}
 
-pub const MCP_LEGACY_VERSIONS: [&str; 4] = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
+pub const MCP_LEGACY_VERSIONS: [MCPLegacyVersion; 4] = [
+    MCPLegacyVersion::Nov2024,
+    MCPLegacyVersion::Mar2025,
+    MCPLegacyVersion::Jun2025,
+    MCPLegacyVersion::Nov2025,
+];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 pub enum MCPUpstreamProtocol {
+    #[serde(rename = "auto")]
     Auto,
-    Legacy(String),
-}
-
-impl<'de> Deserialize<'de> for MCPUpstreamProtocol {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value == "auto" {
-            return Ok(Self::Auto);
-        }
-        if MCP_LEGACY_VERSIONS.contains(&value.as_str()) {
-            return Ok(Self::Legacy(value));
-        }
-        Err(D::Error::custom("unsupported MCP protocol version"))
-    }
-}
-
-impl Serialize for MCPUpstreamProtocol {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::Auto => serializer.serialize_str("auto"),
-            Self::Legacy(value) => serializer.serialize_str(value),
-        }
-    }
+    #[serde(untagged)]
+    Legacy(MCPLegacyVersion),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -92,183 +88,151 @@ pub enum MCPTokenEndpointAuthMethod {
 
 type Maybe<T> = Option<Option<T>>;
 
-fn deserialize_maybe<'de, D, T>(deserializer: D) -> Result<Maybe<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Ok(Some(Option::<T>::deserialize(deserializer)?))
-}
-
-#[derive(Clone)]
-pub struct StoredSecret(SecretString);
-
-impl<'de> Deserialize<'de> for StoredSecret {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(Self(SecretString::deserialize(deserializer)?))
-    }
-}
-
-impl Serialize for StoredSecret {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.0.expose_secret())
-    }
-}
-
-impl Debug for StoredSecret {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("[REDACTED]")
-    }
-}
-
-impl StoredSecret {
-    #[must_use]
-    pub fn expose_secret(&self) -> &str {
-        self.0.expose_secret()
-    }
-}
-
 #[derive(Clone, Deserialize, Serialize)]
 pub struct MCPCredentials {
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub auth_value: Maybe<StoredSecret>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub client_id: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub client_secret: Maybe<StoredSecret>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub scopes: Maybe<Vec<String>>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_access_key_id: Maybe<StoredSecret>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_secret_access_key: Maybe<StoredSecret>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_session_token: Maybe<StoredSecret>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_region_name: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_service_name: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_role_name: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub aws_session_name: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub audience: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub token_exchange_endpoint: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub subject_token_type: Maybe<String>,
+    #[serde(
+        default,
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub id_jag_resource_token_endpoint: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub id_jag_resource: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub upstream_resource: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub upstream_token_header: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub client_private_key: Maybe<StoredSecret>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub client_private_key_id: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub client_assertion_signing_alg: Maybe<String>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub token_endpoint_auth_method: Maybe<MCPTokenEndpointAuthMethod>,
     #[serde(
         default,
-        deserialize_with = "deserialize_maybe",
+        with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub redirect_uris: Maybe<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub token_exchange_profile: Maybe<String>,
 }
 
@@ -280,14 +244,25 @@ impl Debug for MCPCredentials {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct PinnedMCPTool {
+pub struct ToolDefinition {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
     pub input_schema: BTreeMap<String, JsonValue>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(transparent)]
+pub struct PinnedMCPTool(ToolDefinition);
+
+impl AsRef<ToolDefinition> for PinnedMCPTool {
+    fn as_ref(&self) -> &ToolDefinition {
+        &self.0
+    }
+}
+
 pub mod decode;
 pub mod pinned;
+pub mod secret;
 
 mod tests;

@@ -1,62 +1,43 @@
-from __future__ import annotations
-
 import json
-from typing import Final, Literal, cast
+from typing import cast
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from typing_extensions import TypedDict
-
-
-class Credentials(TypedDict, total=False):
-    auth_value: str | None
-    client_id: str | None
-    client_secret: str | None
-    scopes: list[str] | None
-    aws_access_key_id: str | None
-    aws_secret_access_key: str | None
-    aws_session_token: str | None
-    aws_region_name: str | None
-    aws_service_name: str | None
-    aws_role_name: str | None
-    aws_session_name: str | None
-    audience: str | None
-    token_exchange_endpoint: str | None
-    id_jag_resource_token_endpoint: str | None
-    id_jag_resource: str | None
-    upstream_resource: str | None
-    upstream_token_header: str | None
-    client_private_key: str | None
-    client_private_key_id: str | None
-    client_assertion_signing_alg: str | None
-    token_endpoint_auth_method: str | None
-    redirect_uris: list[str] | None
-    token_exchange_profile: str | None
-
-
-class PinnedTool(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    description: str = ""
-    input_schema: dict[str, object] = Field(default_factory=dict)
-
-
-PINNED: Final = TypeAdapter(dict[str, PinnedTool] | None)
-PROTOCOLS: Final = TypeAdapter(
-    Literal["auto", "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
+from litellm.types.mcp import (
+    MCPAuthType,
+    MCPCredentials,
+    MCPTokenEndpointAuthMethod,
+    MCPTransportType,
 )
+from litellm.types.mcp_server.mcp_server_manager import MCPInfo, parse_pinned_tools
+from pydantic import TypeAdapter, ValidationError
 
 
-def run(input_value: dict[str, object]) -> object:
+def invoke(input_value: dict[str, object]) -> object:
     function = input_value["function"]
     value = input_value["value"]
     if function == "credential_contract":
-        return TypeAdapter(Credentials).validate_python(value)
+        return TypeAdapter[object](MCPCredentials).validate_python(value)
+    if function == "transport":
+        return TypeAdapter[object](MCPTransportType).validate_python(value)
+    if function == "auth":
+        return TypeAdapter[object](MCPAuthType).validate_python(value)
+    if function == "token_endpoint_method":
+        return TypeAdapter[object](MCPTokenEndpointAuthMethod).validate_python(value)
     if function == "pinned_tool_contract":
-        decoded: object = json.loads(value) if isinstance(value, str) and value else value
-        return PINNED.validate_python(decoded or None)
+        tools = parse_pinned_tools(value)
+        return None if tools is None else {
+            name: cast(dict[str, object], tool.model_dump()) for name, tool in tools.items()
+        }
     if function == "protocol_metadata":
-        metadata = cast("dict[str, object]", value)
-        if "protocol_version" in metadata:
-            PROTOCOLS.validate_python(metadata["protocol_version"])
-        return value
+        return TypeAdapter[object](MCPInfo).validate_python(value)
     raise ValueError(f"unknown function: {function}")
+
+
+def run(input_value: dict[str, object]) -> object:
+    steps = cast(dict[str, dict[str, object]], input_value["steps"])
+    results: dict[str, object] = {}
+    for name, step in steps.items():
+        try:
+            results[name] = {"value": invoke(step), "error": None}
+        except (ValidationError, json.JSONDecodeError) as error:
+            results[name] = {"value": None, "error": type(error).__name__}
+    return results

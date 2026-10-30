@@ -1,5 +1,25 @@
-kind: helper
-name: pinned-tool-shapes
-call: {mcp_stored_contracts: {function: pinned_tool_contract, value: '{"weather":{"input_schema":{"properties":{"city":{"type":"string"}}}}}'}}
-env: {}
-compare: {ignore: []}
+{
+"kind":"helper", "name":"pinned-tool-shapes",
+"call":{"mcp_stored_contracts":{"steps":{
+"falsey_raw_0":{"function": "pinned_tool_contract", "value": null},
+"falsey_raw_1":{"function": "pinned_tool_contract", "value": ""},
+"falsey_raw_2":{"function": "pinned_tool_contract", "value": {}},
+"falsey_raw_3":{"function": "pinned_tool_contract", "value": []},
+"falsey_raw_4":{"function": "pinned_tool_contract", "value": false},
+"falsey_raw_5":{"function": "pinned_tool_contract", "value": 0},
+"falsey_json_0":{"function": "pinned_tool_contract", "value": "null"},
+"falsey_json_1":{"function": "pinned_tool_contract", "value": "\"\""},
+"falsey_json_2":{"function": "pinned_tool_contract", "value": "{}"},
+"falsey_json_3":{"function": "pinned_tool_contract", "value": "[]"},
+"falsey_json_4":{"function": "pinned_tool_contract", "value": "false"},
+"falsey_json_5":{"function": "pinned_tool_contract", "value": "0"},
+"defaults":{"function": "pinned_tool_contract", "value": {"first": {}, "second": {}}},
+"stored_json_tools":{"function": "pinned_tool_contract", "value": "{\"weather\": {\"description\": \"forecast\", \"input_schema\": {\"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"nested\": [null, true, 1.5]}}}"},
+"whitespace_json_error":{"function": "pinned_tool_contract", "value": "  "},
+"nonempty_list_rejected":{"function": "pinned_tool_contract", "value": [1]},
+"tool_extra_field_rejected":{"function": "pinned_tool_contract", "value": {"tool": {"extra": true}}},
+"invalid_tool_field_type":{"function": "pinned_tool_contract", "value": {"tool": {"description": false}}},
+"null_schema":{"function": "pinned_tool_contract", "value": {"tool": {"input_schema": null}}},
+"nonempty_number":{"function": "pinned_tool_contract", "value": 1}
+}}}, "env":{}, "compare":{"ignore":[]}
+}
