@@ -1,10 +1,8 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
-use rstest::rstest;
-
 use crate::loader::{ConfigError, ConfigLoader};
+use rstest::rstest;
+use std::collections::BTreeMap;
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, ConfigError> {
     let lookup = environment
@@ -18,52 +16,66 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, C
 }
 
 #[rstest]
-#[case::loads_max_size_per_item_in_memory_cache_in_kb("max_size_per_item_in_memory_cache_in_kb")]
-#[case::loads_default_in_memory_ttl("default_in_memory_ttl")]
-fn local_ttl_cache_config_cases(#[case] key: &str) {
+#[case::loads_max_size_per_item_in_memory_cache_in_kb(false)]
+#[case::loads_default_in_memory_ttl(true)]
+fn local_ttl_cache_config_cases(#[case] ttl: bool) {
     let default = load("", &[]).unwrap();
-    assert_eq!(default.global_max_item_kib, Some(1024));
+    assert_eq!(super::Settings::default(), default);
+    assert_eq!(default.global_max_item_kib, 1024);
     assert!(default.global_ttl.is_none());
-    let global = load(&format!("litellm_settings:\n  {key}: 7\n"), &[]).unwrap();
-    if key.starts_with("max_") {
-        assert_eq!(global.global_max_item_kib, Some(7));
+    if ttl {
+        assert_eq!(
+            load("litellm_settings:\n  default_in_memory_ttl: 2.5\n", &[])
+                .unwrap()
+                .global_ttl,
+            Some(2.5_f64)
+        );
+        assert!(matches!(
+            load("litellm_settings:\n  default_in_memory_ttl: true\n", &[]),
+            Err(ConfigError::InvalidScalar { .. })
+        ));
+        assert_eq!(
+            load("litellm_settings:\n  default_in_memory_ttl: 7\n", &[])
+                .unwrap()
+                .global_ttl,
+            Some(7.0_f64)
+        );
+        assert_eq!(
+            load(
+                "litellm_settings:\n  default_in_memory_ttl: os.environ/CACHE_TTL\n",
+                &[("CACHE_TTL", "11")]
+            )
+            .unwrap()
+            .global_ttl,
+            Some(11.0_f64)
+        );
+        assert!(matches!(
+            load("litellm_settings:\n  default_in_memory_ttl: invalid\n", &[]),
+            Err(ConfigError::InvalidFloat { .. })
+        ));
     } else {
-        assert_eq!(global.global_ttl, Some(7.0_f64));
-    }
-    let deployment = load(
-        &format!("model_list:\n- model_name: a\n  litellm_params:\n    {key}: 9\n"),
-        &[],
-    )
-    .unwrap();
-    if key.starts_with("max_") {
-        assert_eq!(deployment.deployment_max_item_kib, vec![Some(9)]);
-    } else {
-        assert_eq!(deployment.deployment_ttl, vec![Some(9.0_f64)]);
-    }
-    let environment = load(
-        &format!("litellm_settings:\n  {key}: os.environ/CACHE_VALUE\n"),
-        &[("CACHE_VALUE", "11")],
-    )
-    .unwrap();
-    if key.starts_with("max_") {
-        assert_eq!(environment.global_max_item_kib, Some(11));
-    } else {
-        assert_eq!(environment.global_ttl, Some(11.0_f64));
+        assert_eq!(
+            load("", &[("MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB", "7")])
+                .unwrap()
+                .global_max_item_kib,
+            7
+        );
+        assert!(matches!(
+            load("", &[("MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB", "bad")]),
+            Err(ConfigError::InvalidInteger { .. })
+        ));
     }
 }
 
-#[test]
-fn rejects_unrelated_local_ttl_cache_key() {
-    let error = load("litellm_settings:\n  unrelated_local_cache_key: 1\n", &[]).unwrap_err();
-    assert!(matches!(error, ConfigError::Unsupported { .. }));
-}
-
-#[test]
-fn rejects_malformed_local_ttl_cache_integer() {
-    let error = load(
-        "litellm_settings:\n  max_size_per_item_in_memory_cache_in_kb: invalid\n",
-        &[],
-    )
-    .unwrap_err();
-    assert!(matches!(error, ConfigError::InvalidInteger { .. }));
+#[rstest]
+#[case::unrelated("litellm_settings:\n  unrelated_local_cache_key: 1\n")]
+#[case::yaml_size("litellm_settings:\n  max_size_per_item_in_memory_cache_in_kb: 1\n")]
+#[case::deployment_ttl(
+    "model_list:\n- model_name: a\n  litellm_params:\n    default_in_memory_ttl: 9\n"
+)]
+fn rejects_unrelated_local_ttl_cache_key(#[case] source: &str) {
+    assert!(matches!(
+        load(source, &[]),
+        Err(ConfigError::Unsupported { .. })
+    ));
 }

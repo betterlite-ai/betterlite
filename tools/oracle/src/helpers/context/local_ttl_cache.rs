@@ -1,8 +1,11 @@
-use std::sync::Arc;
-
-use betterlite_context::local_ttl_cache::{
-    CacheError, CacheValue, LocalTtlCache, decode_cached_json,
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
 };
+#[path = "local_ttl_cache/dual.rs"]
+mod dual;
+
+use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -31,52 +34,72 @@ impl crate::helpers::Helper for Op {
             Input::ExpiryAndOverwrite => expiry(),
             Input::NonrefreshingTtl => nonrefreshing(),
             Input::ValueSizePolicy => size_policy(),
-            Input::CachedJsonProjection { value } => Ok(projection(value)),
-            Input::DualLocalDefaultsErrors => dual_defaults(),
+            Input::CachedJsonProjection { value } => projection(value),
+            Input::DualLocalDefaultsErrors => dual::run(),
         }
     }
 }
 
 fn defaults() -> crate::helpers::HelperResult {
-    let cache = LocalTtlCache::with_clock(None, None, None, Arc::new(|| 0.0_f64))?;
-    Ok(json!({"capacity": cache.capacity(), "ttl": 600, "item_kib": cache.max_size_per_item()}))
+    let cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))?;
+    let zero = LocalTtlCache::with_clock(None, Some(0.0_f64), Some(0), 1024, Arc::new(|| 0.0_f64))?;
+    Ok(
+        json!({"capacity": cache.as_ref().capacity, "ttl": cache.as_ref().default_ttl, "item_kib": cache.as_ref().max_size_per_item, "zero_ttl": zero.as_ref().default_ttl, "zero_item_kib": zero.as_ref().max_size_per_item}),
+    )
 }
 
 fn expiry() -> crate::helpers::HelperResult {
-    let mut cache =
-        LocalTtlCache::with_clock(Some(2), Some(600.0_f64), Some(1024), Arc::new(|| 10.0_f64))?;
+    let mut cache = LocalTtlCache::with_clock(
+        Some(2),
+        Some(600.0_f64),
+        Some(1024),
+        1024,
+        Arc::new(|| 10.0_f64),
+    )?;
     cache.set("b", CacheValue::Integer(2), Some(5.0_f64))?;
     cache.set("a", CacheValue::Integer(1), Some(5.0_f64))?;
     cache.set("c", CacheValue::Integer(3), Some(5.0_f64))?;
-    Ok(json!({"a": cache.get("a"), "b": cache.get("b"), "c": cache.get("c")}))
+    Ok(json!({"a": cache.get("a")?, "b": cache.get("b")?, "c": cache.get("c")?}))
 }
 
 fn nonrefreshing() -> crate::helpers::HelperResult {
-    let mut cache =
-        LocalTtlCache::with_clock(Some(2), Some(600.0_f64), Some(1024), Arc::new(|| 0.0_f64))?;
+    let clock = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
+    let source = Arc::clone(&clock);
+    let mut cache = LocalTtlCache::with_clock(
+        Some(2),
+        None,
+        None,
+        1024,
+        Arc::new(move || f64::from_bits(source.load(Ordering::Relaxed))),
+    )?;
     cache.set("key", CacheValue::Integer(1), Some(10.0_f64))?;
     cache.set("key", CacheValue::Integer(2), Some(100.0_f64))?;
-    Ok(json!({"value": cache.get("key"), "expiry": cache.expiry("key")}))
+    clock.store(10.0_f64.to_bits(), Ordering::Relaxed);
+    let boundary = cache.get("key")?;
+    clock.store(11.0_f64.to_bits(), Ordering::Relaxed);
+    let expired = cache.get("key")?;
+    cache.set("deleted", CacheValue::Integer(3), None)?;
+    cache.delete("deleted");
+    Ok(json!({"boundary": boundary, "expired": expired, "deleted": cache.get("deleted")?}))
 }
 
 fn size_policy() -> crate::helpers::HelperResult {
-    let mut cache =
-        LocalTtlCache::with_clock(Some(2), Some(600.0_f64), Some(1), Arc::new(|| 0.0_f64))?;
+    let mut cache = LocalTtlCache::with_clock(
+        Some(2),
+        Some(600.0_f64),
+        Some(1),
+        1024,
+        Arc::new(|| 0.0_f64),
+    )?;
     cache.set("small", CacheValue::Text("ok".to_owned()), None)?;
     cache.set("large", CacheValue::Text("x".repeat(2000)), None)?;
-    Ok(json!({"small": cache.get("small"), "large": cache.get("large")}))
+    Ok(json!({"small": cache.get("small")?, "large": cache.get("large")?}))
 }
 
-fn projection(value: &str) -> serde_json::Value {
-    let result = json!({"value": decode_cached_json(value.as_bytes())});
-    result
-}
-
-fn dual_defaults() -> crate::helpers::HelperResult {
-    let mut cache =
-        LocalTtlCache::with_clock(Some(2), Some(600.0_f64), Some(1024), Arc::new(|| 0.0_f64))?;
-    cache.set("false", CacheValue::Boolean(false), None)?;
-    Ok(json!({"value": cache.get("false"), "missing": cache.get("missing")}))
+fn projection(value: &str) -> crate::helpers::HelperResult {
+    let mut cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))?;
+    cache.set("value", CacheValue::Text(value.to_owned()), None)?;
+    Ok(json!({"value": cache.get("value")?}))
 }
 
 impl From<CacheError> for Box<crate::helpers::HelperError> {

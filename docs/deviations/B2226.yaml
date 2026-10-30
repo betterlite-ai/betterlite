@@ -1,5 +1,11 @@
 task: B2226
 deviations:
-  - what: Typed native cache values use bounded canonical serialized size with 1024-byte keys and a 1 MiB value ceiling instead of Python object-layout __sizeof__.
+  - what: Typed native cache values use bounded canonical serialized size with 1024-byte keys and a 1 MiB value ceiling instead of Python object-layout __sizeof__; the decoder rejects input above 1 MiB as null.
     why: The shared native cache follows the task's existing B390 bounded-value policy and keeps credential-bearing debug paths safe.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56-L91
+  - what: Cache events redact all values and error details through B187, and credential handles never enter JSON projection.
+    why: Provider credentials must remain opaque in diagnostics and cannot be exposed by the local DualCache branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L211-L216
+  - what: Negative capacity fails construction with a typed error, and nonfinite injected clock readings fail cache operations.
+    why: Reject invalid native state before heap operations; the local wrapper catches operation errors and returns a cache miss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L141

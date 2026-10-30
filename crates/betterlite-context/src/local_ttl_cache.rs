@@ -3,6 +3,8 @@ mod tests;
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap};
+use std::fmt;
+use std::num::TryFromIntError;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -10,21 +12,34 @@ use thiserror::Error;
 
 const DEFAULT_CAPACITY: usize = 200;
 const DEFAULT_TTL: f64 = 600.0;
-const DEFAULT_ITEM_KIB: usize = 1024;
+pub mod credential;
+pub mod dual;
+use credential::CredentialHandle;
 const MAX_KEY_BYTES: usize = 1024;
 const MAX_VALUE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CacheError {
     #[error("cache capacity cannot be negative")]
-    NegativeCapacity,
-    #[error("cache value could not be serialized: {0}")]
-    ValueSerialization(String),
+    NegativeCapacity {
+        #[source]
+        source: TryFromIntError,
+    },
+    #[error("cache expiration heap is empty")]
+    MissingExpiry,
+    #[error("cache lock is poisoned")]
+    Unavailable,
+    #[error("cache clock is not finite")]
+    InvalidClock,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum CacheValue {
+    #[serde(skip)]
+    Credential(CredentialHandle),
+    #[serde(skip)]
+    Bytes(Vec<u8>),
     Null,
     Boolean(bool),
     Integer(i64),
@@ -34,10 +49,15 @@ pub enum CacheValue {
     Object(BTreeMap<String, Self>),
 }
 
+#[derive(Debug)]
+pub struct CacheLimits {
+    pub capacity: usize,
+    pub default_ttl: f64,
+    pub max_size_per_item: i64,
+}
+
 pub struct LocalTtlCache {
-    capacity: usize,
-    default_ttl: f64,
-    max_size_per_item: usize,
+    limits: CacheLimits,
     values: BTreeMap<String, CacheValue>,
     expiries: BTreeMap<String, f64>,
     heap: BinaryHeap<Reverse<(OrderedFloat, String)>>,
@@ -63,15 +83,25 @@ impl PartialOrd for OrderedFloat {
 
 impl LocalTtlCache {
     pub fn with_clock(
-        capacity: Option<usize>,
+        capacity: Option<i64>,
         default_ttl: Option<f64>,
-        max_size_per_item: Option<usize>,
+        max_size_per_item: Option<i64>,
+        loaded_item_kib: i64,
         clock: Arc<dyn Fn() -> f64 + Send + Sync>,
     ) -> Result<Self, CacheError> {
+        let resolved_capacity = capacity
+            .map_or(Ok(DEFAULT_CAPACITY), usize::try_from)
+            .map_err(|source| CacheError::NegativeCapacity { source })?;
         let cache = Self {
-            capacity: capacity.unwrap_or(DEFAULT_CAPACITY),
-            default_ttl: default_ttl.unwrap_or(DEFAULT_TTL),
-            max_size_per_item: max_size_per_item.unwrap_or(DEFAULT_ITEM_KIB),
+            limits: CacheLimits {
+                capacity: resolved_capacity,
+                default_ttl: default_ttl
+                    .filter(|ttl| *ttl != 0.0_f64)
+                    .unwrap_or(DEFAULT_TTL),
+                max_size_per_item: max_size_per_item
+                    .filter(|size| *size != 0)
+                    .unwrap_or(loaded_item_kib),
+            },
             values: BTreeMap::new(),
             expiries: BTreeMap::new(),
             heap: BinaryHeap::new(),
@@ -80,63 +110,34 @@ impl LocalTtlCache {
         Ok(cache)
     }
 
-    #[must_use]
-    pub const fn capacity(&self) -> usize {
-        if self.capacity == 0 {
-            return 0;
-        }
-        self.capacity
-    }
-
-    #[must_use]
-    pub const fn default_ttl(&self) -> f64 {
-        if self.default_ttl.is_sign_negative() {
-            return self.default_ttl;
-        }
-        self.default_ttl
-    }
-
-    #[must_use]
-    pub const fn max_size_per_item(&self) -> usize {
-        if self.max_size_per_item == 0 {
-            return 0;
-        }
-        self.max_size_per_item
-    }
-
-    #[must_use]
-    pub fn expiry(&self, key: &str) -> Option<f64> {
-        let expiry = self.expiries.get(key);
-        expiry.copied()
-    }
-
     pub fn set(
         &mut self,
         key: &str,
         value: CacheValue,
         ttl: Option<f64>,
     ) -> Result<(), CacheError> {
-        self.prune(self.now());
-        if self.capacity == 0 || key.len() > MAX_KEY_BYTES {
+        let initial_time = self.read_clock()?;
+        self.prune(initial_time);
+        if self.limits.capacity == 0 || key.len() > MAX_KEY_BYTES {
             return Ok(());
         }
-        while self.values.len() >= self.capacity {
+        while self.values.len() >= self.limits.capacity {
             let Some(Reverse((expiry, oldest))) = self.heap.pop() else {
-                break;
+                return Err(CacheError::MissingExpiry);
             };
             if self.expiries.get(&oldest).copied() == Some(expiry.0) {
                 self.values.remove(&oldest);
                 self.expiries.remove(&oldest);
             }
         }
-        if !self.fits(&value)? {
+        if !self.fits(&value) {
             return Ok(());
         }
-        let now = self.now();
+        let now = self.read_clock()?;
         let expiry = self.expiries.get(key).copied();
         self.values.insert(key.to_owned(), value);
         if expiry.is_none_or(|current| current < now) {
-            let next = now.mul_add(1.0_f64, ttl.unwrap_or(self.default_ttl));
+            let next = now.mul_add(1.0_f64, ttl.unwrap_or(self.limits.default_ttl));
             self.expiries.insert(key.to_owned(), next);
             self.heap
                 .push(Reverse((OrderedFloat(next), key.to_owned())));
@@ -144,15 +145,18 @@ impl LocalTtlCache {
         Ok(())
     }
 
-    #[must_use]
-    pub fn get(&mut self, key: &str) -> Option<CacheValue> {
-        let now = self.now();
+    pub fn get(&mut self, key: &str) -> Result<Option<CacheValue>, CacheError> {
+        let now = self.read_clock()?;
         if self.expiries.get(key).is_some_and(|expiry| now > *expiry) {
             self.values.remove(key);
             self.expiries.remove(key);
-            return None;
+            return Ok(None);
         }
-        self.values.get(key).cloned()
+        Ok(match self.values.get(key) {
+            Some(CacheValue::Text(text)) => Some(decode_cached_json(text.as_bytes())),
+            Some(CacheValue::Bytes(bytes)) => Some(decode_cached_json(bytes)),
+            value => value.cloned(),
+        })
     }
 
     pub fn delete(&mut self, key: &str) {
@@ -160,12 +164,13 @@ impl LocalTtlCache {
         self.expiries.remove(key);
     }
 
-    fn now(&self) -> f64 {
+    fn read_clock(&self) -> Result<f64, CacheError> {
         let now = (self.clock)();
-        if now.is_nan() {
-            return now;
+        if now.is_finite() {
+            Ok(now)
+        } else {
+            Err(CacheError::InvalidClock)
         }
-        now
     }
 
     fn prune(&mut self, now: f64) {
@@ -183,19 +188,34 @@ impl LocalTtlCache {
         }
     }
 
-    fn fits(&self, value: &CacheValue) -> Result<bool, CacheError> {
-        let bytes = serde_json::to_vec(value)
-            .map_err(|error| CacheError::ValueSerialization(error.to_string()))?;
-        let limit = self
-            .max_size_per_item
-            .checked_mul(1024)
-            .unwrap_or(MAX_VALUE_BYTES);
-        Ok(bytes.len() <= limit && bytes.len() <= MAX_VALUE_BYTES)
+    fn fits(&self, value: &CacheValue) -> bool {
+        let charge = match value {
+            CacheValue::Credential(handle) => handle.size_charge(),
+            CacheValue::Bytes(bytes) => bytes.len(),
+            CacheValue::Null
+            | CacheValue::Boolean(_)
+            | CacheValue::Integer(_)
+            | CacheValue::Float(_)
+            | CacheValue::Text(_)
+            | CacheValue::Array(_)
+            | CacheValue::Object(_) => match serde_json::to_vec(value) {
+                Ok(bytes) => bytes.len(),
+                Err(_) => return false,
+            },
+        };
+        let limit = usize::try_from(self.limits.max_size_per_item)
+            .unwrap_or(0)
+            .saturating_mul(1024)
+            .min(MAX_VALUE_BYTES);
+        charge <= limit
     }
 }
 
 #[must_use]
 pub fn decode_cached_json(bytes: &[u8]) -> CacheValue {
+    if bytes.len() > MAX_VALUE_BYTES {
+        return CacheValue::Null;
+    }
     let parsed = serde_json::from_slice(bytes);
     parsed.unwrap_or_else(|_| {
         String::from_utf8(bytes.to_vec()).map_or_else(
@@ -210,4 +230,18 @@ pub fn decode_cached_json(bytes: &[u8]) -> CacheValue {
             CacheValue::Text,
         )
     })
+}
+
+impl fmt::Debug for LocalTtlCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalTtlCache")
+            .field("entries", &self.values.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl AsRef<CacheLimits> for LocalTtlCache {
+    fn as_ref(&self) -> &CacheLimits {
+        &self.limits
+    }
 }
