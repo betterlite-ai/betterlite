@@ -1,0 +1,26 @@
+task: B217
+deviations:
+  - what: A `$ref` whose value is not a string is left on the node untouched instead of raising; LiteLLM's `node["$ref"].split("/")[-1]` raises AttributeError on a non-string value.
+    why: A malformed `$ref` is not a shape any production caller relies on, and rule owned-behavior-is-built draws the line at a bug none can rely on; betterlite treats it the same way as an unresolved reference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1009
+  - what: A root-level `$ref` whose target is not an object falls back to the original schema instead of raising; LiteLLM's `schema.clear(); schema.update(resolved)` raises TypeError when `resolved` is not a mapping.
+    why: A root `$ref` resolving to a scalar or list is not a shape any production caller relies on, so betterlite returns the schema unchanged rather than reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1050-L1051
+  - what: A `components` key whose value is not an object is treated as having no `components.schemas`, instead of raising; LiteLLM's `schema.pop("components", {}).get("schemas")` raises AttributeError when `components` is present but not a dict.
+    why: A non-object `components` value is not a shape any production caller relies on, so betterlite treats it as absent rather than reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1128
+  - what: A `$defs` or `definitions` value that is not an object is ignored at every node of the walk (the root, a resolved ref target, and any plain dict), instead of raising. LiteLLM builds `root_defs`, `child_defs` and `current_defs` with `**schema.get("$defs", {})` and `**schema.get("definitions", {})`, which raise TypeError when the value under either key is not a mapping.
+    why: A non-object `$defs` or `definitions` value is not a shape any production caller relies on, so betterlite skips it rather than reproducing the crash, the same way it treats the other malformed-schema shapes above.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L989-L991
+  - what: The same non-object `$defs`/`definitions` skip applies to a resolved ref target's own defs.
+    why: Same reasoning as above, at the second of the three merge sites LiteLLM has for this shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1032-L1036
+  - what: The same non-object `$defs`/`definitions` skip applies while walking into a plain dict's own children.
+    why: Same reasoning as above, at the third of the three merge sites LiteLLM has for this shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1064-L1068
+  - what: A non-object `components.schemas` value (`components` is an object but `schemas` isn't) is treated as empty instead of raising; LiteLLM's `.get("schemas") or {}` pattern still assigns the non-dict value to `defs`, and the following `defs.update(...)` then raises AttributeError because a non-dict has no `update`.
+    why: A non-object `components.schemas` value is not a shape any production caller relies on, so betterlite treats it as empty rather than reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1128-L1129
+  - what: A non-object `definitions` value is treated as absent instead of raising; LiteLLM's `schema.pop("definitions", None) or {}` falls through to `{}` only when the value is falsy (None, {}, [], ""), so a truthy non-object value such as a string or a list reaches `defs.update(...)` and raises TypeError.
+    why: A non-object `definitions` value is not a shape any production caller relies on, so betterlite treats it as absent rather than reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1128-L1129
