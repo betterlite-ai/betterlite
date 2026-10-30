@@ -1,0 +1,8 @@
+task: B3779
+deviations:
+  - what: Lasso inspection primitives expose JSON values rather than LiteLLM model classes.
+    why: betterlite's guardrail wire layer is serde-based and preserves the original OpenAI shape while masking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L477-L563
+  - what: Lakera span replacements with invalid UTF-8 boundaries are skipped.
+    why: Rust strings must remain valid UTF-8 and silently clamping a detector span could corrupt adjacent text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L435-L492

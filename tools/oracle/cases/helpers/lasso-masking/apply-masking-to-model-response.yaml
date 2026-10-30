@@ -1,0 +1,8 @@
+kind: helper
+name: apply_masking_to_model_response
+call:
+  apply_masking_to_model_response:
+    response: {choices: [{message: {role: assistant, content: hello}}]}
+    masked: [{role: assistant, content: '[MASKED TEXT]'}]
+env: {}
+compare: {ignore: []}
