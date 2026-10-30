@@ -105,7 +105,7 @@ fn claude_code_response_prefers_result_text_and_structured_output() {
     super::stream::transform(&result, &mut state);
     assert_eq!(state.session_id.as_deref(), Some("s1"));
     assert_eq!(state.final_text(), "final");
-    assert_eq!(state.structured_output_json(), r#"{"ok":true}"#);
+    assert_eq!(state.structured_output_json(), r#"{"ok": true}"#);
 }
 
 #[test]

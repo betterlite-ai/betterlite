@@ -127,10 +127,7 @@ impl ToolOutputBlock {
     fn stringify(&self) -> String {
         match self {
             Self::Text(text) => text.clone(),
-            Self::Object(object) if object.kind.as_deref() == Some("text") => {
-                object.text.clone().unwrap_or_default()
-            }
-            Self::Object(_) => String::new(),
+            Self::Object(object) => object.text_content(),
         }
     }
 }
@@ -141,6 +138,15 @@ pub(super) struct ToolOutputBlockObject {
     pub(super) kind: Option<String>,
     #[serde(default)]
     pub(super) text: Option<String>,
+}
+
+impl ToolOutputBlockObject {
+    fn text_content(&self) -> String {
+        if self.kind.as_deref() == Some("text") {
+            return self.text.clone().unwrap_or_default();
+        }
+        String::new()
+    }
 }
 
 #[derive(Deserialize)]

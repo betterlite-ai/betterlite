@@ -1,5 +1,6 @@
 use super::config::normalize_tool_name;
 use crate::events::Event;
+use crate::payloads::python_json::python_json_text;
 use crate::payloads::{last_json_object, stderr_tail_text};
 use crate::types::JsonObject;
 use wire::{AssistantLine, Block, Line, MessageContent, ResultLine, SystemLine, UserLine};
@@ -27,7 +28,7 @@ impl ClaudeCodeStreamState {
     #[must_use]
     pub fn structured_output_json(&self) -> String {
         if let Some(object) = self.structured_output.as_ref()
-            && let Ok(text) = serde_json::to_string(object)
+            && let Ok(text) = python_json_text(object)
         {
             return text;
         }
