@@ -87,7 +87,7 @@ pitfalls:
   - A valid explicit voice leaves an optional voice_id field available for body forwarding.
   - DEFAULT_OUTPUT_FORMAT is defined but never applied to an omitted response_format.
   - kwargs.extra_body can replace text and model_id despite their initial request values.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

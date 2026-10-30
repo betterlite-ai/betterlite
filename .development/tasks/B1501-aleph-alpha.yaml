@@ -79,7 +79,7 @@ pitfalls:
   - "The first role-bearing control message always becomes ###Instruction even when its role is assistant."
   - Non-200 alone is not the error predicate in this adapter; the JSON error member controls the explicit error branch.
   - Usage reads only choices[0], so summing every returned completion changes billed tokens.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

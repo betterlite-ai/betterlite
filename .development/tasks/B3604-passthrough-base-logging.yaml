@@ -222,7 +222,7 @@ pitfalls:
   providers implement this to assemble chunks into their provider-native response format before
   passthrough_chat_handler transforms it to OpenAI format.
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

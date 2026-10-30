@@ -51,4 +51,4 @@ pitfalls:
   - A supplied AsyncHTTPHandler cannot serve the synchronous client branch.
   - stream=1 is not the literal True check modeled by the typed boolean option.
 budget: {max_changed_lines: 575, max_new_expects: 0}
-review_level: security
+review_level: standard

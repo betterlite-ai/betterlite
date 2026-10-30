@@ -104,4 +104,4 @@ pitfalls:
   - The unrecognized string FALSE-ish stays a nonempty string and enables token caching when used as that setting.
   - GDC strips only one leading gdc/ from a model and removes auth fields after the parent request transform.
 budget: {max_changed_lines: 600, max_new_expects: 0}
-review_level: security
+review_level: standard

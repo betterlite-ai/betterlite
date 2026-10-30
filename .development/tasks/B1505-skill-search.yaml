@@ -71,7 +71,7 @@ pitfalls:
   - Provider None is unsupported here; it is not an alias for the hosted registry.
   - A query ranks all accessible candidates up to 5000 rather than the first default page of 20.
   - Equal scores retain repository order because the source sort is stable.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

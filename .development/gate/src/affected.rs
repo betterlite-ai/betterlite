@@ -122,7 +122,7 @@ fn package_graph(directory: &Path) -> Result<PackageGraph, GateError> {
         })
 }
 
-fn finish(program: &str, args: &[&str], directory: &Path) -> Result<(), GateError> {
+pub(crate) fn finish(program: &str, args: &[&str], directory: &Path) -> Result<(), GateError> {
     let output = check_command(program)
         .args(args)
         .current_dir(directory)

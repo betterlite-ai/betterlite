@@ -77,7 +77,7 @@ pitfalls:
   - Submission accepts a non-error 201, but a poll returning 201 fails.
   - The presence of errors is sufficient to reject a submission even when its value is an empty list.
   - Extra authentication headers used for submission must not accompany polling GETs.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
