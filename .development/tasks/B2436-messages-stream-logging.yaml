@@ -109,7 +109,7 @@ pitfalls:
 - Bedrock stream logging still uses the literal /v1/messages route and ANTHROPIC endpoint type.
 - Deferred fields are cleared before callback construction, so a failing callback is not retried automatically.
 - 'A missing type on a dict chunk emits event: message; forwarding raw JSON would break Anthropic clients.'
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

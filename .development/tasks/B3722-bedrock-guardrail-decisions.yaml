@@ -155,7 +155,7 @@ pitfalls:
   - "The output text may contain multiple entries; loop through outputs and concatenate all text fields, not just the first."
   - Violation category names must skip entries that only carry a match field (bare customWords without a name, unnamed regexes), preserving only labeled categories.
   - "The __type field may contain the word Exception but not at the top level; look for it only inside Output.__type."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

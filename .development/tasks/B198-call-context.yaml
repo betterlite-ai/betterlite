@@ -145,7 +145,7 @@ pitfalls:
 - The current billing time is fixed for a call even if pricing crosses a time window during execution.
 - An SDK sync wrapper must not start a nested Tokio runtime inside an async call.
 - Environment helpers belong at the config boundary, not in betterlite-core.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

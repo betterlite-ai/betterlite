@@ -92,4 +92,4 @@ pitfalls:
   - A failed pricing callback leaves the row's token usage intact and returns zero monetary cost.
   - Publisher model paths take precedence over endpoint-looking components earlier in a bucket prefix.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

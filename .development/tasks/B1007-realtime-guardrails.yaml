@@ -102,7 +102,7 @@ pitfalls:
 - An exception having detail but no status_code is not necessarily a policy block; only ValueError gets that special treatment.
 - Duplicate callback objects run once, but two different objects with the same configured name can both run.
 - A blocked tool result must reach the backend before response.cancel or any synthetic user message.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

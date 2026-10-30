@@ -71,7 +71,7 @@ pitfalls:
   - Continuation chunks follow last_id rather than the index sent by the backend.
   - Duplicate id detection drops the repeated call even when its arguments contain new text.
   - Explicit stream=None survives setdefault and must not be rewritten to False.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

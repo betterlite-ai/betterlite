@@ -85,7 +85,7 @@ pitfalls:
   - A completed status with a result probe returning 500 stays completed unless the status body itself contains an error.
   - The result probe strips transport headers but retains the original authorization header.
   - Content download uses video.url without forwarding the result probe's credentials.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

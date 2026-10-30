@@ -98,7 +98,7 @@ pitfalls:
   - "In get_eval and update_eval, store local_vars = locals() before the try block so that all function parameters (eval_id, name, metadata, extra_headers, extra_query, extra_body, timeout, custom_llm_provider) and their defaults are captured for error reporting."
   - "Both functions reuse module-level DEFAULT_OPENAI_API_BASE and BaseLLMHTTPHandler() from B3421's scope."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

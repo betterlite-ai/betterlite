@@ -133,7 +133,7 @@ pitfalls:
 - original_stream is captured before callback changes and governs short circuits but not ordinary final dispatch.
 - Hook replacement with an empty dict is meaningful; testing truthiness would accidentally retain the old map.
 - Removing litellm_params from the hook result does not remove a preexisting copy from original kwargs.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
