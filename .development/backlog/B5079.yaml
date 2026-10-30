@@ -1,13 +1,13 @@
 id: B5079
 milestone: M0 foundation
 title: Batched helper oracle Python sessions
-status: done
+status: todo
 depends_on: [B171, B900]
 file: tasks/B5079-batched-helper-sessions.yaml
 covers: []
 parent: null
 split_from: null
-resolution: obsolete
+resolution: null
 superseded_by: null
 blocked_reason: null
 pr: null
