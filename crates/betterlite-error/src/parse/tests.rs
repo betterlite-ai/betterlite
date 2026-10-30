@@ -179,6 +179,10 @@ fn error_facts_behavior_tests_behavior_body_code_size_boundary() {
 #[case::unknown("litellm.UnknownProviderFailureError", None)]
 #[case::later_match("litellm.invalid litellm.BadRequestError", Some("BadRequestError"))]
 #[case::suffix("litellm.BadRequestErrorSuffix", Some("BadRequestError"))]
+#[case::underscore_does_not_split_unknown_name(
+    "litellm.APIConnection_Error litellm.RateLimitError",
+    None
+)]
 fn error_facts_behavior_tests_behavior_exception_name(
     #[case] text: &str,
     #[case] expected: Option<&str>,
@@ -218,6 +222,17 @@ fn error_facts_behavior_tests_behavior_missing_argument_constructor(#[case] name
     assert!(matches!(
         extract_exception(None, &text, "model", "provider", None),
         Err(ParseError::Constructor { name: error_name }) if error_name == name
+    ));
+}
+
+#[rstest]
+#[case::model_not_mapped("ModelNotMappedError")]
+#[case::zone_info_not_found("ZoneInfoNotFoundError")]
+fn error_facts_behavior_tests_behavior_no_signature_constructor(#[case] name: &str) {
+    let text = format!("litellm.{name}");
+    assert!(matches!(
+        extract_exception(None, &text, "model", "provider", None),
+        Err(ParseError::Signature { name: error_name }) if error_name == name
     ));
 }
 
