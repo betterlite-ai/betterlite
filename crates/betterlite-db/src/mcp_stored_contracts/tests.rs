@@ -412,6 +412,7 @@ fn metadata_type_validates(#[case] input: &str, #[case] valid: bool) {
 fn secret_wrapper_redacts(#[case] field: &str) {
     let input = format!(r#"{{"{field}":"never-print"}}"#);
     let credentials: MCPCredentials = serde_json::from_str(&input).unwrap();
+    assert!(format!("{credentials:?}").starts_with("MCPCredentials"));
     assert!(!format!("{credentials:?}").contains("never-print"));
     assert_eq!(serde_json::to_string(&credentials).unwrap(), input);
     let secret: super::secret::StoredSecret = serde_json::from_str(r#""never-print""#).unwrap();
@@ -434,5 +435,5 @@ fn mcp_stored_object_depth(#[case] depth: usize, #[case] accepted: bool) {
 #[test]
 fn decoded_stored_debug_redacts() {
     let decoded = decode_mcp_stored_contract(br#"{"auth_value":"never-print"}"#).unwrap();
-    assert!(!format!("{decoded:?}").contains("never-print"));
+    assert_eq!(format!("{decoded:?}"), "[REDACTED]");
 }
