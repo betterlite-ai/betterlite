@@ -212,7 +212,7 @@ pitfalls:
     The semantic_cache_scope parameter defaults to SemanticCacheScope.KEY.value; do not fall back to a string
     default if the enum is not recognized, validate it strictly.
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

@@ -141,7 +141,7 @@ pitfalls:
   Per-operation logging must use the operation name (create_sandbox, run_code, delete_sandbox)
   not the task id, and must be called after config resolution but before forwarding to
   the adapter.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

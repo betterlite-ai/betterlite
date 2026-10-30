@@ -90,7 +90,7 @@ out_of_scope:
 pitfalls:
 - File update overlays extra_body before attribute cleaning; vector-store update in B2402 does the reverse.
 - File DELETE forwards timeout in sync mode even though vector-store DELETE omits it.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

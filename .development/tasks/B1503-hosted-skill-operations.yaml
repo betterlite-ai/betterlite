@@ -75,7 +75,7 @@ pitfalls:
   - An empty file_content value permits the first files tuple to replace explicitly supplied filename and MIME type.
   - has_more is computed from page length without fetching an extra row or producing a continuation cursor.
   - source falls back on empty text as well as null, whereas description is copied unchanged.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

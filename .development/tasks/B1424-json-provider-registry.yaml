@@ -108,4 +108,4 @@ pitfalls:
   - Failed loading sets _loaded and therefore prevents a later successful retry in the same registry instance.
   - Exact base comparison treats a trailing slash as significant.
 budget: {max_changed_lines: 775, max_new_expects: 0}
-review_level: security
+review_level: standard

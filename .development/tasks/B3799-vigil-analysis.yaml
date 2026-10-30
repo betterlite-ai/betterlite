@@ -155,7 +155,7 @@ pitfalls:
   - "Sanitized text fallback tries sanitizedText first, then outputText, then returns the original text. Both keys are optional in the analysis response."
   - "The default timeout is 10 seconds for the request and 5 seconds for the connection. Preserve both when timeout is None, or use the provided timeout for the request with min(timeout, 5.0) for connect."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

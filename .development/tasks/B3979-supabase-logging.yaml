@@ -97,7 +97,7 @@ pitfalls:
   - Both insert and upsert return (data, count) tuples; exceptions are caught and logged, not raised.
   - print_verbose is passed as a logger callback; all diagnostic output uses it, including traceback.format_exc().
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

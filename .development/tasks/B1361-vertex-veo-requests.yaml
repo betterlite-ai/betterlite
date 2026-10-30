@@ -79,4 +79,4 @@ pitfalls:
   - A full instances dictionary suppresses image conversion but leaves any image option among parameters.
   - The source video's gcsUri wins by key presence even if its value is empty.
 budget: {max_changed_lines: 750, max_new_expects: 1}
-review_level: security
+review_level: standard

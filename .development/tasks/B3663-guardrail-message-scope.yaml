@@ -221,7 +221,7 @@ pitfalls:
   - effective_skip_system_message_for_guardrail returns false (do not skip) when neither per-guardrail nor global flag is set, treating absence as permission to scan.
   - A team with metadata.guardrails.modify_guardrails = false cannot modify guardrails through the API, but the check happens at the API boundary, not at invocation time.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

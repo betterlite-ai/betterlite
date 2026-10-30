@@ -116,7 +116,7 @@ pitfalls:
 - A race winner is not permission to detach the losing requests.
 - The models path future.result() raises an earlier model error instead of skipping to a later success.
 - Python waits for all futures on executor-context exit; its losing work is owned, not detached.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

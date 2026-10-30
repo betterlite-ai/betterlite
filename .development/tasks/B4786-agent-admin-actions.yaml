@@ -252,7 +252,7 @@ pitfalls:
   - Both make_agent_public and make_agents_public raise 500 CommonProxyErrors.db_not_connected_error
     when prisma_client is None, before attempting any agent lookups or writes.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

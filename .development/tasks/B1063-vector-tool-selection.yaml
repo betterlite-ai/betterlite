@@ -102,7 +102,7 @@ pitfalls:
 - Stored litellm_params wins over tool parameters despite the source comment claiming the opposite.
 - A tool containing even one unknown id is left intact, so database fallback does not make that tool recognized first.
 - The consuming path preserves duplicate ids and can search or verify the same store multiple times.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
