@@ -17,6 +17,7 @@ regex.workspace = true
 rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
 secrecy.workspace = true
 serde.workspace = true
+serde_json = { version = "1.0.145", features = ["raw_value"] }
 thiserror.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 unicode-general-category = "1.1.0"
@@ -26,5 +27,4 @@ unicode-normalization = "0.1.26"
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 rstest = "=0.27.0"
-serde_json = { version = "1.0.145", features = ["raw_value"] }
 tokio.workspace = true

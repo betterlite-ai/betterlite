@@ -1,0 +1,6 @@
+name: encryption-classification-legacy-versus-plaintext
+kind: helper
+operation: encryption_classification
+input:
+  values: ["", "ordinary text", 3, false]
+  key: scan

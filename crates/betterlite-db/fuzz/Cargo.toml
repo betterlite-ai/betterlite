@@ -10,10 +10,18 @@ cargo-fuzz = true
 [dependencies]
 betterlite-db = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.145"
 
 [[bin]]
 name = "database_urls"
 path = "fuzz_targets/database_urls.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "migration_json"
+path = "fuzz_targets/migration_json.rs"
 test = false
 doc = false
 bench = false
