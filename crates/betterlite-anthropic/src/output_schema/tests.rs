@@ -118,6 +118,10 @@ fn output_schema_filter_checks_container_enum_types() {
     let null_schema: Json = serde_json::from_str(r#"{"type":"null","enum":[null]}"#).unwrap();
     let null_result = serde_json::to_value(filter_anthropic_output_schema(null_schema)).unwrap();
     assert_eq!(null_result["type"], "null");
+    let null_conflict: Json = serde_json::from_str(r#"{"type":"null","enum":[1]}"#).unwrap();
+    let null_conflict_result =
+        serde_json::to_value(filter_anthropic_output_schema(null_conflict)).unwrap();
+    assert!(null_conflict_result.get("type").is_none());
     assert_eq!(
         serde_json::to_value(filter_anthropic_output_schema(
             serde_json::from_str(r#"{"type":"boolean","enum":[true]}"#).unwrap(),
