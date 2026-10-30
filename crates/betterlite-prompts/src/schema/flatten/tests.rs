@@ -3,6 +3,7 @@
 use super::flatten_and_drop;
 use crate::arguments::json::{Json, Object};
 use rstest::rstest;
+use std::iter::once;
 
 fn object(text: &str) -> Object {
     match serde_json::from_str::<Json>(text).unwrap() {
@@ -108,10 +109,10 @@ fn tool_schemas_tool_schema_tests_behavior(#[case] schema: Object, #[case] expec
 fn tool_schemas_tool_schema_tests_depth(#[case] count: usize, #[case] accepted: bool) {
     let definitions = (0..count)
         .map(|index| {
-            let next = index + 1;
+            let next = index.checked_add(1).unwrap();
             format!(r##""d{index}":{{"$ref":"#/$defs/d{next}"}},"##)
         })
-        .chain(std::iter::once(format!(
+        .chain(once(format!(
             r#""d{count}":{{"type":"object","properties":{{"ok":{{"type":"boolean"}}}}}}"#
         )))
         .collect::<String>();
