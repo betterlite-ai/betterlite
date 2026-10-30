@@ -1,5 +1,7 @@
-use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+
+use crate::cisco_conversation::Fields;
+use crate::cisco_conversation::json::Json;
 
 const DECISION_FIELDS: &[&str] = &[
     "action",
@@ -25,39 +27,39 @@ const DECISION_FIELDS: &[&str] = &[
     "sanitized_payload",
 ];
 
-pub fn has_decision_fields(payload: &Value) -> bool {
-    let Value::Object(payload) = payload else {
+#[must_use]
+pub fn has_decision_fields(payload: &Json) -> bool {
+    let Json::Object(fields) = payload else {
         return false;
     };
     DECISION_FIELDS
         .iter()
-        .any(|field| payload.contains_key(*field))
+        .any(|field| fields.contains_key(*field))
 }
 
-pub fn unwrap_verdict_envelope(response: &Value) -> Value {
-    let Value::Object(response) = response else {
-        return Value::Object(Map::new());
+#[must_use]
+pub fn unwrap_verdict_envelope(response: &Json) -> Json {
+    let Json::Object(fields) = response else {
+        return Json::Object(Fields::new());
     };
-    if has_decision_fields(&Value::Object(response.clone())) {
-        return Value::Object(response.clone());
+    if has_decision_fields(response) {
+        return response.clone();
     }
     for key in ["result", "data", "inspection", "ai_defense", "aiDefense"] {
-        if let Some(value) = response.get(key) {
-            if has_decision_fields(value) {
-                return value.clone();
-            }
+        let value = Json::field(fields, key);
+        if has_decision_fields(&value) {
+            return value;
         }
     }
-    if let Some(Value::Object(result)) = response.get("result") {
+    if let Json::Object(result) = Json::field(fields, "result") {
         for key in ["data", "inspection", "ai_defense", "aiDefense"] {
-            if let Some(value) = result.get(key) {
-                if has_decision_fields(value) {
-                    return value.clone();
-                }
+            let value = Json::field(&result, key);
+            if has_decision_fields(&value) {
+                return value;
             }
         }
     }
-    Value::Object(response.clone())
+    response.clone()
 }
 
 pub fn normalize_action(raw_action: &str) -> String {
@@ -89,125 +91,150 @@ pub fn normalize_action(raw_action: &str) -> String {
     "block".to_owned()
 }
 
-pub fn extract_jsonrpc_error(response: &Value) -> Option<Value> {
-    let Value::Object(response) = response else {
+#[must_use]
+pub fn extract_jsonrpc_error(response: &Json) -> Option<Json> {
+    let Json::Object(fields) = response else {
         return None;
     };
-    if let Some(error @ Value::Object(_)) = response.get("error") {
-        return Some(error.clone());
+    let error = Json::field(fields, "error");
+    if let Json::Object(_) = error {
+        return Some(error);
     }
-    if let Some(Value::Object(result)) = response.get("result") {
-        if let Some(error @ Value::Object(_)) = result.get("error") {
-            return Some(error.clone());
-        }
-    }
-    None
-}
-
-pub fn extract_sanitized_text(response: &Value) -> Option<String> {
-    for container in containers(response) {
-        for key in ["sanitized_text", "sanitizedText"] {
-            if let Some(Value::String(text)) = container.get(key) {
-                if !text.is_empty() {
-                    return Some(text.clone());
-                }
-            }
+    if let Json::Object(result) = Json::field(fields, "result") {
+        let nested_error = Json::field(&result, "error");
+        if let Json::Object(_) = nested_error {
+            return Some(nested_error);
         }
     }
     None
 }
 
-pub fn extract_sanitized_messages(response: &Value) -> Option<Vec<Map<String, Value>>> {
-    for container in containers(response) {
-        for key in [
-            "sanitized_messages",
-            "sanitizedMessages",
-            "modified_messages",
-            "modifiedMessages",
-        ] {
-            if let Some(messages) = non_empty_objects(container.get(key)) {
-                return Some(messages);
-            }
-        }
-        for key in [
-            "sanitized_payload",
-            "sanitizedPayload",
-            "modified_payload",
-            "modifiedPayload",
-        ] {
-            if let Some(Value::Object(payload)) = container.get(key) {
-                if let Some(messages) = non_empty_objects(payload.get("messages")) {
-                    return Some(messages);
-                }
-            }
-        }
-    }
-    None
+#[must_use]
+pub fn extract_sanitized_text(response: &Json) -> Option<String> {
+    let response_containers = containers(response);
+    response_containers
+        .into_iter()
+        .find_map(|container| text_in(&container))
 }
 
-pub fn extract_mcp_args(response: &Value) -> Option<Map<String, Value>> {
-    for container in containers(response) {
-        if let Some(arguments) = nested_arguments(container, "params") {
-            return Some(arguments);
-        }
-        for key in [
-            "sanitized_payload",
-            "sanitizedPayload",
-            "modified_payload",
-            "modifiedPayload",
-        ] {
-            if let Some(Value::Object(payload)) = container.get(key) {
-                if let Some(arguments) = nested_arguments(payload, "params") {
-                    return Some(arguments);
-                }
-                if let Some(Value::Object(arguments)) = payload.get("arguments") {
-                    if !arguments.is_empty() {
-                        return Some(arguments.clone());
-                    }
-                }
-            }
-        }
-        if let Some(Value::Object(arguments)) = container.get("arguments") {
-            if !arguments.is_empty() {
-                return Some(arguments.clone());
-            }
-        }
-    }
-    None
+#[must_use]
+pub fn extract_sanitized_messages(response: &Json) -> Option<Vec<Fields>> {
+    let response_containers = containers(response);
+    response_containers
+        .into_iter()
+        .find_map(|container| message_in(&container))
 }
 
-pub fn extract_masked_entity_count(rules: &Value) -> Option<BTreeMap<String, u64>> {
-    let Value::Array(rules) = rules else {
+fn text_in(container: &Fields) -> Option<String> {
+    let text_keys = ["sanitized_text", "sanitizedText"];
+    text_keys
+        .iter()
+        .find_map(|key| match Json::field(container, key) {
+            Json::Text(text) if !text.is_empty() => Some(text),
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_) => None,
+        })
+}
+
+fn message_in(container: &Fields) -> Option<Vec<Fields>> {
+    let direct = [
+        "sanitized_messages",
+        "sanitizedMessages",
+        "modified_messages",
+        "modifiedMessages",
+    ];
+    if let Some(messages) = direct
+        .iter()
+        .find_map(|key| non_empty_objects(&Json::field(container, key)))
+    {
+        return Some(messages);
+    }
+    payload_objects(container)
+        .into_iter()
+        .find_map(|payload| non_empty_objects(&Json::field(&payload, "messages")))
+}
+
+#[must_use]
+pub fn extract_mcp_args(response: &Json) -> Option<Fields> {
+    let response_containers = containers(response);
+    response_containers
+        .into_iter()
+        .find_map(|container| arguments_in(&container))
+}
+
+fn arguments_in(container: &Fields) -> Option<Fields> {
+    if let Some(arguments) = nested_arguments(container, "params") {
+        return Some(arguments);
+    }
+    if let Some(arguments) = payload_objects(container).into_iter().find_map(|payload| {
+        nested_arguments(&payload, "params")
+            .or_else(|| non_empty_object(&Json::field(&payload, "arguments")))
+    }) {
+        return Some(arguments);
+    }
+    non_empty_object(&Json::field(container, "arguments"))
+}
+
+fn payload_objects(container: &Fields) -> Vec<Fields> {
+    let payload_keys = [
+        "sanitized_payload",
+        "sanitizedPayload",
+        "modified_payload",
+        "modifiedPayload",
+    ];
+    payload_keys
+        .iter()
+        .filter_map(|key| match Json::field(container, key) {
+            Json::Object(payload) => Some(payload),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+        })
+        .collect()
+}
+
+#[must_use]
+pub fn extract_masked_entity_count(input: &Json) -> Option<BTreeMap<String, u64>> {
+    let Json::List(rules) = input else {
         return None;
     };
-    let mut counts = BTreeMap::new();
-    for Value::Object(rule) in rules {
-        let Some(Value::Array(entity_types)) = rule.get("entity_types") else {
+    let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+    for raw_rule in rules {
+        let parsed_rule = Json::parse(raw_rule.get());
+        let Json::Object(rule_fields) = parsed_rule else {
             continue;
         };
-        for Value::String(entity_type) in entity_types {
-            let count = counts.entry(entity_type.clone()).or_insert(0);
+        let Json::List(entity_types) = Json::field(&rule_fields, "entity_types") else {
+            continue;
+        };
+        for raw_entity_type in entity_types {
+            let Json::Text(entity_type) = Json::parse(raw_entity_type.get()) else {
+                continue;
+            };
+            let count = counts.entry(entity_type.clone()).or_insert(0_u64);
             *count = count.saturating_add(1);
         }
     }
     (!counts.is_empty()).then_some(counts)
 }
 
-fn containers(response: &Value) -> Vec<&Map<String, Value>> {
-    let Value::Object(response) = response else {
+fn containers(response: &Json) -> Vec<Fields> {
+    let Json::Object(fields) = response else {
         return Vec::new();
     };
-    let mut containers = vec![response];
+    let mut containers = vec![fields.clone()];
     for key in ["result", "data"] {
-        if let Some(Value::Object(container)) = response.get(key) {
-            containers.push(container)
+        if let Json::Object(container) = Json::field(fields, key) {
+            containers.push(container);
         }
     }
     containers
 }
 
-fn non_empty_objects(value: Option<&Value>) -> Option<Vec<Map<String, Value>>> {
-    let Some(Value::Array(values)) = value else {
+fn non_empty_objects(value: &Json) -> Option<Vec<Fields>> {
+    let Json::List(values) = value else {
         return None;
     };
     if values.is_empty() {
@@ -216,22 +243,31 @@ fn non_empty_objects(value: Option<&Value>) -> Option<Vec<Map<String, Value>>> {
     Some(
         values
             .iter()
-            .filter_map(|value| match value {
-                Value::Object(object) => Some(object.clone()),
-                _ => None,
+            .filter_map(|raw_value| match Json::parse(raw_value.get()) {
+                Json::Object(object) => Some(object),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    None
+                }
             })
             .collect(),
     )
 }
 
-fn nested_arguments(container: &Map<String, Value>, key: &str) -> Option<Map<String, Value>> {
-    let Some(Value::Object(params)) = container.get(key) else {
+fn non_empty_object(value: &Json) -> Option<Fields> {
+    let Json::Object(object) = value else {
         return None;
     };
-    let Some(Value::Object(arguments)) = params.get("arguments") else {
+    (!object.is_empty()).then_some(object.clone())
+}
+
+fn nested_arguments(container: &Fields, key: &str) -> Option<Fields> {
+    let Json::Object(params) = Json::field(container, key) else {
         return None;
     };
-    (!arguments.is_empty()).then_some(arguments.clone())
+    let Json::Object(arguments) = Json::field(&params, "arguments") else {
+        return None;
+    };
+    (!arguments.is_empty()).then_some(arguments)
 }
 
 mod tests;
