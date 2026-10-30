@@ -31,17 +31,16 @@ impl From<RawTokenCount> for TokenCount {
     fn from(raw: RawTokenCount) -> Self {
         match raw {
             RawTokenCount::Bool(value) => Self::Value(i64::from(value)),
-            RawTokenCount::Number(number) => match parse_integer_counter(&number) {
-                Some(value) => Self::Value(value),
-                None => Self::Overflow(number),
-            },
+            RawTokenCount::Number(number) => {
+                parse_integer_counter(&number).map_or(Self::Overflow(number), Self::Value)
+            }
             RawTokenCount::Other(_ignored) => Self::Value(0),
         }
     }
 }
 
 impl TokenCount {
-    pub(super) fn value(&self) -> Result<i64, CostUsageError> {
+    pub(super) const fn value(&self) -> Result<i64, CostUsageError> {
         match self {
             Self::Value(value) => Ok(*value),
             Self::Overflow(_number) => Err(CostUsageError::CounterOverflow),

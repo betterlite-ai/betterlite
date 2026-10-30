@@ -89,9 +89,8 @@ pub(super) enum ModalityList {
 impl ModalityList {
     pub(super) fn entries(&self) -> &[Box<RawValue>] {
         match self {
-            Self::Empty => &[],
+            Self::Empty | Self::NotArray => &[],
             Self::Entries(entries) => entries,
-            Self::NotArray => &[],
         }
     }
 }

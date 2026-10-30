@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::value::RawValue;
 
 use super::cache::subtract_cached_from_input;
-use super::modality::modality_token_sums;
+use super::modality::{ModalityList, modality_token_sums};
 use super::record::{InteractionsUsage, field_value};
 use super::search::google_search_query_count;
 use crate::cost_usage::error::CostUsageError;
@@ -15,20 +15,24 @@ struct ModalitySums {
     total_cached_tokens: i64,
 }
 
+const fn has_non_array_modality_list(usage: &InteractionsUsage) -> bool {
+    let lists = (
+        &usage.input_tokens_by_modality,
+        &usage.tool_use_tokens_by_modality,
+        &usage.cached_tokens_by_modality,
+        &usage.output_tokens_by_modality,
+    );
+    matches!(
+        lists,
+        (ModalityList::NotArray, _, _, _)
+            | (_, ModalityList::NotArray, _, _)
+            | (_, _, ModalityList::NotArray, _)
+            | (_, _, _, ModalityList::NotArray)
+    )
+}
+
 fn compute_modality_sums(usage: &InteractionsUsage) -> Result<ModalitySums, CostUsageError> {
-    if matches!(
-        usage.input_tokens_by_modality,
-        super::modality::ModalityList::NotArray
-    ) || matches!(
-        usage.tool_use_tokens_by_modality,
-        super::modality::ModalityList::NotArray
-    ) || matches!(
-        usage.cached_tokens_by_modality,
-        super::modality::ModalityList::NotArray
-    ) || matches!(
-        usage.output_tokens_by_modality,
-        super::modality::ModalityList::NotArray
-    ) {
+    if has_non_array_modality_list(usage) {
         return Err(CostUsageError::ModalityListNotArray);
     }
     let mut input_entries: Vec<&RawValue> = usage
