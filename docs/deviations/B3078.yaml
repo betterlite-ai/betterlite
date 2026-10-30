@@ -18,3 +18,6 @@ deviations:
   - what: Inline PEM goes to a directory named betterlite-billing-mtls-* instead of litellm-billing-mtls-*, and setting a second active recorder logs a warning instead of replacing the first silently.
     why: Names outside the wire stay off the LiteLLM name, and rule no-silent-drops forbids silent overwrites.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L264-L278
+  - what: OTLP responses larger than 4 MiB are rejected before unbounded buffering.
+    why: The shared HTTP boundary requires bounded responses; normal OTLP collector replies are much smaller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L95-L113

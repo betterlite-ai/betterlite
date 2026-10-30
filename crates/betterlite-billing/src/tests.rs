@@ -1,8 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use tempfile::NamedTempFile;
@@ -36,4 +40,9 @@ pub(crate) fn in_memory() -> (BillingMetricsRecorder, InMemoryMetricExporter) {
     let reader = PeriodicReader::builder(exporter.clone()).build();
     let provider = SdkMeterProvider::builder().with_reader(reader).build();
     (BillingMetricsRecorder::new(provider), exporter)
+}
+
+pub(crate) fn direct_policy() -> Arc<ProxyPolicy> {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new());
+    Arc::new(policy)
 }

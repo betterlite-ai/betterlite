@@ -17,10 +17,10 @@ use rustls::server::WebPkiClientVerifier;
 use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 use secrecy::SecretString;
 
-use super::{LicenseData, build_recorder, shutdown_recorder};
+use super::{LicenseData, RecorderContext, build_recorder, shutdown_recorder};
 use crate::active_recorder::ActiveRecorderRegistry;
 use crate::billable_category::BillableCategory;
-use crate::tests::{fixture, logged};
+use crate::tests::{direct_policy, fixture, logged};
 
 struct Received {
     request: Vec<u8>,
@@ -122,8 +122,18 @@ fn meter_one_request(user_id: Option<&str>, model_id: Option<&str>) -> Metered {
     let license = LicenseData {
         user_id: user_id.map(str::to_owned),
     };
-    let (recorder, startup) =
-        logged(|| build_recorder(true, Some(&license), "1.105.1", &configured, &registry));
+    let (recorder, startup) = logged(|| {
+        build_recorder(
+            true,
+            Some(&license),
+            "1.105.1",
+            &RecorderContext {
+                settings: &configured,
+                proxy: &direct_policy(),
+                registry: &registry,
+            },
+        )
+    });
     recorder
         .unwrap()
         .record(BillableCategory::Llm, "/v1/chat/completions", 200, model_id);
@@ -155,8 +165,18 @@ fn an_unlicensed_deployment_gets_no_recorder() {
     let scratch = tempfile::tempdir().unwrap();
     let registry = ActiveRecorderRegistry::default();
     let configured = settings("https://localhost:9", scratch.path());
-    let (recorder, output) =
-        logged(|| build_recorder(false, None, "1.105.1", &configured, &registry));
+    let (recorder, output) = logged(|| {
+        build_recorder(
+            false,
+            None,
+            "1.105.1",
+            &RecorderContext {
+                settings: &configured,
+                proxy: &direct_policy(),
+                registry: &registry,
+            },
+        )
+    });
     assert!(recorder.is_none() && registry.pop().is_none());
     let disabled =
         "DEBUG betterlite_billing::lifecycle: Billing metrics disabled: deployment is not licensed";
@@ -168,8 +188,18 @@ fn an_unlicensed_deployment_gets_no_recorder() {
 #[test]
 fn missing_configuration_disables_metering() {
     let registry = ActiveRecorderRegistry::default();
-    let (recorder, output) =
-        logged(|| build_recorder(true, None, "1.105.1", &Settings::default(), &registry));
+    let (recorder, output) = logged(|| {
+        build_recorder(
+            true,
+            None,
+            "1.105.1",
+            &RecorderContext {
+                settings: &Settings::default(),
+                proxy: &direct_policy(),
+                registry: &registry,
+            },
+        )
+    });
     assert!(recorder.is_none() && registry.pop().is_none());
     assert!(
         output.contains("(LITELLM_BILLING_METRICS_ENDPOINT, "),
@@ -183,8 +213,18 @@ fn an_exporter_failure_disables_metering() {
     let registry = ActiveRecorderRegistry::default();
     let mut configured = settings("https://localhost:9", scratch.path());
     configured.export_interval_ms = 0;
-    let (recorder, output) =
-        logged(|| build_recorder(true, None, "1.105.1", &configured, &registry));
+    let (recorder, output) = logged(|| {
+        build_recorder(
+            true,
+            None,
+            "1.105.1",
+            &RecorderContext {
+                settings: &configured,
+                proxy: &direct_policy(),
+                registry: &registry,
+            },
+        )
+    });
     assert!(recorder.is_none() && registry.pop().is_none());
     let disabled = "WARN betterlite_billing::lifecycle: Billing metrics disabled: failed to initialize exporter: interval value 0 is invalid";
     assert!(output.contains(disabled), "{output}");
@@ -234,7 +274,17 @@ fn a_failed_final_flush_is_logged() {
     let scratch = tempfile::tempdir().unwrap();
     let registry = ActiveRecorderRegistry::default();
     let configured = settings("https://localhost:9", scratch.path());
-    let recorder = build_recorder(true, None, "1.105.1", &configured, &registry).unwrap();
+    let recorder = build_recorder(
+        true,
+        None,
+        "1.105.1",
+        &RecorderContext {
+            settings: &configured,
+            proxy: &direct_policy(),
+            registry: &registry,
+        },
+    )
+    .unwrap();
     recorder.shutdown();
     let ((), output) = logged(|| shutdown_recorder(&registry));
     assert!(

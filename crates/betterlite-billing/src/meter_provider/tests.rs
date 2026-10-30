@@ -8,7 +8,7 @@ use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::{BillingMetricsConfig, ExporterError, build_mtls_meter_provider, resource};
-use crate::tests::fixture;
+use crate::tests::{direct_policy, fixture};
 
 fn config(metering: Metering) -> BillingMetricsConfig {
     BillingMetricsConfig {
@@ -58,7 +58,7 @@ fn resource_names_the_deployment(#[case] license_id: Option<&str>, #[case] expec
 fn rejects_intervals_below_one_millisecond(#[case] interval_ms: i64) {
     let mut settings = metering(Some(fixture("ca.crt")));
     settings.export_interval_ms = interval_ms;
-    let error = build_mtls_meter_provider(&config(settings)).unwrap_err();
+    let error = build_mtls_meter_provider(&config(settings), &direct_policy()).unwrap_err();
     assert!(
         matches!(error, ExporterError::Interval { interval_ms: rejected } if rejected == interval_ms)
     );
@@ -87,20 +87,21 @@ fn rejects_unusable_credentials(
         ca_cert: Some(fixture(authority)),
         export_interval_ms: 60_000,
     };
-    let error = build_mtls_meter_provider(&config(settings)).unwrap_err();
+    let error = build_mtls_meter_provider(&config(settings), &direct_policy()).unwrap_err();
     assert!(error.to_string().contains(message), "{error}");
 }
 
 #[test]
 fn builds_with_the_system_trust_store() {
-    let provider = build_mtls_meter_provider(&config(metering(None))).unwrap();
+    let provider = build_mtls_meter_provider(&config(metering(None)), &direct_policy()).unwrap();
     provider.shutdown().unwrap();
 }
 
 #[test]
 fn builds_inside_a_tokio_runtime() {
     let runtime = Builder::new_multi_thread().build().unwrap();
-    let built = runtime
-        .block_on(async { build_mtls_meter_provider(&config(metering(Some(fixture("ca.crt"))))) });
+    let built = runtime.block_on(async {
+        build_mtls_meter_provider(&config(metering(Some(fixture("ca.crt")))), &direct_policy())
+    });
     built.unwrap().shutdown().unwrap();
 }
