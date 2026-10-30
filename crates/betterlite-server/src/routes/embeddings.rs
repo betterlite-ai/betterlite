@@ -121,17 +121,33 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
             code: status.to_string(),
         },
     };
-    let chat_error = ChatError::UnknownModel {
-        model: String::new(),
-    };
-    let response_headers = match error {
+    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
+    let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    (status_code, response_headers, Json(body)).into_response()
+}
+
+fn failure_headers_for_embedding(
+    error: &EmbeddingError,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+) -> HeaderMap {
+    match error {
         EmbeddingError::Provider { response } => {
             failure_headers_for_upstream(&response.headers, call_id, deployment)
         }
-        _ => failure_headers(&chat_error, call_id, deployment),
-    };
-    let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status_code, response_headers, Json(body)).into_response()
+        EmbeddingError::Body { .. }
+        | EmbeddingError::Encode { .. }
+        | EmbeddingError::Decode { .. }
+        | EmbeddingError::Http { .. }
+        | EmbeddingError::UnknownModel { .. }
+        | EmbeddingError::UnsupportedProvider { .. }
+        | EmbeddingError::MissingApiKey => {
+            let chat_error = ChatError::UnknownModel {
+                model: String::new(),
+            };
+            failure_headers(&chat_error, call_id, deployment)
+        }
+    }
 }
 
 fn provider_message(status: u16, body: &[u8], fallback: &EmbeddingError) -> String {
