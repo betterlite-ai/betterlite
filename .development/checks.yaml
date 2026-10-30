@@ -99,8 +99,10 @@ base:
       why: rustfmt decides the layout
       run: cargo fmt --all --check
     - id: clippy
-      why: the lint table is the code standard and warnings are errors
-      run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      why: the lint table is the code standard and warnings are errors in every package the change can affect, and a push to main lints the whole workspace
+      run: |-
+        packages=$(cargo gate affected) || exit 1
+        if [ -z "$packages" ]; then echo "the change affects no package"; else cargo clippy --all-targets --locked $packages -- -D warnings; fi
     - id: tests
       why: the tests of every package the change can affect pass, and a push to main runs the whole suite
       run: |-
@@ -139,15 +141,16 @@ optional:
     after_green: true
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
-    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; the oracle tests start LiteLLM once per case, so mutants there take hours; the tests check still runs them
+    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; the oracle tests start LiteLLM once per case, so mutants there take hours; the tests check still runs them; it builds in the worktree's own target instead of a cold copy, and skips the mutants an earlier run of this task already caught
     after_green: true
     run: |-
       set -e
       scratch="$GATE_LOG_DIR/mutants-tmp"
+      rm -rf "$scratch"
       mkdir -p "$scratch"
       trap 'rm -rf "$scratch"' EXIT
       git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' > "$GATE_LOG_DIR/mutants.diff"
-      TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --gitignore true --output "$GATE_LOG_DIR"
+      TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --in-place --iterate --output "$GATE_LOG_DIR"
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
     run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES
