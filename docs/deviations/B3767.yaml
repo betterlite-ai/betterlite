@@ -1,0 +1,8 @@
+task: B3767
+deviations:
+  - what: DeepKeep error messages use betterlite's own wording in failure scenarios, not LiteLLM's exact text.
+    why: Status codes and typed failure categories are preserved while betterlite uses its repository error-message conventions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L260-L280
+  - what: Extra headers supplied as a list are ignored with a warning instead of raising an error.
+    why: This preserves LiteLLM's fail-open configuration behavior for unsupported list-form header settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L156-L162
