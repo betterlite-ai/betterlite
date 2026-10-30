@@ -101,6 +101,6 @@ fn select_input(input: &Input) -> HelperResult {
     match (&input.stream, &input.requests) {
         (Some(stream_input), None) => stream(stream_input),
         (None, Some(request_input)) => requests(request_input),
-        _ => return Err(Box::new(invalid_input())),
+        _ => Err(Box::new(invalid_input())),
     }
 }
