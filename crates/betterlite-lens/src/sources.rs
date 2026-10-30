@@ -20,6 +20,8 @@ pub mod verify_evidence;
 mod content_partial;
 #[path = "sources/tests/content_truncation.rs"]
 mod content_truncation;
+#[path = "sources/tests/corpus.rs"]
+mod corpus;
 #[path = "sources/tests/sample_boundaries.rs"]
 mod sample_boundaries;
 #[path = "sources/tests/sample_metadata.rs"]
