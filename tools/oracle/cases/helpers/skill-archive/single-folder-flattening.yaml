@@ -1,0 +1,8 @@
+kind: helper
+name: single-folder-flattening
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAGNXl0l1+tWKAAAACkAAAAOAAAAc2tpbGwvU0tJTEwubWTT1dXlykvMTbVScEnNzedKSS1OLsosKMnMzwOJFCdz6QIVJOWnVAIAUEsBAhQDFAAAAAgAAY1eXSXX61YoAAAAKQAAAA4AAAAAAAAAAAAAAIABAAAAAHNraWxsL1NLSUxMLm1kUEsFBgAAAAABAAEAPAAAAFQAAAAAAA==
+env: {}
+compare:
+  ignore: []
