@@ -1,6 +1,8 @@
 #![cfg(test)]
 
-use super::{Scalar, Tier, coerce_cost_per_token, select_tier_for_input, tier_rate};
+use super::{
+    Scalar, Tier, TieredPricingError, coerce_cost_per_token, select_tier_for_input, tier_rate,
+};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use std::ptr;
@@ -158,19 +160,28 @@ fn select_tier_for_input_errors_on_an_empty_range_during_the_sort_before_the_len
 #[test]
 fn select_tier_for_input_errors_on_a_range_endpoint_that_is_not_a_number() {
     let tiers = vec![tier(r#"[0,"100"]"#, "1")];
-    select_tier_for_input(&tiers, 30).unwrap_err();
+    assert!(matches!(
+        select_tier_for_input(&tiers, 30),
+        Err(TieredPricingError::MalformedRange)
+    ));
 }
 
 #[test]
 fn select_tier_for_input_errors_on_a_null_range_endpoint() {
     let tiers = vec![tier("[0,null]", "1")];
-    select_tier_for_input(&tiers, 30).unwrap_err();
+    assert!(matches!(
+        select_tier_for_input(&tiers, 30),
+        Err(TieredPricingError::MalformedRange)
+    ));
 }
 
 #[test]
 fn select_tier_for_input_propagates_an_endpoint_exact_decimal_cannot_hold() {
     let tiers = vec![tier("[0,1e30]", "1")];
-    select_tier_for_input(&tiers, 30).unwrap_err();
+    assert!(matches!(
+        select_tier_for_input(&tiers, 30),
+        Err(TieredPricingError::Rate(_))
+    ));
 }
 
 #[test]
