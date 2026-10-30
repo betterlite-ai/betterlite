@@ -1,5 +1,7 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
+use std::str;
 
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
@@ -52,7 +54,8 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
         if unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
             return None;
         }
-        let path = normalize_path(info.name())?;
+        let raw_name = info.name().ok()?;
+        let path = normalize_path(raw_name.as_ref())?;
         let mut data = Vec::new();
         info.read_to_end(&mut data).ok()?;
         entries.push((path, data));
@@ -157,7 +160,7 @@ fn decode_utf8_replacing(input: &[u8]) -> String {
     let mut remaining = input;
     let mut output = String::new();
     while !remaining.is_empty() {
-        match std::str::from_utf8(remaining) {
+        match str::from_utf8(remaining) {
             Ok(valid) => {
                 output.push_str(valid);
                 break;
@@ -165,7 +168,7 @@ fn decode_utf8_replacing(input: &[u8]) -> String {
             Err(error) => {
                 let valid_length = error.valid_up_to();
                 if let Some(valid) = remaining.get(..valid_length) {
-                    output.push_str(std::str::from_utf8(valid).unwrap_or_default());
+                    output.push_str(str::from_utf8(valid).unwrap_or_default());
                 }
                 output.push('\u{FFFD}');
                 let invalid_length = error
@@ -181,9 +184,7 @@ fn decode_utf8_replacing(input: &[u8]) -> String {
 }
 
 fn clean_frontmatter_text(value: Option<String>) -> Option<String> {
-    let Some(text) = value else {
-        return None;
-    };
+    let text = value?;
     let trimmed = text.trim().to_owned();
     if trimmed.is_empty() {
         None
@@ -199,7 +200,7 @@ fn repack(members: &[(String, Vec<u8>)]) -> ZipResult<Vec<u8>> {
         .compression_method(CompressionMethod::Deflated)
         .last_modified_time(
             DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
-                .map_err(|error| ZipError::InvalidArchive(error.to_string()))?,
+                .map_err(|error| ZipError::InvalidArchive(Cow::Owned(error.to_string())))?,
         )
         .unix_permissions(0o644);
     for (name, data) in members {

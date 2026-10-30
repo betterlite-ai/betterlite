@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
 use std::io::{Cursor, Read as _, Write as _};
+use std::path::Path;
 
 use rstest::rstest;
 use zip::write::SimpleFileOptions;
@@ -44,7 +46,7 @@ fn skill_archive_builds_root_manifest_and_metadata() {
         manifest,
         b"---\nname:  Demo skill \ndescription: ' A demo ' \n---\nbody"
     );
-    assert!(repacked.by_name("skill/SKILL.md").is_err());
+    repacked.by_name("skill/SKILL.md").unwrap_err();
 }
 
 #[rstest]
@@ -56,7 +58,7 @@ fn skill_archive_builds_root_manifest_and_metadata() {
 #[case::drive_letter(Some("C:/SKILL.md"))]
 fn skill_archive_rejects_invalid_uploads(#[case] path: Option<&str>) {
     let members = path
-        .map(|path| vec![(path, b"body".as_slice())])
+        .map(|member_path| vec![(member_path, b"body".as_slice())])
         .unwrap_or_default();
     assert!(build_skill_archive(&upload(&members)).is_none());
 }
@@ -87,14 +89,21 @@ fn skill_archive_repacks_sorted_members_with_fixed_metadata() {
     .unwrap();
     let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
     let names = (0..repacked.len())
-        .map(|index| repacked.by_index(index).unwrap().name().to_owned())
+        .map(|index| {
+            repacked
+                .by_index(index)
+                .unwrap()
+                .name()
+                .unwrap()
+                .into_owned()
+        })
         .collect::<Vec<_>>();
     assert_eq!(names, ["SKILL.md", "a.txt", "z.txt"]);
-    let assert_metadata = |index| {
+    let mut assert_metadata = |index| {
         let entry = repacked.by_index(index).unwrap();
         assert_eq!(
             entry.last_modified(),
-            zip::DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).unwrap()
+            Some(zip::DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).unwrap())
         );
         assert_eq!(entry.unix_mode(), Some(0o644));
         assert_eq!(entry.compression(), CompressionMethod::Deflated);
@@ -106,11 +115,10 @@ fn skill_archive_repacks_sorted_members_with_fixed_metadata() {
 
 #[test]
 fn skill_archive_replays_the_skill_archive_zip_corpus() {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/skill_archive_zip");
-    std::fs::read_dir(path)
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/skill_archive_zip");
+    fs::read_dir(path)
         .unwrap()
-        .map(|entry| std::fs::read(entry.unwrap().path()).unwrap())
+        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
         .for_each(|bytes| {
             drop(build_skill_archive(&bytes));
         });
