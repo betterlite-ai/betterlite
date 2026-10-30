@@ -169,8 +169,6 @@ fn expect_byte(bytes: &[u8], cursor: &mut usize, expected: u8) -> Result<(), Cat
 }
 
 fn scan_error(message: &str) -> CatalogError {
-    match message.len() {
-        0 => CatalogError::Scan(String::new()),
-        _ => CatalogError::Scan(message.to_owned()),
-    }
+    let message = message.to_owned();
+    CatalogError::Scan(message)
 }
