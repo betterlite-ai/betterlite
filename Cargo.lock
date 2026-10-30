@@ -924,6 +924,8 @@ dependencies = [
  "serde_ignored",
  "serde_json",
  "thiserror",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
