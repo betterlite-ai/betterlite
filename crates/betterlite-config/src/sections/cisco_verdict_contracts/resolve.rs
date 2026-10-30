@@ -156,6 +156,18 @@ where
     } else {
         FallbackAction::Block
     };
+    let timeout = resolve_timeout(configured_timeout, prefix, lookup)?;
+    Ok((flagged_action, fallback_action, timeout))
+}
+
+fn resolve_timeout<L>(
+    configured_timeout: Option<f64>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let timeout = match configured_timeout {
         Some(value) => value,
         None => lookup
@@ -170,11 +182,7 @@ where
             "Cisco AI Defense timeout is outside 1-60 seconds; clamping"
         );
     }
-    Ok((
-        flagged_action,
-        fallback_action,
-        timeout.clamp(1.0_f64, 60.0_f64),
-    ))
+    Ok(timeout.clamp(1.0_f64, 60.0_f64))
 }
 
 struct Choice<'choice> {
