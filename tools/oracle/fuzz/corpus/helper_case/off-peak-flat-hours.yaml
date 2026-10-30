@@ -1,0 +1,20 @@
+kind: helper
+name: off-peak-flat-hours
+call:
+  off_peak:
+    off_peak_pricing:
+      hours_utc: "10:00-11:00"
+      input_cost_per_token: 0.0000002
+    moment: "2024-06-16T10:30:00Z"
+    rates:
+      input_rate: 0.000001
+      output_rate: 0.000002
+      cache_read_rate: 0.0000001
+      cache_creation_rate: 0.0000003
+    base_costs:
+      prompt_rate: 0.000001
+      completion_rate: 0.000002
+      cache_creation_rate: 0.0000003
+      cache_read_rate: 0.0000001
+compare: {ignore: []}
+env: {}

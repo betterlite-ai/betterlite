@@ -2,10 +2,11 @@
 
 use std::path::Path;
 
+use crate::dispatch::progress::{Progress, clear};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::reviewer_rungs;
 use crate::dispatch::vendor::mark;
-use crate::dispatch::{Places, Progress, climb_rung, find_runner, note_blocked};
+use crate::dispatch::{EarlierReview, Places, climb_rung, find_runner, note_blocked, run_ladder};
 use crate::spec::agents::Agents;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
@@ -23,6 +24,8 @@ fn progress() -> Progress {
         feedback: Vec::new(),
         number: 0,
         used: 0,
+        rung: 0,
+        rung_used: 0,
         limited: false,
         review_rounds: 0,
         blocked_reports: 0,
@@ -30,6 +33,80 @@ fn progress() -> Progress {
         earlier: None,
         litellm: Vec::new(),
     }
+}
+
+#[test]
+fn a_saved_progress_comes_back_in_place_of_the_notes() {
+    let folder = tempfile::tempdir().unwrap();
+    let mut saved = progress();
+    saved.feedback = vec!["fix the parser".to_owned()];
+    saved.number = 4;
+    saved.used = 4;
+    saved.rung = 1;
+    saved.rung_used = 1;
+    saved.review_rounds = 2;
+    saved.earlier = Some(EarlierReview {
+        commit: "abc123".to_owned(),
+        findings: vec!["fix the parser".to_owned()],
+    });
+    saved.save(folder.path()).unwrap();
+    let loaded = Progress::load(folder.path(), vec!["a new note".to_owned()]).unwrap();
+    assert_eq!(loaded, saved);
+}
+
+#[test]
+fn without_a_saved_progress_the_notes_start_the_feedback() {
+    let folder = tempfile::tempdir().unwrap();
+    let loaded = Progress::load(folder.path(), vec!["a note".to_owned()]).unwrap();
+    let mut expected = progress();
+    expected.feedback = vec!["a note".to_owned()];
+    assert_eq!(loaded, expected);
+}
+
+#[test]
+fn clearing_removes_the_saved_progress_and_needs_none() {
+    let folder = tempfile::tempdir().unwrap();
+    progress().save(folder.path()).unwrap();
+    clear(folder.path()).unwrap();
+    assert!(!folder.path().join("progress.json").exists());
+    clear(folder.path()).unwrap();
+}
+
+#[test]
+fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
+    let (agents, task) = fixtures();
+    let brief = Brief {
+        task: &task,
+        file: "tasks/B000-workspace.yaml",
+        branch: "task/B000-workspace",
+        base: "abc123",
+    };
+    let folder = tempfile::tempdir().unwrap();
+    // a dispatch that started over at the first rung would stop at these marks instead
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let mut saved = progress();
+    saved.feedback = vec!["the saved findings".to_owned()];
+    saved.rung = agents.roles.worker.ladder.len();
+    saved.save(folder.path()).unwrap();
+    let error = run_ladder(&agents, &brief, &places, vec!["a new note".to_owned()]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("the worker ladder ran out of attempts; last feedback: the saved findings")
+    );
 }
 
 #[test]
