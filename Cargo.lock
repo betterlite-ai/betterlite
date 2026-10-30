@@ -802,6 +802,7 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "hex",
  "indexmap 2.14.2",
  "rstest",

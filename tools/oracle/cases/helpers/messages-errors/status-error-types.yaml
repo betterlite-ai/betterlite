@@ -1,6 +1,19 @@
 kind: helper
 name: status-error-types
 call:
-  messages_errors: {action: transform, status: 429, raw_message: broken}
+  messages_errors:
+    actions:
+      - {"action": "transform", "status": 400, "raw_message": "broken"}
+      - {"action": "transform", "status": 401, "raw_message": "broken"}
+      - {"action": "transform", "status": 403, "raw_message": "broken"}
+      - {"action": "transform", "status": 404, "raw_message": "broken"}
+      - {"action": "transform", "status": 413, "raw_message": "broken"}
+      - {"action": "transform", "status": 429, "raw_message": "broken"}
+      - {"action": "transform", "status": 500, "raw_message": "broken"}
+      - {"action": "transform", "status": 529, "raw_message": "broken"}
+      - {"action": "transform", "status": 418, "raw_message": "broken"}
+      - {"action": "transform", "status": 500, "raw_message": "broken", "request_id": null}
+      - {"action": "transform", "status": 500, "raw_message": "broken", "request_id": ""}
+      - {"action": "transform", "status": 500, "raw_message": "broken", "request_id": "req_a"}
 env: {}
 compare: {ignore: []}

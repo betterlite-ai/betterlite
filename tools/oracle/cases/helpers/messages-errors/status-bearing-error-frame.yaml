@@ -1,6 +1,13 @@
 kind: helper
 name: status-bearing-error-frame
 call:
-  messages_errors: {action: frame, status: 429, raw_message: slow, call_id: call_a}
+  messages_errors:
+    actions:
+      - {"action": "frame", "status": 429, "raw_message": "slow", "call_id": null}
+      - {"action": "frame", "status": 429, "raw_message": "slow", "call_id": ""}
+      - {"action": "frame", "status": 429, "raw_message": "slow", "call_id": "call_a"}
+      - {"action": "frame", "status": 418, "raw_message": "\u00e9\ud83d\ude00\nquote\""}
+      - {"action": "frame", "status": 401, "raw_message": "{\"extra\":7,\"error\":{\"message\":\"bad\",\"type\":\"vendor_error\",\"litellm_call_id\":null},\"type\":\"error\"}", "call_id": "call_a"}
+      - {action: frame, status: 418, raw_message: '{"type":"error","error":{"type":null,"message":1e-05},"extra":[0,1.0,1e+16]}'}
 env: {}
 compare: {ignore: []}

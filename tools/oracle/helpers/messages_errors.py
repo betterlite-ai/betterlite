@@ -5,20 +5,28 @@ from litellm.anthropic_interface.exceptions.exception_mapping_utils import (
     AnthropicErrorSseFrame,
     AnthropicExceptionMapping,
 )
+from litellm.types.llms.anthropic_messages.anthropic_request import AnthropicMetadata
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
-class Input(TypedDict):
+class Action(TypedDict):
     action: str
     status: NotRequired[int]
     raw_message: NotRequired[str]
     request_id: NotRequired[str | None]
     call_id: NotRequired[str | None]
-    bytes: NotRequired[list[int]]
+    json: NotRequired[str]
+    metadata: NotRequired[bool]
 
 
-def run(argument: Input) -> object:
+class Batch(TypedDict):
+    actions: list[Action]
+
+
+def run(argument: Action | Batch) -> object:
+    if "actions" in argument:
+        return [run(action) for action in argument["actions"]]
     action = argument["action"]
     status = argument.get("status", 0)
     raw_message = argument.get("raw_message", "")
@@ -39,5 +47,7 @@ def run(argument: Input) -> object:
             "json_body": frame.json_body(argument.get("call_id")),
         }
     if action == "wire_roundtrip":
-        return cast(Json, json.loads(bytes(argument.get("bytes", []))))
+        if argument.get("metadata", False):
+            return AnthropicMetadata.model_validate_json(argument.get("json", "{}")).model_dump()
+        return cast(Json, json.loads(argument.get("json", "{}")))
     raise ValueError("unknown messages_errors action")
