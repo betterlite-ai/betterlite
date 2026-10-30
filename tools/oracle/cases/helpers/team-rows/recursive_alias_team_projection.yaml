@@ -1,0 +1,8 @@
+kind: helper
+name: recursive_alias_team_projection
+call:
+  team_rows:
+    calls:
+      - {"name":"recursive_alias_team_projection","operation":"team","row":{"team_id":"t","litellm_model_table":{"created_by":"c","updated_by":"u","model_aliases":{"a":"m"},"team":{"team_id":"inner","metadata":"{}"}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: membership_empty_email_wins
+call:
+  budget_permission_rows:
+    operation: membership
+    row: {user_id: u, organization_id: o, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', user_email: '', user: {user_email: nested}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
