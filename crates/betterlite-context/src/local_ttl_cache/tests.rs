@@ -165,6 +165,14 @@ fn local_ttl_cache_cases(#[case] name: &str) {
                 .set("empty", CacheValue::Bytes(vec![]), None)
                 .unwrap();
             assert_eq!(loaded_negative.get("empty").unwrap(), None);
+            let mut large_limit = timed_cache(1, i64::MAX, Arc::new(|| 0.0_f64));
+            large_limit
+                .set("empty", CacheValue::Bytes(vec![]), None)
+                .unwrap();
+            assert_eq!(
+                large_limit.get("empty").unwrap(),
+                Some(CacheValue::Bytes(vec![]))
+            );
             let mut cache = timed_cache(1, 1, Arc::new(|| 0.0_f64));
             cache
                 .set("small", CacheValue::Text("ok".to_owned()), None)
