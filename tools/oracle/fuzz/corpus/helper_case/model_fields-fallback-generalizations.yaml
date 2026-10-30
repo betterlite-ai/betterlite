@@ -1,0 +1,8 @@
+kind: helper
+name: fallback-generalizations
+call:
+  model_fields:
+    kind: fallback_generalizations
+    source: '{"rules":[{"name":"bedrock-claude-ids","pattern":"bedrock/.*claude.*","model_info":{"litellm_provider":"bedrock"}}]}'
+compare: {ignore: []}
+env: {}

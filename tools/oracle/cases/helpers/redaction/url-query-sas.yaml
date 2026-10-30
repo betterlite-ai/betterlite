@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-url-query-sas
+call:
+  redaction:
+    function: redact_string
+    text: "https://api.example.com/v1?api_key=AAAAAAAAAAAAAAAA&harmless=value&sig=BBBBBBBBBBBBBBBB"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,7 @@
+kind: helper
+name: modalities-regions
+call:
+  model_fields:
+    source: '{"litellm_provider":"vertex_ai","supported_modalities":["text","image"],"supported_output_modalities":["text","code"],"supported_regions":["global","us-east1"]}'
+compare: {ignore: []}
+env: {}

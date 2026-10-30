@@ -11,11 +11,13 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "toki
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
+betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-core = { path = "../../crates/betterlite-core" }
 betterlite-db = { path = "../../crates/betterlite-db" }
+betterlite-error = { path = "../../crates/betterlite-error" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-harness = { path = "../../crates/betterlite-harness" }
 betterlite-http = { path = "../../crates/betterlite-http" }
@@ -30,6 +32,7 @@ betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
+betterlite-redis = { path = "../../crates/betterlite-redis" }
 betterlite-router = { path = "../../crates/betterlite-router" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
@@ -41,11 +44,13 @@ futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
+rust_decimal.workspace = true
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+sha2.workspace = true
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "time", "io-util", "macros", "process", "fs"] }
 tracing = "0.1.44"
