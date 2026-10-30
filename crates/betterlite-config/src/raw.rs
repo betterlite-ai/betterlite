@@ -84,10 +84,6 @@ pub(super) struct RawLiteLlm {
     #[serde(rename = "bedrock_request_metadata_fields")]
     pub(super) bedrock_metadata_fields: Option<Vec<RawMetadataField>>,
     pub(super) modify_params: Option<bool>,
-    #[serde(default)]
-    pub(super) cost_discount_config: BTreeMap<String, serde_json::Value>,
-    #[serde(default)]
-    pub(super) cost_margin_config: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]

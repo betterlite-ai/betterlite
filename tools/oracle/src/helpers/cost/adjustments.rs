@@ -1,4 +1,4 @@
-use betterlite_config::types::CostAdjustmentMap;
+use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_cost::adjustments::{apply_cost_discount, apply_cost_margin};
 use rust_decimal::Decimal;
 use serde::Deserialize;

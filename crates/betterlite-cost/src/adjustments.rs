@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use betterlite_config::types::CostAdjustmentMap;
+use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use thiserror::Error;

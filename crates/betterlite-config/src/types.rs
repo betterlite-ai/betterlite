@@ -76,7 +76,7 @@ pub struct ProxyTrust {
     pub disable_aiohttp_trust_env: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LiteLlmSettings {
     pub num_retries: Option<u32>,
     pub request_timeout: Option<f64>,
@@ -85,23 +85,4 @@ pub struct LiteLlmSettings {
     pub bedrock_metadata_fields: Vec<String>,
     pub modify_params: bool,
     pub default_max_tokens: i64,
-    pub cost_discount_config: CostAdjustmentMap,
-    pub cost_margin_config: CostAdjustmentMap,
 }
-
-impl std::fmt::Debug for LiteLlmSettings {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("LiteLlmSettings")
-            .field("num_retries", &self.num_retries)
-            .field("request_timeout", &self.request_timeout)
-            .field("drop_params", &self.drop_params)
-            .field("proxy_trust", &self.proxy_trust)
-            .field("bedrock_metadata_fields", &self.bedrock_metadata_fields)
-            .field("modify_params", &self.modify_params)
-            .field("default_max_tokens", &self.default_max_tokens)
-            .finish()
-    }
-}
-
-pub type CostAdjustmentMap = BTreeMap<String, serde_json::Value>;
