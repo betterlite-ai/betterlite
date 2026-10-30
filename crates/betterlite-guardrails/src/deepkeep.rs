@@ -238,38 +238,52 @@ impl DeepKeepGuardrail {
         })
     }
 
+    async fn send_request(
+        &self,
+        request: &Request,
+    ) -> Result<(reqwest::StatusCode, String), DeepKeepError> {
+        let response = self
+            .client
+            .post(&self.settings.api_base)
+            .headers(self.request_headers()?)
+            .json(request)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|source| {
+                if source.is_timeout() {
+                    DeepKeepError::Timeout { source }
+                } else {
+                    DeepKeepError::Request { source }
+                }
+            })?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|source| DeepKeepError::Request { source })?;
+        Ok((status, body))
+    }
+
     pub async fn apply(
         &self,
         inputs: Inputs,
         context: RequestContext,
     ) -> Result<Inputs, DeepKeepError> {
         let request = self.build_request(inputs.clone(), context);
-        let response = match self
-            .client
-            .post(&self.settings.api_base)
-            .headers(self.request_headers()?)
-            .json(&request)
-            .timeout(self.timeout)
-            .send()
-            .await
-        {
+        let (status, body) = match self.send_request(&request).await {
             Ok(response) => response,
-            Err(source) => {
-                if self.settings.unreachable_fallback == UnreachableFallback::FailOpen {
-                    return Ok(inputs);
-                }
-                return Err(if source.is_timeout() {
-                    DeepKeepError::Timeout { source }
-                } else {
-                    DeepKeepError::Request { source }
-                });
+            Err(error)
+                if self.settings.unreachable_fallback == UnreachableFallback::FailOpen
+                    && matches!(
+                        error,
+                        DeepKeepError::Request { .. } | DeepKeepError::Timeout { .. }
+                    ) =>
+            {
+                return Ok(inputs);
             }
+            Err(error) => return Err(error),
         };
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|source| DeepKeepError::Request { source })?;
         if !status.is_success() {
             if self.settings.unreachable_fallback == UnreachableFallback::FailOpen
                 && matches!(
