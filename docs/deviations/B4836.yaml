@@ -1,4 +1,6 @@
 task: B4836
+# Keep the complete branch inventory in the worker report, including earlier attempts.
+# The first four entries are task-declared safeguards already present in the pinned LiteLLM code.
 deviations:
   - what: "Session token is never in argv or environment; the config references it with `{file:<path>}` inside OPENCODE_CONFIG_CONTENT JSON."
     why: "Command-line arguments are visible in process listings. The token is a secret and must stay out of argv and env."
