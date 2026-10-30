@@ -1,6 +1,8 @@
+use std::env;
 use std::fs::File;
 use std::path::PathBuf;
 
+use dec_from_char::DecimalExtended as _;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -16,8 +18,10 @@ pub const CA_CERT_ENV: &str = "LITELLM_BILLING_METRICS_CA_CERT";
 pub const EXPORT_INTERVAL_ENV: &str = "LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS";
 pub const DEFAULT_EXPORT_INTERVAL_MS: i64 = 60_000;
 pub const METRICS_PATH: &str = "/v1/metrics";
-// Python's tempfile.gettempdir reads these in this order before falling back to /tmp
+// Python's tempfile.gettempdir tries these, in this order, before the platform defaults
 const TEMP_ROOT_ENV: [&str; 3] = ["TMPDIR", "TEMP", "TMP"];
+// tempfile._candidate_tempdir_list appends these platform defaults, then the current directory
+const TEMP_ROOT_DEFAULTS: [&str; 3] = ["/tmp", "/var/tmp", "/usr/tmp"];
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -34,7 +38,8 @@ pub struct Settings {
     pub ca_cert: Option<String>,
     // LiteLLM keeps any integer here and lets the exporter reject zero and negative values
     pub export_interval_ms: i64,
-    pub temp_root: PathBuf,
+    // ordered like tempfile.gettempdir's candidate list: usable env vars, then platform defaults, then cwd
+    pub temp_root_candidates: Vec<PathBuf>,
 }
 
 impl Default for Settings {
@@ -45,9 +50,15 @@ impl Default for Settings {
             client_key: None,
             ca_cert: None,
             export_interval_ms: DEFAULT_EXPORT_INTERVAL_MS,
-            temp_root: PathBuf::from("/tmp"),
+            temp_root_candidates: default_temp_root_candidates(),
         }
     }
+}
+
+fn default_temp_root_candidates() -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = TEMP_ROOT_DEFAULTS.into_iter().map(PathBuf::from).collect();
+    candidates.push(env::current_dir().unwrap_or_else(|_source| PathBuf::from(".")));
+    candidates
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,17 +78,19 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
-        let temp_root = TEMP_ROOT_ENV
+        let mut temp_root_candidates: Vec<PathBuf> = TEMP_ROOT_ENV
             .into_iter()
-            .find_map(present)
-            .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from);
+            .filter_map(present)
+            .map(PathBuf::from)
+            .collect();
+        temp_root_candidates.extend(default_temp_root_candidates());
         Ok(Settings {
             endpoint: present(ENDPOINT_ENV),
             client_cert: present(CLIENT_CERT_ENV),
             client_key: present(CLIENT_KEY_ENV).map(SecretString::from),
             ca_cert: present(CA_CERT_ENV),
             export_interval_ms: export_interval_ms(lookup.lookup(EXPORT_INTERVAL_ENV)),
-            temp_root,
+            temp_root_candidates,
         })
     }
 }
@@ -86,14 +99,44 @@ fn export_interval_ms(raw: Option<String>) -> i64 {
     let Some(value) = raw else {
         return DEFAULT_EXPORT_INTERVAL_MS;
     };
-    match value.trim().parse() {
-        Ok(interval) => interval,
-        Err(_error) => {
-            tracing::warn!(
-                "Invalid {EXPORT_INTERVAL_ENV}={value:?}, falling back to {DEFAULT_EXPORT_INTERVAL_MS} ms"
-            );
-            DEFAULT_EXPORT_INTERVAL_MS
+    parse_python_int(&value).unwrap_or_else(|| {
+        tracing::warn!(
+            "Invalid {EXPORT_INTERVAL_ENV}={value:?}, falling back to {DEFAULT_EXPORT_INTERVAL_MS} ms"
+        );
+        DEFAULT_EXPORT_INTERVAL_MS
+    })
+}
+
+// Mirrors Python's int(str): Unicode whitespace, an optional sign, Unicode decimal digits, and underscores allowed only strictly between two digits (PEP 515).
+fn parse_python_int(raw: &str) -> Option<i64> {
+    let trimmed = raw.trim();
+    let (negative, digits) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
+    let mut value: i64 = 0;
+    let mut previous_was_digit = false;
+    let mut saw_digit = false;
+    for character in digits.chars() {
+        if character == '_' {
+            if !previous_was_digit {
+                return None;
+            }
+            previous_was_digit = false;
+            continue;
         }
+        let digit = i64::from(character.to_decimal_utf8()?);
+        value = value.checked_mul(10)?.checked_add(digit)?;
+        previous_was_digit = true;
+        saw_digit = true;
+    }
+    if !saw_digit || !previous_was_digit {
+        return None;
+    }
+    if negative {
+        value.checked_neg()
+    } else {
+        Some(value)
     }
 }
 
@@ -133,7 +176,7 @@ impl Settings {
         client_key: &SecretString,
     ) -> Option<credentials::CredentialPaths> {
         let paths = match credentials::resolve_paths(
-            &self.temp_root,
+            &self.temp_root_candidates,
             client_cert,
             client_key.expose_secret(),
             self.ca_cert.as_deref(),

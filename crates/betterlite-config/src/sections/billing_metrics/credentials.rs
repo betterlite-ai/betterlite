@@ -28,7 +28,7 @@ pub(super) struct CredentialPaths {
 }
 
 pub(super) fn resolve_paths(
-    temp_root: &Path,
+    temp_root_candidates: &[PathBuf],
     client_cert: &str,
     client_key: &str,
     ca_cert: Option<&str>,
@@ -45,15 +45,7 @@ pub(super) fn resolve_paths(
         });
     }
     // the directory is kept for the life of the process, since the exporter reads the files by path
-    let directory = tempfile::Builder::new()
-        .prefix(PEM_DIRECTORY_PREFIX)
-        .permissions(Permissions::from_mode(PEM_DIRECTORY_MODE))
-        .tempdir_in(temp_root)
-        .map_err(|source| CredentialError::Write {
-            path: temp_root.to_path_buf(),
-            source,
-        })?
-        .keep();
+    let directory = create_pem_directory(temp_root_candidates)?;
     Ok(CredentialPaths {
         client_cert: credential_path(&directory, "client.crt", client_cert)?,
         client_key: credential_path(&directory, "client.key", client_key)?,
@@ -61,6 +53,30 @@ pub(super) fn resolve_paths(
             .map(|value| credential_path(&directory, "ca.crt", value))
             .transpose()?,
     })
+}
+
+// Mirrors tempfile.mkdtemp trying every tempfile.gettempdir candidate, not just the first.
+fn create_pem_directory(candidates: &[PathBuf]) -> Result<PathBuf, CredentialError> {
+    let mut last_error = CredentialError::Write {
+        path: PathBuf::new(),
+        source: io::Error::other("no temporary directory candidates were configured"),
+    };
+    for candidate in candidates {
+        let attempt = tempfile::Builder::new()
+            .prefix(PEM_DIRECTORY_PREFIX)
+            .permissions(Permissions::from_mode(PEM_DIRECTORY_MODE))
+            .tempdir_in(candidate);
+        match attempt {
+            Ok(directory) => return Ok(directory.keep()),
+            Err(source) => {
+                last_error = CredentialError::Write {
+                    path: candidate.clone(),
+                    source,
+                };
+            }
+        }
+    }
+    Err(last_error)
 }
 
 fn credential_path(
