@@ -157,7 +157,6 @@ fn splitter_counts_unicode_characters_not_bytes() {
 fn pdf_extracts_text_from_a_well_formed_document() {
     let pdf = minimal_pdf("Test PDF File");
     let extracted = extract_text_from_pdf(&pdf);
-    eprintln!("PROBE_EXTRACTED={extracted:?}");
     assert!(extracted.is_some());
 }
 
