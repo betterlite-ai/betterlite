@@ -46,7 +46,7 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
             assert!(filtered.get("type").is_none());
             for conflict_source in [
                 r#"{"type":"array","enum":[]}"#,
-                r#"{"type":"object","enum":[{}]}"#,
+                r#"{"type":"object","enum":[1]}"#,
                 r#"{"type":"integer","enum":[1.5]}"#,
                 r#"{"type":"number","enum":["text"]}"#,
             ] {
@@ -55,9 +55,26 @@ fn output_schema_cases(#[case] source: &str, #[case] expected: &str) {
                     serde_json::to_value(filter_anthropic_output_schema(conflict_schema)).unwrap();
                 assert!(conflict_result.get("type").is_none());
             }
+            for matching_source in [
+                r#"{"type":"array","enum":[[]]}"#,
+                r#"{"type":"object","enum":[{}]}"#,
+            ] {
+                let matching_schema: Json = serde_json::from_str(matching_source).unwrap();
+                let matching_result =
+                    serde_json::to_value(filter_anthropic_output_schema(matching_schema)).unwrap();
+                assert!(matching_result.get("type").is_some());
+            }
         }
         if expected == "anyOf" {
             assert!(filtered.get("anyOf").is_some());
+            let ordered_schema: Json = serde_json::from_str(
+                r#"{"oneOf":[{"type":"string"}],"anyOf":[{"type":"number"}]}"#,
+            )
+            .unwrap();
+            let ordered_result =
+                serde_json::to_value(filter_anthropic_output_schema(ordered_schema)).unwrap();
+            assert_eq!(ordered_result["anyOf"][0]["type"], "string");
+            assert_eq!(ordered_result["anyOf"][1]["type"], "number");
         }
         if expected == "additionalProperties" {
             assert_eq!(filtered["additionalProperties"], false);

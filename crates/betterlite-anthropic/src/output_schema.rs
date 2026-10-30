@@ -138,7 +138,7 @@ fn add_alternative(result: &mut Object, key: &str, value: Json) {
         .into_iter()
         .map(filter_anthropic_output_schema)
         .collect::<Vec<_>>();
-    if key == "oneOf" {
+    if key == "oneOf" || key == "anyOf" {
         let mut any = take_list(result, "anyOf");
         any.extend(filtered);
         result.insert("anyOf".to_owned(), Json::List(any));
@@ -210,7 +210,7 @@ fn enum_type_conflict(schema: &Object) -> bool {
     let Some(Json::Text(kind)) = schema.get("type") else {
         return false;
     };
-    if values.is_empty() || kind == "array" || kind == "object" {
+    if values.is_empty() {
         return true;
     }
     values.iter().any(|value| !matches_type(value, kind))
@@ -223,6 +223,8 @@ fn matches_type(value: &Json, kind: &str) -> bool {
         "integer" => matches!(value, Json::Number(number) if number.is_i64() || number.is_u64()),
         "number" => matches!(value, Json::Number(_)),
         "string" => matches!(value, Json::Text(_)),
+        "array" => matches!(value, Json::List(_)),
+        "object" => matches!(value, Json::Object(_)),
         _ => true,
     }
 }
