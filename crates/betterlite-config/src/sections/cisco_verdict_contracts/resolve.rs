@@ -223,9 +223,9 @@ fn optional<L>(
 where
     L: EnvironmentLookup,
 {
-    let resolved = value
-        .or_else(|| lookup.lookup(variable))
-        .map(|text| resolve_string(text, &format!("{prefix}.{name}"), lookup))
-        .transpose();
-    resolved
+    let selected = value.or_else(|| lookup.lookup(variable));
+    if let Some(text) = selected {
+        return resolve_string(text, &format!("{prefix}.{name}"), lookup).map(Some);
+    }
+    Ok(None)
 }
