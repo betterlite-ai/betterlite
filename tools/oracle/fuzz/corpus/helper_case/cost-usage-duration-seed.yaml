@@ -1,0 +1,5 @@
+kind: helper
+name: cost-usage-duration-seed
+call: {cost_usage: {transcription: [{type: duration, seconds: 1.0}], interactions: []}}
+env: {}
+compare: {ignore: []}
