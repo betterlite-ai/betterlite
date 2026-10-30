@@ -1,0 +1,5 @@
+kind: helper
+name: has-decision-fields
+call: {b3758: {function: has_decision_fields, response: {score: 1}}}
+env: {}
+compare: {ignore: []}

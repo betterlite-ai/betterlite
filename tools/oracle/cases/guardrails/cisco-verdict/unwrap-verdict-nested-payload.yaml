@@ -1,0 +1,5 @@
+kind: helper
+name: unwrap-verdict-nested-payload
+call: {b3758: {function: unwrap_verdict, response: {ai_defense: {status: ok}}}}
+env: {}
+compare: {ignore: []}

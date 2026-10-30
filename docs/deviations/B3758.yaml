@@ -1,0 +1,5 @@
+task: B3758
+deviations:
+  - what: Cisco configuration returns errors with betterlite's own wording rather than LiteLLM's wording.
+    why: The repository's errors-match-litellm rule keeps betterlite-native error text while preserving the same failure and code semantics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1250-L1273
