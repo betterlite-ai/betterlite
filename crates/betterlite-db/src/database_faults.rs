@@ -130,16 +130,26 @@ pub fn is_transport_error(error: &DbError) -> bool {
 
 #[must_use]
 pub const fn is_prisma_error(error: &DbError) -> bool {
-    if error.error_type.is_data_type() {
-        return true;
-    }
-    matches!(
-        error.error_type,
+    match error.error_type {
         ErrorType::Prisma
-            | ErrorType::EngineConnection
-            | ErrorType::ClientNotConnected
-            | ErrorType::HttpClientClosed
-    )
+        | ErrorType::EngineConnection
+        | ErrorType::ClientNotConnected
+        | ErrorType::HttpClientClosed
+        | ErrorType::Data
+        | ErrorType::UniqueViolation
+        | ErrorType::ForeignKeyViolation
+        | ErrorType::MissingRequiredValue
+        | ErrorType::RawQuery
+        | ErrorType::TableNotFound
+        | ErrorType::RecordNotFound => true,
+        ErrorType::Connect
+        | ErrorType::ConnectTimeout
+        | ErrorType::Read
+        | ErrorType::ReadTimeout
+        | ErrorType::Deadline
+        | ErrorType::NoDbConnection
+        | ErrorType::Other => false,
+    }
 }
 
 #[must_use]

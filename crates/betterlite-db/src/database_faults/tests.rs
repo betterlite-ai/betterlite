@@ -250,8 +250,21 @@ async fn read_success() {
     assert_eq!(effects, ["read"]);
 }
 
+#[tokio::test]
+async fn data_no_reconnect() {
+    let first = error(ErrorType::Data);
+    let (result, effects) = scripted_retry(
+        vec![Err(first.clone()), Ok(7_i32)],
+        Some(Ok(true)),
+        (None, None),
+        POLICY,
+    )
+    .await;
+    assert_eq!(result, Err(first));
+    assert_eq!(effects, ["read"]);
+}
+
 #[rstest::rstest]
-#[case::data_no_reconnect(ErrorType::Data)]
 #[case::unsafe_transport_no_replay(ErrorType::ReadTimeout)]
 #[case::connect_timeout(ErrorType::ConnectTimeout)]
 #[case::read_error(ErrorType::Read)]
