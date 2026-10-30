@@ -1,0 +1,13 @@
+kind: helper
+name: key_expires_string_stays_string
+call:
+  identity_rows:
+    operation: key
+    row: {expires: '2027-01-01'}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/total_spend
+      why: Decimal and float serializers use different zero representations

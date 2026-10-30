@@ -1,0 +1,11 @@
+kind: helper
+name: end_user_region_exact_literals
+call:
+  identity_rows:
+    operation: end_user
+    row: {user_id: u, blocked: false, spend: null, allowed_model_region: eu}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations

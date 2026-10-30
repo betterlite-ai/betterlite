@@ -1,0 +1,11 @@
+kind: helper
+name: user_all_defaults_and_required_id
+call:
+  identity_rows:
+    operation: user
+    row: {user_id: u}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations

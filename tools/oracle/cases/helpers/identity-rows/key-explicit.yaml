@@ -1,0 +1,15 @@
+kind: helper
+name: key_all_explicit_fields_roundtrip
+call:
+  identity_rows:
+    operation: key
+    row: {token: tok, key_name: name, key_alias: alias, spend: 1.25, total_spend: 2.5, max_budget: 10, expires: 'never', models: [m, {x: 1}], aliases: {a: b}, config: {x: true}, user_id: u, team_id: t, agent_id: a, project_id: p, max_parallel_requests: 2, metadata: {x: y}, tpm_limit: 3, rpm_limit: 4, tpd_limit: 5, budget_duration: 1d, allowed_cache_controls: [no-cache], allowed_routes: [route], key_type: user, permissions: {scope: all}, model_spend: {m: 1}, model_max_budget: {m: 2}, budget_fallbacks: {m: [m2]}, soft_budget_cooldown: true, blocked: false, litellm_budget_table: {budget_id: b}, budget_id: b, org_id: o, created_by: c, updated_by: u, object_permission_id: op, access_group_ids: [g], rotation_count: 2, auto_rotate: true, rotation_interval: 1d, router_settings: {x: y}, budget_limits: [{x: 1}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/total_spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/max_budget
+      why: Decimal and float serializers use different zero representations

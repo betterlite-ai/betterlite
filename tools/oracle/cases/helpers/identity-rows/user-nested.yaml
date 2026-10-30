@@ -1,0 +1,13 @@
+kind: helper
+name: nested_membership_and_permission
+call:
+  identity_rows:
+    operation: user
+    row: {user_id: u, object_permission: {object_permission_id: p}, organization_memberships: [{user_id: u, organization_id: o, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/organization_memberships/0/spend
+      why: Decimal and float serializers use different zero representations

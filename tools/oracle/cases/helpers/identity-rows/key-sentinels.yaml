@@ -1,0 +1,13 @@
+kind: helper
+name: key_model_sentinels_are_plain_values
+call:
+  identity_rows:
+    operation: key
+    row: {models: ['*', all-proxy-models]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/total_spend
+      why: Decimal and float serializers use different zero representations

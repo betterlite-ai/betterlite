@@ -1,0 +1,13 @@
+kind: helper
+name: pydantic_scalar_coercion_boundaries
+call:
+  identity_rows:
+    operation: key
+    row: {spend: '1.5', max_parallel_requests: '2'}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/total_spend
+      why: Decimal and float serializers use different zero representations

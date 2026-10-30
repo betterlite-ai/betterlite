@@ -1,0 +1,13 @@
+kind: helper
+name: user_all_explicit_fields_roundtrip
+call:
+  identity_rows:
+    operation: user
+    row: {user_id: u, user_alias: alias, team_id: t, sso_user_id: sso, organization_id: o, object_permission_id: op, password_reset_required: true, teams: [t], user_role: admin, max_budget: 10, spend: 1.5, user_email: u@example.com, models: [m, {x: 1}], metadata: {x: y}, max_parallel_requests: 2, tpm_limit: 3, rpm_limit: 4, budget_duration: 1d, allowed_cache_controls: [no-cache], policies: [p], model_spend: {m: 1}, model_max_budget: {m: 2}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/max_budget
+      why: Decimal and float serializers use different zero representations

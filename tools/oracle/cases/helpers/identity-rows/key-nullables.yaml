@@ -1,0 +1,13 @@
+kind: helper
+name: key_nullable_lists_and_rotation_fields
+call:
+  identity_rows:
+    operation: key
+    row: {allowed_cache_controls: null, allowed_routes: null, rotation_count: null, auto_rotate: null}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
+    - pointer: /value/total_spend
+      why: Decimal and float serializers use different zero representations
