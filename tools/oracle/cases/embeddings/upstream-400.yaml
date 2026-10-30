@@ -13,4 +13,9 @@ upstream:
   - status: 400
     headers: {content-type: application/json, x-request-id: embedding-error}
     body: {error: {message: bad input, type: invalid_request_error, param: input, code: invalid}}
-compare: {headers: [content-type, llm_provider-x-request-id], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}
+compare:
+  headers: [content-type, llm_provider-x-request-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: provider SDK error text formatting differs across OpenAI client versions}
