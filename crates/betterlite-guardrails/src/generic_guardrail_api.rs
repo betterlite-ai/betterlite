@@ -35,7 +35,6 @@ pub enum GenericGuardrailAPIError {
     #[error("the generic guardrail API blocked the content{reason}")]
     Blocked { reason: String },
 }
-
 impl GenericGuardrailAPIError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
@@ -66,7 +65,6 @@ impl GenericGuardrailAPIError {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct GenericGuardrailAPI {
     pub api_key: Option<SecretString>,
@@ -76,7 +74,6 @@ pub struct GenericGuardrailAPI {
     pub client: reqwest::Client,
     pub timeout: Duration,
 }
-
 impl GenericGuardrailAPI {
     pub fn prepare_headers(&self) -> Result<HeaderMap, GenericGuardrailAPIError> {
         let mut headers = HeaderMap::new();
@@ -160,7 +157,6 @@ impl GenericGuardrailAPI {
         Err(error)
     }
 }
-
 #[must_use]
 pub fn extract_user_api_key_metadata(
     litellm_metadata: Option<&BTreeMap<String, Option<String>>>,
@@ -186,7 +182,6 @@ pub fn extract_user_api_key_metadata(
     }
     result
 }
-
 fn request_error(source: reqwest::Error) -> GenericGuardrailAPIError {
     if source.is_timeout() {
         GenericGuardrailAPIError::Timeout { source }
@@ -194,7 +189,6 @@ fn request_error(source: reqwest::Error) -> GenericGuardrailAPIError {
         GenericGuardrailAPIError::Request { source }
     }
 }
-
 async fn read_capped_body(
     mut response: reqwest::Response,
     limit: usize,

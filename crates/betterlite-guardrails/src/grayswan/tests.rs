@@ -97,7 +97,6 @@ fn grayswan_payload_forwards_messages_and_merges_dynamic_parameters() {
     assert_eq!(payload.messages, messages);
     assert_eq!(payload.policy_id.as_deref(), Some("request-policy"));
 }
-
 #[test]
 fn grayswan_payload_dynamic_categories_override_configured_categories() {
     let mut instance = guardrail(OnFlaggedAction::Block);
@@ -113,7 +112,6 @@ fn grayswan_payload_dynamic_categories_override_configured_categories() {
         Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())]))
     );
 }
-
 #[test]
 fn grayswan_payload_empty_dynamic_categories_fall_back_to_configured_categories() {
     let mut instance = guardrail(OnFlaggedAction::Block);
@@ -132,7 +130,6 @@ fn grayswan_payload_empty_dynamic_categories_fall_back_to_configured_categories(
         )]))
     );
 }
-
 #[test]
 fn grayswan_payload_empty_dynamic_policy_id_falls_back_to_configured_policy_id() {
     let mut instance = guardrail(OnFlaggedAction::Block);
@@ -142,7 +139,6 @@ fn grayswan_payload_empty_dynamic_policy_id_falls_back_to_configured_policy_id()
     let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
     assert_eq!(payload.policy_id.as_deref(), Some("configured-policy"));
 }
-
 #[test]
 fn grayswan_payload_falls_back_to_configured_reasoning_mode() {
     let mut instance = guardrail(OnFlaggedAction::Block);
@@ -151,7 +147,6 @@ fn grayswan_payload_falls_back_to_configured_reasoning_mode() {
     let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
     assert_eq!(payload.reasoning_mode, Some(ReasoningMode::Hybrid));
 }
-
 #[test]
 fn grayswan_payload_dynamic_reasoning_mode_overrides_configured_mode() {
     let mut instance = guardrail(OnFlaggedAction::Block);
@@ -161,7 +156,6 @@ fn grayswan_payload_dynamic_reasoning_mode_overrides_configured_mode() {
     let payload = instance.prepare_payload(&scan, Vec::new(), Vec::new());
     assert_eq!(payload.reasoning_mode, Some(ReasoningMode::Hybrid));
 }
-
 #[test]
 fn grayswan_build_messages_prepends_context_and_uses_request_role() {
     let context = vec![message("assistant", "old")];
@@ -175,7 +169,6 @@ fn grayswan_build_messages_prepends_context_and_uses_request_role() {
     assert_eq!(messages[0].role, "assistant");
     assert_eq!(messages[1].role, "user");
 }
-
 #[test]
 fn grayswan_build_messages_merges_single_text_tail_with_tool_calls() {
     let tool_calls = vec![GuardrailExtraValue::Object(BTreeMap::from([(
@@ -196,7 +189,6 @@ fn grayswan_build_messages_merges_single_text_tail_with_tool_calls() {
         Some(&GuardrailExtraValue::Text("final answer".to_owned()))
     );
 }
-
 #[test]
 fn grayswan_build_messages_appends_a_separate_tool_calls_message_when_multiple_texts_present() {
     let tool_calls = vec![GuardrailExtraValue::Text("call".to_owned())];
@@ -211,14 +203,12 @@ fn grayswan_build_messages_appends_a_separate_tool_calls_message_when_multiple_t
     assert!(messages[2].extra.contains_key("tool_calls"));
     assert!(!messages[2].extra.contains_key("content"));
 }
-
 #[test]
 fn grayswan_verdict_at_threshold_blocks() {
     let guardrail = guardrail(OnFlaggedAction::Block);
     let result = guardrail.process_response(&response(0.5), GuardrailInputType::Request, vec![]);
     drop(result.expect_err("threshold violation"));
 }
-
 #[test]
 fn grayswan_passthrough_replaces_post_call_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
@@ -228,7 +218,6 @@ fn grayswan_passthrough_replaces_post_call_messages() {
     assert_eq!(result.messages.len(), 1);
     assert!(matches!(result.verdict, GraySwanVerdict::Replaced { .. }));
 }
-
 #[test]
 fn grayswan_passthrough_short_circuits_pre_call_instead_of_replacing_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
@@ -268,7 +257,6 @@ fn structured_rule(
         extra: BTreeMap::new(),
     })
 }
-
 #[test]
 fn grayswan_verdict_message_includes_rule_name_and_description() {
     let mut scan_response = response(0.9);
@@ -288,7 +276,6 @@ fn grayswan_verdict_message_includes_rule_name_and_description() {
         )
     );
 }
-
 #[test]
 fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
     let mut scan_response = response(0.9);
@@ -304,7 +291,6 @@ fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
         )
     );
 }
-
 #[test]
 fn grayswan_verdict_message_prefixes_the_rule_number_when_present() {
     let mut scan_response = response(0.9);
@@ -324,7 +310,6 @@ fn grayswan_verdict_message_prefixes_the_rule_number_when_present() {
         )
     );
 }
-
 #[test]
 fn grayswan_verdict_message_omits_the_rule_number_when_it_is_zero() {
     let mut scan_response = response(0.9);
@@ -344,7 +329,6 @@ fn grayswan_verdict_message_omits_the_rule_number_when_it_is_zero() {
         )
     );
 }
-
 #[test]
 fn grayswan_verdict_message_omits_the_rule_number_when_it_is_an_empty_string() {
     let mut scan_response = response(0.9);
@@ -364,7 +348,6 @@ fn grayswan_verdict_message_omits_the_rule_number_when_it_is_an_empty_string() {
         )
     );
 }
-
 #[test]
 fn grayswan_verdict_message_falls_back_to_a_typed_plain_value_for_an_unrecognized_rule_shape() {
     let mut scan_response = response(0.9);

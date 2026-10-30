@@ -22,14 +22,12 @@ fn resolve(
 fn grayswan_config_names_the_guardrail_for_the_ui() {
     assert_eq!(super::UI_FRIENDLY_NAME, "Gray Swan Cygnal");
 }
-
 #[test]
 fn grayswan_config_skips_other_guardrail_kinds() {
     let source = GRAYSWAN_CONFIG.replace("guardrail: grayswan", "guardrail: aim");
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     assert!(settings.guardrails.is_empty());
 }
-
 #[test]
 fn grayswan_config_is_optional() {
     let loader = ConfigLoader {
@@ -39,7 +37,6 @@ fn grayswan_config_is_optional() {
         .load("general_settings:\n  master_key: test-master\n")
         .unwrap();
 }
-
 #[test]
 fn grayswan_config_requires_key_only_when_enabled() {
     let loader = ConfigLoader {
@@ -52,7 +49,6 @@ fn grayswan_config_requires_key_only_when_enabled() {
         if variable == "GRAYSWAN_API_KEY" && path == "guardrails.0.litellm_params.api_key")
     );
 }
-
 #[test]
 fn grayswan_config_defaults_match_litellm() {
     let settings = resolve(GRAYSWAN_CONFIG, &BTreeMap::new()).unwrap();

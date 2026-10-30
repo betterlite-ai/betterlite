@@ -31,7 +31,6 @@ pub struct GraySwanInput {
     #[serde(default)]
     pub litellm_metadata: BTreeMap<String, GuardrailExtraValue>,
 }
-
 #[derive(Debug, Clone, Serialize)]
 pub struct GraySwanPayload {
     pub messages: Vec<GuardrailMessage>,
@@ -48,7 +47,6 @@ pub struct GraySwanPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub litellm_metadata: Option<GuardrailExtraValue>,
 }
-
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GraySwanResponse {
     #[serde(default)]

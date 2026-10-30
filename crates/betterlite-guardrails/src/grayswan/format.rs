@@ -33,7 +33,6 @@ pub(super) fn build_messages(
     }
     messages
 }
-
 fn text_message(role: &str, content: String) -> GuardrailMessage {
     let extra = BTreeMap::from([("content".to_owned(), GuardrailExtraValue::Text(content))]);
     GuardrailMessage {
@@ -41,7 +40,6 @@ fn text_message(role: &str, content: String) -> GuardrailMessage {
         extra,
     }
 }
-
 fn text_message_with_tool_calls(
     content: String,
     tool_calls: &[GuardrailExtraValue],
@@ -52,7 +50,6 @@ fn text_message_with_tool_calls(
         .insert("content".to_owned(), GuardrailExtraValue::Text(content));
     message
 }
-
 fn tool_calls_message(tool_calls: &[GuardrailExtraValue]) -> GuardrailMessage {
     let extra = BTreeMap::from([(
         "tool_calls".to_owned(),
@@ -63,7 +60,6 @@ fn tool_calls_message(tool_calls: &[GuardrailExtraValue]) -> GuardrailMessage {
         extra,
     }
 }
-
 pub(super) fn format_violation_message(response: &GraySwanResponse, is_output: bool) -> String {
     let location = if is_output {
         "model response"
@@ -93,14 +89,12 @@ pub(super) fn format_violation_message(response: &GraySwanResponse, is_output: b
     }
     message
 }
-
 fn describe_violated_rule(rule: &GraySwanViolatedRule) -> String {
     match rule {
         GraySwanViolatedRule::Structured(fields) => describe_structured_rule(fields),
         GraySwanViolatedRule::Plain(value) => describe_extra_value(value),
     }
 }
-
 fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
     let Some(name) = fields.name.as_deref().filter(|name| !name.is_empty()) else {
         return describe_extra_value(&GuardrailExtraValue::Object(fallback_fields(fields)));
@@ -122,14 +116,12 @@ fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
             |description| format!("{prefixed_name}: {description}"),
         )
 }
-
 fn rule_number_text(number: &GraySwanRuleNumber) -> String {
     match number {
         GraySwanRuleNumber::Integer(value) => value.to_string(),
         GraySwanRuleNumber::Text(value) => value.clone(),
     }
 }
-
 fn fallback_fields(fields: &GraySwanViolatedRuleFields) -> BTreeMap<String, GuardrailExtraValue> {
     let mut map = fields.extra.clone();
     if let Some(number) = &fields.rule {
@@ -150,7 +142,6 @@ fn fallback_fields(fields: &GraySwanViolatedRuleFields) -> BTreeMap<String, Guar
     }
     map
 }
-
 fn describe_extra_value(value: &GuardrailExtraValue) -> String {
     match value {
         GuardrailExtraValue::Text(text) => text.clone(),

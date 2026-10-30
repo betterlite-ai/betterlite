@@ -239,19 +239,28 @@ fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, Confi
 where
     L: EnvironmentLookup,
 {
+    let RawRouter {
+        routing_strategy,
+        num_retries: retries,
+        timeout: router_timeout,
+        allowed_fails,
+        cooldown_time,
+        fallbacks,
+    } = raw;
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
-    let num_retries = integer(raw.num_retries, "router_settings.num_retries")?;
-    let timeout = float(raw.timeout, "router_settings.timeout")?;
-    let allowed_fails = integer(raw.allowed_fails, "router_settings.allowed_fails")?;
-    let cooldown_time = float(raw.cooldown_time, "router_settings.cooldown_time")?;
+    let num_retries = integer(retries, "router_settings.num_retries")?;
+    let timeout = float(router_timeout, "router_settings.timeout")?;
+    let allowed_fails = integer(allowed_fails, "router_settings.allowed_fails")?;
+    let cooldown_time = float(cooldown_time, "router_settings.cooldown_time")?;
+    let fallbacks = fallbacks.into_iter().collect::<Vec<_>>();
     Ok(RouterSettings {
-        routing_strategy: raw.routing_strategy,
+        routing_strategy,
         num_retries,
         timeout,
         allowed_fails,
         cooldown_time,
-        fallbacks: raw.fallbacks,
+        fallbacks,
     })
 }
 

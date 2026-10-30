@@ -19,7 +19,6 @@ pub enum GraySwanGuardrailAPIError {
     #[error("Gray Swan flagged content{reason}")]
     Blocked { reason: String },
 }
-
 impl GraySwanGuardrailAPIError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {

@@ -96,7 +96,6 @@ fn generic_guardrail_metadata_merges_litellm_metadata_first() {
     assert_eq!(result.user_api_key_hash.as_deref(), Some("preferred"));
     assert_eq!(result.user_api_key_team_id.as_deref(), Some("team"));
 }
-
 #[test]
 fn generic_guardrail_metadata_token_alias_overrides_hash() {
     let metadata = BTreeMap::from([
@@ -106,7 +105,6 @@ fn generic_guardrail_metadata_token_alias_overrides_hash() {
     let result = extract_user_api_key_metadata(None, Some(&metadata));
     assert_eq!(result.user_api_key_hash.as_deref(), Some("token"));
 }
-
 #[test]
 fn generic_guardrail_metadata_maps_every_known_field_and_drops_unknown_keys() {
     let metadata = BTreeMap::from([
@@ -144,7 +142,6 @@ fn generic_guardrail_metadata_maps_every_known_field_and_drops_unknown_keys() {
     assert_eq!(result.user_api_key_org_id.as_deref(), Some("org"));
     assert!(result.extra.is_empty());
 }
-
 #[test]
 fn generic_guardrail_merge_provider_params_adds_the_configured_base_values() {
     let mut instance = api(
@@ -164,7 +161,6 @@ fn generic_guardrail_merge_provider_params_adds_the_configured_base_values() {
         )]))
     );
 }
-
 #[test]
 fn generic_guardrail_merge_provider_params_lets_the_request_override_the_base_value() {
     let mut instance = api(
@@ -191,7 +187,6 @@ fn generic_guardrail_merge_provider_params_lets_the_request_override_the_base_va
         )]))
     );
 }
-
 #[test]
 fn generic_guardrail_merge_provider_params_sends_an_empty_object_when_nothing_is_configured() {
     let instance = api(
@@ -208,7 +203,6 @@ fn generic_guardrail_merge_provider_params_sends_an_empty_object_when_nothing_is
             .is_empty()
     );
 }
-
 #[test]
 fn generic_guardrail_error_policy_is_explicit() {
     let settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
@@ -222,7 +216,6 @@ fn generic_guardrail_error_policy_is_explicit() {
     assert!(!settings.fail_on_error);
     assert_eq!(settings.unreachable_fallback, UnreachableFallback::FailOpen);
 }
-
 #[test]
 fn generic_guardrail_fail_on_error_override_unreachable() {
     let instance = api(
@@ -239,7 +232,6 @@ fn generic_guardrail_fail_on_error_override_unreachable() {
     let result = instance.handle_error(error, fallback).expect("fallback");
     assert_eq!(result.texts, Some(vec!["fallback".to_owned()]));
 }
-
 #[test]
 fn generic_guardrail_status_code_is_always_bad_request() {
     let error = GenericGuardrailAPIError::Blocked {
@@ -247,7 +239,6 @@ fn generic_guardrail_status_code_is_always_bad_request() {
     };
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
 }
-
 #[test]
 fn generic_guardrail_handle_error_propagates_a_reachable_error_with_fail_open_configured() {
     let instance = api(
@@ -267,7 +258,6 @@ fn generic_guardrail_handle_error_propagates_a_reachable_error_with_fail_open_co
         Err(GenericGuardrailAPIError::Blocked { .. })
     ));
 }
-
 #[test]
 fn generic_guardrail_handle_error_propagates_an_unreachable_error_with_fail_closed_configured() {
     let instance = api(
@@ -287,7 +277,6 @@ fn generic_guardrail_handle_error_propagates_an_unreachable_error_with_fail_clos
         Err(GenericGuardrailAPIError::HttpStatus { .. })
     ));
 }
-
 #[test]
 fn generic_guardrail_handle_error_falls_open_for_an_unreachable_error_with_fail_open_configured() {
     let instance = api(
@@ -304,7 +293,6 @@ fn generic_guardrail_handle_error_falls_open_for_an_unreachable_error_with_fail_
     let result = instance.handle_error(error, fallback).expect("fallback");
     assert_eq!(result.texts, Some(vec!["fallback".to_owned()]));
 }
-
 #[test]
 fn generic_guardrail_headers_include_the_api_key_and_json_content_type() {
     let instance = api(
@@ -323,7 +311,6 @@ fn generic_guardrail_headers_include_the_api_key_and_json_content_type() {
         "application/json"
     );
 }
-
 #[test]
 fn generic_guardrail_headers_omit_the_api_key_when_none_is_configured() {
     let instance = GenericGuardrailAPI {
@@ -337,7 +324,6 @@ fn generic_guardrail_headers_omit_the_api_key_when_none_is_configured() {
     let headers = instance.prepare_headers().expect("headers");
     assert!(!headers.contains_key("x-api-key"));
 }
-
 #[test]
 fn generic_guardrail_stores_the_api_base_verbatim() {
     let instance = api(
@@ -349,7 +335,6 @@ fn generic_guardrail_stores_the_api_base_verbatim() {
         "https://example.com/beta/litellm_basic_guardrail_api"
     );
 }
-
 #[test]
 fn generic_guardrail_enforce_response_blocks_only_a_blocked_action() {
     let blocked = GenericGuardrailAPIResponse {

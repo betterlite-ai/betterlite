@@ -47,7 +47,6 @@ pub struct GraySwanSettings {
     pub policy_id: Option<String>,
     pub fail_open: bool,
 }
-
 impl Default for GraySwanSettings {
     fn default() -> Self {
         Self {
@@ -60,7 +59,6 @@ impl Default for GraySwanSettings {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct GraySwanGuardrail {
     pub api_key: SecretString,
@@ -69,7 +67,6 @@ pub struct GraySwanGuardrail {
     pub client: reqwest::Client,
     pub timeout: Duration,
 }
-
 impl GraySwanGuardrail {
     pub fn prepare_headers(&self) -> Result<HeaderMap, GraySwanGuardrailAPIError> {
         let mut headers = HeaderMap::new();
@@ -234,7 +231,6 @@ impl GraySwanGuardrail {
         }
     }
 }
-
 fn request_error(source: reqwest::Error) -> GraySwanGuardrailAPIError {
     if source.is_timeout() {
         GraySwanGuardrailAPIError::Timeout { source }
@@ -242,7 +238,6 @@ fn request_error(source: reqwest::Error) -> GraySwanGuardrailAPIError {
         GraySwanGuardrailAPIError::Request { source }
     }
 }
-
 async fn read_capped_body(
     mut response: reqwest::Response,
     limit: usize,

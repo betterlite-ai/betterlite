@@ -21,14 +21,12 @@ fn resolve(
 fn generic_guardrail_api_config_names_the_guardrail_for_the_ui() {
     assert_eq!(super::UI_FRIENDLY_NAME, "Generic Guardrail API");
 }
-
 #[test]
 fn generic_guardrail_api_config_skips_other_guardrail_kinds() {
     let source = GENERIC_CONFIG.replace("guardrail: generic_guardrail_api", "guardrail: aim");
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
     assert!(settings.guardrails.is_empty());
 }
-
 #[test]
 fn generic_guardrail_api_config_is_optional() {
     let loader = ConfigLoader {
@@ -38,7 +36,6 @@ fn generic_guardrail_api_config_is_optional() {
         .load("general_settings:\n  master_key: test-master\n")
         .unwrap();
 }
-
 #[test]
 fn generic_guardrail_api_config_requires_api_base() {
     let loader = ConfigLoader {
@@ -51,7 +48,6 @@ fn generic_guardrail_api_config_requires_api_base() {
         if variable == "GENERIC_GUARDRAIL_API_BASE" && path == "guardrails.0.litellm_params.api_base")
     );
 }
-
 #[test]
 fn generic_guardrail_api_config_api_key_is_optional() {
     let settings = resolve(GENERIC_CONFIG, &BTreeMap::new()).unwrap();

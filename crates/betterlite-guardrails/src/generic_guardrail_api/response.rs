@@ -3,7 +3,6 @@ use crate::generic_guardrail_contracts::{
     GenericGuardrailAPIRequest, GenericGuardrailAPIResponse, GuardrailMessage,
     GuardrailResponseAction, reconcile_structured_rows,
 };
-
 pub(super) fn passthrough_response(
     request: &GenericGuardrailAPIRequest,
 ) -> GenericGuardrailAPIResponse {
@@ -21,7 +20,6 @@ pub(super) fn passthrough_response(
         stream_holdback_chars: None,
     }
 }
-
 fn field_or_original<T>(value: Option<Vec<T>>, original: Option<&Vec<T>>) -> Option<Vec<T>>
 where
     T: Clone,
@@ -32,7 +30,6 @@ where
         value
     }
 }
-
 fn reconcile_structured_messages(
     response_rows: Option<Vec<GuardrailMessage>>,
     original: &GenericGuardrailAPIRequest,
@@ -54,7 +51,6 @@ fn reconcile_structured_messages(
         response_rows
     }
 }
-
 pub(super) fn enforce_response(
     response: GenericGuardrailAPIResponse,
     original: &GenericGuardrailAPIRequest,
