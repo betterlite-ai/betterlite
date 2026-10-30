@@ -2,4 +2,4 @@ kind: helper
 name: extract-masked-entity-count-empty
 call: {b3758: {function: extract_masked_entity_count, rules: []}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /value, why: "JSON null deserializes to absent Option value in the native helper protocol"}]}

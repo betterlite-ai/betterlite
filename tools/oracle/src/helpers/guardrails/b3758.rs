@@ -120,7 +120,7 @@ fn as_json(value: &Value) -> Result<Json, serde_json::Error> {
 }
 
 fn to_value(value: &Json) -> Result<Value, serde_json::Error> {
-    if let Json::Null = value {
+    if matches!(value, Json::Null) {
         return Ok(Value::Null);
     }
     if let Json::Bool(flag) = value {

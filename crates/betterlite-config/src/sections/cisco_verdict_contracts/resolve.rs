@@ -14,18 +14,25 @@ impl Entry {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
         let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
-        let api_base = resolve_base(parameters.api_base, &prefix, lookup)?;
-        let inspection_type = resolve_inspection(parameters.inspection_type, &prefix, lookup)?;
+        let (api_base, inspection_type) = resolve_endpoint(
+            parameters.api_base,
+            parameters.inspection_type,
+            &prefix,
+            lookup,
+        )?;
         let inspect_path = parameters
             .inspect_path
             .unwrap_or_else(|| match inspection_type {
                 InspectionType::Chat => "/api/v1/inspect/chat".to_owned(),
                 InspectionType::Mcp => "/api/v1/inspect/mcp".to_owned(),
             });
-        let on_flagged_action =
-            resolve_flagged_action(parameters.on_flagged_action, &prefix, lookup)?;
-        let fallback_on_error = resolve_fallback(parameters.fallback_on_error, &prefix, lookup)?;
-        let timeout = resolve_timeout(parameters.timeout, &prefix, lookup)?;
+        let (on_flagged_action, fallback_on_error, timeout) = resolve_actions(
+            parameters.on_flagged_action,
+            parameters.fallback_on_error,
+            parameters.timeout,
+            &prefix,
+            lookup,
+        )?;
         Ok(Configured {
             guardrail_name: self
                 .guardrail_name
@@ -65,35 +72,26 @@ where
     Ok(SecretString::from(secret))
 }
 
-fn resolve_base<L>(
-    configured: Option<String>,
+fn resolve_endpoint<L>(
+    configured_base: Option<String>,
+    configured_inspection: Option<String>,
     prefix: &str,
     lookup: &L,
-) -> Result<String, ConfigError>
+) -> Result<(String, InspectionType), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let value = optional(
-        configured,
+    let api_base = optional(
+        configured_base,
         "CISCO_AI_DEFENSE_API_BASE",
         prefix,
         "api_base",
         lookup,
-    )?;
-    Ok(value.unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
-}
-
-fn resolve_inspection<L>(
-    configured: Option<String>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<InspectionType, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let value = resolve_choice(
+    )?
+    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+    let inspection = resolve_choice(
         Choice {
-            configured,
+            configured: configured_inspection,
             variable: "CISCO_AI_DEFENSE_INSPECTION_TYPE",
             prefix,
             name: "inspection_type",
@@ -102,7 +100,12 @@ where
         },
         lookup,
     )?;
-    match value.as_str() {
+    let inspection_type = inspection_type(&inspection, prefix)?;
+    Ok((api_base, inspection_type))
+}
+
+fn inspection_type(value: &str, prefix: &str) -> Result<InspectionType, ConfigError> {
+    match value {
         "chat" => Ok(InspectionType::Chat),
         "mcp" => Ok(InspectionType::Mcp),
         _ => Err(ConfigError::Unsupported {
@@ -111,17 +114,19 @@ where
     }
 }
 
-fn resolve_flagged_action<L>(
-    configured: Option<String>,
+fn resolve_actions<L>(
+    configured_flagged: Option<String>,
+    configured_fallback: Option<String>,
+    configured_timeout: Option<f64>,
     prefix: &str,
     lookup: &L,
-) -> Result<FlaggedAction, ConfigError>
+) -> Result<(FlaggedAction, FallbackAction, f64), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let value = resolve_choice(
+    let flagged = resolve_choice(
         Choice {
-            configured,
+            configured: configured_flagged,
             variable: "CISCO_AI_DEFENSE_ON_FLAGGED_ACTION",
             prefix,
             name: "on_flagged_action",
@@ -130,24 +135,9 @@ where
         },
         lookup,
     )?;
-    Ok(if value == "monitor" {
-        FlaggedAction::Monitor
-    } else {
-        FlaggedAction::Block
-    })
-}
-
-fn resolve_fallback<L>(
-    configured: Option<String>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<FallbackAction, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let value = resolve_choice(
+    let fallback = resolve_choice(
         Choice {
-            configured,
+            configured: configured_fallback,
             variable: "CISCO_AI_DEFENSE_FALLBACK_ON_ERROR",
             prefix,
             name: "fallback_on_error",
@@ -156,11 +146,35 @@ where
         },
         lookup,
     )?;
-    Ok(if value == "allow" {
+    let flagged_action = if flagged == "monitor" {
+        FlaggedAction::Monitor
+    } else {
+        FlaggedAction::Block
+    };
+    let fallback_action = if fallback == "allow" {
         FallbackAction::Allow
     } else {
         FallbackAction::Block
-    })
+    };
+    let timeout = match configured_timeout {
+        Some(value) => value,
+        None => lookup
+            .lookup("CISCO_AI_DEFENSE_TIMEOUT")
+            .map_or(Ok(10.0_f64), |text| {
+                parse_float(&text, &format!("{prefix}.timeout"))
+            })?,
+    };
+    if !(1.0_f64..=60.0_f64).contains(&timeout) {
+        tracing::warn!(
+            timeout,
+            "Cisco AI Defense timeout is outside 1-60 seconds; clamping"
+        );
+    }
+    Ok((
+        flagged_action,
+        fallback_action,
+        timeout.clamp(1.0_f64, 60.0_f64),
+    ))
 }
 
 struct Choice<'choice> {
@@ -190,27 +204,6 @@ where
     Err(ConfigError::Unsupported {
         paths: vec![format!("{}.{}", choice.prefix, choice.name)],
     })
-}
-
-fn resolve_timeout<L>(configured: Option<f64>, prefix: &str, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let timeout = match configured {
-        Some(value) => value,
-        None => lookup
-            .lookup("CISCO_AI_DEFENSE_TIMEOUT")
-            .map_or(Ok(10.0_f64), |text| {
-                parse_float(&text, &format!("{prefix}.timeout"))
-            })?,
-    };
-    if !(1.0_f64..=60.0_f64).contains(&timeout) {
-        tracing::warn!(
-            timeout,
-            "Cisco AI Defense timeout is outside 1-60 seconds; clamping"
-        );
-    }
-    Ok(timeout.clamp(1.0, 60.0))
 }
 
 fn optional<L>(
