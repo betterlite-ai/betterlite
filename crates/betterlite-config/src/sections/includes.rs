@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 use crate::sections::Section;
 use crate::sections::settings::settings_rules::JsonValue as Value;
+use crate::types::Config;
 use serde::de::Deserialize;
 use thiserror::Error;
 
@@ -199,11 +200,18 @@ fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
     base
 }
 
-impl<L> ConfigLoader<L>
+pub trait ConfigLoaderFile {
+    // pub fn load_file is a trait method because ConfigLoader already has an inherent implementation in loader.rs.
+    fn load_file<P>(&self, config_path: P) -> Result<Config, LoadError>
+    where
+        P: AsRef<Path>;
+}
+
+impl<L> ConfigLoaderFile for ConfigLoader<L>
 where
     L: EnvironmentLookup,
 {
-    pub fn load_file<P>(&self, config_path: P) -> Result<crate::types::Config, LoadError>
+    fn load_file<P>(&self, config_path: P) -> Result<Config, LoadError>
     where
         P: AsRef<Path>,
     {
@@ -211,10 +219,12 @@ where
         let config = read_config(path).map_err(|source| LoadError::Includes { source })?;
         let resolved =
             resolve_includes(config, path).map_err(|source| LoadError::Includes { source })?;
-        let source =
+        let resolved_source =
             serde_json::to_string(&resolved).map_err(|source| LoadError::Serialize { source })?;
-        self.load(&source)
-            .map_err(|source| LoadError::Config { source })
+        self.load(&resolved_source)
+            .map_err(|config_error| LoadError::Config {
+                source: config_error,
+            })
     }
 }
 

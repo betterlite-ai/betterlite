@@ -1,4 +1,5 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::sections::includes::{ConfigLoaderFile as _, LoadError};
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -94,13 +95,12 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
         Ok(config) => Some(config),
         Err(error) => {
             match error {
-                betterlite_config::sections::includes::LoadError::Config { source } => {
+                LoadError::Config { source } => {
                     log_config_error(&source, location);
                 }
-                error => {
+                LoadError::Includes { .. } | LoadError::Serialize { .. } => {
                     tracing::error!(
                         path = %location.display(),
-                        error = ?error,
                         "failed to read or resolve configuration"
                     );
                 }

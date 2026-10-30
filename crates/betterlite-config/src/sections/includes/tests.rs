@@ -1,6 +1,8 @@
 #![cfg(test)]
 
-use super::{ConfigMap, IncludeError, LoadError, read_config, resolve_includes};
+use super::{
+    ConfigLoaderFile as _, ConfigMap, IncludeError, LoadError, read_config, resolve_includes,
+};
 use crate::loader::ConfigLoader;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -61,7 +63,7 @@ fn missing_include_names_the_file() {
 fn fallback_uses_file_next_to_root() {
     let directory = tempdir().unwrap();
     let nested = directory.path().join("nested");
-    fs::create_dir(&nested).unwrap();
+    fs::create_dir_all(&nested).unwrap();
     let root = directory.path().join("config.yaml");
     fs::write(&root, "include: [nested/child.yaml]\n").unwrap();
     fs::copy(
@@ -83,7 +85,7 @@ fn fallback_uses_file_next_to_root() {
 fn declaring_relative_file_wins_conflict() {
     let directory = tempdir().unwrap();
     let nested = directory.path().join("nested");
-    fs::create_dir(&nested).unwrap();
+    fs::create_dir_all(&nested).unwrap();
     let root = directory.path().join("config.yaml");
     fs::write(&root, "include: [nested/child.yaml]\n").unwrap();
     fs::copy(
@@ -136,9 +138,12 @@ fn malformed_include_values_are_rejected() {
     let error = resolve_includes(scalar, &root).unwrap_err();
     assert!(matches!(error, IncludeError::EntriesNotList));
 
-    let entries = ConfigMap::from_iter([(String::from("include"), json!(["child.yaml", 4]))]);
-    let error = resolve_includes(entries, &root).unwrap_err();
-    assert!(matches!(error, IncludeError::EntryNotString { index: 1 }));
+    let entries = ConfigMap::from_iter([(String::from("include"), json!(["child.yaml", 4_i32]))]);
+    let entry_error = resolve_includes(entries, &root).unwrap_err();
+    assert!(matches!(
+        entry_error,
+        IncludeError::EntryNotString { index: 1 }
+    ));
 }
 
 #[test]
