@@ -1,5 +1,5 @@
 use betterlite_models::tiered_pricing::{
-    Scalar, Tier, TieredPricingError, select_tier_for_input, tier_rate,
+    Scalar, Tier, TierRange, TieredPricingError, select_tier_for_input, tier_rate,
 };
 use serde::Deserialize;
 
@@ -36,22 +36,34 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let selected = select_tier_for_input(&input.tiers, input.tokens)
-            .map_err(|error| pricing_error(&error))?;
-        let Some(tier) = selected else {
-            return Ok(serde_json::json!({ "selected_range": null, "rate": null }));
-        };
-        let primary = scalar_for(tier, &input.cost_key);
-        let fallback = input
-            .fallback_cost_key
-            .as_ref()
-            .and_then(|key| scalar_for(tier, key));
-        let rate = tier_rate(primary, fallback).map_err(|error| pricing_error(&error))?;
-        Ok(serde_json::json!({
-            "selected_range": range_json(tier),
-            "rate": rate.normalize().to_string(),
-        }))
+        run_inner(input).map_err(|error| {
+            Box::new(crate::helpers::HelperError {
+                class: "TieredPricingError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
     }
+}
+
+fn run_inner(input: &Input) -> Result<serde_json::Value, TieredPricingError> {
+    let selected = select_tier_for_input(&input.tiers, input.tokens)?;
+    let Some(tier) = selected else {
+        return Ok(serde_json::json!({ "selected_range": null, "rate": null }));
+    };
+    let primary = scalar_for(tier, &input.cost_key);
+    let fallback = input
+        .fallback_cost_key
+        .as_ref()
+        .and_then(|key| scalar_for(tier, key));
+    let rate = tier_rate(primary, fallback)?;
+    Ok(serde_json::json!({
+        "selected_range": range_json(tier),
+        "rate": rate.normalize().to_string(),
+    }))
 }
 
 const fn scalar_for<'tier>(tier: &'tier Tier, key: &CostKey) -> Option<&'tier Scalar> {
@@ -67,22 +79,23 @@ const fn scalar_for<'tier>(tier: &'tier Tier, key: &CostKey) -> Option<&'tier Sc
 }
 
 fn range_json(tier: &Tier) -> Option<serde_json::Value> {
-    let [Scalar::Number(lower), Scalar::Number(upper)] = tier.range.as_deref()? else {
+    let TierRange::Values(range) = &tier.range else {
         return None;
     };
+    let [lower_scalar, upper_scalar] = range.as_slice() else {
+        return None;
+    };
+    let lower = scalar_range_json(lower_scalar)?;
+    let upper = scalar_range_json(upper_scalar)?;
     Some(serde_json::json!([lower, upper]))
 }
 
-fn pricing_error(error: &TieredPricingError) -> Box<crate::helpers::HelperError> {
-    let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
-        class: "TieredPricingError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
+fn scalar_range_json(value: &Scalar) -> Option<serde_json::Value> {
+    match value {
+        Scalar::Bool(flag) => Some(serde_json::json!(flag)),
+        Scalar::Number(number) => Some(serde_json::json!(number)),
+        Scalar::Text(_) | Scalar::Array(_) | Scalar::Object(_) => None,
+    }
 }
 
 mod tests;

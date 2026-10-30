@@ -9,10 +9,6 @@ from litellm.litellm_core_utils.llm_cost_calc.tiered_pricing import (
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
-def _normalized(rate: float) -> str:
-    return format(Decimal(repr(rate)).normalize(), "f")
-
-
 def run(input_value: dict[str, Json]) -> Json:
     tiers_value = input_value.get("tiers", [])
     if not isinstance(tiers_value, list):
@@ -31,4 +27,7 @@ def run(input_value: dict[str, Json]) -> Json:
     if selected is None:
         return {"selected_range": None, "rate": None}
     rate = tier_rate(selected, cost_key_value, fallback_cost_key_value)
-    return {"selected_range": selected.get("range"), "rate": _normalized(rate)}
+    return {
+        "selected_range": selected.get("range"),
+        "rate": format(Decimal(repr(rate)).normalize(), "f"),
+    }

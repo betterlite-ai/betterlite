@@ -29,8 +29,18 @@ pub struct Tier {
     #[serde(rename = "cache_creation_input_token_cost_above_1hr")]
     pub cache_creation_above_1hr_cost: Option<Scalar>,
     pub input_cost_per_query: Option<Scalar>,
-    pub range: Option<Vec<Scalar>>,
+    pub range: TierRange,
     pub max_results_range: Option<Vec<Scalar>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(untagged)]
+pub enum TierRange {
+    #[serde(skip)]
+    #[default]
+    Missing,
+    Null(()),
+    Values(Vec<Scalar>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -125,27 +135,28 @@ pub fn tier_rate(
 }
 
 fn range_sort_key(tier: &Tier) -> Result<Decimal, TieredPricingError> {
-    match &tier.range {
-        None => Ok(Decimal::ZERO),
-        Some(range) => match range.first() {
-            Some(Scalar::Number(lower)) => Ok(parse_decimal_lexeme(&lower.to_string())?),
-            _ => Err(TieredPricingError::MalformedRange),
-        },
+    if matches!(tier.range, TierRange::Missing) {
+        return Ok(Decimal::ZERO);
     }
-}
-
-// A non-two-length range is filtered out; a two-length range with a bad endpoint is a typed error.
-fn range_bounds(tier: &Tier) -> Result<Option<(Decimal, Decimal)>, TieredPricingError> {
-    let Some([lower_scalar, upper_scalar]) = tier.range.as_deref() else {
-        return Ok(None);
-    };
-    let (Scalar::Number(lower_number), Scalar::Number(upper_number)) = (lower_scalar, upper_scalar)
-    else {
+    if matches!(tier.range, TierRange::Null(())) {
+        return Err(TieredPricingError::MalformedRange);
+    }
+    let TierRange::Values(range) = &tier.range else {
         return Err(TieredPricingError::MalformedRange);
     };
-    let lower_bound = parse_decimal_lexeme(&lower_number.to_string())?;
-    let upper_bound = parse_decimal_lexeme(&upper_number.to_string())?;
-    Ok(Some((lower_bound, upper_bound)))
+    range
+        .first()
+        .map_or(Err(TieredPricingError::MalformedRange), range_endpoint)
+}
+
+fn range_endpoint(value: &Scalar) -> Result<Decimal, TieredPricingError> {
+    if let Scalar::Bool(flag) = value {
+        return Ok(Decimal::from(u8::from(*flag)));
+    }
+    let Scalar::Number(number) = value else {
+        return Err(TieredPricingError::MalformedRange);
+    };
+    Ok(parse_decimal_lexeme(&number.to_string())?)
 }
 
 // A malformed range, including an empty one, errors during the sort rather than being filtered out first.
@@ -162,21 +173,32 @@ pub fn select_tier_for_input(
     }
     keyed.sort_by_key(|(key, _)| *key);
 
-    let mut valid = Vec::with_capacity(keyed.len());
-    for (_, tier) in keyed {
-        if let Some((lower, upper)) = range_bounds(tier)? {
-            valid.push((lower, upper, tier));
-        }
-    }
-    let Some(&(_, _, last)) = valid.last() else {
+    let valid: Vec<_> = keyed
+        .into_iter()
+        .filter_map(|(lower, tier)| match &tier.range {
+            TierRange::Values(range) if range.len() == 2 => Some((lower, tier)),
+            TierRange::Missing | TierRange::Null(()) | TierRange::Values(_) => None,
+        })
+        .collect();
+    let Some((_, last)) = valid.last() else {
         return Ok(None);
     };
     let input = Decimal::from(input_tokens);
-    let selected = valid
-        .iter()
-        .find(|(lower, upper, _)| *lower < input && input <= *upper)
-        .map_or(last, |&(_, _, tier)| tier);
-    Ok(Some(selected))
+    for (lower, tier) in &valid {
+        if *lower < input {
+            let TierRange::Values(range) = &tier.range else {
+                continue;
+            };
+            let [_, upper_scalar] = range.as_slice() else {
+                continue;
+            };
+            let upper = range_endpoint(upper_scalar)?;
+            if input <= upper {
+                return Ok(Some(*tier));
+            }
+        }
+    }
+    Ok(Some(*last))
 }
 
 mod tests;

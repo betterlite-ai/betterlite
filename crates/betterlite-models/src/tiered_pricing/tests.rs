@@ -167,12 +167,37 @@ fn select_tier_for_input_errors_on_a_range_endpoint_that_is_not_a_number() {
 }
 
 #[test]
+fn select_tier_for_input_errors_on_an_explicitly_null_range_during_sort() {
+    let tiers = vec![tier("null", "1"), tier("[0,300]", "2")];
+    assert!(matches!(
+        select_tier_for_input(&tiers, 30),
+        Err(TieredPricingError::MalformedRange)
+    ));
+}
+
+#[test]
 fn select_tier_for_input_errors_on_a_null_range_endpoint() {
     let tiers = vec![tier("[0,null]", "1")];
     assert!(matches!(
         select_tier_for_input(&tiers, 30),
         Err(TieredPricingError::MalformedRange)
     ));
+}
+
+#[test]
+fn select_tier_for_input_defers_an_unreadable_upper_endpoint_until_matching() {
+    let tiers = vec![tier("[0,100]", "1"), tier("[200,null]", "2")];
+    let first = select_tier_for_input(&tiers, 50).expect("selection succeeds");
+    assert!(selected_is(first, &tiers[0]));
+    let fallback = select_tier_for_input(&tiers, 150).expect("selection succeeds");
+    assert!(selected_is(fallback, &tiers[1]));
+}
+
+#[test]
+fn select_tier_for_input_coerces_boolean_range_endpoints_like_python() {
+    let tiers = vec![tier("[false,true]", "1")];
+    let selected = select_tier_for_input(&tiers, 1).expect("selection succeeds");
+    assert!(selected_is(selected, &tiers[0]));
 }
 
 #[test]
