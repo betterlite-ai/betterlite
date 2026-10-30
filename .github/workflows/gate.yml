@@ -173,7 +173,7 @@ jobs:
 
       - name: Install the tools without prebuilt binaries
         if: github.event_name != 'pull_request' && steps.tools.outputs.cache-hit != 'true'
-        run: cargo install --locked cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
+        run: cargo install --locked --force cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
 
       - name: Save the tools built from source
         if: github.ref == 'refs/heads/main' && matrix.part == 'lint' && steps.tools.outputs.cache-hit != 'true'
