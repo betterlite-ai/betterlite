@@ -1,0 +1,9 @@
+kind: helper
+name: permission_explicit_nulls_and_fresh_lists
+call:
+  budget_permission_rows:
+    operation: permission
+    row: {object_permission_id: p, mcp_servers: null, models: []}
+env: {}
+compare:
+  ignore: []

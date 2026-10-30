@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-defaults
+call: {model_metadata_projection: {key: fixture/model, model: fixture/model, provider: fixture, entry: {mode: chat}}}
+env: {}
+compare: {ignore: []}
