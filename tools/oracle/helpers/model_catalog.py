@@ -37,7 +37,7 @@ def run(input_value: dict[str, Json]) -> Json:
     lookup = input_value.get("lookup")
     if isinstance(lookup, list):
         result["lookup"] = [
-            _projection(finalized.get(name), name) if isinstance(name, str) else None
+            _projection(finalized.get(name), name, finalized) if isinstance(name, str) else None
             for name in lookup
         ]
     if operation == "generalizations_excluded":
@@ -45,11 +45,15 @@ def run(input_value: dict[str, Json]) -> Json:
     return result
 
 
-def _projection(value: Json, name: str) -> Json:
+def _projection(value: Json, name: str, entries: CostMap) -> Json:
     if not isinstance(value, dict):
         return None
+    canonical = next(
+        (candidate for candidate, entry in entries.items() if entry is value),
+        name,
+    )
     return {
-        "model": name,
+        "model": canonical,
         "provider": value.get("litellm_provider", ""),
         "mode": value.get("mode"),
     }
