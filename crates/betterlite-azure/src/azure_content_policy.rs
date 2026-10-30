@@ -193,13 +193,69 @@ fn is_truthy(value: &JsonValue) -> bool {
 fn display_message(value: &JsonValue) -> String {
     match value {
         JsonValue::String(message) => message.clone(),
-        JsonValue::Null => "null".to_owned(),
-        JsonValue::Bool(boolean) => boolean.to_string(),
-        JsonValue::Number(number) => number.to_string(),
-        JsonValue::Array(_) | JsonValue::Object(_) => {
-            serde_json::to_string(value).unwrap_or_else(|_| "[unserializable]".to_owned())
+        JsonValue::Array(_)
+        | JsonValue::Object(_)
+        | JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_) => python_repr(value),
+    }
+}
+
+fn python_repr(value: &JsonValue) -> String {
+    if let JsonValue::String(text) = value {
+        return python_string_repr(text);
+    }
+    if let JsonValue::Array(values) = value {
+        let items = values
+            .iter()
+            .map(python_repr)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("[{items}]");
+    }
+    if let JsonValue::Object(values) = value {
+        let fields = values
+            .iter()
+            .map(|(key, item)| format!("{}: {}", python_string_repr(key), python_repr(item)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("{{{fields}}}");
+    }
+    if matches!(value, JsonValue::Null) {
+        return "None".to_owned();
+    }
+    if let JsonValue::Bool(boolean) = value {
+        return (if *boolean { "True" } else { "False" }).to_owned();
+    }
+    if let JsonValue::Number(number) = value {
+        return number.to_string();
+    }
+    String::new()
+}
+
+fn python_string_repr(value: &str) -> String {
+    let quote = if value.contains('\'') && !value.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut rendered = String::with_capacity(value.len().saturating_add(2));
+    rendered.push(quote);
+    for character in value.chars() {
+        match character {
+            '\\' => rendered.push_str("\\\\"),
+            '\n' => rendered.push_str("\\n"),
+            '\r' => rendered.push_str("\\r"),
+            '\t' => rendered.push_str("\\t"),
+            quote_character if quote_character == quote => {
+                rendered.push('\\');
+                rendered.push(quote_character);
+            }
+            other => rendered.push(other),
         }
     }
+    rendered.push(quote);
+    rendered
 }
 
 mod tests;

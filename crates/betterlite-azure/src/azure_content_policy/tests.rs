@@ -101,6 +101,40 @@ fn azure_policy_provider_non_string_message_is_rendered() {
     );
 }
 
+#[rstest]
+#[case::bool(r#"{"message":true}"#, "True")]
+#[case::array(r#"{"message":[true,null,"text"]}"#, "[True, None, 'text']")]
+#[case::object(
+    r#"{"message":{"enabled":false,"text":"value"}}"#,
+    "{'enabled': False, 'text': 'value'}"
+)]
+fn azure_policy_provider_message_uses_python_repr(#[case] body: &str, #[case] rendered: &str) {
+    let input = ContentPolicyInput {
+        message: "caller".to_owned(),
+        model: "gpt".to_owned(),
+        extra_information: "debug".to_owned(),
+        body: value(body),
+        response: None,
+    };
+    let error = content_policy_error(&input);
+    assert_eq!(
+        error.message,
+        format!("litellm.BadRequestError: litellm.ContentPolicyViolationError: {rendered}")
+    );
+}
+
+#[rstest]
+#[case("a'b", "\"a'b\"")]
+#[case("a'b\"c", "'a\\'b\"c'")]
+fn azure_policy_nested_string_uses_python_repr(#[case] value: &str, #[case] expected: &str) {
+    assert_eq!(super::python_string_repr(value), expected);
+}
+
+#[test]
+fn azure_policy_null_message_uses_python_repr() {
+    assert_eq!(super::display_message(&JsonValue::Null), "None");
+}
+
 #[test]
 fn azure_policy_classification_keeps_provider_wire_fields() {
     let input = ContentPolicyInput {
