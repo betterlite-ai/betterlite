@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 use super::model::scalars::PassthroughValue;
 use super::model::settings::{ClientKind, Target};
 
-// These are the primitive kwargs accepted by redis.Redis.__init__ and LiteLLM's include list.
+// Direct clients accept client and connection settings through Redis.__init__.
 const DIRECT_KWARGS: &[&str] = &[
     "encoding",
     "encoding_errors",
+    "socket_read_size",
+    "unix_socket_path",
     "decode_responses",
     "retry_on_timeout",
     "retry_on_error",
@@ -21,11 +23,22 @@ const DIRECT_KWARGS: &[&str] = &[
     "auto_close_connection_pool",
     "ssl",
     "ssl_cert_reqs",
+    "ssl_keyfile",
+    "ssl_certfile",
+    "ssl_include_verify_flags",
+    "ssl_exclude_verify_flags",
     "ssl_check_hostname",
     "ssl_ca_certs",
+    "ssl_ca_path",
+    "ssl_ca_data",
+    "ssl_password",
     "ssl_validate_ocsp",
     "ssl_validate_ocsp_stapled",
+    "ssl_ocsp_context",
     "ssl_ocsp_expected_cert",
+    "ssl_min_version",
+    "ssl_ciphers",
+    "legacy_responses",
     "redis_connect_func",
     "gcp_service_account",
     "gcp_ssl_ca_certs",
@@ -40,9 +53,10 @@ const DIRECT_KWARGS: &[&str] = &[
     "aws_iam_serverless",
 ];
 
-// from_url forwards connection kwargs, not client-only kwargs; rediss selects SSLConnection itself.
+// from_url forwards only Connection parameters; rediss selects SSLConnection itself.
 const URL_CONNECTION_KWARGS: &[&str] = &[
     "socket_keepalive_options",
+    "socket_type",
     "max_connections",
     "health_check_interval",
     "retry_on_timeout",
@@ -67,6 +81,8 @@ const CLUSTER_KWARGS: &[&str] = &[
     "lib_version",
     "protocol",
     "socket_keepalive_options",
+    "socket_read_size",
+    "socket_type",
     "cluster_error_retry_attempts",
     "require_full_coverage",
     "reinitialize_steps",
@@ -75,11 +91,19 @@ const CLUSTER_KWARGS: &[&str] = &[
     "connection_error_retry_attempts",
     "ssl",
     "ssl_cert_reqs",
+    "ssl_certfile",
+    "ssl_keyfile",
+    "ssl_include_verify_flags",
+    "ssl_exclude_verify_flags",
     "ssl_check_hostname",
     "ssl_ca_certs",
+    "ssl_ca_data",
     "ssl_validate_ocsp",
     "ssl_validate_ocsp_stapled",
     "ssl_ocsp_expected_cert",
+    "ssl_min_version",
+    "ssl_ciphers",
+    "legacy_responses",
     "redis_connect_func",
     "credential_provider",
     "gcp_service_account",

@@ -56,11 +56,14 @@ pub fn coerce_passthrough(
 fn coerce_passthrough_value(kind: CoercionKind, text: &str) -> Option<PassthroughValue> {
     match kind {
         CoercionKind::Int => text
+            .trim()
+            .replace('_', "")
             .parse::<i64>()
             .ok()
             .map(|parsed| PassthroughValue::Number(serde_json::Number::from(parsed))),
         CoercionKind::Float => {
-            serde_json::Number::from_f64(text.parse::<f64>().ok()?).map(PassthroughValue::Number)
+            serde_json::Number::from_f64(text.trim().replace('_', "").parse::<f64>().ok()?)
+                .map(PassthroughValue::Number)
         }
         CoercionKind::Bool => Some(PassthroughValue::Bool(matches!(
             text.to_lowercase().as_str(),
@@ -77,6 +80,10 @@ const fn coercion_table(target: Target) -> &'static [(&'static str, CoercionKind
         ("decode_responses", CoercionKind::Bool),
         ("health_check_interval", CoercionKind::Int),
         ("protocol", CoercionKind::Int),
+        ("socket_read_size", CoercionKind::Int),
+        ("socket_type", CoercionKind::Int),
+        ("auto_close_connection_pool", CoercionKind::Bool),
+        ("legacy_responses", CoercionKind::Bool),
         ("ssl_check_hostname", CoercionKind::Bool),
         ("ssl_validate_ocsp", CoercionKind::Bool),
         ("ssl_validate_ocsp_stapled", CoercionKind::Bool),

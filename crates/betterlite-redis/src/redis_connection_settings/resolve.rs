@@ -11,12 +11,13 @@ use super::model::nodes::{ClusterNodeConfig, NodesInput};
 use super::model::scalars::{BoolOrText, FloatOrText, IntOrText, PassthroughValue};
 use super::model::settings::{ClientKind, RedisConnectionSettings, RedisOverrides, Target};
 use super::target::resolve_target;
-use super::url_parts::{strip_userinfo, uses_tls};
+use super::url_parts::strip_userinfo;
 use std::collections::BTreeMap;
 
 const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
     "ENCODING",
     "ENCODING_ERRORS",
+    "SOCKET_READ_SIZE",
     "DECODE_RESPONSES",
     "RETRY_ON_TIMEOUT",
     "RETRY_ON_ERROR",
@@ -28,11 +29,22 @@ const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
     "SINGLE_CONNECTION_CLIENT",
     "AUTO_CLOSE_CONNECTION_POOL",
     "SSL_CERT_REQS",
+    "SSL_KEYFILE",
+    "SSL_CERTFILE",
+    "SSL_INCLUDE_VERIFY_FLAGS",
+    "SSL_EXCLUDE_VERIFY_FLAGS",
     "SSL_CHECK_HOSTNAME",
     "SSL_CA_CERTS",
+    "SSL_CA_PATH",
+    "SSL_CA_DATA",
+    "SSL_PASSWORD",
     "SSL_VALIDATE_OCSP",
     "SSL_VALIDATE_OCSP_STAPLED",
     "SSL_OCSP_EXPECTED_CERT",
+    "SSL_MIN_VERSION",
+    "SSL_CIPHERS",
+    "LEGACY_RESPONSES",
+    "SOCKET_TYPE",
     "CLUSTER_ERROR_RETRY_ATTEMPTS",
     "REQUIRE_FULL_COVERAGE",
     "REINITIALIZE_STEPS",
@@ -170,19 +182,6 @@ where
         }
     }
     passthrough
-}
-
-#[must_use]
-pub fn settings_uses_tls(settings: &RedisConnectionSettings) -> bool {
-    let url = settings.url.as_ref().map(ExposeSecret::expose_secret);
-    uses_tls(
-        settings
-            .startup_nodes
-            .as_ref()
-            .is_some_and(|nodes| !nodes.is_empty()),
-        settings.ssl,
-        url,
-    )
 }
 
 fn resolve_nodes<T, F>(

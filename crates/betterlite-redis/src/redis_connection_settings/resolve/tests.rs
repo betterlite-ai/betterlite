@@ -7,12 +7,13 @@ use std::path::PathBuf;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
-use super::{resolve_redis_kwargs, settings_uses_tls};
+use super::resolve_redis_kwargs;
 use crate::redis_connection_settings::model::nodes::{ClusterNodeConfig, NodesInput};
 use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::{
     ClientKind, RedisConnectionSettings, RedisOverrides,
 };
+use crate::redis_connection_settings::url_parts::uses_tls;
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -113,6 +114,35 @@ fn redis_precedence_uses_environment_nodes_for_an_empty_override() {
 }
 
 #[test]
+fn redis_precedence_uses_environment_nodes_for_an_empty_list_override() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        startup_nodes: Some(NodesInput::Nodes(Vec::new())),
+        ..blank_overrides()
+    };
+    let environment = env(&[("REDIS_CLUSTER_NODES", r#"[{"host":"a","port":7000}]"#)]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment)
+        .expect("environment startup_nodes names a target");
+    assert_eq!(settings.startup_nodes.map(|nodes| nodes.len()), Some(1));
+}
+
+#[test]
+fn redis_target_resolution_prefers_environment_url_over_environment_sentinel_nodes() {
+    let environment = env(&[
+        ("REDIS_URL", "redis://from-url:6379"),
+        ("REDIS_SENTINEL_NODES", r#"[["sentinel",26379]]"#),
+        ("REDIS_SERVICE_NAME", "mymaster"),
+    ]);
+    let settings = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &environment)
+        .expect("environment url names a target");
+    assert_eq!(
+        settings.url.as_ref().map(ExposeSecret::expose_secret),
+        Some("redis://from-url:6379")
+    );
+    assert!(settings.sentinel_nodes.is_some());
+}
+
+#[test]
 fn redis_coerce_drops_a_value_that_does_not_parse() {
     let env = env(&[
         ("REDIS_HOST", "cache.internal"),
@@ -174,7 +204,14 @@ fn redis_tls_is_true_end_to_end_for_a_rediss_url() {
     };
     let settings =
         resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
-    assert!(settings_uses_tls(&settings));
+    assert!(uses_tls(
+        settings
+            .startup_nodes
+            .as_ref()
+            .is_some_and(|nodes| !nodes.is_empty()),
+        settings.ssl,
+        settings.url.as_ref().map(ExposeSecret::expose_secret)
+    ));
 }
 
 #[test]
@@ -185,7 +222,14 @@ fn redis_tls_is_false_end_to_end_for_a_plain_redis_url() {
     };
     let settings =
         resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
-    assert!(!settings_uses_tls(&settings));
+    assert!(!uses_tls(
+        settings
+            .startup_nodes
+            .as_ref()
+            .is_some_and(|nodes| !nodes.is_empty()),
+        settings.ssl,
+        settings.url.as_ref().map(ExposeSecret::expose_secret)
+    ));
 }
 
 #[test]
@@ -197,7 +241,14 @@ fn redis_tls_uses_the_url_when_startup_nodes_are_empty() {
     };
     let settings =
         resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).expect("url names a target");
-    assert!(settings_uses_tls(&settings));
+    assert!(uses_tls(
+        settings
+            .startup_nodes
+            .as_ref()
+            .is_some_and(|nodes| !nodes.is_empty()),
+        settings.ssl,
+        settings.url.as_ref().map(ExposeSecret::expose_secret)
+    ));
 }
 
 #[test]
@@ -222,7 +273,14 @@ fn redis_tls_does_not_treat_an_empty_startup_list_as_cluster_mode() {
         service_name: None,
         passthrough: BTreeMap::new(),
     };
-    assert!(settings_uses_tls(&settings));
+    assert!(uses_tls(
+        settings
+            .startup_nodes
+            .as_ref()
+            .is_some_and(|nodes| !nodes.is_empty()),
+        settings.ssl,
+        settings.url.as_ref().map(ExposeSecret::expose_secret)
+    ));
 }
 
 #[test]

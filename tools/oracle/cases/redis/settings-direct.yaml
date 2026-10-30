@@ -9,4 +9,5 @@ call:
       port: 6379
 env:
   REDIS_RETRY_ON_TIMEOUT: "false"
+  REDIS_CLIENT_NAME: from-environment
 compare: {ignore: []}
