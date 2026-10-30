@@ -150,6 +150,72 @@ pub(crate) struct HeaderOwned {
     pub(crate) typ: String,
 }
 
+pub(crate) trait MintPayload: Sized {
+    fn expires_in(&self) -> Option<i64>;
+    fn required_token(&self) -> &str;
+    fn token_type(&self) -> Option<&str>;
+    fn optional_token(&self) -> Option<&str>;
+    fn lifetime(&self) -> i64;
+    fn into_plaintext(self) -> Result<String, EnvelopeMintError>;
+}
+
+impl MintPayload for UpstreamTokenGrant {
+    fn expires_in(&self) -> Option<i64> {
+        self.expires_in
+    }
+
+    fn required_token(&self) -> &str {
+        self.access_token.expose_secret()
+    }
+
+    fn token_type(&self) -> Option<&str> {
+        Some(&self.token_type)
+    }
+
+    fn optional_token(&self) -> Option<&str> {
+        self.refresh_token.as_ref().map(SecretString::expose_secret)
+    }
+
+    fn lifetime(&self) -> i64 {
+        self.expires_in.unwrap_or(super::MAX_ENVELOPE_TTL_SECONDS)
+    }
+
+    fn into_plaintext(self) -> Result<String, EnvelopeMintError> {
+        serde_json::to_string(&WireGrant::from(self))
+            .map_err(|source| EnvelopeMintError::Serialize { source })
+    }
+}
+
+impl MintPayload for RefreshCredential {
+    fn expires_in(&self) -> Option<i64> {
+        self.expires_in
+    }
+
+    fn required_token(&self) -> &str {
+        self.refresh_token.expose_secret()
+    }
+
+    fn token_type(&self) -> Option<&str> {
+        None
+    }
+
+    fn optional_token(&self) -> Option<&str> {
+        None
+    }
+
+    fn lifetime(&self) -> i64 {
+        self.expires_in
+            .map_or(super::MAX_REFRESH_TTL_SECONDS, |value| {
+                value.min(super::MAX_REFRESH_TTL_SECONDS)
+            })
+    }
+
+    fn into_plaintext(self) -> Result<String, EnvelopeMintError> {
+        serde_json::to_string(&WireRefresh::from(self))
+            .map_err(|source| EnvelopeMintError::Serialize { source })
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WireGrant {

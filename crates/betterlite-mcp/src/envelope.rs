@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use self::crypto::{decrypt_text, encode_jwt, encrypt_grant, open_claims};
-use self::models::{WireGrant, WireRefresh};
+use self::models::{MintPayload as _, MintValidation, WireGrant, WireRefresh};
 
 pub type EnvelopeIdentity = models::EnvelopeIdentity;
 use self::models::EnvelopeKind;
@@ -65,116 +65,99 @@ impl EnvelopePrefix for str {
     }
 }
 
-pub fn mint_envelope<N>(
-    identity: EnvelopeIdentity,
-    grant: UpstreamTokenGrant,
-    keys: &EnvelopeKeys,
-    now: DateTime<Utc>,
-    nonces: &N,
-) -> Result<SealedEnvelope, EnvelopeMintError>
-where
-    N: NonceSource,
-{
-    models::validate_mint(&models::MintValidation {
-        identity: &identity,
-        expires_in: grant.expires_in,
-        required_token: grant.access_token.expose_secret(),
-        token_type: Some(&grant.token_type),
-        optional_token: grant
-            .refresh_token
-            .as_ref()
-            .map(secrecy::ExposeSecret::expose_secret),
-    })?;
-    let lifetime = grant.expires_in.unwrap_or(MAX_ENVELOPE_TTL_SECONDS);
-    let plaintext = serde_json::to_string(&WireGrant::from(grant))
-        .map_err(|source| EnvelopeMintError::Serialize { source })?;
-    mint_sealed(MintRequest {
-        identity,
-        plaintext: &plaintext,
-        keys,
-        now,
-        lifetime,
-        prefix: ENVELOPE_PREFIX,
-        kind: EnvelopeKind::Access,
-        nonces,
-    })
+macro_rules! mint_envelope_fn {
+    ($name:ident, $payload:ty, $prefix:expr, $kind:expr) => {
+        pub fn $name<N>(
+            identity: EnvelopeIdentity,
+            payload: $payload,
+            keys: &EnvelopeKeys,
+            now: DateTime<Utc>,
+            nonces: &N,
+        ) -> Result<SealedEnvelope, EnvelopeMintError>
+        where
+            N: NonceSource,
+        {
+            models::validate_mint(&MintValidation {
+                identity: &identity,
+                expires_in: payload.expires_in(),
+                required_token: payload.required_token(),
+                token_type: payload.token_type(),
+                optional_token: payload.optional_token(),
+            })?;
+            let lifetime = payload.lifetime();
+            let plaintext = payload.into_plaintext()?;
+            mint_sealed(MintRequest {
+                identity,
+                plaintext: &plaintext,
+                keys,
+                now,
+                lifetime,
+                prefix: $prefix,
+                kind: $kind,
+                nonces,
+            })
+        }
+    };
 }
 
-pub fn mint_refresh_envelope<N>(
-    identity: EnvelopeIdentity,
-    refresh: RefreshCredential,
-    keys: &EnvelopeKeys,
-    now: DateTime<Utc>,
-    nonces: &N,
-) -> Result<SealedEnvelope, EnvelopeMintError>
-where
-    N: NonceSource,
-{
-    models::validate_mint(&models::MintValidation {
-        identity: &identity,
-        expires_in: refresh.expires_in,
-        required_token: refresh.refresh_token.expose_secret(),
-        token_type: None,
-        optional_token: None,
-    })?;
-    let lifetime = refresh.expires_in.map_or(MAX_REFRESH_TTL_SECONDS, |value| {
-        value.min(MAX_REFRESH_TTL_SECONDS)
-    });
-    let plaintext = serde_json::to_string(&WireRefresh::from(refresh))
-        .map_err(|source| EnvelopeMintError::Serialize { source })?;
-    mint_sealed(MintRequest {
-        identity,
-        plaintext: &plaintext,
-        keys,
-        now,
-        lifetime,
-        prefix: REFRESH_ENVELOPE_PREFIX,
-        kind: EnvelopeKind::Refresh,
-        nonces,
-    })
+mint_envelope_fn!(
+    mint_envelope,
+    UpstreamTokenGrant,
+    ENVELOPE_PREFIX,
+    EnvelopeKind::Access
+);
+mint_envelope_fn!(
+    mint_refresh_envelope,
+    RefreshCredential,
+    REFRESH_ENVELOPE_PREFIX,
+    EnvelopeKind::Refresh
+);
+
+macro_rules! open_envelope_fn {
+    ($name:ident, $opened:ident, $wire:ty, $payload:ty, $field:ident, $prefix:expr, $kind:expr) => {
+        pub fn $name(
+            candidate: &str,
+            keys: &EnvelopeKeys,
+            now: DateTime<Utc>,
+        ) -> Result<$opened, EnvelopeOpenError> {
+            let (identity, plaintext) = open_grant(&OpenRequest {
+                candidate,
+                keys,
+                now,
+                prefix: $prefix,
+                kind: $kind,
+            })?;
+            let wire: $wire = serde_json::from_str(plaintext.expose_secret())
+                .map_err(|_error| EnvelopeOpenError::MalformedPayload)?;
+            if !wire.is_valid() {
+                return Err(EnvelopeOpenError::MalformedPayload);
+            }
+            Ok($opened {
+                identity,
+                $field: <$payload>::from(wire),
+            })
+        }
+    };
 }
 
-pub fn open_envelope(
-    candidate: &str,
-    keys: &EnvelopeKeys,
-    now: DateTime<Utc>,
-) -> Result<OpenedEnvelope, EnvelopeOpenError> {
-    let (identity, plaintext) = open_grant(&OpenRequest {
-        candidate,
-        keys,
-        now,
-        prefix: ENVELOPE_PREFIX,
-        kind: EnvelopeKind::Access,
-    })?;
-    let wire: WireGrant = serde_json::from_str(plaintext.expose_secret())
-        .map_err(|_error| EnvelopeOpenError::MalformedPayload)?;
-    if !wire.is_valid() {
-        return Err(EnvelopeOpenError::MalformedPayload);
-    }
-    Ok(OpenedEnvelope {
-        identity,
-        grant: UpstreamTokenGrant::from(wire),
-    })
-}
-
-pub fn open_refresh_envelope(
-    candidate: &str,
-    keys: &EnvelopeKeys,
-    now: DateTime<Utc>,
-) -> Result<OpenedRefreshEnvelope, EnvelopeOpenError> {
-    let (identity, plaintext) = open_grant(&OpenRequest {
-        candidate,
-        keys,
-        now,
-        prefix: REFRESH_ENVELOPE_PREFIX,
-        kind: EnvelopeKind::Refresh,
-    })?;
-    let wire = parse_refresh_grant(&plaintext)?;
-    Ok(OpenedRefreshEnvelope {
-        identity,
-        refresh: RefreshCredential::from(wire),
-    })
-}
+open_envelope_fn!(
+    open_envelope,
+    OpenedEnvelope,
+    WireGrant,
+    UpstreamTokenGrant,
+    grant,
+    ENVELOPE_PREFIX,
+    EnvelopeKind::Access
+);
+open_envelope_fn!(
+    open_refresh_envelope,
+    OpenedRefreshEnvelope,
+    WireRefresh,
+    RefreshCredential,
+    refresh,
+    REFRESH_ENVELOPE_PREFIX,
+    EnvelopeKind::Refresh
+);
 
 struct OpenRequest<'request> {
     candidate: &'request str,
@@ -201,15 +184,6 @@ fn open_grant(
         subject: claims.subject,
     };
     Ok((identity, plaintext))
-}
-
-fn parse_refresh_grant(plaintext: &SecretString) -> Result<WireRefresh, EnvelopeOpenError> {
-    let wire: WireRefresh = serde_json::from_str(plaintext.expose_secret())
-        .map_err(|_error| EnvelopeOpenError::MalformedPayload)?;
-    if !wire.is_valid() {
-        return Err(EnvelopeOpenError::MalformedPayload);
-    }
-    Ok(wire)
 }
 
 struct MintRequest<'request, N> {
