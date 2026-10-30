@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::iter::repeat_n;
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, str::from_utf8};
 
 use crate::facts::presence::Field;
 use crate::facts::{ProviderErrorBody, ResponseFacts};
@@ -153,6 +153,21 @@ fn error_facts_behavior_tests_behavior_body_code(
     assert_eq!(get_body_error_code(body), expected);
 }
 
+#[test]
+fn error_facts_behavior_tests_behavior_body_code_size_boundary() {
+    let prefix = br#"{"error":{"code":429}}"#;
+    let mut at_limit = prefix.to_vec();
+    at_limit.extend(repeat_n(b' ', MAX_BODY_BYTES - prefix.len()));
+    assert_eq!(at_limit.len(), MAX_BODY_BYTES);
+    assert_eq!(
+        get_body_error_code(from_utf8(&at_limit).unwrap()),
+        Some(429)
+    );
+
+    at_limit.push(b' ');
+    assert_eq!(get_body_error_code(from_utf8(&at_limit).unwrap()), None);
+}
+
 #[rstest]
 #[case::valid(
     "prefix litellm.ContextWindowExceededError suffix",
@@ -174,6 +189,36 @@ fn error_facts_behavior_tests_behavior_exception_name(
             .map(|facts| facts.name),
         expected.map(str::to_owned)
     );
+}
+
+#[rstest]
+#[case::api_connection("APIConnectionError")]
+#[case::api_response_validation("APIResponseValidationError")]
+#[case::invalid_request("InvalidRequestError")]
+fn error_facts_behavior_tests_behavior_plain_exception_constructor(#[case] name: &str) {
+    let text = format!("litellm.{name}");
+    let facts = extract_exception(None, &text, "model", "provider", None)
+        .unwrap()
+        .expect("plain exceptions should be constructible");
+    assert_eq!(facts.name, name);
+    assert!(facts.response.is_none());
+    assert!(facts.body.is_none());
+}
+
+#[rstest]
+#[case::api("APIError")]
+#[case::budget("BudgetExceededError")]
+#[case::event("ErrorEventError")]
+#[case::schema("JSONSchemaValidationError")]
+#[case::openai("OpenAIError")]
+#[case::router("RouterRateLimitError")]
+#[case::vector_store("VectorStoreSearchError")]
+fn error_facts_behavior_tests_behavior_missing_argument_constructor(#[case] name: &str) {
+    let text = format!("litellm.{name}");
+    assert!(matches!(
+        extract_exception(None, &text, "model", "provider", None),
+        Err(ParseError::Constructor { name: error_name }) if error_name == name
+    ));
 }
 
 #[test]
@@ -237,3 +282,7 @@ fn error_facts_behavior_tests_behavior_code_fields(
 ) {
     assert_eq!(get_body_error_code(body), expected);
 }
+
+mod gate_boundary_cases;
+
+mod gate_constructor_cases;

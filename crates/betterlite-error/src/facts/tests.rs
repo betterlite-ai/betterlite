@@ -58,6 +58,14 @@ fn error_facts_behavior_tests_behavior_context_window(
     assert_eq!(ExceptionCheckers::context_window(message), expected);
 }
 
+#[rstest]
+#[case::content_policy("content_policy_violation", true)]
+#[case::responsible_ai("ResponsibleAIPolicyViolation", true)]
+#[case::ordinary("provider rejected the request", false)]
+fn error_facts_behavior_tests_behavior_azure_policy(#[case] message: &str, #[case] expected: bool) {
+    assert_eq!(ExceptionCheckers::azure_policy(message), expected);
+}
+
 #[test]
 fn error_facts_behavior_tests_behavior_proxy_reconstructs_empty_response_headers() {
     let facts = ProviderErrorFacts {
@@ -109,6 +117,31 @@ fn error_facts_behavior_tests_behavior_proxy_keeps_non_proxy_empty_headers() {
 }
 
 #[test]
+fn error_facts_behavior_tests_behavior_proxy_ignores_fallback_headers_for_non_proxy() {
+    let facts = ProviderErrorFacts {
+        status_code: Some(502),
+        response: Some(ResponseFacts {
+            status_code: 502,
+            headers: BTreeMap::new(),
+            request: None,
+        }),
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        headers: Some(BTreeMap::from([(
+            String::from("retry-after"),
+            String::from("1"),
+        )])),
+        litellm_response_headers: None,
+        request: None,
+    };
+    assert!(
+        litellm_proxy_response(&facts, "openai")
+            .is_some_and(|response| response.headers.is_empty())
+    );
+}
+
+#[test]
 fn error_facts_behavior_tests_behavior_body_boundaries_are_inclusive() {
     let empty = ProviderErrorBody {
         message: Field::Value(String::new()),
@@ -148,3 +181,7 @@ fn proxy_without_response_is_absent() {
     };
     assert_eq!(litellm_proxy_response(&error, "openai"), None);
 }
+
+mod azure_policy_gate_cases;
+
+mod proxy_header_gate_cases;
