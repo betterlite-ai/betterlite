@@ -1,13 +1,14 @@
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
+use std::iter::once;
+use std::str::{Utf8Error, from_utf8};
 
-const MAX_ROW_BYTES: usize = 1_048_576;
+const MAX_ROW_BYTES: usize = 0x0010_0000;
 const MAX_JSON_DEPTH: usize = 64;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiteLLMBudgetTable {
     #[serde(default)]
     pub budget_id: Option<String>,
@@ -24,7 +25,7 @@ pub struct LiteLLMBudgetTable {
     #[serde(default)]
     pub tpd_limit: Option<i64>,
     #[serde(default)]
-    pub model_max_budget: Option<BTreeMap<String, Value>>,
+    pub model_max_budget: Option<BTreeMap<String, JsonData>>,
     #[serde(default)]
     pub budget_duration: Option<String>,
     #[serde(default)]
@@ -35,7 +36,7 @@ pub struct LiteLLMBudgetTable {
     pub temp_budget_expiry: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiteLLMBudgetTableFull {
     #[serde(flatten)]
     pub budget: LiteLLMBudgetTable,
@@ -45,19 +46,21 @@ pub struct LiteLLMBudgetTableFull {
 }
 
 impl LiteLLMBudgetTable {
+    #[must_use]
     pub fn active_temp_budget_increase(&self, now: DateTime<Utc>) -> Decimal {
         match (self.temp_budget_increase, self.temp_budget_expiry) {
             (Some(amount), Some(expiry)) if expiry > now => amount,
             _ => Decimal::ZERO,
         }
     }
+    #[must_use]
     pub fn effective_max_budget(&self, now: DateTime<Utc>) -> Option<Decimal> {
         let budget = self.max_budget?;
-        Some(budget + self.active_temp_budget_increase(now))
+        budget.checked_add(self.active_temp_budget_increase(now))
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiteLLMObjectPermissionTable {
     pub object_permission_id: String,
     #[serde(default = "empty_list")]
@@ -87,10 +90,21 @@ pub struct LiteLLMObjectPermissionTable {
 }
 fn empty_list() -> Option<Vec<String>> {
     let values = Vec::new();
-    Some(values)
+    once(values).next()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum JsonData {
+    Null,
+    Bool(bool),
+    Number(serde_json::Number),
+    String(String),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrganizationMembership {
     pub user_id: String,
     pub organization_id: String,
@@ -103,18 +117,18 @@ pub struct OrganizationMembership {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
-    pub user: Option<Value>,
+    pub user: Option<JsonData>,
     #[serde(default)]
     pub litellm_budget_table: Option<LiteLLMBudgetTable>,
     #[serde(default)]
-    pub user_email: Option<Value>,
+    pub user_email: Option<JsonData>,
 }
 impl OrganizationMembership {
     pub fn populate_user_email(&mut self) {
-        if self.user_email.is_none() {
-            if let Some(Value::Object(user)) = self.user.as_ref() {
-                self.user_email = user.get("user_email").cloned();
-            }
+        if self.user_email.is_none()
+            && let Some(JsonData::Object(user)) = self.user.as_ref()
+        {
+            self.user_email = user.get("user_email").cloned();
         }
     }
 }
@@ -124,7 +138,7 @@ pub enum BudgetPermissionDecodeError {
     #[error("stored row is {len} bytes, over the {MAX_ROW_BYTES} byte limit")]
     TooLarge { len: usize },
     #[error("stored row is not valid UTF-8")]
-    InvalidUtf8(#[source] std::str::Utf8Error),
+    InvalidUtf8(#[source] Utf8Error),
     #[error("stored row exceeds JSON depth {MAX_JSON_DEPTH}")]
     TooDeep,
     #[error("stored row is invalid JSON")]
@@ -132,7 +146,7 @@ pub enum BudgetPermissionDecodeError {
     #[error("stored row kind is invalid")]
     UnknownKind,
 }
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "row")]
 pub enum BudgetPermissionRow {
     Budget(LiteLLMBudgetTable),
@@ -146,41 +160,26 @@ pub fn decode_budget_permission_rows(
     if bytes.len() > MAX_ROW_BYTES {
         return Err(BudgetPermissionDecodeError::TooLarge { len: bytes.len() });
     }
-    let text = std::str::from_utf8(bytes).map_err(BudgetPermissionDecodeError::InvalidUtf8)?;
-    let value: Value = serde_json::from_str(text).map_err(BudgetPermissionDecodeError::Json)?;
-    if json_depth(&value) > MAX_JSON_DEPTH {
+    let text = from_utf8(bytes).map_err(BudgetPermissionDecodeError::InvalidUtf8)?;
+    if json_depth(bytes) > MAX_JSON_DEPTH {
         return Err(BudgetPermissionDecodeError::TooDeep);
     }
-    let kind = value
-        .get("kind")
-        .and_then(Value::as_str)
-        .ok_or(BudgetPermissionDecodeError::UnknownKind)?;
-    let row = value
-        .get("row")
-        .ok_or(BudgetPermissionDecodeError::UnknownKind)?
-        .clone();
-    match kind {
-        "budget" => serde_json::from_value(row)
-            .map(BudgetPermissionRow::Budget)
-            .map_err(BudgetPermissionDecodeError::Json),
-        "full" => serde_json::from_value(row)
-            .map(BudgetPermissionRow::Full)
-            .map_err(BudgetPermissionDecodeError::Json),
-        "permission" => serde_json::from_value(row)
-            .map(BudgetPermissionRow::Permission)
-            .map_err(BudgetPermissionDecodeError::Json),
-        "membership" => serde_json::from_value(row)
-            .map(BudgetPermissionRow::Membership)
-            .map_err(BudgetPermissionDecodeError::Json),
-        _ => Err(BudgetPermissionDecodeError::UnknownKind),
-    }
+    serde_json::from_str(text).map_err(BudgetPermissionDecodeError::Json)
 }
-fn json_depth(value: &Value) -> usize {
-    match value {
-        Value::Array(values) => values.iter().map(json_depth).max().unwrap_or(0) + 1,
-        Value::Object(values) => values.values().map(json_depth).max().unwrap_or(0) + 1,
-        _ => 0,
+fn json_depth(bytes: &[u8]) -> usize {
+    let mut depth = 0_usize;
+    let mut maximum = 0_usize;
+    for byte in bytes {
+        match byte {
+            b'{' | b'[' => {
+                depth = depth.saturating_add(1);
+                maximum = maximum.max(depth);
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
     }
+    maximum
 }
 
 #[path = "budget_permission_rows/tests.rs"]

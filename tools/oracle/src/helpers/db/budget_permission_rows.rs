@@ -1,4 +1,5 @@
 use betterlite_db::budget_permission_rows::{LiteLLMBudgetTable, LiteLLMObjectPermissionTable};
+use rust_decimal::prelude::ToPrimitive;
 
 pub(crate) struct Op;
 
@@ -29,8 +30,20 @@ impl crate::helpers::Helper for Op {
                 let now = input
                     .now
                     .ok_or_else(|| helper_error("InvalidInput", "now is required"))?;
+                let active = budget
+                    .active_temp_budget_increase(now)
+                    .to_f64()
+                    .ok_or_else(|| helper_error("InvalidOutput", "decimal conversion failed"))?;
+                let effective = budget
+                    .effective_max_budget(now)
+                    .map(|value| {
+                        value.to_f64().ok_or_else(|| {
+                            helper_error("InvalidOutput", "decimal conversion failed")
+                        })
+                    })
+                    .transpose()?;
                 Ok(
-                    serde_json::json!({"active_temp_budget_increase": budget.active_temp_budget_increase(now), "effective_max_budget": budget.effective_max_budget(now)}),
+                    serde_json::json!({"active_temp_budget_increase": active, "effective_max_budget": effective}),
                 )
             }
             _ => Err(helper_error("InvalidInput", "unsupported operation")),
