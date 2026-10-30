@@ -66,6 +66,27 @@ fn tool_schemas_tool_schema_tests_regex_walks_object_items() {
 }
 
 #[test]
+fn tool_schemas_tool_schema_tests_regex_walks_all_schema_applicators() {
+    let schema = object(
+        r#"{
+            "$defs":{"definition":{"type":"string","pattern":"\\P{Cc}"}},
+            "allOf":[{"type":"string","pattern":"\\z"}],
+            "additionalProperties":{"type":"string","pattern":"\\p{Cc}"},
+            "properties":{"value":{"type":"string","pattern":"\\p{Cc}"}}
+        }"#,
+    );
+    let expected = object(
+        r#"{
+            "$defs":{"definition":{"type":"string"}},
+            "allOf":[{"type":"string"}],
+            "additionalProperties":{"type":"string"},
+            "properties":{"value":{"type":"string"}}
+        }"#,
+    );
+    assert_eq!(drop_non_python_regex_patterns(&schema), expected);
+}
+
+#[test]
 fn escaped_regex_marker_is_preserved() {
     let schema = object(r#"{"type":"object","pattern":"\\\\p{Cc}"}"#);
     assert_eq!(drop_non_python_regex_patterns(&schema), schema);
