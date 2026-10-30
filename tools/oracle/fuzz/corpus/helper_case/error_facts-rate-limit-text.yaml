@@ -1,0 +1,8 @@
+kind: helper
+name: error-facts-rate-limit-text
+call:
+  error_facts:
+    kind: rate_limit
+    text: service tier capacity exceeded
+env: {}
+compare: {ignore: []}
