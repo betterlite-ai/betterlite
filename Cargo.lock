@@ -845,6 +845,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-openai",
+ "encoding_rs",
  "futures-util",
  "indexmap 2.14.2",
  "rstest",
