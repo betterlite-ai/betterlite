@@ -19,13 +19,67 @@ defaults:
     shell: bash
 
 jobs:
-  gate:
-    name: gate
+  find:
+    name: find the base and the task
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
+    outputs:
+      base: ${{ steps.find.outputs.base }}
+      task: ${{ steps.find.outputs.task }}
+      parts: ${{ steps.find.outputs.parts }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Find the base, the task and the parts to run
+        id: find
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BRANCH: ${{ github.head_ref }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ $EVENT == merge_group ]]; then
+            base=$QUEUE_BASE
+            number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
+            branch=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
+          else
+            base=$(git rev-parse HEAD^1)
+            branch=$PR_BRANCH
+          fi
+          task=""
+          if [[ $branch =~ ^task/(B[0-9]+)(-|$) ]]; then
+            task=${BASH_REMATCH[1]}
+          fi
+          parts='["lint","tests"]'
+          if [[ $EVENT == pull_request ]]; then
+            parts='["lint"]'
+          elif [[ $EVENT == merge_group && -n $task ]]; then
+            parts='["lint","tests","task"]'
+          fi
+          echo "branch $branch, base $base, task ${task:-none}, parts $parts"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "task=$task" >> "$GITHUB_OUTPUT"
+          echo "parts=$parts" >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: ${{ matrix.part }}
+    needs: find
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read
-      pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
+    strategy:
+      matrix:
+        part: ${{ fromJSON(needs.find.outputs.parts) }}
     container:
       image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
     services:
@@ -42,6 +96,8 @@ jobs:
           --health-retries 60
     env:
       CARGO_TERM_COLOR: never
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
       SOURCE_TOOLS: |
         /usr/local/cargo/bin/cargo-shear
         /usr/local/cargo/bin/ast-grep
@@ -59,56 +115,41 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Find the base and the task
-        id: find
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_BRANCH: ${{ github.head_ref }}
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
-          REPOSITORY: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if [[ $EVENT == merge_group ]]; then
-            base=$QUEUE_BASE
-            number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
-            branch=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
-          else
-            base=$(git rev-parse HEAD^1)
-            branch=$PR_BRANCH
-          fi
-          task=""
-          if [[ $branch =~ ^task/(B[0-9]+)(-|$) ]]; then
-            task=${BASH_REMATCH[1]}
-          fi
-          echo "branch $branch, base $base, task ${task:-none}"
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "task=$task" >> "$GITHUB_OUTPUT"
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Add Rust components
         run: rustup component add clippy rustfmt llvm-tools-preview
 
+      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: gate
+          shared-key: gate-${{ matrix.part == 'lint' && 'lint' || 'tests' }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: |
             .development/gate -> target
             . -> target
 
       - name: Check whitespace in the change
+        if: matrix.part == 'lint'
         env:
-          BASE: ${{ steps.find.outputs.base }}
+          BASE: ${{ needs.find.outputs.base }}
         run: git diff --check "$BASE" HEAD
 
       - name: Validate the specs
+        if: matrix.part == 'lint'
         run: cargo gate validate
 
       - name: Test and lint the gate
-        if: github.event_name != 'pull_request'
+        if: matrix.part == 'lint' && github.event_name != 'pull_request'
+        env:
+          BASE: ${{ needs.find.outputs.base }}
         run: |
+          if git diff --quiet "$BASE" HEAD -- .development/gate; then
+            echo "the change leaves .development/gate alone"
+            exit 0
+          fi
           cargo fmt --check --manifest-path .development/gate/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path .development/gate/Cargo.toml -- -D warnings
           cargo test --locked --manifest-path .development/gate/Cargo.toml
@@ -132,7 +173,7 @@ jobs:
         run: cargo install --locked cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
 
       - name: Save the tools built from source
-        if: github.ref == 'refs/heads/main' && steps.tools.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && matrix.part == 'lint' && steps.tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.SOURCE_TOOLS }}
@@ -144,29 +185,36 @@ jobs:
         run: cargo fetch --locked
 
       - name: Restore LiteLLM's helper answers
-        if: github.event_name != 'pull_request'
+        if: matrix.part != 'lint' && github.event_name != 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/betterlite-oracle
           key: oracle-answers-${{ github.sha }}
           restore-keys: oracle-answers-
 
-      - name: Run the task's checks on the merged result
-        if: steps.find.outputs.task != '' && github.event_name == 'merge_group'
+      # lint and task split every check between them, so a check added to checks.yaml runs in task
+      - name: Run the gate's ${{ matrix.part }} checks on the merged result
+        if: github.event_name != 'pull_request'
         env:
-          GATE_BASE: ${{ steps.find.outputs.base }}
-          TASK: ${{ steps.find.outputs.task }}
-        run: cargo gate run "$TASK" --skip mutants --skip coverage
-
-      - name: Run the base checks on the merged result
-        if: steps.find.outputs.task == '' && github.event_name != 'pull_request'
-        env:
-          GATE_BASE: ${{ steps.find.outputs.base }}
+          GATE_BASE: ${{ needs.find.outputs.base }}
           GATE_ALL_TESTS: ${{ github.event_name == 'push' && 'true' || '' }}
-        run: cargo gate run B000 --only fmt --only clippy --only tests --only deny --only shear --only hooks --only similarity --only file-size --only workflows
+          PART: ${{ matrix.part }}
+          TASK: ${{ needs.find.outputs.task }}
+        run: |
+          lint=(fmt clippy deny shear hooks similarity file-size workflows)
+          if [[ -n $TASK ]]; then
+            lint+=(task-file tools scope lint-table diff-budget expect-budget crates committed whitespace specs-untouched notice no-enterprise no-attribution)
+          fi
+          selection=()
+          case $PART in
+            lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
+            tests) selection=(--only tests) ;;
+            task) for id in "${lint[@]}" tests mutants coverage; do selection+=(--skip "$id"); done ;;
+          esac
+          cargo gate run "${TASK:-B000}" "${selection[@]}"
 
       - name: Save LiteLLM's helper answers
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && matrix.part == 'tests'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/betterlite-oracle
@@ -176,8 +224,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gate-logs
+          name: gate-logs-${{ matrix.part }}
           path: .git/betterlite/*/gate/
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
+  gate:
+    name: gate
+    needs: [find, checks]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every part to pass
+        env:
+          FIND: ${{ needs.find.result }}
+          CHECKS: ${{ needs.checks.result }}
+        run: |
+          echo "find $FIND, checks $CHECKS"
+          [[ $FIND == success && $CHECKS == success ]]
