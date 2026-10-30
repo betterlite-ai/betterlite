@@ -1,0 +1,18 @@
+kind: helper
+name: explicit-null-range-errors-during-sort
+call:
+  pricing_tier:
+    tiers:
+      - range: null
+      - range: [0, 300]
+        input_cost_per_token: 1
+    tokens: 30
+    cost_key: input_cost_per_token
+    fallback_cost_key: null
+compare:
+  ignore:
+    - pointer: /error/class
+      why: betterlite raises a typed TieredPricingError where LiteLLM raises a native TypeError
+    - pointer: /error/message
+      why: betterlite writes its own message
+env: {}
