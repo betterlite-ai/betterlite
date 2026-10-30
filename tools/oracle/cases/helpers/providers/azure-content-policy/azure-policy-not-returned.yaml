@@ -1,0 +1,5 @@
+kind: helper
+name: azure-policy-not-returned
+call: {azure_content_policy: {message: caller, model: gpt, extra_information: debug, body: null, response: null}}
+env: {}
+compare: {ignore: []}

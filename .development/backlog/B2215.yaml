@@ -1,14 +1,14 @@
 id: B2215
 milestone: M3 providers
 title: Azure content-policy error payloads
-status: todo
+status: done
 depends_on: [B184, B171]
 file: tasks/B2215-azure-content-policy.yaml
 covers:
   - "litellm/llms/azure/exception_mapping.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 322
