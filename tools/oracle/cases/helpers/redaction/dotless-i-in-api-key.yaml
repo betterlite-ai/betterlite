@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-dotless-i-in-api-key
+call:
+  redaction:
+    function: redact_string
+    text: "apı_key=abcdefghijk"
+env: {}
+compare:
+  ignore: []
