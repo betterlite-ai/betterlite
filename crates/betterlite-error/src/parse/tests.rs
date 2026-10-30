@@ -63,11 +63,11 @@ fn error_facts_behavior_tests_behavior_parser_bounds_input() {
             .map(|error| error.to_string()),
         Some(String::from("provider error body exceeds the bounded size"))
     );
-    let padding = MAX_BODY_BYTES - 14;
+    let prefix = br#"{"message":"a"}"#;
+    let padding = MAX_BODY_BYTES - prefix.len();
     let mut body = Vec::with_capacity(MAX_BODY_BYTES);
-    body.extend_from_slice(br#"{"message":""#);
-    body.extend(repeat_n(b'a', padding));
-    body.extend_from_slice(br#""}"#);
+    body.extend_from_slice(prefix);
+    body.extend(repeat_n(b' ', padding));
     assert_eq!(body.len(), MAX_BODY_BYTES);
     drop(parse_provider_error(&body).unwrap());
 }
