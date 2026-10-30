@@ -1,0 +1,8 @@
+kind: helper
+name: validator_mutates_prior_fields_before_error
+call:
+  team_rows:
+    calls:
+      - {"name":"validator_mutates_prior_fields_before_error","operation":"validator","row":{"members_with_roles":{},"metadata":"{}","aliases":"bad"}}
+env: {}
+compare: {ignore: []}

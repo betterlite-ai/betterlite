@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-error-passthrough
+call:
+  messages_errors:
+    actions:
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":{\"type\":\"vendor_error\",\"message\":\"bad\",\"code\":\"provider\"},\"extra\":7}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":{\"type\":null,\"message\":null},\"request_id\":null}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":{\"type\":\"vendor_error\",\"message\":\"bad\"},\"request_id\":\"req_old\"}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":{\"type\":[],\"message\":{},\"litellm_call_id\":null,\"provider_specific_fields\":null}}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":{\"message\":\"bad\"}}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":{\"type\":\"vendor_error\"}}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"error\",\"error\":[]}", "request_id": "req_new"}
+      - {"action": "transform", "status": 401, "raw_message": "{\"type\":\"other\",\"error\":{\"type\":null,\"message\":\"bad\"}}", "request_id": "req_new"}
+env: {}
+compare: {ignore: []}
