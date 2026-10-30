@@ -4,7 +4,8 @@ use std::fs::{self, File};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use crate::dispatch::vendor::{limit_line, limited, mark, take_seat};
+use crate::dispatch::seat::Seat;
+use crate::dispatch::vendor::{limit_line, limited, mark, seat_free, take_seat};
 use crate::spec::agents::{Agents, Vendor};
 use crate::yaml::read_yaml;
 
@@ -18,6 +19,7 @@ fn codex() -> Vendor {
         id: "openai".to_owned(),
         limit_markers: vec!["You've hit your usage limit".to_owned()],
         max_parallel: Some(2),
+        max_writers: None,
     }
 }
 
@@ -73,15 +75,33 @@ fn a_fresh_mark_skips_the_vendor_and_an_old_one_does_not() {
 fn each_run_takes_its_own_seat_up_to_the_vendor_cap() {
     let agents = agents();
     let git = tempfile::tempdir().unwrap();
-    let first = take_seat(git.path(), &agents, &codex()).unwrap();
-    let second = take_seat(git.path(), &agents, &codex()).unwrap();
+    let first = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    let second = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
     let seats = git.path().join("betterlite/seats");
     for number in 1_u32..=2_u32 {
         let held = File::open(seats.join(format!("openai-{number}"))).unwrap();
         assert!(held.try_lock().is_err(), "seat {number} is free");
     }
     drop(first);
-    let again = take_seat(git.path(), &agents, &codex()).unwrap();
+    let again = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
     drop((second, again));
     assert_eq!(fs::read_dir(&seats).unwrap().count(), 2);
+}
+
+#[test]
+fn a_worker_also_needs_a_writer_seat_and_a_reviewer_does_not() {
+    let agents = agents();
+    let git = tempfile::tempdir().unwrap();
+    let mut claude = codex();
+    claude.id = "anthropic".to_owned();
+    claude.max_writers = Some(1);
+    let worker = take_seat(git.path(), &agents, &claude, Seat::Worker).unwrap();
+    assert!(!seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
+    assert!(seat_free(git.path(), &agents, &claude, Seat::Reviewer).unwrap());
+    drop(worker);
+    let first = take_seat(git.path(), &agents, &claude, Seat::Reviewer).unwrap();
+    let second = take_seat(git.path(), &agents, &claude, Seat::Reviewer).unwrap();
+    assert!(!seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
+    drop((first, second));
+    assert!(seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
 }
