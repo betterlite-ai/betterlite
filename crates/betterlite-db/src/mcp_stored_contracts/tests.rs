@@ -5,6 +5,7 @@ use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use super::{
     JsonValue, MAX_STORED_BYTES, MAX_STORED_DEPTH, MCPAuth, MCPAuthType, MCPCredentials,
@@ -256,6 +257,26 @@ fn mcp_stored_limits() {
         Err(decode::McpStoredDecodeError::TooDeep | decode::McpStoredDecodeError::Json(_))
     ));
 }
+
+#[test]
+fn mcp_stored_limits_reject_large_nested_input_before_deserialize() {
+    let nesting = 2 * (MAX_STORED_DEPTH + 1);
+    let padding = "0".repeat(MAX_STORED_BYTES - nesting);
+    let nested = format!(
+        "{}{}{}",
+        "[".repeat(MAX_STORED_DEPTH + 1),
+        padding,
+        "]".repeat(MAX_STORED_DEPTH + 1)
+    );
+    assert!(nested.len() <= MAX_STORED_BYTES);
+    let started = Instant::now();
+    assert!(matches!(
+        decode_mcp_stored_contract(nested.as_bytes()),
+        Err(decode::McpStoredDecodeError::TooDeep)
+    ));
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
 #[rstest]
 fn replays_the_mcp_stored_contract_corpus(
     #[files("fuzz/corpus/mcp_stored_contract/*")] path: PathBuf,
