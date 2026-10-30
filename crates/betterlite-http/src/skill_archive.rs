@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
 
+use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
+use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
@@ -17,6 +19,7 @@ pub struct SkillArchive {
     pub declared_description: Option<String>,
 }
 
+#[must_use]
 pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
     let mut uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
     let members = flattened_members(&mut uploaded)?;
@@ -75,13 +78,14 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
 }
 
 fn normalize_path(raw_path: &str) -> Option<String> {
+    let bytes = raw_path.as_bytes();
+    let drive_letter = bytes.first().is_some_and(u8::is_ascii_alphabetic)
+        && bytes.get(1).is_some_and(|byte| *byte == b':');
     if raw_path.is_empty()
         || raw_path.contains('\0')
         || raw_path.contains('\\')
         || raw_path.starts_with('/')
-        || raw_path
-            .get(..2)
-            .is_some_and(|prefix| prefix.as_bytes()[1] == b':')
+        || drive_letter
     {
         return None;
     }
@@ -95,15 +99,15 @@ fn normalize_path(raw_path: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn common_root_prefix<'a>(paths: impl Iterator<Item = &'a str>) -> String {
-    let paths: Vec<&str> = paths.collect();
-    let Some(first) = paths.first() else {
+fn common_root_prefix<'path>(path_iter: impl Iterator<Item = &'path str>) -> String {
+    let path_list: Vec<&str> = path_iter.collect();
+    let Some(first) = path_list.first() else {
         return String::new();
     };
     let Some((root, _)) = first.split_once('/') else {
         return String::new();
     };
-    if paths.iter().all(|path| {
+    if path_list.iter().all(|path| {
         path.split_once('/')
             .is_some_and(|(candidate, _)| candidate == root)
     }) {
@@ -113,8 +117,14 @@ fn common_root_prefix<'a>(paths: impl Iterator<Item = &'a str>) -> String {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct Frontmatter {
+    name: Option<String>,
+    description: Option<String>,
+}
+
 fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
-    let text = String::from_utf8_lossy(manifest);
+    let text = decode_utf8_replacing(manifest);
     let mut lines = text.split_inclusive('\n');
     let Some(first) = lines.next() else {
         return (None, None);
@@ -134,40 +144,67 @@ fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
     if !closed {
         return (None, None);
     }
-    let Ok(value) = serde_saphyr::from_str::<serde_json::Value>(&yaml) else {
-        return (None, None);
-    };
-    let Some(object) = value.as_object() else {
+    let Ok(frontmatter) = serde_saphyr::from_str::<Frontmatter>(&yaml) else {
         return (None, None);
     };
     (
-        frontmatter_text(object.get("name")),
-        frontmatter_text(object.get("description")),
+        clean_frontmatter_text(frontmatter.name),
+        clean_frontmatter_text(frontmatter.description),
     )
 }
 
-fn frontmatter_text(value: Option<&serde_json::Value>) -> Option<String> {
-    let text = value
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    text
+fn decode_utf8_replacing(input: &[u8]) -> String {
+    let mut remaining = input;
+    let mut output = String::new();
+    while !remaining.is_empty() {
+        match std::str::from_utf8(remaining) {
+            Ok(valid) => {
+                output.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid_length = error.valid_up_to();
+                if let Some(valid) = remaining.get(..valid_length) {
+                    output.push_str(std::str::from_utf8(valid).unwrap_or_default());
+                }
+                output.push('\u{FFFD}');
+                let invalid_length = error
+                    .error_len()
+                    .unwrap_or_else(|| remaining.len().saturating_sub(valid_length));
+                remaining = remaining
+                    .get(valid_length.saturating_add(invalid_length)..)
+                    .unwrap_or_default();
+            }
+        }
+    }
+    output
 }
 
-fn repack(members: &[(String, Vec<u8>)]) -> zip::result::ZipResult<Vec<u8>> {
+fn clean_frontmatter_text(value: Option<String>) -> Option<String> {
+    let Some(text) = value else {
+        return None;
+    };
+    let trimmed = text.trim().to_owned();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn repack(members: &[(String, Vec<u8>)]) -> ZipResult<Vec<u8>> {
     let mut output = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(&mut output);
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .last_modified_time(
             DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
-                .map_err(|error| zip::result::ZipError::InvalidArchive(error.to_string().into()))?,
+                .map_err(|error| ZipError::InvalidArchive(error.to_string()))?,
         )
         .unix_permissions(0o644);
     for (name, data) in members {
         writer.start_file(name, options)?;
-        writer.write_all(data).map_err(zip::result::ZipError::Io)?;
+        writer.write_all(data).map_err(ZipError::Io)?;
     }
     writer.finish()?;
     Ok(output.into_inner())

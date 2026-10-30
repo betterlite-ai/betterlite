@@ -98,14 +98,11 @@ jobs:
       CARGO_TERM_COLOR: never
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
-      # the tools check reads the cargo-shear version from .crates.toml, since cargo shear --version prints "dev"
       SOURCE_TOOLS: |
         /usr/local/cargo/bin/cargo-shear
         /usr/local/cargo/bin/ast-grep
         /usr/local/cargo/bin/sg
         /usr/local/cargo/bin/similarity-rs
-        /usr/local/cargo/.crates.toml
-        /usr/local/cargo/.crates2.json
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
@@ -173,7 +170,7 @@ jobs:
 
       - name: Install the tools without prebuilt binaries
         if: github.event_name != 'pull_request' && steps.tools.outputs.cache-hit != 'true'
-        run: cargo install --locked --force cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
+        run: cargo install --locked cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
 
       - name: Save the tools built from source
         if: github.ref == 'refs/heads/main' && matrix.part == 'lint' && steps.tools.outputs.cache-hit != 'true'
