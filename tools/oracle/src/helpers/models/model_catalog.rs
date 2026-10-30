@@ -53,8 +53,8 @@ fn summarize_source(
     Ok(serde_json::Value::Object(result))
 }
 
-fn invalid(message: impl Into<String>) -> Box<crate::helpers::HelperError> {
-    let message = message.into();
+fn invalid(input_message: impl Into<String>) -> Box<crate::helpers::HelperError> {
+    let message = input_message.into();
     let message_empty = message.is_empty();
     let error = Box::new(crate::helpers::HelperError {
         class: "InvalidInput".to_owned(),
