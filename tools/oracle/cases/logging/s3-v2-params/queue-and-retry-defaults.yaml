@@ -1,5 +1,5 @@
 kind: helper
 name: queue-and-retry-defaults
-call: {b3992: {operation: defaults, source: {}}}
+call: {"b3992": {"operation": "params"}}
 env: {}
 compare: {ignore: []}

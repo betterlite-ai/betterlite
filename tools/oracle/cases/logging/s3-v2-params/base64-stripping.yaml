@@ -1,5 +1,5 @@
 kind: helper
 name: base64-stripping
-call: {b3992: {operation: strip, payload: {messages: [{content: [{type: image_url, image_url: {url: data:image/png;base64,AAAA}}]}]}}}
+call: {"b3992": {"operation": "event", "start_time": "2026-01-02T03:04:05", "source": {"s3_path": "logs", "s3_use_team_prefix": true, "s3_use_key_prefix": true, "s3_partition_granularity": "hour", "s3_strip_base64_files": true}, "payload": {"id": "request", "metadata": {"user_api_key_team_alias": "team", "user_api_key_alias": "key"}, "response": {"text": "ok"}, "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}, {"type": "text", "text": "before data:image/png;base64,AAAA! after"}, {"file": {}}, {"text": "kept", "nested": {"blob": "data:application/pdf;base64,AAAA"}}]}]}}}
 env: {}
 compare: {ignore: []}

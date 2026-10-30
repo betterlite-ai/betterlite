@@ -6,3 +6,6 @@ deviations:
   - what: Exporter state and upload machinery are not initialized by the parameter/event builder.
     why: The task owns immutable parameter and event construction; exporter state belongs to later S3 tasks.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128-L254
+  - what: Base64 stripping leaves the caller's logging payload unchanged.
+    why: Event construction must be immutable; LiteLLM's message filtering modifies the input payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1044-L1074

@@ -19,8 +19,10 @@ prost = "0.14.4"
 regex.workspace = true
 rust_decimal.workspace = true
 ryu = "1.0.23"
+secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
@@ -31,7 +33,7 @@ unicode-properties = { version = "0.1.4", default-features = false, features = [
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 tracing-subscriber.workspace = true
 
 [[test]]

@@ -1,5 +1,5 @@
 kind: helper
 name: no-event-on-missing-payload
-call: {b3992: {operation: event, payload: null}}
+call: {"b3992": {"operation": "event", "start_time": "2026-01-02T03:04:05", "source": {"s3_path": "logs", "s3_use_team_prefix": true, "s3_use_key_prefix": true, "s3_partition_granularity": "hour"}, "payload": null}}
 env: {}
 compare: {ignore: []}
