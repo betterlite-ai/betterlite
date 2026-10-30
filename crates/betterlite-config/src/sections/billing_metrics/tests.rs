@@ -74,7 +74,11 @@ fn billing_metrics_config_reads_every_variable() {
     assert_eq!(configured.ca_cert.as_deref(), Some("/ca"));
     assert_eq!(configured.export_interval_ms, 1234);
     assert_eq!(configured.temp_root, PathBuf::from("/scratch"));
-    assert!(configured.client_key.is_some_and(|key| key.expose_secret() == "/key"));
+    assert!(
+        configured
+            .client_key
+            .is_some_and(|key| key.expose_secret() == "/key")
+    );
 }
 
 #[test]

@@ -86,12 +86,15 @@ fn export_interval_ms(raw: Option<String>) -> i64 {
     let Some(value) = raw else {
         return DEFAULT_EXPORT_INTERVAL_MS;
     };
-    value.trim().parse().unwrap_or_else(|_error| {
-        tracing::warn!(
-            "Invalid {EXPORT_INTERVAL_ENV}={value:?}, falling back to {DEFAULT_EXPORT_INTERVAL_MS} ms"
-        );
-        DEFAULT_EXPORT_INTERVAL_MS
-    })
+    match value.trim().parse() {
+        Ok(interval) => interval,
+        Err(_error) => {
+            tracing::warn!(
+                "Invalid {EXPORT_INTERVAL_ENV}={value:?}, falling back to {DEFAULT_EXPORT_INTERVAL_MS} ms"
+            );
+            DEFAULT_EXPORT_INTERVAL_MS
+        }
+    }
 }
 
 impl Settings {
