@@ -253,10 +253,8 @@ fn resolve_local_ref<'root>(root: &'root Object, reference: &str) -> Option<&'ro
 }
 
 fn is_object_schema(schema: &Object) -> bool {
-    let has_object_type = schema
-        .get("type")
-        .is_some_and(|value| value.as_str() == Some("object"));
-    let has_properties_without_type =
-        schema.get("type").is_none() && schema.contains_key("properties");
-    has_object_type || has_properties_without_type
+    match schema.get("type") {
+        Some(value) => value.as_str() == Some("object"),
+        None => schema.contains_key("properties"),
+    }
 }
