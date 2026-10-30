@@ -1,0 +1,9 @@
+kind: helper
+name: full_flattened_budget_and_timestamps
+call:
+  budget_permission_rows:
+    operation: full
+    row: {budget_id: b, created_at: '2026-01-01T00:00:00', max_budget: 5.0}
+env: {}
+compare:
+  ignore: []
