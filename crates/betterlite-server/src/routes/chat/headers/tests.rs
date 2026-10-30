@@ -61,7 +61,7 @@ fn failure_headers_preserves_repeated_upstream_values() {
             body: Vec::new(),
         }),
     };
-    let headers = failure_headers(&error, "call-1", None);
+    let headers = failure_headers(Some(&error), None, "call-1", None);
     let forwarded: Vec<&HeaderValue> = headers
         .get_all("llm_provider-x-ratelimit-remaining-tokens")
         .iter()
@@ -81,7 +81,7 @@ fn failure_headers_drops_an_unsafe_prefixed_header() {
             body: Vec::new(),
         }),
     };
-    let headers = failure_headers(&error, "call-3", None);
+    let headers = failure_headers(Some(&error), None, "call-3", None);
     assert!(headers.get("llm_provider-set-cookie").is_none());
     assert!(headers.get("set-cookie").is_none());
     assert_eq!(headers.get("llm_provider-x-request-id").unwrap(), "abc");
@@ -101,7 +101,7 @@ fn failure_headers_forwards_a_non_utf8_value_losslessly() {
             body: Vec::new(),
         }),
     };
-    let headers = failure_headers(&error, "call-2", None);
+    let headers = failure_headers(Some(&error), None, "call-2", None);
     assert_eq!(
         headers
             .get("llm_provider-x-vendor-trace")

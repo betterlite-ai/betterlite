@@ -1,0 +1,9 @@
+kind: helper
+name: budget_all_twelve_defaults
+call:
+  budget_permission_rows:
+    operation: budget
+    row: {}
+env: {}
+compare:
+  ignore: []

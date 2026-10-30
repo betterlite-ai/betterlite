@@ -6,6 +6,7 @@ use crate::ids::check_id_problem;
 use crate::spec::backlog::BacklogEntry;
 use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
+use crate::validate::command_args::argument_problems;
 use crate::validate::{catalog, duplicates};
 
 fn text_problems(task: &Task) -> Vec<String> {
@@ -171,6 +172,9 @@ fn command_problems(task: &Task) -> Vec<String> {
                 check.id,
                 banned.join(", ")
             ));
+        }
+        for problem in argument_problems(&check.run) {
+            problems.push(format!("{}: check {} {problem}", task.id, check.id));
         }
     }
     problems
