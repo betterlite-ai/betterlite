@@ -14,15 +14,25 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let result = match transform_file_response(input.response.clone()) {
+        let response = input.response.clone();
+        let result = match transform_file_response(response.clone()) {
             Ok(content) => json!({
                 "ok": true,
                 "response": content.response,
                 "hidden_params": content.hidden_params,
                 "summary": content.logging_summary(),
             }),
-            Err(FileContentError::Bedrock(error)) => {
-                json!({"ok": false, "error": error})
+            Err(FileContentError::Bedrock { error, .. }) => json!({
+                "ok": false,
+                "error": {
+                    "status_code": error.error.status_code,
+                    "message": error.error.message,
+                    "headers": response.headers,
+                    "response": response,
+                },
+            }),
+            Err(FileContentError::Header(error)) => {
+                json!({"ok": false, "error": error.to_string()})
             }
         };
         Ok(result)

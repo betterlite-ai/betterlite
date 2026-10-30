@@ -1,4 +1,5 @@
 use super::super::{FileContentError, FileContentRequest, RawResponse, transform_file_response};
+use crate::bedrock_settings::error_response_text;
 use rstest::rstest;
 use std::collections::BTreeMap;
 
@@ -50,11 +51,17 @@ fn empty_binary_reply() {
 fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
     let expected = response(500, body);
     let outcome = transform_file_response(expected.clone()).expect_err("failure");
-    let FileContentError::Bedrock(bedrock_error) = outcome;
-    assert_eq!(bedrock_error.status_code, 500);
-    assert_eq!(bedrock_error.message, message);
-    assert_eq!(bedrock_error.headers, expected.headers);
-    assert_eq!(bedrock_error.response, expected);
+    let FileContentError::Bedrock { status, error } = outcome else {
+        panic!("expected BedrockError");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(error.error.status_code, 500);
+    assert_eq!(error.error.message, message);
+    assert_eq!(
+        error.response_headers,
+        expected.headers.into_iter().collect::<Vec<_>>()
+    );
+    assert_eq!(error_response_text(&error.response_body), message);
 }
 
 #[rstest]
