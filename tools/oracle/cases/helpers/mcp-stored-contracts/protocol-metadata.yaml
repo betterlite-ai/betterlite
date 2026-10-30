@@ -9,6 +9,7 @@
 "version_2024-11-05":{"function": "protocol_metadata", "value": {"protocol_version": "2024-11-05", "extra": [1]}},
 "version_2025-03-26":{"function": "protocol_metadata", "value": {"protocol_version": "2025-03-26", "extra": [1]}},
 "version_2025-06-18":{"function": "protocol_metadata", "value": {"protocol_version": "2025-06-18", "extra": [1]}},
-"version_2025-11-25":{"function": "protocol_metadata", "value": {"protocol_version": "2025-11-25", "extra": [1]}}
+"version_2025-11-25":{"function": "protocol_metadata", "value": {"protocol_version": "2025-11-25", "extra": [1]}},
+"protocol_object":{"function": "protocol_metadata", "value": {"protocol_version": {"auto": null}}}
 }}}, "env":{}, "compare":{"ignore":[]}
 }

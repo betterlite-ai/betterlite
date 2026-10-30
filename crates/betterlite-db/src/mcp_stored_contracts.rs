@@ -3,7 +3,8 @@ use std::fmt::{self, Debug, Formatter};
 
 use secret::StoredSecret;
 use serde::{Deserialize, Serialize};
-use serde_with::rust::double_option;
+use serde_with::{DeserializeFromStr, rust::double_option};
+use strum::EnumString;
 pub const MAX_STORED_BYTES: usize = 0x0010_0000;
 pub const MAX_STORED_DEPTH: usize = 64;
 
@@ -25,16 +26,18 @@ impl Debug for JsonValue {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, DeserializeFromStr, Serialize, PartialEq, Eq, EnumString)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum MCPTransport {
     Sse,
     Http,
     Stdio,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, DeserializeFromStr, Serialize, PartialEq, Eq, EnumString)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum MCPAuth {
     None,
     ApiKey,
@@ -52,15 +55,19 @@ pub enum MCPAuth {
 
 pub type MCPTransportType = MCPTransport;
 pub type MCPAuthType = Option<MCPAuth>;
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, DeserializeFromStr, Serialize, PartialEq, Eq, EnumString)]
 pub enum MCPLegacyVersion {
     #[serde(rename = "2024-11-05")]
+    #[strum(serialize = "2024-11-05")]
     Nov2024,
     #[serde(rename = "2025-03-26")]
+    #[strum(serialize = "2025-03-26")]
     Mar2025,
     #[serde(rename = "2025-06-18")]
+    #[strum(serialize = "2025-06-18")]
     Jun2025,
     #[serde(rename = "2025-11-25")]
+    #[strum(serialize = "2025-11-25")]
     Nov2025,
 }
 
@@ -71,16 +78,28 @@ pub const MCP_LEGACY_VERSIONS: [MCPLegacyVersion; 4] = [
     MCPLegacyVersion::Nov2025,
 ];
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, DeserializeFromStr, Serialize, PartialEq, Eq, EnumString)]
 pub enum MCPUpstreamProtocol {
     #[serde(rename = "auto")]
+    #[strum(serialize = "auto")]
     Auto,
-    #[serde(untagged)]
-    Legacy(MCPLegacyVersion),
+    #[serde(rename = "2024-11-05")]
+    #[strum(serialize = "2024-11-05")]
+    Nov2024,
+    #[serde(rename = "2025-03-26")]
+    #[strum(serialize = "2025-03-26")]
+    Mar2025,
+    #[serde(rename = "2025-06-18")]
+    #[strum(serialize = "2025-06-18")]
+    Jun2025,
+    #[serde(rename = "2025-11-25")]
+    #[strum(serialize = "2025-11-25")]
+    Nov2025,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, DeserializeFromStr, Serialize, PartialEq, Eq, EnumString)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum MCPTokenEndpointAuthMethod {
     ClientSecretBasic,
     ClientSecretPost,

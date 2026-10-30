@@ -18,7 +18,8 @@ rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.145", features = ["raw_value"] }
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 unicode-general-category = "1.1.0"

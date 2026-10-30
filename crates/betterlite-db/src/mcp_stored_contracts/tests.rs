@@ -437,3 +437,17 @@ fn decoded_stored_debug_redacts() {
     let decoded = decode_mcp_stored_contract(br#"{"auth_value":"never-print"}"#).unwrap();
     assert_eq!(format!("{decoded:?}"), "[REDACTED]");
 }
+
+#[rstest]
+#[case::transport(r#"{"sse":null}"#)]
+#[case::auth(r#"{"none":null}"#)]
+#[case::method(r#"{"client_secret_basic":null}"#)]
+#[case::protocol(r#"{"auto":null}"#)]
+#[case::legacy(r#"{"2024-11-05":null}"#)]
+fn literal_objects_rejected(#[case] input: &str) {
+    serde_json::from_str::<MCPTransport>(input).unwrap_err();
+    serde_json::from_str::<MCPAuth>(input).unwrap_err();
+    serde_json::from_str::<MCPTokenEndpointAuthMethod>(input).unwrap_err();
+    serde_json::from_str::<super::MCPUpstreamProtocol>(input).unwrap_err();
+    serde_json::from_str::<super::MCPLegacyVersion>(input).unwrap_err();
+}

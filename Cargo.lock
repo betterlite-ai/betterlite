@@ -970,6 +970,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "strum",
  "thiserror",
  "tokio",
  "tokio-postgres",
