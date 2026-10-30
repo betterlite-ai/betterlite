@@ -100,23 +100,30 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let api_key = required_secret(parameters.api_key, "DEEPKEEP_API_KEY", &prefix, lookup)?;
-        let api_base = required_string(parameters.api_base, "DEEPKEEP_API_BASE", &prefix, lookup)?;
-        let firewall_id = required_string(
+        let api_key = SecretString::from(required_value(
+            parameters
+                .api_key
+                .map(|secret| secret.expose_secret().to_owned()),
+            "DEEPKEEP_API_KEY",
+            &prefix,
+            "api_key",
+            lookup,
+        )?);
+        let api_base = required_value(
+            parameters.api_base,
+            "DEEPKEEP_API_BASE",
+            &prefix,
+            "api_base",
+            lookup,
+        )?;
+        let firewall_id = required_value(
             parameters.deepkeep_firewall_id,
             "DEEPKEEP_FIREWALL_ID",
             &prefix,
+            "deepkeep_firewall_id",
             lookup,
         )?;
-        let extra_headers = match parameters.extra_headers {
-            Some(ExtraHeaders::Mapping(values)) => values,
-            Some(ExtraHeaders::List(values)) => {
-                drop(values);
-                tracing::warn!("DeepKeep extra_headers list ignored; a mapping is required");
-                BTreeMap::new()
-            }
-            _ => BTreeMap::new(),
-        };
+        let extra_headers = resolve_extra_headers(parameters.extra_headers);
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_base: normalize_endpoint(&api_base),
@@ -131,46 +138,30 @@ impl Entry {
     }
 }
 
-fn required_secret<L>(
-    configured: Option<SecretString>,
-    variable: &str,
-    prefix: &str,
-    lookup: &L,
-) -> Result<SecretString, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = configured
-        .filter(|secret| !secret.expose_secret().is_empty())
-        .map(|secret| secret.expose_secret().to_owned())
-        .or_else(|| lookup.lookup(variable))
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: variable.to_owned(),
-            path: format!("{prefix}.api_key"),
-        })?;
-    Ok(SecretString::from(resolve_string(
-        resolved,
-        &format!("{prefix}.api_key"),
-        lookup,
-    )?))
+fn resolve_extra_headers(extra_headers: Option<ExtraHeaders>) -> BTreeMap<String, String> {
+    match extra_headers {
+        Some(ExtraHeaders::Mapping(values)) => values,
+        Some(ExtraHeaders::List(values)) => {
+            drop(values);
+            tracing::warn!("DeepKeep extra_headers list ignored; a mapping is required");
+            BTreeMap::new()
+        }
+        None => BTreeMap::new(),
+    }
 }
 
-fn required_string<L>(
+fn required_value<L>(
     configured: Option<String>,
     variable: &str,
     prefix: &str,
+    path_name: &str,
     lookup: &L,
 ) -> Result<String, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let path_name = if variable == "DEEPKEEP_API_BASE" {
-        "api_base"
-    } else {
-        "deepkeep_firewall_id"
-    };
     let resolved = configured
-        .filter(|text| !text.is_empty())
+        .filter(|value| !value.is_empty())
         .or_else(|| lookup.lookup(variable))
         .ok_or_else(|| ConfigError::MissingEnvironment {
             variable: variable.to_owned(),
