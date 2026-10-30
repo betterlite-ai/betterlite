@@ -9,4 +9,3 @@ compare:
   ignore:
     - pointer: /value/organization_memberships/0/spend
       why: OrganizationMembership is owned by B2310 and still serializes spend as Decimal text, not float like Pydantic's model
-
