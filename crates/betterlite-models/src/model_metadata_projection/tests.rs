@@ -50,3 +50,17 @@ fn threshold_suffixes_are_copied_without_priority_extensions() {
     assert!(!projected.contains_key("input_cost_per_token_above_999_tokens_priority"));
     assert!(!projected.contains_key("unknown"));
 }
+
+#[test]
+fn rejects_non_numeric_non_null_prices() {
+    let raw: &RawValue = serde_json::from_str(r#"{"input_cost_per_token":"invalid"}"#).unwrap();
+    assert!(project("model", "model", "openai", raw).is_err());
+}
+
+#[test]
+fn omits_threshold_keys_without_digits() {
+    let raw: &RawValue = serde_json::from_str(r#"{"cost_above__tokens":1}"#).unwrap();
+    let projected: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(project("model", "model", "openai", raw).unwrap().get()).unwrap();
+    assert!(!projected.contains_key("cost_above__tokens"));
+}
