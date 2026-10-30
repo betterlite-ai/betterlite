@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
-use super::chat::headers::{failure_headers, success_headers};
+use super::chat::headers::{failure_headers, failure_headers_for_upstream, success_headers};
 
 #[derive(Serialize)]
 struct ErrorBody {
@@ -124,7 +124,12 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
     let chat_error = ChatError::UnknownModel {
         model: String::new(),
     };
-    let response_headers = failure_headers(&chat_error, call_id, deployment);
+    let response_headers = match error {
+        EmbeddingError::Provider { response } => {
+            failure_headers_for_upstream(&response.headers, call_id, deployment)
+        }
+        _ => failure_headers(&chat_error, call_id, deployment),
+    };
     let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (status_code, response_headers, Json(body)).into_response()
 }
