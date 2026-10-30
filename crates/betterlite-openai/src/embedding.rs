@@ -60,6 +60,8 @@ pub struct EmbeddingUsage {
     pub completion_tokens: u32,
     #[serde(default)]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
+    #[serde(default)]
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
     pub total_tokens: u32,
 }
 
@@ -69,6 +71,12 @@ pub struct CompletionTokensDetails {
     pub audio_tokens: Option<u32>,
     pub accepted_prediction_tokens: Option<u32>,
     pub rejected_prediction_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PromptTokensDetails {
+    pub cached_tokens: Option<u32>,
+    pub audio_tokens: Option<u32>,
 }
 
 #[derive(Debug, Error)]
