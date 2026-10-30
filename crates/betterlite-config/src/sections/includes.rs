@@ -200,18 +200,11 @@ fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
     base
 }
 
-pub trait ConfigLoaderFile {
-    // pub fn load_file is a trait method because ConfigLoader already has an inherent implementation in loader.rs.
-    fn load_file<P>(&self, config_path: P) -> Result<Config, LoadError>
-    where
-        P: AsRef<Path>;
-}
-
-impl<L> ConfigLoaderFile for ConfigLoader<L>
+impl<L> ConfigLoader<L>
 where
     L: EnvironmentLookup,
 {
-    fn load_file<P>(&self, config_path: P) -> Result<Config, LoadError>
+    pub fn load_file<P>(&self, config_path: P) -> Result<Config, LoadError>
     where
         P: AsRef<Path>,
     {

@@ -1,8 +1,6 @@
 #![cfg(test)]
 
-use super::{
-    ConfigLoaderFile as _, ConfigMap, IncludeError, LoadError, read_config, resolve_includes,
-};
+use super::{ConfigMap, IncludeError, LoadError, read_config, resolve_includes};
 use crate::loader::ConfigLoader;
 use serde_json::json;
 use std::collections::BTreeMap;

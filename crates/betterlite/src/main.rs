@@ -1,5 +1,5 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::includes::{ConfigLoaderFile as _, LoadError};
+use betterlite_config::sections::includes::LoadError;
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
