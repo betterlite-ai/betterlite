@@ -81,7 +81,7 @@ base:
     - id: expect-budget
       why: "new #[expect(...)] attributes must fit the task's budget"
     - id: file-size
-      why: no Rust source file may grow past the line limits in settings.file_size
+      why: no Rust source file may grow past the line limits in settings.file_size; a `mod name;` line does not count, so a parent can declare every child module where cargo-mutants finds it
     - id: crates
       why: every crate inherits the workspace lints, is MIT, and keeps the LiteLLM name out of its name
   commands:
