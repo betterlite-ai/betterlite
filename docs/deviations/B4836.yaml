@@ -1,6 +1,4 @@
 task: B4836
-# Keep the complete branch inventory in the worker report, including earlier attempts.
-# The first four entries are task-declared safeguards already present in the pinned LiteLLM code.
 deviations:
   - what: "Session token is never in argv or environment; the config references it with `{file:<path>}` inside OPENCODE_CONFIG_CONTENT JSON."
     why: "Command-line arguments are visible in process listings. The token is a secret and must stay out of argv and env."
@@ -21,5 +19,5 @@ deviations:
     why: "LiteLLM uses plain json.dumps, while the typed Rust event boundary receives ordered JsonObject values; B4835 records the same wire-order limitation."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L168-L190
   - what: "Malformed known OpenCode JSONL events fail the turn and append their parse error to earlier event errors."
-    why: "The typed Rust wire model rejects malformed known event fields, while LiteLLM leniently reads these events through _as_dict and str()."
+    why: "The typed Rust wire model rejects malformed known event fields, while LiteLLM leniently reads these events through _as_dict and str(). Appending the parse error preserves earlier event failures."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L382-L407
