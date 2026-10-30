@@ -1,5 +1,5 @@
 use betterlite_db::budget_permission_rows::{LiteLLMBudgetTable, LiteLLMObjectPermissionTable};
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::ToPrimitive as _;
 
 pub(crate) struct Op;
 
@@ -51,7 +51,10 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn dump<T: serde::Serialize>(value: &T) -> crate::helpers::HelperResult {
+fn dump<T>(value: &T) -> crate::helpers::HelperResult
+where
+    T: serde::Serialize,
+{
     let output = serde_json::to_value(value)
         .map_err(|error| helper_error("InvalidOutput", &error.to_string()))?;
     Ok(output)
