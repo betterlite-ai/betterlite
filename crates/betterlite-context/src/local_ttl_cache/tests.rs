@@ -71,12 +71,12 @@ fn local_ttl_cache_cases(#[case] name: &str) {
             assert!(cache.get("b").is_some());
             assert!(cache.get("c").is_some());
             let clock = Arc::new(Mutex::new(0.0_f64));
-            let source = Arc::clone(&clock);
+            let expiry_source = Arc::clone(&clock);
             let mut expiring = LocalTtlCache::with_clock(
                 Some(3),
                 Some(600.0_f64),
                 Some(2048),
-                Arc::new(move || *source.lock().unwrap()),
+                Arc::new(move || *expiry_source.lock().unwrap()),
             )
             .unwrap();
             expiring
@@ -99,12 +99,12 @@ fn local_ttl_cache_cases(#[case] name: &str) {
                 .unwrap();
             assert_eq!(cache.expiry("key"), Some(10.0_f64));
             let equality_clock = Arc::new(Mutex::new(0.0_f64));
-            let source = Arc::clone(&equality_clock);
+            let equality_source = Arc::clone(&equality_clock);
             let mut equality = LocalTtlCache::with_clock(
                 Some(2),
                 Some(600.0_f64),
                 Some(1024),
-                Arc::new(move || *source.lock().unwrap()),
+                Arc::new(move || *equality_source.lock().unwrap()),
             )
             .unwrap();
             equality
@@ -119,12 +119,12 @@ fn local_ttl_cache_cases(#[case] name: &str) {
             cache.delete("key");
             assert!(cache.get("key").is_none());
             let clock = Arc::new(Mutex::new(0.0_f64));
-            let source = Arc::clone(&clock);
+            let boundary_source = Arc::clone(&clock);
             let mut boundary = LocalTtlCache::with_clock(
                 Some(2),
                 Some(600.0_f64),
                 Some(1024),
-                Arc::new(move || *source.lock().unwrap()),
+                Arc::new(move || *boundary_source.lock().unwrap()),
             )
             .unwrap();
             boundary
