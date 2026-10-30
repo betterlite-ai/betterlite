@@ -1,0 +1,14 @@
+kind: helper
+name: gaps-and-below-all-ranges-use-last
+call:
+  pricing_tier:
+    tiers:
+      - range: [50, 100]
+        input_cost_per_token: 1
+      - range: [200, 300]
+        input_cost_per_token: 2
+    tokens: 10
+    cost_key: input_cost_per_token
+    fallback_cost_key: null
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,6 @@
+kind: helper
+name: messages-errors-seed
+call:
+  messages_errors: {action: transform, status: 500, raw_message: seed}
+env: {}
+compare: {ignore: []}

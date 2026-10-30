@@ -1,0 +1,10 @@
+kind: helper
+name: temporary_before_at_after_expiry
+call:
+  budget_permission_rows:
+    operation: effective
+    row: {max_budget: 10, temp_budget_increase: -2, temp_budget_expiry: '2026-01-02T00:00:00Z'}
+    now: '2026-01-01T00:00:00Z'
+env: {}
+compare:
+  ignore: []
