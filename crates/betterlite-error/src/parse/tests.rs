@@ -183,6 +183,7 @@ fn error_facts_behavior_tests_behavior_body_code_size_boundary() {
     "litellm.RateLimitError details litellm.BadRequestError",
     Some("RateLimitError")
 )]
+#[case::does_not_split_underscore_in_name("litellm.RateLimitError_BadRequestError", None)]
 fn error_facts_behavior_tests_behavior_exception_name(
     #[case] text: &str,
     #[case] expected: Option<&str>,
