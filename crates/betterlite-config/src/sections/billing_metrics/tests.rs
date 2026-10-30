@@ -153,6 +153,12 @@ fn billing_metrics_config_picks_the_temp_root(
     assert!(candidates.contains(&PathBuf::from("/var/tmp")));
 }
 
+#[test]
+fn billing_metrics_config_uses_the_current_directory_after_platform_defaults() {
+    let candidates = settings(&[]).temp_root_candidates;
+    assert_eq!(candidates.last(), Some(&std::env::current_dir().unwrap()));
+}
+
 #[rstest]
 #[case::nothing(&[], "(LITELLM_BILLING_METRICS_ENDPOINT, LITELLM_BILLING_METRICS_CLIENT_CERT, LITELLM_BILLING_METRICS_CLIENT_KEY)")]
 #[case::endpoint(&[(CLIENT_CERT_ENV, "/c"), (CLIENT_KEY_ENV, "/k")], "(LITELLM_BILLING_METRICS_ENDPOINT)")]
@@ -224,6 +230,24 @@ fn billing_metrics_config_writes_inline_pem_privately() {
     let authority = fs::read_to_string(written.join("ca.crt")).unwrap();
     assert_eq!(authority, format!("{indented_authority}\n"));
     assert_eq!(fs::read_dir(&written).unwrap().count(), 2);
+}
+
+#[test]
+fn billing_metrics_config_writes_inline_credentials_without_a_custom_ca() {
+    let scratch = tempfile::tempdir().unwrap();
+    let configured = settings(&[
+        (ENDPOINT_ENV, "https://collector"),
+        (CLIENT_CERT_ENV, CERT_PEM),
+        (CLIENT_KEY_ENV, KEY_PEM),
+        ("TMPDIR", scratch.path().to_str().unwrap()),
+    ]);
+    let metering = configured.resolve().unwrap();
+    assert!(metering.ca_cert.is_none());
+    assert_eq!(
+        fs::read_to_string(metering.client_cert).unwrap(),
+        format!("{CERT_PEM}\n")
+    );
+    assert_eq!(fs::read_to_string(metering.client_key).unwrap(), KEY_PEM);
 }
 
 #[test]
