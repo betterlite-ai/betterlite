@@ -17,20 +17,32 @@ fn invalid_input(message: String) -> Box<crate::helpers::HelperError> {
 }
 
 fn message(input: &serde_json::Value) -> crate::helpers::HelperResult {
+    let facts = body_facts(input)?;
+    Ok(serde_json::json!(get_error_message(&facts)))
+}
+
+fn body_facts(
+    input: &serde_json::Value,
+) -> Result<ProviderErrorFacts, Box<crate::helpers::HelperError>> {
     let body_value = input
         .get("body")
         .cloned()
         .ok_or_else(|| invalid_input("message body is missing".to_owned()))?;
     let body: ProviderErrorBody =
         serde_json::from_value(body_value).map_err(|error| invalid_input(error.to_string()))?;
-    let facts = ProviderErrorFacts {
+    Ok(ProviderErrorFacts {
         body: Some(body),
         ..ProviderErrorFacts::empty()
-    };
-    Ok(serde_json::json!(get_error_message(&facts)))
+    })
 }
 
 fn status(input: &serde_json::Value) -> crate::helpers::HelperResult {
+    let (facts, error_text, provider) = status_parts(input);
+    serde_json::to_value(map_exception_by_status(&facts, &error_text, &provider))
+        .map_err(|error| invalid_input(error.to_string()))
+}
+
+fn status_parts(input: &serde_json::Value) -> (ProviderErrorFacts, String, String) {
     let status_code = input
         .get("status")
         .and_then(serde_json::Value::as_u64)
@@ -43,18 +55,17 @@ fn status(input: &serde_json::Value) -> crate::helpers::HelperResult {
             .unwrap_or(false),
         ..ProviderErrorFacts::empty()
     };
-    serde_json::to_value(map_exception_by_status(
-        &facts,
-        input
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(""),
-        input
-            .get("provider")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("Provider"),
-    ))
-    .map_err(|error| invalid_input(error.to_string()))
+    let error_text = input
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let provider = input
+        .get("provider")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Provider")
+        .to_owned();
+    (facts, error_text, provider)
 }
 
 impl crate::helpers::Helper for Op {
