@@ -116,8 +116,8 @@ pub(crate) fn remove_extra_targets(worktree: &Path) -> Result<Vec<String>, GateE
         source,
     })?;
     let mut notes = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|source| GateError::Read {
+    for found in entries {
+        let entry = found.map_err(|source| GateError::Read {
             path: target.clone(),
             source,
         })?;
