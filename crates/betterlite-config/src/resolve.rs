@@ -14,14 +14,16 @@ pub(super) fn resolve_environment<L>(
 where
     L: EnvironmentLookup,
 {
-    let resolved = values
+    if values.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    values
         .into_iter()
         .map(|(key, value)| {
             let path = format!("environment_variables.{key}");
             resolve_secret(value, &path, lookup).map(|secret| (key, secret))
         })
-        .collect();
-    resolved
+        .collect()
 }
 
 pub(super) fn resolve_secret(
