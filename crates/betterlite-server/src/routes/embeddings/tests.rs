@@ -1,10 +1,18 @@
 #![cfg(test)]
 
+use axum::body::Body;
 use axum::body::to_bytes;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, Request, StatusCode};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_http::proxy::UpstreamResponse;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use tower::ServiceExt as _;
 
-use super::{EmbeddingError, failure};
+use super::{EmbeddingError, embedding_routes, failure};
+use crate::server::chat_setup::chat_executor;
 
 #[test]
 fn embedding_failure_returns_bad_request() {
@@ -34,4 +42,26 @@ async fn embedding_provider_failure_preserves_message() {
         .await
         .expect("error body");
     assert!(body.windows(12).any(|window| window == b"upstream bad"));
+}
+
+#[tokio::test]
+async fn embedding_route_rejects_malformed_body() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("model_list:\n")
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::builder()
+        .method("POST")
+        .uri("/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from("not-json"))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
