@@ -20,6 +20,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "embedding"
+path = "fuzz_targets/embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sse_events"
 path = "fuzz_targets/sse_events.rs"
 test = false
