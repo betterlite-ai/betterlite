@@ -1,8 +1,3 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "opencode JSON config and stream lines are untyped"
-)]
-
 use std::collections::BTreeMap;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -29,6 +24,8 @@ mod permissions;
 #[path = "stream.rs"]
 pub mod stream;
 mod tests;
+#[path = "validation.rs"]
+mod validation;
 #[path = "wire.rs"]
 mod wire;
 

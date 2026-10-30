@@ -45,33 +45,41 @@ fn stream(input: &str) -> HelperResult {
 }
 
 fn requests(input: &str) -> HelperResult {
-    let mut result = Vec::new();
-    for raw_line in input.lines() {
-        let request: Value = serde_json::from_str(raw_line).map_err(|error| {
-            Box::new(HelperError {
-                class: "RequestParse".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
-        let object = request.as_object().cloned().unwrap_or_default();
-        let headers = object
-            .get("headers")
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        result.push(json!({
-            "auth_prefix": object.get("auth_prefix"),
-            "content_type": headers.get("Content-Type"),
-            "tools": object.get("tools").cloned().unwrap_or_else(|| json!([])),
-            "n_messages": object.get("n_messages"),
-            "roles": object.get("roles").cloned().unwrap_or_else(|| json!([])),
-        }));
+    let requests = parse_request_document(input).map_err(|error| {
+        Box::new(HelperError {
+            class: "RequestParse".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
+    Ok(json!({"requests": requests}))
+}
+
+fn parse_request_document(input: &str) -> Result<Vec<Value>, serde_json::Error> {
+    match serde_json::Deserializer::from_str(input)
+        .into_iter::<Value>()
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(values) => Ok(values.iter().map(project_request).collect()),
+        Err(error) => Err(error),
     }
-    Ok(json!({"requests": result}))
+}
+
+fn project_request(request: &Value) -> Value {
+    let object = request.as_object().cloned().unwrap_or_default();
+    let headers = object
+        .get("headers")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    json!({
+        "auth_prefix": object.get("auth_prefix"), "content_type": headers.get("Content-Type"),
+        "tools": object.get("tools").cloned().unwrap_or_else(|| json!([])),
+        "n_messages": object.get("n_messages"), "roles": object.get("roles").cloned().unwrap_or_else(|| json!([])),
+    })
 }
 
 impl Helper for Op {

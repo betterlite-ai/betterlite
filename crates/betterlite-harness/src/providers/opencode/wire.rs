@@ -77,13 +77,16 @@ pub(crate) struct ToolState {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum ErrorEvent {
-    Object {
-        #[serde(default)]
-        data: Option<ErrorData>,
-        #[serde(default)]
-        name: Option<String>,
-    },
     Text(String),
+    Object(ErrorDetails),
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ErrorDetails {
+    #[serde(default)]
+    data: Option<ErrorData>,
+    #[serde(default)]
+    name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,17 +95,16 @@ pub(crate) struct ErrorData {
     pub(crate) message: Option<String>,
 }
 
-impl ErrorEvent {
-    pub(crate) fn message(&self) -> String {
-        match self {
-            Self::Object { data, name } => data
-                .as_ref()
-                .and_then(|value| value.message.clone())
-                .or_else(|| name.clone())
-                .unwrap_or_else(|| "opencode reported an error".to_owned()),
-            Self::Text(message) if !message.is_empty() => message.clone(),
-            Self::Text(_) => "opencode reported an error".to_owned(),
-        }
+pub(crate) fn error_message(error: &ErrorEvent) -> String {
+    match error {
+        ErrorEvent::Text(message) if !message.is_empty() => message.clone(),
+        ErrorEvent::Text(_) => "opencode reported an error".to_owned(),
+        ErrorEvent::Object(details) => details
+            .data
+            .as_ref()
+            .and_then(|value| value.message.clone())
+            .or_else(|| details.name.clone())
+            .unwrap_or_else(|| "opencode reported an error".to_owned()),
     }
 }
 

@@ -58,30 +58,28 @@ fn tool_events(part: ToolPart) -> Vec<Event> {
                 | "plan_exit"
         ),
     };
-    if part.state.status.as_deref() == Some("error") {
-        let output = failed_tool_output(part.state);
-        return vec![
-            call,
-            Event::ToolResult {
-                id: call_id,
-                output,
-                is_error: true,
-            },
-        ];
+    vec![call, tool_result(part, &native, call_id)]
+}
+
+fn tool_result(part: ToolPart, native: &str, call_id: String) -> Event {
+    let (output, is_error) = if part.state.status.as_deref() == Some("error") {
+        (failed_tool_output(part.state), true)
+    } else {
+        (tool_output(part.state), native == "invalid")
+    };
+    Event::ToolResult {
+        id: call_id,
+        output,
+        is_error,
     }
-    let output = match part.state.output {
+}
+
+fn tool_output(state: super::wire::ToolState) -> String {
+    match state.output {
         Some(serde_json::Value::String(text)) => text,
         Some(value) => python_json_text(&value).unwrap_or_else(|_| value.to_string()),
         None => String::from("null"),
-    };
-    vec![
-        call,
-        Event::ToolResult {
-            id: call_id,
-            output,
-            is_error: native == "invalid",
-        },
-    ]
+    }
 }
 
 fn failed_tool_output(state: super::wire::ToolState) -> String {
@@ -121,7 +119,7 @@ pub(super) fn transform_line(line: &JsonObject, state: &mut OpenCodeStreamState)
             .unwrap_or_default(),
         Line::ToolUse { part, .. } => tool_events(part),
         Line::Error { error, .. } => {
-            let message = error.message();
+            let message = super::wire::error_message(&error);
             state.error = Some(match state.error.take() {
                 Some(existing) => format!("{existing}\n{message}"),
                 None => message,
