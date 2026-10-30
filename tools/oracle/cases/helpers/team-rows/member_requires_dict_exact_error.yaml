@@ -1,0 +1,11 @@
+kind: helper
+name: member_requires_dict_exact_error
+call:
+  team_rows:
+    calls:
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":null}
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":[]}
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":1}
+      - {"name":"member_requires_dict_exact_error","operation":"member_base","row":"x"}
+env: {}
+compare: {ignore: []}
