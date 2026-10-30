@@ -1,0 +1,9 @@
+kind: helper
+name: defs-ref
+call:
+  schema_definitions:
+    mode: unpack_defs
+    schema: {"a": {"$ref": "#/$defs/Foo"}}
+    defs: {"Foo": {"type": "string"}}
+env: {}
+compare: {ignore: []}

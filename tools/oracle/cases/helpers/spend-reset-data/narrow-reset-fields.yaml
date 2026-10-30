@@ -1,0 +1,16 @@
+kind: helper
+name: narrow-reset-fields
+call:
+  spend_reset_data:
+    cases:
+      reset_time_and_decrement:
+        budget_reset_at: "2026-08-06T00:30:00Z"
+        spend_decrement: 12.5
+      far_future_reset_time:
+        budget_reset_at: "2099-01-01T00:00:00Z"
+        spend_decrement: 1
+      epoch_reset_time:
+        budget_reset_at: "1970-01-01T00:00:00Z"
+        spend_decrement: 0.01
+env: {}
+compare: {ignore: []}
