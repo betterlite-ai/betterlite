@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "missing-ref", "call": {"schema_definitions": {"mode": "unpack_defs", "schema": {"a": {"$ref": "#/$defs/Missing"}}, "defs": {}}}, "env": {}, "compare": {"ignore": []}}

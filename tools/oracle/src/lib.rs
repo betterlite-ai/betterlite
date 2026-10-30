@@ -179,6 +179,10 @@ pub enum OracleError {
     },
     #[error("helper output is not valid JSON: {0}")]
     HelperJson(#[source] serde_json::Error),
+    #[error("BETTERLITE_ORACLE_CACHE must be own or shared")]
+    CacheMode,
+    #[error("HOME is not set, so the shared LiteLLM answer cache has no folder")]
+    CacheHome,
     #[error("database fixture failed: {0}")]
     DatabaseFixture(#[source] FixtureError),
     #[error("cases declare different database fixtures: {cases:?}")]

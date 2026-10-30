@@ -1,0 +1,10 @@
+kind: helper
+name: error-class-api-connection-validation
+call:
+  error_class:
+    family: api_connection
+    message: connection reset while streaming
+    model: gpt-4
+    provider: openai
+env: {}
+compare: {ignore: []}

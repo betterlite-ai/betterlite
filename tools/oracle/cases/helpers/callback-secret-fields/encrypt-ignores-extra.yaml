@@ -1,0 +1,20 @@
+kind: helper
+name: callback-secret-fields-encrypt-ignores-extra
+call:
+  callback_secret_fields:
+    salt_key: salt-one
+    master_key: null
+    general_settings: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f1011121314151617"
+    extra: [custom_extra_field]
+    steps:
+      - kind: sensitive
+        key: custom_extra_field
+      - kind: encrypt
+        metadata:
+          callback_settings:
+            callback_vars:
+              custom_extra_field: not-a-secret
+env: {}
+compare:
+  ignore: []

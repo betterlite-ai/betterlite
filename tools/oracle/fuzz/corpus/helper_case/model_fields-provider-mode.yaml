@@ -1,0 +1,7 @@
+kind: helper
+name: provider-mode
+call:
+  model_fields:
+    source: '{"litellm_provider":"anthropic","mode":"chat"}'
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,1 @@
+{"definitions": {"Foo": {"type": "string"}}, "components": {"schemas": "not an object"}, "properties": {"a": {"$ref": 123}, "b": {"$ref": "#/$defs/Missing"}}}

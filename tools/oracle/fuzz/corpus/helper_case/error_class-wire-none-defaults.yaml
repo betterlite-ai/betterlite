@@ -1,0 +1,10 @@
+kind: helper
+name: error-class-wire-none-defaults
+call:
+  error_class:
+    family: unsupported_params
+    message: max_tokens is not supported for this model
+    model: gpt-4
+    provider: anthropic
+env: {}
+compare: {ignore: []}

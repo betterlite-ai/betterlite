@@ -1,0 +1,15 @@
+kind: helper
+name: error-class-rate-limit-body-fields
+call:
+  error_class:
+    family: rate_limit
+    context:
+      message: slow down
+      model: gpt-4
+      provider: openai
+      body_type: server_error
+      body_param: retry_after
+      body_code: vendor_throttled
+    category: vendor_rate_limit
+env: {}
+compare: {ignore: []}

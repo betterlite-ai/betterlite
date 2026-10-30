@@ -27,9 +27,29 @@ pub(crate) struct Agents {
         description = "Directory for task worktrees, relative to the repository root."
     )]
     pub(crate) worktrees: String,
+    pub(crate) vendors: Vec<Vendor>,
     pub(crate) runners: Vec<Runner>,
     pub(crate) roles: Roles,
     pub(crate) policy: Policy,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(
+    description = "An account that runs agents. Each runner names one, so a new CLI is one vendor and its runners."
+)]
+pub(crate) struct Vendor {
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
+    pub(crate) id: String,
+    #[schemars(
+        description = "Text the vendor's CLI prints when the account is out of usage. A run that ends without an answer and prints one in its last lines marks the vendor, and every ladder skips it for limit_retry_minutes."
+    )]
+    pub(crate) limit_markers: Vec<String>,
+    #[schemars(
+        range(min = 1),
+        description = "Runs at once on this vendor. Without it the policy's max_parallel applies."
+    )]
+    pub(crate) max_parallel: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -40,18 +60,15 @@ pub(crate) struct Agents {
 pub(crate) struct Runner {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
     pub(crate) id: String,
-    pub(crate) vendor: Vendor,
+    #[schemars(
+        regex(pattern = "^[a-z][a-z0-9-]*$"),
+        description = "The id of the vendor whose account runs this CLI."
+    )]
+    pub(crate) vendor: String,
     #[schemars(length(min = 1))]
     pub(crate) program: String,
     pub(crate) args: Vec<String>,
     pub(crate) output: OutputMode,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum Vendor {
-    Openai,
-    Anthropic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -84,7 +101,7 @@ pub(crate) struct Role {
     pub(crate) instructions: String,
     #[schemars(
         length(min = 1),
-        description = "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out."
+        description = "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out, and skips a rung whose vendor is at its usage limit."
     )]
     pub(crate) ladder: Vec<Rung>,
 }
@@ -108,9 +125,24 @@ pub(crate) struct Rung {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Policy {
     #[schemars(
-        description = "The reviewer always runs on a different vendor than the worker whose change it reads."
+        description = "The reviewer runs on a different vendor than the worker whose change it reads. When every such reviewer is at its usage limit, one on the worker's vendor runs."
     )]
     pub(crate) review_by_other_vendor: bool,
+    #[schemars(
+        range(min = 1),
+        description = "Worker attempts across the whole ladder. A run that hits a usage limit doesn't count, so skipped rungs leave their attempts to the rungs after them."
+    )]
+    pub(crate) max_worker_attempts: u32,
+    #[schemars(
+        range(min = 1),
+        description = "Minutes a vendor stays skipped after one of its runs hit the usage limit. The next run after that tries it again."
+    )]
+    pub(crate) limit_retry_minutes: u32,
+    #[schemars(
+        range(min = 1),
+        description = "Runs at once on each vendor that sets no max_parallel of its own. A run waits for a free seat."
+    )]
+    pub(crate) max_parallel: u32,
     #[schemars(description = "Review rounds before a task goes back to the architect.")]
     pub(crate) max_review_rounds: u32,
     #[schemars(
