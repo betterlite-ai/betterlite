@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import TypeAlias, cast
 
 from litellm.litellm_core_utils.llm_cost_calc.utils import (
@@ -24,14 +25,25 @@ def parse_token_rates(value: dict[str, Json]) -> TokenRates:
     )
 
 
+def _decimal_str(value: float) -> str:
+    """Render a float as the plain decimal string betterlite's Decimal rates serialize to.
+
+    No arithmetic touches these rates between parsing and this call, so repr's shortest
+    round-trip text still carries the exact digits of the original JSON literal.
+    """
+    return format(Decimal(repr(value)).normalize(), "f")
+
+
 def token_rates_json(rates: TokenRates) -> Json:
     return {
-        "input_rate": rates.input_rate,
-        "output_rate": rates.output_rate,
-        "cache_read_rate": rates.cache_read_rate,
-        "cache_creation_rate": rates.cache_creation_rate,
-        "reasoning_rate": rates.reasoning_rate,
-        "billed_reasoning_rate": rates.billed_reasoning_rate,
+        "input_rate": _decimal_str(rates.input_rate),
+        "output_rate": _decimal_str(rates.output_rate),
+        "cache_read_rate": _decimal_str(rates.cache_read_rate),
+        "cache_creation_rate": _decimal_str(rates.cache_creation_rate),
+        "reasoning_rate": (
+            None if rates.reasoning_rate is None else _decimal_str(rates.reasoning_rate)
+        ),
+        "billed_reasoning_rate": _decimal_str(rates.billed_reasoning_rate),
     }
 
 
@@ -66,10 +78,10 @@ def run(input_value: dict[str, Json]) -> Json:
     return {
         "rates": token_rates_json(resolved_rates),
         "base_costs": {
-            "prompt_rate": resolved_base_costs[0],
-            "completion_rate": resolved_base_costs[1],
-            "cache_creation_rate": resolved_base_costs[2],
-            "cache_creation_above_1hr_rate": resolved_base_costs[3],
-            "cache_read_rate": resolved_base_costs[4],
+            "prompt_rate": _decimal_str(resolved_base_costs[0]),
+            "completion_rate": _decimal_str(resolved_base_costs[1]),
+            "cache_creation_rate": _decimal_str(resolved_base_costs[2]),
+            "cache_creation_above_1hr_rate": _decimal_str(resolved_base_costs[3]),
+            "cache_read_rate": _decimal_str(resolved_base_costs[4]),
         },
     }
