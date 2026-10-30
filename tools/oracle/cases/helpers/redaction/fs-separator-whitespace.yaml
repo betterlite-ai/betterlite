@@ -1,0 +1,9 @@
+kind: helper
+name: redaction-fs-separator-whitespace
+call:
+  redaction:
+    function: redact_string
+    text: "Authorization: Bearer\x1cabcdefghij1234567890 client_secret\x1fabcDEF123456"
+env: {}
+compare:
+  ignore: []
