@@ -22,8 +22,12 @@ pub enum TeamRowError {
     TooDeep,
     #[error("stored row is invalid JSON: {0}")]
     Json(#[source] serde_json::Error),
-    #[error("{0}")]
-    Validation(&'static str),
+    #[error("input needs to be a dictionary")]
+    NotAnObject,
+    #[error("Either user id or user email must be provided")]
+    MissingIdentity,
+    #[error("team_id is required")]
+    MissingTeamId,
     #[error("Field {field} should be a valid dictionary")]
     Field {
         field: &'static str,

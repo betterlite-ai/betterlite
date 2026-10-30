@@ -40,15 +40,13 @@ impl TryFrom<JsonData> for MemberBase {
     type Error = TeamRowError;
     fn try_from(value: JsonData) -> Result<Self, Self::Error> {
         let JsonData::Object(fields) = &value else {
-            return Err(TeamRowError::Validation("input needs to be a dictionary"));
+            return Err(TeamRowError::NotAnObject);
         };
         if ["user_id", "user_email"]
             .iter()
             .all(|key| matches!(fields.get(*key), None | Some(JsonData::Null)))
         {
-            return Err(TeamRowError::Validation(
-                "Either user id or user email must be provided",
-            ));
+            return Err(TeamRowError::MissingIdentity);
         }
         let identity: Identity = super::decoder::convert(&value)?;
         Ok(Self {

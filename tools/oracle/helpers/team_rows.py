@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 from litellm.models.team import (
     BudgetLimitEntry,
@@ -18,7 +18,10 @@ Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 class Call(TypedDict):
     name: str
-    operation: str
+    operation: Literal[
+        "validator", "base_model", "limits", "member_base", "member", "budget_limit",
+        "model", "team_base", "team", "cached", "deleted", "membership",
+    ]
     row: Json
 
 

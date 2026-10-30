@@ -9,3 +9,6 @@ deviations:
   - what: Duplicate keys in stored team JSON are rejected instead of overwriting earlier values.
     why: Reuse B2310's duplicate-checking JsonData boundary and the repository no-silent-drops rule; the parser corpus includes a duplicate team_id row.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L107-L133
+  - what: Non-object LiteLLM_TeamTable input and its cached and deleted variants return a typed NotAnObject error instead of raising an unhandled AttributeError.
+    why: Reject invalid input without preserving LiteLLM's crash; team_non_object_typed_error covers list and null inputs for all three variants.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L119-L122

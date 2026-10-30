@@ -54,6 +54,43 @@ fn member_requires_dict_exact_error(#[case] text: &str) {
     );
 }
 #[rstest]
+#[case::list("[]")]
+#[case::null("null")]
+fn team_non_object_typed_error(#[case] text: &str) {
+    let row = parse::<JsonData>(text);
+    assert!(matches!(
+        set_model_info(&mut row.clone()),
+        Err(TeamRowError::NotAnObject)
+    ));
+    assert!(matches!(
+        LiteLLMTeamTable::try_from(row.clone()),
+        Err(TeamRowError::NotAnObject)
+    ));
+    assert!(matches!(
+        LiteLLMTeamTableCachedObj::try_from(row.clone()),
+        Err(TeamRowError::NotAnObject)
+    ));
+    assert!(matches!(
+        LiteLLMDeletedTeamTable::try_from(row),
+        Err(TeamRowError::NotAnObject)
+    ));
+}
+#[test]
+fn identity_and_team_id_errors_are_typed() {
+    assert!(matches!(
+        MemberBase::try_from(JsonData::Null),
+        Err(TeamRowError::NotAnObject)
+    ));
+    assert!(matches!(
+        MemberBase::try_from(parse::<JsonData>("{}")),
+        Err(TeamRowError::MissingIdentity)
+    ));
+    assert!(matches!(
+        LiteLLMTeamTable::try_from(parse::<JsonData>("{}")),
+        Err(TeamRowError::MissingTeamId)
+    ));
+}
+#[rstest]
 #[case("{}")]
 #[case(r#"{"user_id":null,"user_email":null}"#)]
 fn member_missing_and_null_identity_error(#[case] text: &str) {
@@ -392,18 +429,45 @@ fn member_limits_none_zero_negative(#[case] created: &str) {
     assert_eq!(row.safe_get_team_member_tpm_limit(), Some(-2));
 }
 #[rstest]
-#[case("NaN")]
-#[case("Infinity")]
-#[case("1e100")]
-#[case("-1e100")]
-fn team_money_nonfinite_and_overflow_rejected(#[case] amount: &str) {
-    invalid::<LiteLLMTeamTable>(&format!(r#"{{"team_id":"t","max_budget":"{amount}"}}"#));
-    invalid::<BudgetLimitEntry>(&format!(
-        r#"{{"budget_duration":"x","max_budget":"{amount}"}}"#
-    ));
-    invalid::<LiteLLMTeamMembership>(&format!(
-        r#"{{"user_id":"u","team_id":"t","spend":"{amount}"}}"#
-    ));
+#[case::nan(r#""NaN""#)]
+#[case::infinity(r#""Infinity""#)]
+#[case::positive_string(r#""1e100""#)]
+#[case::negative_string(r#""-1e100""#)]
+#[case::positive_number("1e100")]
+#[case::negative_number("-1e100")]
+fn team_money_nonfinite_and_overflow_rejected(
+    #[case] amount: &str,
+    #[values(
+        ("team", r#""team_id":"t""#, "max_budget"),
+        ("budget_limit", r#""budget_duration":"x""#, "max_budget"),
+        ("membership", r#""user_id":"u","team_id":"t""#, "spend")
+    )]
+    context: (&str, &str, &str),
+) {
+    let (kind, fields, field) = context;
+    let text = format!(r#"{{"kind":"{kind}","row":{{{fields},"{field}":{amount}}}}}"#);
+    let TeamRowError::Json(source) = decode_team_rows(text.as_bytes()).unwrap_err() else {
+        panic!("{kind}.{field} must fail Decimal conversion");
+    };
+    let expected = if amount.starts_with('"') {
+        "expected a Decimal type representing a fixed-point number"
+    } else {
+        "Scale exceeds the maximum precision allowed: 100 > 28"
+    };
+    assert!(source.is_data());
+    assert!(
+        source.to_string().contains(expected),
+        "{kind}.{field}: {source}"
+    );
+}
+#[test]
+fn team_money_in_range_string_accepted() {
+    let team = team(r#"{"team_id":"t","max_budget":"1.5"}"#);
+    let window: BudgetLimitEntry = parse(r#"{"budget_duration":"x","max_budget":"1.5"}"#);
+    let membership = member(r#"{"user_id":"u","team_id":"t","spend":"1.5"}"#);
+    assert_eq!(team.fields.base.max_budget, Some(Decimal::new(15, 1)));
+    assert_eq!(window.max_budget, Decimal::new(15, 1));
+    assert_eq!(membership.spend.0, Some(Decimal::new(15, 1)));
 }
 #[rstest]
 #[case(64)]

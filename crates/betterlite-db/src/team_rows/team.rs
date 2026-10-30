@@ -101,10 +101,10 @@ impl TryFrom<JsonData> for LiteLLMTeamTable {
     fn try_from(mut value: JsonData) -> Result<Self, Self::Error> {
         super::validator::set_model_info(&mut value)?;
         let JsonData::Object(fields) = &value else {
-            return Err(Self::Error::Validation("input needs to be a dictionary"));
+            return Err(Self::Error::NotAnObject);
         };
         if !fields.contains_key("team_id") {
-            return Err(Self::Error::Validation("team_id is required"));
+            return Err(Self::Error::MissingTeamId);
         }
         Ok(Self {
             fields: super::decoder::convert(&value)?,

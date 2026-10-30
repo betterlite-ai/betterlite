@@ -1,7 +1,7 @@
 use betterlite_db::{
     budget_permission_rows::JsonData,
     team_rows::{
-        decoder::{TeamRow, decode_team_rows},
+        decoder::{TeamRow, TeamRowError, decode_team_rows},
         team::TeamBase,
         validator::set_model_info,
     },
@@ -16,12 +16,37 @@ pub(crate) struct Input {
 #[derive(Deserialize, Serialize)]
 struct Call {
     name: String,
-    operation: String,
+    operation: Operation,
     row: JsonData,
+}
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Operation {
+    Validator,
+    BaseModel,
+    Limits,
+    MemberBase,
+    Member,
+    BudgetLimit,
+    Model,
+    TeamBase,
+    Team,
+    Cached,
+    Deleted,
+    Membership,
+}
+#[derive(Debug, thiserror::Error)]
+enum AdapterError {
+    #[error("{0}")]
+    Row(#[from] TeamRowError),
+    #[error("{0}")]
+    Json(#[from] serde_json::Error),
+    #[error("amount cannot project to float")]
+    FloatProjection,
 }
 #[derive(Serialize)]
 struct Envelope<'row> {
-    kind: &'row str,
+    kind: Operation,
     row: &'row JsonData,
 }
 #[derive(Serialize)]
@@ -52,34 +77,38 @@ fn run_call(call: &Call) -> JsonData {
         Err(source) => JsonData::String(normalize_error(&source.to_string())),
     }
 }
-fn execute(call: &Call) -> Result<JsonData, betterlite_db::team_rows::decoder::TeamRowError> {
-    use betterlite_db::team_rows::decoder::TeamRowError;
-    let mut row = call.row.clone();
-    if call.operation == "validator" || call.operation == "base_model" {
-        if call.operation == "base_model" {
-            let base: TeamBase =
-                serde_json::from_str(&serde_json::to_string(&row).map_err(TeamRowError::Json)?)
-                    .map_err(TeamRowError::Json)?;
-            row = serde_json::from_str(&serde_json::to_string(&base).map_err(TeamRowError::Json)?)
-                .map_err(TeamRowError::Json)?;
+fn execute(call: &Call) -> Result<JsonData, AdapterError> {
+    let (kind, limits) = match call.operation {
+        Operation::Validator => return validate(call.row.clone()),
+        Operation::BaseModel => {
+            let base: TeamBase = serde_json::from_str(&serde_json::to_string(&call.row)?)?;
+            return validate(serde_json::from_str(&serde_json::to_string(&base)?)?);
         }
-        let error = set_model_info(&mut row)
-            .err()
-            .map(|source| source.to_string());
-        return serde_json::from_str(
-            &serde_json::to_string(&Validated { row, error }).map_err(TeamRowError::Json)?,
-        )
-        .map_err(TeamRowError::Json);
-    }
-    let kind = if call.operation == "limits" {
-        "membership"
-    } else {
-        &call.operation
+        Operation::Limits => (Operation::Membership, true),
+        Operation::MemberBase
+        | Operation::Member
+        | Operation::BudgetLimit
+        | Operation::Model
+        | Operation::TeamBase
+        | Operation::Team
+        | Operation::Cached
+        | Operation::Deleted
+        | Operation::Membership => (call.operation, false),
     };
-    let bytes = serde_json::to_vec(&Envelope { kind, row: &row }).map_err(TeamRowError::Json)?;
+    project(&call.row, kind, limits)
+}
+fn validate(mut row: JsonData) -> Result<JsonData, AdapterError> {
+    let error = set_model_info(&mut row)
+        .err()
+        .map(|source| source.to_string());
+    serde_json::from_str(&serde_json::to_string(&Validated { row, error })?)
+        .map_err(AdapterError::Json)
+}
+fn project(row: &JsonData, kind: Operation, limits: bool) -> Result<JsonData, AdapterError> {
+    let bytes = serde_json::to_vec(&Envelope { kind, row })?;
     let decoded = decode_team_rows(&bytes)?;
     let output = if let TeamRow::Membership(member) = &decoded
-        && call.operation == "limits"
+        && limits
     {
         serde_json::to_string(&(
             member.safe_get_team_member_rpm_limit(),
@@ -87,9 +116,8 @@ fn execute(call: &Call) -> Result<JsonData, betterlite_db::team_rows::decoder::T
         ))
     } else {
         serde_json::to_string(&decoded)
-    }
-    .map_err(TeamRowError::Json)?;
-    let mut projection = serde_json::from_str(&output).map_err(TeamRowError::Json)?;
+    }?;
+    let mut projection = serde_json::from_str(&output)?;
     float_amounts(&mut projection)?;
     Ok(projection)
 }
@@ -120,10 +148,7 @@ fn normalize_error(message: &str) -> String {
     "invalid row".to_owned()
 }
 
-fn float_amounts(
-    value: &mut JsonData,
-) -> Result<(), betterlite_db::team_rows::decoder::TeamRowError> {
-    use betterlite_db::team_rows::decoder::TeamRowError;
+fn float_amounts(value: &mut JsonData) -> Result<(), AdapterError> {
     let JsonData::Object(fields) = value else {
         return Ok(());
     };
@@ -140,7 +165,7 @@ fn float_amounts(
             *amount = amount
                 .as_f64()
                 .and_then(serde_json::Number::from_f64)
-                .ok_or(TeamRowError::Validation("amount cannot project to float"))?;
+                .ok_or(AdapterError::FloatProjection)?;
         }
     }
     for key in ["row", "litellm_budget_table", "litellm_model_table", "team"] {
@@ -155,3 +180,5 @@ fn float_amounts(
     }
     Ok(())
 }
+
+mod tests;

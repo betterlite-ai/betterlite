@@ -3,7 +3,7 @@ use crate::budget_permission_rows::JsonData;
 
 pub fn set_model_info(value: &mut JsonData) -> Result<(), TeamRowError> {
     let JsonData::Object(object) = value else {
-        return Err(TeamRowError::Validation("input needs to be a dictionary"));
+        return Err(TeamRowError::NotAnObject);
     };
     if matches!(object.get("members_with_roles"), Some(JsonData::Object(fields)) if fields.is_empty())
     {
@@ -25,7 +25,9 @@ pub fn set_model_info(value: &mut JsonData) -> Result<(), TeamRowError> {
                 other @ (TeamRowError::TooLarge { .. }
                 | TeamRowError::InvalidUtf8(_)
                 | TeamRowError::TooDeep
-                | TeamRowError::Validation(_)
+                | TeamRowError::NotAnObject
+                | TeamRowError::MissingIdentity
+                | TeamRowError::MissingTeamId
                 | TeamRowError::Field { .. }) => other,
             })?;
             object.insert(field.to_owned(), parsed);
