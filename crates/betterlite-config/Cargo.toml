@@ -14,7 +14,6 @@ betterlite-secrets = { path = "../betterlite-secrets" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 netrc-rs = "0.1.2"
 percent-encoding.workspace = true
-rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde-inline-default = "1.0.3"

@@ -3,7 +3,18 @@ use std::collections::BTreeMap;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-pub type CostAdjustmentMap = BTreeMap<String, serde_json::Value>;
+pub type CostAdjustmentMap = BTreeMap<String, CostAdjustmentValue>;
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
+pub enum CostAdjustmentValue {
+    Null,
+    Boolean(bool),
+    Number(serde_json::Number),
+    Text(String),
+    Object(BTreeMap<String, Self>),
+    Array(Vec<Self>),
+}
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {

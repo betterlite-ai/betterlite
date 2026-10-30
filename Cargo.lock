@@ -917,7 +917,6 @@ dependencies = [
  "netrc-rs",
  "percent-encoding",
  "rstest",
- "rust_decimal",
  "secrecy",
  "serde",
  "serde-inline-default",
@@ -966,7 +965,6 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "rust_decimal",
- "serde",
  "serde_json",
  "thiserror",
 ]

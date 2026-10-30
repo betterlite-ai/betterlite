@@ -1,6 +1,7 @@
 use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_cost::adjustments::{apply_cost_discount, apply_cost_margin};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::json;
 use thiserror::Error;
@@ -41,10 +42,43 @@ impl crate::helpers::Helper for Op {
             .map_err(|error| {
                 Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error))
             })?;
-        Ok(json!({
+        let mut output = json!({
             "discount": {"final_cost": discount.final_cost, "discount_percent": discount.discount_percent, "saved_amount": discount.saved_amount},
             "margin": {"final_cost": margin.final_cost, "margin_percent": margin.margin_percent, "fixed_amount": margin.fixed_amount, "total_amount": margin.total_amount}
-        }))
+        });
+        canonical_numbers(&mut output);
+        Ok(output)
+    }
+}
+
+fn canonical_numbers(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for nested in fields.values_mut() {
+                canonical_numbers(nested);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                canonical_numbers(item);
+            }
+        }
+        serde_json::Value::Number(number) => {
+            if let Some(float) = number.as_f64()
+                && let Some(canonical) = serde_json::Number::from_f64(float)
+            {
+                *number = canonical;
+            }
+        }
+        serde_json::Value::String(text) => {
+            if let Ok(decimal) = Decimal::from_str_exact(text)
+                && let Some(float) = decimal.to_f64()
+                && let Some(canonical) = serde_json::Number::from_f64(float)
+            {
+                *value = serde_json::Value::Number(canonical);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) => {}
     }
 }
 
