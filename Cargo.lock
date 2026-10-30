@@ -1219,6 +1219,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-rate-limit",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-server",

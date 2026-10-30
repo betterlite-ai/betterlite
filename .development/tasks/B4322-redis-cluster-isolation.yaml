@@ -91,8 +91,8 @@ checks:
     why: the new adapter is missing, unchanged, untyped or fails lint
     run: test -f tools/oracle/helpers/redis_cluster_node_isolation.py && test -n "$(git
       diff --name-only "$GATE_BASE" -- tools/oracle/helpers/redis_cluster_node_isolation.py)"
-      && uv run --locked --project tools/oracle ruff check tools/oracle/helpers && uv
-      run --locked --project tools/oracle basedpyright tools/oracle/helpers
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers
+      && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/helpers/redis-cluster-node-isolation/node-timeout-isolation.yaml
 - tools/oracle/cases/helpers/redis-cluster-node-isolation/moved-redirect-preserves-topology.yaml
