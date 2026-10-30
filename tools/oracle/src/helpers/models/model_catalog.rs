@@ -29,7 +29,7 @@ impl crate::helpers::Helper for Op {
 
 fn summarize_source(
     source: Option<&serde_json::Value>,
-    lookup: Option<&serde_json::Value>,
+    lookup_values: Option<&serde_json::Value>,
     operation: &str,
 ) -> crate::helpers::HelperResult {
     let raw_source = source.ok_or_else(|| invalid("source is required"))?;
@@ -40,7 +40,7 @@ fn summarize_source(
         "warnings".to_owned(),
         serde_json::json!(catalog.warnings()),
     )]);
-    if let Some(lookup) = lookup.and_then(serde_json::Value::as_array) {
+    if let Some(lookup) = lookup_values.and_then(serde_json::Value::as_array) {
         result.insert("lookup".to_owned(), serde_json::Value::Array(
             lookup.iter().filter_map(serde_json::Value::as_str).map(|name| {
                 catalog.metadata(name).map_or(serde_json::Value::Null, |metadata| serde_json::json!({"model": metadata.model, "provider": metadata.provider, "mode": metadata.mode.map(|mode| format!("{mode:?}").to_lowercase())}))
