@@ -1,8 +1,11 @@
 #![cfg(test)]
 
+use super::reconnect::{DbReconnect, RetryPolicy, call_with_db_reconnect_retry};
 use super::*;
 use std::error::Error as _;
+use std::future::Future;
 use std::mem;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 fn error(kind: ErrorType) -> DbError {
@@ -144,7 +147,12 @@ fn exception_classes_only() {
 
 #[tokio::test]
 async fn read_success() {
-    let mut client = TestClient;
+    let mut client = ScriptedClient {
+        effects: Arc::new(Mutex::new(RetryEffects::default())),
+        reconnect: Ok(true),
+        timeout: None,
+        lock_timeout: None,
+    };
     let result = call_with_db_reconnect_retry(
         &mut client,
         || async { Ok::<_, DbError>(7_i32) },
@@ -392,24 +400,4 @@ async fn retry_failure_no_loop() {
     .await;
     drop(result.expect_err("retry failure does not loop"));
     assert_eq!(effects.reconnects.len(), 1);
-}
-
-struct TestClient;
-impl DbReconnect for TestClient {
-    fn reconnect_timeout_seconds(&self) -> Option<f64> {
-        None
-    }
-
-    fn reconnect_lock_timeout_seconds(&self) -> Option<f64> {
-        None
-    }
-
-    fn attempt_db_reconnect<'client>(
-        &'client mut self,
-        _reason: &'client str,
-        _timeout_seconds: f64,
-        _lock_timeout_seconds: f64,
-    ) -> Pin<Box<dyn Future<Output = Result<bool, DbError>> + Send + 'client>> {
-        Box::pin(async { Ok(true) })
-    }
 }
