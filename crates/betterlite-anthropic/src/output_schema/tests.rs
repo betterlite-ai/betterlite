@@ -132,6 +132,14 @@ fn output_schema_filter_preserves_each_supported_branch() {
         .unwrap()["type"],
         "array"
     );
+    let boolean_conflict: Json = serde_json::from_str(r#"{"type":"boolean","enum":[1]}"#).unwrap();
+    let boolean_result =
+        serde_json::to_value(filter_anthropic_output_schema(boolean_conflict)).unwrap();
+    assert!(boolean_result.get("type").is_none());
+    let array_conflict: Json = serde_json::from_str(r#"{"type":"array","enum":[1]}"#).unwrap();
+    let array_result =
+        serde_json::to_value(filter_anthropic_output_schema(array_conflict)).unwrap();
+    assert!(array_result.get("type").is_none());
     let note_schema: Json =
         serde_json::from_str(r#"{"contains":{"type":"string","enum":["x"]}}"#).unwrap();
     let note = serde_json::to_value(filter_anthropic_output_schema(note_schema)).unwrap();
