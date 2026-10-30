@@ -78,6 +78,33 @@ fn skill_archive_digest_is_reproducible() {
 }
 
 #[test]
+fn skill_archive_repacks_sorted_members_with_fixed_metadata() {
+    let archive = build_skill_archive(&upload(&[
+        ("skill/z.txt", b"z"),
+        ("skill/SKILL.md", b"body"),
+        ("skill/a.txt", b"a"),
+    ]))
+    .unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let names = (0..repacked.len())
+        .map(|index| repacked.by_index(index).unwrap().name().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["SKILL.md", "a.txt", "z.txt"]);
+    let assert_metadata = |index| {
+        let entry = repacked.by_index(index).unwrap();
+        assert_eq!(
+            entry.last_modified(),
+            zip::DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).unwrap()
+        );
+        assert_eq!(entry.unix_mode(), Some(0o644));
+        assert_eq!(entry.compression(), CompressionMethod::Deflated);
+    };
+    assert_metadata(0);
+    assert_metadata(1);
+    assert_metadata(2);
+}
+
+#[test]
 fn skill_archive_replays_the_skill_archive_zip_corpus() {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/skill_archive_zip");
