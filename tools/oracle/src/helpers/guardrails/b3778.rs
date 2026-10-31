@@ -214,9 +214,7 @@ fn configure(
             | ConfigError::Unsupported { .. }
             | ConfigError::InvalidFloat { .. }
             | ConfigError::InvalidInteger { .. }
-            | ConfigError::InvalidScalar { .. }
-            | ConfigError::InvalidCostAdjustmentNumber { .. }
-            | ConfigError::UnsupportedCostAdjustmentShape { .. } => "ConfigError",
+            | ConfigError::InvalidScalar { .. } => "ConfigError",
         };
         failure(class, error.to_string())
     })?;
