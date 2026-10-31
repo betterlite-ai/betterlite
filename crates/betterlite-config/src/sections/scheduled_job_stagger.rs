@@ -102,6 +102,13 @@ enum LaxIntWire {
     Str(String),
 }
 
+fn lax_i64_from_wire(wire: LaxIntWire) -> Option<i64> {
+    match wire {
+        LaxIntWire::Int(value) => Some(value),
+        LaxIntWire::Str(text) => lax_i64_from_str(&text),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(try_from = "LaxIntWire")]
 struct LaxWindowSeconds(u32);
@@ -110,12 +117,7 @@ impl TryFrom<LaxIntWire> for LaxWindowSeconds {
     type Error = LaxCoercionError;
 
     fn try_from(wire: LaxIntWire) -> Result<Self, Self::Error> {
-        let parsed = match wire {
-            LaxIntWire::Int(value) => value,
-            LaxIntWire::Str(text) => {
-                lax_i64_from_str(&text).ok_or(LaxCoercionError::WindowSeconds)?
-            }
-        };
+        let parsed = lax_i64_from_wire(wire).ok_or(LaxCoercionError::WindowSeconds)?;
         u32::try_from(parsed)
             .map(Self)
             .map_err(|_err| LaxCoercionError::WindowSeconds)
@@ -130,12 +132,9 @@ impl TryFrom<LaxIntWire> for LaxOffset {
     type Error = LaxCoercionError;
 
     fn try_from(wire: LaxIntWire) -> Result<Self, Self::Error> {
-        match wire {
-            LaxIntWire::Int(value) => Ok(Self(value)),
-            LaxIntWire::Str(text) => lax_i64_from_str(&text)
-                .map(Self)
-                .ok_or(LaxCoercionError::Offset),
-        }
+        lax_i64_from_wire(wire)
+            .map(Self)
+            .ok_or(LaxCoercionError::Offset)
     }
 }
 
