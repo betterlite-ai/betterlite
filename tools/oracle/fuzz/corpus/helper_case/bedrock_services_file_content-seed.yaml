@@ -5,7 +5,7 @@ call:
     response:
       status_code: 200
       body: [0, 255, 10]
-      headers: {content-type: application/x-custom, content-disposition: 'attachment; filename=x'}
+      headers: [[content-type, application/x-custom], [content-disposition, 'attachment; filename=x']]
       request: {method: GET, url: 'https://bedrock.example/files/id/content'}
 env: {}
 compare: {ignore: []}

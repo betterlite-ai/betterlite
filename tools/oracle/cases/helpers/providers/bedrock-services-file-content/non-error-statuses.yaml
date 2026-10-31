@@ -5,7 +5,7 @@ call:
     response:
       status_code: 302
       body: []
-      headers: {location: 'https://bedrock.example/other'}
+      headers: [[location, 'https://bedrock.example/other']]
       request: {method: GET, url: 'https://bedrock.example/files/id/content'}
 env: {}
 compare: {ignore: []}

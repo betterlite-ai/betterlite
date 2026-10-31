@@ -5,7 +5,7 @@ call:
     response:
       status_code: 500
       body: [98, 97, 100, 32, 114, 101, 113, 117, 101, 115, 116]
-      headers: {content-type: application/octet-stream, x-error: 'yes', content-length: '11'}
+      headers: [[content-type, application/octet-stream], [x-error, 'yes'], [content-length, '11']]
       request: {method: GET, url: 'https://bedrock.example/files/id/content'}
 env: {}
 compare: {ignore: []}
