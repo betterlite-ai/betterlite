@@ -4,7 +4,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize as _;
 use serde::de::IgnoredAny;
-use serde::de::value::{F64Deserializer, StringDeserializer};
+use serde::de::value::BytesDeserializer;
+use serde_json::{error::Category, value::RawValue};
 use std::collections::BTreeMap;
 use std::fs;
 use std::iter::repeat_n;
@@ -384,24 +385,21 @@ fn stored_json_shapes_roundtrip(#[case] input: &str) {
 
 #[test]
 fn stored_owned_string_roundtrip() {
-    let deserializer = StringDeserializer::<serde_json::Error>::new("owned text".to_owned());
+    let deserializer = serde_json::Value::String("owned text".to_owned());
     let decoded = JsonValue::deserialize(deserializer).unwrap();
     assert_eq!(decoded, JsonValue::String("owned text".to_owned()));
 }
 
 #[rstest]
-#[case::finite(1.25_f64, Some("1.25"))]
-#[case::nan(f64::NAN, None)]
-#[case::infinite(f64::INFINITY, None)]
-fn stored_float_values(#[case] value: f64, #[case] expected: Option<&str>) {
-    let decoded = JsonValue::deserialize(F64Deserializer::<serde_json::Error>::new(value));
+#[case::finite("1.25", Some("1.25"))]
+#[case::nan("NaN", None)]
+#[case::infinite("Infinity", None)]
+fn stored_float_values(#[case] value: &str, #[case] expected: Option<&str>) {
+    let decoded = serde_json::from_str::<JsonValue>(value);
     if let Some(encoded) = expected {
         assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), encoded);
     } else {
-        assert_eq!(
-            decoded.unwrap_err().to_string(),
-            "data did not match any variant of untagged enum JsonValue"
-        );
+        assert_eq!(decoded.unwrap_err().classify(), Category::Syntax);
     }
 }
 
@@ -654,4 +652,81 @@ fn literal_objects_rejected(#[case] input: &str) {
     serde_json::from_str::<MCPTokenEndpointAuthMethod>(input).unwrap_err();
     serde_json::from_str::<super::MCPUpstreamProtocol>(input).unwrap_err();
     serde_json::from_str::<super::MCPLegacyVersion>(input).unwrap_err();
+}
+
+#[rstest]
+#[case::number_marker(r#"{"$serde_json::private::Number":"1"}"#)]
+#[case::marker_and_sibling(r#"{"$serde_json::private::Number":"1","other":2}"#)]
+#[case::nested_markers(r#"[{"$serde_json::private::Number":"1"},{"$serde_json::private::Number":"not a number"},{"$serde_json::private::RawValue":"1"}]"#)]
+#[case::numbers("[1,1.25,18446744073709551616,1.234567890123456789]")]
+fn metadata_marker_roundtrip(#[case] custom: &str) {
+    let input = format!(r#"{{"custom":{custom}}}"#);
+    let record: super::pinned::MCPInfo = serde_json::from_str(&input).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), input);
+    let value =
+        serde_json::to_value(decode_mcp_stored_contract(input.as_bytes()).unwrap()).unwrap();
+    let owned: super::pinned::MCPInfo = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_string(&owned).unwrap(), input);
+    let borrowed = super::pinned::MCPInfo::deserialize(&value).unwrap();
+    assert_eq!(serde_json::to_string(&borrowed).unwrap(), input);
+}
+
+#[rstest]
+#[case::number_marker(r#"{"$serde_json::private::Number":"1"}"#)]
+#[case::marker_and_sibling(r#"{"$serde_json::private::Number":"1","other":2}"#)]
+#[case::nested_markers(r#"[{"$serde_json::private::Number":"1"},{"$serde_json::private::Number":"not a number"},{"$serde_json::private::RawValue":"1"}]"#)]
+#[case::numbers("[1,1.25,18446744073709551616,1.234567890123456789]")]
+fn pinned_schema_marker_roundtrip(#[case] nested: &str) {
+    let input = format!(r#"{{"description":"","input_schema":{{"nested":{nested}}}}}"#);
+    let tool: PinnedMCPTool = serde_json::from_slice(input.as_bytes()).unwrap();
+    assert_eq!(serde_json::to_string(&tool).unwrap(), input);
+    let reader: PinnedMCPTool = serde_json::from_reader(input.as_bytes()).unwrap();
+    assert_eq!(reader, tool);
+    let value =
+        serde_json::to_value(decode_mcp_stored_contract(input.as_bytes()).unwrap()).unwrap();
+    let owned: PinnedMCPTool = serde_json::from_value(value).unwrap();
+    assert_eq!(serde_json::to_string(&owned).unwrap(), input);
+    let catalog = format!(r#"{{"tool":{input}}}"#);
+    let tools = parse_pinned_tools(wire(&catalog)).unwrap().unwrap();
+    assert_eq!(serde_json::to_string(&tools).unwrap(), catalog);
+    let stored = parse_pinned_tools(JsonValue::String(catalog.clone()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(serde_json::to_string(&stored).unwrap(), catalog);
+}
+
+#[rstest]
+#[case::object(r#"{"$serde_json::private::Number":"1"}"#)]
+#[case::nested(r#"[{"$serde_json::private::Number":"1"},1]"#)]
+#[case::raw_marker(r#"{"$serde_json::private::RawValue":"1"}"#)]
+#[case::number("1.234567890123456789")]
+fn json_marker_roundtrip(#[case] input: &str) {
+    let decoded = wire(input);
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), input);
+    assert_eq!(
+        decoded,
+        decode_mcp_stored_contract(input.as_bytes()).unwrap()
+    );
+    let raw: Box<RawValue> = serde_json::from_str(input).unwrap();
+    let captured = JsonValue::deserialize(raw.as_ref()).unwrap();
+    assert_eq!(captured, decoded);
+}
+
+#[rstest]
+#[case::null("null")]
+#[case::boolean("true")]
+#[case::signed("-7")]
+#[case::unsigned("7")]
+#[case::string(r#""text""#)]
+fn serde_scalar_roundtrip(#[case] input: &str) {
+    let parsed = wire(input);
+    assert_eq!(serde_json::to_string(&parsed).unwrap(), input);
+}
+
+#[test]
+fn non_json_bytes_are_redacted() {
+    let deserializer = BytesDeserializer::<serde_json::Error>::new(b"never-print");
+    let error = JsonValue::deserialize(deserializer).unwrap_err();
+    assert!(error.to_string().contains("byte array"));
+    assert!(!format!("{error:?}").contains("never-print"));
 }

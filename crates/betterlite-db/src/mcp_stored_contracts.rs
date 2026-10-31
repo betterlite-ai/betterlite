@@ -3,13 +3,14 @@ use std::fmt::{self, Debug, Formatter};
 
 use secret::StoredSecret;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use serde_with::{DeserializeFromStr, rust::double_option};
 use strum::EnumString;
 pub const MAX_STORED_BYTES: usize = 0x0010_0000;
 pub const MAX_STORED_DEPTH: usize = 64;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
-#[serde(untagged)]
+#[serde(untagged, try_from = "Box<RawValue>")]
 pub enum JsonValue {
     Null,
     Bool(bool),
@@ -284,4 +285,5 @@ pub mod decode;
 pub mod pinned;
 pub mod secret;
 
+mod json;
 mod tests;

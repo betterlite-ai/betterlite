@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::io::Error as IoError;
 
+use serde::de::IgnoredAny;
+
 use super::{JsonValue, MAX_STORED_BYTES, MAX_STORED_DEPTH};
 
 #[derive(Debug, thiserror::Error)]
@@ -20,14 +22,15 @@ pub fn decode_mcp_stored_contract(bytes: &[u8]) -> Result<JsonValue, McpStoredDe
     check_depth(bytes)?;
     let mut parser = Parser { bytes, position: 0 };
     let Ok(value) = parser.parse_value() else {
-        return match serde_json::from_slice::<JsonValue>(bytes) {
+        return match serde_json::from_slice::<IgnoredAny>(bytes) {
             Ok(_) => Err(McpStoredDecodeError::Json(invalid_json())),
             Err(error) => Err(McpStoredDecodeError::Json(error)),
         };
     };
     parser.skip_whitespace();
     if parser.position != bytes.len() {
-        return serde_json::from_slice(bytes).map_err(McpStoredDecodeError::Json);
+        serde_json::from_slice::<IgnoredAny>(bytes)?;
+        return Err(McpStoredDecodeError::Json(invalid_json()));
     }
     Ok(value)
 }

@@ -1,0 +1,1 @@
+{"custom":{"$serde_json::private::Number":"1"},"tool":{"input_schema":{"nested":[{"$serde_json::private::Number":"1"},1,1.234567890123456789]}}}
