@@ -1,12 +1,16 @@
 #![cfg(test)]
 
+use std::fs::{self, File};
 use std::path::Path;
 
+use crate::dispatch::attempt::remove_extra_targets;
 use crate::dispatch::progress::{Progress, clear};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::reviewer_rungs;
 use crate::dispatch::vendor::mark;
-use crate::dispatch::{EarlierReview, Places, climb_rung, find_runner, note_blocked, run_ladder};
+use crate::dispatch::{
+    EarlierReview, Places, climb_rung, find_runner, note_blocked, overflow_rung, run_ladder,
+};
 use crate::spec::agents::Agents;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
@@ -70,6 +74,28 @@ fn clearing_removes_the_saved_progress_and_needs_none() {
     clear(folder.path()).unwrap();
     assert!(!folder.path().join("progress.json").exists());
     clear(folder.path()).unwrap();
+}
+
+#[test]
+fn a_worker_made_cargo_target_is_deleted_and_named() {
+    let folder = tempfile::tempdir().unwrap();
+    let target = folder.path().join("target");
+    for name in ["b123-check", "llvm-cov-target"] {
+        fs::create_dir_all(target.join(name).join("debug")).unwrap();
+        fs::write(target.join(name).join("CACHEDIR.TAG"), "").unwrap();
+    }
+    fs::create_dir_all(target.join("debug")).unwrap();
+    let notes = remove_extra_targets(folder.path()).unwrap();
+    assert!(!target.join("b123-check").exists());
+    assert!(target.join("llvm-cov-target").exists());
+    assert!(target.join("debug").exists());
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].starts_with("The gate deleted target/b123-check,"));
+    assert!(
+        remove_extra_targets(&folder.path().join("missing"))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -234,4 +260,59 @@ fn the_reviewer_on_the_other_vendor_comes_first() {
         order("claude-worker", ReviewLevel::Security),
         ["gpt-6-astra", "opus"]
     );
+}
+
+fn hold_seats(git: &Path, name: &str, count: u32) -> Vec<File> {
+    let folder = git.join("betterlite/seats");
+    fs::create_dir_all(&folder).unwrap();
+    let mut held = Vec::new();
+    for number in 1..=count {
+        let seat = File::create(folder.join(format!("{name}-{number}"))).unwrap();
+        seat.try_lock().unwrap();
+        held.push(seat);
+    }
+    held
+}
+
+#[test]
+fn a_try_whose_vendor_has_no_free_seat_goes_to_a_free_rung_of_another_vendor() {
+    let (agents, _) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let codex = find_runner(&agents, "codex-worker").unwrap();
+    assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
+    let openai = hold_seats(folder.path(), "openai", 12);
+    let (runner, rung) = overflow_rung(&agents, &places, 0, codex).unwrap().unwrap();
+    assert_eq!(
+        (runner.id.as_str(), rung.model.as_str()),
+        ("claude-worker", "sonnet")
+    );
+    drop(openai);
+}
+
+#[test]
+fn no_try_moves_while_the_other_vendor_is_full_or_at_its_limit() {
+    let (agents, _) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let codex = find_runner(&agents, "codex-worker").unwrap();
+    let openai = hold_seats(folder.path(), "openai", 12);
+    let writers = hold_seats(folder.path(), "anthropic-writer", 4);
+    assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
+    drop(writers);
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
+    drop(openai);
 }

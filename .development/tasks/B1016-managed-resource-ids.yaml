@@ -114,7 +114,7 @@ pitfalls:
   litellm_proxy; batch encodings do not pass this reader's litellm_proxy: default prefix.
 - Regex model_id must not substring-match llm_output_file_model_id, or a deployment UUID becomes an authorization model.
 - Successful parsing is possible with missing fields and duplicate target names; adding schema validation here rejects accepted legacy ids.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -107,13 +107,10 @@ pub(crate) fn hook(input: &str) -> Result<Vec<String>, GateError> {
     if report.status == ReportStatus::Blocked && !report.blocker.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let verdict = checks::run(
-        &development,
-        &development.task(task_id)?,
-        &Selection::default(),
-    )?;
+    let task = development.task(task_id)?;
+    let verdict = checks::run(&development, &task, &Selection::default())?;
     let added = added_dependencies(&development.root, &resolve_base(&development.root)?)?;
-    let problems = report_problems(&report, task_id, &added);
+    let problems = report_problems(&report, &task, &added);
     if verdict.passed && problems.is_empty() {
         return Ok(Vec::new());
     }

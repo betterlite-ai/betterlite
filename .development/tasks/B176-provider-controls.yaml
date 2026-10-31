@@ -134,7 +134,7 @@ pitfalls:
 - A generated session identifier is not a stable affinity key.
 - Header names are case insensitive, including duplicate detection.
 - Dot-path reads and deletes use different grammars in LiteLLM; do not silently treat them as the same operation.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

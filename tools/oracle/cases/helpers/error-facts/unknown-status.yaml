@@ -1,0 +1,13 @@
+kind: helper
+name: error-facts-unknown-status
+call:
+  error_facts:
+    kind: status
+    status: 599
+    provider: openai
+    text: upstream failure
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
