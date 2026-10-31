@@ -2,7 +2,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{Configured, Entry, FallbackAction, FlaggedAction, InspectionType};
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::{parse_float, resolve_string};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number, resolve_string};
 
 const DEFAULT_API_BASE: &str = "https://us.api.inspect.aidefense.security.cisco.com";
 
@@ -38,6 +39,7 @@ impl Entry {
             inspect_path,
             enabled_rules: parameters
                 .enabled_rules
+                .unwrap_or_default()
                 .into_iter()
                 .map(super::RawRule::resolve)
                 .collect(),
@@ -61,18 +63,31 @@ where
     L: EnvironmentLookup,
 {
     let non_empty = configured.filter(|value| !value.expose_secret().is_empty());
-    optional(
-        non_empty.map(|value| value.expose_secret().to_owned()),
-        "CISCO_AI_DEFENSE_API_KEY",
-        prefix,
-        "api_key",
-        lookup,
-    )?
-    .ok_or_else(|| ConfigError::MissingEnvironment {
-        variable: "CISCO_AI_DEFENSE_API_KEY".to_owned(),
-        path: format!("{prefix}.api_key"),
-    })
-    .map(SecretString::from)
+    let secret = non_empty
+        .unwrap_or_else(|| SecretString::from("os.environ/CISCO_AI_DEFENSE_API_KEY".to_owned()));
+    resolve_secret(secret, &format!("{prefix}.api_key"), lookup)
+}
+
+// Resolves an `os.environ/NAME` indirection without ever copying the secret into a plain String.
+fn resolve_secret<L>(
+    secret: SecretString,
+    path: &str,
+    lookup: &L,
+) -> Result<SecretString, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(suffix) = secret.expose_secret().strip_prefix("os.environ/") else {
+        return Ok(secret);
+    };
+    let variable = suffix.to_owned();
+    lookup
+        .lookup(&variable)
+        .map(SecretString::from)
+        .ok_or_else(|| ConfigError::MissingEnvironment {
+            variable,
+            path: path.to_owned(),
+        })
 }
 
 fn resolve_endpoint<L>(
@@ -127,7 +142,7 @@ fn resolve_inspect_path(
 fn resolve_actions<L>(
     configured_flagged: Option<String>,
     configured_fallback: Option<String>,
-    configured_timeout: Option<f64>,
+    configured_timeout: Option<RawNumber>,
     prefix: &str,
     lookup: &L,
 ) -> Result<(FlaggedAction, FallbackAction, f64), ConfigError>
@@ -171,20 +186,20 @@ where
 }
 
 fn resolve_timeout<L>(
-    configured_timeout: Option<f64>,
+    configured_timeout: Option<RawNumber>,
     prefix: &str,
     lookup: &L,
 ) -> Result<f64, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let timeout = match configured_timeout {
+    let timeout_path = format!("{prefix}.timeout");
+    let configured = resolve_number(configured_timeout, &timeout_path, lookup, parse_float)?;
+    let timeout = match configured {
         Some(value) => value,
         None => lookup
             .lookup("CISCO_AI_DEFENSE_TIMEOUT")
-            .map_or(Ok(10.0_f64), |text| {
-                parse_float(&text, &format!("{prefix}.timeout"))
-            })?,
+            .map_or(Ok(10.0_f64), |text| parse_float(&text, &timeout_path))?,
     };
     let clamped = timeout.clamp(1.0_f64, 60.0_f64);
     let out_of_range = !(1.0_f64..=60.0_f64).contains(&timeout);
@@ -216,14 +231,20 @@ where
         choice.prefix,
         choice.name,
         lookup,
-    )?
-    .unwrap_or_else(|| choice.default.to_owned());
-    if choice.allowed.contains(&selected.as_str()) {
-        return Ok(selected);
+    )?;
+    let Some(candidate) = selected else {
+        return Ok(choice.default.to_owned());
+    };
+    if choice.allowed.contains(&candidate.as_str()) {
+        return Ok(candidate);
     }
-    Err(ConfigError::Unsupported {
-        paths: vec![format!("{}.{}", choice.prefix, choice.name)],
-    })
+    tracing::warn!(
+        value = candidate,
+        setting = choice.name,
+        default = choice.default,
+        "invalid Cisco AI Defense setting value; falling back to default"
+    );
+    Ok(choice.default.to_owned())
 }
 
 fn optional<L>(
