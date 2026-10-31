@@ -3,18 +3,14 @@ use crate::bedrock_settings::error_response_text;
 use rstest::rstest;
 use std::error::Error as _;
 
-fn response(status_code: u16, body: Vec<u8>) -> RawResponse {
-    response_with_headers(
-        status_code,
-        body,
-        vec![
-            ("content-type".to_owned(), "application/x-custom".to_owned()),
-            (
-                "content-disposition".to_owned(),
-                "attachment; filename=x".to_owned(),
-            ),
-        ],
-    )
+fn default_headers() -> Vec<(String, String)> {
+    vec![
+        ("content-type".to_owned(), "application/x-custom".to_owned()),
+        (
+            "content-disposition".to_owned(),
+            "attachment; filename=x".to_owned(),
+        ),
+    ]
 }
 
 fn response_with_headers(
@@ -38,7 +34,7 @@ fn response_with_headers(
 #[case::nul_bytes(vec![b'{', 0, b'}'])]
 #[case::json_looking(br#"{"records":[{"ok":true}]}"#.to_vec())]
 fn raw_binary_reply(#[case] body: Vec<u8>) {
-    let expected = response(200, body);
+    let expected = response_with_headers(200, body, default_headers());
     let actual = transform_file_response(expected.clone()).expect("success");
     assert_eq!(actual.response, expected);
     assert!(actual.hidden_params.is_empty());
@@ -50,7 +46,7 @@ fn raw_binary_reply(#[case] body: Vec<u8>) {
 
 #[rstest]
 fn empty_binary_reply() {
-    let expected = response(204, Vec::new());
+    let expected = response_with_headers(204, Vec::new(), default_headers());
     let actual = transform_file_response(expected.clone()).expect("success");
     assert_eq!(actual.response, expected);
     assert!(actual.logging_summary().content_type.is_some());
@@ -61,7 +57,7 @@ fn empty_binary_reply() {
 #[case::empty(Vec::new(), "")]
 #[case::invalid_utf8(vec![0, 255, 10], "\u{0}\u{fffd}\n")]
 fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
-    let expected = response(500, body.clone());
+    let expected = response_with_headers(500, body.clone(), default_headers());
     let outcome = transform_file_response(expected.clone()).expect_err("failure");
     assert!(outcome.source().is_some());
     let FileContentError::Bedrock {
@@ -120,7 +116,7 @@ fn raw_binary_reply_preserves_repeated_headers() {
 #[case::redirect(302)]
 #[case::no_content(204)]
 fn non_error_statuses(#[case] status_code: u16) {
-    let expected = response(status_code, Vec::new());
+    let expected = response_with_headers(status_code, Vec::new(), default_headers());
     let actual = transform_file_response(expected.clone()).expect("non-error response");
     assert_eq!(actual.response, expected);
 }
