@@ -1,6 +1,6 @@
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use betterlite_openai::openai_base_config::Object;
-use encoding_rs::UTF_8;
+use encoding_rs::{Encoding, UTF_8};
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -125,7 +125,7 @@ pub fn transform_file_response(
     })
 }
 
-// Matches httpx's codecs-based text decode, not encoding_rs's WHATWG aliasing of iso-8859-1/ascii to windows-1252.
+// HTTPX uses Python codecs labels; preserve its latin-1/ascii differences from WHATWG labels.
 fn decode_response_text(bytes: &[u8], headers: &[(String, String)]) -> String {
     let charset = header_value(headers, "content-type")
         .and_then(|value| value.parse::<Mime>().ok())
@@ -148,7 +148,16 @@ fn decode_response_text(bytes: &[u8], headers: &[(String, String)]) -> String {
                 }
             })
             .collect(),
-        _ => UTF_8.decode_without_bom_handling(bytes).0.into_owned(),
+        Some(label) => {
+            let hyphenated_label = label.replace('_', "-");
+            let normalized_label = hyphenated_label.replace("utf-16-le", "utf-16le");
+            Encoding::for_label(normalized_label.as_bytes())
+                .unwrap_or(UTF_8)
+                .decode_without_bom_handling(bytes)
+                .0
+                .into_owned()
+        }
+        None => UTF_8.decode_without_bom_handling(bytes).0.into_owned(),
     }
 }
 
