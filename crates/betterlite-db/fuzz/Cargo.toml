@@ -33,6 +33,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "resource_rows"
+path = "fuzz_targets/resource_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "team_rows"
 path = "fuzz_targets/team_rows.rs"
 test = false

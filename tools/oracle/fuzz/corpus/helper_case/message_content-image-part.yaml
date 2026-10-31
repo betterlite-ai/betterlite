@@ -1,0 +1,5 @@
+kind: helper
+name: message-content-image-part-seed
+call: {message_content: {operation: request_contains_image_content, messages: [{role: user, content: [{type: image_url, image_url: "https://img"}]}]}}
+env: {}
+compare: {ignore: []}

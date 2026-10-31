@@ -1,0 +1,17 @@
+kind: helper
+name: project_all_fields_nested_budget_and_permissions
+call:
+  resource_rows:
+    operation: project
+    row: {project_id: p, project_alias: a, description: d, team_id: t, budget_id: b,
+      metadata: {k: v}, models: [gpt], spend: 3.5, model_spend: {gpt: 1.0},
+      model_rpm_limit: {gpt: 10}, model_tpm_limit: {gpt: 100}, blocked: true,
+      object_permission_id: op, created_by: c, updated_by: u,
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-02T00:00:00Z',
+      litellm_budget_table: {budget_id: b, max_budget: 10},
+      object_permission: {object_permission_id: op}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/litellm_budget_table/max_budget
+      why: Decimal serializes a whole number bare while Python's float keeps the trailing .0
