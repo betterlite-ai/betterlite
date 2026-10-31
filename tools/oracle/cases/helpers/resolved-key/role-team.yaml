@@ -1,0 +1,9 @@
+kind: helper
+name: role-team-scope-used-for-jwt-auth
+call:
+  resolved_key:
+    function: role
+    value: team
+env: {}
+compare:
+  ignore: []

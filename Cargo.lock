@@ -878,14 +878,18 @@ dependencies = [
 name = "betterlite-auth"
 version = "0.1.0"
 dependencies = [
+ "betterlite-db",
  "chrono",
+ "hex",
  "rstest",
  "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "speedate",
+ "strum",
  "thiserror",
  "unicode-normalization",
  "uuid",

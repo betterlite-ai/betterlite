@@ -1,0 +1,9 @@
+kind: helper
+name: integer-end-user-id-stringified
+call:
+  resolved_key:
+    function: view
+    value: {end_user_id: 42}
+env: {}
+compare:
+  ignore: []

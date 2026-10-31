@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-empty-segments-count
+call:
+  resolved_key:
+    function: is_jwt
+    value: '..'
+env: {}
+compare:
+  ignore: []

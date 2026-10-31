@@ -1,0 +1,9 @@
+kind: helper
+name: resolved-key-view-seed
+call:
+  resolved_key:
+    function: view
+    value: {}
+env: {}
+compare:
+  ignore: []
