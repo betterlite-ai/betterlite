@@ -3,6 +3,7 @@
 use super::{ConfigMap, IncludeError, LoadError, load_file, read_config, resolve_includes};
 use crate::loader::ConfigLoader;
 use crate::sections::Section as _;
+use crate::sections::settings::settings_rules::JsonValue as Value;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
@@ -58,19 +59,22 @@ fn resolves_multiple_includes_in_order() {
 
 #[test]
 fn merge_extends_lists_and_replaces_other_values() {
+    let base_settings: Value = serde_json::from_str(r#"{"base":true}"#).unwrap();
+    let included_settings: Value = serde_json::from_str(r#"{"included":true}"#).unwrap();
     let base = ConfigMap::from_iter([
         (String::from("model_list"), json!(["base"])),
-        (String::from("litellm_settings"), json!({"base": true})),
+        (String::from("litellm_settings"), base_settings),
     ]);
     let included = ConfigMap::from_iter([
         (String::from("model_list"), json!(["included"])),
-        (String::from("litellm_settings"), json!({"included": true})),
+        (String::from("litellm_settings"), included_settings),
     ]);
 
     let merged = super::merge(base, included);
 
     assert_eq!(merged["model_list"], json!(["base", "included"]));
-    assert_eq!(merged["litellm_settings"], json!({"included": true}));
+    let expected_settings: Value = serde_json::from_str(r#"{"included":true}"#).unwrap();
+    assert_eq!(merged["litellm_settings"], expected_settings);
 }
 
 #[test]
