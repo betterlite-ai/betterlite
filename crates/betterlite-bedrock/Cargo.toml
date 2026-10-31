@@ -7,7 +7,9 @@ publish.workspace = true
 
 [dependencies]
 betterlite-openai = { path = "../betterlite-openai" }
+encoding_rs = "0.8.42"
 indexmap = { version = "2.14.2", features = ["serde"] }
+mime = "0.3.17"
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
