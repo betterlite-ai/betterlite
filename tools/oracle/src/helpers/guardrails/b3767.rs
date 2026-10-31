@@ -93,7 +93,12 @@ fn construct(settings: &Value) -> HelperResult {
     }))
 }
 
-type Prepared = (Option<MockProvider>, String, tokio::runtime::Runtime);
+type Prepared = (
+    Option<MockProvider>,
+    TcpListener,
+    String,
+    tokio::runtime::Runtime,
+);
 
 fn prepare(answer: Option<&UpstreamAnswer>) -> Result<Prepared, Box<HelperError>> {
     let fail = |class: &str, message: String| -> Box<HelperError> {
@@ -107,7 +112,7 @@ fn prepare(answer: Option<&UpstreamAnswer>) -> Result<Prepared, Box<HelperError>
         })
     };
     let io = |error: std::io::Error| fail("OSError", error.to_string());
-    // with no answer the listener accepts the connection and never replies, so the call times out
+    // with no answer this stays bound and silent until apply drops it, so the call times out instead of being refused
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     let mock = answer
         .map(|reply| {
@@ -123,7 +128,7 @@ fn prepare(answer: Option<&UpstreamAnswer>) -> Result<Prepared, Box<HelperError>
         .enable_all()
         .build()
         .map_err(io)?;
-    Ok((mock, base, runtime))
+    Ok((mock, silent, base, runtime))
 }
 
 fn apply(args: ApplyArgs<'_>) -> HelperResult {
@@ -137,7 +142,7 @@ fn apply(args: ApplyArgs<'_>) -> HelperResult {
         input_type,
         answer,
     } = args;
-    let (mock, base, runtime) = prepare(answer)?;
+    let (mock, silent, base, runtime) = prepare(answer)?;
     let mut deepkeep = guardrail(settings)?;
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     let context = RequestContext {
@@ -149,6 +154,7 @@ fn apply(args: ApplyArgs<'_>) -> HelperResult {
         dynamic_params: dynamic_params.clone(),
     };
     let result = runtime.block_on(deepkeep.apply(inputs, context));
+    drop(silent);
     finish(mock, result)
 }
 
