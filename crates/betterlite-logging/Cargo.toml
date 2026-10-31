@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
 flate2 = "1.1.5"
 hex.workspace = true

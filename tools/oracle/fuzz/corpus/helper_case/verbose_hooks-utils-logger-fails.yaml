@@ -1,0 +1,5 @@
+kind: helper
+name: verbose-hooks-utils-logger-fails
+call: {verbose_hooks: {function: utils, payload: message, set_verbose: true, log_level: DEBUG, logger_only: false, logger_fails: true}}
+env: {}
+compare: {ignore: []}

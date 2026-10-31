@@ -1,7 +1,7 @@
 id: B2239
 milestone: M3 providers
 title: Injected verbose logging hooks
-status: todo
+status: done
 depends_on: [B187, B002, B171]
 file: tasks/B2239-verbose-hooks.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/utils.py"
 parent: B014
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 395
