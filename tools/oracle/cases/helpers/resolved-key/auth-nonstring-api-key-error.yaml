@@ -1,0 +1,11 @@
+kind: helper
+name: nonstring-api-key-not-stringified
+call:
+  resolved_key:
+    function: auth
+    value: {api_key: 123}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message for the unwrapped TypeError

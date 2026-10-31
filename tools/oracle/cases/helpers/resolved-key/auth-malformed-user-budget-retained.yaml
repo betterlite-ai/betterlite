@@ -1,0 +1,9 @@
+kind: helper
+name: malformed-unselected-user-budget-entry-retained
+call:
+  resolved_key:
+    function: auth
+    value: {user_model_max_budget: {gpt-4: not-a-number}}
+env: {}
+compare:
+  ignore: []
