@@ -1,181 +1,124 @@
 id: B4571
 title: Validate and apply agent gateway setup
 description: >-
-  Build credential and model validation, interactive selections, saved-setup repair and ordered
-  application for Claude Code and Codex configuration. Preflight each selected target's settings
-  before applying any, refuse login-derived credentials for permanent setup, and save a valid
-  profile before attempting its settings write. The module handles the common flow: resolve
-  credentials from --api-key, LITELLM_PROXY_API_KEY, or a saved profile; list available models
-  from the gateway with key repair on rejection; validate model selections against the listing;
-  and apply Claude and Codex settings in order with atomic profile saves. Default model pinning
-  is optional for Claude, required for first-time Codex. Codex setup requires either --model or
-  interactive selection. Model selection uses fuzzy search for Claude and Codex separately,
-  showing source_model names when available. The module enforces that login tokens (from `lite
-  login` with PKCE) are never written into settings; permanent setup requires a long-lived
-  virtual key. Connection validation includes a repair loop for rejection on changed gateways.
-  All model listings filter to the gateway's advertised models; model search for Codex treats
-  all listed models as valid, while Claude Code filters to ids containing "claude" or "anthropic"
-  in the picker. The listed model count and format diagnostics preserve the distinction between
-  proxies that serve all models at the same names and those that differ in picker visibility.
-  Failures abort the transaction and save the attempted profile so the user can retry with a
-  corrected key; successful application saves the profile first, then applies settings, and
-  reports success with next-step guidance.
+  Build the setup flow behind lite configure and lite reconfigure in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/configure_setup.py: resolve_credential, the model listing with key repair, the per-target prepare step, the target and model pickers, and configure_targets. The code lives in tools/management-cli/src/agent_setup.rs and agent_setup/**, and exports resolve_credential, pick_targets, configure_targets and MODEL_OPTION_HELP for B4572's commands. configure_targets takes B4560's context values (base_url, base_url_explicit, api_key and api_key_from_token_file), the process environment as a map, a prompter, whether stdin is a terminal (std::io::IsTerminal at the call site) and two writers for stdout and stderr, and returns Ok or this module's error enum. The enum has a Usage variant for LiteLLM's click.UsageError (the root prints it on stderr and exits 2) and plain variants for every click.ClickException (the root prints the text as one line on stderr and exits 1). The prompter is a trait for LiteLLM's prompts (the target checkbox, the Claude Code and Codex model pickers, the gateway URL and the hidden key entries); the real one uses dialoguer and tests pass a scripted one that records what it was asked.
+
+  docs/compatibility.md decides what is ported. The order of preflight, prepare, save and apply, the request sent, the saved values it reuses, the prompts' messages, choices and defaults, the lines printed on stdout, the two symlink notes on stderr, the exit codes and the streams stay LiteLLM's. Python's habits are not copied. The context comes typed from B4560 instead of pydantic's model_validate of ctx.obj, picker answers come back typed instead of through TypeAdapter.validate_python, and a model name in an error is plain text, not a repr. ListedModel declares id and source_model as non-empty strings (pi.py L58-L62), so LiteLLM's "source_model or id" and "source or ..." are None checks here and give the same result for every listing of the declared type. Error texts are betterlite's own words, as rule errors-match-litellm says, and each carries LiteLLM's facts: the value at fault, the base URL, the HTTP status, and the option or command that fixes it.
+
+  resolve_credential(context, api_key) uses api_key when given, else the context api_key unless api_key_from_token_file is true. None is an error that asks for a long-lived virtual key through --api-key, lite --api-key or LITELLM_PROXY_API_KEY and says the lite login credential expires within a day and is never written into agent settings. A key that trims to nothing, or has any character at or below U+0020 or equal to U+007F, is an error. It returns B4562's StaticToken.
+
+  Listing. The models come from B4565's fetch_model_listing without following redirects. For Claude Code it adds anthropic-version: 2023-06-01 and x-gateway-client: claude-code (model_listing_utils.py L29-L31); Codex gets no extra header. Each failure kind has its error. Rejected names the HTTP status and asks for a valid --api-key. Unreachable asks whether the proxy at the base URL is running and whether --base-url or LITELLM_PROXY_URL is right. Empty repeats the listing's message and says Claude Code or Codex would have nothing to run. Any other kind says the proxy at the base URL answered and asks to check that it is a healthy LiteLLM proxy. Repair is on when a saved setup exists, the run is not interactive and stdin is a terminal. Then a rejected listing asks for "Replacement virtual key" (hidden, asked again when empty), resolves it, and lists once more; a second failure is the error for its kind. Every other failure, and every failure without repair, is its error at once. A name's starting model is the id of the first listed model whose source_model equals it, else the first listed id equal to it, else none. A name with no starting model is an error that gives the name, the base URL and the first 20 listed ids joined by ", ".
+
+  prepare(target, saved, model, default_model). The default is none with default_model, else the model given, else the saved model. Codex with no default outside interactive mode is Usage: the --model option is missing and first-time Codex setup needs a starting model. This check runs before any prompt or request. With edit_connection, the prompt "Claude gateway URL" or "Codex gateway URL" offers the context base_url when there is no saved setup or base_url_explicit is set, and the saved base_url otherwise. The answer goes through B4560's normalize_base_url (its error is Usage) and loses one trailing "/v1". The key to keep is the supplied key (the context api_key unless it came from the token file), else the saved key when the saved base_url equals the new one. With one to keep, the prompt is "Virtual key (press Enter to keep the current key)" and an empty entry keeps it; without one, the prompt is "Virtual key" and an empty entry asks again. Without edit_connection, the base URL is chosen the same way with no prompt, and the key is the supplied key, else the saved key for that same URL. When that key does not resolve, a saved setup exists for another URL and no key was supplied, the error says the gateway changed, the saved key was not used and --api-key is needed for the new gateway. Then the listing and repair run. repair_model is true when repair is on, a default exists and it has no starting model. In interactive mode or on repair_model, Claude Code picks from the source names (source_model, else id) and Codex from the ids; otherwise the choice is the default. The Codex picker always returns a model and the non-interactive path already required one, so LiteLLM's check at configure_setup.py L352-L353 cannot fire and the types make it unneeded. The choice is validated as above. The model to save is the source name of that starting model for Claude Code and the choice as given for Codex. The profile is B4570's SavedSetup with the target, B4570's resolved settings path for the target, the base URL, the key from the listing step and that model. A profile B4570 rejects is an error that says the gateway setup is invalid and no settings were changed.
+
+  configure_targets with both model and default_model is Usage. It preflights every target in order (B4563's preflight_claude_settings on B4562's claude_settings_path, B4569's preflight_codex_settings on B4564's codex_config_path, both from the environment map). It then prepares every target with B4570's read_saved_setup, and only then goes through the prepared setups, calling B4570's save_setup on each before applying it. Claude Code looks the saved model up again, applies through B4563's configure_claude_settings with StartOn(starting id) or UnpinModel when there is none, and prints LiteLLM's five lines (configure_setup.py L195-L211). The picker count there is the number of listed ids that contain "claude" or "anthropic" in any case. Codex validates the saved model, applies it as saved through B4569's configure_codex_settings and prints its three lines (L269-L271). When the settings path is a symlink, each prints LiteLLM's note on stderr (L212-L217 and L272-L273) with the link target. An error in this step keeps its cause, says the target's setup was saved and names lite configure {target} to retry. After each apply it prints "Setup saved. Edit with `lite reconfigure {target}`; remove saved settings and key with `lite unconfigure {target} --forget`."
+
+  Pickers. pick_targets(defaults, edit) shows "Claude Code (CLI)" and "Codex (CLI)" with the defaults checked. Its message is "Which agents should be edited? Unselected agents keep their current setup" when editing and "Which agents should route through LiteLLM?" otherwise. An empty answer shows "Pick at least one." and asks again, and the picks come back in claude, codex order. The Claude Code picker asks "Model Claude Code starts on (type to filter; /model switches any time):" with "Keep Claude Code's own default" first, then the source names. It preselects the default when it is among them and the keep row otherwise, and the keep row returns none. The Codex picker asks "Model Codex starts on (type to filter):" over the ids and preselects the default when listed, else the first id.
+
+  Tests. Test functions live in tests.rs files under agent_setup/ with the name prefixes the checks select: credential_, listing_, prepare_, apply_ and pickers_. They run against a local HTTP server on 127.0.0.1:0 (axum is in Cargo.lock) that serves /v1/models with canned statuses, bodies and redirects and records the request headers. They use a scripted prompter, an explicit terminal flag, and temp directories named in the environment map, so no test touches the real home directory or a terminal. They compare the exact stdout and stderr bytes for the lines LiteLLM prints, and assert the returned error variant and the facts its message carries for betterlite's own error texts.
 scope:
   paths:
-    - tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
+    - tools/management-cli/Cargo.toml
+    - Cargo.lock
+    - tools/management-cli/src/agent_setup.rs
+    - tools/management-cli/src/agent_setup/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L78-L95
-    why: resolve_credential function with long-lived key validation and login-token rejection.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L97-L137
-    why: _Listing dataclass, _preflight, _listing_error and _fetch_models with header selection for Claude Code.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L139-L177
-    why: _connection_listing with repair flow, _starting_model, _model_choice and _validated_model.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L179-L218
-    why: _apply_claude with STARTING_MODEL_ROLE, CLAUDE_CODE_PICKER_PATTERN and symlink diagnostics.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L224-L260
-    why: pick_targets checkbox, _pick_model and _pick_codex_model fuzzy pickers with defaults and keep-default option.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L262-L274
-    why: _apply_codex with credential storage and symlink warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L54-L94
+    why: The constants, MODEL_OPTION_HELP, ConnectionSettings and resolve_credential with its two checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L106-L176
+    why: _preflight, _listing_error, _fetch_models with the Claude Code headers and no redirects, _connection_listing with repair, _starting_model and _validated_model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L179-L217
+    why: _apply_claude, the picker count, its five lines and its symlink note.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L224-L259
+    why: pick_targets, _pick_model and _pick_codex_model with their messages, choices and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L262-L273
+    why: _apply_codex, its three lines and its symlink note.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L282-L370
-    why: _connection, _prompt_connection, _prepare with repair detection and interactive trigger logic.
+    why: _connection, _prompt_connection and _prepare, the reuse of saved values and the repair rules.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L373-L422
-    why: _apply and configure_targets entry point with preflight sequencing and ordered application.
+    why: _apply saves before it applies, and configure_targets preflights all, prepares all, then applies each.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L28-L62
+    why: ListingFailure, PiSyncError and ListedModel with id and source_model as non-empty strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L86-L115
+    why: fetch_model_listing takes the extra headers and the get function that turns redirects off.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_listing_utils.py#L29-L31
+    why: CLAUDE_CODE_PICKER_PATTERN (claude or anthropic in any case), GATEWAY_CLIENT_HEADER and CLAUDE_CODE_CLIENT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L30-L103
+    why: SavedSetup and its validators, settings_path_for, and read_saved_setup comparing the saved settings_path with the resolved path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/config.py#L65-L75
+    why: normalize_base_url raises click.UsageError for a bad gateway URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L80-L147
+    why: How lite configure and lite reconfigure call pick_targets and configure_targets.
+  - url: https://docs.rs/dialoguer/latest/dialoguer/
+    why: MultiSelect, FuzzySelect, Input and Password for the real prompter.
 dod:
   - text: >-
-      resolve_credential accepts --api-key flag, LITELLM_PROXY_API_KEY environment variable, or
-      saved key from a prior setup; login-derived credentials (api_key_from_token_file) are rejected
-      with a message stating they expire within a day.
-    proof: [credential-resolution]
+      resolve_credential takes the given key, else the context key unless it came from the token file, and rejects a missing, blank or control-character key with errors that carry LiteLLM's facts.
+    proof: [setup-credential]
   - text: >-
-      Keys must not be blank, contain only whitespace, or contain control characters (ASCII 0-32 and 127).
-    proof: [credential-validation]
+      The listing sends the Claude Code headers only for Claude Code and does not follow a redirect, maps each failure kind to its error, repairs a rejected key once under LiteLLM's three conditions, and validates a model by source_model, then id, with at most 20 ids in the error.
+    proof: [setup-listing]
   - text: >-
-      For each target, _preflight calls preflight_claude_settings or preflight_codex_settings before
-      applying any configuration; all targets are preflighted before any are applied.
-    proof: [preflight-validation]
+      prepare picks the default, base URL and key as LiteLLM does with and without edit_connection, keeps the current key on an empty entry, runs the pickers in interactive mode or on repair_model, requires a Codex model before any prompt or request, and builds the profile or the invalid-setup error.
+    proof: [setup-prepare]
   - text: >-
-      _fetch_models sends GET /v1/models with Authorization Bearer token and the Claude Code client
-      headers (anthropic-version and gateway client header) when target is claude; Codex gets no extra headers.
-    proof: [model-listing-headers]
+      configure_targets rejects --model with --default-model, preflights every target before preparing any and prepares every target before applying any, saves each profile before its settings, and prints LiteLLM's lines, symlink notes and the saved-setup error.
+    proof: [setup-apply]
   - text: >-
-      _listing_error distinguishes rejection (HTTP status), unreachable (connection failure), empty
-      (no models), and other failures with appropriate user guidance.
-    proof: [listing-error-messages]
-  - text: >-
-      _connection_listing repairs on rejection when a saved setup exists, stdin.isatty() is true, and repair
-      flag is true; prompts for a replacement key and retries; otherwise raises immediately.
-    proof: [repair-credential-flow]
-  - text: >-
-      Validation errors show up to _LISTED_MODELS_SHOWN (20) models; fuzzy pickers show all listing.ids.
-    proof: [model-display-limit]
-  - text: >-
-      _pick_model shows _KEEP_DEFAULT_MODEL ("Keep Claude Code's own default") as the first choice and
-      returns None when selected; _pick_codex_model defaults to listing.ids[0].
-    proof: [model-picker-behavior]
-  - text: >-
-      _starting_model checks both model.source_model and model.id; _validated_model confirms the selection
-      exists in the listing before returning it.
-    proof: [model-source-lookup]
-  - text: >-
-      _prepare saves source_model for Claude or the id for Codex; on validation error,
-      _validated_model raises a ClickException with available models shown.
-    proof: [model-validation-flow]
-  - text: >-
-      _prompt_connection is called when edit_connection is True; otherwise _connection uses explicit
-      --base-url or saved setup base_url.
-    proof: [connection-selection]
-  - text: >-
-      Interactive model selection triggers when repair_model is true (saved model not in listing) or
-      interactive is True; non-interactive Codex setup without --model and without repair raises
-      "Missing option '--model'".
-    proof: [interactive-trigger]
-  - text: >-
-      _apply calls save_setup before apply_claude or apply_codex; if settings application fails,
-      the profile is already saved and the error message directs retry with reconfigure.
-    proof: [profile-save-before-apply]
-  - text: >-
-      _apply_claude outputs configured path, credential slot, starting model with /model picker details
-      including count of models shown in picker (CLAUDE_CODE_PICKER_PATTERN filter), and symlink warning.
-    proof: [claude-success-output]
-  - text: >-
-      _apply_codex outputs configured path, starting model, credential slot and symlink warning.
-    proof: [codex-success-output]
-  - text: >-
-      pick_targets uses inquirer.checkbox with both targets enabled by default (defaults=(claude,codex));
-      edit flag changes message to "Which agents should be edited?" vs "Which agents should route through LiteLLM?".
-    proof: [picker-defaults-and-messages]
+      pick_targets and both model pickers pass LiteLLM's messages, choices and preselected rows to the prompter, ask again on an empty target answer, return targets in claude, codex order and map the keep row to none.
+    proof: [setup-pickers]
 checks:
   optional: []
   commands:
-    - id: credential-resolution
-      why: credential resolution order or login-derived token rejection is incorrect or missing
-      run: grep -qF 'resolve_credential' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'api_key_from_token_file' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'expires within a day' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: credential-validation
-      why: key format validation (blank, whitespace, control chars) is missing
-      run: grep -qF '.strip()' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'ord(char) <= 32' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'ord(char) == 127' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: preflight-validation
-      why: preflight does not check both target types before applying any configuration
-      run: grep -qF '_preflight' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'for target in targets' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: model-listing-headers
-      why: /v1/models headers missing or wrong for Claude Code view
-      run: grep -qF '_CLAUDE_CODE_VIEW' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'GATEWAY_CLIENT_HEADER' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'CLAUDE_CODE_CLIENT' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: listing-error-messages
-      why: error messages do not distinguish rejection/unreachable/empty/other failures
-      run: grep -qF 'ListingFailure.REJECTED' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'ListingFailure.UNREACHABLE' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'ListingFailure.EMPTY' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: repair-credential-flow
-      why: repair does not check saved setup, TTY or repair flag
-      run: grep -qF '_connection_listing' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'isatty()' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'repair' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: model-display-limit
-      why: validation errors do not truncate to 20 models or fuzzy pickers do not show all
-      run: grep -qF '_LISTED_MODELS_SHOWN' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF '[:_LISTED_MODELS_SHOWN' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: model-picker-behavior
-      why: Claude picker missing "Keep default" option or Codex does not default to first model
-      run: grep -qF '_KEEP_DEFAULT_MODEL' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'listing.ids[0]' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: model-source-lookup
-      why: model lookup does not check both source_model and id
-      run: grep -qF 'source_model' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF '_starting_model' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: model-validation-flow
-      why: validated model save or error messaging is wrong
-      run: grep -qF '_validated_model' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'source_model or' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: connection-selection
-      why: URL selection does not branch on edit_connection
-      run: grep -qF 'edit_connection' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF '_prompt_connection' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: interactive-trigger
-      why: repair_model or interactive trigger missing, or Codex does not require --model
-      run: grep -qF 'repair_model' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF "Missing option '--model'" tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: profile-save-before-apply
-      why: profile not saved before settings apply, or error recovery missing
-      run: grep -qF 'save_setup(saved)' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'setup was saved' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: claude-success-output
-      why: Claude output missing path, credential slot, or /model details
-      run: grep -qF 'Configured Claude Code' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'ANTHROPIC_AUTH_TOKEN' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF '/model' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: codex-success-output
-      why: Codex output missing configured path or model
-      run: grep -qF 'Configured Codex' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF '_apply_codex' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
-    - id: picker-defaults-and-messages
-      why: target picker defaults or messages wrong
-      run: grep -qF 'Which agents should be edited' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py && grep -qF 'Which agents should route through' tools/management-cli/litellm/proxy/client/cli/commands/configure_setup.py
+    - id: setup-credential
+      why: the credential tests are missing or the key choice or a rejection differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::credential_/)'
+    - id: setup-listing
+      why: the listing tests are missing or the headers, redirects, an error kind, the repair rule or model validation differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::listing_/)'
+    - id: setup-prepare
+      why: the prepare tests are missing or the default, base URL, key reuse, picker trigger or saved profile differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::prepare_/)'
+    - id: setup-apply
+      why: the apply tests are missing or the preflight, prepare, save and apply order, a printed line or the saved-setup error differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::apply_/)'
+    - id: setup-pickers
+      why: the picker tests are missing or a message, choice, preselected row or the returned order differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::pickers_/)'
 oracle_cases: []
-deviations: []
+deviations:
+  - what: >-
+      The target checkbox, the two model pickers and the URL and key prompts are drawn by dialoguer. Their messages, choices, preselected rows, the empty-answer rules and the hidden key entry are LiteLLM's, but the look, the key bindings and the fuzzy match ranking differ from InquirerPy's and click's.
+    why: >-
+      Porting InquirerPy's terminal widgets is a large job for screens only a person reads. Every non-interactive path takes its values from options and the saved setup, and those stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L224-L259
 out_of_scope:
-  - "`interactive_configure` (L425-437) — no caller at the pin. It is imported and re-exported by configure.py for embedders, but registered production configure commands call `configure_targets` instead. Test-only invocations do not make it production work."
-  - "SavedSetup validation and serialization; that belongs to B4570."
-  - "Settings application to Claude Code and Codex (configure_claude_settings and configure_codex_settings); those belong to B4562 and B4563."
-  - "Model listing utilities and LiteLLM constants (CLAUDE_CODE_CLIENT, GATEWAY_CLIENT_HEADER, CLAUDE_CODE_PICKER_PATTERN); these are imported from model_listing_utils and configure_setup maintains them for compatibility."
-  - "Credential storage and key format checking; the module validates and passes credentials to other parts that store them."
+  - The configure, reconfigure and unconfigure commands, their options, the "Gateway URL" prompt in configure.py and setup_locks around configure_targets are B4572's and B4570's. The CLI root declares the agent_setup module and maps Usage and the other errors to exit codes (main.py, B134).
+  - "interactive_configure (configure_setup.py L425-L437) has no caller at the pin: configure.py only imports and re-exports it (L35 and L306), and a Rust binary has no embedders, so no task ports it. B4572's out_of_scope line that gives it to B4571 is outdated."
+  - SavedSetup and its validation, the resolved settings path, read_saved_setup, save_setup and the targets list are B4570's.
+  - configure_claude_settings and preflight_claude_settings are B4563's. claude_settings_path, configure_state_path, settings_file_owners, StaticToken, StartOn, UnpinModel and STARTING_MODEL_ROLE are B4562's.
+  - configure_codex_settings and preflight_codex_settings are B4569's, and codex_config_path is B4564's.
+  - fetch_model_listing, ListedModel, ListingFailure and the listing error are B4565's. normalize_base_url and the context values are B4560's.
+  - The server's Claude Code model view keyed on x-gateway-client (model_listing_utils.py L120) belongs to the model list routes, not to this client.
 pitfalls:
-  - Login tokens from PKCE flow expire within a day; resolve_credential must reject them (api_key_from_token_file=True) and direct the user to --api-key or LITELLM_PROXY_API_KEY for persistent setup.
-  - Repair mode triggers only when saved setup exists, interactive mode is off, and sys.stdin.isatty() is true; otherwise a rejected key fails the transaction immediately.
-  - Model lookup returns source_model (the original name before proxy mapping) for Claude to preserve intent; Codex returns the id directly from the listing.
-  - Codex requires a model on first setup unless interactive mode is enabled; non-interactive Codex without --model and without repair must fail, not silence the missing model.
-  - _starting_model checks source_model first, then falls back to matching id; _validated_model then confirms the result exists in the listing before returning it.
-  - Connection gateway change is detected when saved.base_url differs from settings.base_url; a change without an explicit --api-key requires --api-key for the new gateway.
-  - Setup profile is saved before apply_claude or apply_codex is called; if settings application fails, the profile remains saved so the user can retry with corrected credentials.
-  - InquirerPy checkbox has both targets enabled by default; the edit flag changes the message but not the defaults. Fuzzy pickers default to the starting model or listing[0].
-  - Control characters (ASCII 0-32 and 127) in credentials are rejected; this catches tabs, nulls and DEL but not Unicode spaces. The proxy will reject the key if it remains invalid.
-  - CLAUDE_CODE_PICKER_PATTERN filters models by searching for "claude" or "anthropic" in the id; the in_picker count reflects exact pattern matches, not substring or case variants.
-review_level: standard
+  - >-
+    configure_targets prepares every target before it applies any, so a Codex listing failure leaves Claude Code's settings untouched even when claude comes first.
+  - >-
+    The profile is saved before its settings are applied, so an apply error still leaves a saved setup, and the error has to say so and name lite configure {target}.
+  - >-
+    The picker count matches "claude" or "anthropic" anywhere in the id and in any case (an re.IGNORECASE search), so "Claude-3" and "my-anthropic-proxy" both count.
+  - >-
+    Claude Code saves the source name and starts on the id found for it again at apply time. Two ids may share a source_model, so --model with the second id starts on the first one; that is LiteLLM's behavior and stays. Codex validates its model but writes it as given.
+  - >-
+    Repair needs a saved setup, a non-interactive run and a terminal on stdin; a first-time setup or a piped run fails on a rejected key without a prompt.
+  - >-
+    The saved settings_path must be the exact string B4570's read_saved_setup compares against, or the next run reports the profile as invalid. Use B4570's resolved path; std::fs::canonicalize fails on a settings file that does not exist yet, while Python's Path.resolve does not.
+  - >-
+    The symlink notes print the link target as Path.resolve gives it, and only after the settings were written and the stdout lines printed.
+  - >-
+    dialoguer pulls console and fuzzy-matcher, and neither is in Cargo.lock yet. Turn its default features off, enable fuzzy-select and password, and pick a release whose dependencies cargo deny accepts.
+review_level: security
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
