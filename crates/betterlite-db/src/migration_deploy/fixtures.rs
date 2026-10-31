@@ -3,8 +3,10 @@
 use std::env::temp_dir;
 use std::fs::remove_dir_all;
 use std::future::{Future, poll_fn};
+use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::process::id;
 use std::time::Duration;
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -40,6 +42,7 @@ where
     Fut: Future<Output = ()> + Send + 'static,
 {
     let _guard = DATABASE_TESTS.lock().await;
+    let test_file = acquire_test_file().await;
     let url = Environment::parse_from(["migration-tests"])
         .url
         .map(SecretString::from);
@@ -74,6 +77,40 @@ where
     fixture.close_async().await.unwrap();
     cleanup.unwrap();
     result.unwrap();
+    fs::remove_file(test_file).await.unwrap();
+}
+
+async fn acquire_test_file() -> PathBuf {
+    let path = temp_dir().join("betterlite-migration-deploy.lock");
+    loop {
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+        {
+            Ok(file) => {
+                drop(file);
+                fs::write(&path, id().to_string()).await.unwrap();
+                return path;
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                reclaim_stale_test_file(&path).await;
+                sleep(Duration::from_millis(10)).await;
+            }
+            Err(error) => panic!("could not create migration test lock: {error}"),
+        }
+    }
+}
+
+async fn reclaim_stale_test_file(path: &PathBuf) {
+    let Ok(owner) = fs::read_to_string(path).await else {
+        return;
+    };
+    let process_path = PathBuf::from(format!("/proc/{}", owner.trim()));
+    if !fs::try_exists(process_path).await.unwrap_or(true) {
+        drop(fs::remove_file(path).await);
+    }
 }
 
 async fn lock_connection(config: Config) -> (PostgresClient, JoinSet<Result<(), PostgresError>>) {
