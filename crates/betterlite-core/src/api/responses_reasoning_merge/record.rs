@@ -8,6 +8,7 @@ use super::{Reasoning, Role, is_falsy};
 // A chat message, dict or attribute shaped, with double_option keeping "missing" distinct from an explicit null.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatRecord {
+    #[serde(default, skip_serializing_if = "Role::is_missing")]
     pub role: Role,
     #[serde(
         default,
@@ -39,7 +40,7 @@ pub struct ChatRecord {
 
 impl Reasoning for ChatRecord {
     fn is_pending(&self) -> bool {
-        self.role == Role::Assistant
+        matches!(self.role, Role::Known(super::KnownRole::Assistant))
             && self.content.as_ref().and_then(Option::as_ref).is_none()
             && self
                 .tool_calls
@@ -50,7 +51,7 @@ impl Reasoning for ChatRecord {
     }
 
     fn is_assistant(&self) -> bool {
-        self.role == Role::Assistant
+        matches!(self.role, Role::Known(super::KnownRole::Assistant))
     }
 
     fn text(&self) -> Option<&str> {
@@ -77,24 +78,24 @@ impl Reasoning for ChatRecord {
 
     fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self {
         let mut record = Self {
-            role: Role::Assistant,
+            role: Role::ASSISTANT,
             content: Some(None),
             reasoning_content: None,
             thinking_blocks: None,
             tool_calls: None,
             extra: Map::new(),
         };
-        if let Some(found) = text {
+        if let Some(found) = text.filter(|candidate| !candidate.is_empty()) {
             record.set_text(found);
         }
-        if let Some(found) = blocks {
+        if let Some(found) = blocks.filter(|candidate| !candidate.is_empty()) {
             record.set_blocks(found);
         }
         record
     }
 }
 
-// Tags whether a message came from a Python dict or an attribute object; LiteLLM dispatches per message, so one call can mix both kinds.
+// Tags dict and attribute objects because LiteLLM dispatches each message independently.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Record {
     Dict(ChatRecord),

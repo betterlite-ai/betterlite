@@ -29,7 +29,8 @@ _KNOWN_FIELDS = frozenset({"role", "content", "reasoning_content", "thinking_blo
 
 @dataclass
 class AttributeChatRecord:
-    role: str
+    role: Json = None
+    role_present: bool = False
     content: Json = None
     reasoning_content: Json = None
     thinking_blocks: Json = None
@@ -37,8 +38,7 @@ class AttributeChatRecord:
     extra: dict[str, Json] = field(default_factory=dict)
 
     def __getattr__(self, name: str) -> Json:
-        # Real attribute message classes use extra="allow", so an attribute outside the five
-        # declared fields (name, tool_call_id, ...) still reads through getattr from this bucket.
+        # Extra attributes remain readable because real message classes use extra="allow".
         try:
             return self.extra[name]
         except KeyError as error:
@@ -59,12 +59,12 @@ def _as_list(value: Json) -> list[Json]:
 
 def _to_attribute_record(message: Json) -> AttributeChatRecord:
     fields = _as_dict(message)
+    role_present = "role" in fields
     role = fields.get("role")
-    if not isinstance(role, str):
-        raise ValueError("role must be a string")
     extra = {key: value for key, value in fields.items() if key not in _KNOWN_FIELDS}
     return AttributeChatRecord(
         role=role,
+        role_present=role_present,
         content=fields.get("content"),
         reasoning_content=fields.get("reasoning_content"),
         thinking_blocks=fields.get("thinking_blocks"),
@@ -74,7 +74,9 @@ def _to_attribute_record(message: Json) -> AttributeChatRecord:
 
 
 def _from_attribute_record(record: AttributeChatRecord) -> dict[str, Json]:
-    result: dict[str, Json] = {"role": record.role, "content": record.content}
+    result: dict[str, Json] = {"content": record.content}
+    if record.role_present:
+        result["role"] = record.role
     if record.reasoning_content is not None:
         result["reasoning_content"] = record.reasoning_content
     if record.thinking_blocks is not None:

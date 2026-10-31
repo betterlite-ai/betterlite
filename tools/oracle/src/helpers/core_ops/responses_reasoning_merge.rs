@@ -1,6 +1,6 @@
 use betterlite_core::api::responses_reasoning_merge::merge_reasoning;
 use betterlite_core::api::responses_reasoning_merge::record::{ChatRecord, Record};
-use betterlite_core::api::responses_reasoning_merge::trailing::merge_trailing;
+use betterlite_core::api::responses_reasoning_merge::trailing::merge_trailing_values;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -129,7 +129,7 @@ impl crate::helpers::Helper for Op {
                 merge_reasoning_records(&input.messages, &kinds)
             }
             Mode::Trailing => {
-                merge_trailing(&input.messages, &input.new_messages, input.hosted_search)
+                merge_trailing_values(&input.messages, &input.new_messages, input.hosted_search)
                     .map(|merged| {
                         // keep the "merged" key present so a null result round-trips, not a missing key
                         let mut object = serde_json::Map::new();

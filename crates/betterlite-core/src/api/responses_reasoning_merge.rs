@@ -22,16 +22,36 @@ pub enum MergeError {
     },
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Role {
+pub enum KnownRole {
     System,
     Developer,
     User,
-    #[default]
     Assistant,
     Tool,
     Function,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(untagged)]
+pub enum Role {
+    Known(KnownRole),
+    Other(Value),
+    #[default]
+    Missing,
+}
+
+impl Role {
+    pub const ASSISTANT: Self = Self::Known(KnownRole::Assistant);
+    pub const USER: Self = Self::Known(KnownRole::User);
+
+    pub(super) const fn is_missing(&self) -> bool {
+        match self {
+            Self::Missing => true,
+            Self::Known(_) | Self::Other(_) => false,
+        }
+    }
 }
 
 // Public so merge_reasoning's trait bound is visible; lets one loop drive both record kinds.
