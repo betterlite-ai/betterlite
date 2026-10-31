@@ -11,6 +11,7 @@ pub(super) struct Prepared {
     pub catalog: Vec<Examined>,
     pub catalog_pages: usize,
     pub evidence: Vec<TracePart>,
+    pub all_spans: Vec<TracePart>,
 }
 
 pub(super) fn prepare(
@@ -18,43 +19,51 @@ pub(super) fn prepare(
     relevant: &[&Examined],
     state: &State,
 ) -> Result<Prepared, AnalysisError> {
-    let observations = observations(context.candidate, relevant);
+    let observations: Vec<Observation> = relevant
+        .iter()
+        .flat_map(|item| item.observations.iter())
+        .filter(|item| {
+            item.check_id == context.candidate.check_id && item.kind == context.candidate.kind
+        })
+        .cloned()
+        .collect();
     let observation_batches = partition_items(&observations, json_size, 16_000)?;
-    let supporting = observation_batches
-        .get(state.observation_page)
-        .cloned()
-        .unwrap_or_default();
-    let evidence = evidence(
-        relevant,
-        &state.additional,
-        &supporting,
-        state.navigation.as_ref(),
-    )?;
-    let catalog = catalog(context.candidate, context.examined, relevant);
-    let catalog_batches = partition_items(&catalog, json_size, 16_000)?;
-    let catalog_page = catalog_batches
-        .get(state.catalog_page)
-        .cloned()
-        .unwrap_or_default();
+    let supporting = page(&observation_batches, state.observation_page);
+    let cited: Vec<(String, String)> = supporting
+        .iter()
+        .flat_map(|item| item.evidence.iter())
+        .map(|item| (item.execution_id.clone(), item.span_id.clone()))
+        .collect();
+    let all_spans = unique_spans(relevant, &state.additional);
+    let evidence = evidence_page(&all_spans, &cited, state.navigation.as_ref())?;
+    let catalog_items = catalog(context.candidate, context.examined, relevant);
+    let catalog_batches =
+        partition_items(&catalog_items, |item| json_size(&item.execution), 16_000)?;
     Ok(Prepared {
         supporting,
         total_observations: observations.len(),
         observation_pages: observation_batches.len(),
-        catalog: catalog_page,
+        catalog: page(&catalog_batches, state.catalog_page),
         catalog_pages: catalog_batches.len(),
         evidence,
+        all_spans,
     })
 }
 
-fn observations(candidate: &Candidate, relevant: &[&Examined]) -> Vec<Observation> {
-    let filtered: Vec<Observation> = relevant
-        .iter()
-        .flat_map(|item| item.observations.iter())
-        .filter(|item| item.check_id == candidate.check_id && item.kind == candidate.kind)
-        .cloned()
-        .collect();
-    debug_assert!(filtered.len() <= relevant.len());
-    filtered
+fn json_size<T>(value: &T) -> usize
+where
+    T: serde::Serialize,
+{
+    let encoded = serde_json::to_vec(value);
+    encoded.map_or(usize::MAX, |bytes| bytes.len())
+}
+
+fn page<T>(batches: &[Vec<T>], index: usize) -> Vec<T>
+where
+    T: Clone,
+{
+    let selected = batches.get(index).cloned();
+    selected.unwrap_or_default()
 }
 
 fn catalog(candidate: &Candidate, examined: &[Examined], relevant: &[&Examined]) -> Vec<Examined> {
@@ -68,26 +77,7 @@ fn catalog(candidate: &Candidate, examined: &[Examined], relevant: &[&Examined])
     items
 }
 
-fn json_size<T>(item: &T) -> usize
-where
-    T: serde::Serialize,
-{
-    let encoded = serde_json::to_vec(item);
-    debug_assert!(encoded.is_ok() || encoded.is_err());
-    encoded.map_or(usize::MAX, |value| value.len())
-}
-
-fn evidence(
-    relevant: &[&Examined],
-    additional: &[TracePart],
-    supporting: &[Observation],
-    navigation: Option<&ExecutionContent>,
-) -> Result<Vec<TracePart>, AnalysisError> {
-    let cited: Vec<_> = supporting
-        .iter()
-        .flat_map(|item| item.evidence.iter())
-        .map(|item| (item.execution_id.clone(), item.span_id.clone()))
-        .collect();
+fn unique_spans(relevant: &[&Examined], additional: &[TracePart]) -> Vec<TracePart> {
     let mut unique = BTreeMap::new();
     for part in relevant
         .iter()
@@ -103,8 +93,16 @@ fn evidence(
             part.clone(),
         );
     }
+    unique.into_values().collect()
+}
+
+fn evidence_page(
+    all_spans: &[TracePart],
+    cited: &[(String, String)],
+    navigation: Option<&ExecutionContent>,
+) -> Result<Vec<TracePart>, AnalysisError> {
     let recent = navigation.map_or(&[][..], |item| item.parts.as_slice());
-    let mut parts: Vec<TracePart> = unique.into_values().collect();
+    let mut parts = all_spans.to_vec();
     parts.sort_by_key(|part| {
         (
             !recent.contains(part),
