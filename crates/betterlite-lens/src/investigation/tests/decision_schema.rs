@@ -67,6 +67,7 @@ struct ProbeSchema {
 
 #[derive(serde::Deserialize)]
 struct ProbePrompt {
+    task: String,
     response_schema: ProbeSchema,
 }
 
@@ -102,4 +103,33 @@ async fn decision_schema_forbids_additional_properties_throughout() {
         .as_ref()
         .unwrap();
     assert_eq!(evidence_items.additional_properties, Some(false));
+}
+
+#[tokio::test]
+async fn decision_schema_task_text_covers_recovery_aliases_and_finding_prose() {
+    let claim = fixtures::claim();
+    let candidate = fixtures::candidate(vec![String::from("e1")]);
+    let examined = vec![fixtures::examined("e1", "nothing to see here")];
+    let (model, prompts) = fixtures::scripted(vec![fixtures::submit_decision(
+        "e1",
+        "s1",
+        "the original quote",
+    )]);
+    let read = fixtures::never_read();
+
+    investigate(claim, candidate, examined, read, model)
+        .await
+        .unwrap();
+
+    let sent = prompts.lock().unwrap();
+    let probe: ProbePrompt = serde_json::from_str(&sent[0]).unwrap();
+    drop(sent);
+    assert!(probe.task.contains("kind='pattern' with low priority"));
+    assert!(probe.task.contains("intended target was not tested"));
+    assert!(
+        probe
+            .task
+            .contains("Never put internal run aliases in prose")
+    );
+    assert!(probe.task.contains("Copy supported quotes exactly"));
 }
