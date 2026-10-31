@@ -17,19 +17,14 @@ pub(crate) struct Difference {
     pub(crate) pointer: String,
 }
 
-#[expect(
-    clippy::if_then_some_else_none,
-    reason = "A bool::then closure would still be a single-expression body, which the one-line-function rule forbids."
-)]
 fn rejected_helper_ignore(pointer: &str) -> Option<Difference> {
     if pointer == "/error/class" || pointer == "/error/message" {
-        Some(Difference {
+        return Some(Difference {
             message: "compare.ignore names a field helper comparisons skip".to_owned(),
             pointer: pointer.to_owned(),
-        })
-    } else {
-        None
+        });
     }
+    None
 }
 
 fn strip_helper_only_fields(
