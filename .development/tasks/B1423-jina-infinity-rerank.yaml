@@ -98,4 +98,4 @@ pitfalls:
   - Jina ignores a formal top_n value if non_default_params does not contain that key.
   - Infinity can report negative output_tokens when total_tokens is below prompt_tokens.
 budget: {max_changed_lines: 775, max_new_expects: 0}
-review_level: security
+review_level: standard

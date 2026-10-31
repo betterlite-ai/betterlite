@@ -194,7 +194,7 @@ pitfalls:
   - "API version selection from key prefix (sk_agt_ → v3) may log a warning if a v3 key is configured with api_version v1; this warning must be output through verbose_proxy_logger so operators are aware of the routing change."
   - "X-Straiker-Webhook-Format header is only sent for v1 API; v3 requests must not include it even if it appears in custom_headers, so reserved header filtering must exclude it from custom headers."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

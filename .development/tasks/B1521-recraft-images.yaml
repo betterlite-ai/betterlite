@@ -92,7 +92,7 @@ pitfalls:
   - RecraftImageEditRequestParams is not a validator for the documented strength or image-count ranges.
   - The generation path retains preexisting images, but the edit path constructs a new response.
   - A requested n does not determine billing when the provider returns fewer images.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

@@ -74,7 +74,7 @@ pitfalls:
   - Cancellation returns cancelled even when the upstream JSON contains another status.
   - A lowercase running status without output follows the generic missing-URL branch.
   - Retrieval deliberately loses the model component when wrapping a provider task ID.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

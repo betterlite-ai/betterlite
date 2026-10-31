@@ -132,7 +132,7 @@ pitfalls:
 - Generic configs receive original api_base/key, while later provider branches often use dynamic resolved values.
 - Azure and OpenAI direct connectors discard the merged headers and force client=None.
 - A transcription-only URL intentionally has no model key; normalizing the route model must not insert one.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

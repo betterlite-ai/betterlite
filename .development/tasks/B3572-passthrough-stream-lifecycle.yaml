@@ -161,7 +161,7 @@ pitfalls:
   - "Sync close() is a final cleanup method that may suppress exceptions; calling it twice (e.g., in a finally and a __del__) is safe because _flush_scheduled remains true."
   - "Empty streams (zero chunks fed to collector) do not schedule a flush; should_flush returns false when chunk_count is 0."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

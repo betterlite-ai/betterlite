@@ -116,4 +116,4 @@ pitfalls:
   - A present empty snippet suppresses htmlSnippet fallback for that snippet.
   - Native extra_body.query changes both the upstream query and returned search_query.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

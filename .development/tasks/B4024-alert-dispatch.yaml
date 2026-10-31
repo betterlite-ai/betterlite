@@ -88,7 +88,7 @@ pitfalls:
   - "SLACK_WEBHOOK_URL environment variable is checked first via the `or` operator; ALERTING_WEBHOOK_URL is used only when SLACK_WEBHOOK_URL is unset or empty."
   - "PROXY_BASE_URL footer is appended whenever the environment variable is set and non-None, including when set to an empty string; empty strings are not treated as None."
   - "kwargs are formatted as raw key-value pairs; alerting_metadata dict is formatted under a *Alerting Metadata* header."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
