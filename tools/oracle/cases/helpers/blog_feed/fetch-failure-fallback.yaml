@@ -3,4 +3,4 @@ name: fetch-failure-fallback
 call:
   blog_feed: {function: get_blog_posts, url: https://example.test/feed, now: 100, response: {status: 503, text: ''}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /value/warnings/0/message, why: "betterlite writes its own fetch-failure message"}]}
