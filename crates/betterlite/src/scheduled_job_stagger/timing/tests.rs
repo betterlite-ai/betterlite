@@ -3,7 +3,7 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use tracing::subscriber::with_default;
 
 use super::attach_job_timing_logger;
@@ -63,9 +63,9 @@ impl io::Write for Captured {
     }
 }
 
-fn submit_with_capture(event: &FakeSubmission) -> String {
+fn submit_with_capture(event: &FakeSubmission, now: DateTime<Utc>) -> String {
     let mut scheduler = FakeScheduler { listener: None };
-    attach_job_timing_logger(&mut scheduler);
+    attach_job_timing_logger(&mut scheduler, move || now);
     let listener = scheduler
         .listener
         .expect("a listener should have been attached");
@@ -74,6 +74,7 @@ fn submit_with_capture(event: &FakeSubmission) -> String {
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || writer.clone())
         .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
         .finish();
     with_default(subscriber, || listener(event));
     String::from_utf8(
@@ -88,11 +89,12 @@ fn submit_with_capture(event: &FakeSubmission) -> String {
 
 #[test]
 fn logs_the_scheduled_and_actual_start_time() {
+    let now = Utc::now();
     let event = FakeSubmission {
         job_id: "job-a".to_owned(),
-        scheduled_run_times: vec![Utc::now()],
+        scheduled_run_times: vec![now],
     };
-    let output = submit_with_capture(&event);
+    let output = submit_with_capture(&event, now);
     assert!(output.contains("job-a"));
     assert!(output.contains("scheduled job started"));
 }
@@ -103,6 +105,18 @@ fn does_nothing_when_no_run_times_were_scheduled() {
         job_id: "job-a".to_owned(),
         scheduled_run_times: vec![],
     };
-    let output = submit_with_capture(&event);
+    let output = submit_with_capture(&event, Utc::now());
     assert!(output.is_empty());
+}
+
+#[test]
+fn logs_the_exact_delay_between_the_scheduled_and_actual_start_time() {
+    let scheduled = Utc::now();
+    let started = scheduled + ChronoDuration::milliseconds(2500);
+    let event = FakeSubmission {
+        job_id: "job-a".to_owned(),
+        scheduled_run_times: vec![scheduled],
+    };
+    let output = submit_with_capture(&event, started);
+    assert!(output.contains("delay_milliseconds=2500"));
 }
