@@ -1,67 +1,70 @@
-from decimal import Decimal
-from typing import Any, TypeAlias
+from typing import TypeAlias, cast
 
-# The oracle receives JSON-shaped records; runtime guards below establish the mapping shapes.
-# pyright: reportAny=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportOptionalIterable=false, reportGeneralTypeIssues=false
+from litellm.cost_calculator import BaseTokenUsageProcessor
+from litellm.types.utils import CachedTokensDetails, PromptTokensDetailsWrapper, Usage
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-
-def _sum(old: int | None, new: int | None) -> int | None:
-    if old is None and new is None:
-        return None
-    return (old or 0) + (new or 0)
-
-
-def _cached(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
-    names = ("text_tokens", "audio_tokens", "image_tokens")
-    return {name: _sum(old.get(name) if old else None, new.get(name)) for name in names}
+_PROMPT_DETAIL_KEYS = (
+    "text_tokens", "audio_tokens", "image_tokens", "video_tokens",
+    "cache_write_tokens", "cache_creation_tokens",
+)
+_CACHED_DETAIL_KEYS = ("text_tokens", "audio_tokens", "image_tokens")
+_COMPLETION_DETAIL_KEYS = (
+    "text_tokens", "reasoning_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens",
+)
 
 
-def _prompt(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
-    result = dict(old or {})
-    fields = (
-        "text_tokens", "audio_tokens", "image_tokens", "video_tokens",
-        "cache_write_tokens", "cache_creation_tokens",
+def _build_usage(item: dict[str, Json]) -> Usage:
+    prompt_tokens_details = cast("dict[str, Json] | None", item.get("prompt_tokens_details"))
+    completion_tokens_details = cast(
+        "dict[str, Json] | None", item.get("completion_tokens_details")
     )
-    for name in fields:
-        if name == "cache_creation_tokens" and new.get("cache_write_tokens") is not None:
-            continue
-        if name in new:
-            result[name] = _sum(result.get(name), new[name])
-    if isinstance(new.get("cached_tokens_details"), dict):
-        result["cached_tokens_details"] = _cached(
-            result.get("cached_tokens_details"), new["cached_tokens_details"]
-        )
-    return result
+    usage = Usage(
+        prompt_tokens=cast("int | None", item.get("prompt_tokens")),
+        completion_tokens=cast("int | None", item.get("completion_tokens")),
+        total_tokens=cast("int | None", item.get("total_tokens")),
+        prompt_tokens_details=prompt_tokens_details,
+        completion_tokens_details=completion_tokens_details,
+    )
+    extras = item.get("numeric_extras")
+    if isinstance(extras, dict):
+        for key, value in extras.items():
+            setattr(usage, key, value)
+    return usage
+
+
+def _details(model: object, keys: tuple[str, ...]) -> dict[str, Json]:
+    return {key: getattr(model, key, None) for key in keys}
+
+
+def _cached_details(details: PromptTokensDetailsWrapper) -> Json:
+    cached: CachedTokensDetails | None = getattr(details, "cached_tokens_details", None)
+    if cached is None:
+        return None
+    return _details(cached, _CACHED_DETAIL_KEYS)
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    combined: dict[str, Any] = {"numeric_extras": {}}
-    for usage in input_value.get("usages", []):
-        for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
-            if name in usage:
-                combined[name] = _sum(combined.get(name), usage[name])
-        if isinstance(usage.get("prompt_tokens_details"), dict):
-            combined["prompt_tokens_details"] = _prompt(
-                combined.get("prompt_tokens_details"), usage["prompt_tokens_details"]
-            )
-        if isinstance(usage.get("completion_tokens_details"), dict):
-            details = combined.setdefault("completion_tokens_details", {})
-            names = (
-                "text_tokens", "reasoning_tokens", "accepted_prediction_tokens",
-                "rejected_prediction_tokens",
-            )
-            for name in names:
-                if name in usage["completion_tokens_details"]:
-                    details[name] = _sum(
-                        details.get(name), usage["completion_tokens_details"][name]
-                    )
-        for name, value in usage.get("numeric_extras", {}).items():
-            if name not in combined["numeric_extras"]:
-                combined["numeric_extras"][name] = value
-            else:
-                combined["numeric_extras"][name] = (
-                    Decimal(str(combined["numeric_extras"][name])) + Decimal(str(value))
-                )
-    return combined
+    usages_raw = cast("list[dict[str, Json]]", input_value.get("usages", []))
+    usages = [_build_usage(item) for item in usages_raw]
+    combined = BaseTokenUsageProcessor.combine_usage_objects(usages)
+    prompt_details = combined.prompt_tokens_details
+    prompt_json: Json = None
+    if prompt_details is not None:
+        prompt_json = {
+            **_details(prompt_details, _PROMPT_DETAIL_KEYS),
+            "cached_tokens_details": _cached_details(prompt_details),
+        }
+    completion_details = combined.completion_tokens_details
+    completion_json: Json = None
+    if completion_details is not None:
+        completion_json = _details(completion_details, _COMPLETION_DETAIL_KEYS)
+    return {
+        "prompt_tokens": combined.prompt_tokens,
+        "completion_tokens": combined.completion_tokens,
+        "total_tokens": combined.total_tokens,
+        "prompt_tokens_details": prompt_json,
+        "completion_tokens_details": completion_json,
+        "numeric_extras": dict(combined.model_extra or {}),
+    }

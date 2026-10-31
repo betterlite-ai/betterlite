@@ -7,5 +7,8 @@ call:
         completion_tokens_details: {accepted_prediction_tokens: 2, rejected_prediction_tokens: 1}
       - numeric_extras: {duration: 0.75}
         completion_tokens_details: {accepted_prediction_tokens: 3, rejected_prediction_tokens: 4}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/numeric_extras/duration
+      why: betterlite sums the duration extra; LiteLLM's combine_usage_objects loses every extra because dir(usage) never lists a pydantic extra="allow" field (docs/deviations/B1680.yaml)
 env: {}

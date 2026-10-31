@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -109,7 +111,7 @@ pub fn transform_transcription_usage(usage: &TranscriptionUsage) -> Option<CostU
         }),
         completion_details: None,
         cache_read_tokens: None,
-        numeric_extras: std::collections::BTreeMap::new(),
+        numeric_extras: BTreeMap::new(),
     })
 }
 

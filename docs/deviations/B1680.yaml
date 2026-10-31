@@ -3,3 +3,6 @@ deviations:
   - what: Accumulated counters and fractional usage use checked integer and Decimal arithmetic instead of unbounded integers and binary floats.
     why: A long stream must fail with a typed overflow rather than wrap or silently lose usage precision.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2764-L2815
+  - what: Numeric extras such as duration survive aggregation; combine_usage_objects sums them like any other public numeric field.
+    why: Python's dir() never lists a pydantic model's extra="allow" fields, so every call path that attaches a provider extra through setattr loses it the moment two Usage records are combined; no working setup can rely on that silent loss, confirmed empirically against litellm.types.utils.Usage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2778-L2786
