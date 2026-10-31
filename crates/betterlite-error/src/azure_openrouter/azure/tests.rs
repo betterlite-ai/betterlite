@@ -319,6 +319,15 @@ fn resolve_message_prefers_the_body_message_over_error_str() {
 }
 
 #[test]
+fn content_policy_violation_wraps_the_message_like_litellm_does() {
+    let class = map_azure_exception(&input("content_policy_violation detected", Some(400)));
+    assert_eq!(
+        describe(&class).1,
+        "litellm.BadRequestError: litellm.ContentPolicyViolationError: content_policy_violation detected"
+    );
+}
+
+#[test]
 fn content_policy_forwards_its_own_type_and_code_instead_of_the_defaults() {
     let mut request = input("content_policy_violation detected", Some(400));
     request.body = Some(AzureErrorBody {
