@@ -207,6 +207,33 @@ fn strip_server_only_fields(fields: &mut BTreeMap<String, JsonData>) {
     }
 }
 
+#[must_use]
+pub fn is_team_service_account(auth: &UserAPIKeyAuth) -> bool {
+    match auth.view.token.metadata.0.get("service_account_id") {
+        None | Some(JsonData::Null) => false,
+        Some(_) => {
+            auth.view.token.user_id.is_none()
+                && auth.view.token.team_id.is_some()
+                && !auth.view.token.metadata.0.is_empty()
+        }
+    }
+}
+
+#[must_use]
+pub const fn user_api_key_has_admin_view(auth: &UserAPIKeyAuth) -> bool {
+    match auth.extra.user_role {
+        Some(UserRole::ProxyAdmin | UserRole::ProxyAdminViewer) => true,
+        Some(
+            UserRole::OrgAdmin
+            | UserRole::InternalUser
+            | UserRole::InternalUserViewer
+            | UserRole::Team
+            | UserRole::Customer,
+        )
+        | None => false,
+    }
+}
+
 fn hash_api_key_and_token(fields: &mut BTreeMap<String, JsonData>) -> Result<(), AuthError> {
     let Some(value) = fields.get("api_key") else {
         return Ok(());
