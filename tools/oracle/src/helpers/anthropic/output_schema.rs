@@ -37,7 +37,7 @@ impl crate::helpers::Helper for Op {
                     response_schema: schema
                         .clone()
                         .map_or(mapping::Field::Missing, mapping::Field::Value),
-                    json_schema: None,
+                    json_schema: mapping::Field::Missing,
                 };
                 mapping::map_output(Some(&format))
                     .and_then(|result| serde_json::to_value(result).map_err(SchemaError::Encode))

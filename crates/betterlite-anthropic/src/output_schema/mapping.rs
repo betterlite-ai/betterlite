@@ -64,7 +64,9 @@ fn schema_field(nested: &Json) -> Result<&Json, SchemaError> {
         Json::Object(fields) => fields
             .get("schema")
             .ok_or(SchemaError::Invalid("json_schema")),
-        _ => Err(SchemaError::Invalid("json_schema")),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(SchemaError::Invalid("json_schema"))
+        }
     }
 }
 
