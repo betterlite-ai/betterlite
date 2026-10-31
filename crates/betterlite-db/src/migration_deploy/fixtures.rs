@@ -95,11 +95,11 @@ async fn acquire_test_file() -> PathBuf {
                 return path;
             }
             Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                if let Ok(owner) = fs::read_to_string(&path).await {
-                    let process_path = PathBuf::from(format!("/proc/{}", owner.trim()));
-                    if !fs::try_exists(process_path).await.unwrap_or(true) {
-                        drop(fs::remove_file(&path).await);
-                    }
+                let owner = fs::read_to_string(&path).await.unwrap_or_default();
+                let process_path = PathBuf::from(format!("/proc/{}", owner.trim()));
+                let process_exists = fs::try_exists(process_path).await.unwrap_or(true);
+                if !owner.is_empty() && !process_exists {
+                    drop(fs::remove_file(&path).await);
                 }
                 sleep(Duration::from_millis(10)).await;
             }
