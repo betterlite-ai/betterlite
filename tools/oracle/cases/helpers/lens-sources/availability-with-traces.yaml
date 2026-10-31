@@ -1,0 +1,10 @@
+kind: helper
+name: availability-with-traces
+call:
+  b4502:
+    availability:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      rows:
+        - {traces: true, requests: false}
+env: {}
+compare: {ignore: []}
