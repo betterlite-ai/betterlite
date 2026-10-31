@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-output-schema-seed
+call: {anthropic_output_schema: {function: filter, schema: {type: object, minProperties: 1, properties: {name: {type: string}}}}}
+env: {}
+compare: {ignore: []}
