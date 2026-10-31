@@ -41,7 +41,7 @@ pub struct Response {
     #[serde(default)]
     pub content: Blocks,
     #[serde(default)]
-    pub choices: Option<Vec<Choice>>,
+    pub choices: Vec<Choice>,
     #[serde(default)]
     pub output: Blocks,
 }
