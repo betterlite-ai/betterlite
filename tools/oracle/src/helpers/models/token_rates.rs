@@ -49,20 +49,41 @@ pub(crate) enum Input {
     Deployment { model_info: Option<ModelInfo> },
 }
 
-impl From<TokenRateError> for Box<crate::helpers::HelperError> {
+enum RunError {
+    Token(TokenRateError),
+    Serialize(serde_json::Error),
+}
+
+impl From<TokenRateError> for RunError {
     fn from(error: TokenRateError) -> Self {
+        Self::Token(error)
+    }
+}
+
+impl From<serde_json::Error> for RunError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Serialize(error)
+    }
+}
+
+impl From<RunError> for Box<crate::helpers::HelperError> {
+    fn from(error: RunError) -> Self {
+        let (class, message) = match error {
+            RunError::Token(source) => ("TokenRateError", source.to_string()),
+            RunError::Serialize(source) => ("Serialize", source.to_string()),
+        };
         Self::new(crate::helpers::HelperError {
-            class: "TokenRateError".to_owned(),
+            class: class.to_owned(),
             status: None,
             error_type: Some(None),
             param: Some(None),
             code: Some(None),
-            message: error.to_string(),
+            message,
         })
     }
 }
 
-fn run_base(fields: &BaseInput) -> crate::helpers::HelperResult {
+fn run_base(fields: &BaseInput) -> Result<serde_json::Value, RunError> {
     let database = TimeZoneDatabase::from_env();
     let pricing = ModelPricing {
         model: &fields.model_info,
@@ -93,57 +114,30 @@ fn run_batch(
     model_info: &ModelInfo,
     usage: Usage,
     provider: Option<&str>,
-) -> crate::helpers::HelperResult {
+) -> Result<serde_json::Value, RunError> {
     let rates = token_rates::batch::get_batch_cost_rates(model_info, usage, provider)?;
-    serde_json::to_value(rates).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
-            class: "Serialize".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        })
-    })
+    Ok(serde_json::to_value(rates)?)
 }
 
 fn run_component(
     model_info: &ModelInfo,
     cost_key: &str,
     usage: Option<Decimal>,
-) -> crate::helpers::HelperResult {
+) -> Result<serde_json::Value, RunError> {
     let component = token_rates::component::calculate_cost_component(model_info, cost_key, usage)?;
-    serde_json::to_value(component.normalize().to_string()).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
-            class: "Serialize".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        })
-    })
+    Ok(serde_json::to_value(component.normalize().to_string())?)
 }
 
-fn run_deployment(model_info: Option<&ModelInfo>) -> crate::helpers::HelperResult {
+fn run_deployment(model_info: Option<&ModelInfo>) -> Result<serde_json::Value, RunError> {
     let pricing = token_rates::deployment::deployment_pricing(model_info)?;
-    serde_json::to_value(pricing).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
-            class: "Serialize".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        })
-    })
+    Ok(serde_json::to_value(pricing)?)
 }
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input {
+        let result = match input {
             Input::Base(fields) => run_base(fields),
             Input::Batch {
                 model_info,
@@ -156,6 +150,7 @@ impl crate::helpers::Helper for Op {
                 usage,
             } => run_component(model_info, cost_key, *usage),
             Input::Deployment { model_info } => run_deployment(model_info.as_ref()),
-        }
+        };
+        Ok(result?)
     }
 }

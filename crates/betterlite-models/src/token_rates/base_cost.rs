@@ -4,7 +4,7 @@ use super::rates::{cost_per_unit, service_tier_cost_key};
 use super::reasoning::resolve_billed_reasoning_rate;
 use super::threshold::{apply_threshold_overrides, crossed_input_threshold};
 use super::{EffectiveRates, ModelInfo, ModelPricing, RequestContext, TokenRateError, Usage};
-use crate::off_peak::{self, BaseCosts, ResolvedBaseCosts};
+use crate::off_peak::{self, BaseCosts};
 use crate::tiered_pricing::{self, Tier};
 
 pub fn get_token_base_cost(
@@ -36,7 +36,7 @@ fn tiered_rates(
     };
     let (cache_creation, above_1hr, cache_read) = tiered_cache_rates(tier)?;
     // A tier's own above-1hr rate is already resolved, so it stands even while an off-peak window is open.
-    resolve_and_finish(
+    finish_rates(
         pricing,
         context,
         BaseCosts {
@@ -48,21 +48,6 @@ fn tiered_rates(
         },
         tiered_reasoning_rate(tier)?,
     )
-}
-
-fn resolve_and_finish(
-    pricing: &ModelPricing<'_>,
-    context: &RequestContext<'_>,
-    costs: BaseCosts,
-    reasoning: Option<Decimal>,
-) -> Result<EffectiveRates, TokenRateError> {
-    let resolved = off_peak::apply_off_peak_to_base_costs(
-        pricing.off_peak_pricing,
-        context.moment,
-        costs,
-        context.database,
-    )?;
-    finish_rates(pricing, context, resolved, reasoning)
 }
 
 // The one-hour fallback reads truthiness: an explicit zero in the tier still yields cache_creation.
@@ -90,9 +75,15 @@ fn tiered_cache_rates(tier: &Tier) -> Result<(Decimal, Decimal, Decimal), TokenR
 fn finish_rates(
     pricing: &ModelPricing<'_>,
     context: &RequestContext<'_>,
-    resolved: ResolvedBaseCosts,
+    costs: BaseCosts,
     tier_reasoning: Option<Decimal>,
 ) -> Result<EffectiveRates, TokenRateError> {
+    let resolved = off_peak::apply_off_peak_to_base_costs(
+        pricing.off_peak_pricing,
+        context.moment,
+        costs,
+        context.database,
+    )?;
     let reasoning = resolve_billed_reasoning_rate(
         pricing.model,
         tier_reasoning,
@@ -143,7 +134,7 @@ fn standard_rates(
     };
 
     let costs = resolve_standard_cost(pricing, context, &overridden)?;
-    resolve_and_finish(pricing, context, costs, None)
+    finish_rates(pricing, context, costs, None)
 }
 
 fn initial_base_rates(
