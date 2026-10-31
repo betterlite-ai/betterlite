@@ -59,7 +59,7 @@ fn run_events(reader: &mut Reader<&[u8]>, collector: &mut Collector) -> Result<(
             Event::Text(text) => push_unescaped(text.as_ref(), collector)?,
             Event::CData(text) => collector.push_text(text.as_ref())?,
             Event::GeneralRef(reference) => {
-                push_unescaped(&format!("&{};", reference.as_ref()), collector)?
+                push_unescaped(&format!("&{};", reference.as_ref()), collector)?;
             }
             Event::Eof => return Ok(()),
             Event::Decl(_) | Event::PI(_) | Event::DocType(_) | Event::Comment(_) => {}
