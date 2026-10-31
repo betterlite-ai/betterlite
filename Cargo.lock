@@ -949,13 +949,19 @@ name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.23.1",
  "betterlite-config",
  "dbus-secret-service-keyring-store",
+ "httparse",
  "keyring-core",
  "rstest",
  "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
  "subtle",
  "thiserror",
+ "url",
  "windows-native-keyring-store",
 ]
 

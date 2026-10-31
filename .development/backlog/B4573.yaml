@@ -1,14 +1,14 @@
 id: B4573
 milestone: M8 platform
 title: CLI PKCE discovery, loopback callback and token exchange
-status: todo
+status: done
 depends_on: []
 file: tasks/B4573-cli-pkce-protocol.yaml
 covers:
   - "litellm/proxy/client/cli/commands/pkce_login.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 403
