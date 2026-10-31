@@ -12,7 +12,14 @@ pub(super) fn base_config() -> Settings {
 }
 
 pub(super) fn airline_settings() -> AirlineSettings {
-    AirlineSettings::from(base_config())
+    AirlineSettings {
+        base: base_config(),
+        other_meaning_signals: Vec::new(),
+        competitor_signals: Vec::new(),
+        other_meaning_anchors: Vec::new(),
+        explicit_competitor_marker: None,
+        explicit_other_meaning_marker: None,
+    }
 }
 
 pub(super) fn airline_checker() -> AirlineCompetitorIntentChecker {
