@@ -2,6 +2,7 @@
 mod tests;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 
@@ -62,14 +63,5 @@ where
     let JsonValue::String(text) = value else {
         return Ok(value);
     };
-    let Some(name) = text.strip_prefix("os.environ/") else {
-        return Ok(JsonValue::String(text));
-    };
-    lookup
-        .lookup(name)
-        .map(JsonValue::String)
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: name.to_owned(),
-            path: "litellm_settings.set_verbose".to_owned(),
-        })
+    resolve_string(text, "litellm_settings.set_verbose", lookup).map(JsonValue::String)
 }
