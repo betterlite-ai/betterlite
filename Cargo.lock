@@ -990,6 +990,7 @@ dependencies = [
  "tokio-postgres",
  "unicode-general-category",
  "unicode-normalization",
+ "uuid",
 ]
 
 [[package]]
