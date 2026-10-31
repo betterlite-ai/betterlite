@@ -18,12 +18,7 @@ const WARNING_BOUNDARY_ENTRIES: usize = MAX_CATALOG_WARNINGS.div_euclid(2);
 enum Outcome {
     Count(usize),
     Price,
-    Duplicate,
-    TooLarge,
-    TooDeep,
-    TooMany,
-    Invalid,
-    Unknown,
+    Failure(Failure),
     Warnings,
     Alias(&'static str),
     Generalizations,
@@ -36,6 +31,16 @@ enum Outcome {
     WarningBoundary(usize, usize),
     WarningOverflow,
     AliasOverflow,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Failure {
+    Duplicate,
+    TooLarge,
+    TooDeep,
+    TooMany,
+    Invalid,
+    Unknown,
 }
 
 #[rstest]
@@ -52,26 +57,26 @@ enum Outcome {
 #[case::generalizations_malformed_rule(br#"{"fallback_generalizations":{"rules":[{"name":"bad","pattern":5,"model_info":{}}]}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationWarnings)]
 #[case::generalizations_unknown_model_info_warn(br#"{"fallback_generalizations":{"rules":[{"name":"base","pattern":"^x","model_info":{"new_capability":true}}]}}"#.to_vec(), UnknownFields::Warn, Outcome::GeneralizationWarnings)]
 #[case::generalizations_unknown_model_info_reject(br#"{"fallback_generalizations":{"rules":[{"name":"base","pattern":"^x","model_info":{"new_capability":true}}]}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationUnknown)]
-#[case::unknown_bundled(br#"{"model":{"new_field":true}}"#.to_vec(), UnknownFields::Reject, Outcome::Unknown)]
+#[case::unknown_bundled(br#"{"model":{"new_field":true}}"#.to_vec(), UnknownFields::Reject, Outcome::Failure(Failure::Unknown))]
 #[case::unknown_remote(br#"{"model":{"new_field":true,"metadata":{"new_note":"x"}}}"#.to_vec(), UnknownFields::Warn, Outcome::Warnings)]
-#[case::duplicate_models(br#"{"model":{},"model":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Duplicate)]
-#[case::duplicate_fields(br#"{"model":{"mode":"chat","mode":"embedding"}}"#.to_vec(), UnknownFields::Warn, Outcome::Duplicate)]
-#[case::duplicate_unknown(br#"{"model":{"unknown":{"key":1,"key":2}}}"#.to_vec(), UnknownFields::Warn, Outcome::Duplicate)]
-#[case::duplicate_escaped(br#"{"model":{},"\u006dodel":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Duplicate)]
+#[case::duplicate_models(br#"{"model":{},"model":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Duplicate))]
+#[case::duplicate_fields(br#"{"model":{"mode":"chat","mode":"embedding"}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Duplicate))]
+#[case::duplicate_unknown(br#"{"model":{"unknown":{"key":1,"key":2}}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Duplicate))]
+#[case::duplicate_escaped(br#"{"model":{},"\u006dodel":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Duplicate))]
 #[case::byte_boundary(padded(MAX_CATALOG_BYTES), UnknownFields::Warn, Outcome::Count(0))]
-#[case::byte_limit(padded(MAX_CATALOG_BYTES + 1), UnknownFields::Warn, Outcome::TooLarge)]
+#[case::byte_limit(padded(MAX_CATALOG_BYTES + 1), UnknownFields::Warn, Outcome::Failure(Failure::TooLarge))]
 #[case::entry_boundary(
     entries(MAX_CATALOG_ENTRIES),
     UnknownFields::Warn,
     Outcome::Count(MAX_CATALOG_ENTRIES)
 )]
-#[case::entry_limit(entries(MAX_CATALOG_ENTRIES + 1), UnknownFields::Warn, Outcome::TooMany)]
+#[case::entry_limit(entries(MAX_CATALOG_ENTRIES + 1), UnknownFields::Warn, Outcome::Failure(Failure::TooMany))]
 #[case::depth_boundary(nested(MAX_CATALOG_DEPTH - 2), UnknownFields::Warn, Outcome::Count(1))]
-#[case::depth_limit(nested(MAX_CATALOG_DEPTH - 1), UnknownFields::Warn, Outcome::TooDeep)]
-#[case::invalid_key(br#"{"\uQQQQ":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Invalid)]
-#[case::unterminated(br#"{"model"#.to_vec(), UnknownFields::Warn, Outcome::Invalid)]
+#[case::depth_limit(nested(MAX_CATALOG_DEPTH - 1), UnknownFields::Warn, Outcome::Failure(Failure::TooDeep))]
+#[case::invalid_key(br#"{"\uQQQQ":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
+#[case::unterminated(br#"{"model"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
 #[case::large_key_array(large_key_array(), UnknownFields::Warn, Outcome::Count(1))]
-#[case::trailing(b"{}x".to_vec(), UnknownFields::Warn, Outcome::Invalid)]
+#[case::trailing(b"{}x".to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
 #[case::price_unknown_warn(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceWarn("model.off_peak_pricing.new_field"))]
 #[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
 #[case::provider_specific_known(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":{}}}}"#.to_vec(), UnknownFields::Reject, Outcome::Count(1))]
@@ -194,45 +199,35 @@ fn model_catalog_tests_behavior(
                 }
             ));
         }
-        failure @ (Outcome::Duplicate
-        | Outcome::TooLarge
-        | Outcome::TooDeep
-        | Outcome::TooMany
-        | Outcome::Invalid
-        | Outcome::Unknown) => check_error(&result.unwrap_err(), failure),
+        Outcome::Failure(failure) => check_error(&result.unwrap_err(), failure),
     }
 }
 
-#[expect(
-    clippy::wildcard_enum_match_arm,
-    reason = "Only called with the failure Outcome variants listed at its call site; success variants assert at their own case instead."
-)]
-fn check_error(error: &CatalogError, outcome: Outcome) {
-    match outcome {
-        Outcome::Duplicate => assert!(error.to_string().contains("duplicate")),
-        Outcome::TooLarge => assert!(matches!(
+fn check_error(error: &CatalogError, failure: Failure) {
+    match failure {
+        Failure::Duplicate => assert!(error.to_string().contains("duplicate")),
+        Failure::TooLarge => assert!(matches!(
             error,
             CatalogError::TooLarge {
                 limit: MAX_CATALOG_BYTES,
                 ..
             }
         )),
-        Outcome::TooDeep => assert!(matches!(
+        Failure::TooDeep => assert!(matches!(
             error,
             CatalogError::TooDeep {
                 limit: MAX_CATALOG_DEPTH
             }
         )),
-        Outcome::TooMany => assert!(matches!(
+        Failure::TooMany => assert!(matches!(
             error,
             CatalogError::TooManyEntries {
                 limit: MAX_CATALOG_ENTRIES,
                 ..
             }
         )),
-        Outcome::Unknown => assert!(error.to_string().contains("unknown field")),
-        Outcome::Invalid => assert!(matches!(error, CatalogError::Json(_))),
-        _ => panic!("expected success"),
+        Failure::Unknown => assert!(error.to_string().contains("unknown field")),
+        Failure::Invalid => assert!(matches!(error, CatalogError::Json(_))),
     }
 }
 

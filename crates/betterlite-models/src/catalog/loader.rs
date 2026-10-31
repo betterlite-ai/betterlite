@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
@@ -12,63 +13,73 @@ use crate::catalog_generalizations::{CatalogGeneralizations, decode_generalizati
 use crate::entry::{ModelFieldError, ModelFields};
 use crate::price_fields::PriceFields;
 
+struct Accumulators {
+    entries: BTreeMap<String, CatalogEntry>,
+    lookup: BTreeMap<String, Arc<str>>,
+    warnings: Vec<String>,
+    alias_claims: Vec<(String, Arc<str>)>,
+}
+
 pub(super) fn build_catalog(
     raw: IndexMap<String, Box<RawValue>>,
     unknown: UnknownFields,
 ) -> Result<ModelCatalog, CatalogError> {
-    let mut entries = BTreeMap::new();
-    let mut lookup: BTreeMap<String, Arc<str>> = BTreeMap::new();
-    let mut warnings = Vec::new();
+    let mut accumulators = Accumulators {
+        entries: BTreeMap::new(),
+        lookup: BTreeMap::new(),
+        warnings: Vec::new(),
+        alias_claims: Vec::new(),
+    };
     let mut generalizations = CatalogGeneralizations::default();
-    let mut alias_claims = Vec::new();
     for (name, value) in raw {
         if name == SAMPLE_SPEC {
             continue;
         }
         if name == FALLBACK_GENERALIZATIONS {
-            generalizations = install_generalizations(value.as_ref(), unknown, &mut warnings)?;
+            generalizations =
+                install_generalizations(value.as_ref(), unknown, &mut accumulators.warnings)?;
             continue;
         }
-        add_entry(
-            &name,
-            value.as_ref(),
-            unknown,
-            &mut entries,
-            &mut lookup,
-            &mut warnings,
-            &mut alias_claims,
+        add_entry(&name, value.as_ref(), unknown, &mut accumulators)?;
+    }
+    for (alias, canonical) in mem::take(&mut accumulators.alias_claims) {
+        insert_lookup(
+            &mut accumulators.lookup,
+            alias,
+            canonical,
+            &mut accumulators.warnings,
         )?;
     }
-    for (alias, canonical) in alias_claims {
-        insert_lookup(&mut lookup, alias, canonical, &mut warnings)?;
-    }
     Ok(ModelCatalog {
-        entries,
-        lookup,
+        entries: accumulators.entries,
+        lookup: accumulators.lookup,
         generalizations,
-        warnings,
+        warnings: accumulators.warnings,
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Threads the catalog accumulators a single entry updates; splitting them loses the single call site."
-)]
 fn add_entry(
     name: &str,
     value: &RawValue,
     unknown: UnknownFields,
-    entries: &mut BTreeMap<String, CatalogEntry>,
-    lookup: &mut BTreeMap<String, Arc<str>>,
-    warnings: &mut Vec<String>,
-    alias_claims: &mut Vec<(String, Arc<str>)>,
+    accumulators: &mut Accumulators,
 ) -> Result<(), CatalogError> {
     let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
     let typed_value = without_aliases(&fields_map)?;
-    let fields = parse_fields(name, typed_value.as_ref(), unknown, warnings)?;
-    let prices = parse_prices(name, typed_value.as_ref(), unknown, warnings)?;
+    let fields = parse_fields(
+        name,
+        typed_value.as_ref(),
+        unknown,
+        &mut accumulators.warnings,
+    )?;
+    let prices = parse_prices(
+        name,
+        typed_value.as_ref(),
+        unknown,
+        &mut accumulators.warnings,
+    )?;
     let canonical: Arc<str> = Arc::from(name);
-    entries.insert(
+    accumulators.entries.insert(
         name.to_owned(),
         CatalogEntry {
             name: name.to_owned(),
@@ -76,8 +87,19 @@ fn add_entry(
             prices,
         },
     );
-    insert_lookup(lookup, name.to_owned(), Arc::clone(&canonical), warnings)?;
-    add_alias_claims(name, &canonical, &fields_map, warnings, alias_claims)
+    insert_lookup(
+        &mut accumulators.lookup,
+        name.to_owned(),
+        Arc::clone(&canonical),
+        &mut accumulators.warnings,
+    )?;
+    add_alias_claims(
+        name,
+        &canonical,
+        &fields_map,
+        &mut accumulators.warnings,
+        &mut accumulators.alias_claims,
+    )
 }
 
 fn add_alias_claims(
