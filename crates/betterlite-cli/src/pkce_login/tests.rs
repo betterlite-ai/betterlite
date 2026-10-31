@@ -22,8 +22,8 @@ use super::{
     loopback::{LoopbackConnection, LoopbackListener},
     models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
     oauth::{
-        RedeemCodeRequest, RefreshCredentialRequest, pkce_pair, redeem_code, refresh_credential,
-        register_client,
+        RedeemCodeRequest, RefreshCredentialRequest, authorize_url, pkce_pair, redeem_code,
+        refresh_credential, register_client,
     },
     request::{RequestRead, parse_request},
     revoke::{RevocationUnavailableOrFailure, revoke_credential},
@@ -257,6 +257,25 @@ fn pkce_pair_has_64_byte_verifier_and_s256_challenge() {
     let (verifier, challenge) = pkce_pair(&mut FixedEntropy).expect("pair");
     assert_eq!(verifier.len(), 86);
     assert_eq!(challenge, "d-tPkxk37XPMxus_-J6yZXGjoN4TOADR8GPQl-whssA");
+}
+
+#[test]
+fn authorize_url_carries_s256_and_resource() {
+    let url = authorize_url(
+        &contract(),
+        "client-1",
+        "http://127.0.0.1:1/callback",
+        "state-1",
+        "challenge-1",
+    );
+    assert!(url.starts_with("https://example.test/oauth/authorize?"));
+    assert!(url.contains("response_type=code"));
+    assert!(url.contains("client_id=client-1"));
+    assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2Fcallback"));
+    assert!(url.contains("state=state-1"));
+    assert!(url.contains("code_challenge=challenge-1"));
+    assert!(url.contains("code_challenge_method=S256"));
+    assert!(url.contains("resource=https%3A%2F%2Fexample.test"));
 }
 
 #[test]
