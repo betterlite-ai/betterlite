@@ -19,10 +19,15 @@ pub fn decode_mcp_stored_contract(bytes: &[u8]) -> Result<JsonValue, McpStoredDe
     }
     check_depth(bytes)?;
     let mut parser = Parser { bytes, position: 0 };
-    let value = parser.parse_value()?;
+    let Ok(value) = parser.parse_value() else {
+        return match serde_json::from_slice::<JsonValue>(bytes) {
+            Ok(_) => Err(McpStoredDecodeError::Json(invalid_json())),
+            Err(error) => Err(McpStoredDecodeError::Json(error)),
+        };
+    };
     parser.skip_whitespace();
     if parser.position != bytes.len() {
-        return Err(McpStoredDecodeError::Json(invalid_json()));
+        return serde_json::from_slice(bytes).map_err(McpStoredDecodeError::Json);
     }
     Ok(value)
 }
