@@ -99,14 +99,10 @@ fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
     let Some(name) = fields.name.as_deref().filter(|name| !name.is_empty()) else {
         return describe_extra_value(&GuardrailExtraValue::Object(fields.to_fields()));
     };
-    let prefixed_name = fields
-        .rule
-        .as_ref()
-        .filter(|number| number.is_truthy())
-        .map_or_else(
-            || name.to_owned(),
-            |number| format!("#{} {name}", rule_number_text(number)),
-        );
+    let prefixed_name = fields.rule.as_ref().map_or_else(
+        || name.to_owned(),
+        |number| format!("#{} {name}", rule_number_text(number)),
+    );
     fields
         .description
         .as_deref()

@@ -370,7 +370,7 @@ fn grayswan_verdict_message_prefixes_the_rule_number_when_present() {
     );
 }
 #[test]
-fn grayswan_verdict_message_omits_the_rule_number_when_it_is_zero() {
+fn grayswan_verdict_message_prefixes_an_explicit_zero_rule_number() {
     let mut scan_response = response(0.9);
     scan_response.violated_rule_descriptions = vec![structured_rule(
         Some(GraySwanRuleNumber::Integer(0)),
@@ -384,12 +384,12 @@ fn grayswan_verdict_message_omits_the_rule_number_when_it_is_zero() {
         violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
-             It violated rule(s): Illegal Activities: content promotes illegal activities."
+             It violated rule(s): #0 Illegal Activities: content promotes illegal activities."
         )
     );
 }
 #[test]
-fn grayswan_verdict_message_omits_the_rule_number_when_it_is_an_empty_string() {
+fn grayswan_verdict_message_prefixes_an_explicit_empty_string_rule_number() {
     let mut scan_response = response(0.9);
     scan_response.violated_rule_descriptions = vec![structured_rule(
         Some(GraySwanRuleNumber::Text(String::new())),
@@ -403,7 +403,7 @@ fn grayswan_verdict_message_omits_the_rule_number_when_it_is_an_empty_string() {
         violation_message(&result.verdict),
         Some(
             "Gray Swan Cygnal flagged the model response with a violation score of 0.90. \
-             It violated rule(s): Illegal Activities: content promotes illegal activities."
+             It violated rule(s): # Illegal Activities: content promotes illegal activities."
         )
     );
 }

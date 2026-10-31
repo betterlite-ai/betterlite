@@ -169,13 +169,6 @@ pub enum GraySwanRuleNumber {
 }
 impl GraySwanRuleNumber {
     #[must_use]
-    pub const fn is_truthy(&self) -> bool {
-        match self {
-            Self::Integer(value) => *value != 0,
-            Self::Text(value) => !value.is_empty(),
-        }
-    }
-    #[must_use]
     pub fn to_extra_value(&self) -> GuardrailExtraValue {
         match self {
             Self::Integer(value) => GuardrailExtraValue::SignedInteger(*value),
