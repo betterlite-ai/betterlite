@@ -1,0 +1,5 @@
+kind: helper
+name: bundled-catalog-read-failure
+call: {model_catalog: {operation: bundled_catalog_read_failure}}
+env: {}
+compare: {ignore: []}

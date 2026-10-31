@@ -8,6 +8,7 @@ pub struct ProviderSpecificPricing {
     pub us: Option<Decimal>,
     #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
     pub fast: Option<Decimal>,
+    pub bedrock_invocation_schema: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
