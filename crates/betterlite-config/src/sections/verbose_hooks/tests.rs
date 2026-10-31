@@ -21,10 +21,14 @@ fn verbose_hooks_config_cases(
     #[case] lookup: BTreeMap<String, String>,
     #[case] expected: JsonValue,
 ) {
-    let config = ConfigLoader { lookup }
-        .load(source)
-        .expect("config should load");
+    let loader = ConfigLoader { lookup };
+    let config = loader.load(source).expect("config should load");
     assert_eq!(config.sections.verbose_hooks.set_verbose, expected);
+    let default_config = loader.load("{}").expect("default config should load");
+    assert_eq!(
+        default_config.sections.verbose_hooks.set_verbose,
+        json!(false)
+    );
 }
 
 #[test]
