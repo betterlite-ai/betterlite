@@ -70,12 +70,7 @@ where
         resolved_overrides.clone(),
         env,
         startup_nodes,
-        sentinel_nodes.map(|nodes| {
-            nodes
-                .into_iter()
-                .map(|node| (node.host, node.port))
-                .collect()
-        }),
+        sentinel_nodes,
     );
 
     apply_iam_precedence(&resolved_overrides, &mut settings, env)?;
@@ -125,7 +120,13 @@ where
 {
     let url = resolve_url(&overrides, env);
     let secrets = resolve_secret_fields(&overrides, env);
-    let password = resolve_password(&overrides, env);
+    let password = overrides.password.clone().flatten().or_else(|| {
+        if overrides.password.is_some() {
+            None
+        } else {
+            env.lookup("REDIS_PASSWORD").map(SecretString::from)
+        }
+    });
     RedisConnectionSettings {
         host: overrides.host.or_else(|| env.lookup("REDIS_HOST")),
         port: resolve_scalar(overrides.port, env, "REDIS_PORT"),
@@ -161,20 +162,6 @@ where
         ssl_password: secrets.ssl_password,
         passthrough: resolve_passthrough(overrides.passthrough, env),
     }
-}
-
-fn resolve_password<E>(overrides: &RedisOverrides, env: &E) -> Option<SecretString>
-where
-    E: EnvironmentLookup,
-{
-    let explicit = overrides.password.clone().flatten();
-    explicit.or_else(|| {
-        if overrides.password.is_some() {
-            None
-        } else {
-            env.lookup("REDIS_PASSWORD").map(SecretString::from)
-        }
-    })
 }
 
 struct SecretFields {

@@ -83,32 +83,49 @@ where
             PassthroughValue::Text(resolved.clone()),
         );
     }
-    settings.credential_provider = true;
-    settings.credential_provider_settings =
-        service_account.map(|service_account| CredentialProviderSettings::Gcp {
-            service_account,
-            ssl_ca_certs,
-        });
+    let provider = service_account.map(|service_account| CredentialProviderSettings::Gcp {
+        service_account,
+        ssl_ca_certs,
+    });
+    set_provider(settings, provider);
 }
 
 fn apply_azure<E>(overrides: &RedisOverrides, settings: &mut RedisConnectionSettings, env: &E)
 where
     E: EnvironmentLookup,
 {
+    let provider = azure_provider(overrides, env);
+    set_provider(settings, provider);
+}
+
+fn azure_provider<E>(overrides: &RedisOverrides, env: &E) -> Option<CredentialProviderSettings>
+where
+    E: EnvironmentLookup,
+{
+    let client_id = resolve_string(overrides.azure_client_id.as_deref(), env, "AZURE_CLIENT_ID");
+    let tenant_id = resolve_string(overrides.azure_tenant_id.as_deref(), env, "AZURE_TENANT_ID");
+    let client_secret = resolve_string(
+        overrides
+            .azure_client_secret
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        env,
+        "AZURE_CLIENT_SECRET",
+    )
+    .map(SecretString::from);
+    Some(CredentialProviderSettings::Azure {
+        client_id,
+        tenant_id,
+        client_secret,
+    })
+}
+
+fn set_provider(
+    settings: &mut RedisConnectionSettings,
+    provider: Option<CredentialProviderSettings>,
+) {
     settings.credential_provider = true;
-    settings.credential_provider_settings = Some(CredentialProviderSettings::Azure {
-        client_id: resolve_string(overrides.azure_client_id.as_deref(), env, "AZURE_CLIENT_ID"),
-        tenant_id: resolve_string(overrides.azure_tenant_id.as_deref(), env, "AZURE_TENANT_ID"),
-        client_secret: resolve_string(
-            overrides
-                .azure_client_secret
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-            env,
-            "AZURE_CLIENT_SECRET",
-        )
-        .map(SecretString::from),
-    });
+    settings.credential_provider_settings = provider;
 }
 
 fn apply_aws<E>(

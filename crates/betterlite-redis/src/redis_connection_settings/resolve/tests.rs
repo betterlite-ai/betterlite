@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_redis_kwargs;
 use crate::redis_connection_settings::model::nodes::{
-    ClusterNodeConfig, NodesInput, SentinelNodeInput,
+    ClusterNodeInput, NodesInput, SentinelNodeInput,
 };
 use crate::redis_connection_settings::model::scalars::{BoolOrText, IntOrText, PassthroughValue};
 use crate::redis_connection_settings::model::settings::{
@@ -321,9 +321,9 @@ fn redis_ssl_reads_false_from_the_environment() {
 #[test]
 fn redis_precedence_ignores_the_environment_url_once_startup_nodes_are_configured() {
     let overrides = RedisOverrides {
-        startup_nodes: Some(NodesInput::Nodes(vec![ClusterNodeConfig {
+        startup_nodes: Some(NodesInput::Nodes(vec![ClusterNodeInput {
             host: "a".to_owned(),
-            port: 7000,
+            port: IntOrText::Int(7000),
         }])),
         ..blank_overrides()
     };
