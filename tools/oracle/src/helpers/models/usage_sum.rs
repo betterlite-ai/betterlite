@@ -120,36 +120,38 @@ where
     Ok(result)
 }
 
+fn number_from_json(name: &str, raw: &Value) -> Result<UsageNumber, Box<HelperError>> {
+    if let Some(integer) = raw.as_i64() {
+        Ok(UsageNumber::Integer(integer))
+    } else if let Some(float) = raw.as_f64() {
+        let decimal = Decimal::try_from(float).map_err(|error| {
+            Box::new(HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
+        Ok(UsageNumber::Decimal(decimal))
+    } else if let Some(boolean) = raw.as_bool() {
+        Ok(UsageNumber::Boolean(boolean))
+    } else {
+        Err(Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("extra {name} is not numeric"),
+        }))
+    }
+}
+
 impl UsageInput {
     fn build(&self) -> Result<Usage, Box<HelperError>> {
-        let numeric_extras = convert_entries(&self.numeric_extras, |name, raw| {
-            if let Some(integer) = raw.as_i64() {
-                Ok(UsageNumber::Integer(integer))
-            } else if let Some(float) = raw.as_f64() {
-                let decimal = Decimal::try_from(float).map_err(|error| {
-                    Box::new(HelperError {
-                        class: "InvalidInput".to_owned(),
-                        status: None,
-                        error_type: None,
-                        param: None,
-                        code: None,
-                        message: error.to_string(),
-                    })
-                })?;
-                Ok(UsageNumber::Decimal(decimal))
-            } else if let Some(boolean) = raw.as_bool() {
-                Ok(UsageNumber::Boolean(boolean))
-            } else {
-                Err(Box::new(HelperError {
-                    class: "InvalidInput".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: format!("extra {name} is not numeric"),
-                }))
-            }
-        })?;
+        let numeric_extras = convert_entries(&self.numeric_extras, number_from_json)?;
         Ok(Usage {
             prompt_tokens: self.prompt_tokens.unwrap_or(0),
             completion_tokens: self.completion_tokens.unwrap_or(0),

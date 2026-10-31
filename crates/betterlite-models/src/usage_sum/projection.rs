@@ -62,22 +62,24 @@ impl From<&CostUsage> for Usage {
     }
 }
 
+fn prompt_details_to_cost(
+    source: Option<&PromptTokensDetails>,
+) -> (Option<PromptDetails>, Option<i64>) {
+    let prompt_details = source.map(|details| PromptDetails {
+        text_tokens: details.text_tokens,
+        audio_tokens: details.audio_tokens,
+        image_tokens: details.image_tokens,
+        video_tokens: details.video_tokens,
+        web_search_requests: details.web_search_requests,
+    });
+    let cache_read_tokens = source.and_then(|details| details.cached_tokens);
+    (prompt_details, cache_read_tokens)
+}
+
 impl From<&Usage> for CostUsage {
     fn from(value: &Usage) -> Self {
-        let prompt_details = value
-            .prompt_tokens_details
-            .as_ref()
-            .map(|details| PromptDetails {
-                text_tokens: details.text_tokens,
-                audio_tokens: details.audio_tokens,
-                image_tokens: details.image_tokens,
-                video_tokens: details.video_tokens,
-                web_search_requests: details.web_search_requests,
-            });
-        let cache_read_tokens = value
-            .prompt_tokens_details
-            .as_ref()
-            .and_then(|details| details.cached_tokens);
+        let (prompt_details, cache_read_tokens) =
+            prompt_details_to_cost(value.prompt_tokens_details.as_ref());
         Self {
             prompt_tokens: value.prompt_tokens,
             completion_tokens: value.completion_tokens,
