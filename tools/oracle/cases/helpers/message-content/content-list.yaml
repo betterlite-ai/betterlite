@@ -1,0 +1,12 @@
+kind: helper
+name: content_list_text_and_search_results
+call:
+  message_content:
+    operation: convert_content_list_to_str
+    message:
+      role: user
+      content: [{type: text, text: hello}]
+      search_results: [{source: s, title: t, content: [{text: c}], citations: [x]}]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: message-content-content-list-seed
+call: {message_content: {operation: convert_content_list_to_str, message: {role: user, content: [{type: text, text: hello}]}}}
+env: {}
+compare: {ignore: []}

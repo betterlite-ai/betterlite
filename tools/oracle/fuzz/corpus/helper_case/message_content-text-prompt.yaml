@@ -1,0 +1,5 @@
+kind: helper
+name: message-content-text-prompt-seed
+call: {message_content: {operation: text_completion_prompt_to_messages, prompt: hello}}
+env: {}
+compare: {ignore: []}
