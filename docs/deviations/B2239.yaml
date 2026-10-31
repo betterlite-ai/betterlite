@@ -3,3 +3,6 @@ deviations:
   - what: Verbose logger and console payloads are redacted before emission; LiteLLM can print raw supplied payloads.
     why: The repository requires secrets and message bodies to stay out of diagnostic logs. Sink ordering and failure suppression remain preserved.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L544-L559
+  - what: The logger sink keeps the structured, key-redacted payload instead of reproducing LiteLLM's DiagnosticProcessingFilter, which stringifies every verbose_logger record and runs a second, pattern-based redaction pass over that string.
+    why: That filter is attached to verbose_logger itself (not to print_verbose) and runs on every debug/info/error call across LiteLLM; it is separate logging infrastructure outside the main.py/utils.py print_verbose functions this task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L886
