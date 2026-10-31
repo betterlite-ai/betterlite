@@ -75,7 +75,7 @@ checks:
   commands:
     - id: cache-behavior-tests
       why: the default/attribution behavior tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts -p betterlite-context --no-tests=fail -E 'test(/cache_defaults|cache_attribution|injection_seeding)/'
+      run: cargo nextest run --locked -p betterlite-prompts -p betterlite-context --no-tests=fail -E 'test(/cache_defaults|cache_attribution|injection_seeding/)'
     - id: cache-oracle-cases
       why: one of the oracle cases fails or does not exist
       run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/cache/

@@ -139,7 +139,7 @@ checks:
   commands:
     - id: chat-output-tests
       why: the adapter output tests fail, do not exist, or streaming iterator tests are missing
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_chat_output::)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_chat_output::/)'
     - id: chat-output-fuzz-corpus
       why: the output adapter fuzz target or its corpus is missing, or replaying the corpus fails
       run: test -f crates/betterlite-core/fuzz/fuzz_targets/genai_chat_output.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_genai_chat_output_corpus)'

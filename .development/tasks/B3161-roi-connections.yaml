@@ -73,7 +73,7 @@ checks:
   commands:
     - id: connections-unit
       why: unit tests for helper functions fail or do not exist
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::(gateway_key|gateway_http_client|completion_caller|test_estimator_access|spend_reader)::)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::(gateway_key|gateway_http_client|completion_caller|test_estimator_access|spend_reader)::/)'
     - id: repositories-read-admin
       why: read-admin auth tests for GET /roi-calculator/repositories fail or do not exist
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::repositories::auth::read_admin/)'

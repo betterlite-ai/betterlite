@@ -26,6 +26,15 @@ description: >-
   timeout (1-60 seconds, default 10.0, clamped with warning on out-of-range values), and integration_profile_id/version/tenant_id/type
   fields for tenant-aware scanning.
 
+  Main's Lasso config section (crates/betterlite-config/src/sections/lasso_classification.rs, Raw::convert)
+  returns ConfigError::Unsupported for every guardrails entry whose litellm_params.guardrail is not lasso,
+  so no config with a Cisco entry loads. Make it skip entries of other kinds, the way this task's section
+  skips entries that are not cisco_ai_defense, and replace lasso_config_rejects_other_guardrail_kinds in
+  lasso_classification/tests.rs with a test that a config with an aim entry loads with no Lasso guardrails.
+  LiteLLM rejects an unknown kind only when the guardrail registry builds its callbacks ("Unsupported
+  guardrail: {guardrail_type}"), and that belongs to the guardrail registry task B3682, not to one
+  provider's config section.
+
 scope:
   paths:
     - crates/betterlite-guardrails/Cargo.toml
@@ -34,6 +43,8 @@ scope:
     - tools/oracle/cases/guardrails/cisco-verdict/**
     - crates/betterlite-config/src/sections/cisco_verdict_contracts.rs
     - crates/betterlite-config/src/sections/cisco_verdict_contracts/**
+    - crates/betterlite-config/src/sections/lasso_classification.rs
+    - crates/betterlite-config/src/sections/lasso_classification/**
     - tools/oracle/helpers/b3758.py
     - tools/oracle/helpers/b3758/**
     - tools/oracle/src/helpers/guardrails/b3758.rs
@@ -63,6 +74,8 @@ references:
     why: get_config_model classmethod that returns CiscoAIDefenseGuardrailConfigModel for registration.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py
     why: CiscoAIDefenseGuardrailConfigModel with all typed fields (api_key, api_base, inspection_type, enabled_rules, on_flagged_action, fallback_on_error, timeout, integration settings).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L564-L589
+    why: _create_callbacks raises ValueError("Unsupported guardrail") for an unknown kind at registry start, not at config load.
 
 dod:
   - text: >-
@@ -172,6 +185,8 @@ pitfalls:
     CISCO_AI_DEFENSE_API_KEY must be marked as SecretString, never logged or shown in Debug output, and used only to construct the X-Cisco-AI-Defense-API-Key header value.
   - >-
     Timeout clamping must log a warning when values fall outside 1-60 seconds, then clamp to the valid range. Do not error or silently ignore misconfiguration.
+  - >-
+    Every provider section reads the same top-level guardrails list, so a section that errors on another kind's entry breaks every config holding that kind; the Lasso section must skip foreign entries without listing their kinds.
 review_level: security
 budget:
   max_changed_lines: 1500

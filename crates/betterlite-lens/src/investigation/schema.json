@@ -1,0 +1,77 @@
+{
+  "type": "object",
+  "required": ["action"],
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["read", "observations", "catalog", "feedback", "submit", "inconclusive"]
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "execution_id": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }],
+      "default": null
+    },
+    "cursor": {
+      "type": "string",
+      "default": ""
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "finding": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["title", "description", "check_id", "evidence"],
+          "additionalProperties": false,
+          "properties": {
+            "title": { "type": "string", "minLength": 3, "maxLength": 160 },
+            "description": { "type": "string", "minLength": 10, "maxLength": 4000 },
+            "check_id": { "type": "string" },
+            "kind": { "type": "string", "enum": ["issue", "pattern"], "default": "issue" },
+            "priority": {
+              "type": "string",
+              "enum": ["high", "medium", "low"],
+              "default": "medium"
+            },
+            "suggestion": { "type": "string", "maxLength": 2000, "default": "" },
+            "limitation": { "type": "string", "maxLength": 600, "default": "" },
+            "evidence": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "required": ["execution_id", "span_id", "quote"],
+                "additionalProperties": false,
+                "properties": {
+                  "execution_id": { "type": "string" },
+                  "span_id": { "type": "string" },
+                  "quote": { "type": "string", "minLength": 1, "maxLength": 1000 },
+                  "role": {
+                    "type": "string",
+                    "enum": ["support", "counterexample"],
+                    "default": "support"
+                  }
+                }
+              }
+            },
+            "existing_finding_id": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "default": null
+            }
+          }
+        },
+        { "type": "null" }
+      ],
+      "default": null
+    }
+  }
+}
