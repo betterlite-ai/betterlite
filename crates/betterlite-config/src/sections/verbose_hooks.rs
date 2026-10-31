@@ -55,10 +55,10 @@ const fn default_set_verbose() -> JsonValue {
     JsonValue::Bool(false)
 }
 
-fn resolve_setting<L: EnvironmentLookup>(
-    value: JsonValue,
-    lookup: &L,
-) -> Result<JsonValue, ConfigError> {
+fn resolve_setting<L>(value: JsonValue, lookup: &L) -> Result<JsonValue, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let JsonValue::String(text) = value else {
         return Ok(value);
     };
