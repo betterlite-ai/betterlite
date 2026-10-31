@@ -80,18 +80,42 @@ impl<L: LoopbackListener> LoopbackServer<L> {
     fn handle(&self, connection: &mut L::Connection) -> Option<CallbackOutcome> {
         let query = read_callback_request(connection)?;
         if query.path != CALLBACK_PATH {
-            drop(respond(connection, 404, "Not found."));
-            return None;
+            return respond_then(connection, 404, "Not found.", None);
         }
         if query.state.as_deref() != Some(self.expected_state.as_str()) {
-            drop(respond(
+            return respond_then(
                 connection,
                 400,
                 "This response does not belong to the pending sign-in; still waiting.",
-            ));
-            return None;
+                None,
+            );
         }
-        settle_callback(connection, &query)
+        if let Some(error) = query.error {
+            let outcome = CallbackOutcome::Denied(CallbackDenied {
+                error,
+                description: query.description,
+            });
+            return respond_then(
+                connection,
+                200,
+                "Sign-in was not approved. You can close this window.",
+                Some(outcome),
+            );
+        }
+        let Some(code) = query.code else {
+            return respond_then(
+                connection,
+                400,
+                "The sign-in response carried no authorization code; still waiting.",
+                None,
+            );
+        };
+        respond_then(
+            connection,
+            200,
+            "Signed in. You can close this window.",
+            Some(CallbackOutcome::Code(CallbackCode { code })),
+        )
     }
 }
 
@@ -106,16 +130,13 @@ where
         match parse_request(&buffer) {
             RequestRead::Complete(query) => return Some(query),
             RequestRead::TooLarge | RequestRead::Malformed => {
-                drop(respond(connection, 400, "Invalid callback."));
-                return None;
+                return respond_then(connection, 400, "Invalid callback.", None);
             }
             RequestRead::UnsupportedMethod => {
-                drop(respond(connection, 501, "Unsupported method."));
-                return None;
+                return respond_then(connection, 501, "Unsupported method.", None);
             }
             RequestRead::UnsupportedVersion => {
-                drop(respond(connection, 505, "Unsupported HTTP version."));
-                return None;
+                return respond_then(connection, 505, "Unsupported HTTP version.", None);
             }
             RequestRead::Incomplete => {}
         }
@@ -129,36 +150,13 @@ where
     }
 }
 
-fn settle_callback<C>(connection: &mut C, query: &CallbackQuery) -> Option<CallbackOutcome>
+// Sends the response and hands back `result`, so a handler's one line names what it reports without repeating the send.
+fn respond_then<C, T>(connection: &mut C, status: u16, body: &str, result: T) -> T
 where
     C: LoopbackConnection,
 {
-    if let Some(error) = query.error.clone() {
-        let outcome = CallbackOutcome::Denied(CallbackDenied {
-            error,
-            description: query.description.clone(),
-        });
-        drop(respond(
-            connection,
-            200,
-            "Sign-in was not approved. You can close this window.",
-        ));
-        return Some(outcome);
-    }
-    let Some(code) = query.code.clone() else {
-        drop(respond(
-            connection,
-            400,
-            "The sign-in response carried no authorization code; still waiting.",
-        ));
-        return None;
-    };
-    drop(respond(
-        connection,
-        200,
-        "Signed in. You can close this window.",
-    ));
-    Some(CallbackOutcome::Code(CallbackCode { code }))
+    drop(respond(connection, status, body));
+    result
 }
 
 fn respond<C>(connection: &mut C, status: u16, body: &str) -> Result<(), PkceFailure>
