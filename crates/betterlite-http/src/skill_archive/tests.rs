@@ -140,6 +140,24 @@ fn skill_archive_repacks_sorted_members_with_fixed_metadata() {
 }
 
 #[test]
+fn skill_archive_requires_the_delimiter_at_the_very_start_of_the_manifest() {
+    let archive =
+        build_skill_archive(&upload(&[("SKILL.md", b" ---\nname: Leading\n---\nbody")])).unwrap();
+    assert_eq!(archive.declared_name, None);
+}
+
+#[test]
+fn skill_archive_ignores_a_frontmatter_field_that_is_not_a_string() {
+    let archive = build_skill_archive(&upload(&[(
+        "SKILL.md",
+        b"---\nname: 123\ndescription: ok\n---\nbody",
+    )]))
+    .unwrap();
+    assert_eq!(archive.declared_name, None);
+    assert_eq!(archive.declared_description.as_deref(), Some("ok"));
+}
+
+#[test]
 fn skill_archive_replays_the_skill_archive_zip_corpus() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/skill_archive_zip");
     fs::read_dir(path)

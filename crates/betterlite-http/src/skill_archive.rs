@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
 use std::str;
 
+use regex::Regex;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use sha2::{Digest as _, Sha256};
 use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
@@ -12,6 +14,7 @@ use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 1_000;
 const SKILL_MANIFEST_FILENAME: &str = "SKILL.md";
+const FRONTMATTER_PATTERN: &str = r"(?s)^---\s*\n(.*?)\n---\s*(?:\n|$)";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillArchive {
@@ -122,38 +125,44 @@ fn common_root_prefix<'path>(path_iter: impl Iterator<Item = &'path str>) -> Str
 
 #[derive(Debug, Deserialize)]
 struct Frontmatter {
-    name: Option<String>,
-    description: Option<String>,
+    #[serde(default)]
+    name: Option<FrontmatterField>,
+    #[serde(default)]
+    description: Option<FrontmatterField>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum FrontmatterField {
+    Text(String),
+    Other(IgnoredAny),
 }
 
 fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
     let text = decode_utf8_replacing(manifest);
-    let mut lines = text.split_inclusive('\n');
-    let Some(first) = lines.next() else {
+    let Ok(pattern) = Regex::new(FRONTMATTER_PATTERN) else {
         return (None, None);
     };
-    if first.trim_end_matches(['\r', '\n']).trim() != "---" {
+    let Some(captures) = pattern.captures(&text) else {
         return (None, None);
-    }
-    let mut yaml = String::new();
-    let mut closed = false;
-    for line in lines {
-        if line.trim_end_matches(['\r', '\n']).trim() == "---" {
-            closed = true;
-            break;
-        }
-        yaml.push_str(line);
-    }
-    if !closed {
+    };
+    let Some(yaml) = captures.get(1) else {
         return (None, None);
-    }
-    let Ok(frontmatter) = serde_saphyr::from_str::<Frontmatter>(&yaml) else {
+    };
+    let Ok(frontmatter) = serde_saphyr::from_str::<Frontmatter>(yaml.as_str()) else {
         return (None, None);
     };
     (
-        clean_frontmatter_text(frontmatter.name),
-        clean_frontmatter_text(frontmatter.description),
+        frontmatter_text(frontmatter.name),
+        frontmatter_text(frontmatter.description),
     )
+}
+
+fn frontmatter_text(field: Option<FrontmatterField>) -> Option<String> {
+    match field? {
+        FrontmatterField::Text(text) => clean_frontmatter_text(&text),
+        FrontmatterField::Other(_) => None,
+    }
 }
 
 fn decode_utf8_replacing(input: &[u8]) -> String {
@@ -183,13 +192,12 @@ fn decode_utf8_replacing(input: &[u8]) -> String {
     output
 }
 
-fn clean_frontmatter_text(value: Option<String>) -> Option<String> {
-    let text = value?;
-    let trimmed = text.trim().to_owned();
+fn clean_frontmatter_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed)
+        Some(trimmed.to_owned())
     }
 }
 

@@ -1077,6 +1077,7 @@ dependencies = [
  "futures-util",
  "hex",
  "percent-encoding",
+ "regex",
  "reqwest",
  "rstest",
  "secrecy",
