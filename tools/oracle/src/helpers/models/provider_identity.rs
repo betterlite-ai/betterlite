@@ -52,29 +52,17 @@ impl Helper for Op {
                 custom_llm_provider,
                 configured_model_names,
                 catalog,
-            } => {
-                let catalog = parse_catalog(catalog)?;
-                let configured_model_names = configured_model_names.iter().cloned().collect();
-                let classification = classify_prefix(&PrefixClassificationInput {
-                    model,
-                    custom_llm_provider: custom_llm_provider.as_deref(),
-                    configured_model_names: &configured_model_names,
-                    catalog: &catalog,
-                });
-                to_json(&classification)
-            }
+            } => run_explicit_provider(
+                model,
+                custom_llm_provider.as_deref(),
+                configured_model_names,
+                catalog,
+            ),
             Input::Cohere {
                 model,
                 custom_llm_provider,
                 catalog,
-            } => {
-                let catalog = parse_catalog(catalog)?;
-                to_json(&cohere_chat_provider(
-                    model,
-                    custom_llm_provider.as_deref(),
-                    &catalog,
-                ))
-            }
+            } => run_cohere(model, custom_llm_provider.as_deref(), catalog),
             Input::AnthropicText {
                 model,
                 custom_llm_provider,
@@ -97,9 +85,35 @@ impl Helper for Op {
     }
 }
 
+fn run_explicit_provider(
+    model: &str,
+    custom_llm_provider: Option<&str>,
+    configured_model_names: &[String],
+    catalog_json: &serde_json::Value,
+) -> HelperResult {
+    let catalog = parse_catalog(catalog_json)?;
+    let configured_names = configured_model_names.iter().cloned().collect();
+    let classification = classify_prefix(&PrefixClassificationInput {
+        model,
+        custom_llm_provider,
+        configured_model_names: &configured_names,
+        catalog: &catalog,
+    });
+    to_json(&classification)
+}
+
+fn run_cohere(
+    model: &str,
+    custom_llm_provider: Option<&str>,
+    catalog_json: &serde_json::Value,
+) -> HelperResult {
+    let catalog = parse_catalog(catalog_json)?;
+    to_json(&cohere_chat_provider(model, custom_llm_provider, &catalog))
+}
+
 fn parse_catalog(source: &serde_json::Value) -> Result<ModelCatalog, Box<HelperError>> {
-    let bytes = serde_json::to_vec(source).expect("a parsed JSON value always reserializes");
-    ModelCatalog::parse(&bytes, UnknownFields::Reject).map_err(|error| {
+    let bytes = source.to_string();
+    ModelCatalog::parse(bytes.as_bytes(), UnknownFields::Reject).map_err(|error| {
         Box::new(HelperError {
             class: "InvalidInput".to_owned(),
             status: None,
@@ -111,7 +125,10 @@ fn parse_catalog(source: &serde_json::Value) -> Result<ModelCatalog, Box<HelperE
     })
 }
 
-fn to_json<T: serde::Serialize>(value: &T) -> HelperResult {
+fn to_json<T>(value: &T) -> HelperResult
+where
+    T: serde::Serialize,
+{
     match to_value(value) {
         Ok(json) => Ok(json),
         Err(error) => Err(Box::new(HelperError {
