@@ -923,7 +923,9 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "tempfile",
  "thiserror",
+ "tracing",
  "url",
 ]
 
