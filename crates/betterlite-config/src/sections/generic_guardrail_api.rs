@@ -82,9 +82,7 @@ impl Entry {
                 &format!("{prefix}.api_key"),
                 lookup,
             )?)),
-            None => lookup
-                .lookup("GENERIC_GUARDRAIL_API_KEY")
-                .map(SecretString::from),
+            None => None,
         };
         let supplied_base = parameters
             .api_base

@@ -132,7 +132,10 @@ fn generic_guardrail_api_config_loads_environment() {
             "http://env.example".to_owned(),
         ),
     ]);
-    let source = GENERIC_CONFIG.replace("      api_base: http://localhost:8080\n", "");
+    let source = GENERIC_CONFIG.replace(
+        "      api_base: http://localhost:8080\n",
+        "      api_key: os.environ/GENERIC_GUARDRAIL_API_KEY\n",
+    );
     let settings = resolve(&source, &lookup).unwrap();
     let configured = settings.guardrails.first().unwrap();
     assert_eq!(configured.api_key.as_ref().unwrap().expose_secret(), "key");
@@ -140,6 +143,13 @@ fn generic_guardrail_api_config_loads_environment() {
         configured.api_base,
         "http://env.example/beta/litellm_basic_guardrail_api"
     );
+}
+#[test]
+fn generic_guardrail_api_config_leaves_api_key_unset_without_a_configured_value() {
+    let lookup = BTreeMap::from([("GENERIC_GUARDRAIL_API_KEY".to_owned(), "key".to_owned())]);
+    let settings = resolve(GENERIC_CONFIG, &lookup).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert!(configured.api_key.is_none());
 }
 
 #[test]
