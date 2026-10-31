@@ -1,7 +1,8 @@
 kind: helper
 name: get_http_exception_for_blocked_guardrail
 call:
-  get_http_exception_for_blocked_guardrail:
-    response: {breakdown: [{detected: true, detector_type: toxicity}]}
+  b3779:
+    get_http_exception_for_blocked_guardrail:
+      response: {breakdown: [{detected: true, detector_type: toxicity}]}
 env: {}
 compare: {ignore: []}

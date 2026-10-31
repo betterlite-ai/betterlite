@@ -1,8 +1,9 @@
 kind: helper
 name: apply_masking_to_model_response
 call:
-  apply_masking_to_model_response:
-    response: {choices: [{message: {role: assistant, content: hello}}]}
-    masked: [{role: assistant, content: '[MASKED TEXT]'}]
+  b3779:
+    apply_masking_to_model_response:
+      response: {id: resp-1, created: 0, model: test-model, object: chat.completion, choices: [{message: {role: assistant, content: hello}}]}
+      masked: [{role: assistant, content: '[MASKED TEXT]'}]
 env: {}
 compare: {ignore: []}

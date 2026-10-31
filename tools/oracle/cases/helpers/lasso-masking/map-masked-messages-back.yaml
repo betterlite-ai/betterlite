@@ -1,8 +1,9 @@
 kind: helper
 name: map_masked_messages_back
 call:
-  map_masked_messages_back:
-    original: [{role: user, content: hello}]
-    masked: [{role: user, content: '[MASKED TEXT]'}]
+  b3779:
+    map_masked_messages_back:
+      original: [{role: user, content: hello}]
+      masked: [{role: user, content: '[MASKED TEXT]'}]
 env: {}
 compare: {ignore: []}
