@@ -4,8 +4,7 @@ use serde_json::value::{RawValue, to_raw_value};
 
 use super::CatalogError;
 
-// price_fields/nested.rs is outside this task's scope, so these mirror its wire names directly.
-const PROVIDER_SPECIFIC_FIELDS: &[&str] = &["us", "fast"];
+const PROVIDER_SPECIFIC_FIELDS: &[&str] = &["us", "fast", "bedrock_invocation_schema"];
 const OFF_PEAK_FIELDS: &[&str] = &[
     "input_cost_per_token",
     "output_cost_per_token",
