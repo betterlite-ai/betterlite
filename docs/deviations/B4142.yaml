@@ -1,0 +1,8 @@
+task: B4142
+deviations:
+  - what: When both a file next to the declaring config and a file next to the root config match the include path, the declaring-config file wins and the other is mentioned in a warning.
+    why: LiteLLM supports this for backward compatibility with configs written before nested includes worked. The Rust resolver preserves that path selection behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L11-L42
+  - what: The Rust resolver is synchronous and reads local files through std::fs.
+    why: The task explicitly limits includes to filesystem paths; LiteLLM's async implementation uses async file APIs, while the Rust config loader is synchronous.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L117-L132
