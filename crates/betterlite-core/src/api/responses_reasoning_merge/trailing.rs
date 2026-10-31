@@ -1,35 +1,54 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::content::Content;
-use super::{MergeError, is_falsy};
+use super::{MergeError, Role, is_falsy};
 
-// The trailing assistant message as merge_trailing reads and rebuilds it; role stays raw JSON since it is only ever compared against the "assistant" literal.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct TrailingRecord {
+// Any role outside the known chat roles is accepted and simply treated as not matching, never rejected.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum TrailingRole {
+    Known(Role),
+    Other(Value),
+}
+
+// Collapses "missing" and an explicit null into one falsy state, since mergeability treats them alike.
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+enum ToolCalls {
+    #[default]
+    Absent,
+    Present(Value),
+}
+
+impl ToolCalls {
+    fn is_present_and_truthy(&self) -> bool {
+        match self {
+            Self::Present(value) => !is_falsy(value),
+            Self::Absent => false,
+        }
+    }
+}
+
+// The trailing assistant message as merge_trailing reads it.
+#[derive(Debug, Deserialize)]
+struct TrailingRecord {
     #[serde(default)]
-    pub role: Value,
+    role: Option<TrailingRole>,
     #[serde(default)]
-    pub content: Option<Content>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Value>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
+    content: Option<Content>,
+    #[serde(default)]
+    tool_calls: ToolCalls,
 }
 
 // True once both records are assistant-authored and only the trailing one already carries tool calls (or hosted_search is set).
 fn is_mergeable_pair(last: &TrailingRecord, new: &TrailingRecord, hosted_search: bool) -> bool {
-    let is_assistant = |record: &TrailingRecord| record.role.as_str() == Some("assistant");
-    let has_tool_calls = |record: &TrailingRecord| {
-        record
-            .tool_calls
-            .as_ref()
-            .is_some_and(|value| !is_falsy(value))
-    };
+    let is_assistant =
+        |record: &TrailingRecord| matches!(record.role, Some(TrailingRole::Known(Role::Assistant)));
     is_assistant(last)
         && is_assistant(new)
-        && (has_tool_calls(last) || hosted_search)
-        && !has_tool_calls(new)
+        && (last.tool_calls.is_present_and_truthy() || hosted_search)
+        && !new.tool_calls.is_present_and_truthy()
 }
 
 // Concatenates the trailing message's own content blocks ahead of the new message's, unless the trailing content is falsy.
@@ -55,17 +74,19 @@ pub fn merge_trailing(
     if messages.is_empty() || new_messages.len() != 1 {
         return Ok(None);
     }
-    let Some(last_value) = messages.last().filter(|value| value.is_object()) else {
+    let Some(Value::Object(last_map)) = messages.last() else {
         return Ok(None);
     };
-    let last: TrailingRecord =
-        serde_json::from_value(last_value.clone()).map_err(|_error| MergeError::InvalidRecord)?;
-    let new_value = new_messages
-        .first()
-        .cloned()
-        .ok_or(MergeError::InvalidRecord)?;
-    let new: TrailingRecord =
-        serde_json::from_value(new_value).map_err(|_error| MergeError::InvalidRecord)?;
+    let last: TrailingRecord = serde_json::from_value(Value::Object(last_map.clone()))
+        .map_err(|source| MergeError::InvalidRecord { source })?;
+    let Some(new_value) = new_messages.first() else {
+        return Ok(None);
+    };
+    // A map first, so a non-object new message raises instead of deserializing positionally.
+    let new_map: Map<String, Value> = serde_json::from_value(new_value.clone())
+        .map_err(|source| MergeError::InvalidRecord { source })?;
+    let new: TrailingRecord = serde_json::from_value(Value::Object(new_map))
+        .map_err(|source| MergeError::InvalidRecord { source })?;
     if !is_mergeable_pair(&last, &new, hosted_search) {
         return Ok(None);
     }
@@ -73,11 +94,7 @@ pub fn merge_trailing(
         return Ok(None);
     };
     let content = merged_content(&last, new_content)?;
-    let Value::Object(mut merged) =
-        serde_json::to_value(&last).map_err(|_error| MergeError::InvalidRecord)?
-    else {
-        return Err(MergeError::InvalidRecord);
-    };
+    let mut merged: Map<String, Value> = last_map.clone();
     merged.insert("content".to_owned(), content);
     Ok(Some(Value::Object(merged)))
 }
