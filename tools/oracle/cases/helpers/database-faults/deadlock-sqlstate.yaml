@@ -1,0 +1,13 @@
+kind: helper
+name: database-faults-deadlock
+call:
+  database_faults:
+    error:
+      error_type: prisma
+      message: "deadlock detected"
+      code: null
+      meta_code: null
+      traceback_modules: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,8 @@
+kind: helper
+name: provider-lookup-vertex-ai
+call:
+  b3450:
+    mode: provider_lookup
+    provider: vertex_ai
+env: {}
+compare: {ignore: []}

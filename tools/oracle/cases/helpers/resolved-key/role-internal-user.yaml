@@ -1,0 +1,9 @@
+kind: helper
+name: role-internal-user-is-internal-true
+call:
+  resolved_key:
+    function: role
+    value: internal_user
+env: {}
+compare:
+  ignore: []

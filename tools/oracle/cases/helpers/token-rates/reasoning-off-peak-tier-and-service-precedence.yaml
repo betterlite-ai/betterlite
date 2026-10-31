@@ -1,0 +1,19 @@
+kind: helper
+name: reasoning-off-peak-tier-and-service-precedence
+call:
+  token_rates:
+    operation: base
+    model_info:
+      output_cost_per_token: "0.000003"
+      output_cost_per_token_priority: "0.000004"
+      output_cost_per_reasoning_token: "0.000009"
+    usage:
+      prompt_tokens: 1
+    service_tier: priority
+    provider: null
+    off_peak_pricing:
+      hours_utc: "10:00-11:00"
+      output_cost_per_reasoning_token: "0.0000001"
+    moment: "2024-06-16T10:30:00Z"
+compare: {ignore: []}
+env: {}

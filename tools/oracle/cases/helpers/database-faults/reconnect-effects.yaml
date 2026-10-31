@@ -1,0 +1,165 @@
+{
+  "kind": "helper",
+  "name": "database-faults-reconnect-effects",
+  "call": {
+    "database_faults": {
+      "scenarios": [
+        {
+          "name": "read_success",
+          "reads": [
+            {
+              "Ok": 7
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "read_success"
+        },
+        {
+          "name": "data_no_reconnect",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "data",
+                "message": "first read failed"
+              }
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "data_no_reconnect"
+        },
+        {
+          "name": "unsafe_transport_no_replay",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "read_timeout",
+                "message": "first read failed"
+              }
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "unsafe_transport_no_replay",
+          "retry_safe_error_types": [
+            "connect"
+          ]
+        },
+        {
+          "name": "absent_reconnect",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            }
+          ],
+          "reconnect": null,
+          "reason": "absent_reconnect"
+        },
+        {
+          "name": "reconnect_warning_arguments",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 8
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "reconnect_warning_arguments"
+        },
+        {
+          "name": "reconnect_false_preserves_first",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            }
+          ],
+          "reconnect": {
+            "Ok": false
+          },
+          "reason": "reconnect_false_preserves_first"
+        },
+        {
+          "name": "reconnect_raise_chains_first",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            }
+          ],
+          "reconnect": {
+            "Err": {
+              "error_type": "other",
+              "message": "reconnect failed"
+            }
+          },
+          "reason": "reconnect_raise_chains_first"
+        },
+        {
+          "name": "retry_success",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Ok": 9
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "retry_success",
+          "retry_safe_error_types": [
+            "connect"
+          ]
+        },
+        {
+          "name": "retry_failure_no_loop",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "connect",
+                "message": "first read failed"
+              }
+            },
+            {
+              "Err": {
+                "error_type": "read_timeout",
+                "message": "second read failed"
+              }
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "retry_failure_no_loop"
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

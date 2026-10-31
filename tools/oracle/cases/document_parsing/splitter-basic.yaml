@@ -1,0 +1,10 @@
+kind: helper
+name: splitter-basic
+call:
+  b3450:
+    mode: split
+    chunk_size: 10
+    chunk_overlap: 0
+    text: "one two three four five six seven"
+env: {}
+compare: {ignore: []}

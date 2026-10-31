@@ -85,6 +85,24 @@ fn lasso_config_retains_unknown_paths() {
 }
 
 #[test]
+fn lasso_config_leaves_deepkeep_entries_to_deepkeep_section() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::new(),
+    };
+    let source = "guardrails:\n  - guardrail_name: safety\n    litellm_params:\n      guardrail: lasso\n      api_key: key\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n";
+    let config = loader.load(source).unwrap();
+    let lasso = config
+        .sections
+        .lasso_classification
+        .guardrails
+        .first()
+        .unwrap();
+    assert_eq!(lasso.guardrail_name, "safety");
+    assert_eq!(config.sections.lasso_classification.guardrails.len(), 1);
+    assert_eq!(config.sections.deepkeep_firewall.guardrails.len(), 1);
+}
+
+#[test]
 fn lasso_config_explicit_values_win() {
     let loader = ConfigLoader {
         lookup: BTreeMap::from([("LASSO_API_KEY".to_owned(), "environment".to_owned())]),

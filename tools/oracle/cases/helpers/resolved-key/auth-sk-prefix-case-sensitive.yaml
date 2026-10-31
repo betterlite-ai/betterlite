@@ -1,0 +1,9 @@
+kind: helper
+name: sk-prefix-case-sensitive
+call:
+  resolved_key:
+    function: auth
+    value: {api_key: SK-test123}
+env: {}
+compare:
+  ignore: []

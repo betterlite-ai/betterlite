@@ -1,0 +1,9 @@
+kind: helper
+name: view-field-all-defaults
+call:
+  resolved_key:
+    function: view
+    value: {}
+env: {}
+compare:
+  ignore: []

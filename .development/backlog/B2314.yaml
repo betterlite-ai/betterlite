@@ -1,7 +1,7 @@
 id: B2314
 milestone: M4 keys, spend and management
 title: Resolved key fields, role values and credential provenance
-status: todo
+status: done
 depends_on: [B171, B720, B856, B859, B2310, B2313]
 file: tasks/B2314-resolved-key-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/handle_jwt.py"
 parent: B053
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 414

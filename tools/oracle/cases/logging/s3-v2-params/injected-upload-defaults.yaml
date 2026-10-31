@@ -1,0 +1,5 @@
+kind: helper
+name: injected-upload-defaults
+call: {"b3992": {"operation": "params", "settings": {"DEFAULT_S3_MAX_CONCURRENT_UPLOADS": "24", "DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY": "50"}}}
+env: {"DEFAULT_S3_MAX_CONCURRENT_UPLOADS": "24", "DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY": "50"}
+compare: {ignore: []}

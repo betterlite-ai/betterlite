@@ -1,0 +1,11 @@
+kind: helper
+name: generalizations-excluded
+call:
+  model_catalog:
+    operation: generalizations_excluded
+    source:
+      fallback_generalizations:
+        rules: [{name: route, pattern: '^gpt', model_info: {litellm_provider: openai}}]
+      gpt-test: {litellm_provider: openai}
+env: {}
+compare: {ignore: []}

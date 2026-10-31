@@ -1,0 +1,8 @@
+kind: helper
+name: configured-timeout
+call:
+  b3767:
+    construct:
+      settings: {api_key: key, api_base: "https://deepkeep.test", deepkeep_firewall_id: fixed, timeout: "2.5"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: local-only-override
+call:
+  blog_feed: {function: get_blog_posts, url: https://example.test/feed, now: 100, local_only: true, response: {status: 200, text: '<rss><channel/></rss>'}}
+env: {LITELLM_LOCAL_BLOG_POSTS: 'True'}
+compare: {ignore: []}

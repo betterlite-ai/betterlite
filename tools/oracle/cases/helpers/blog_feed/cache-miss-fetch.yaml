@@ -1,0 +1,6 @@
+kind: helper
+name: cache-miss-fetch
+call:
+  blog_feed: {function: get_blog_posts, url: https://example.test/feed, now: 4000, last_fetch_time: 100, cached_posts: [{title: Old, description: '', date: '', url: https://old}], response: {status: 200, text: '<rss><channel><item><title>Fresh</title><link>https://fresh</link></item></channel></rss>'}}
+env: {}
+compare: {ignore: []}

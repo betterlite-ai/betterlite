@@ -34,8 +34,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "grayswan_response"
-path = "fuzz_targets/grayswan_response.rs"
+name = "deepkeep_response"
+path = "fuzz_targets/deepkeep_response.rs"
 test = false
 doc = false
 bench = false

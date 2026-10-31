@@ -1,0 +1,9 @@
+kind: helper
+name: unknown-auth-extras-ignored
+call:
+  resolved_key:
+    function: auth
+    value: {something_brand_new: x}
+env: {}
+compare:
+  ignore: []

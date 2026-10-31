@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-non-list-thinking-blocks-attribute
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    record_kind: attribute
+    messages:
+      - {role: assistant, content: null, reasoning_content: a, thinking_blocks: {note: not-a-list}}
+      - {role: assistant, content: answer, thinking_blocks: {also: not-a-list}}
+env: {}
+compare:
+  ignore: []

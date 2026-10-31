@@ -1,0 +1,10 @@
+kind: helper
+name: metadata-extraction
+call:
+  b3767:
+    metadata:
+      request_data:
+        metadata: {user_api_key_alias: alias, user_api_key_token: token}
+        litellm_metadata: {user_api_key_hash: explicit-hash, user_api_key_user_id: user-1}
+env: {}
+compare: {ignore: []}

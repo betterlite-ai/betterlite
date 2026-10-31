@@ -1,13 +1,15 @@
 id: B183
 title: Bounded inline media conversion
 description: >-
-  Finish bounded inline media decoding and traversal under betterlite-prompts/media. Own image_handling.py _process_image_response
-  for supplied bytes, _rejected_image_fetch and all RemoteMedia/data-URL/inline traversal helpers 146-334, composing
-  B234 supplied ID mappings and B235 metadata/MIME. Keep the current no-request-download policy: preserve URLs for
-  providers accepting them and return typed ImageFetchError-compatible 400 when bytes are required. Add an oracle
-  rejection case using a blocked loopback URL, which LiteLLM rejects through safe_get without an external fetch;
-  public-URL policy differences stay documented and tested locally. No pixel/dimension validation is added here
-  because LiteLLM has none. Bound encoded and decoded byte counts before allocation, never open request paths. media_data
+  Finish bounded inline media decoding and traversal under betterlite-prompts/media. Own the RemoteMedia, data-URL
+  and inline traversal helpers in image_handling.py L142-L288 and L306-L334, composing B234 supplied ID mappings
+  and B235 metadata/MIME. Providers that accept URLs keep them. When a provider needs bytes, the traversal collects
+  each distinct http or https URL in first-seen order and gets its data URL from B5083 (Max, 2026-10-31: media URLs
+  are fetched like LiteLLM). inline_remote_media calls B5083's convert once per URL in that order, the way it builds
+  its dict at L321; async_inline_remote_media calls B5083's fetch_all. A B5083 failure fails the request with its
+  ImageFetchError 400 text. Add an oracle rejection case using a blocked loopback URL, which LiteLLM rejects through
+  safe_get before any request goes out. No pixel/dimension validation is added here because LiteLLM has none. Bound
+  encoded and decoded byte counts before allocation, never open local paths. media_data
   fuzz target calls production data-URL/base64 parsing and replays crates/betterlite-prompts/fuzz/corpus/media_data.
   Budget 260 decoder/traversal, 100 adapters, 320 tests/fuzz and 60 wiring (740 total). Write the behavior rstest
   functions inline_media_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
@@ -50,16 +52,16 @@ scope:
   - "tools/oracle/fuzz/corpus/helper_case/inline_media-*"
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L146-L334
-  why: Typed media shapes and inlining traversal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L142-L334
+  why: Typed media shapes and inlining traversal; _fetch_data_url and _fetch_data_urls at L289-L303 are B5083's.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L490-L786
   why: Model-specific file/vector IDs and supplied mappings.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L789-L914
   why: Metadata without file reads and bare string path rejection.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1439-L1594
   why: MIME inference precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L29-L139
-  why: Remote fetch behavior deliberately excluded from request processing.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L23-L136
+  why: The download B5083 builds and B183 calls, with the texts a failed URL fails the request with.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8123-L8129
   why: Shared get_base64_str below providers, moved out of generic SDK utility ownership.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8104-L8120
@@ -70,10 +72,16 @@ dod:
   proof:
   - oracle
   - helper-python
-- text: Oversized data and invalid base64 fail before excessive allocation; no request path or URL triggers file/network
-    access under the current plan.
+- text: Oversized data and invalid base64 fail before excessive allocation; no request path or file name opens a local
+    file.
   proof:
   - inline-media-tests
+- text: Remote URLs are inlined through B5083 in first-seen order, one at a time for inline_remote_media and through
+    fetch_all for async_inline_remote_media, and a B5083 failure fails the request with its 400 text.
+  proof:
+  - inline-media-tests
+  - oracle
+  - helper-python
 - text: The media/ID parser has a cargo-fuzz target and corpus replay; added wire variants retain chat corpus coverage.
   proof:
   - media-data-corpus
@@ -135,18 +143,14 @@ oracle_cases:
 - tools/oracle/cases/helpers/inline-media/invalid-base64.yaml
 - tools/oracle/cases/helpers/inline-media/base64-string-component.yaml
 - tools/oracle/cases/helpers/inline-media/base64-classification.yaml
-deviations:
-- what: 'Open, waiting for Max: keep preserving/rejecting request media URLs without downloads, or allow public
-    URLs through user_url_validation and user_url_allowed_hosts with SSRF-checked safe_get.'
-  why: LiteLLM downloads public image/PDF data for providers requiring bytes. Keep the current plan and build no
-    download behavior until the shared B009 decision is resolved.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L84-L139
+deviations: []
 out_of_scope:
 - SDK PathLike and file-handle adapters are B159-B161; storage-backed managed IDs are B087.
 - Provider-native attachment upload is implemented by provider/endpoint tasks.
 - All common_utils file-ID functions including get_file_ids_from_messages are B234; file metadata/MIME B235.
-- convert_url_to_base64/async_convert_url_to_base64 remote fetching remains blocked by the open decision; the rejection
-  path alone is covered here.
+- The cache and limits, _process_image_response, _rejected_image_fetch, async_convert_url_to_base64, convert_url_to_base64,
+  _fetch_data_url and _fetch_data_urls (image_handling.py L23-L136 and L289-L303) are B5083's; the SSRF check is
+  B5082's.
 - 'Function ownership inventory litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024.'
 - 'Function ownership inventory litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class
   L117-L126; _snapshot_exception_for_hook L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response
@@ -277,6 +281,8 @@ pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/inline_media-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as inline_media in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/inline_media.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/inline_media.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A filename is metadata, never permission to open a local path.
+- With several bad URLs, inline_remote_media fails on the first in URL order and async_inline_remote_media on the
+  first to fail in time (asyncio.gather), so keep the two paths apart.
 - Enforce decoded-size bounds before base64 decoding, not after allocating the decoded buffer.
 - File metadata extraction must not consume a streaming upload.
 review_level: standard

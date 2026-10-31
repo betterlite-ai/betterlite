@@ -1,7 +1,7 @@
 id: B3450
 milestone: M5 api families
 title: RAG records, provider selection and document chunking
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B3450-rag-records-and-chunking.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/rag/main.py"
 parent: B097
 split_from: B097
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 412
