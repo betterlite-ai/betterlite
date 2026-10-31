@@ -92,17 +92,22 @@ impl crate::helpers::Helper for Op {
             .iter()
             .map(UsageInput::build)
             .collect::<Result<Vec<_>, _>>()?;
-        let result = usage_sum(&usages).map_err(|error| {
-            Box::new(HelperError {
-                class: "UsageSumError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
+        let result = usage_sum(&usages)
+            .map_err(|error| Box::new(HelperError::from(("UsageSumError", error.to_string()))))?;
         usage_value(&result)
+    }
+}
+
+impl From<(&str, String)> for HelperError {
+    fn from((class, message): (&str, String)) -> Self {
+        Self {
+            class: class.to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message,
+        }
     }
 }
 
@@ -124,28 +129,16 @@ fn number_from_json(name: &str, raw: &Value) -> Result<UsageNumber, Box<HelperEr
     if let Some(integer) = raw.as_i64() {
         Ok(UsageNumber::Integer(integer))
     } else if let Some(float) = raw.as_f64() {
-        let decimal = Decimal::try_from(float).map_err(|error| {
-            Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
+        let decimal = Decimal::try_from(float)
+            .map_err(|error| Box::new(HelperError::from(("InvalidInput", error.to_string()))))?;
         Ok(UsageNumber::Decimal(decimal))
     } else if let Some(boolean) = raw.as_bool() {
         Ok(UsageNumber::Boolean(boolean))
     } else {
-        Err(Box::new(HelperError {
-            class: "InvalidInput".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: format!("extra {name} is not numeric"),
-        }))
+        Err(Box::new(HelperError::from((
+            "InvalidInput",
+            format!("extra {name} is not numeric"),
+        ))))
     }
 }
 
@@ -267,14 +260,10 @@ fn number_value(value: &UsageNumber) -> Result<Value, Box<HelperError>> {
     match value {
         UsageNumber::Integer(inner) => Ok(json!(inner)),
         UsageNumber::Decimal(inner) => inner.to_f64().map(|float| json!(float)).ok_or_else(|| {
-            Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: format!("decimal extra {inner} has no f64 representation"),
-            })
+            Box::new(HelperError::from((
+                "InvalidInput",
+                format!("decimal extra {inner} has no f64 representation"),
+            )))
         }),
         UsageNumber::Boolean(inner) => Ok(json!(inner)),
     }
