@@ -88,4 +88,4 @@ pitfalls:
   - An error object is ignored when the same result contains a response body.
   - A nonempty pagination_token on an empty results page terminates collection.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

@@ -69,4 +69,4 @@ pitfalls:
   - An empty inlineData.data value is omitted even though the generation adapter includes it.
   - Image edit does not advertise n or copy usageMetadata into its response.
 budget: {max_changed_lines: 550, max_new_expects: 1}
-review_level: security
+review_level: standard

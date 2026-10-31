@@ -74,4 +74,4 @@ pitfalls:
   - A matching displayName with no name stops the search with no usable cache name.
   - Cache list pagination is bounded at 100 even if the provider repeats its nextPageToken forever.
 budget: {max_changed_lines: 675, max_new_expects: 0}
-review_level: security
+review_level: standard

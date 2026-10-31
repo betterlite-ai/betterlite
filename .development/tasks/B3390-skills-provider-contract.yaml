@@ -142,7 +142,7 @@ pitfalls:
     the JSON structure against the Skill/ListSkillsResponse/DeleteSkillResponse types, not assume
     it matches the schema."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

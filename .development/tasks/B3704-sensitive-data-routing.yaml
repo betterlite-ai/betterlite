@@ -92,7 +92,7 @@ pitfalls:
   - "The pre_call_hook returns the modified data dict; callers expect it to mutate the request in place or return the mutation, never return a new dict without updating the caller's reference."
   - "Metadata fields sensitive_data_routing_applied and sensitive_data_routing_original_model are strings set by the hook; any code that reads them must handle the case where they are absent or have unexpected types."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

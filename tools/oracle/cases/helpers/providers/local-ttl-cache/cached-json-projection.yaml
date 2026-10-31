@@ -1,0 +1,9 @@
+kind: helper
+name: cached-json-projection
+call:
+  local_ttl_cache:
+    function: cached_json_projection
+    value: 'false'
+env: {}
+compare:
+  ignore: []

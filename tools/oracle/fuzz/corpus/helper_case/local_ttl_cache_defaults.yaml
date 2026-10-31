@@ -1,0 +1,7 @@
+kind: helper
+name: local-ttl-cache-defaults
+call:
+  local_ttl_cache:
+    function: cache_defaults
+env: {}
+compare: {ignore: []}
