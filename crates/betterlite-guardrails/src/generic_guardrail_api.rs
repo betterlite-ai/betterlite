@@ -10,11 +10,8 @@ use crate::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
     GenericGuardrailAPISettings, GuardrailExtraValue, UnreachableFallback,
 };
-
 mod response;
-
 use response::{enforce_response, passthrough_response};
-
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 

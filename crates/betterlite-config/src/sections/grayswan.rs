@@ -1,14 +1,12 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
-
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number, resolve_string};
-
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 mod tests;
 pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";

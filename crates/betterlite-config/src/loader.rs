@@ -62,7 +62,6 @@ pub enum ConfigError {
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
-
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
@@ -142,7 +141,6 @@ where
         sections,
     })
 }
-
 fn convert_deployment<L>(
     raw: RawDeployment,
     index: usize,
@@ -164,7 +162,6 @@ where
         model_info,
     })
 }
-
 fn convert_params<L>(raw: RawParams, index: usize, lookup: &L) -> Result<LiteLlmParams, ConfigError>
 where
     L: EnvironmentLookup,
@@ -200,7 +197,6 @@ where
         weight,
     })
 }
-
 fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, ConfigError>
 where
     L: EnvironmentLookup,
@@ -211,7 +207,6 @@ where
         .transpose()?;
     Ok(ModelInfo { id })
 }
-
 fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -223,7 +218,6 @@ where
         lookup,
     ))
 }
-
 fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -243,7 +237,6 @@ where
         fallbacks: raw.fallbacks,
     })
 }
-
 fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -266,7 +259,6 @@ where
         default_max_tokens,
     })
 }
-
 fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
 where
     L: EnvironmentLookup,
