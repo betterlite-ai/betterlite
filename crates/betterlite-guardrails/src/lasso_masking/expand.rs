@@ -33,36 +33,37 @@ fn expand_tool_message(message: &Message, expanded: &mut Vec<LassoMessage>) {
     let Some(tool_use_id) = message.tool_call_id.clone() else {
         return;
     };
-    let content = flatten_tool_result_text(message.content.as_ref());
+    let block = ToolResultBlock {
+        kind: "tool_result".to_owned(),
+        tool_use_id: Some(tool_use_id),
+        content: Some(flatten_tool_result_text(message.content.as_ref())),
+    };
     expanded.push(LassoMessage {
+        content: LassoContent::ToolResult(block),
         role: "developer".to_owned(),
-        content: LassoContent::ToolResult(ToolResultBlock {
-            kind: "tool_result".to_owned(),
-            tool_use_id: Some(tool_use_id),
-            content: Some(content),
-        }),
     });
 }
 
 fn expand_tool_calls(message: &Message, expanded: &mut Vec<LassoMessage>) {
-    let Some(calls) = message.tool_calls.as_ref() else {
+    for call in message.tool_calls.as_deref().unwrap_or_default() {
+        push_tool_use(call, expanded);
+    }
+}
+
+fn push_tool_use(call: &ToolCall, expanded: &mut Vec<LassoMessage>) {
+    let fields = extract_tool_call_fields(call);
+    let (Some(id), Some(name)) = (fields.id, fields.name) else {
         return;
     };
-    for call in calls {
-        let fields = extract_tool_call_fields(call);
-        let (Some(id), Some(name)) = (fields.id, fields.name) else {
-            continue;
-        };
-        expanded.push(LassoMessage {
-            role: "model".to_owned(),
-            content: LassoContent::ToolUse(ToolUseBlock {
-                kind: "tool_use".to_owned(),
-                id: Some(id),
-                name: Some(name),
-                input: fields.input,
-            }),
-        });
-    }
+    expanded.push(LassoMessage {
+        role: "model".to_owned(),
+        content: LassoContent::ToolUse(ToolUseBlock {
+            kind: "tool_use".to_owned(),
+            id: Some(id),
+            name: Some(name),
+            input: fields.input,
+        }),
+    });
 }
 
 fn extract_tool_call_fields(call: &ToolCall) -> lasso_wire::ToolCallFields {

@@ -17,107 +17,74 @@ where
     Ok((head, rest))
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct LakeraResponse {
-    pub flagged: Option<bool>,
-    pub payload: Option<Vec<PayloadItem>>,
-    pub breakdown: Option<Vec<BreakdownItem>>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
+// Each wire struct repeats the same known-fields-plus-extra shape, so one macro emits it from a field list instead of a hand-written copy per struct.
+macro_rules! raw_value_record {
+    ($name:ident / $head:ident { $($field:ident : $ty:ty),* $(,)? } skip) => {
+        #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+        #[serde(try_from = "Box<RawValue>")]
+        pub struct $name {
+            $(#[serde(skip_serializing_if = "Option::is_none")] pub $field: $ty,)*
+            #[serde(flatten)]
+            pub extra: BTreeMap<String, Box<RawValue>>,
+        }
+
+        #[derive(Default, Deserialize, Serialize)]
+        struct $head {
+            $(#[serde(default)] $field: $ty,)*
+        }
+
+        impl TryFrom<Box<RawValue>> for $name {
+            type Error = serde_json::Error;
+
+            fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+                let (head, extra) = split_fields::<$head>(raw.get())?;
+                Ok(Self { $($field: head.$field,)* extra })
+            }
+        }
+    };
+
+    ($name:ident / $head:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[serde(try_from = "Box<RawValue>")]
+        pub struct $name {
+            $(pub $field: $ty,)*
+            #[serde(flatten)]
+            pub extra: BTreeMap<String, Box<RawValue>>,
+        }
+
+        #[derive(Deserialize, Serialize)]
+        struct $head {
+            $(#[serde(default)] $field: $ty,)*
+        }
+
+        impl TryFrom<Box<RawValue>> for $name {
+            type Error = serde_json::Error;
+
+            fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+                let (head, extra) = split_fields::<$head>(raw.get())?;
+                Ok(Self { $($field: head.$field,)* extra })
+            }
+        }
+    };
 }
 
-#[derive(Default, Deserialize, Serialize)]
-struct LakeraResponseHead {
-    #[serde(default)]
+raw_value_record!(LakeraResponse / LakeraResponseHead {
     flagged: Option<bool>,
-    #[serde(default)]
     payload: Option<Vec<PayloadItem>>,
-    #[serde(default)]
     breakdown: Option<Vec<BreakdownItem>>,
-}
+} skip);
 
-impl TryFrom<Box<RawValue>> for LakeraResponse {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<LakeraResponseHead>(raw.get())?;
-        Ok(Self {
-            flagged: head.flagged,
-            payload: head.payload,
-            breakdown: head.breakdown,
-            extra,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct PayloadItem {
-    pub message_id: Option<u64>,
-    pub start: Option<u64>,
-    pub end: Option<u64>,
-    pub detector_type: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct PayloadItemHead {
-    #[serde(default)]
+raw_value_record!(PayloadItem / PayloadItemHead {
     message_id: Option<u64>,
-    #[serde(default)]
     start: Option<u64>,
-    #[serde(default)]
     end: Option<u64>,
-    #[serde(default)]
     detector_type: Option<String>,
-}
+});
 
-impl TryFrom<Box<RawValue>> for PayloadItem {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<PayloadItemHead>(raw.get())?;
-        Ok(Self {
-            message_id: head.message_id,
-            start: head.start,
-            end: head.end,
-            detector_type: head.detector_type,
-            extra,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct BreakdownItem {
-    pub detected: Option<bool>,
-    pub detector_type: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct BreakdownItemHead {
-    #[serde(default)]
+raw_value_record!(BreakdownItem / BreakdownItemHead {
     detected: Option<bool>,
-    #[serde(default)]
     detector_type: Option<String>,
-}
-
-impl TryFrom<Box<RawValue>> for BreakdownItem {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<BreakdownItemHead>(raw.get())?;
-        Ok(Self {
-            detected: head.detected,
-            detector_type: head.detector_type,
-            extra,
-        })
-    }
-}
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Box<RawValue>")]

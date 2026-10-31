@@ -2,28 +2,34 @@ use std::collections::BTreeMap;
 
 use super::wire::{LassoContent, LassoMessage, ToolUseBlock};
 
-pub(super) fn index_tool_use(masked: &[LassoMessage]) -> BTreeMap<String, ToolUseBlock> {
-    let mut index = BTreeMap::new();
-    for message in masked {
-        if let LassoContent::ToolUse(block) = &message.content
-            && let Some(id) = block.id.clone()
-        {
-            index.insert(id, block.clone());
-        }
-    }
-    index
+pub(super) struct ToolIndex {
+    pub(super) tool_use: BTreeMap<String, ToolUseBlock>,
+    pub(super) tool_result: BTreeMap<String, String>,
 }
 
-pub(super) fn index_tool_result(masked: &[LassoMessage]) -> BTreeMap<String, String> {
-    let mut index = BTreeMap::new();
+// One pass over the masked messages fills both maps, since a message's content is exactly one of ToolUse, ToolResult or Text.
+pub(super) fn index_tool_blocks(masked: &[LassoMessage]) -> ToolIndex {
+    let mut tool_use = BTreeMap::new();
+    let mut tool_result = BTreeMap::new();
     for message in masked {
-        if let LassoContent::ToolResult(block) = &message.content
-            && let Some(id) = block.tool_use_id.clone()
-        {
-            index.insert(id, block.content.clone().unwrap_or_default());
+        match &message.content {
+            LassoContent::ToolUse(block) => {
+                if let Some(id) = block.id.clone() {
+                    tool_use.insert(id, block.clone());
+                }
+            }
+            LassoContent::ToolResult(block) => {
+                if let Some(id) = block.tool_use_id.clone() {
+                    tool_result.insert(id, block.content.clone().unwrap_or_default());
+                }
+            }
+            LassoContent::Text(_) => {}
         }
     }
-    index
+    ToolIndex {
+        tool_use,
+        tool_result,
+    }
 }
 
 pub(super) fn collect_texts(masked: &[LassoMessage]) -> Vec<String> {

@@ -20,99 +20,101 @@ where
     Ok((head, rest))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct Message {
-    pub role: Role,
-    pub content: Option<Content>,
-    pub tool_calls: Option<Vec<ToolCall>>,
-    pub tool_call_id: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
+// Each wire struct repeats the same known-fields-plus-extra shape, so one macro emits it from a field list instead of a hand-written copy per struct.
+macro_rules! raw_value_record {
+    ($name:ident / $head:ident { role: $role_ty:ty, $($field:ident : $ty:ty),* $(,)? } skip) => {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[serde(try_from = "Box<RawValue>")]
+        pub struct $name {
+            pub role: $role_ty,
+            $(#[serde(skip_serializing_if = "Option::is_none")] pub $field: $ty,)*
+            #[serde(flatten)]
+            pub extra: BTreeMap<String, Box<RawValue>>,
+        }
+
+        #[derive(Deserialize, Serialize)]
+        struct $head {
+            role: $role_ty,
+            $(#[serde(default)] $field: $ty,)*
+        }
+
+        impl TryFrom<Box<RawValue>> for $name {
+            type Error = serde_json::Error;
+
+            fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+                let (head, extra) = split_fields::<$head>(raw.get())?;
+                Ok(Self { role: head.role, $($field: head.$field,)* extra })
+            }
+        }
+    };
+
+    ($name:ident / $head:ident { role: $role_ty:ty, $($field:ident : $ty:ty),* $(,)? }) => {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[serde(try_from = "Box<RawValue>")]
+        pub struct $name {
+            pub role: $role_ty,
+            $(pub $field: $ty,)*
+            #[serde(flatten)]
+            pub extra: BTreeMap<String, Box<RawValue>>,
+        }
+
+        #[derive(Deserialize, Serialize)]
+        struct $head {
+            role: $role_ty,
+            $(#[serde(default)] $field: $ty,)*
+        }
+
+        impl TryFrom<Box<RawValue>> for $name {
+            type Error = serde_json::Error;
+
+            fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+                let (head, extra) = split_fields::<$head>(raw.get())?;
+                Ok(Self { role: head.role, $($field: head.$field,)* extra })
+            }
+        }
+    };
+
+    ($name:ident / $head:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+        #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+        #[serde(try_from = "Box<RawValue>")]
+        pub struct $name {
+            $(pub $field: $ty,)*
+            #[serde(flatten)]
+            pub extra: BTreeMap<String, Box<RawValue>>,
+        }
+
+        #[derive(Default, Deserialize, Serialize)]
+        struct $head {
+            $(#[serde(default)] $field: $ty,)*
+        }
+
+        impl TryFrom<Box<RawValue>> for $name {
+            type Error = serde_json::Error;
+
+            fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+                let (head, extra) = split_fields::<$head>(raw.get())?;
+                Ok(Self { $($field: head.$field,)* extra })
+            }
+        }
+    };
 }
 
-#[derive(Deserialize, Serialize)]
-struct MessageHead {
+raw_value_record!(Message / MessageHead {
     role: Role,
-    #[serde(default)]
     content: Option<Content>,
-    #[serde(default)]
     tool_calls: Option<Vec<ToolCall>>,
-    #[serde(default)]
     tool_call_id: Option<String>,
-}
+} skip);
 
-impl TryFrom<Box<RawValue>> for Message {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<MessageHead>(raw.get())?;
-        Ok(Self {
-            role: head.role,
-            content: head.content,
-            tool_calls: head.tool_calls,
-            tool_call_id: head.tool_call_id,
-            extra,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct ToolCall {
-    pub id: Option<String>,
-    pub function: Option<ToolCallFunction>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct ToolCallHead {
+raw_value_record!(ToolCall / ToolCallHead {
     id: Option<String>,
-    #[serde(default)]
     function: Option<ToolCallFunction>,
-}
+});
 
-impl TryFrom<Box<RawValue>> for ToolCall {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<ToolCallHead>(raw.get())?;
-        Ok(Self {
-            id: head.id,
-            function: head.function,
-            extra,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct ToolCallFunction {
-    pub name: Option<String>,
-    pub arguments: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
-}
-
-#[derive(Default, Deserialize, Serialize)]
-struct ToolCallFunctionHead {
+raw_value_record!(ToolCallFunction / ToolCallFunctionHead {
     name: Option<String>,
     arguments: Option<String>,
-}
-
-impl TryFrom<Box<RawValue>> for ToolCallFunction {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<ToolCallFunctionHead>(raw.get())?;
-        Ok(Self {
-            name: head.name,
-            arguments: head.arguments,
-            extra,
-        })
-    }
-}
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LassoMessage {
@@ -153,12 +155,17 @@ impl TryFrom<Box<RawValue>> for ToolUseBlock {
     type Error = serde_json::Error;
 
     fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let head = serde_json::from_str::<ToolUseBlockHead>(raw.get())?;
+        let ToolUseBlockHead {
+            kind,
+            id,
+            name,
+            input: raw_input,
+        } = serde_json::from_str(raw.get())?;
         Ok(Self {
-            kind: head.kind,
-            id: head.id,
-            name: head.name,
-            input: head.input.as_deref().map(parse_tool_arguments),
+            kind,
+            id,
+            name,
+            input: raw_input.as_deref().map(parse_tool_arguments),
         })
     }
 }
@@ -257,35 +264,8 @@ impl TryFrom<Box<RawValue>> for ResponseChoice {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(try_from = "Box<RawValue>")]
-pub struct ResponseMessage {
-    pub role: Role,
-    pub content: Option<String>,
-    pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Box<RawValue>>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct ResponseMessageHead {
+raw_value_record!(ResponseMessage / ResponseMessageHead {
     role: Role,
-    #[serde(default)]
     content: Option<String>,
-    #[serde(default)]
     tool_calls: Option<Vec<ToolCall>>,
-}
-
-impl TryFrom<Box<RawValue>> for ResponseMessage {
-    type Error = serde_json::Error;
-
-    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        let (head, extra) = split_fields::<ResponseMessageHead>(raw.get())?;
-        Ok(Self {
-            role: head.role,
-            content: head.content,
-            tool_calls: head.tool_calls,
-            extra,
-        })
-    }
-}
+});

@@ -10,7 +10,7 @@ pub fn mask_model_response(
     response: &ModelResponseShape,
     masked: &[LassoMessage],
 ) -> ModelResponseShape {
-    let tool_use = index::index_tool_use(masked);
+    let tool_use = index::index_tool_blocks(masked).tool_use;
     let texts = index::collect_texts(masked);
     let original_text_count = response
         .choices

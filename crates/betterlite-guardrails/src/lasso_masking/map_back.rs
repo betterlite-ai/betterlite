@@ -9,8 +9,10 @@ use super::wire::{LassoMessage, Message, ToolUseBlock};
 // A tool message takes its content from the masked tool result by call id; every other message with text content takes the next masked text in order, and an assistant message's tool_calls are rewritten whenever present, regardless of whether its own content changed.
 #[must_use]
 pub fn map_masked_messages_back(original: &[Message], masked: &[LassoMessage]) -> Vec<Message> {
-    let tool_use = index::index_tool_use(masked);
-    let tool_result = index::index_tool_result(masked);
+    let index::ToolIndex {
+        tool_use,
+        tool_result,
+    } = index::index_tool_blocks(masked);
     let texts = index::collect_texts(masked);
     let original_text_count = original
         .iter()

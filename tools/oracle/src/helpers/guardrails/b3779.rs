@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use betterlite_guardrails::lakera_pii::masking as lakera_masking;
 use betterlite_guardrails::lakera_pii::wire::{LakeraResponse, Message as LakeraMessage};
 use betterlite_guardrails::lasso_masking::wire::{
-    LassoMessage, Message as OpenAiMessage, ModelResponseShape,
+    LassoMessage, Message as OpenAiMessage, ModelResponseShape, ResponseChoice, ToolCall,
 };
 use betterlite_guardrails::lasso_masking::{apply_response, expand, map_back};
-use serde_json::json;
+use serde_json::{Value, json};
 
 // Bridges the oracle's b3779 operation to the LassoMasking and LakeraProcessing primitives.
 pub(crate) struct Op;
@@ -61,7 +61,9 @@ impl crate::helpers::Helper for Op {
                 json!(map_back::map_masked_messages_back(original, masked))
             }
             Input::ApplyMaskingToModelResponse { response, masked } => {
-                json!(apply_response::mask_model_response(response, masked))
+                let updated = apply_response::mask_model_response(response, masked);
+                let choices: Vec<_> = updated.choices.iter().map(choice_projection).collect();
+                json!(choices)
             }
             Input::MaskPiiInMessages { messages, response } => {
                 let mut counts = BTreeMap::new();
@@ -85,4 +87,23 @@ impl crate::helpers::Helper for Op {
         };
         Ok(result)
     }
+}
+
+fn choice_projection(choice: &ResponseChoice) -> Value {
+    let message = choice.message.as_ref();
+    let tool_calls: Vec<_> = message
+        .and_then(|response_message| response_message.tool_calls.as_ref())
+        .into_iter()
+        .flatten()
+        .map(|call: &ToolCall| {
+            json!({
+                "id": call.id,
+                "arguments": call.function.as_ref().and_then(|function| function.arguments.clone()),
+            })
+        })
+        .collect();
+    json!({
+        "content": message.and_then(|response_message| response_message.content.clone()),
+        "tool_calls": tool_calls,
+    })
 }
