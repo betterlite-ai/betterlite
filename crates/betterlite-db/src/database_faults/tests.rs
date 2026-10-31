@@ -21,24 +21,24 @@ fn error(kind: ErrorType) -> DbError {
 
 #[test]
 fn connection_allowlist() {
-    assert!(classify(ErrorType::Deadline).connection);
-    assert!(!classify(ErrorType::Prisma).connection);
+    assert!(is_database_connection_error(ErrorType::Deadline));
+    assert!(!is_database_connection_error(ErrorType::Prisma));
 }
 #[test]
 fn infrastructure_data_exclusions() {
-    assert!(!classify(ErrorType::UniqueViolation).infrastructure);
-    assert!(classify(ErrorType::Prisma).infrastructure);
+    assert!(!is_infrastructure_error(ErrorType::UniqueViolation));
+    assert!(is_infrastructure_error(ErrorType::Prisma));
 }
 #[test]
 fn base_data_exact_type() {
-    assert_eq!(error(ErrorType::Data).error_type, ErrorType::Data);
-    assert_ne!(error(ErrorType::RawQuery).error_type, ErrorType::Data);
+    assert!(is_prisma_data_error(ErrorType::Data));
+    assert!(!is_prisma_data_error(ErrorType::RawQuery));
 }
 #[test]
 fn p1001_base_data() {
     let mut value = error(ErrorType::Data);
     value.message = "can't reach database server".to_owned();
-    assert_eq!(value.error_type, ErrorType::Data);
+    assert!(is_prisma_data_error(value.error_type));
 }
 
 #[test]
@@ -53,32 +53,33 @@ fn unique_violation_uses_meta_sqlstate() {
 #[case::client_not_connected(ErrorType::ClientNotConnected)]
 #[case::http_client_closed(ErrorType::HttpClientClosed)]
 fn prisma_subclasses_cover_all_predicates(#[case] error_type: ErrorType) {
-    let classes = classify(error_type);
-    assert!(classes.prisma);
-    assert!(classes.infrastructure);
-    assert!(!classify(ErrorType::Deadline).infrastructure);
+    assert!(is_prisma_error(error_type));
+    assert!(is_infrastructure_error(error_type));
+    assert!(!is_infrastructure_error(ErrorType::Deadline));
 }
 
 #[test]
 fn deadline_and_engine_transport_are_distinct() {
-    assert!(!is_transport_error(&error(ErrorType::Deadline)));
+    assert!(!is_database_transport_error(&error(ErrorType::Deadline)));
     let mut engine = error(ErrorType::EngineConnection);
-    assert!(!is_transport_error(&engine));
+    assert!(!is_database_transport_error(&engine));
     engine.message = "connection refused".to_owned();
-    assert!(is_transport_error(&engine));
+    assert!(is_database_transport_error(&engine));
 }
 #[test]
 fn transport_keyword_matrix() {
     let mut value = error(ErrorType::Prisma);
     value.message = "NETWORK IS UNREACHABLE".to_owned();
-    assert!(is_transport_error(&value));
-    assert!(is_transport_error(&error(ErrorType::HttpClientClosed)));
+    assert!(is_database_transport_error(&value));
+    assert!(is_database_transport_error(&error(
+        ErrorType::HttpClientClosed
+    )));
 }
 #[test]
 fn unrelated_message_not_transport() {
     let mut value = error(ErrorType::Prisma);
     value.message = "query rejected".to_owned();
-    assert!(!is_transport_error(&value));
+    assert!(!is_database_transport_error(&value));
 }
 #[test]
 fn deadlock_code_and_phrases() {
@@ -121,7 +122,7 @@ fn engine_traceback_origin() {
     value
         .traceback_modules
         .push("prisma.engine.response".to_owned());
-    assert!(is_prisma_engine_internal(&value));
+    assert!(is_engine_internal_error(&value));
 }
 #[test]
 fn known_prisma_not_engine_internal() {
@@ -129,7 +130,7 @@ fn known_prisma_not_engine_internal() {
     value
         .traceback_modules
         .push("prisma.engine.response".to_owned());
-    assert!(!is_prisma_engine_internal(&value));
+    assert!(!is_engine_internal_error(&value));
 }
 #[test]
 fn permanent_excludes_transient() {
@@ -138,7 +139,7 @@ fn permanent_excludes_transient() {
 }
 #[test]
 fn exception_classes_only() {
-    assert!(!classify(ErrorType::Other).prisma);
+    assert!(!is_prisma_error(ErrorType::Other));
 }
 
 #[derive(Clone, Default)]
@@ -424,11 +425,10 @@ async fn retry_success(#[case] second: Result<i32, DbError>) {
 #[case::read_timeout(ErrorType::ReadTimeout)]
 fn transport_type_predicates(#[case] kind: ErrorType) {
     let value = error(kind);
-    let classes = classify(kind);
-    assert!(classes.connection);
-    assert!(classes.infrastructure);
-    assert!(is_transport_error(&value));
-    assert!(!classes.prisma);
+    assert!(is_database_connection_error(kind));
+    assert!(is_infrastructure_error(kind));
+    assert!(is_database_transport_error(&value));
+    assert!(!is_prisma_error(kind));
 }
 
 #[rstest::rstest]
@@ -437,7 +437,7 @@ fn transport_type_predicates(#[case] kind: ErrorType) {
 fn prisma_subclass_transport_keywords(#[case] kind: ErrorType) {
     let mut value = error(kind);
     value.message = "connection refused".to_owned();
-    assert!(is_transport_error(&value));
+    assert!(is_database_transport_error(&value));
 }
 
 #[rstest::rstest]

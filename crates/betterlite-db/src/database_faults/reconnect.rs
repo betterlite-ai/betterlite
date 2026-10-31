@@ -1,4 +1,4 @@
-use super::{DbError, ErrorType, is_error_type_or_subclass, is_transport_error};
+use super::{DbError, ErrorType, is_database_transport_error, is_error_type_or_subclass};
 use serde::{Deserialize, de::IgnoredAny};
 use std::future::Future;
 use std::pin::Pin;
@@ -55,7 +55,7 @@ where
 }
 
 fn is_retry_eligible(error: &DbError, policy: &RetryPolicy<'_>) -> bool {
-    if !is_transport_error(error) {
+    if !is_database_transport_error(error) {
         return false;
     }
     let Some(allowed) = policy.retry_safe_error_types else {
