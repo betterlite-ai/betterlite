@@ -1,0 +1,14 @@
+kind: helper
+name: settings-coercion-numeric
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment: {}
+    overrides:
+      host: cache.internal
+      port: "6380"
+      db: "3"
+      max_connections: "50"
+      health_check_interval: "20"
+env: {}
+compare: {ignore: []}

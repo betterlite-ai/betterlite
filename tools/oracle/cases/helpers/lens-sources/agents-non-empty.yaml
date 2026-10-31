@@ -1,0 +1,11 @@
+kind: helper
+name: agents-non-empty
+call:
+  b4502:
+    agents:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      rows:
+        - {agent_name: agent-a}
+        - {agent_name: agent-b}
+env: {}
+compare: {ignore: []}

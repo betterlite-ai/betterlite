@@ -1,0 +1,34 @@
+{
+  "kind": "helper",
+  "name": "websearch-no-tool-responses",
+  "call": {
+    "b4112": {
+      "format": "responses",
+      "response": {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "one",
+            "id": "item",
+            "name": "web_search",
+            "arguments": {}
+          },
+          {
+            "type": "web_search_20250305"
+          },
+          {
+            "type": "web_search_preview_2025_03_11"
+          },
+          {
+            "type": "web_search_call"
+          }
+        ]
+      },
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

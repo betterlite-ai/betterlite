@@ -1,14 +1,14 @@
 id: B702
 milestone: M4 keys, spend and management
 title: Postgres migrations for baseline
-status: todo
+status: done
 depends_on: [B700, B860]
 file: tasks/B702-schema-baseline.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 381

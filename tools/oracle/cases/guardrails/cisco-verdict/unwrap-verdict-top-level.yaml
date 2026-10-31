@@ -1,0 +1,5 @@
+kind: helper
+name: unwrap-verdict-top-level
+call: {b3758: {function: unwrap_verdict, response: {action: allow}}}
+env: {}
+compare: {ignore: []}

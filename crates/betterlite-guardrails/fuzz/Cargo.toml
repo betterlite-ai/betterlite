@@ -20,6 +20,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "lasso_wire"
+path = "fuzz_targets/lasso_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lakera_wire"
+path = "fuzz_targets/lakera_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "grayswan_response"
 path = "fuzz_targets/grayswan_response.rs"
 test = false

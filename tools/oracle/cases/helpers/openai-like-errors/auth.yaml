@@ -1,0 +1,13 @@
+kind: helper
+name: openai-like-errors-auth
+call:
+  openai_like_errors:
+    model: command-r
+    custom_llm_provider: my_provider
+    error_str: "authorization denied for this api key"
+    status_code: 403
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

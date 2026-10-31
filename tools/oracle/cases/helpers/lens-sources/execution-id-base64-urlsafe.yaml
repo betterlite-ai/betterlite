@@ -1,0 +1,11 @@
+kind: helper
+name: execution-id-base64-urlsafe
+call:
+  b4502:
+    execution_id:
+      source: traces
+      team_id: team/with+slash
+      trace_id: trace?with&chars
+      trace_ref: "ref>>>é"
+env: {}
+compare: {ignore: []}

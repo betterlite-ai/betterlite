@@ -1,0 +1,60 @@
+kind: helper
+name: content-full-page-cursor
+call:
+  b4502:
+    content:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      execution:
+        id: exec-1
+        source: traces
+        trace_id: trace-1
+        team_id: team-1
+        name: run
+        start_time: "2026-01-01T00:00:00Z"
+        span_count: 40
+        root_seen: true
+      cursor: ""
+      offset: 0
+      rows:
+        - {span_id: span-1, parent_span_id: span-0, name: tool, kind: tool, content: reply-1, truncated: 0}
+        - {span_id: span-2, parent_span_id: span-0, name: tool, kind: tool, content: reply-2, truncated: 0}
+        - {span_id: span-3, parent_span_id: span-0, name: tool, kind: tool, content: reply-3, truncated: 0}
+        - {span_id: span-4, parent_span_id: span-0, name: tool, kind: tool, content: reply-4, truncated: 0}
+        - {span_id: span-5, parent_span_id: span-0, name: tool, kind: tool, content: reply-5, truncated: 0}
+        - {span_id: span-6, parent_span_id: span-0, name: tool, kind: tool, content: reply-6, truncated: 0}
+        - {span_id: span-7, parent_span_id: span-0, name: tool, kind: tool, content: reply-7, truncated: 0}
+        - {span_id: span-8, parent_span_id: span-0, name: tool, kind: tool, content: reply-8, truncated: 0}
+        - {span_id: span-9, parent_span_id: span-0, name: tool, kind: tool, content: reply-9, truncated: 0}
+        - {span_id: span-10, parent_span_id: span-0, name: tool, kind: tool, content: reply-10, truncated: 0}
+        - {span_id: span-11, parent_span_id: span-0, name: tool, kind: tool, content: reply-11, truncated: 0}
+        - {span_id: span-12, parent_span_id: span-0, name: tool, kind: tool, content: reply-12, truncated: 0}
+        - {span_id: span-13, parent_span_id: span-0, name: tool, kind: tool, content: reply-13, truncated: 0}
+        - {span_id: span-14, parent_span_id: span-0, name: tool, kind: tool, content: reply-14, truncated: 0}
+        - {span_id: span-15, parent_span_id: span-0, name: tool, kind: tool, content: reply-15, truncated: 0}
+        - {span_id: span-16, parent_span_id: span-0, name: tool, kind: tool, content: reply-16, truncated: 0}
+        - {span_id: span-17, parent_span_id: span-0, name: tool, kind: tool, content: reply-17, truncated: 0}
+        - {span_id: span-18, parent_span_id: span-0, name: tool, kind: tool, content: reply-18, truncated: 0}
+        - {span_id: span-19, parent_span_id: span-0, name: tool, kind: tool, content: reply-19, truncated: 0}
+        - {span_id: span-20, parent_span_id: span-0, name: tool, kind: tool, content: reply-20, truncated: 0}
+        - {span_id: span-21, parent_span_id: span-0, name: tool, kind: tool, content: reply-21, truncated: 0}
+        - {span_id: span-22, parent_span_id: span-0, name: tool, kind: tool, content: reply-22, truncated: 0}
+        - {span_id: span-23, parent_span_id: span-0, name: tool, kind: tool, content: reply-23, truncated: 0}
+        - {span_id: span-24, parent_span_id: span-0, name: tool, kind: tool, content: reply-24, truncated: 0}
+        - {span_id: span-25, parent_span_id: span-0, name: tool, kind: tool, content: reply-25, truncated: 0}
+        - {span_id: span-26, parent_span_id: span-0, name: tool, kind: tool, content: reply-26, truncated: 0}
+        - {span_id: span-27, parent_span_id: span-0, name: tool, kind: tool, content: reply-27, truncated: 0}
+        - {span_id: span-28, parent_span_id: span-0, name: tool, kind: tool, content: reply-28, truncated: 0}
+        - {span_id: span-29, parent_span_id: span-0, name: tool, kind: tool, content: reply-29, truncated: 0}
+        - {span_id: span-30, parent_span_id: span-0, name: tool, kind: tool, content: reply-30, truncated: 0}
+        - {span_id: span-31, parent_span_id: span-0, name: tool, kind: tool, content: reply-31, truncated: 0}
+        - {span_id: span-32, parent_span_id: span-0, name: tool, kind: tool, content: reply-32, truncated: 0}
+        - {span_id: span-33, parent_span_id: span-0, name: tool, kind: tool, content: reply-33, truncated: 0}
+        - {span_id: span-34, parent_span_id: span-0, name: tool, kind: tool, content: reply-34, truncated: 0}
+        - {span_id: span-35, parent_span_id: span-0, name: tool, kind: tool, content: reply-35, truncated: 0}
+        - {span_id: span-36, parent_span_id: span-0, name: tool, kind: tool, content: reply-36, truncated: 0}
+        - {span_id: span-37, parent_span_id: span-0, name: tool, kind: tool, content: reply-37, truncated: 0}
+        - {span_id: span-38, parent_span_id: span-0, name: tool, kind: tool, content: reply-38, truncated: 0}
+        - {span_id: span-39, parent_span_id: span-0, name: tool, kind: tool, content: reply-39, truncated: 0}
+        - {span_id: span-40, parent_span_id: span-0, name: tool, kind: tool, content: reply-40, truncated: 0}
+env: {}
+compare: {ignore: []}
