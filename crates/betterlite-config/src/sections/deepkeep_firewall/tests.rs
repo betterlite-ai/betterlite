@@ -41,6 +41,23 @@ fn deepkeep_config_requires_each_secret() {
 }
 
 #[test]
+fn deepkeep_config_rejects_extra_headers_as_list() {
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: configured\n      extra_headers:\n        - X-Test\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    let settings = config
+        .sections
+        .deepkeep_firewall
+        .guardrails
+        .first()
+        .expect("entry");
+    assert!(settings.extra_headers.is_empty());
+}
+
+#[test]
 fn deepkeep_config_reads_environment() {
     let config = ConfigLoader {
         lookup: BTreeMap::from([
