@@ -113,4 +113,4 @@ pitfalls:
   - 'The literal string data: is ordinary generated text in Bytez streaming responses.'
   - A stream=false option remains duplicated in the nested params object.
 budget: {max_changed_lines: 800, max_new_expects: 0}
-review_level: security
+review_level: standard

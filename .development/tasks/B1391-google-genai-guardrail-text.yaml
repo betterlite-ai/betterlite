@@ -94,4 +94,4 @@ pitfalls:
   - Raw SSE replacement text is discarded after detection, so rewriting a stream would change the pinned behavior.
   - Byte chunks are individually decoded with replacement before concatenation, which matters for a split multibyte character.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

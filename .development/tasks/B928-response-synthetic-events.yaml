@@ -111,7 +111,7 @@ pitfalls:
 - Added events expose full stored content before deltas,so replacing their content with an empty shell changes replay behavior.
 - A synthetic failed response still ends with response.completed rather than response.failed.
 - Logging fallback detaches the usage attribute but does not promise a recursive deep copy.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

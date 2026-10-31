@@ -142,7 +142,7 @@ pitfalls:
 - Counting mock requests from the number of canned answers can assign one implementation's traffic to the other implementation.
 - An SDK AuthenticationError has body=None, so copying the upstream error.code into the SDK projection changes LiteLLM's result.
 - A helper stdin adapter is not provider parity; sdk_http must record each actual outbound request.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

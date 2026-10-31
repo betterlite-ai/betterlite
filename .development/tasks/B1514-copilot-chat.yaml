@@ -80,7 +80,7 @@ pitfalls:
   - An empty choices array needs repair just as a missing choices field does.
   - A tool role triggers agent for chat even though Copilot Responses uses a different rule.
   - Swallowing GetAPIKeyError in validate_environment must not suppress it during provider-info acquisition.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

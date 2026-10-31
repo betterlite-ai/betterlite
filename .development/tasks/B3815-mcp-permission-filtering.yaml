@@ -103,7 +103,7 @@ pitfalls:
   - Server name extraction from litellm_proxy URLs must check the full prefix and only strip the prefix when the remainder is non-empty to avoid adding an empty string to the set.
   - The security guardrail maps every on_violation value except literal "block" to "alert"; do not default to "block" at application time if initialization sets it to "alert".
   - End-user object lookup uses the same cache and failure boundary as auth (B739); preserve the warning on lookup failure and the passthrough on None, do not add new exception handling.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 3

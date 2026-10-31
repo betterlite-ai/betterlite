@@ -3,6 +3,7 @@
 use std::fs::{self, File};
 use std::path::Path;
 
+use crate::dispatch::attempt::remove_extra_targets;
 use crate::dispatch::progress::{Progress, clear};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::reviewer_rungs;
@@ -73,6 +74,28 @@ fn clearing_removes_the_saved_progress_and_needs_none() {
     clear(folder.path()).unwrap();
     assert!(!folder.path().join("progress.json").exists());
     clear(folder.path()).unwrap();
+}
+
+#[test]
+fn a_worker_made_cargo_target_is_deleted_and_named() {
+    let folder = tempfile::tempdir().unwrap();
+    let target = folder.path().join("target");
+    for name in ["b123-check", "llvm-cov-target"] {
+        fs::create_dir_all(target.join(name).join("debug")).unwrap();
+        fs::write(target.join(name).join("CACHEDIR.TAG"), "").unwrap();
+    }
+    fs::create_dir_all(target.join("debug")).unwrap();
+    let notes = remove_extra_targets(folder.path()).unwrap();
+    assert!(!target.join("b123-check").exists());
+    assert!(target.join("llvm-cov-target").exists());
+    assert!(target.join("debug").exists());
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].starts_with("The gate deleted target/b123-check,"));
+    assert!(
+        remove_extra_targets(&folder.path().join("missing"))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

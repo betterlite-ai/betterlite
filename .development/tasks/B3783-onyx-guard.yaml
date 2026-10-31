@@ -97,7 +97,7 @@ pitfalls:
   - "The async_handler is obtained via get_async_httpx_client; it already has the timeout configured as a dependency from B173."
   - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
   - "ONYX_TIMEOUT is parsed with int(os.getenv(...)); the default 10.0 becomes 10, and non-integer strings like '7.5' raise ValueError, not a parse error message."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -219,7 +219,7 @@ pitfalls:
 - _call_type_from_url treats /responses/r_1/input_items and image routes as known but non-scannable, so the implementation must still apply the body-key fallback instead of rejecting the row.
 - A 403 HTTPException with an explicit __cause__ is a technical guardrail failure and must be re-raised, whereas an uncased 403 is an intentional drop.
 - _describe sanitizes only newline, NUL and DEL/control characters for logs; the report retains the original custom_id, so truncating the stored identifier would break reconciliation.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

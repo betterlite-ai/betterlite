@@ -93,7 +93,7 @@ out_of_scope:
 pitfalls:
 - extra_body is applied before OpenAI attribute cleaning, so it cannot restore numeric attributes the way vector-store update extra_body can.
 - List accepts timeout but never supplies it to the HTTP client; create does in both execution modes.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

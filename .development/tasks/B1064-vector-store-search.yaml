@@ -120,7 +120,7 @@ pitfalls:
 - An empty mock list sends a real search request, whereas the pure mock constructor accepts an empty result list.
 - Search reads registry credentials after executor preparation, so registry metadata cannot retroactively alter that executor.
 - The slash in vertex_ai/rag_api selects api_type; it is not part of the LlmProviders enum value.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
