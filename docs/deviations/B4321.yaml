@@ -1,0 +1,5 @@
+task: B4321
+deviations:
+  - what: Stripping userinfo from a credential_provider URL can fail with InvalidUrl or UrlCannotStripUserinfo in betterlite, where LiteLLM's _url_without_userinfo never raises.
+    why: urlsplit/urlunsplit never reject a malformed string, but url::Url::parse enforces RFC 3986 and set_username/set_password refuse non-authority schemes (such as unix sockets), so a url LiteLLM accepts can be rejected here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L503-L506

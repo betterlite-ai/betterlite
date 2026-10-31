@@ -60,10 +60,6 @@ impl Section for Raw {
         for (index, entry) in self.guardrails.into_iter().enumerate() {
             if entry.litellm_params.guardrail == "lasso" {
                 guardrails.push(entry.resolve(index, lookup)?);
-            } else {
-                return Err(ConfigError::Unsupported {
-                    paths: vec![format!("guardrails.{index}.litellm_params.guardrail")],
-                });
             }
         }
         Ok(Settings { guardrails })

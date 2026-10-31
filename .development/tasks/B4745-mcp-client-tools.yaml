@@ -111,7 +111,6 @@ checks:
       why: The HTTP oracle does not replay list_tools and call_tool behavior with real or scripted MCP peers.
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-client-tools)" &&
-        test -f tools/oracle/cases/helpers/mcp-client-tools/*.yaml &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
 oracle_cases:

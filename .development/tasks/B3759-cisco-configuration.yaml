@@ -113,7 +113,7 @@ checks:
   commands:
     - id: cisco-config-tests
       why: the cisco configuration module's tests fail, do not exist, or do not exercise all code paths
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_configuration::)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_configuration::/)'
 
 oracle_cases: []
 
