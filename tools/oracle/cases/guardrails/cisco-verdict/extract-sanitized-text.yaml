@@ -1,0 +1,5 @@
+kind: helper
+name: extract-sanitized-text
+call: {b3758: {function: extract_sanitized_text, response: {sanitized_text: clean}}}
+env: {}
+compare: {ignore: []}
