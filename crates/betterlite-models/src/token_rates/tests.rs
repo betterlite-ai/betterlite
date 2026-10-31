@@ -79,7 +79,6 @@ fn fast_priority_price_wins_over_standard() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(Some("fast"), None, &database))
@@ -98,7 +97,6 @@ fn invalid_nonnull_rate_does_not_take_missing_key_fallback() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(
@@ -123,7 +121,6 @@ fn threshold_boundary_matches_provider_rule(#[case] prompt_tokens: i64, #[case] 
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let provider = (prompt_tokens == 100 && crosses).then_some("xai");
@@ -151,7 +148,6 @@ fn malformed_threshold_sort_key_is_a_typed_error() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let error =
@@ -169,7 +165,6 @@ fn missing_cache_rates_inherit_resolved_input_rate() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
@@ -189,7 +184,6 @@ fn explicit_zero_cache_price_survives() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
@@ -203,14 +197,9 @@ fn tiered_table_output_falls_back_to_model_output_rate() {
     let prices = model(&[("output_cost_per_token", "\"0.3\"")]);
     let tier: Tier = serde_json::from_str(r#"{"range":[0,1000],"input_cost_per_token":"0.1"}"#)
         .expect("a fixture tier parses");
-    let presence = TierKeyPresence {
-        input: true,
-        output: OutputKeyPresence::default(),
-    };
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: slice::from_ref(&tier),
-        tier_key_presence: slice::from_ref(&presence),
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
@@ -226,14 +215,9 @@ fn tiered_one_hour_zero_falls_back_to_cache_creation() {
         r#"{"range":[0,1000],"input_cost_per_token":"0.1","cache_creation_input_token_cost":"0.2","cache_creation_input_token_cost_above_1hr":0}"#,
     )
     .expect("a fixture tier parses");
-    let presence = TierKeyPresence {
-        input: true,
-        output: OutputKeyPresence::default(),
-    };
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: slice::from_ref(&tier),
-        tier_key_presence: slice::from_ref(&presence),
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
@@ -247,17 +231,9 @@ fn priced_tier_requires_an_input_rate_key() {
     let prices = model(&[("input_cost_per_token", "\"0.1\"")]);
     let tier: Tier = serde_json::from_str(r#"{"range":[0,1000],"output_cost_per_token":"0.2"}"#)
         .expect("a fixture tier parses");
-    let presence = TierKeyPresence {
-        input: false,
-        output: OutputKeyPresence {
-            present: true,
-            reasoning: false,
-        },
-    };
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: slice::from_ref(&tier),
-        tier_key_presence: slice::from_ref(&presence),
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
@@ -271,17 +247,12 @@ fn tiered_rates_apply_an_open_off_peak_window() {
     let prices = model(&[]);
     let tier: Tier = serde_json::from_str(r#"{"range":[0,1000],"input_cost_per_token":"0.1"}"#)
         .expect("a fixture tier parses");
-    let presence = TierKeyPresence {
-        input: true,
-        output: OutputKeyPresence::default(),
-    };
     let off_peak_block: OffPeakBlock =
         serde_json::from_str(r#"{"hours_utc":"00:00-00:00","input_cost_per_token":"0.02"}"#)
             .expect("a fixture off-peak block parses");
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: slice::from_ref(&tier),
-        tier_key_presence: slice::from_ref(&presence),
         off_peak_pricing: Some(&off_peak_block),
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
@@ -290,24 +261,19 @@ fn tiered_rates_apply_an_open_off_peak_window() {
 }
 
 #[test]
-fn null_input_key_still_bills_the_tier() {
+fn null_input_key_falls_back_to_standard_rates() {
     let database = TimeZoneDatabase::from_env();
     let prices = model(&[("input_cost_per_token", "\"0.9\"")]);
     let tier: Tier = serde_json::from_str(r#"{"range":[0,1000],"input_cost_per_token":null}"#)
         .expect("a fixture tier parses");
-    let presence = TierKeyPresence {
-        input: true,
-        output: OutputKeyPresence::default(),
-    };
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: slice::from_ref(&tier),
-        tier_key_presence: slice::from_ref(&presence),
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
-        .expect("a tier with a null input key is still priced");
-    assert_eq!(rates.input_rate, Decimal::ZERO);
+        .expect("a tier with a null input key is treated as absent");
+    assert_eq!(rates.input_rate, Decimal::new(9, 1));
 }
 
 #[test]
@@ -321,7 +287,6 @@ fn reasoning_prefers_service_output_price_over_standard_reasoning() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(
@@ -343,7 +308,6 @@ fn reasoning_falls_back_to_standard_reasoning_rate() {
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
-        tier_key_presence: &[],
         off_peak_pricing: None,
     };
     let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))

@@ -1,13 +1,9 @@
-use std::ptr;
-
 use rust_decimal::Decimal;
 
 use super::rates::{cost_per_unit, service_tier_cost_key};
 use super::reasoning::resolve_billed_reasoning_rate;
 use super::threshold::{apply_threshold_overrides, crossed_input_threshold};
-use super::{
-    EffectiveRates, ModelInfo, ModelPricing, RequestContext, TierKeyPresence, TokenRateError, Usage,
-};
+use super::{EffectiveRates, ModelInfo, ModelPricing, RequestContext, TokenRateError, Usage};
 use crate::off_peak::{self, BaseCosts, ResolvedBaseCosts};
 use crate::tiered_pricing::{self, Tier};
 
@@ -18,42 +14,31 @@ pub fn get_token_base_cost(
 ) -> Result<EffectiveRates, TokenRateError> {
     let selected =
         tiered_pricing::select_tier_for_input(pricing.tiered_pricing, usage.prompt_tokens)?
-            .and_then(|tier| presence_of(pricing, tier).map(|presence| (tier, presence)))
-            .filter(|(_, presence)| presence.input);
+            .filter(|tier| tier.input_token.is_some());
     selected.map_or_else(
         || standard_rates(pricing, usage, context),
-        |(tier, presence)| tiered_rates(pricing, tier, presence, context),
+        |tier| tiered_rates(pricing, tier, context),
     )
-}
-
-// The tier's index into `pricing.tiered_pricing` recovers its parallel presence flags.
-fn presence_of(pricing: &ModelPricing<'_>, tier: &Tier) -> Option<TierKeyPresence> {
-    let index = pricing
-        .tiered_pricing
-        .iter()
-        .position(|candidate| ptr::eq(candidate, tier))?;
-    pricing.tier_key_presence.get(index).copied()
 }
 
 // One tier is picked and every undeclared rate falls back to the tier's input rate; output falls back to the model's own output rate instead.
 fn tiered_rates(
     pricing: &ModelPricing<'_>,
     tier: &Tier,
-    presence: TierKeyPresence,
     context: &RequestContext<'_>,
 ) -> Result<EffectiveRates, TokenRateError> {
     let model = pricing.model;
     let input = tiered_pricing::tier_rate(tier.input_token.as_ref(), None)?;
-    let output = if presence.output.present {
+    let output = if tier.output_token.is_some() {
         tiered_pricing::tier_rate(tier.output_token.as_ref(), None)?
     } else {
         cost_per_unit(model, "output_cost_per_token", Some(Decimal::ZERO))?.unwrap_or(Decimal::ZERO)
     };
     let (cache_creation, above_1hr, cache_read) = tiered_cache_rates(tier)?;
     // A tier's own above-1hr rate is already resolved, so it stands even while an off-peak window is open.
-    let resolved = off_peak::apply_off_peak_to_base_costs(
-        pricing.off_peak_pricing,
-        context.moment,
+    resolve_and_finish(
+        pricing,
+        context,
         BaseCosts {
             prompt_rate: input,
             completion_rate: output,
@@ -61,14 +46,23 @@ fn tiered_rates(
             cache_creation_above_1hr_rate: Some(above_1hr),
             cache_read_rate: cache_read,
         },
+        tiered_reasoning_rate(tier)?,
+    )
+}
+
+fn resolve_and_finish(
+    pricing: &ModelPricing<'_>,
+    context: &RequestContext<'_>,
+    costs: BaseCosts,
+    reasoning: Option<Decimal>,
+) -> Result<EffectiveRates, TokenRateError> {
+    let resolved = off_peak::apply_off_peak_to_base_costs(
+        pricing.off_peak_pricing,
+        context.moment,
+        costs,
         context.database,
     )?;
-    finish_rates(
-        pricing,
-        context,
-        resolved,
-        tiered_reasoning_rate(tier, presence)?,
-    )
+    finish_rates(pricing, context, resolved, reasoning)
 }
 
 // The one-hour fallback reads truthiness: an explicit zero in the tier still yields cache_creation.
@@ -116,11 +110,8 @@ fn finish_rates(
     })
 }
 
-fn tiered_reasoning_rate(
-    tier: &Tier,
-    presence: TierKeyPresence,
-) -> Result<Option<Decimal>, TokenRateError> {
-    if !presence.output.reasoning && !presence.output.present {
+fn tiered_reasoning_rate(tier: &Tier) -> Result<Option<Decimal>, TokenRateError> {
+    if tier.output_reasoning_token.is_none() && tier.output_token.is_none() {
         return Ok(None);
     }
     Ok(Some(tiered_pricing::tier_rate(
@@ -151,8 +142,8 @@ fn standard_rates(
         None => base,
     };
 
-    let resolved = resolve_standard_cost(pricing, context, &overridden)?;
-    finish_rates(pricing, context, resolved, None)
+    let costs = resolve_standard_cost(pricing, context, &overridden)?;
+    resolve_and_finish(pricing, context, costs, None)
 }
 
 fn initial_base_rates(
@@ -189,22 +180,16 @@ fn resolve_standard_cost(
     pricing: &ModelPricing<'_>,
     context: &RequestContext<'_>,
     base: &BaseRates,
-) -> Result<ResolvedBaseCosts, TokenRateError> {
+) -> Result<BaseCosts, TokenRateError> {
     let input_rate_for_missing_cache =
         off_peak_input_rate_fallback(pricing.off_peak_pricing, context, base.prompt)?;
-    let base_costs = BaseCosts {
+    Ok(BaseCosts {
         prompt_rate: base.prompt,
         completion_rate: base.completion,
         cache_creation_rate: base.cache_creation.unwrap_or(input_rate_for_missing_cache),
         cache_creation_above_1hr_rate: base.cache_creation_above_1hr,
         cache_read_rate: base.cache_read.unwrap_or(input_rate_for_missing_cache),
-    };
-    Ok(off_peak::apply_off_peak_to_base_costs(
-        pricing.off_peak_pricing,
-        context.moment,
-        base_costs,
-        context.database,
-    )?)
+    })
 }
 
 fn off_peak_input_rate_fallback(

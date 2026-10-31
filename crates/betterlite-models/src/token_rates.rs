@@ -45,23 +45,9 @@ pub struct BatchCostRates {
     pub cache_creation: Option<Decimal>,
 }
 
-// A tier's Option<Scalar> fields can't tell an absent key from an explicit JSON null, so this carries that distinction instead, one struct per tier in `tiered_pricing`.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct TierKeyPresence {
-    pub input: bool,
-    pub output: OutputKeyPresence,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct OutputKeyPresence {
-    pub present: bool,
-    pub reasoning: bool,
-}
-
 pub struct ModelPricing<'pricing> {
     pub model: &'pricing ModelInfo,
     pub tiered_pricing: &'pricing [Tier],
-    pub tier_key_presence: &'pricing [TierKeyPresence],
     pub off_peak_pricing: Option<&'pricing OffPeakBlock>,
 }
 
