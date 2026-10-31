@@ -33,9 +33,16 @@ fn python_number(number: &serde_json::Number) -> String {
     if !spelling.contains(['.', 'e', 'E']) {
         return spelling;
     }
-    let Some(value) = number.as_f64() else {
+    let Ok(value) = spelling.parse::<f64>() else {
         return spelling;
     };
+    if value.is_infinite() {
+        return String::from(if value.is_sign_negative() {
+            "-inf"
+        } else {
+            "inf"
+        });
+    }
     let debug = format!("{value:?}");
     match debug.split_once('e') {
         Some((mantissa, exponent)) => {

@@ -358,6 +358,8 @@ fn invalid_a2a_records_fail(#[case] payload: AgentJson) {
 #[case::large_exponent("1.5e20", "1.5e+20")]
 #[case::small_exponent("1.5e-10", "1.5e-10")]
 #[case::single_digit_exponent("1e16", "1e+16")]
+#[case::positive_overflow("1e309", "inf")]
+#[case::negative_overflow("-1e309", "-inf")]
 fn fractional_request_ids_become_strings(#[case] input: &str, #[case] expected: &str) {
     let request: AgentJson = serde_json::from_str(input).unwrap();
     let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
